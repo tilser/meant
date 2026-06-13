@@ -4,7 +4,7 @@ spring:
   application:
     name: meant-api
   datasource:
-    url: ${MEANT_DB_URL:jdbc:postgresql://localhost:5432/meant}
+    url: ${MEANT_DB_URL:jdbc:postgresql://localhost:5433/meant}
     username: ${MEANT_DB_USER:meant}
     password: ${MEANT_DB_PASSWORD:meant}
   jpa:
