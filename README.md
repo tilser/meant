@@ -100,7 +100,7 @@ This repository is a monorepo with a Java Spring Boot backend and a TanStack Sta
 
 - Backend: Java 25, Spring Boot 4.1.0, Maven, Hibernate via Spring Data JPA, Liquibase
 - Database: PostgreSQL
-- Frontend: TanStack Start, React, TypeScript, Bun
+- Frontend: TanStack Start, React, TypeScript, Tailwind CSS, Bun
 
 ## Layout
 
