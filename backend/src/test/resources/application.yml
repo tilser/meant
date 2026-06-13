@@ -1,11 +1,17 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:meant;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    url: jdbc:h2:mem:${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
     username: sa
     password:
   liquibase:
     enabled: true
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     open-in-view: false
+
+crawling:
+  ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train
+  ucp-dataset-page-size: 100
+  ucp-dataset-import-cron: "0 0 3 2 * *"
+  ucp-dataset-import-zone: UTC

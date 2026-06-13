@@ -25,3 +25,9 @@ management:
 
 server:
   port: ${MEANT_API_PORT:8080}
+
+crawling:
+  ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train
+  ucp-dataset-page-size: 100
+  ucp-dataset-import-cron: "0 0 3 2 * *"
+  ucp-dataset-import-zone: UTC

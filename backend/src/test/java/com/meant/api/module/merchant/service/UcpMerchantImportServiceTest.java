@@ -1,0 +1,158 @@
+package com.meant.api.module.merchant.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.meant.api.module.merchant.entity.MerchantRaw;
+import com.meant.api.module.merchant.repository.MerchantRawRepository;
+import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
+import java.time.OffsetDateTime;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.web.client.RestClient;
+
+@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
+class UcpMerchantImportServiceTest {
+
+    @Autowired
+    private UcpMerchantImportService service;
+
+    @Autowired
+    private MerchantRawRepository repository;
+
+    @Autowired
+    private FakeUcpDatasetClient datasetClient;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAllInBatch();
+        datasetClient.rows = List.of();
+        datasetClient.exception = null;
+    }
+
+    @Test
+    void importMerchantsSavesOnlyVerifiedRowsWithParsedJsonPayloads() {
+        datasetClient.rows = List.of(
+                datasetRow(1, "verified-one.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
+                datasetRow(2, "unverified.example", "pending", "{\"GPTBot\": true}", "[\"mcp\"]"),
+                datasetRow(3, "verified-two.example", "verified", "{\"GPTBot\": false}", "[\"embedded\"]")
+        );
+
+        UcpMerchantImportResult result = service.importMerchants(new ImportUcpMerchantsCommand());
+
+        assertThat(result.fetchedRows()).isEqualTo(3);
+        assertThat(result.savedRows()).isEqualTo(2);
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getDomain)
+                .containsExactlyInAnyOrder("verified-one.example", "verified-two.example");
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getStatus)
+                .containsOnly("verified");
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getAiBotPolicies)
+                .allSatisfy(value -> assertThat(value).contains("GPTBot"));
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getTransports)
+                .containsExactlyInAnyOrder("[\"mcp\"]", "[\"embedded\"]");
+    }
+
+    @Test
+    void importMerchantsDoesNotReplaceRowsWhenFetchFails() {
+        repository.save(existingMerchant());
+        datasetClient.exception = new IllegalStateException("fetch failed");
+
+        assertThatThrownBy(() -> service.importMerchants(new ImportUcpMerchantsCommand()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("fetch failed");
+
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getDomain)
+                .containsExactly("existing.example");
+    }
+
+    private MerchantRaw existingMerchant() {
+        return new MerchantRaw(
+                100,
+                "existing.example",
+                "verified",
+                "https://existing.example/.well-known/ucp",
+                200,
+                "2026-01-23",
+                true,
+                false,
+                false,
+                true,
+                false,
+                2,
+                "{\"GPTBot\":true}",
+                "[\"mcp\"]",
+                OffsetDateTime.parse("2026-04-02T09:00:15+00:00"),
+                OffsetDateTime.parse("2026-04-02T09:00:15+00:00"),
+                OffsetDateTime.parse("2026-04-02T09:00:15+00:00")
+        );
+    }
+
+    private HuggingFaceDatasetRow datasetRow(
+            int rowIdx,
+            String domain,
+            String status,
+            String aiBotPolicies,
+            String transports
+    ) {
+        return new HuggingFaceDatasetRow(
+                rowIdx,
+                new UcpMerchantDatasetRow(
+                        domain,
+                        status,
+                        "https://%s/.well-known/ucp".formatted(domain),
+                        200.0,
+                        "2026-01-23",
+                        1,
+                        0,
+                        0,
+                        1,
+                        0,
+                        2,
+                        aiBotPolicies,
+                        transports,
+                        OffsetDateTime.parse("2026-04-02T09:00:15+00:00"),
+                        OffsetDateTime.parse("2026-04-02T09:00:15+00:00")
+                ),
+                List.of()
+        );
+    }
+
+    @TestConfiguration
+    static class Configuration {
+
+        @Bean
+        @Primary
+        FakeUcpDatasetClient fakeUcpDatasetClient() {
+            return new FakeUcpDatasetClient();
+        }
+    }
+
+    static class FakeUcpDatasetClient extends UcpDatasetClient {
+
+        private List<HuggingFaceDatasetRow> rows = List.of();
+        private RuntimeException exception;
+
+        FakeUcpDatasetClient() {
+            super(RestClient.builder(), new CrawlingProperties());
+        }
+
+        @Override
+        public List<HuggingFaceDatasetRow> fetchAllRows() {
+            if (exception != null) {
+                throw exception;
+            }
+            return rows;
+        }
+    }
+}
