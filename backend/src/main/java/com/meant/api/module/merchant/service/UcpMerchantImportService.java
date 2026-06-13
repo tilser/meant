@@ -1,6 +1,9 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.MerchantRaw;
+import com.meant.api.module.merchant.exception.UcpAiBotPoliciesParsingException;
+import com.meant.api.module.merchant.exception.UcpMerchantJsonWritingException;
+import com.meant.api.module.merchant.exception.UcpTransportsParsingException;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpAiBotPolicies;
@@ -79,7 +82,7 @@ public class UcpMerchantImportService {
         try {
             return objectMapper.readValue(value, UcpAiBotPolicies.class);
         } catch (JacksonException ex) {
-            throw new IllegalArgumentException("Unable to parse UCP AI bot policies", ex);
+            throw new UcpAiBotPoliciesParsingException(ex);
         }
     }
 
@@ -87,7 +90,7 @@ public class UcpMerchantImportService {
         try {
             return new UcpTransports(objectMapper.readerForListOf(String.class).readValue(value));
         } catch (JacksonException ex) {
-            throw new IllegalArgumentException("Unable to parse UCP transports", ex);
+            throw new UcpTransportsParsingException(ex);
         }
     }
 
@@ -95,7 +98,7 @@ public class UcpMerchantImportService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JacksonException ex) {
-            throw new IllegalArgumentException("Unable to write UCP merchant JSON", ex);
+            throw new UcpMerchantJsonWritingException(ex);
         }
     }
 
