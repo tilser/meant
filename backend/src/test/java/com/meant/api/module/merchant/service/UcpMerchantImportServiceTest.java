@@ -39,7 +39,7 @@ class UcpMerchantImportServiceTest {
     }
 
     @Test
-    void importMerchantsSavesOnlyVerifiedRowsWithParsedJsonPayloads() {
+    void importMerchantsSavesOnlyVerifiedRowsWithRawJsonPayloads() {
         datasetClient.rows = List.of(
                 datasetRow(1, "verified-one.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
                 datasetRow(2, "unverified.example", "pending", "{\"GPTBot\": true}", "[\"mcp\"]"),
@@ -56,7 +56,7 @@ class UcpMerchantImportServiceTest {
                 .containsOnly("verified");
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getAiBotPolicies)
-                .allSatisfy(value -> assertThat(value).contains("GPTBot"));
+                .containsExactlyInAnyOrder("{\"GPTBot\": true}", "{\"GPTBot\": false}");
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getTransports)
                 .containsExactlyInAnyOrder("[\"mcp\"]", "[\"embedded\"]");
