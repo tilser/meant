@@ -10,6 +10,7 @@ import com.meant.api.module.merchant.service.dto.UcpTransports;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
@@ -18,6 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 @Validated
+@RequiredArgsConstructor
 public class UcpMerchantImportService {
 
     private static final String VERIFIED_STATUS = "verified";
@@ -26,18 +28,6 @@ public class UcpMerchantImportService {
     private final MerchantRawRepository merchantRawRepository;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
-
-    public UcpMerchantImportService(
-            UcpDatasetClient ucpDatasetClient,
-            MerchantRawRepository merchantRawRepository,
-            TransactionTemplate transactionTemplate,
-            ObjectMapper objectMapper
-    ) {
-        this.ucpDatasetClient = ucpDatasetClient;
-        this.merchantRawRepository = merchantRawRepository;
-        this.transactionTemplate = transactionTemplate;
-        this.objectMapper = objectMapper;
-    }
 
     public UcpMerchantImportResult importMerchants(@Valid ImportUcpMerchantsCommand command) {
         List<HuggingFaceDatasetRow> datasetRows = ucpDatasetClient.fetchAllRows();
