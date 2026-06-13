@@ -46,10 +46,8 @@ class UcpMerchantImportServiceTest {
                 datasetRow(3, "verified-two.example", "verified", "{\"GPTBot\": false}", "[\"embedded\"]")
         );
 
-        UcpMerchantImportResult result = service.importMerchants();
+        service.importMerchants();
 
-        assertThat(result.fetchedRows()).isEqualTo(3);
-        assertThat(result.savedRows()).isEqualTo(2);
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getDomain)
                 .containsExactlyInAnyOrder("verified-one.example", "verified-two.example");

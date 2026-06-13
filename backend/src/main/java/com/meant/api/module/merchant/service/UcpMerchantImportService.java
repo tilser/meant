@@ -9,12 +9,14 @@ import com.meant.api.module.merchant.service.dto.UcpTransports;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+@Slf4j
 @Service
 @Validated
 @RequiredArgsConstructor
@@ -27,7 +29,7 @@ public class UcpMerchantImportService {
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
 
-    public UcpMerchantImportResult importMerchants() {
+    public void importMerchants() {
         List<HuggingFaceDatasetRow> datasetRows = ucpDatasetClient.fetchAllRows();
         Instant fetchedAt = Instant.now();
         List<MerchantRaw> verifiedMerchants = datasetRows.stream()
@@ -40,7 +42,7 @@ public class UcpMerchantImportService {
             merchantRawRepository.saveAll(verifiedMerchants);
         });
 
-        return new UcpMerchantImportResult(datasetRows.size(), verifiedMerchants.size());
+        log.info("Merchant import completed. Saved merchants: {}", verifiedMerchants.size());
     }
 
     private boolean isVerified(UcpMerchantDatasetRow row) {
