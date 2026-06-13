@@ -1,0 +1,27 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: meant-api
+  datasource:
+    url: ${MEANT_DB_URL:jdbc:postgresql://localhost:5432/meant}
+    username: ${MEANT_DB_USER:meant}
+    password: ${MEANT_DB_PASSWORD:meant}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+server:
+  port: ${MEANT_API_PORT:8080}
