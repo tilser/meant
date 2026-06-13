@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -92,9 +92,9 @@ class UcpMerchantImportServiceTest {
                 .capabilityCount(2)
                 .aiBotPolicies("{\"GPTBot\":true}")
                 .transports("[\"mcp\"]")
-                .lastCheckedAt(OffsetDateTime.parse("2026-04-02T09:00:15+00:00"))
-                .lastSuccessAt(OffsetDateTime.parse("2026-04-02T09:00:15+00:00"))
-                .fetchedAt(OffsetDateTime.parse("2026-04-02T09:00:15+00:00"))
+                .lastCheckedAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .lastSuccessAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .fetchedAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build();
     }
 
@@ -121,8 +121,8 @@ class UcpMerchantImportServiceTest {
                         2,
                         aiBotPolicies,
                         transports,
-                        OffsetDateTime.parse("2026-04-02T09:00:15+00:00"),
-                        OffsetDateTime.parse("2026-04-02T09:00:15+00:00")
+                        Instant.parse("2026-04-02T09:00:15Z"),
+                        Instant.parse("2026-04-02T09:00:15Z")
                 ),
                 List.of()
         );

@@ -2,7 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -53,7 +53,7 @@ record UcpMerchantDatasetRow(
         @JsonProperty("capability_count") Integer capabilityCount,
         @JsonProperty("ai_bot_policies") String aiBotPolicies,
         String transports,
-        @JsonProperty("last_checked_at") OffsetDateTime lastCheckedAt,
-        @JsonProperty("last_success_at") OffsetDateTime lastSuccessAt
+        @JsonProperty("last_checked_at") Instant lastCheckedAt,
+        @JsonProperty("last_success_at") Instant lastSuccessAt
 ) {
 }

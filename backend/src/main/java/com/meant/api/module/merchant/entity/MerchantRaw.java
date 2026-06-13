@@ -5,7 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -72,10 +72,10 @@ public class MerchantRaw {
     @Column(nullable = false)
     private String transports;
 
-    private OffsetDateTime lastCheckedAt;
+    private Instant lastCheckedAt;
 
-    private OffsetDateTime lastSuccessAt;
+    private Instant lastSuccessAt;
 
     @Column(nullable = false)
-    private OffsetDateTime fetchedAt;
+    private Instant fetchedAt;
 }

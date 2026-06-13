@@ -4,8 +4,7 @@ import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
 import jakarta.validation.Valid;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -38,7 +37,7 @@ public class UcpMerchantImportService {
 
     public UcpMerchantImportResult importMerchants(@Valid ImportUcpMerchantsCommand command) {
         List<HuggingFaceDatasetRow> datasetRows = ucpDatasetClient.fetchAllRows();
-        OffsetDateTime fetchedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        Instant fetchedAt = Instant.now();
         List<MerchantRaw> verifiedMerchants = datasetRows.stream()
                 .filter(datasetRow -> isVerified(datasetRow.row()))
                 .map(datasetRow -> toMerchantRaw(datasetRow, fetchedAt))
@@ -56,7 +55,7 @@ public class UcpMerchantImportService {
         return row != null && VERIFIED_STATUS.equals(row.status());
     }
 
-    private MerchantRaw toMerchantRaw(HuggingFaceDatasetRow datasetRow, OffsetDateTime fetchedAt) {
+    private MerchantRaw toMerchantRaw(HuggingFaceDatasetRow datasetRow, Instant fetchedAt) {
         UcpMerchantDatasetRow row = datasetRow.row();
         UcpAiBotPolicies aiBotPolicies = parseAiBotPolicies(row.aiBotPolicies());
         UcpTransports transports = parseTransports(row.transports());
