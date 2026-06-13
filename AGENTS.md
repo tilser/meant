@@ -105,3 +105,23 @@ Do not add Flyway migrations or Flyway dependencies.
 ## Tests
 
 Keep tests aligned with the package being tested. Prefer focused service/controller tests for module behavior and a small application context test for bootstrapping.
+
+## Git Commits
+
+Use this commit message format:
+
+```text
+<type>/<commit description>
+```
+
+Allowed types:
+
+- `f` for feature work
+- `b` for bug fixes
+- `c` for chores, documentation, configuration, and maintenance
+
+Examples:
+
+- `f/Add user preference search`
+- `b/Fix merchant ranking filter`
+- `c/Document Meant product specification`
