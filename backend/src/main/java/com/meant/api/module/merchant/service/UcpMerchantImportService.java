@@ -2,12 +2,10 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
-import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpAiBotPolicies;
 import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpTransports;
-import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +27,7 @@ public class UcpMerchantImportService {
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
 
-    public UcpMerchantImportResult importMerchants(@Valid ImportUcpMerchantsCommand command) {
+    public UcpMerchantImportResult importMerchants() {
         List<HuggingFaceDatasetRow> datasetRows = ucpDatasetClient.fetchAllRows();
         Instant fetchedAt = Instant.now();
         List<MerchantRaw> verifiedMerchants = datasetRows.stream()

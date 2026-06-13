@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.CrawlingProperties;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
-import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
 import java.time.Instant;
@@ -47,7 +46,7 @@ class UcpMerchantImportServiceTest {
                 datasetRow(3, "verified-two.example", "verified", "{\"GPTBot\": false}", "[\"embedded\"]")
         );
 
-        UcpMerchantImportResult result = service.importMerchants(new ImportUcpMerchantsCommand());
+        UcpMerchantImportResult result = service.importMerchants();
 
         assertThat(result.fetchedRows()).isEqualTo(3);
         assertThat(result.savedRows()).isEqualTo(2);
@@ -70,7 +69,7 @@ class UcpMerchantImportServiceTest {
         repository.save(existingMerchant());
         datasetClient.exception = new IllegalStateException("fetch failed");
 
-        assertThatThrownBy(() -> service.importMerchants(new ImportUcpMerchantsCommand()))
+        assertThatThrownBy(() -> service.importMerchants())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("fetch failed");
 

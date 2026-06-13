@@ -1,7 +1,6 @@
 package com.meant.api.module.merchant.service.task;
 
 import com.meant.api.module.merchant.service.UcpMerchantImportService;
-import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -17,6 +16,6 @@ public class UcpMerchantImportTask {
             zone = "${crawling.ucp-dataset-import-zone}"
     )
     public void importMerchants() {
-        ucpMerchantImportService.importMerchants(new ImportUcpMerchantsCommand());
+        ucpMerchantImportService.importMerchants();
     }
 }
