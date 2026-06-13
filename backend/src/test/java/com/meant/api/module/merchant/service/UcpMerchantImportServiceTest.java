@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.merchant.entity.MerchantRaw;
+import com.meant.api.module.merchant.properties.CrawlingProperties;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
 import java.time.Instant;
@@ -144,7 +145,12 @@ class UcpMerchantImportServiceTest {
         private RuntimeException exception;
 
         FakeUcpDatasetClient() {
-            super(RestClient.builder(), new CrawlingProperties());
+            super(RestClient.builder(), new CrawlingProperties(
+                    "https://datasets.example/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train",
+                    100,
+                    "0 0 3 2 * *",
+                    "UTC"
+            ));
         }
 
         @Override

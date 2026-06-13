@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.service;
 
+import com.meant.api.module.merchant.properties.CrawlingProperties;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,7 +23,7 @@ public class UcpDatasetClient {
     public List<HuggingFaceDatasetRow> fetchAllRows() {
         List<HuggingFaceDatasetRow> rows = new ArrayList<>();
         int offset = 0;
-        int pageSize = crawlingProperties.getUcpDatasetPageSize();
+        int pageSize = crawlingProperties.ucpDatasetPageSize();
 
         while (true) {
             HuggingFaceRowsResponse response = fetchPage(offset, pageSize);
@@ -47,7 +48,7 @@ public class UcpDatasetClient {
     }
 
     private String pageUri(int offset, int pageSize) {
-        String rowsUrl = crawlingProperties.getUcpDatasetRowsUrl();
+        String rowsUrl = crawlingProperties.ucpDatasetRowsUrl();
         int queryStart = rowsUrl.indexOf('?');
         if (queryStart == -1) {
             return rowsUrl + "?offset=" + offset + "&length=" + pageSize;

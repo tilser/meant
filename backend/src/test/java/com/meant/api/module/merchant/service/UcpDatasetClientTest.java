@@ -5,6 +5,7 @@ import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.merchant.properties.CrawlingProperties;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -17,9 +18,12 @@ class UcpDatasetClientTest {
     void fetchAllRowsUsesOffsetAndLengthPagination() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        CrawlingProperties properties = new CrawlingProperties();
-        properties.setUcpDatasetRowsUrl("https://datasets.example/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train");
-        properties.setUcpDatasetPageSize(2);
+        CrawlingProperties properties = new CrawlingProperties(
+                "https://datasets.example/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train",
+                2,
+                "0 0 3 2 * *",
+                "UTC"
+        );
         server.expect(once(), requestTo("https://datasets.example/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train&offset=0&length=2"))
                 .andRespond(withSuccess(firstPage(), MediaType.APPLICATION_JSON));
         server.expect(once(), requestTo("https://datasets.example/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train&offset=2&length=2"))
