@@ -66,7 +66,6 @@ public class MerchantRaw {
     @Column(nullable = false)
     private Integer capabilityCount;
 
-    @Column(nullable = false)
     private String aiBotPolicies;
 
     @Column(nullable = false)

@@ -42,9 +42,7 @@
             <column name="capability_count" type="int">
                 <constraints nullable="false"/>
             </column>
-            <column name="ai_bot_policies" type="text">
-                <constraints nullable="false"/>
-            </column>
+            <column name="ai_bot_policies" type="text"/>
             <column name="transports" type="text">
                 <constraints nullable="false"/>
             </column>
