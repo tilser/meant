@@ -72,7 +72,7 @@ public class UcpMerchantImportService {
         if (value == null) {
             return null;
         }
-        return Math.toIntExact(Math.round(value));
+        return value.intValue();
     }
 
     private boolean toBoolean(Integer value) {
