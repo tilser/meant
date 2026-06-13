@@ -1,4 +1,4 @@
-package com.meant.api;
+package com.meant.api.common.controller;
 
 import java.time.Instant;
 
