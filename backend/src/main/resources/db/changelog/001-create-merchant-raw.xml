@@ -56,7 +56,7 @@
         </createTable>
     </changeSet>
 
-    <changeSet id="002-add-merchant-raw-domain-unique-constraint" author="codex" dbms="postgresql">
+    <changeSet id="002-add-merchant-raw-domain-unique-constraint" author="codex">
         <addUniqueConstraint
                 tableName="merchant_raw"
                 columnNames="domain"
