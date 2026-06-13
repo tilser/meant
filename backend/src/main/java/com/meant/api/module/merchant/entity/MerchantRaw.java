@@ -25,19 +25,19 @@ public class MerchantRaw {
     @Column(name = "dataset_row_idx", nullable = false)
     private Integer datasetRowIdx;
 
-    @Column(name = "domain", nullable = false)
+    @Column(name = "domain", nullable = false, columnDefinition = "text")
     private String domain;
 
-    @Column(name = "status", nullable = false)
+    @Column(name = "status", nullable = false, columnDefinition = "text")
     private String status;
 
-    @Column(name = "ucp_url", nullable = false, length = 2048)
+    @Column(name = "ucp_url", nullable = false, columnDefinition = "text")
     private String ucpUrl;
 
     @Column(name = "http_status")
     private Integer httpStatus;
 
-    @Column(name = "ucp_version")
+    @Column(name = "ucp_version", columnDefinition = "text")
     private String ucpVersion;
 
     @Column(name = "has_checkout", nullable = false)
