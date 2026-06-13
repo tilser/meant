@@ -111,17 +111,25 @@ Keep tests aligned with the package being tested. Prefer focused service/control
 Use this commit message format:
 
 ```text
-<type>/<commit description>
+<type>[optional scope]: <description>
 ```
 
 Allowed types:
 
-- `f` for feature work
-- `b` for bug fixes
-- `c` for chores, documentation, configuration, and maintenance
+- `feat` for feature work
+- `fix` for bug fixes
+- `chore` for chores, configuration, and maintenance
+- `docs` for documentation-only changes
+- `refactor` for code restructuring without behavior changes
+- `test` for adding or updating tests
+- `build` for build system or dependency changes
+- `ci` for CI/CD configuration
+- `perf` for performance improvements
+- `style` for formatting-only changes
 
 Examples:
 
-- `f/Add user preference search`
-- `b/Fix merchant ranking filter`
-- `c/Document Meant product specification`
+- `feat: add user preference search`
+- `fix: handle missing merchant checkout URL`
+- `docs: document Meant product specification`
+- `feat(user): add preference commands`
