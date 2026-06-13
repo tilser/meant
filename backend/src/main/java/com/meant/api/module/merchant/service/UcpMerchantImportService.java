@@ -37,7 +37,7 @@ public class UcpMerchantImportService {
                 .map(datasetRow -> toMerchantRaw(datasetRow, fetchedAt))
                 .toList();
 
-        transactionTemplate.executeWithoutResult(status -> {
+        transactionTemplate.executeWithoutResult(_ -> {
             merchantRawRepository.deleteAllInBatch();
             merchantRawRepository.saveAll(verifiedMerchants);
         });
@@ -46,7 +46,7 @@ public class UcpMerchantImportService {
     }
 
     private boolean isVerified(UcpMerchantDatasetRow row) {
-        return row != null && VERIFIED_STATUS.equals(row.status());
+        return row != null && VERIFIED_STATUS.equalsIgnoreCase(row.status().trim());
     }
 
     private MerchantRaw toMerchantRaw(HuggingFaceDatasetRow datasetRow, Instant fetchedAt) {
