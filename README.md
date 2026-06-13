@@ -1,6 +1,100 @@
 # Meant
 
-Meant is a monorepo with a Java Spring Boot backend and a TanStack Start frontend.
+**Everything meant for you.**
+
+Meant is a personalized shopping platform that lets users search and buy products across multiple online stores from one place.
+
+Instead of showing users everything, Meant shows only products that match their preferences, goals, and values. It is not another marketplace. It is a personalized shopping layer on top of the internet.
+
+## Product
+
+Users can define persistent shopping preferences, such as:
+
+- only organic food
+- no polyester
+- cotton clothing only
+- healthy products
+- sustainable brands
+- specific budget limits
+- highly rated products only
+
+These preferences are applied automatically across every search.
+
+## User Experience
+
+1. The user enters a shopping request, for example: "Find me a durable organic cotton hoodie under €100."
+2. Meant searches relevant merchants and products.
+3. Results are filtered and ranked based on the user's explicit preferences, product relevance, price, availability, reviews, and merchant quality.
+4. Each result explains why it is recommended, such as matching material preferences, staying within budget, having strong durability reviews, or shipping to the user's location.
+5. The user selects a product and is redirected to the merchant checkout.
+
+## Merchant Discovery
+
+Meant maintains an index of merchants that support UCP and Shopify Storefront MCP.
+
+For each merchant, Meant stores:
+
+- store description
+- product categories
+- target audience
+- sustainability signals
+- popular searches
+- supported capabilities
+- checkout endpoint
+
+Merchant profiles are embedded for semantic search.
+
+## Product Search
+
+Search happens in two stages:
+
+1. Find the most relevant merchants using semantic search over merchant profiles.
+2. Search products live only across those merchants.
+
+Product results are cached and gradually indexed to improve speed and quality over time.
+
+## Reviews
+
+Reviews are a key part of Meant.
+
+Meant aggregates available ratings and review data and generates concise AI insights:
+
+- common advantages
+- common complaints
+- product quality signals
+- recurring issues
+- fit with the user's preferences
+
+## Ranking
+
+The ranking pipeline:
+
+1. Hard filters, such as excluding polyester or products above budget.
+2. Semantic retrieval to find relevant merchants and products.
+3. Reranking to rank the best candidates against the user query.
+4. Personalization based on the user's long-term profile and goals.
+
+## Monetization
+
+Meant is free for users.
+
+Revenue comes from merchant commissions when users complete purchases through Meant.
+
+## MVP Scope
+
+- merchant registry from public UCP merchants
+- merchant profiling through Shopify Storefront MCP
+- semantic merchant search
+- live product search
+- user preferences
+- personalized filtering and ranking
+- product detail with AI explanation
+- aggregated ratings and basic review insights
+- redirect to merchant checkout
+
+## Repository
+
+This repository is a monorepo with a Java Spring Boot backend and a TanStack Start frontend.
 
 ## Stack
 
