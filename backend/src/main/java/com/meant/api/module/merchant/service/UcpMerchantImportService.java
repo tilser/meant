@@ -61,25 +61,25 @@ public class UcpMerchantImportService {
         UcpAiBotPolicies aiBotPolicies = parseAiBotPolicies(row.aiBotPolicies());
         UcpTransports transports = parseTransports(row.transports());
 
-        return new MerchantRaw(
-                datasetRow.rowIdx(),
-                row.domain(),
-                row.status(),
-                row.ucpUrl(),
-                toHttpStatus(row.httpStatus()),
-                row.version(),
-                toBoolean(row.hasCheckout()),
-                toBoolean(row.hasIdentityLinking()),
-                toBoolean(row.hasCartManagement()),
-                toBoolean(row.hasOrder()),
-                toBoolean(row.hasPaymentToken()),
-                row.capabilityCount(),
-                writeJson(aiBotPolicies),
-                writeJson(transports.names()),
-                row.lastCheckedAt(),
-                row.lastSuccessAt(),
-                fetchedAt
-        );
+        return MerchantRaw.builder()
+                .datasetRowIdx(datasetRow.rowIdx())
+                .domain(row.domain())
+                .status(row.status())
+                .ucpUrl(row.ucpUrl())
+                .httpStatus(toHttpStatus(row.httpStatus()))
+                .ucpVersion(row.version())
+                .hasCheckout(toBoolean(row.hasCheckout()))
+                .hasIdentityLinking(toBoolean(row.hasIdentityLinking()))
+                .hasCartManagement(toBoolean(row.hasCartManagement()))
+                .hasOrder(toBoolean(row.hasOrder()))
+                .hasPaymentToken(toBoolean(row.hasPaymentToken()))
+                .capabilityCount(row.capabilityCount())
+                .aiBotPolicies(writeJson(aiBotPolicies))
+                .transports(writeJson(transports.names()))
+                .lastCheckedAt(row.lastCheckedAt())
+                .lastSuccessAt(row.lastSuccessAt())
+                .fetchedAt(fetchedAt)
+                .build();
     }
 
     private UcpAiBotPolicies parseAiBotPolicies(String value) {

@@ -77,25 +77,25 @@ class UcpMerchantImportServiceTest {
     }
 
     private MerchantRaw existingMerchant() {
-        return new MerchantRaw(
-                100,
-                "existing.example",
-                "verified",
-                "https://existing.example/.well-known/ucp",
-                200,
-                "2026-01-23",
-                true,
-                false,
-                false,
-                true,
-                false,
-                2,
-                "{\"GPTBot\":true}",
-                "[\"mcp\"]",
-                OffsetDateTime.parse("2026-04-02T09:00:15+00:00"),
-                OffsetDateTime.parse("2026-04-02T09:00:15+00:00"),
-                OffsetDateTime.parse("2026-04-02T09:00:15+00:00")
-        );
+        return MerchantRaw.builder()
+                .datasetRowIdx(100)
+                .domain("existing.example")
+                .status("verified")
+                .ucpUrl("https://existing.example/.well-known/ucp")
+                .httpStatus(200)
+                .ucpVersion("2026-01-23")
+                .hasCheckout(true)
+                .hasIdentityLinking(false)
+                .hasCartManagement(false)
+                .hasOrder(true)
+                .hasPaymentToken(false)
+                .capabilityCount(2)
+                .aiBotPolicies("{\"GPTBot\":true}")
+                .transports("[\"mcp\"]")
+                .lastCheckedAt(OffsetDateTime.parse("2026-04-02T09:00:15+00:00"))
+                .lastSuccessAt(OffsetDateTime.parse("2026-04-02T09:00:15+00:00"))
+                .fetchedAt(OffsetDateTime.parse("2026-04-02T09:00:15+00:00"))
+                .build();
     }
 
     private HuggingFaceDatasetRow datasetRow(
