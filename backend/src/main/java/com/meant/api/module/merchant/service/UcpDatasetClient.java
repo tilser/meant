@@ -1,6 +1,8 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.properties.CrawlingProperties;
+import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
+import com.meant.api.module.merchant.service.dto.HuggingFaceRowsResponse;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;

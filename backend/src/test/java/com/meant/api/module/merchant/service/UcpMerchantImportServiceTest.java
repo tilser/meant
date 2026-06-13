@@ -7,6 +7,8 @@ import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.CrawlingProperties;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.command.ImportUcpMerchantsCommand;
+import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
+import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

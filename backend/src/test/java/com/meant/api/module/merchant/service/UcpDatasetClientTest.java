@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.module.merchant.properties.CrawlingProperties;
+import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
