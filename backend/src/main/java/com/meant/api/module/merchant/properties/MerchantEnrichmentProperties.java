@@ -11,6 +11,10 @@ public record MerchantEnrichmentProperties(
 
         @Positive
         @NotNull
-        Integer batchSize
+        Integer batchSize,
+
+        @Positive
+        @NotNull
+        Long fixedDelay
 ) {
 }

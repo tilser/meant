@@ -14,8 +14,7 @@ public class UcpMerchantEnrichmentTask {
     private final MerchantEnrichmentService merchantEnrichmentService;
     private final MerchantEnrichmentProperties merchantEnrichmentProperties;
 
-    @Scheduled(fixedDelay = 60_000
-    )
+    @Scheduled(fixedDelayString = "${merchant.enrichment.fixed-delay}")
     public void enrichMerchants() {
         merchantEnrichmentService.enrichMerchants(
                 new EnrichMerchantsCommand(

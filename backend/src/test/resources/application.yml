@@ -19,5 +19,4 @@ merchant:
       - ucpchecker.com
   enrichment:
     batch-size: 25
-    cron: "0 0 4 * * *"
-    zone: UTC
+    fixed-delay: 60000
