@@ -88,6 +88,8 @@ public class MerchantRetrievalEmbeddingVectorRepository {
                 select merchant.id,
                        merchant.domain,
                        merchant.name,
+                       merchant.advertised_mcp_endpoint,
+                       merchant.profile_mcp_endpoint,
                        embedding.retrieval_content,
                        1 - (embedding.retrieval_embedding <=> cast(:queryEmbedding as vector)) as score
                 from merchant_retrieval_embedding embedding
@@ -105,6 +107,8 @@ public class MerchantRetrievalEmbeddingVectorRepository {
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("domain"),
                 resultSet.getString("name"),
+                resultSet.getString("advertised_mcp_endpoint"),
+                resultSet.getString("profile_mcp_endpoint"),
                 resultSet.getString("retrieval_content"),
                 resultSet.getDouble("score")
         ));

@@ -47,3 +47,8 @@ merchant:
     dimension: ${VOYAGE_EMBEDDING_DIMENSION:1024}
     batch-size: ${MERCHANT_EMBEDDING_BATCH_SIZE:5}
     fixed-delay: ${MERCHANT_EMBEDDING_FIXED_DELAY:600000}
+  catalog-search:
+    merchant-candidate-limit: ${MERCHANT_CATALOG_SEARCH_MERCHANT_CANDIDATE_LIMIT:30}
+    merchant-limit: ${MERCHANT_CATALOG_SEARCH_MERCHANT_LIMIT:5}
+    products-per-merchant: ${MERCHANT_CATALOG_SEARCH_PRODUCTS_PER_MERCHANT:10}
+    product-limit: ${MERCHANT_CATALOG_SEARCH_PRODUCT_LIMIT:20}

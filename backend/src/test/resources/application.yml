@@ -24,6 +24,12 @@ merchant:
     voyage-base-url: https://api.voyageai.com
     api-key: ""
     model: voyage-4-lite
+    rerank-model: rerank-2.5-lite
     dimension: 1024
     batch-size: 25
     fixed-delay: 60000
+  catalog-search:
+    merchant-candidate-limit: 30
+    merchant-limit: 5
+    products-per-merchant: 10
+    product-limit: 20

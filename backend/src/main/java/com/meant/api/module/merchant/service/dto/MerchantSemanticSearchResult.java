@@ -6,6 +6,8 @@ public record MerchantSemanticSearchResult(
         UUID merchantId,
         String domain,
         String name,
+        String advertisedMcpEndpoint,
+        String profileMcpEndpoint,
         String retrievalContent,
         double semanticScore,
         double rerankScore,

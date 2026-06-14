@@ -60,6 +60,8 @@ public class MerchantSemanticSearchService {
                 candidate.merchantId(),
                 candidate.domain(),
                 candidate.name(),
+                candidate.advertisedMcpEndpoint(),
+                candidate.profileMcpEndpoint(),
                 candidate.retrievalContent(),
                 candidate.score(),
                 rerankResult.relevanceScore(),
