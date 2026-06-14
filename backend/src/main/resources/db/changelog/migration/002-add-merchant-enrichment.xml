@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="000-drop-merchant-raw-dataset-row-idx-unique" author="codex">
+        <sql dbms="postgresql">
+            ALTER TABLE merchant_raw DROP CONSTRAINT IF EXISTS merchant_raw_dataset_row_idx_key
+        </sql>
+    </changeSet>
+
+    <changeSet id="001-add-merchant-raw-processing-state" author="codex">
+        <addColumn tableName="merchant_raw">
+            <column name="processed" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="processed_at" type="timestamp with time zone"/>
+            <column name="processing_status" type="text"/>
+            <column name="processing_error" type="text"/>
+            <column name="source_hash" type="text" defaultValue="legacy">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_seen_at" type="timestamp with time zone"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="002-create-merchant" author="codex">
+        <createTable tableName="merchant">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_raw_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="domain" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ucp_url" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ucp_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="advertised_mcp_endpoint" type="text"/>
+            <column name="profile_mcp_endpoint" type="text"/>
+            <column name="profile_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="about" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="target_audience" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="profile_question" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="profile_answer_raw" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_profiled_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="merchant" columnNames="merchant_raw_id" constraintName="uk_merchant_raw_id"/>
+        <addUniqueConstraint tableName="merchant" columnNames="domain" constraintName="uk_merchant_domain"/>
+        <addForeignKeyConstraint
+                baseTableName="merchant"
+                baseColumnNames="merchant_raw_id"
+                constraintName="fk_merchant_merchant_raw"
+                referencedTableName="merchant_raw"
+                referencedColumnNames="id"/>
+        <createIndex tableName="merchant" indexName="idx_merchant_active">
+            <column name="active"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="003-create-merchant-service" author="codex">
+        <createTable tableName="merchant_service">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="transport" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="endpoint" type="text"/>
+            <column name="version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="spec_url" type="text"/>
+            <column name="schema_url" type="text"/>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_service"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_service_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_service"
+                columnNames="merchant_id, name, version"
+                constraintName="uk_merchant_service_name_version"/>
+        <createIndex tableName="merchant_service" indexName="idx_merchant_service_transport">
+            <column name="transport"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="004-create-merchant-capability" author="codex">
+        <createTable tableName="merchant_capability">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="capability_id" type="text"/>
+            <column name="version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="spec_url" type="text"/>
+            <column name="schema_url" type="text"/>
+            <column name="requires_protocol_min" type="text"/>
+            <column name="requires_protocol_max" type="text"/>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_capability"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_capability_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_capability"
+                columnNames="merchant_id, name, version"
+                constraintName="uk_merchant_capability_name_version"/>
+        <createIndex tableName="merchant_capability" indexName="idx_merchant_capability_name">
+            <column name="name"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="005-create-merchant-capability-extension" author="codex">
+        <createTable tableName="merchant_capability_extension">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_capability_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="parent_capability_name" type="text">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_capability_extension"
+                baseColumnNames="merchant_capability_id"
+                constraintName="fk_merchant_capability_extension_capability"
+                referencedTableName="merchant_capability"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_capability_extension"
+                columnNames="merchant_capability_id, parent_capability_name"
+                constraintName="uk_merchant_capability_extension_parent"/>
+    </changeSet>
+
+    <changeSet id="006-create-merchant-capability-requirement" author="codex">
+        <createTable tableName="merchant_capability_requirement">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_capability_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="required_capability_name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="min_version" type="text"/>
+            <column name="max_version" type="text"/>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_capability_requirement"
+                baseColumnNames="merchant_capability_id"
+                constraintName="fk_merchant_capability_requirement_capability"
+                referencedTableName="merchant_capability"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_capability_requirement"
+                columnNames="merchant_capability_id, required_capability_name"
+                constraintName="uk_merchant_capability_requirement_name"/>
+    </changeSet>
+
+    <changeSet id="007-create-merchant-payment-handler" author="codex">
+        <createTable tableName="merchant_payment_handler">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="handler_id" type="text"/>
+            <column name="version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="spec_url" type="text"/>
+            <column name="schema_url" type="text"/>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_payment_handler"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_payment_handler_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_payment_handler"
+                columnNames="merchant_id, name, version"
+                constraintName="uk_merchant_payment_handler_name_version"/>
+    </changeSet>
+
+    <changeSet id="008-create-merchant-category" author="codex">
+        <createTable tableName="merchant_category">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_name" type="text">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_category"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_category_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_category"
+                columnNames="merchant_id, normalized_name"
+                constraintName="uk_merchant_category_normalized_name"/>
+        <createIndex tableName="merchant_category" indexName="idx_merchant_category_normalized_name">
+            <column name="normalized_name"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="009-create-merchant-popular-search" author="codex">
+        <createTable tableName="merchant_popular_search">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="search_text" type="text">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_popular_search"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_popular_search_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_popular_search"
+                columnNames="merchant_id, search_text"
+                constraintName="uk_merchant_popular_search_text"/>
+    </changeSet>
+
+    <changeSet id="010-update-merchant-service-unique-constraint" author="codex">
+        <sql dbms="postgresql" splitStatements="false">
+            ALTER TABLE merchant_service DROP CONSTRAINT IF EXISTS uk_merchant_service_name_version;
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'uk_merchant_service_name_transport_version'
+                ) THEN
+                    ALTER TABLE merchant_service
+                    ADD CONSTRAINT uk_merchant_service_name_transport_version
+                    UNIQUE (merchant_id, name, transport, version);
+                END IF;
+            END
+            $$;
+        </sql>
+    </changeSet>
+</databaseChangeLog>

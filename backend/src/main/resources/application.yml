@@ -31,3 +31,12 @@ crawling:
   ucp-dataset-page-size: 100
   ucp-dataset-import-cron: "0 0 3 2 * *"
   ucp-dataset-import-zone: UTC
+
+merchant:
+  import:
+    excluded-domains:
+      - ucpchecker.com
+  enrichment:
+    batch-size: 500
+    cron: "0 0 4 * * *"
+    zone: UTC

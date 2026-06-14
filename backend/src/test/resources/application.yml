@@ -1,14 +1,10 @@
 spring:
-  datasource:
-    url: jdbc:h2:mem:${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
-    username: sa
-    password:
   liquibase:
     enabled: true
     change-log: classpath:db/changelog/db.changelog-master.xml
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
     open-in-view: false
 
 crawling:
@@ -16,3 +12,12 @@ crawling:
   ucp-dataset-page-size: 100
   ucp-dataset-import-cron: "0 0 3 2 * *"
   ucp-dataset-import-zone: UTC
+
+merchant:
+  import:
+    excluded-domains:
+      - ucpchecker.com
+  enrichment:
+    batch-size: 25
+    cron: "0 0 4 * * *"
+    zone: UTC

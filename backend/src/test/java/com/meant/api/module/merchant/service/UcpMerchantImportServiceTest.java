@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.CrawlingProperties;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
@@ -20,7 +21,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.web.client.RestClient;
 
 @SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class UcpMerchantImportServiceTest {
+class UcpMerchantImportServiceTest extends PostgresIntegrationTest {
 
     @Autowired
     private UcpMerchantImportService service;
@@ -60,6 +61,13 @@ class UcpMerchantImportServiceTest {
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getTransports)
                 .containsExactlyInAnyOrder("[\"mcp\"]", "[\"embedded\"]");
+        assertThat(repository.findAll())
+                .allSatisfy(merchantRaw -> {
+                    assertThat(merchantRaw.isActive()).isTrue();
+                    assertThat(merchantRaw.isProcessed()).isFalse();
+                    assertThat(merchantRaw.getSourceHash()).isNotBlank();
+                    assertThat(merchantRaw.getLastSeenAt()).isNotNull();
+                });
     }
 
     @Test
@@ -74,6 +82,84 @@ class UcpMerchantImportServiceTest {
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getDomain)
                 .containsExactly("existing.example");
+    }
+
+    @Test
+    void importMerchantsKeepsProcessedStateWhenSourceHashIsUnchanged() {
+        datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"));
+        service.importMerchants();
+        MerchantRaw imported = repository.findByDomain("verified.example").orElseThrow();
+        imported.markProcessed("PROCESSED_UPDATED", Instant.parse("2026-04-03T09:00:15Z"));
+        repository.save(imported);
+
+        service.importMerchants();
+
+        MerchantRaw updated = repository.findByDomain("verified.example").orElseThrow();
+        assertThat(updated.isProcessed()).isTrue();
+        assertThat(updated.getProcessingStatus()).isEqualTo("PROCESSED_UPDATED");
+        assertThat(updated.isActive()).isTrue();
+    }
+
+    @Test
+    void importMerchantsResetsProcessedStateWhenSourceHashChanges() {
+        datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"));
+        service.importMerchants();
+        MerchantRaw imported = repository.findByDomain("verified.example").orElseThrow();
+        imported.markProcessed("PROCESSED_UPDATED", Instant.parse("2026-04-03T09:00:15Z"));
+        repository.save(imported);
+
+        datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": false}", "[\"mcp\"]"));
+        service.importMerchants();
+
+        MerchantRaw updated = repository.findByDomain("verified.example").orElseThrow();
+        assertThat(updated.isProcessed()).isFalse();
+        assertThat(updated.getProcessedAt()).isNull();
+        assertThat(updated.getProcessingStatus()).isNull();
+        assertThat(updated.getProcessingError()).isNull();
+        assertThat(updated.getAiBotPolicies()).isEqualTo("{\"GPTBot\": false}");
+    }
+
+    @Test
+    void importMerchantsMarksRowsMissingFromLatestImportInactive() {
+        repository.save(existingMerchant());
+        datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"));
+
+        service.importMerchants();
+
+        MerchantRaw oldMerchant = repository.findByDomain("existing.example").orElseThrow();
+        assertThat(oldMerchant.isActive()).isFalse();
+        assertThat(oldMerchant.isProcessed()).isFalse();
+        assertThat(oldMerchant.getProcessingStatus()).isEqualTo("INACTIVE");
+    }
+
+    @Test
+    void importMerchantsDeduplicatesVerifiedRowsByDomain() {
+        datasetClient.rows = List.of(
+                datasetRow(1, "duplicate.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
+                datasetRow(2, "duplicate.example", "verified", "{\"GPTBot\": false}", "[\"embedded\"]")
+        );
+
+        service.importMerchants();
+
+        assertThat(repository.findAll()).hasSize(1);
+        MerchantRaw imported = repository.findByDomain("duplicate.example").orElseThrow();
+        assertThat(imported.getDatasetRowIdx()).isEqualTo(1);
+        assertThat(imported.getAiBotPolicies()).isEqualTo("{\"GPTBot\": true}");
+        assertThat(imported.getTransports()).isEqualTo("[\"mcp\"]");
+    }
+
+    @Test
+    void importMerchantsSkipsExcludedDomains() {
+        datasetClient.rows = List.of(
+                datasetRow(1, "ucpchecker.com", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
+                datasetRow(2, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]")
+        );
+
+        service.importMerchants();
+
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getDomain)
+                .containsExactly("verified.example");
     }
 
     private MerchantRaw existingMerchant() {
@@ -95,6 +181,12 @@ class UcpMerchantImportServiceTest {
                 .lastCheckedAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .lastSuccessAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .fetchedAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .processed(true)
+                .processedAt(Instant.parse("2026-04-03T09:00:15Z"))
+                .processingStatus("PROCESSED_UPDATED")
+                .sourceHash("existing-source-hash")
+                .active(true)
+                .lastSeenAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build();
     }
 

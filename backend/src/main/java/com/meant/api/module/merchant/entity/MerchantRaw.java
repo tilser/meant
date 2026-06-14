@@ -21,7 +21,6 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "merchant_raw",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_merchant_raw_dataset_row_idx", columnNames = "dataset_row_idx"),
                 @UniqueConstraint(name = "uk_merchant_raw_domain", columnNames = "domain")
         }
 )
@@ -77,4 +76,92 @@ public class MerchantRaw {
 
     @Column(nullable = false)
     private Instant fetchedAt;
+
+    @Column(nullable = false)
+    private boolean processed;
+
+    private Instant processedAt;
+
+    private String processingStatus;
+
+    private String processingError;
+
+    @Column(nullable = false)
+    private String sourceHash;
+
+    @Column(nullable = false)
+    private boolean active;
+
+    private Instant lastSeenAt;
+
+    public void updateFromImport(
+            Integer datasetRowIdx,
+            String status,
+            String ucpUrl,
+            Integer httpStatus,
+            String ucpVersion,
+            boolean hasCheckout,
+            boolean hasIdentityLinking,
+            boolean hasCartManagement,
+            boolean hasOrder,
+            boolean hasPaymentToken,
+            Integer capabilityCount,
+            String aiBotPolicies,
+            String transports,
+            Instant lastCheckedAt,
+            Instant lastSuccessAt,
+            Instant fetchedAt,
+            String sourceHash
+    ) {
+        boolean sourceChanged = !sourceHash.equals(this.sourceHash);
+
+        this.datasetRowIdx = datasetRowIdx;
+        this.status = status;
+        this.ucpUrl = ucpUrl;
+        this.httpStatus = httpStatus;
+        this.ucpVersion = ucpVersion;
+        this.hasCheckout = hasCheckout;
+        this.hasIdentityLinking = hasIdentityLinking;
+        this.hasCartManagement = hasCartManagement;
+        this.hasOrder = hasOrder;
+        this.hasPaymentToken = hasPaymentToken;
+        this.capabilityCount = capabilityCount;
+        this.aiBotPolicies = aiBotPolicies;
+        this.transports = transports;
+        this.lastCheckedAt = lastCheckedAt;
+        this.lastSuccessAt = lastSuccessAt;
+        this.fetchedAt = fetchedAt;
+        this.sourceHash = sourceHash;
+        this.active = true;
+        this.lastSeenAt = fetchedAt;
+
+        if (sourceChanged) {
+            this.processed = false;
+            this.processedAt = null;
+            this.processingStatus = null;
+            this.processingError = null;
+        }
+    }
+
+    public void markInactive() {
+        this.active = false;
+        this.processed = false;
+        this.processingStatus = "INACTIVE";
+        this.processingError = null;
+    }
+
+    public void markProcessed(String processingStatus, Instant processedAt) {
+        this.processed = true;
+        this.processedAt = processedAt;
+        this.processingStatus = processingStatus;
+        this.processingError = null;
+    }
+
+    public void markProcessingFailure(String processingStatus, String processingError) {
+        // Keep processed false so failed merchants are eligible for the next enrichment retry.
+        this.processed = false;
+        this.processedAt = null;
+        this.processingStatus = processingStatus;
+        this.processingError = processingError;
+    }
 }
