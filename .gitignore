@@ -30,3 +30,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 bun.lockb
+
+# Local properties
+backend/src/main/resources/application-local.yml
