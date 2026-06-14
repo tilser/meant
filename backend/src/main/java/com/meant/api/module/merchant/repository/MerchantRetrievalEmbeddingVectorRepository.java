@@ -88,6 +88,7 @@ public class MerchantRetrievalEmbeddingVectorRepository {
                 select merchant.id,
                        merchant.domain,
                        merchant.name,
+                       embedding.retrieval_content,
                        1 - (embedding.retrieval_embedding <=> cast(:queryEmbedding as vector)) as score
                 from merchant_retrieval_embedding embedding
                 join merchant merchant on merchant.id = embedding.merchant_id
@@ -104,6 +105,7 @@ public class MerchantRetrievalEmbeddingVectorRepository {
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("domain"),
                 resultSet.getString("name"),
+                resultSet.getString("retrieval_content"),
                 resultSet.getDouble("score")
         ));
     }

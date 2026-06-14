@@ -19,6 +19,9 @@ public record MerchantEmbeddingProperties(
         @NotBlank
         String model,
 
+        @NotBlank
+        String rerankModel,
+
         @Positive
         @NotNull
         Integer dimension,

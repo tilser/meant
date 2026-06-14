@@ -14,7 +14,8 @@ import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingRepository;
 import com.meant.api.module.merchant.service.command.GenerateMerchantRetrievalEmbeddingsCommand;
-import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchCandidate;
+import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -66,6 +67,9 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
     @Autowired
     private FakeVoyageEmbeddingClient voyageEmbeddingClient;
 
+    @Autowired
+    private FakeVoyageRerankClient voyageRerankClient;
+
     @BeforeEach
     void setUp() {
         merchantRetrievalEmbeddingRepository.deleteAllInBatch();
@@ -74,6 +78,7 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
         merchantRepository.deleteAllInBatch();
         merchantRawRepository.deleteAllInBatch();
         voyageEmbeddingClient.reset();
+        voyageRerankClient.reset();
     }
 
     @Test
@@ -155,13 +160,17 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
         saveMerchantWithRetrievalContent("home-store.example", "Home", "kitchen table");
         merchantRetrievalEmbeddingService.generateRetrievalEmbeddings(new GenerateMerchantRetrievalEmbeddingsCommand(10));
 
-        List<MerchantSemanticSearchCandidate> candidates = merchantSemanticSearchService.search(
+        List<MerchantSemanticSearchResult> candidates = merchantSemanticSearchService.search(
                 new SemanticMerchantSearchQuery("running shoes", 2)
         );
 
-        assertThat(candidates).extracting(MerchantSemanticSearchCandidate::domain)
+        assertThat(voyageRerankClient.rerankCalls).isEqualTo(1);
+        assertThat(candidates).extracting(MerchantSemanticSearchResult::domain)
                 .containsExactly("shoe-store.example", "home-store.example");
-        assertThat(candidates.getFirst().score()).isGreaterThan(candidates.getLast().score());
+        assertThat(candidates.getFirst().semanticScore()).isGreaterThan(candidates.getLast().semanticScore());
+        assertThat(candidates.getFirst().rerankScore()).isGreaterThan(candidates.getLast().rerankScore());
+        assertThat(candidates).extracting(MerchantSemanticSearchResult::rank)
+                .containsExactly(1, 2);
     }
 
     private Merchant saveMerchantWithRetrievalContent(String domain, String category, String popularSearch) {
@@ -233,6 +242,12 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
         FakeVoyageEmbeddingClient fakeVoyageEmbeddingClient(MerchantEmbeddingProperties merchantEmbeddingProperties) {
             return new FakeVoyageEmbeddingClient(merchantEmbeddingProperties);
         }
+
+        @Bean
+        @Primary
+        FakeVoyageRerankClient fakeVoyageRerankClient(MerchantEmbeddingProperties merchantEmbeddingProperties) {
+            return new FakeVoyageRerankClient(merchantEmbeddingProperties);
+        }
     }
 
     static class FakeVoyageEmbeddingClient extends VoyageEmbeddingClient {
@@ -271,6 +286,41 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
             }
             embedding.set(1, 1.0d);
             return embedding;
+        }
+    }
+
+    static class FakeVoyageRerankClient extends VoyageRerankClient {
+
+        private int rerankCalls;
+
+        FakeVoyageRerankClient(MerchantEmbeddingProperties merchantEmbeddingProperties) {
+            super(RestClient.builder(), merchantEmbeddingProperties);
+        }
+
+        @Override
+        public List<VoyageRerankResult> rerank(String query, List<String> documents) {
+            rerankCalls++;
+            List<VoyageRerankResult> results = new ArrayList<>();
+            for (int index = documents.size() - 1; index >= 0; index--) {
+                results.add(new VoyageRerankResult(index, relevanceScore(query, documents.get(index))));
+            }
+            return results;
+        }
+
+        private void reset() {
+            rerankCalls = 0;
+        }
+
+        private double relevanceScore(String query, String document) {
+            String normalizedQuery = query.toLowerCase(Locale.ROOT);
+            String normalizedDocument = document.toLowerCase(Locale.ROOT);
+            if (normalizedQuery.contains("running") && normalizedDocument.contains("running")) {
+                return 0.9d;
+            }
+            if (normalizedQuery.contains("shoe") && normalizedDocument.contains("shoe")) {
+                return 0.6d;
+            }
+            return 0.1d;
         }
     }
 }

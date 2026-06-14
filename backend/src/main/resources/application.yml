@@ -43,6 +43,7 @@ merchant:
     voyage-base-url: ${VOYAGE_BASE_URL:https://api.voyageai.com}
     api-key: ${VOYAGE_API_KEY:}
     model: ${VOYAGE_EMBEDDING_MODEL:voyage-4-lite}
+    rerank-model: ${VOYAGE_RERANK_MODEL:rerank-2.5-lite}
     dimension: ${VOYAGE_EMBEDDING_DIMENSION:1024}
     batch-size: ${MERCHANT_EMBEDDING_BATCH_SIZE:5}
     fixed-delay: ${MERCHANT_EMBEDDING_FIXED_DELAY:600000}
