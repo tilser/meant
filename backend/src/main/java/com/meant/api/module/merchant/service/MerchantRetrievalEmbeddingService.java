@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -39,7 +38,7 @@ public class MerchantRetrievalEmbeddingService {
     public void generateRetrievalEmbeddings(@NotNull @Valid GenerateMerchantRetrievalEmbeddingsCommand command) {
         List<Merchant> merchants = merchantRepository.findForRetrievalEmbeddingRefresh(
                 merchantEmbeddingProperties.model(),
-                PageRequest.of(0, command.batchSize())
+                command.batchSize()
         );
         List<EmbeddingWorkItem> workItems = new ArrayList<>();
 
