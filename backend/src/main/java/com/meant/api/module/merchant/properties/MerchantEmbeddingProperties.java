@@ -25,10 +25,6 @@ public record MerchantEmbeddingProperties(
 
         @Positive
         @NotNull
-        Integer batchSize,
-
-        @Positive
-        @NotNull
-        Long fixedDelay
+        Integer batchSize
 ) {
 }

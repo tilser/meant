@@ -16,12 +16,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -38,18 +37,13 @@ public class MerchantRetrievalEmbeddingService {
     private final MerchantEmbeddingProperties merchantEmbeddingProperties;
 
     public void generateRetrievalEmbeddings(@NotNull @Valid GenerateMerchantRetrievalEmbeddingsCommand command) {
-        List<UUID> merchantIds = merchantRetrievalEmbeddingVectorRepository.findMerchantIdsForEmbeddingRefresh(
+        List<Merchant> merchants = merchantRepository.findForRetrievalEmbeddingRefresh(
                 merchantEmbeddingProperties.model(),
-                command.batchSize()
+                PageRequest.of(0, command.batchSize())
         );
-        Map<UUID, Merchant> merchants = orderedMerchantsById(merchantIds);
         List<EmbeddingWorkItem> workItems = new ArrayList<>();
 
-        for (UUID merchantId : merchantIds) {
-            Merchant merchant = merchants.get(merchantId);
-            if (merchant == null) {
-                continue;
-            }
+        for (Merchant merchant : merchants) {
             Optional<String> retrievalContent = merchantRetrievalContentBuilder.build(merchant);
             if (retrievalContent.isEmpty()) {
                 merchantRetrievalEmbeddingVectorRepository.deactivate(merchant.getId(), Instant.now());
@@ -69,12 +63,6 @@ public class MerchantRetrievalEmbeddingService {
                     .toList());
             persistEmbeddings(batch, embeddings);
         }
-    }
-
-    private Map<UUID, Merchant> orderedMerchantsById(List<UUID> merchantIds) {
-        Map<UUID, Merchant> merchants = new LinkedHashMap<>();
-        merchantRepository.findAllById(merchantIds).forEach(merchant -> merchants.put(merchant.getId(), merchant));
-        return merchants;
     }
 
     private boolean embeddingIsCurrent(UUID merchantId, String retrievalContentHash) {

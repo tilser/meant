@@ -18,38 +18,6 @@ public class MerchantRetrievalEmbeddingVectorRepository {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    public List<UUID> findMerchantIdsForEmbeddingRefresh(String embeddingModel, int limit) {
-        return jdbcTemplate.queryForList("""
-                select merchant.id
-                from merchant merchant
-                left join merchant_retrieval_embedding embedding on embedding.merchant_id = merchant.id
-                where merchant.active = true
-                  and (
-                    exists (
-                        select 1
-                        from merchant_category category
-                        where category.merchant_id = merchant.id
-                    )
-                    or exists (
-                        select 1
-                        from merchant_popular_search popular_search
-                        where popular_search.merchant_id = merchant.id
-                    )
-                  )
-                  and (
-                    embedding.id is null
-                    or embedding.active = false
-                    or embedding.embedding_model <> :embeddingModel
-                    or merchant.updated_at > embedding.embedded_at
-                  )
-                order by merchant.updated_at asc
-                limit :limit
-                """, Map.of(
-                "embeddingModel", embeddingModel,
-                "limit", limit
-        ), UUID.class);
-    }
-
     public void upsert(
             UUID merchantId,
             String retrievalContent,
