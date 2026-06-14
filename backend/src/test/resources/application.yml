@@ -20,3 +20,10 @@ merchant:
   enrichment:
     batch-size: 25
     fixed-delay: 60000
+  embedding:
+    voyage-base-url: https://api.voyageai.com
+    api-key: ""
+    model: voyage-4-lite
+    dimension: 1024
+    batch-size: 25
+    fixed-delay: 60000

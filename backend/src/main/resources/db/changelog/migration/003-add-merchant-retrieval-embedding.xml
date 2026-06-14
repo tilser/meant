@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="000-enable-pgvector" author="codex">
+        <sql dbms="postgresql">
+            CREATE EXTENSION IF NOT EXISTS vector
+        </sql>
+    </changeSet>
+
+    <changeSet id="001-create-merchant-retrieval-embedding" author="codex">
+        <createTable tableName="merchant_retrieval_embedding">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="retrieval_content" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="retrieval_content_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="retrieval_embedding" type="vector(1024)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="embedding_model" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="embedded_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_retrieval_embedding"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_retrieval_embedding_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+        <addUniqueConstraint
+                tableName="merchant_retrieval_embedding"
+                columnNames="merchant_id"
+                constraintName="uk_merchant_retrieval_embedding_merchant"/>
+        <createIndex tableName="merchant_retrieval_embedding" indexName="idx_merchant_retrieval_embedding_model_active">
+            <column name="embedding_model"/>
+            <column name="active"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="002-create-merchant-retrieval-embedding-hnsw-index" author="codex">
+        <sql dbms="postgresql">
+            CREATE INDEX IF NOT EXISTS idx_merchant_retrieval_embedding_hnsw
+            ON merchant_retrieval_embedding
+            USING hnsw (retrieval_embedding vector_cosine_ops)
+            WHERE active = true
+        </sql>
+    </changeSet>
+</databaseChangeLog>
