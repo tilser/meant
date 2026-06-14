@@ -6,7 +6,7 @@
         https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
     <changeSet id="000-enable-pgvector" author="codex">
-        <sql dbms="postgresql">
+        <sql>
             CREATE EXTENSION IF NOT EXISTS vector
         </sql>
     </changeSet>
@@ -62,7 +62,7 @@
     </changeSet>
 
     <changeSet id="002-create-merchant-retrieval-embedding-hnsw-index" author="codex">
-        <sql dbms="postgresql">
+        <sql>
             CREATE INDEX IF NOT EXISTS idx_merchant_retrieval_embedding_hnsw
             ON merchant_retrieval_embedding
             USING hnsw (retrieval_embedding vector_cosine_ops)
