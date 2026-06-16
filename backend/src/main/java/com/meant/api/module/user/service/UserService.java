@@ -9,7 +9,9 @@ import com.meant.api.module.user.service.query.GetUserQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -28,20 +30,7 @@ public class UserService {
      */
     @Transactional
     public User upsert(@NotNull @Valid UpsertUserCommand command) {
-        Instant now = Instant.now();
-        return userRepository.findById(command.id())
-                .map(existing -> {
-                    existing.updateEmail(command.email(), now);
-                    return existing;
-                })
-                .orElseGet(() -> userRepository.save(User.builder()
-                        .id(command.id())
-                        .email(command.email())
-                        .firstName(command.firstName())
-                        .surname(command.surname())
-                        .createdAt(now)
-                        .updatedAt(now)
-                        .build()));
+        return upsertInternal(command, Instant.now());
     }
 
     @Transactional(readOnly = true)
@@ -49,14 +38,54 @@ public class UserService {
         return findUser(query.id());
     }
 
+    /**
+     * Ensures the profile exists (upsert from the JWT identity) and applies the user's name edits in a
+     * single transaction. A client may PATCH before ever calling GET /me, so the row must be created
+     * here if missing; combining both steps keeps the operation atomic and avoids a second roundtrip.
+     */
     @Transactional
-    public User updateProfile(@NotNull @Valid UpdateUserProfileCommand command) {
-        User user = findUser(command.id());
-        user.updateProfile(command.firstName(), command.surname(), Instant.now());
+    public User updateProfile(
+            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid UpdateUserProfileCommand updateCommand) {
+        Instant now = Instant.now();
+        User user = upsertInternal(upsertCommand, now);
+        user.updateProfile(updateCommand.firstName(), updateCommand.surname(), now);
         return user;
     }
 
-    private User findUser(java.util.UUID id) {
+    private User upsertInternal(UpsertUserCommand command, Instant now) {
+        return userRepository.findById(command.id())
+                .map(existing -> {
+                    existing.updateEmail(command.email(), now);
+                    return existing;
+                })
+                .orElseGet(() -> createUser(command, now));
+    }
+
+    /**
+     * Inserts a fresh profile row. Because upsert runs on read, two concurrent first-time requests can
+     * both miss the existing row and race to insert; the loser hits a unique-constraint violation. We
+     * recover by re-reading the row the winner committed and refreshing its email.
+     */
+    private User createUser(UpsertUserCommand command, Instant now) {
+        try {
+            return userRepository.saveAndFlush(User.builder()
+                    .id(command.id())
+                    .email(command.email())
+                    .firstName(command.firstName())
+                    .surname(command.surname())
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build());
+        } catch (DataIntegrityViolationException raceLost) {
+            User existing = userRepository.findById(command.id())
+                    .orElseThrow(() -> raceLost);
+            existing.updateEmail(command.email(), now);
+            return existing;
+        }
+    }
+
+    private User findUser(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new UserException("User not found: " + id));
     }

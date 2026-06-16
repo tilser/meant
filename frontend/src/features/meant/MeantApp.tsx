@@ -2837,8 +2837,12 @@ export function MeantApp() {
 
   // Once authenticated, hydrate the profile from the backend (which creates the users row on first
   // call). Falls back to the JWT email if the backend is unreachable so the shell still renders.
+  // Keyed on the user identity rather than the whole session object so periodic token refreshes
+  // (which replace `session` hourly) don't trigger a redundant re-fetch.
+  const userId = session?.user?.id
+  const userEmail = session?.user?.email
   useEffect(() => {
-    if (!session) {
+    if (!userId) {
       return
     }
     let active = true
@@ -2854,15 +2858,14 @@ export function MeantApp() {
       })
       .catch(() => {
         if (!active) return
-        const email = session.user.email
-        if (email) {
-          setUser((current) => ({ ...current, email }))
+        if (userEmail) {
+          setUser((current) => ({ ...current, email: userEmail }))
         }
       })
     return () => {
       active = false
     }
-  }, [session, setUser])
+  }, [userId, userEmail, setUser])
 
   const handleSignOut = () => {
     void signOut()

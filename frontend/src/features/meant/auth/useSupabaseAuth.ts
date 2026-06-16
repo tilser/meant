@@ -39,14 +39,16 @@ export function useSupabaseAuth(): AuthState {
       setLoading(false)
     })
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession)
       setLoading(false)
     })
 
     return () => {
       active = false
-      subscription.subscription.unsubscribe()
+      subscription.unsubscribe()
     }
   }, [])
 

@@ -58,14 +58,32 @@ class UserServiceTest {
     }
 
     @Test
-    void updateProfileMutatesNames() {
+    void updateProfileMutatesNamesOnExistingUser() {
         UUID id = UUID.randomUUID();
         userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
-        User updated = userService.updateProfile(new UpdateUserProfileCommand(id, "Augusta", "Byron"));
+        User updated = userService.updateProfile(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserProfileCommand(id, "Augusta", "Byron"));
 
         assertThat(updated.getFirstName()).isEqualTo("Augusta");
         assertThat(updated.getSurname()).isEqualTo("Byron");
+        // No second insert: the existing row is mutated in place.
+        assertThat(userRepository.saveCount).isEqualTo(1);
+    }
+
+    @Test
+    void updateProfileCreatesUserWhenPatchedBeforeFirstRead() {
+        UUID id = UUID.randomUUID();
+
+        User created = userService.updateProfile(
+                new UpsertUserCommand(id, "grace@example.com", "Grace", "Hopper"),
+                new UpdateUserProfileCommand(id, "Grace", "Murray Hopper"));
+
+        assertThat(created.getId()).isEqualTo(id);
+        assertThat(created.getEmail()).isEqualTo("grace@example.com");
+        assertThat(created.getSurname()).isEqualTo("Murray Hopper");
+        assertThat(userRepository.saveCount).isEqualTo(1);
     }
 
     @Test
@@ -75,14 +93,6 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.get(new GetUserQuery(id)))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining(id.toString());
-    }
-
-    @Test
-    void updateProfileMissingUserThrows() {
-        UUID id = UUID.randomUUID();
-
-        assertThatThrownBy(() -> userService.updateProfile(new UpdateUserProfileCommand(id, "A", "B")))
-                .isInstanceOf(UserException.class);
     }
 
     static class FakeUserRepository {
@@ -99,7 +109,7 @@ class UserServiceTest {
                         case "findByEmail" -> usersById.values().stream()
                                 .filter(user -> user.getEmail().equals(args[0]))
                                 .findFirst();
-                        case "save" -> {
+                        case "save", "saveAndFlush" -> {
                             User user = (User) args[0];
                             usersById.put(user.getId(), user);
                             saveCount++;

@@ -61,9 +61,10 @@ public class UserController {
             @Valid @RequestBody UpdateUserProfileRequest request
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        // Ensure the profile row exists before patching (a client may PATCH before ever calling GET /me).
-        userService.upsert(UserCommandMapper.toUpsertCommand(authenticatedUser));
-        return UserResponse.from(
-                userService.updateProfile(UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+        // Upsert-from-JWT and the name edit run in a single service transaction (the row may not exist
+        // yet if a client PATCHes before ever calling GET /me).
+        return UserResponse.from(userService.updateProfile(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
     }
 }
