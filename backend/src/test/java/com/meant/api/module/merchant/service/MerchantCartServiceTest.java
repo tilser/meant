@@ -19,6 +19,7 @@ import com.meant.api.module.merchant.service.query.GetMerchantCheckoutQuery;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -102,7 +103,7 @@ class MerchantCartServiceTest {
                 List.of(),
                 List.of(new UpdateMerchantCartCommand.UpdateItem(cartLineId, null, 2)),
                 List.of(cartLineId),
-                List.of(),
+                List.of("gid://shopify/CartLine/1"),
                 null,
                 List.of(),
                 List.of(),
@@ -115,6 +116,28 @@ class MerchantCartServiceTest {
         assertThat(merchantCartClient.lastUpdateArguments.updateItems()).extracting("id")
                 .containsExactly("gid://shopify/CartLine/1");
         assertThat(merchantCartClient.lastUpdateArguments.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
+    }
+
+    @Test
+    void createIgnoresNullRemoteCartLinesWhenSavingSnapshot() {
+        merchantCartClient.cartToolResult = cartToolResult(Arrays.asList(null, cartLine()), null);
+
+        MerchantCartResult result = merchantCartService.create(new CreateMerchantCartCommand(
+                merchant.getId(),
+                null,
+                List.of(new CreateMerchantCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+
+        assertThat(result.totalQuantity()).isEqualTo(1);
+        assertThat(result.lines()).hasSize(1);
+        assertThat(result.lines().getFirst().remoteCartLineId()).isEqualTo("gid://shopify/CartLine/1");
     }
 
     @Test
@@ -229,6 +252,10 @@ class MerchantCartServiceTest {
     }
 
     private CartToolResult cartToolResult() {
+        return cartToolResult(List.of(cartLine()), 1);
+    }
+
+    private CartToolResult cartToolResult(List<CartToolResponse.Line> lines, Integer totalQuantity) {
         return new CartToolResult(
                 "https://merchant.example/api/mcp",
                 "{}",
@@ -238,27 +265,31 @@ class MerchantCartServiceTest {
                                 "gid://shopify/Cart/1",
                                 Instant.parse("2026-06-16T11:05:00Z"),
                                 Instant.parse("2026-06-16T11:05:01Z"),
-                                List.of(new CartToolResponse.Line(
-                                        "gid://shopify/CartLine/1",
-                                        1,
-                                        new CartToolResponse.Cost(
-                                                new CartToolResponse.Money("14.95", "USD"),
-                                                new CartToolResponse.Money("14.95", "USD")
-                                        ),
-                                        new CartToolResponse.Merchandise(
-                                                "gid://shopify/ProductVariant/1",
-                                                "3x6",
-                                                new CartToolResponse.Product("gid://shopify/Product/1", "Candle")
-                                        )
-                                )),
+                                lines,
                                 new CartToolResponse.Cost(
                                         new CartToolResponse.Money("14.95", "USD"),
                                         new CartToolResponse.Money("14.95", "USD")
                                 ),
-                                1,
+                                totalQuantity,
                                 "https://merchant.example/checkout"
                         ),
                         List.of()
+                )
+        );
+    }
+
+    private CartToolResponse.Line cartLine() {
+        return new CartToolResponse.Line(
+                "gid://shopify/CartLine/1",
+                1,
+                new CartToolResponse.Cost(
+                        new CartToolResponse.Money("14.95", "USD"),
+                        new CartToolResponse.Money("14.95", "USD")
+                ),
+                new CartToolResponse.Merchandise(
+                        "gid://shopify/ProductVariant/1",
+                        "3x6",
+                        new CartToolResponse.Product("gid://shopify/Product/1", "Candle")
                 )
         );
     }

@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -175,11 +176,10 @@ public class MerchantCartService {
                     return remoteCartLineId;
                 })
                 .toList();
-        return List.copyOf(new java.util.LinkedHashSet<>(
-                java.util.stream.Stream.concat(localRemoteIds.stream(), safeList(command.removeRemoteCartLineIds()).stream())
-                        .filter(value -> value != null && !value.isBlank())
-                        .toList()
-        ));
+        return java.util.stream.Stream.concat(localRemoteIds.stream(), safeList(command.removeRemoteCartLineIds()).stream())
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
     }
 
     private MerchantCart saveSnapshot(UUID cartId, Merchant merchant, CartToolResult result) {
@@ -209,7 +209,7 @@ public class MerchantCartService {
                 remoteCart.updatedAt(),
                 now
         );
-        cart.replaceLines(safeList(remoteCart.lines()).stream()
+        cart.replaceLines(safeCartLines(remoteCart.lines()).stream()
                 .map(line -> toCartLine(line, now))
                 .toList());
         return merchantCartRepository.save(cart);
@@ -237,11 +237,17 @@ public class MerchantCartService {
     }
 
     private int totalQuantity(List<CartToolResponse.Line> lines) {
-        return safeList(lines).stream()
+        return safeCartLines(lines).stream()
                 .map(CartToolResponse.Line::quantity)
                 .filter(quantity -> quantity != null)
                 .mapToInt(Integer::intValue)
                 .sum();
+    }
+
+    private List<CartToolResponse.Line> safeCartLines(List<CartToolResponse.Line> lines) {
+        return safeList(lines).stream()
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private String amount(CartToolResponse.Money money) {

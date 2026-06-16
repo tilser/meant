@@ -149,15 +149,18 @@ public class MerchantMcpToolClient {
         List<String> endpoints = new ArrayList<>();
         addEndpoint(endpoints, domain, profileMcpEndpoint);
         addEndpoint(endpoints, domain, advertisedMcpEndpoint);
-        endpoints.add("https://" + domain + "/api/mcp");
-        if (!domain.startsWith("www.")) {
-            endpoints.add("https://www." + domain + "/api/mcp");
+        if (hasText(domain)) {
+            String trimmedDomain = domain.trim();
+            endpoints.add("https://" + trimmedDomain + "/api/mcp");
+            if (!trimmedDomain.startsWith("www.")) {
+                endpoints.add("https://www." + trimmedDomain + "/api/mcp");
+            }
         }
         return endpoints.stream().distinct().toList();
     }
 
     private void addEndpoint(List<String> endpoints, String domain, String endpoint) {
-        if (endpoint == null || endpoint.isBlank()) {
+        if (!hasText(endpoint)) {
             return;
         }
         String trimmedEndpoint = endpoint.trim();
@@ -166,10 +169,16 @@ public class MerchantMcpToolClient {
             return;
         }
         if (trimmedEndpoint.startsWith("/")) {
-            endpoints.add("https://" + domain + trimmedEndpoint);
+            if (hasText(domain)) {
+                endpoints.add("https://" + domain.trim() + trimmedEndpoint);
+            }
             return;
         }
         endpoints.add("https://" + trimmedEndpoint);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private <T> List<T> safeList(List<T> values) {
