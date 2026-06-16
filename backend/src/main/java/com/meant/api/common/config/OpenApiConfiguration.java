@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
         info = @Info(
                 title = "Meant API",
                 version = "0.1.0",
-                description = "Backend API for Meant merchant search and merchant cart testing endpoints.",
+                description = "Backend API for Meant merchant search and cart testing endpoints.",
                 contact = @Contact(name = "Meant"),
                 license = @License(name = "Proprietary")
         ),

@@ -9,6 +9,7 @@ import com.meant.api.module.merchant.service.dto.McpContent;
 import com.meant.api.module.merchant.service.dto.McpToolCallParams;
 import com.meant.api.module.merchant.service.dto.McpToolCallRequest;
 import com.meant.api.module.merchant.service.dto.McpToolCallResponse;
+import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import java.net.URI;
@@ -37,7 +38,7 @@ public class MerchantMcpToolClient {
         this.restClient = restClientBuilder.requestFactory(requestFactory).build();
     }
 
-    MerchantMcpToolClient(RestClient restClient) {
+    public MerchantMcpToolClient(RestClient restClient) {
         this.restClient = restClient;
     }
 
@@ -60,6 +61,16 @@ public class MerchantMcpToolClient {
                 merchant.getDomain(),
                 merchant.getAdvertisedMcpEndpoint(),
                 merchant.getProfileMcpEndpoint(),
+                toolName,
+                arguments
+        );
+    }
+
+    public MerchantMcpToolCallResult callTool(MerchantCartProvider provider, String toolName, Object arguments) {
+        return callTool(
+                provider.domain(),
+                provider.advertisedMcpEndpoint(),
+                provider.profileMcpEndpoint(),
                 toolName,
                 arguments
         );

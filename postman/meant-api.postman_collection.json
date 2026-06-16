@@ -130,10 +130,10 @@
       ]
     },
     {
-      "name": "Merchant Carts",
+      "name": "Carts",
       "item": [
         {
-          "name": "Create Merchant Cart",
+          "name": "Create Cart",
           "event": [
             {
               "listen": "test",
@@ -164,31 +164,31 @@
               "raw": "{\n  \"merchantId\": null,\n  \"merchantDomain\": \"{{merchantDomain}}\",\n  \"addItems\": [\n    {\n      \"productVariantId\": \"{{productVariantId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"buyerIdentity\": null,\n  \"deliveryAddressesToAdd\": [],\n  \"deliveryAddressesToReplace\": [],\n  \"selectedDeliveryOptions\": [],\n  \"discountCodes\": [],\n  \"giftCardCodes\": [],\n  \"note\": \"Created from Postman\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts",
+              "raw": "{{baseUrl}}/api/carts",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts"
+                "carts"
               ]
             },
             "description": "merchantId is preferred for production-like calls. This example uses merchantDomain for testing convenience; set merchantId to a UUID and merchantDomain to null when you want to target a specific local merchant row."
           }
         },
         {
-          "name": "Get Merchant Cart",
+          "name": "Get Cart",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}?refresh=false",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}?refresh=false",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}"
               ],
               "query": [
@@ -201,18 +201,18 @@
           }
         },
         {
-          "name": "Refresh Merchant Cart",
+          "name": "Refresh Cart",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}?refresh=true",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}?refresh=true",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}"
               ],
               "query": [
@@ -225,7 +225,7 @@
           }
         },
         {
-          "name": "Add Item To Merchant Cart",
+          "name": "Add Item To Cart",
           "event": [
             {
               "listen": "test",
@@ -255,13 +255,13 @@
               "raw": "{\n  \"addItems\": [\n    {\n      \"productVariantId\": \"{{productVariantId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"updateItems\": [],\n  \"removeCartLineIds\": [],\n  \"removeRemoteCartLineIds\": [],\n  \"buyerIdentity\": null,\n  \"deliveryAddressesToAdd\": [],\n  \"deliveryAddressesToReplace\": [],\n  \"selectedDeliveryOptions\": [],\n  \"discountCodes\": [],\n  \"giftCardCodes\": [],\n  \"note\": \"Updated from Postman\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}"
               ]
             }
@@ -294,13 +294,13 @@
               "raw": "{\n  \"addItems\": [],\n  \"updateItems\": [\n    {\n      \"cartLineId\": \"{{cartLineId}}\",\n      \"remoteCartLineId\": null,\n      \"quantity\": 2\n    }\n  ],\n  \"removeCartLineIds\": [],\n  \"removeRemoteCartLineIds\": [],\n  \"buyerIdentity\": null,\n  \"deliveryAddressesToAdd\": [],\n  \"deliveryAddressesToReplace\": [],\n  \"selectedDeliveryOptions\": [],\n  \"discountCodes\": [],\n  \"giftCardCodes\": [],\n  \"note\": \"Quantity updated from Postman\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}"
               ]
             }
@@ -333,13 +333,13 @@
               "raw": "{\n  \"addItems\": [],\n  \"updateItems\": [],\n  \"removeCartLineIds\": [\"{{cartLineId}}\"],\n  \"removeRemoteCartLineIds\": [],\n  \"buyerIdentity\": null,\n  \"deliveryAddressesToAdd\": [],\n  \"deliveryAddressesToReplace\": [],\n  \"selectedDeliveryOptions\": [],\n  \"discountCodes\": [],\n  \"giftCardCodes\": [],\n  \"note\": \"Line removed from Postman\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}"
               ]
             }
@@ -363,13 +363,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}/checkout?refresh=false",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}/checkout?refresh=false",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}",
                 "checkout"
               ],
@@ -400,13 +400,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/merchant-carts/{{cartId}}/checkout?refresh=true",
+              "raw": "{{baseUrl}}/api/carts/{{cartId}}/checkout?refresh=true",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "merchant-carts",
+                "carts",
                 "{{cartId}}",
                 "checkout"
               ],

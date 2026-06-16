@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-cart" author="codex">
+        <createTable tableName="cart">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_domain" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="endpoint" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remote_cart_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remote_cart_id_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_url" type="text"/>
+            <column name="instructions" type="text"/>
+            <column name="raw_cart_response" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_quantity" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_amount" type="text"/>
+            <column name="subtotal_amount" type="text"/>
+            <column name="currency" type="text"/>
+            <column name="active" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remote_created_at" type="timestamp with time zone"/>
+            <column name="remote_updated_at" type="timestamp with time zone"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="refreshed_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="cart"
+                baseColumnNames="merchant_id"
+                constraintName="fk_cart_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="cart"
+                columnNames="remote_cart_id_hash"
+                constraintName="uk_cart_remote_cart_id_hash"/>
+        <createIndex tableName="cart" indexName="idx_cart_merchant">
+            <column name="merchant_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="002-create-cart-line" author="codex">
+        <createTable tableName="cart_line">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="cart_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remote_cart_line_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_id" type="text"/>
+            <column name="product_title" type="text"/>
+            <column name="product_variant_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="variant_title" type="text"/>
+            <column name="quantity" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_amount" type="text"/>
+            <column name="subtotal_amount" type="text"/>
+            <column name="currency" type="text"/>
+            <column name="raw_line_response" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="cart_line"
+                baseColumnNames="cart_id"
+                constraintName="fk_cart_line_cart"
+                referencedTableName="cart"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+        <addUniqueConstraint
+                tableName="cart_line"
+                columnNames="cart_id, remote_cart_line_id"
+                constraintName="uk_cart_line_remote"/>
+        <createIndex tableName="cart_line" indexName="idx_cart_line_cart">
+            <column name="cart_id"/>
+        </createIndex>
+        <createIndex tableName="cart_line" indexName="idx_cart_line_product_variant">
+            <column name="product_variant_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

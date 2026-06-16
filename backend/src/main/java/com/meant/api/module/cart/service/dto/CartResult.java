@@ -1,0 +1,55 @@
+package com.meant.api.module.cart.service.dto;
+
+import com.meant.api.module.cart.entity.Cart;
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+
+public record CartResult(
+        UUID cartId,
+        UUID merchantId,
+        String merchantDomain,
+        String endpoint,
+        String remoteCartId,
+        String checkoutUrl,
+        String instructions,
+        Integer totalQuantity,
+        String totalAmount,
+        String subtotalAmount,
+        String currency,
+        boolean active,
+        Instant remoteCreatedAt,
+        Instant remoteUpdatedAt,
+        Instant createdAt,
+        Instant updatedAt,
+        Instant refreshedAt,
+        List<CartLineResult> lines
+) {
+
+    public static CartResult from(Cart cart) {
+        return new CartResult(
+                cart.getId(),
+                cart.getMerchantId(),
+                cart.getMerchantDomain(),
+                cart.getEndpoint(),
+                cart.getRemoteCartId(),
+                cart.getCheckoutUrl(),
+                cart.getInstructions(),
+                cart.getTotalQuantity(),
+                cart.getTotalAmount(),
+                cart.getSubtotalAmount(),
+                cart.getCurrency(),
+                cart.isActive(),
+                cart.getRemoteCreatedAt(),
+                cart.getRemoteUpdatedAt(),
+                cart.getCreatedAt(),
+                cart.getUpdatedAt(),
+                cart.getRefreshedAt(),
+                cart.getLines().stream()
+                        .map(CartLineResult::from)
+                        .sorted(Comparator.comparing(CartLineResult::createdAt))
+                        .toList()
+        );
+    }
+}
