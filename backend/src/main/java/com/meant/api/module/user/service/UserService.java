@@ -11,7 +11,6 @@ import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -53,36 +52,20 @@ public class UserService {
         return user;
     }
 
-    private User upsertInternal(UpsertUserCommand command, Instant now) {
-        return userRepository.findById(command.id())
-                .map(existing -> {
-                    existing.updateEmail(command.email(), now);
-                    return existing;
-                })
-                .orElseGet(() -> createUser(command, now));
-    }
-
     /**
-     * Inserts a fresh profile row. Because upsert runs on read, two concurrent first-time requests can
-     * both miss the existing row and race to insert; the loser hits a unique-constraint violation. We
-     * recover by re-reading the row the winner committed and refreshing its email.
+     * Performs the conflict-safe upsert at the database level, then loads the resulting managed entity
+     * so callers can keep mutating it within the same transaction. The native query handles the
+     * upsert-on-read insert race atomically, so no exception is thrown (and the transaction is never
+     * marked rollback-only).
      */
-    private User createUser(UpsertUserCommand command, Instant now) {
-        try {
-            return userRepository.saveAndFlush(User.builder()
-                    .id(command.id())
-                    .email(command.email())
-                    .firstName(command.firstName())
-                    .surname(command.surname())
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build());
-        } catch (DataIntegrityViolationException raceLost) {
-            User existing = userRepository.findById(command.id())
-                    .orElseThrow(() -> raceLost);
-            existing.updateEmail(command.email(), now);
-            return existing;
-        }
+    private User upsertInternal(UpsertUserCommand command, Instant now) {
+        userRepository.upsertFromIdentity(
+                command.id(),
+                command.email(),
+                command.firstName(),
+                command.surname(),
+                now);
+        return findUser(command.id());
     }
 
     private User findUser(UUID id) {
