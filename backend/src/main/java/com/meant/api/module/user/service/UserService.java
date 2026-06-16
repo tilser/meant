@@ -53,19 +53,24 @@ public class UserService {
     }
 
     /**
-     * Performs the conflict-safe upsert at the database level, then loads the resulting managed entity
-     * so callers can keep mutating it within the same transaction. The native query handles the
-     * upsert-on-read insert race atomically, so no exception is thrown (and the transaction is never
-     * marked rollback-only).
+     * Resolves the managed profile entity, writing only when necessary. Since this runs on every
+     * read ({@code GET /api/users/me}), the common case — an existing row whose email is unchanged —
+     * is served by a pure read, avoiding the row lock and WAL of an unconditional write. Only when the
+     * row is missing or the email changed do we fall through to the conflict-safe native upsert, which
+     * handles the concurrent-first-request insert race atomically (no rollback-marking exception).
      */
     private User upsertInternal(UpsertUserCommand command, Instant now) {
-        userRepository.upsertFromIdentity(
-                command.id(),
-                command.email(),
-                command.firstName(),
-                command.surname(),
-                now);
-        return findUser(command.id());
+        return userRepository.findById(command.id())
+                .filter(existing -> existing.getEmail().equals(command.email()))
+                .orElseGet(() -> {
+                    userRepository.upsertFromIdentity(
+                            command.id(),
+                            command.email(),
+                            command.firstName(),
+                            command.surname(),
+                            now);
+                    return findUser(command.id());
+                });
     }
 
     private User findUser(UUID id) {

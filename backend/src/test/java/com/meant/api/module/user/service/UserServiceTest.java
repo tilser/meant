@@ -88,6 +88,19 @@ class UserServiceTest {
     }
 
     @Test
+    void upsertOnUnchangedEmailSkipsTheWrite() {
+        UUID id = UUID.randomUUID();
+        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        int writesAfterCreate = userRepository.upsertCallCount;
+
+        // Same identity, same email: the common upsert-on-read case must not issue a write.
+        User reread = userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThat(reread.getEmail()).isEqualTo("ada@example.com");
+        assertThat(userRepository.upsertCallCount).isEqualTo(writesAfterCreate);
+    }
+
+    @Test
     void getMissingUserThrows() {
         UUID id = UUID.randomUUID();
 
@@ -100,6 +113,7 @@ class UserServiceTest {
 
         private final Map<UUID, User> usersById = new HashMap<>();
         private int insertCount;
+        private int upsertCallCount;
 
         UserRepository proxy() {
             return (UserRepository) Proxy.newProxyInstance(
@@ -113,6 +127,7 @@ class UserServiceTest {
                         // Mirrors the native INSERT ... ON CONFLICT: insert with names, or on conflict
                         // refresh only the email (names preserved) and advance updatedAt iff it changed.
                         case "upsertFromIdentity" -> {
+                            upsertCallCount++;
                             UUID id = (UUID) args[0];
                             String email = (String) args[1];
                             String firstName = (String) args[2];
