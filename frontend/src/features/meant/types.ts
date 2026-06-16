@@ -1,14 +1,5 @@
-export type CorePreferenceId =
-  | 'organic'
-  | 'natural'
-  | 'no-poly'
-  | 'reviews'
-  | 'sustainable'
-  | 'value'
-  | 'low-sugar'
-
-export type CustomPreferenceId = `custom-${string}`
-export type PreferenceId = CorePreferenceId | CustomPreferenceId
+export type CorePreferenceId = string
+export type PreferenceId = string
 
 export type ProductId =
   | 'cereal'
@@ -42,6 +33,9 @@ export interface Preference {
   id: PreferenceId
   label: string
   desc: string
+  category?: string
+  polarity?: string
+  displayOrder?: number
 }
 
 export interface Profile {
@@ -70,8 +64,8 @@ export interface Product {
   match: number
   priceFrom: number
   merchants: number
-  satisfies: readonly CorePreferenceId[]
-  misses: readonly CorePreferenceId[]
+  satisfies: readonly PreferenceId[]
+  misses: readonly PreferenceId[]
   note: string
   pros: readonly string[]
   cons: readonly string[]

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.module.user.controller.response.UserResponse;
+import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -133,6 +134,69 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body).isNotNull();
         assertThat(body.firstName()).isEqualTo("Augusta");
         assertThat(body.surname()).isEqualTo("Byron");
+    }
+
+    @Test
+    void settingsReturnsDefaultCanonicalFilters() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+
+        UserSettingsResponse body = client.get().uri("/api/users/me/settings")
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.budget()).isEqualTo(120);
+        assertThat(body.availableFilters()).extracting("id")
+                .contains("organic", "gluten-free", "no-polyester", "highly-rated");
+        assertThat(body.filters()).extracting("id")
+                .containsExactly(
+                        "organic",
+                        "low-sugar",
+                        "natural-materials",
+                        "no-polyester",
+                        "sustainable-brands",
+                        "best-value",
+                        "highly-rated");
+    }
+
+    @Test
+    void patchSettingsUpdatesFiltersBudgetAndLocation() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+
+        UserSettingsResponse body = client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "budget": 95,
+                          "location": {
+                            "country": "United States",
+                            "code": "US",
+                            "city": "New York"
+                          },
+                          "filterIds": ["organic", "gluten-free", "fast-shipping"]
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.budget()).isEqualTo(95);
+        assertThat(body.location()).isNotNull();
+        assertThat(body.location().code()).isEqualTo("US");
+        assertThat(body.filters()).extracting("id")
+                .containsExactly("organic", "gluten-free", "fast-shipping");
     }
 
     @Test

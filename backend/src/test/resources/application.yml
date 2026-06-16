@@ -7,6 +7,14 @@ spring:
       ddl-auto: validate
     open-in-view: false
 
+ai:
+  openrouter:
+    base-url: https://openrouter.ai/api/v1
+    api-key: ""
+    app-title: Meant
+    models:
+      preference-filter-parser: google/gemini-2.5-flash-lite
+
 crawling:
   ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train
   ucp-dataset-page-size: 100

@@ -10,7 +10,6 @@ import type {
   CartLine,
   CheckoutPayload,
   CorePreferenceId,
-  CustomPreferenceId,
   DiscountCode,
   Offer,
   Order,
@@ -97,6 +96,27 @@ export function productsForLocation(
   return products.filter((product) => availableOffers(product, location).length > 0)
 }
 
+export function productsForPreferences(
+  products: readonly Product[],
+  preferences: readonly Preference[],
+): Product[] {
+  const activeIds = new Set(preferences.map((preference) => preference.id))
+  if (activeIds.size === 0) {
+    return [...products]
+  }
+  return [...products]
+    .filter((product) => !product.misses.some((id) => activeIds.has(id)))
+    .sort((left, right) => {
+      const rightScore = preferenceScore(right, activeIds)
+      const leftScore = preferenceScore(left, activeIds)
+      return rightScore - leftScore || right.match - left.match
+    })
+}
+
+function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>): number {
+  return product.satisfies.filter((id) => activeIds.has(id)).length
+}
+
 export function productPriceFrom(
   product: Product,
   location: UserLocation | null,
@@ -141,26 +161,26 @@ const filterMatchers: ReadonlyArray<{
 }> = [
   { id: 'organic', pattern: /organic/ },
   {
-    id: 'natural',
+    id: 'natural-materials',
     pattern:
       /natural (material|fabric|fibre|fiber)|\b(cotton|wool|linen|merino|silk)\b/,
   },
   {
-    id: 'no-poly',
+    id: 'no-polyester',
     pattern:
       /no polyester|avoid polyester|without polyester|no synthetic|anti-?synthetic|polyester/,
   },
   {
-    id: 'reviews',
+    id: 'highly-rated',
     pattern:
       /review|well[- ]?rated|highly[- ]?rated|good ratings?|top[- ]?rated|popular/,
   },
   {
-    id: 'sustainable',
+    id: 'sustainable-brands',
     pattern: /sustainab|eco[- ]?friendly|ethical|environment|planet|carbon|recycl/,
   },
   {
-    id: 'value',
+    id: 'best-value',
     pattern: /budget|good value|best quality|affordable|value for money|bang for/,
   },
   {
@@ -209,7 +229,7 @@ export function deriveFilters(text: string): DerivedFilters {
     const id = `custom-${pretty
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')}` as CustomPreferenceId
+      .replace(/(^-|-$)/g, '')}` as PreferenceId
 
     if (seen.has(id) || id === 'custom-') {
       return
@@ -264,7 +284,7 @@ export function resolveAsk(
     }
 
     if (/material|made of|fabric|polyester|natural|organic|ingredient|synthetic/.test(normalized)) {
-      if (product.misses.includes('no-poly')) {
+      if (product.misses.includes('no-polyester')) {
         return `Worth flagging: it contains polyester, which is on your avoid list. On the plus side, ${product.pros[0].toLowerCase()}.`
       }
       return `${listJoin(product.pros)}. ${product.note}`

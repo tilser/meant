@@ -12,10 +12,10 @@ import {
 } from 'react'
 
 import {
-  CORE_PREFERENCE_IDS,
   DEFAULT_CART,
   DEFAULT_COMPARE,
   DEFAULT_ORDERS,
+  DEFAULT_PREFERENCE_IDS,
   DEFAULT_SAVED_IDS,
   DEFAULT_USER,
   LOCATIONS,
@@ -25,7 +25,14 @@ import {
   PROMPTS,
 } from './data'
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
-import { getCurrentUser, updateProfile } from '../../lib/apiClient'
+import {
+  getCurrentUser,
+  getUserSettings,
+  type ShoppingFilterProfile,
+  updateProfile,
+  updateUserSettings,
+  type UserSettingsProfile,
+} from '../../lib/apiClient'
 import type {
   AuthMode,
   CartItem,
@@ -50,7 +57,6 @@ import {
   cartLines,
   computeSmartAlerts,
   createOrder,
-  deriveFilters,
   formatOrderDate,
   listJoin,
   money,
@@ -59,6 +65,7 @@ import {
   productById,
   productMerchantCount,
   productPriceFrom,
+  productsForPreferences,
   productsByIds,
   productsForLocation,
   readStorage,
@@ -178,6 +185,30 @@ function useBrowserGreeting(): string {
 
 function firstNameFromName(name: string): string {
   return name.trim().split(/\s+/)[0] || name
+}
+
+function preferenceFromFilter(filter: ShoppingFilterProfile): Preference {
+  return {
+    id: filter.id,
+    label: filter.label,
+    desc: filter.description,
+    category: filter.category,
+    polarity: filter.polarity,
+    displayOrder: filter.displayOrder,
+  }
+}
+
+function applySettingsPayload(
+  settings: UserSettingsProfile,
+  setAvailablePrefs: Dispatch<SetStateAction<Preference[]>>,
+  setPrefsOn: Dispatch<SetStateAction<PreferenceId[]>>,
+  setBudget: Dispatch<SetStateAction<number>>,
+  setLocation: Dispatch<SetStateAction<UserLocation | null>>,
+) {
+  setAvailablePrefs(settings.availableFilters.map(preferenceFromFilter))
+  setPrefsOn(settings.filters.map((filter) => filter.id))
+  setBudget(settings.budget ?? 120)
+  setLocation(settings.location)
 }
 
 function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
@@ -1437,6 +1468,11 @@ function CompareView({
   }
   const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
   const bestPrice = enough ? Math.min(...items.map((product) => product.priceFrom)) : null
+  const comparisonPreferenceIds = preferences
+    .map((preference) => preference.id)
+    .filter((id) =>
+      items.some((product) => product.satisfies.includes(id) || product.misses.includes(id)),
+    )
 
   return (
     <main className="mt-feed mt-view">
@@ -1509,7 +1545,7 @@ function CompareView({
               {items.map((product) => <div key={product.id} />)}
               {showAdd ? <div /> : null}
             </div>
-            {CORE_PREFERENCE_IDS.map((id) => (
+            {comparisonPreferenceIds.map((id) => (
               <div className="mt-cmp-grid mt-cmp-row" key={id} style={gridStyle}>
                 <div className="mt-cmp-rowlabel">{prefLabel(preferences, id)}</div>
                 {items.map((product) => (
@@ -1732,7 +1768,6 @@ function PreferencesView({
   allPrefs,
   prefsOn,
   onToggle,
-  onRemoveCustom,
   onApplyDescription,
   budget,
   onBudget,
@@ -1744,8 +1779,7 @@ function PreferencesView({
   allPrefs: readonly Preference[]
   prefsOn: ReadonlySet<PreferenceId>
   onToggle: (id: PreferenceId) => void
-  onRemoveCustom: (id: PreferenceId) => void
-  onApplyDescription: (text: string) => void
+  onApplyDescription: (text: string) => Promise<boolean>
   budget: number
   onBudget: (value: number) => void
   location: UserLocation | null
@@ -1757,6 +1791,7 @@ function PreferencesView({
   const [importText, setImportText] = useState('')
   const [imported, setImported] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [parsing, setParsing] = useState(false)
   const enabled = allPrefs.filter((preference) => prefsOn.has(preference.id))
 
   const copyQuestion = () => {
@@ -1775,8 +1810,14 @@ function PreferencesView({
     if (!text.trim()) {
       return
     }
+    setParsing(true)
     onApplyDescription(text.trim())
-    clear()
+      .then((applied) => {
+        if (applied) {
+          clear()
+        }
+      })
+      .finally(() => setParsing(false))
   }
 
   return (
@@ -1820,10 +1861,10 @@ function PreferencesView({
           <button
             className="mt-act mt-act-primary"
             type="button"
-            disabled={!desc.trim()}
+            disabled={!desc.trim() || parsing}
             onClick={() => apply(desc, () => setDesc(''))}
           >
-            Create filters
+            {parsing ? 'Creating filters' : 'Create filters'}
           </button>
           <span className="mt-describe-hint">
             Meant matches your words to filters and creates new ones for anything custom.
@@ -1842,27 +1883,15 @@ function PreferencesView({
         <div className="mt-prefs-list">
           {allPrefs.map((preference) => {
             const active = prefsOn.has(preference.id)
-            const custom = preference.id.startsWith('custom-')
             return (
               <div className={`mt-pref-row ${active ? '' : 'off'}`} key={preference.id}>
                 <div className="mt-pref-text">
                   <div className="mt-pref-name">
                     {preference.label}
-                    {custom ? <span className="mt-mono mt-pref-tag">custom</span> : null}
                   </div>
                   <div className="mt-pref-desc">{preference.desc}</div>
                 </div>
                 <div className="mt-pref-controls">
-                  {custom ? (
-                    <button
-                      className="mt-pref-remove"
-                      type="button"
-                      onClick={() => onRemoveCustom(preference.id)}
-                      aria-label="Remove filter"
-                    >
-                      <CloseIcon size={13} />
-                    </button>
-                  ) : null}
                   <Toggle on={active} onClick={() => onToggle(preference.id)} />
                 </div>
               </div>
@@ -1934,7 +1963,7 @@ function PreferencesView({
               <button
                 className="mt-act mt-act-primary"
                 type="button"
-                disabled={!importText.trim()}
+                disabled={!importText.trim() || parsing}
                 onClick={() => {
                   apply(importText, () => setImportText(''))
                   setImported(true)
@@ -2834,8 +2863,8 @@ export function MeantApp() {
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [savedIds, setSavedIds] = useStoredState<ProductId[]>('meant.saved', [...DEFAULT_SAVED_IDS])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
-  const [customPrefs, setCustomPrefs] = useStoredState<Preference[]>('meant.customPrefs', [])
-  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...CORE_PREFERENCE_IDS])
+  const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
+  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
   const [budget, setBudget] = useStoredState('meant.budget', 120)
   const [location, setLocation] = useStoredState<UserLocation | null>('meant.location', null)
   const [cart, setCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
@@ -2846,11 +2875,12 @@ export function MeantApp() {
   const [accountMenu, setAccountMenu] = useState(false)
   const greeting = useBrowserGreeting()
 
-  const allPreferences = useMemo(() => [...PREFERENCES, ...customPrefs], [customPrefs])
+  const allPreferences = availablePrefs
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
   const savedSet = useMemo(() => new Set(savedIds), [savedIds])
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
   const shippableProducts = useMemo(() => productsForLocation(PRODUCTS, location), [location])
+  const visibleProducts = productsForPreferences(shippableProducts, activePreferences)
 
   const liveProfile = useMemo(
     () => ({
@@ -2867,8 +2897,9 @@ export function MeantApp() {
     const resolved = resolveReply(query)
     return productsByIds(resolved.ids)
   }, [query, reply])
-  const feedProducts = productsForLocation(baseFeed, location)
-  const hiddenByShip = baseFeed.length - feedProducts.length
+  const localizedFeedProducts = productsForLocation(baseFeed, location)
+  const feedProducts = productsForPreferences(localizedFeedProducts, activePreferences)
+  const hiddenByShip = baseFeed.length - localizedFeedProducts.length
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -2901,10 +2932,19 @@ export function MeantApp() {
           setUser((current) => ({ ...current, email: userEmail }))
         }
       })
+    getUserSettings()
+      .then((settings) => {
+        if (!active) return
+        applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setLocation)
+      })
+      .catch(() => {
+        if (!active) return
+        setAvailablePrefs([...PREFERENCES])
+      })
     return () => {
       active = false
     }
-  }, [userId, userEmail, setUser])
+  }, [userId, userEmail, setUser, setPrefsOn, setBudget, setLocation])
 
   const handleSignOut = () => {
     void signOut()
@@ -2966,12 +3006,28 @@ export function MeantApp() {
     )
   }
 
-  const applyDescription = (text: string) => {
-    const derived = deriveFilters(text)
-    setPrefsOn((current) => Array.from(new Set([...current, ...derived.matched, ...derived.customs.map((preference) => preference.id)])))
-    setCustomPrefs((current) => {
-      const ids = new Set(current.map((preference) => preference.id))
-      return [...current, ...derived.customs.filter((preference) => !ids.has(preference.id))]
+  const applySavedSettings = (settings: UserSettingsProfile) => {
+    applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setLocation)
+  }
+
+  const saveSettings = async (input: {
+    budget?: number
+    location?: UserLocation | null
+    filterIds?: readonly PreferenceId[]
+    preferenceDescription?: string
+  }) => {
+    try {
+      applySavedSettings(await updateUserSettings(input))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const applyDescription = async (text: string) => {
+    return saveSettings({
+      filterIds: prefsOn,
+      preferenceDescription: text,
     })
   }
 
@@ -2998,7 +3054,7 @@ export function MeantApp() {
       case 'saved':
         return (
           <SavedView
-            products={shippableProducts.filter((product) => savedSet.has(product.id))}
+            products={visibleProducts.filter((product) => savedSet.has(product.id))}
             location={location}
             preferences={allPreferences}
             savedSet={savedSet}
@@ -3009,7 +3065,7 @@ export function MeantApp() {
       case 'compare':
         return (
           <CompareView
-            products={shippableProducts}
+            products={visibleProducts}
             compareIds={compareIds}
             preferences={allPreferences}
             onPick={(index, id) =>
@@ -3024,18 +3080,26 @@ export function MeantApp() {
           <PreferencesView
             allPrefs={allPreferences}
             prefsOn={new Set(prefsOn)}
-            onToggle={(id) =>
-              setPrefsOn((current) => current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id])
-            }
-            onRemoveCustom={(id) => {
-              setCustomPrefs((current) => current.filter((preference) => preference.id !== id))
-              setPrefsOn((current) => current.filter((candidate) => candidate !== id))
+            onToggle={(id) => {
+              setPrefsOn((current) => {
+                const next = current.includes(id)
+                  ? current.filter((candidate) => candidate !== id)
+                  : [...current, id]
+                void saveSettings({ filterIds: next })
+                return next
+              })
             }}
             onApplyDescription={applyDescription}
             budget={budget}
-            onBudget={setBudget}
+            onBudget={(value) => {
+              setBudget(value)
+              void saveSettings({ budget: value })
+            }}
             location={location}
-            onLocation={setLocation}
+            onLocation={(nextLocation) => {
+              setLocation(nextLocation)
+              void saveSettings({ location: nextLocation })
+            }}
             profile={liveProfile}
             onDone={() => nav('discover')}
           />

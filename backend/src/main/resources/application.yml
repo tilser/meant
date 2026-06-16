@@ -32,6 +32,14 @@ management:
 server:
   port: ${MEANT_API_PORT:8080}
 
+ai:
+  openrouter:
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+    api-key: ${OPENROUTER_API_KEY:}
+    app-title: ${OPENROUTER_APP_TITLE:Meant}
+    models:
+      preference-filter-parser: ${OPENROUTER_PREFERENCE_FILTER_MODEL:google/gemini-2.5-flash-lite}
+
 crawling:
   ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train
   ucp-dataset-page-size: 100
