@@ -129,6 +129,34 @@ class MerchantCartServiceTest {
         assertThat(merchantCartClient.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
     }
 
+    @Test
+    void replaceLinesUpdatesExistingLineForMatchingRemoteLineId() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        MerchantCart cart = cart(cartId, "https://merchant.example/checkout", cartLineId);
+        MerchantCartLine replacementLine = MerchantCartLine.builder()
+                .remoteCartLineId("gid://shopify/CartLine/1")
+                .productId("gid://shopify/Product/2")
+                .productTitle("Updated Candle")
+                .productVariantId("gid://shopify/ProductVariant/2")
+                .variantTitle("Updated")
+                .quantity(3)
+                .totalAmount("44.85")
+                .subtotalAmount("44.85")
+                .currency("USD")
+                .rawLineResponse("{\"updated\":true}")
+                .createdAt(Instant.parse("2026-06-16T11:06:00Z"))
+                .updatedAt(Instant.parse("2026-06-16T11:06:00Z"))
+                .build();
+
+        cart.replaceLines(List.of(replacementLine));
+
+        assertThat(cart.getLines()).hasSize(1);
+        assertThat(cart.getLines().getFirst().getId()).isEqualTo(cartLineId);
+        assertThat(cart.getLines().getFirst().getProductTitle()).isEqualTo("Updated Candle");
+        assertThat(cart.getLines().getFirst().getQuantity()).isEqualTo(3);
+    }
+
     private PlatformTransactionManager transactionManager() {
         return new PlatformTransactionManager() {
             @Override

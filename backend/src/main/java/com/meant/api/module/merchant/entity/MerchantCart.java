@@ -12,7 +12,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -120,8 +122,21 @@ public class MerchantCart {
     }
 
     public void replaceLines(List<MerchantCartLine> replacementLines) {
-        lines.clear();
-        replacementLines.forEach(line -> line.assignCart(this));
-        lines.addAll(replacementLines);
+        Map<String, MerchantCartLine> existingLinesByRemoteId = new HashMap<>();
+        lines.forEach(line -> existingLinesByRemoteId.put(line.getRemoteCartLineId(), line));
+
+        List<MerchantCartLine> newLines = new ArrayList<>();
+        for (MerchantCartLine replacementLine : replacementLines) {
+            MerchantCartLine existingLine = existingLinesByRemoteId.remove(replacementLine.getRemoteCartLineId());
+            if (existingLine == null) {
+                replacementLine.assignCart(this);
+                newLines.add(replacementLine);
+            } else {
+                existingLine.updateFrom(replacementLine);
+            }
+        }
+
+        lines.removeIf(line -> existingLinesByRemoteId.containsKey(line.getRemoteCartLineId()));
+        lines.addAll(newLines);
     }
 }

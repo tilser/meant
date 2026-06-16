@@ -64,7 +64,7 @@ public class MerchantCartController {
         return new CreateMerchantCartCommand(
                 request.merchantId(),
                 request.merchantDomain(),
-                request.addItems().stream()
+                safeList(request.addItems()).stream()
                         .map(item -> new CreateMerchantCartCommand.AddItem(
                                 item.productVariantId(),
                                 item.quantity()

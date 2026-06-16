@@ -39,6 +39,9 @@ merchant:
   enrichment:
     batch-size: 500
     fixed-delay: 60000
+  mcp-tool:
+    connect-timeout-milliseconds: ${MERCHANT_MCP_TOOL_CONNECT_TIMEOUT_MILLISECONDS:5000}
+    read-timeout-milliseconds: ${MERCHANT_MCP_TOOL_READ_TIMEOUT_MILLISECONDS:5000}
   embedding:
     voyage-base-url: ${VOYAGE_BASE_URL:https://api.voyageai.com}
     api-key: ${VOYAGE_API_KEY:}

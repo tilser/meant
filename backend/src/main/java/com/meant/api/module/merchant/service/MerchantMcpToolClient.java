@@ -2,6 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
+import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.McpContent;
 import com.meant.api.module.merchant.service.dto.McpToolCallParams;
 import com.meant.api.module.merchant.service.dto.McpToolCallRequest;
@@ -9,8 +10,11 @@ import com.meant.api.module.merchant.service.dto.McpToolCallResponse;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -20,8 +24,19 @@ public class MerchantMcpToolClient {
 
     private final RestClient restClient;
 
-    public MerchantMcpToolClient(RestClient.Builder restClientBuilder) {
-        this.restClient = restClientBuilder.build();
+    @Autowired
+    public MerchantMcpToolClient(
+            RestClient.Builder restClientBuilder,
+            MerchantMcpToolProperties merchantMcpToolProperties
+    ) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofMillis(merchantMcpToolProperties.connectTimeoutMilliseconds()));
+        requestFactory.setReadTimeout(Duration.ofMillis(merchantMcpToolProperties.readTimeoutMilliseconds()));
+        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
+    }
+
+    MerchantMcpToolClient(RestClient restClient) {
+        this.restClient = restClient;
     }
 
     public MerchantMcpToolCallResult callTool(

@@ -71,4 +71,17 @@ public class MerchantCartLine {
     void assignCart(MerchantCart cart) {
         this.cart = cart;
     }
+
+    void updateFrom(MerchantCartLine other) {
+        this.productId = other.productId;
+        this.productTitle = other.productTitle;
+        this.productVariantId = other.productVariantId;
+        this.variantTitle = other.variantTitle;
+        this.quantity = other.quantity;
+        this.totalAmount = other.totalAmount;
+        this.subtotalAmount = other.subtotalAmount;
+        this.currency = other.currency;
+        this.rawLineResponse = other.rawLineResponse;
+        this.updatedAt = other.updatedAt;
+    }
 }

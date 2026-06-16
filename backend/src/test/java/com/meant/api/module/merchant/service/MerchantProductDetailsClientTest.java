@@ -24,7 +24,7 @@ class MerchantProductDetailsClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantProductDetailsClient client = new MerchantProductDetailsClient(
-                new MerchantMcpToolClient(restClientBuilder),
+                new MerchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
         server.expect(requestTo("https://merchant.example/api/mcp"))

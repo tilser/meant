@@ -29,7 +29,10 @@ class MerchantCartClientTest {
     void createsCartWithAddItemsAndParsesCheckoutUrl() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        MerchantCartClient client = new MerchantCartClient(new MerchantMcpToolClient(restClientBuilder), new ObjectMapper());
+        MerchantCartClient client = new MerchantCartClient(
+                new MerchantMcpToolClient(restClientBuilder.build()),
+                new ObjectMapper()
+        );
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"update_cart\"")))
@@ -65,7 +68,10 @@ class MerchantCartClientTest {
     void updatesAndRemovesCartLines() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        MerchantCartClient client = new MerchantCartClient(new MerchantMcpToolClient(restClientBuilder), new ObjectMapper());
+        MerchantCartClient client = new MerchantCartClient(
+                new MerchantMcpToolClient(restClientBuilder.build()),
+                new ObjectMapper()
+        );
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"cart_id\":\"gid://shopify/Cart/1\"")))
@@ -97,7 +103,10 @@ class MerchantCartClientTest {
     void getsCartByRemoteCartId() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        MerchantCartClient client = new MerchantCartClient(new MerchantMcpToolClient(restClientBuilder), new ObjectMapper());
+        MerchantCartClient client = new MerchantCartClient(
+                new MerchantMcpToolClient(restClientBuilder.build()),
+                new ObjectMapper()
+        );
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"get_cart\"")))
