@@ -2,8 +2,6 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.MerchantImportProperties;
-import com.meant.api.module.merchant.repository.MerchantRepository;
-import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +17,6 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
 
 @Slf4j
@@ -32,9 +29,7 @@ public class UcpMerchantImportService {
 
     private final UcpDatasetClient ucpDatasetClient;
     private final MerchantImportProperties merchantImportProperties;
-    private final MerchantRawRepository merchantRawRepository;
-    private final MerchantRepository merchantRepository;
-    private final TransactionTemplate transactionTemplate;
+    private final UcpMerchantImportPersistenceService ucpMerchantImportPersistenceService;
 
     public void importMerchants() {
         List<HuggingFaceDatasetRow> datasetRows = ucpDatasetClient.fetchAllRows();
@@ -49,31 +44,7 @@ public class UcpMerchantImportService {
                 .map(datasetRow -> toMerchantRaw(datasetRow, fetchedAt))
                 .toList();
 
-        transactionTemplate.executeWithoutResult(_ -> {
-            Set<String> seenDomains = verifiedMerchants.stream()
-                    .map(MerchantRaw::getDomain)
-                    .collect(Collectors.toSet());
-            Map<String, MerchantRaw> existingByDomain = merchantRawRepository.findByDomainIn(seenDomains).stream()
-                    .collect(Collectors.toMap(MerchantRaw::getDomain, Function.identity()));
-
-            List<MerchantRaw> merchantsToSave = verifiedMerchants.stream()
-                    .map(importedMerchant -> mergeImportedMerchant(
-                            importedMerchant,
-                            existingByDomain.get(importedMerchant.getDomain())
-                    ))
-                    .toList();
-
-            merchantRawRepository.saveAll(merchantsToSave);
-            List<String> inactiveDomains = merchantRawRepository.findAll().stream()
-                    .filter(merchantRaw -> !seenDomains.contains(merchantRaw.getDomain()))
-                    .peek(MerchantRaw::markInactive)
-                    .map(MerchantRaw::getDomain)
-                    .toList();
-            if (!inactiveDomains.isEmpty()) {
-                merchantRepository.findByDomainIn(inactiveDomains)
-                        .forEach(merchant -> merchant.markInactive(fetchedAt));
-            }
-        });
+        ucpMerchantImportPersistenceService.saveImport(verifiedMerchants, fetchedAt);
 
         log.info("Merchant import completed. Saved merchants: {}", verifiedMerchants.size());
     }
@@ -153,33 +124,6 @@ public class UcpMerchantImportService {
                 .active(true)
                 .lastSeenAt(fetchedAt)
                 .build();
-    }
-
-    private MerchantRaw mergeImportedMerchant(MerchantRaw importedMerchant, MerchantRaw existingMerchant) {
-        if (existingMerchant == null) {
-            return importedMerchant;
-        }
-
-        existingMerchant.updateFromImport(
-                importedMerchant.getDatasetRowIdx(),
-                importedMerchant.getStatus(),
-                importedMerchant.getUcpUrl(),
-                importedMerchant.getHttpStatus(),
-                importedMerchant.getUcpVersion(),
-                importedMerchant.isHasCheckout(),
-                importedMerchant.isHasIdentityLinking(),
-                importedMerchant.isHasCartManagement(),
-                importedMerchant.isHasOrder(),
-                importedMerchant.isHasPaymentToken(),
-                importedMerchant.getCapabilityCount(),
-                importedMerchant.getAiBotPolicies(),
-                importedMerchant.getTransports(),
-                importedMerchant.getLastCheckedAt(),
-                importedMerchant.getLastSuccessAt(),
-                importedMerchant.getFetchedAt(),
-                importedMerchant.getSourceHash()
-        );
-        return existingMerchant;
     }
 
     private Integer toHttpStatus(Double value) {

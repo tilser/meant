@@ -1,5 +1,7 @@
 package com.meant.api.module.merchant.service;
 
+import static com.meant.api.common.util.CollectionUtils.safeList;
+
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
@@ -181,7 +183,4 @@ public class MerchantMcpToolClient {
         return value != null && !value.isBlank();
     }
 
-    private <T> List<T> safeList(List<T> values) {
-        return values == null ? List.of() : values;
-    }
 }

@@ -27,10 +27,6 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.SimpleTransactionStatus;
 import tools.jackson.databind.ObjectMapper;
 
 class MerchantCartServiceTest {
@@ -46,12 +42,14 @@ class MerchantCartServiceTest {
         merchantRepository = new FakeMerchantRepository();
         merchantCartRepository = new FakeCartRepository();
         merchantCartClient = new FakeCartClient();
+        MerchantCartPersistenceService merchantCartPersistenceService = new MerchantCartPersistenceService(
+                merchantCartRepository.proxy(),
+                new ObjectMapper()
+        );
         merchantCartService = new MerchantCartService(
                 merchantRepository.proxy(),
-                merchantCartRepository.proxy(),
-                merchantCartClient,
-                transactionManager(),
-                new ObjectMapper()
+                merchantCartPersistenceService,
+                merchantCartClient
         );
         merchant = merchant();
         merchantRepository.save(merchant);
@@ -178,23 +176,6 @@ class MerchantCartServiceTest {
         assertThat(cart.getLines().getFirst().getId()).isEqualTo(cartLineId);
         assertThat(cart.getLines().getFirst().getProductTitle()).isEqualTo("Updated Candle");
         assertThat(cart.getLines().getFirst().getQuantity()).isEqualTo(3);
-    }
-
-    private PlatformTransactionManager transactionManager() {
-        return new PlatformTransactionManager() {
-            @Override
-            public TransactionStatus getTransaction(TransactionDefinition definition) {
-                return new SimpleTransactionStatus();
-            }
-
-            @Override
-            public void commit(TransactionStatus status) {
-            }
-
-            @Override
-            public void rollback(TransactionStatus status) {
-            }
-        };
     }
 
     private Merchant merchant() {

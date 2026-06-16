@@ -1,5 +1,7 @@
 package com.meant.api.module.merchant.service;
 
+import static com.meant.api.common.util.CollectionUtils.safeList;
+
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
@@ -254,7 +256,4 @@ public class MerchantSemanticProductSearchService {
         return value == null || value.isBlank() ? defaultValue : value;
     }
 
-    private <T> List<T> safeList(List<T> values) {
-        return values == null ? List.of() : values;
-    }
 }

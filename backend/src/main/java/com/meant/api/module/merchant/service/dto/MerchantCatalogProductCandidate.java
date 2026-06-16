@@ -1,5 +1,7 @@
 package com.meant.api.module.merchant.service.dto;
 
+import static com.meant.api.common.util.CollectionUtils.safeList;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -124,7 +126,4 @@ public record MerchantCatalogProductCandidate(
         return label + ": " + value.trim();
     }
 
-    private <T> List<T> safeList(List<T> values) {
-        return values == null ? List.of() : values;
-    }
 }
