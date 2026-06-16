@@ -52,7 +52,6 @@ export const PREFERENCES: readonly Preference[] = [
 
 export const PROFILE: Profile = {
   name: 'Mara',
-  greeting: 'Good afternoon',
   summary:
     'organic food, natural-material clothing, and products people actually love.',
 }

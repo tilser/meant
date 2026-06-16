@@ -46,7 +46,6 @@ export interface Preference {
 
 export interface Profile {
   name: string
-  greeting: string
   summary: string
 }
 

@@ -124,6 +124,22 @@ const askContexts: Readonly<Record<View, { label: string; suggestions: readonly 
     },
   }
 
+const DEFAULT_GREETING = 'Good afternoon'
+
+function greetingForHour(hour: number): string {
+  if (hour >= 5 && hour < 12) {
+    return 'Good morning'
+  }
+  if (hour < 18) {
+    return 'Good afternoon'
+  }
+  return 'Good evening'
+}
+
+function currentBrowserGreeting(): string {
+  return greetingForHour(new Date().getHours())
+}
+
 function useStoredState<T>(
   key: string,
   fallback: T,
@@ -144,6 +160,24 @@ function useStoredState<T>(
   }, [hydrated, key, value])
 
   return [value, setValue] as const
+}
+
+function useBrowserGreeting(): string {
+  const [greeting, setGreeting] = useState(DEFAULT_GREETING)
+
+  useEffect(() => {
+    const updateGreeting = () => setGreeting(currentBrowserGreeting())
+    updateGreeting()
+
+    const intervalId = window.setInterval(updateGreeting, 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  return greeting
+}
+
+function firstNameFromName(name: string): string {
+  return name.trim().split(/\s+/)[0] || name
 }
 
 function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
@@ -607,10 +641,12 @@ function ProductCard({
 
 function ChatHero({
   profile,
+  greeting,
   prompts,
   onSubmit,
 }: Readonly<{
   profile: typeof PROFILE
+  greeting: string
   prompts: readonly string[]
   onSubmit: (query: string) => void
 }>) {
@@ -628,7 +664,7 @@ function ChatHero({
   return (
     <header className="mt-hero">
       <div className="mt-mono mt-hero-eyebrow">
-        {profile.greeting}, {profile.name}
+        {greeting}, {profile.name}
       </div>
       <h1 className="mt-hero-title">
         Everything here is <em>meant</em> for you.
@@ -683,6 +719,7 @@ function ChatHero({
 
 function FeedView({
   profile,
+  greeting,
   products,
   hiddenByShip,
   location,
@@ -696,6 +733,7 @@ function FeedView({
   onToggleSave,
 }: Readonly<{
   profile: typeof PROFILE
+  greeting: string
   products: readonly Product[]
   hiddenByShip: number
   location: UserLocation | null
@@ -707,7 +745,7 @@ function FeedView({
 } & ProductOpenProps & ProductSaveProps>) {
   return (
     <main className="mt-feed">
-      <ChatHero profile={profile} prompts={PROMPTS} onSubmit={onSubmit} />
+      <ChatHero profile={profile} greeting={greeting} prompts={PROMPTS} onSubmit={onSubmit} />
       {reply ? (
         <div className="mt-reply">
           <div className="mt-reply-av">
@@ -2806,6 +2844,7 @@ export function MeantApp() {
   const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
+  const greeting = useBrowserGreeting()
 
   const allPreferences = useMemo(() => [...PREFERENCES, ...customPrefs], [customPrefs])
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
@@ -2816,7 +2855,7 @@ export function MeantApp() {
   const liveProfile = useMemo(
     () => ({
       ...PROFILE,
-      name: user.name,
+      name: firstNameFromName(user.name),
     }),
     [user.name],
   )
@@ -3042,6 +3081,7 @@ export function MeantApp() {
         return (
           <FeedView
             profile={liveProfile}
+            greeting={greeting}
             products={feedProducts}
             hiddenByShip={hiddenByShip}
             location={location}
