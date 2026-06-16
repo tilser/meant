@@ -30,7 +30,7 @@ merchant:
     rerank-model: rerank-2.5-lite
     dimension: 1024
     batch-size: 25
-    fixed-delay: 60000
+    fixed-delay: 120000
   catalog-search:
     merchant-candidate-limit: 30
     merchant-limit: 5

@@ -24,6 +24,8 @@ import {
   PROFILE,
   PROMPTS,
 } from './data'
+import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
+import { getCurrentUser, updateProfile } from '../../lib/apiClient'
 import type {
   AuthMode,
   CartItem,
@@ -2431,6 +2433,17 @@ function OrderCard({
   )
 }
 
+/**
+ * Splits a single full-name field into first name + surname the same way the backend does:
+ * first whitespace-separated token is the first name, the remainder is the surname.
+ */
+function splitName(fullName: string): { firstName: string; surname: string | null } {
+  const tokens = fullName.trim().split(/\s+/).filter(Boolean)
+  const firstName = tokens[0] ?? ''
+  const surname = tokens.length > 1 ? tokens.slice(1).join(' ') : null
+  return { firstName, surname }
+}
+
 function AccountView({
   user,
   onSave,
@@ -2445,12 +2458,13 @@ function AccountView({
   onDone: () => void
 }>) {
   const [name, setName] = useState(user.name)
-  const [email, setEmail] = useState(user.email)
   const [avatar, setAvatar] = useState<string | null>(user.avatar)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
-  const preview: UserAccount = { name, email, avatar }
-  const dirty = name !== user.name || email !== user.email || avatar !== user.avatar
+  const preview: UserAccount = { name, email: user.email, avatar }
+  const dirty = name !== user.name || avatar !== user.avatar
 
   const onFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -2500,23 +2514,36 @@ function AccountView({
           </label>
           <label className="mt-field">
             <span className="mt-field-label mt-mono">Email</span>
-            <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            <input className="mt-input" type="email" value={user.email} readOnly disabled />
+            <span className="mt-field-hint">Your email is your sign-in identity and can't be changed here.</span>
           </label>
         </div>
         <div className="mt-acct-save-row">
           <button
             className="mt-acct-save"
             type="button"
-            disabled={!dirty}
+            disabled={!dirty || saving}
             onClick={() => {
-              onSave({ name: name.trim() || user.name, email: email.trim() || user.email, avatar })
-              setSaved(true)
-              window.setTimeout(() => setSaved(false), 1800)
+              const nextName = name.trim() || user.name
+              const { firstName, surname } = splitName(nextName)
+              setSaving(true)
+              setError(null)
+              updateProfile({ firstName, surname })
+                .then((profile) => {
+                  const savedName =
+                    [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
+                  onSave({ name: savedName, email: user.email, avatar })
+                  setSaved(true)
+                  window.setTimeout(() => setSaved(false), 1800)
+                })
+                .catch(() => setError('Could not save your changes. Please try again.'))
+                .finally(() => setSaving(false))
             }}
           >
-            Save changes
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
           {saved ? <span className="mt-acct-saved-note">Saved</span> : null}
+          {error ? <span className="mt-acct-save-error">{error}</span> : null}
         </div>
       </div>
       <button className="mt-acct-link" type="button" onClick={onEditPrefs}>
@@ -2540,14 +2567,29 @@ function AccountView({
   )
 }
 
+const GoogleGlyph = (
+  <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true">
+    <path d="M17.6 9.2c0-.6-.05-1.18-.16-1.74H9v3.3h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.64-3.88 2.64-6.54z" fill="#4285F4" />
+    <path d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" fill="#34A853" />
+    <path d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" fill="#FBBC05" />
+    <path d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" fill="#EA4335" />
+  </svg>
+)
+
+const AppleGlyph = (
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+    <path d="M11.18 8.5c-.02-1.66 1.36-2.46 1.42-2.5-.77-1.13-1.98-1.29-2.4-1.3-1.02-.1-1.99.6-2.5.6-.52 0-1.31-.59-2.16-.57-1.1.02-2.13.65-2.7 1.64-1.16 2.01-.3 4.98.83 6.6.55.8 1.21 1.69 2.07 1.66.83-.03 1.15-.54 2.15-.54 1 0 1.29.54 2.16.52.9-.01 1.46-.81 2-1.61.64-.92.9-1.82.91-1.86-.02-.01-1.75-.67-1.78-2.64zM9.6 3.62c.45-.55.76-1.31.67-2.07-.65.03-1.45.44-1.92.98-.42.48-.79 1.26-.69 2 .73.06 1.48-.37 1.94-.91z" />
+  </svg>
+)
+
 function AuthScreen({
   mode,
   onMode,
-  onAuth,
+  auth,
 }: Readonly<{
   mode: AuthMode
   onMode: (mode: AuthMode) => void
-  onAuth: (user: Partial<UserAccount>) => void
+  auth: Omit<AuthActions, 'signOut'>
 }>) {
   const signup = mode === 'signup'
   const reset = mode === 'reset'
@@ -2555,28 +2597,57 @@ function AuthScreen({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [sent, setSent] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+
+  const runOAuth = async (provider: 'google' | 'apple') => {
+    setError(null)
+    const { error: oauthError } = await auth.signInWithOAuth(provider)
+    if (oauthError) {
+      setError(oauthError)
+    }
+  }
 
   if (reset) {
     return (
       <div className="mt-auth">
         <AuthBrand />
         <main className="mt-auth-panel">
-          <form className="mt-auth-card" onSubmit={(event) => event.preventDefault()}>
+          <form
+            className="mt-auth-card"
+            onSubmit={async (event: FormEvent<HTMLFormElement>) => {
+              event.preventDefault()
+              if (!email.trim() || pending) {
+                return
+              }
+              setPending(true)
+              setError(null)
+              const { error: resetError } = await auth.resetPassword(email.trim())
+              setPending(false)
+              if (resetError) {
+                setError(resetError)
+                return
+              }
+              setSent(true)
+            }}
+          >
             <button className="mt-reset-back mt-mono" type="button" onClick={() => onMode('signin')}>
               Back to sign in
             </button>
             <div className="mt-mono mt-auth-eyebrow">Password reset</div>
             <h2 className="mt-auth-title">Forgot your password?</h2>
             <p className="mt-auth-sub">
-              Enter your email and Meant will send a reset code. This prototype keeps it local.
+              Enter your email and Meant will send you a link to reset your password.
             </p>
             <label className="mt-field">
               <span className="mt-field-label mt-mono">Email</span>
               <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
             </label>
-            {sent ? <div className="mt-reset-ok mt-mono">Demo code sent. Use any six digits.</div> : null}
-            <button className="mt-auth-primary" type="button" disabled={!email.trim()} onClick={() => setSent(true)}>
-              Send reset code
+            {sent ? <div className="mt-reset-ok mt-mono">Check your inbox for a reset link.</div> : null}
+            {error ? <div className="mt-auth-error mt-mono">{error}</div> : null}
+            <button className="mt-auth-primary" type="submit" disabled={!email.trim() || pending}>
+              {pending ? 'Sending…' : 'Send reset link'}
             </button>
           </form>
         </main>
@@ -2584,27 +2655,70 @@ function AuthScreen({
     )
   }
 
-  const canSubmit = Boolean(email.trim() && password.trim() && (!signup || name.trim()))
+  const canSubmit = Boolean(email.trim() && password.trim() && (!signup || name.trim())) && !pending
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canSubmit) {
+      return
+    }
+    setPending(true)
+    setError(null)
+    setNotice(null)
+    if (signup) {
+      const { error: signUpError, needsConfirmation } = await auth.signUp(
+        email.trim(),
+        password,
+        name.trim(),
+      )
+      setPending(false)
+      if (signUpError) {
+        setError(signUpError)
+        return
+      }
+      if (needsConfirmation) {
+        setNotice('Account created. Check your email to confirm, then sign in.')
+        onMode('signin')
+      }
+      // When confirmation is not required, the auth state listener flips the app into the app shell.
+      return
+    }
+    const { error: signInError } = await auth.signInWithPassword(email.trim(), password)
+    setPending(false)
+    if (signInError) {
+      setError(signInError)
+    }
+  }
 
   return (
     <div className="mt-auth">
       <AuthBrand />
       <main className="mt-auth-panel">
-        <form
-          className="mt-auth-card"
-          onSubmit={(event: FormEvent<HTMLFormElement>) => {
-            event.preventDefault()
-            if (!canSubmit) {
-              return
-            }
-            onAuth(signup ? { name: name.trim(), email: email.trim() } : { email: email.trim() })
-          }}
-        >
+        <form className="mt-auth-card" onSubmit={submit}>
           <div className="mt-mono mt-auth-eyebrow">{signup ? 'Create your account' : 'Welcome back'}</div>
           <h2 className="mt-auth-title">{signup ? 'Start shopping the way you mean it.' : 'Sign in to Meant.'}</h2>
           <p className="mt-auth-sub">
             {signup ? 'Set up your profile once and Meant applies it across every store.' : 'Pick up right where you left off.'}
           </p>
+          <div className="mt-auth-social">
+            <button
+              className="mt-social-btn"
+              type="button"
+              disabled={pending}
+              onClick={() => runOAuth('google')}
+            >
+              {GoogleGlyph} Continue with Google
+            </button>
+            <button
+              className="mt-social-btn"
+              type="button"
+              disabled={pending}
+              onClick={() => runOAuth('apple')}
+            >
+              {AppleGlyph} Continue with Apple
+            </button>
+          </div>
+          <div className="mt-auth-div"><span>or with email</span></div>
           {signup ? (
             <label className="mt-field">
               <span className="mt-field-label mt-mono">Full name</span>
@@ -2624,12 +2738,20 @@ function AuthScreen({
               Forgot password?
             </button>
           ) : null}
+          {error ? <div className="mt-auth-error mt-mono">{error}</div> : null}
+          {notice ? <div className="mt-reset-ok mt-mono">{notice}</div> : null}
           <button className="mt-auth-primary" type="submit" disabled={!canSubmit}>
-            {signup ? 'Create account' : 'Sign in'}
+            {pending ? 'Working…' : signup ? 'Create account' : 'Sign in'}
           </button>
           <div className="mt-auth-toggle">
             {signup ? 'Already have an account? ' : 'New to Meant? '}
-            <button type="button" onClick={() => onMode(signup ? 'signin' : 'signup')}>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null)
+                onMode(signup ? 'signin' : 'signup')
+              }}
+            >
               {signup ? 'Sign in' : 'Create an account'}
             </button>
           </div>
@@ -2666,7 +2788,8 @@ function AuthBrand() {
 export function MeantApp() {
   const [view, setView] = useState<View>('discover')
   const [authMode, setAuthMode] = useState<AuthMode>('signin')
-  const [authed, setAuthed] = useStoredState('meant.authed', true)
+  const { session, loading: authLoading, signOut, ...authActions } = useSupabaseAuth()
+  const authed = Boolean(session)
   const [theme, setTheme] = useStoredState<Theme>('meant.theme', 'light')
   const [reply, setReply] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -2711,6 +2834,41 @@ export function MeantApp() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  // Once authenticated, hydrate the profile from the backend (which creates the users row on first
+  // call). Falls back to the JWT email if the backend is unreachable so the shell still renders.
+  useEffect(() => {
+    if (!session) {
+      return
+    }
+    let active = true
+    getCurrentUser()
+      .then((profile) => {
+        if (!active) return
+        const fullName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim()
+        setUser((current) => ({
+          ...current,
+          name: fullName || current.name,
+          email: profile.email || current.email,
+        }))
+      })
+      .catch(() => {
+        if (!active) return
+        const email = session.user.email
+        if (email) {
+          setUser((current) => ({ ...current, email }))
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [session, setUser])
+
+  const handleSignOut = () => {
+    void signOut()
+    setAuthMode('signin')
+    setView('discover')
+  }
 
   const nav = (next: View) => {
     setView(next)
@@ -2787,23 +2945,11 @@ export function MeantApp() {
   }
 
   const content = (() => {
+    if (authLoading) {
+      return <div className="mt-auth-loading" />
+    }
     if (!authed) {
-      return (
-        <AuthScreen
-          mode={authMode}
-          onMode={setAuthMode}
-          onAuth={(partial) => {
-            setUser((current) => ({
-              ...current,
-              ...partial,
-              name: partial.name || current.name,
-              email: partial.email || current.email,
-            }))
-            setAuthed(true)
-            setAuthMode('signin')
-          }}
-        />
-      )
+      return <AuthScreen mode={authMode} onMode={setAuthMode} auth={authActions} />
     }
 
     switch (view) {
@@ -2883,7 +3029,7 @@ export function MeantApp() {
           <AccountView
             user={user}
             onSave={setUser}
-            onSignOut={() => setAuthed(false)}
+            onSignOut={handleSignOut}
             onEditPrefs={() => nav('preferences')}
             onDone={() => nav('discover')}
           />
@@ -2944,7 +3090,7 @@ export function MeantApp() {
           setCartPeek(false)
         }}
         onRemoveFromCart={removeFromCart}
-        onSignOut={() => setAuthed(false)}
+        onSignOut={handleSignOut}
       />
       <ProfileBar
         preferences={activePreferences}

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        The `id` column equals the Supabase auth.users.id (the JWT `sub` claim). We intentionally do
+        NOT add a database foreign key to auth.users: that schema is managed by Supabase and a
+        cross-schema FK is brittle under ddl-auto=validate. Referential integrity is maintained in the
+        application by always setting id = JWT sub.
+    -->
+    <changeSet id="001-create-users" author="meant">
+        <createTable tableName="users">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="email" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_name" type="text"/>
+            <column name="surname" type="text"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+                tableName="users"
+                columnNames="email"
+                constraintName="uk_users_email"/>
+    </changeSet>
+</databaseChangeLog>

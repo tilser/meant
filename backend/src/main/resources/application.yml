@@ -16,6 +16,12 @@ spring:
         format_sql: true
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${SUPABASE_JWKS_URI:#{null}}
+          issuer-uri: ${SUPABASE_ISSUER_URI:#{null}}
 
 management:
   endpoints:
