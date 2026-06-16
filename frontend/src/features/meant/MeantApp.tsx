@@ -1,0 +1,2976 @@
+import {
+  type ChangeEvent,
+  type Dispatch,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
+import {
+  CORE_PREFERENCE_IDS,
+  DEFAULT_CART,
+  DEFAULT_COMPARE,
+  DEFAULT_ORDERS,
+  DEFAULT_SAVED_IDS,
+  DEFAULT_USER,
+  LOCATIONS,
+  PREFERENCES,
+  PRODUCTS,
+  PROFILE,
+  PROMPTS,
+} from './data'
+import type {
+  AuthMode,
+  CartItem,
+  CheckoutPayload,
+  CorePreferenceId,
+  Order,
+  Preference,
+  PreferenceId,
+  Product,
+  ProductId,
+  Theme,
+  UserAccount,
+  UserLocation,
+  View,
+} from './types'
+import {
+  IMPORT_ASK,
+  availableOffers,
+  bestOffer,
+  canMerchantShip,
+  cartGroups,
+  cartLines,
+  computeSmartAlerts,
+  createOrder,
+  deriveFilters,
+  formatOrderDate,
+  listJoin,
+  money,
+  orderTotal,
+  prefLabel,
+  productById,
+  productMerchantCount,
+  productPriceFrom,
+  productsByIds,
+  productsForLocation,
+  readStorage,
+  resolveAsk,
+  resolveReply,
+  writeStorage,
+} from './utils'
+
+interface Message {
+  role: 'you' | 'ai'
+  text: string
+}
+
+interface ViewHeadProps {
+  eyebrow: string
+  title: string
+  sub?: string
+  right?: ReactNode
+}
+
+interface ProductOpenProps {
+  onOpen: (product: Product) => void
+}
+
+interface ProductSaveProps {
+  savedSet: ReadonlySet<ProductId>
+  onToggleSave: (id: ProductId) => void
+}
+
+const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> =
+  {
+    discover: {
+      label: 'Your feed',
+      suggestions: [
+        "What's the best value here?",
+        'Find me something healthy',
+        'Help me pick clothing',
+      ],
+    },
+    saved: {
+      label: 'Your saved items',
+      suggestions: ['Compare my saved items', 'Best value in my list?'],
+    },
+    compare: {
+      label: 'Comparing products',
+      suggestions: ['Which one is better for me?', 'Cheaper of these?'],
+    },
+    preferences: {
+      label: 'Your profile',
+      suggestions: ['What should I add?', 'Suggest products for these filters'],
+    },
+    cart: {
+      label: 'Your cart',
+      suggestions: ['Is everything compatible?', 'Find me more codes'],
+    },
+    orders: {
+      label: 'Your orders',
+      suggestions: ["Where's my latest order?", 'What did I buy last month?'],
+    },
+    account: {
+      label: 'Your account',
+      suggestions: ['Where are my saved items?', 'How do I change preferences?'],
+    },
+  }
+
+function useStoredState<T>(
+  key: string,
+  fallback: T,
+): readonly [T, Dispatch<SetStateAction<T>>] {
+  const fallbackRef = useRef(fallback)
+  const [value, setValue] = useState<T>(fallback)
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
+    setValue(readStorage(key, fallbackRef.current))
+    setHydrated(true)
+  }, [key])
+
+  useEffect(() => {
+    if (hydrated) {
+      writeStorage(key, value)
+    }
+  }, [hydrated, key, value])
+
+  return [value, setValue] as const
+}
+
+function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
+  size?: number
+  color?: string
+}>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M10 2.5l1.7 4.8 4.8 1.7-4.8 1.7L10 17.5l-1.7-4.8L3.5 11l4.8-1.7L10 2.5z"
+        fill={color}
+      />
+    </svg>
+  )
+}
+
+function SunIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M20 14.5A8 8 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function HeartIcon({ filled }: Readonly<{ filled: boolean }>) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+      <path
+        d="M9 15.5S2.5 11.5 2.5 6.8A3.3 3.3 0 0 1 9 5.2a3.3 3.3 0 0 1 6.5 1.6C15.5 11.5 9 15.5 9 15.5z"
+        fill={filled ? 'var(--accent)' : 'none'}
+        stroke={filled ? 'var(--accent)' : 'currentColor'}
+        strokeWidth="1.4"
+      />
+    </svg>
+  )
+}
+
+function CartIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+      <path
+        d="M2 2.5h2.1l1.4 8.2h7.2l1.4-6.1H5.1"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="7" cy="14.6" r="1.15" fill="currentColor" />
+      <circle cx="12.6" cy="14.6" r="1.15" fill="currentColor" />
+    </svg>
+  )
+}
+
+function CloseIcon({ size = 16 }: Readonly<{ size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden>
+      <path
+        d="M3 3l10 10M13 3 3 13"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function Avatar({ user, size = 38 }: Readonly<{
+  user: UserAccount
+  size?: number
+}>) {
+  const initial = (user.name.trim().charAt(0) || 'M').toUpperCase()
+  if (user.avatar) {
+    return (
+      <img
+        className="mt-ava-img"
+        src={user.avatar}
+        alt=""
+        style={{ width: size, height: size }}
+      />
+    )
+  }
+  return (
+    <span
+      className="mt-ava-fallback"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
+    >
+      {initial}
+    </span>
+  )
+}
+
+function Placeholder({
+  label,
+  tone,
+  radius = 0,
+}: Readonly<{
+  label: string
+  tone: string
+  radius?: number
+}>) {
+  return (
+    <div className="mt-ph" style={{ background: tone, borderRadius: radius }}>
+      <div className="mt-ph-stripes" />
+      <span className="mt-mono mt-ph-label">{label}</span>
+    </div>
+  )
+}
+
+function MatchRing({
+  value,
+  size = 44,
+  stroke = 3,
+}: Readonly<{
+  value: number
+  size?: number
+  stroke?: number
+}>) {
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - value / 100)
+  return (
+    <div className="mt-ring" style={{ width: size, height: size }}>
+      <svg width={size} height={size} aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="var(--line)"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={value >= 85 ? 'var(--accent)' : 'var(--muted)'}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <span className="mt-mono mt-ring-num" style={{ fontSize: size * 0.26 }}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function PrefChip({
+  label,
+  variant = 'muted',
+  small = false,
+}: Readonly<{
+  label: string
+  variant?: 'lit' | 'muted' | 'missed'
+  small?: boolean
+}>) {
+  return (
+    <span className={`mt-chip mt-chip-${variant} mt-chip-in ${small ? 'mt-chip-sm' : ''}`}>
+      {variant === 'lit' && <span className="mt-chip-dot" />}
+      {variant === 'missed' && <span className="mt-chip-x">x</span>}
+      {label}
+    </span>
+  )
+}
+
+function ViewHead({ eyebrow, title, sub, right }: Readonly<ViewHeadProps>) {
+  return (
+    <div className="mt-view-head">
+      <div>
+        <div className="mt-mono mt-view-eyebrow">{eyebrow}</div>
+        <h1 className="mt-view-title">{title}</h1>
+        {sub ? <p className="mt-view-sub">{sub}</p> : null}
+      </div>
+      {right}
+    </div>
+  )
+}
+
+function AskThread({ messages }: Readonly<{ messages: readonly Message[] }>) {
+  const endRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (endRef.current) {
+      endRef.current.scrollTop = endRef.current.scrollHeight
+    }
+  }, [messages.length])
+
+  if (messages.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="mt-ask-thread" ref={endRef}>
+      {messages.map((message, index) => (
+        <div key={`${message.role}-${index}`} className={`mt-msg mt-msg-${message.role}`}>
+          {message.role === 'ai' ? (
+            <span className="mt-msg-av">
+              <SparkMark size={12} />
+            </span>
+          ) : null}
+          <div className="mt-msg-bubble">{message.text}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AskComposer({
+  placeholder,
+  suggestions,
+  showChips,
+  onAsk,
+  autoFocus = false,
+}: Readonly<{
+  placeholder: string
+  suggestions: readonly string[]
+  showChips: boolean
+  onAsk: (question: string) => void
+  autoFocus?: boolean
+}>) {
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus()
+    }
+  }, [autoFocus])
+
+  const send = (text?: string) => {
+    const question = (text ?? value).trim()
+    if (!question) {
+      return
+    }
+    setValue('')
+    onAsk(question)
+  }
+
+  return (
+    <div className="mt-ask-composer">
+      {showChips && suggestions.length > 0 ? (
+        <div className="mt-ask-chips">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              className="mt-ask-chip"
+              type="button"
+              onClick={() => send(suggestion)}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <form
+        className="mt-ask-bar"
+        onSubmit={(event) => {
+          event.preventDefault()
+          send()
+        }}
+      >
+        <span className="mt-ask-spark">
+          <SparkMark size={17} />
+        </span>
+        <input
+          ref={inputRef}
+          className="mt-ask-input"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={placeholder}
+        />
+        <button type="submit" className="mt-ask-go" aria-label="Ask">
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden>
+            <path
+              d="M3.5 9h11M9.5 4l5 5-5 5"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function FloatingAsk({
+  contextLabel,
+  suggestions,
+  preferences,
+}: Readonly<{
+  contextLabel: string
+  suggestions: readonly string[]
+  preferences: readonly Preference[]
+}>) {
+  const [open, setOpen] = useState(false)
+  const [messages, setMessages] = useState<Message[]>([])
+
+  const ask = (question: string) => {
+    const answer = resolveAsk(question, null, preferences)
+    setMessages((current) => [
+      ...current,
+      { role: 'you', text: question },
+      { role: 'ai', text: answer },
+    ])
+  }
+
+  return (
+    <div className={`mt-fab-wrap ${open ? 'open' : ''}`}>
+      {open ? (
+        <div className="mt-askpanel" role="dialog" aria-label="Ask Meant">
+          <div className="mt-askpanel-head">
+            <div className="mt-askpanel-title">
+              <SparkMark size={15} /> Ask Meant
+            </div>
+            <button
+              className="mt-askpanel-close"
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+            >
+              <CloseIcon size={14} />
+            </button>
+          </div>
+          <div className="mt-mono mt-askpanel-ctx">{contextLabel}</div>
+          {messages.length === 0 ? (
+            <p className="mt-askpanel-hint">
+              Ask anything. I already know your preferences.
+            </p>
+          ) : null}
+          <AskThread messages={messages} />
+          <AskComposer
+            placeholder="Ask Meant..."
+            suggestions={suggestions}
+            showChips={messages.length === 0}
+            onAsk={ask}
+            autoFocus
+          />
+        </div>
+      ) : null}
+      <button className="mt-fab" type="button" onClick={() => setOpen((current) => !current)}>
+        {open ? <CloseIcon size={18} /> : <><SparkMark size={16} color="#fff" /> <span>Ask Meant</span></>}
+      </button>
+    </div>
+  )
+}
+
+function ProductCard({
+  product,
+  index,
+  location,
+  preferences,
+  onOpen,
+  savedSet,
+  onToggleSave,
+}: Readonly<{
+  product: Product
+  index: number
+  location: UserLocation | null
+  preferences: readonly Preference[]
+} & ProductOpenProps & ProductSaveProps>) {
+  const open = () => onOpen(product)
+  const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      open()
+    }
+  }
+
+  return (
+    <div
+      className="mt-card mt-card-in"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={handleKey}
+      style={{ transitionDelay: `${index * 45}ms` }}
+    >
+      <div className="mt-card-media">
+        <Placeholder label={`${product.category.toLowerCase()} shot`} tone={product.tone} />
+        <span className="mt-mono mt-card-cat">{product.category}</span>
+        <div className="mt-card-ring">
+          <MatchRing value={product.match} />
+        </div>
+        <button
+          className={`mt-save ${savedSet.has(product.id) ? 'on' : ''}`}
+          type="button"
+          aria-label={savedSet.has(product.id) ? 'Remove from saved' : 'Save'}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleSave(product.id)
+          }}
+        >
+          <HeartIcon filled={savedSet.has(product.id)} />
+        </button>
+      </div>
+
+      <div className="mt-card-body">
+        <div className="mt-mono mt-card-brand">{product.brand}</div>
+        <div className="mt-card-name">{product.name}</div>
+        <div className="mt-chips">
+          {product.satisfies.slice(0, 3).map((id) => (
+            <PrefChip
+              key={id}
+              label={prefLabel(preferences, id)}
+              variant="lit"
+              small
+            />
+          ))}
+          {product.misses.map((id) => (
+            <PrefChip
+              key={id}
+              label={prefLabel(preferences, id)}
+              variant="missed"
+              small
+            />
+          ))}
+        </div>
+        <div className="mt-card-foot">
+          <span className="mt-card-price">
+            <span className="mt-mono mt-card-from">from</span>{' '}
+            {money(productPriceFrom(product, location))}
+          </span>
+          <span className="mt-mono mt-card-stores">
+            {productMerchantCount(product, location)} stores
+          </span>
+        </div>
+        <div className="mt-card-note">
+          <span className="mt-note-key">Why it is meant for you</span>
+          {product.note}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ChatHero({
+  profile,
+  prompts,
+  onSubmit,
+}: Readonly<{
+  profile: typeof PROFILE
+  prompts: readonly string[]
+  onSubmit: (query: string) => void
+}>) {
+  const [value, setValue] = useState('')
+
+  const submit = (text?: string) => {
+    const query = (text ?? value).trim()
+    if (!query) {
+      return
+    }
+    setValue('')
+    onSubmit(query)
+  }
+
+  return (
+    <header className="mt-hero">
+      <div className="mt-mono mt-hero-eyebrow">
+        {profile.greeting}, {profile.name}
+      </div>
+      <h1 className="mt-hero-title">
+        Everything here is <em>meant</em> for you.
+      </h1>
+      <p className="mt-hero-sub">
+        Ask for anything across every store. Meant already knows you prefer{' '}
+        {profile.summary}
+      </p>
+      <form
+        className="mt-search"
+        onSubmit={(event) => {
+          event.preventDefault()
+          submit()
+        }}
+      >
+        <span className="mt-search-spark" aria-hidden>
+          <SparkMark size={20} />
+        </span>
+        <input
+          className="mt-search-input"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder='Ask Meant anything - "a good cotton T-shirt under $50"'
+        />
+        <button type="submit" className="mt-search-go" aria-label="Ask">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+            <path
+              d="M3.5 9h11M9.5 4l5 5-5 5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </form>
+      <div className="mt-prompts">
+        {prompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            className="mt-prompt"
+            onClick={() => submit(prompt)}
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+    </header>
+  )
+}
+
+function FeedView({
+  profile,
+  products,
+  hiddenByShip,
+  location,
+  reply,
+  query,
+  preferences,
+  onSubmit,
+  onClear,
+  onOpen,
+  savedSet,
+  onToggleSave,
+}: Readonly<{
+  profile: typeof PROFILE
+  products: readonly Product[]
+  hiddenByShip: number
+  location: UserLocation | null
+  reply: string | null
+  query: string
+  preferences: readonly Preference[]
+  onSubmit: (query: string) => void
+  onClear: () => void
+} & ProductOpenProps & ProductSaveProps>) {
+  return (
+    <main className="mt-feed">
+      <ChatHero profile={profile} prompts={PROMPTS} onSubmit={onSubmit} />
+      {reply ? (
+        <div className="mt-reply">
+          <div className="mt-reply-av">
+            <SparkMark />
+          </div>
+          <div className="mt-reply-body">
+            <div className="mt-mono mt-reply-q">You asked: "{query}"</div>
+            <p className="mt-reply-text">{reply}</p>
+          </div>
+          <button className="mt-reply-clear mt-mono" type="button" onClick={onClear}>
+            Back to your feed
+          </button>
+        </div>
+      ) : null}
+      <div className="mt-feed-head">
+        <h2 className="mt-feed-title">{reply ? 'Your matches' : 'Meant for you'}</h2>
+        <span className="mt-mono mt-feed-count">
+          {products.length} shown · sorted by match
+        </span>
+      </div>
+      {location ? (
+        <div className="mt-ship-strip">
+          <span aria-hidden>⌖</span>
+          <span>
+            Shipping to <strong>{location.city}, {location.country}</strong>
+          </span>
+          {hiddenByShip > 0 ? (
+            <span className="mt-ship-strip-hidden mt-mono">
+              {hiddenByShip} hidden · cannot reach you
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="mt-grid">
+        {products.map((product, index) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            index={index}
+            location={location}
+            preferences={preferences}
+            onOpen={onOpen}
+            savedSet={savedSet}
+            onToggleSave={onToggleSave}
+          />
+        ))}
+      </div>
+      <p className="mt-mono mt-feed-foot">
+        Meant hid products that clash with your profile. Nothing here works
+        against what matters to you.
+      </p>
+    </main>
+  )
+}
+
+function ProductModal({
+  product,
+  location,
+  preferences,
+  saved,
+  inCompare,
+  onClose,
+  onToggleSave,
+  onCompare,
+  onAddToCart,
+}: Readonly<{
+  product: Product | null
+  location: UserLocation | null
+  preferences: readonly Preference[]
+  saved: boolean
+  inCompare: boolean
+  onClose: () => void
+  onToggleSave: (id: ProductId) => void
+  onCompare: (id: ProductId) => void
+  onAddToCart: (id: ProductId, merchant: string) => void
+}>) {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [added, setAdded] = useState(false)
+
+  useEffect(() => {
+    setMessages([])
+    setAdded(false)
+  }, [product?.id])
+
+  useEffect(() => {
+    if (!product) {
+      return
+    }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, product])
+
+  if (!product) {
+    return null
+  }
+
+  const offers = availableOffers(product, location)
+  const visibleOffers = offers.length > 0 ? offers : product.offers
+  const ask = (question: string) => {
+    setMessages((current) => [
+      ...current,
+      { role: 'you', text: question },
+      { role: 'ai', text: resolveAsk(question, product, preferences) },
+    ])
+  }
+  const selectedOffer = bestOffer(product, location)
+
+  return (
+    <div className="mt-modal-root open">
+      <button
+        className="mt-modal-scrim"
+        type="button"
+        aria-label="Close product detail"
+        onClick={onClose}
+      />
+      <div className="mt-modal" role="dialog" aria-modal="true" aria-label={product.name}>
+        <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
+          <CloseIcon />
+        </button>
+        <div className="mt-modal-body">
+          <div className="mt-modal-left">
+            <div className="mt-modal-media">
+              <Placeholder label={`${product.category.toLowerCase()} shot`} tone={product.tone} />
+              <div className="mt-modal-ring">
+                <MatchRing value={product.match} size={56} stroke={4} />
+              </div>
+            </div>
+            <div className="mt-mono mt-card-brand">{product.brand} · {product.category}</div>
+            <h2 className="mt-modal-name">{product.name}</h2>
+            <div className="mt-modal-price">
+              <span className="mt-mono mt-card-from">from</span>{' '}
+              {money(productPriceFrom(product, location))}
+              <span className="mt-mono mt-modal-stores">
+                · {productMerchantCount(product, location)} stores
+              </span>
+            </div>
+            <div className="mt-modal-actions">
+              <button
+                className={`mt-act mt-act-icon ${saved ? 'on' : ''}`}
+                type="button"
+                onClick={() => onToggleSave(product.id)}
+                aria-label={saved ? 'Saved' : 'Save'}
+              >
+                <HeartIcon filled={saved} />
+              </button>
+              <button
+                className={`mt-act mt-act-ghost ${inCompare ? 'on' : ''}`}
+                type="button"
+                onClick={() => onCompare(product.id)}
+              >
+                {inCompare ? 'In compare' : 'Add to compare'}
+              </button>
+              <button
+                className={`mt-act mt-act-primary ${added ? 'done' : ''}`}
+                type="button"
+                onClick={() => {
+                  onAddToCart(product.id, selectedOffer.merchant)
+                  setAdded(true)
+                  window.setTimeout(() => setAdded(false), 1600)
+                }}
+              >
+                {added ? 'Added to cart' : 'Add to cart'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-modal-right">
+            <div className="mt-drawer-note">
+              <span className="mt-note-key">Meant's take</span>
+              {product.note}
+            </div>
+
+            <section className="mt-block">
+              <div className="mt-block-label mt-mono">Preference match</div>
+              <div className="mt-chips">
+                {product.satisfies.map((id) => (
+                  <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" />
+                ))}
+                {product.misses.map((id) => (
+                  <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" />
+                ))}
+              </div>
+            </section>
+
+            <section className="mt-block">
+              <div className="mt-procon">
+                <div>
+                  <div className="mt-block-label mt-mono">Advantages</div>
+                  <ul className="mt-list mt-list-pro">
+                    {product.pros.map((pro) => (
+                      <li key={pro}>{pro}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div className="mt-block-label mt-mono">Trade-offs</div>
+                  <ul className="mt-list mt-list-con">
+                    {product.cons.map((con) => (
+                      <li key={con}>{con}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-block">
+              <div className="mt-reviews-head">
+                <div className="mt-block-label mt-mono">From the reviews</div>
+                <div className="mt-reviews-score">
+                  <span className="mt-stars">
+                    {'★'.repeat(Math.round(product.review.score))}
+                  </span>
+                  <span className="mt-mono">
+                    {product.review.score.toFixed(1)} ·{' '}
+                    {product.review.count.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <p className="mt-reviews-insight">{product.review.insight}</p>
+            </section>
+
+            <section className="mt-block">
+              <div className="mt-block-label mt-mono">Available offers</div>
+              <div className="mt-offers">
+                {visibleOffers.map((offer, index) => (
+                  <div className={`mt-offer ${index === 0 ? 'best' : ''}`} key={offer.merchant}>
+                    <div className="mt-offer-merch">
+                      {offer.merchant}
+                      {index === 0 ? <span className="mt-mono mt-offer-tag">best</span> : null}
+                    </div>
+                    <div className="mt-offer-right">
+                      <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
+                      <span className="mt-offer-price">{money(offer.price)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div className="mt-modal-dock">
+          <AskThread messages={messages} />
+          <AskComposer
+            placeholder={`Ask Meant about ${product.name}...`}
+            suggestions={[
+              'Does this match my preferences?',
+              'Is there a cheaper option?',
+              'What do reviewers say?',
+            ]}
+            showChips={messages.length === 0}
+            onAsk={ask}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProfileBar({
+  preferences,
+  location,
+  onEdit,
+}: Readonly<{
+  preferences: readonly Preference[]
+  location: UserLocation | null
+  onEdit: () => void
+}>) {
+  return (
+    <div className="mt-profile">
+      <span className="mt-mono mt-profile-key">Your profile</span>
+      <button
+        className={`mt-loc-chip ${location ? '' : 'empty'}`}
+        type="button"
+        onClick={onEdit}
+      >
+        <span aria-hidden>⌖</span>
+        {location
+          ? `${location.city}, ${location.country}`
+          : 'Set delivery location'}
+      </button>
+      <div className="mt-profile-chips">
+        {preferences.length === 0 ? (
+          <span className="mt-profile-empty mt-mono">No active preferences</span>
+        ) : (
+          preferences.slice(0, 6).map((preference) => (
+            <span className="mt-pref-pill" key={preference.id}>
+              {preference.label}
+            </span>
+          ))
+        )}
+      </div>
+      <button className="mt-profile-edit mt-mono" type="button" onClick={onEdit}>
+        Edit
+      </button>
+    </div>
+  )
+}
+
+function CartPopover({
+  cart,
+  products,
+  onViewFull,
+  onClose,
+  onRemove,
+}: Readonly<{
+  cart: readonly CartItem[]
+  products: readonly Product[]
+  onViewFull: () => void
+  onClose: () => void
+  onRemove: (id: ProductId, merchant: string) => void
+}>) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  const lines = cartLines(cart, products)
+
+  if (lines.length === 0) {
+    return (
+      <div className="mt-cart-pop" ref={ref}>
+        <div className="mt-cart-pop-head">
+          <div className="mt-cart-pop-title">
+            <SparkMark size={15} /> Smart cart
+          </div>
+        </div>
+        <div className="mt-cart-pop-empty">
+          <div className="mt-cart-pop-empty-mark">
+            <CartIcon />
+          </div>
+          <div className="mt-cart-pop-empty-title">Your cart is empty</div>
+          <div className="mt-cart-pop-empty-sub">
+            Add products and Meant checks compatibility and hunts for codes.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const alerts = computeSmartAlerts(lines, products)
+  const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
+  const groups = cartGroups(lines, false)
+  const itemTotal = groups.reduce((sum, group) => sum + group.subtotal, 0)
+  const discountTotal = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
+  const deliveryTotal = groups.reduce((sum, group) => sum + group.delivery, 0)
+  const codeCount = groups.filter((group) => group.found).length
+  const grandTotal = itemTotal - discountTotal + deliveryTotal
+  const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
+
+  return (
+    <div className="mt-cart-pop" ref={ref}>
+      <div className="mt-cart-pop-head">
+        <div className="mt-cart-pop-title">
+          <SparkMark size={15} /> Smart cart
+        </div>
+        <span className="mt-mono mt-cart-pop-count">
+          {itemCount} items · {groups.length} merchants
+        </span>
+      </div>
+      <div className="mt-cart-pop-signals">
+        <div className={`mt-cart-sig ${warnCount > 0 ? 'mt-cart-sig-warn' : 'mt-cart-sig-good'}`}>
+          {warnCount > 0 ? `${warnCount} issue to review` : 'All compatible'}
+        </div>
+        <div className={`mt-cart-sig ${codeCount > 0 ? 'mt-cart-sig-good' : 'mt-cart-sig-muted'}`}>
+          <SparkMark size={13} />
+          {codeCount > 0 ? `${codeCount} codes · -${money(discountTotal)}` : 'No codes found'}
+        </div>
+      </div>
+      <div className="mt-cart-pop-list">
+        {lines.map((line) => (
+          <div className="mt-cart-pop-item" key={`${line.id}-${line.merchant}`}>
+            <div className="mt-cart-pop-media">
+              <Placeholder label={line.product.category.toLowerCase()} tone={line.product.tone} />
+            </div>
+            <div className="mt-cart-pop-info">
+              <div className="mt-cart-pop-name">{line.product.name}</div>
+              <div className="mt-mono mt-cart-pop-meta">
+                {line.qty} × {money(line.price)} · {line.merchant}
+              </div>
+            </div>
+            <div className="mt-cart-pop-price">{money(line.price * line.qty)}</div>
+            <button
+              className="mt-cart-pop-x"
+              type="button"
+              onClick={() => onRemove(line.id, line.merchant)}
+              aria-label="Remove"
+            >
+              <CloseIcon size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-cart-pop-foot">
+        {discountTotal > 0 ? (
+          <div className="mt-cart-pop-save mt-mono">
+            You are saving {money(discountTotal)} with codes Meant found.
+          </div>
+        ) : null}
+        <div className="mt-cart-pop-total">
+          <span>Total</span>
+          <span>{money(grandTotal)}</span>
+        </div>
+        <button className="mt-cart-pop-detail" type="button" onClick={onViewFull}>
+          View full cart
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TopBar({
+  view,
+  theme,
+  user,
+  savedCount,
+  cart,
+  cartPeek,
+  accountMenu,
+  onNav,
+  onToggleTheme,
+  onToggleCart,
+  onToggleAccount,
+  onRemoveFromCart,
+  onSignOut,
+}: Readonly<{
+  view: View
+  theme: Theme
+  user: UserAccount
+  savedCount: number
+  cart: readonly CartItem[]
+  cartPeek: boolean
+  accountMenu: boolean
+  onNav: (view: View) => void
+  onToggleTheme: () => void
+  onToggleCart: () => void
+  onToggleAccount: () => void
+  onRemoveFromCart: (id: ProductId, merchant: string) => void
+  onSignOut: () => void
+}>) {
+  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
+
+  return (
+    <div className="mt-topbar">
+      <button className="mt-brand" type="button" onClick={() => onNav('discover')} aria-label="Meant home">
+        <img className="mt-brand-logo" src="/assets/meant-logo.png" alt="Meant" />
+      </button>
+      <nav className="mt-nav" aria-label="Primary">
+        {[
+          ['discover', 'Discover'],
+          ['saved', 'Saved'],
+          ['compare', 'Compare'],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            className={`mt-nav-item ${view === key ? 'on' : ''}`}
+            type="button"
+            onClick={() => onNav(key as View)}
+          >
+            {label}
+            {key === 'saved' && savedCount > 0 ? (
+              <span className="mt-mono mt-nav-count">{savedCount}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
+      <div className="mt-topbar-right">
+        <button
+          className="mt-icon-btn"
+          type="button"
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          onClick={onToggleTheme}
+        >
+          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
+        <button
+          className={`mt-icon-btn ${view === 'saved' ? 'on' : ''}`}
+          type="button"
+          aria-label="Saved"
+          onClick={() => onNav('saved')}
+        >
+          <HeartIcon filled={view === 'saved'} />
+        </button>
+        <div className="mt-cart-anchor">
+          <button
+            className={`mt-icon-btn mt-cart-btn ${cartPeek || view === 'cart' ? 'on' : ''}`}
+            type="button"
+            aria-label="Cart"
+            aria-expanded={cartPeek}
+            onClick={onToggleCart}
+          >
+            <CartIcon />
+            {cartCount > 0 ? <span className="mt-cart-badge mt-mono">{cartCount}</span> : null}
+          </button>
+          {cartPeek ? (
+            <CartPopover
+              cart={cart}
+              products={PRODUCTS}
+              onViewFull={() => onNav('cart')}
+              onClose={onToggleCart}
+              onRemove={onRemoveFromCart}
+            />
+          ) : null}
+        </div>
+        <div className="mt-avatar-anchor">
+          <button
+            className={`mt-avatar ${accountMenu || view === 'account' ? 'on' : ''}`}
+            type="button"
+            onClick={onToggleAccount}
+            aria-label="Your account"
+            aria-expanded={accountMenu}
+          >
+            <Avatar user={user} size={38} />
+          </button>
+          {accountMenu ? (
+            <AccountMenu
+              user={user}
+              onNav={onNav}
+              onClose={onToggleAccount}
+              onSignOut={onSignOut}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccountMenu({
+  user,
+  onNav,
+  onClose,
+  onSignOut,
+}: Readonly<{
+  user: UserAccount
+  onNav: (view: View) => void
+  onClose: () => void
+  onSignOut: () => void
+}>) {
+  const items: ReadonlyArray<{ key: View; label: string }> = [
+    { key: 'account', label: 'Account settings' },
+    { key: 'orders', label: 'Order history' },
+    { key: 'preferences', label: 'Your preferences' },
+    { key: 'saved', label: 'Saved items' },
+    { key: 'cart', label: 'Your cart' },
+  ]
+
+  return (
+    <div className="mt-acctmenu" role="menu">
+      <div className="mt-acctmenu-head">
+        <Avatar user={user} size={42} />
+        <div className="mt-acctmenu-id">
+          <div className="mt-acctmenu-name">{user.name}</div>
+          <div className="mt-acctmenu-mail mt-mono">{user.email}</div>
+        </div>
+      </div>
+      <div className="mt-acctmenu-list">
+        {items.map((item) => (
+          <button
+            key={item.key}
+            className="mt-acctmenu-item"
+            type="button"
+            onClick={() => {
+              onNav(item.key)
+              onClose()
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-acctmenu-sep" />
+      <button className="mt-acctmenu-item mt-acctmenu-signout" type="button" onClick={onSignOut}>
+        Sign out
+      </button>
+    </div>
+  )
+}
+
+function SavedView({
+  products,
+  location,
+  preferences,
+  savedSet,
+  onOpen,
+  onToggleSave,
+}: Readonly<{
+  products: readonly Product[]
+  location: UserLocation | null
+  preferences: readonly Preference[]
+} & ProductOpenProps & ProductSaveProps>) {
+  return (
+    <main className="mt-feed mt-view">
+      <ViewHead
+        eyebrow="Your shortlist"
+        title="Saved"
+        sub={
+          products.length > 0
+            ? "Everything you've kept, still filtered to the preferences that matter to you."
+            : undefined
+        }
+      />
+      {products.length === 0 ? (
+        <EmptyState
+          title="Nothing saved yet"
+          sub="Tap the heart on any product and it will wait for you here."
+          mark={<HeartIcon filled={false} />}
+        />
+      ) : (
+        <div className="mt-grid">
+          {products.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              index={index}
+              location={location}
+              preferences={preferences}
+              onOpen={onOpen}
+              savedSet={savedSet}
+              onToggleSave={onToggleSave}
+            />
+          ))}
+        </div>
+      )}
+    </main>
+  )
+}
+
+function EmptyState({
+  title,
+  sub,
+  mark,
+}: Readonly<{
+  title: string
+  sub: string
+  mark: ReactNode
+}>) {
+  return (
+    <div className="mt-empty">
+      <div className="mt-empty-mark">{mark}</div>
+      <h3 className="mt-empty-title">{title}</h3>
+      <p className="mt-empty-sub">{sub}</p>
+    </div>
+  )
+}
+
+function CompareView({
+  products,
+  compareIds,
+  preferences,
+  onPick,
+  onRemove,
+  onAdd,
+}: Readonly<{
+  products: readonly Product[]
+  compareIds: readonly ProductId[]
+  preferences: readonly Preference[]
+  onPick: (index: number, id: ProductId) => void
+  onRemove: (index: number) => void
+  onAdd: (id: ProductId) => void
+}>) {
+  const items = compareIds.map((id) => products.find((product) => product.id === id)).filter((product): product is Product => Boolean(product))
+  const selectedIds = items.map((product) => product.id)
+  const showAdd = items.length < 4
+  const enough = items.length >= 2
+  const gridStyle = {
+    gridTemplateColumns: `190px repeat(${items.length + (showAdd ? 1 : 0)}, minmax(0, 1fr))`,
+  }
+  const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
+  const bestPrice = enough ? Math.min(...items.map((product) => product.priceFrom)) : null
+
+  return (
+    <main className="mt-feed mt-view">
+      <ViewHead
+        eyebrow="Side by side"
+        title="Compare"
+        sub="Compare up to four products at once. Swap, add, or remove any of them and Meant lines them up against everything you care about."
+      />
+      <div className="mt-cmp">
+        <div className="mt-cmp-grid mt-cmp-headrow" style={gridStyle}>
+          <div className="mt-cmp-rowlabel mt-cmp-corner mt-mono">
+            {items.length} of 4
+          </div>
+          {items.map((product, index) => (
+            <CompareSlot
+              key={product.id}
+              index={index}
+              product={product}
+              products={products}
+              selectedIds={selectedIds}
+              canRemove={items.length > 1}
+              onPick={onPick}
+              onRemove={onRemove}
+            />
+          ))}
+          {showAdd ? (
+            <CompareAddSlot products={products} selectedIds={selectedIds} onAdd={onAdd} />
+          ) : null}
+        </div>
+        {enough ? (
+          <>
+            <CompareMetricRow
+              label="Match"
+              gridStyle={gridStyle}
+              cells={items.map((product) => ({
+                key: product.id,
+                value: `${product.match}%`,
+                win: bestMatch !== null && product.match === bestMatch,
+              }))}
+              addSpacer={showAdd}
+            />
+            <CompareMetricRow
+              label="Price from"
+              gridStyle={gridStyle}
+              cells={items.map((product) => ({
+                key: product.id,
+                value: money(product.priceFrom),
+                win: bestPrice !== null && product.priceFrom === bestPrice,
+              }))}
+              addSpacer={showAdd}
+            />
+            <div className="mt-cmp-grid mt-cmp-row" style={gridStyle}>
+              <div className="mt-cmp-rowlabel">Reviews</div>
+              {items.map((product) => (
+                <div key={product.id} className="mt-cmp-cell">
+                  <span className="mt-stars">
+                    {'★'.repeat(Math.round(product.review.score))}
+                  </span>
+                  <span className="mt-mono mt-cmp-sub">
+                    {product.review.score.toFixed(1)} · {product.review.count.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+              {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
+            </div>
+            <div className="mt-cmp-grid mt-cmp-section" style={gridStyle}>
+              <div className="mt-cmp-rowlabel mt-cmp-seclabel mt-mono">
+                Your preferences
+              </div>
+              {items.map((product) => <div key={product.id} />)}
+              {showAdd ? <div /> : null}
+            </div>
+            {CORE_PREFERENCE_IDS.map((id) => (
+              <div className="mt-cmp-grid mt-cmp-row" key={id} style={gridStyle}>
+                <div className="mt-cmp-rowlabel">{prefLabel(preferences, id)}</div>
+                {items.map((product) => (
+                  <div key={product.id} className="mt-cmp-cell">
+                    <CompareMark product={product} preferenceId={id} />
+                  </div>
+                ))}
+                {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
+              </div>
+            ))}
+            <div className="mt-cmp-grid mt-cmp-row mt-cmp-last" style={gridStyle}>
+              <div className="mt-cmp-rowlabel">Best price at</div>
+              {items.map((product) => (
+                <div key={product.id} className="mt-cmp-cell">
+                  <span className="mt-cmp-store">{product.offers[0].merchant}</span>
+                  <span className="mt-mono mt-cmp-sub">
+                    {money(product.offers[0].price)} · {product.offers[0].delivery}
+                  </span>
+                </div>
+              ))}
+              {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
+            </div>
+          </>
+        ) : (
+          <div className="mt-cmp-hint-row">
+            Add at least two products to see them compared field by field.
+          </div>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function CompareMetricRow({
+  label,
+  gridStyle,
+  cells,
+  addSpacer,
+}: Readonly<{
+  label: string
+  gridStyle: { gridTemplateColumns: string }
+  cells: readonly { key: string; value: string; win: boolean }[]
+  addSpacer: boolean
+}>) {
+  return (
+    <div className="mt-cmp-grid mt-cmp-row" style={gridStyle}>
+      <div className="mt-cmp-rowlabel">{label}</div>
+      {cells.map((cell) => (
+        <div key={cell.key} className={`mt-cmp-cell ${cell.win ? 'win' : ''}`}>
+          <span className="mt-cmp-big">{cell.value}</span>
+        </div>
+      ))}
+      {addSpacer ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
+    </div>
+  )
+}
+
+function CompareMark({
+  product,
+  preferenceId,
+}: Readonly<{
+  product: Product
+  preferenceId: CorePreferenceId
+}>) {
+  if (product.satisfies.includes(preferenceId)) {
+    return <span className="mt-cmp-mark yes">yes</span>
+  }
+  if (product.misses.includes(preferenceId)) {
+    return <span className="mt-cmp-mark no">no</span>
+  }
+  return <span className="mt-cmp-mark na">-</span>
+}
+
+function CompareSlot({
+  index,
+  product,
+  products,
+  selectedIds,
+  canRemove,
+  onPick,
+  onRemove,
+}: Readonly<{
+  index: number
+  product: Product
+  products: readonly Product[]
+  selectedIds: readonly ProductId[]
+  canRemove: boolean
+  onPick: (index: number, id: ProductId) => void
+  onRemove: (index: number) => void
+}>) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mt-cmp-col">
+      <div className="mt-cmp-media">
+        <Placeholder label={`${product.category.toLowerCase()} shot`} tone={product.tone} />
+        <div className="mt-cmp-ring">
+          <MatchRing value={product.match} size={48} stroke={3} />
+        </div>
+        {canRemove ? (
+          <button
+            className="mt-cmp-remove"
+            type="button"
+            onClick={() => onRemove(index)}
+            aria-label="Remove from comparison"
+          >
+            <CloseIcon size={12} />
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-mono mt-card-brand">{product.brand}</div>
+      <div className="mt-cmp-name">{product.name}</div>
+      <div className="mt-cmp-picker">
+        <button className="mt-cmp-swap" type="button" onClick={() => setOpen((value) => !value)}>
+          Swap <span className={`mt-caret ${open ? 'up' : ''}`}>v</span>
+        </button>
+        {open ? (
+          <CompareMenu
+            products={products}
+            selectedIds={selectedIds}
+            currentId={product.id}
+            onChoose={(id) => {
+              onPick(index, id)
+              setOpen(false)
+            }}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function CompareAddSlot({
+  products,
+  selectedIds,
+  onAdd,
+}: Readonly<{
+  products: readonly Product[]
+  selectedIds: readonly ProductId[]
+  onAdd: (id: ProductId) => void
+}>) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mt-cmp-col mt-cmp-col-empty">
+      <div className="mt-cmp-picker">
+        <button className="mt-cmp-choose" type="button" onClick={() => setOpen((value) => !value)}>
+          <span className="mt-cmp-plus">+</span> Add a product
+        </button>
+        {open ? (
+          <CompareMenu
+            products={products}
+            selectedIds={selectedIds}
+            currentId={null}
+            onChoose={(id) => {
+              onAdd(id)
+              setOpen(false)
+            }}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function CompareMenu({
+  products,
+  selectedIds,
+  currentId,
+  onChoose,
+}: Readonly<{
+  products: readonly Product[]
+  selectedIds: readonly ProductId[]
+  currentId: ProductId | null
+  onChoose: (id: ProductId) => void
+}>) {
+  const options = products.filter(
+    (product) => product.id === currentId || !selectedIds.includes(product.id),
+  )
+  return (
+    <div className="mt-cmp-menu">
+      {options.map((product) => (
+        <button
+          key={product.id}
+          className={`mt-cmp-opt ${product.id === currentId ? 'on' : ''}`}
+          type="button"
+          onClick={() => onChoose(product.id)}
+        >
+          <span className="mt-cmp-opt-sw" style={{ background: product.tone }} />
+          <span className="mt-cmp-opt-main">
+            <span className="mt-cmp-opt-name">{product.name}</span>
+            <span className="mt-mono mt-cmp-opt-cat">{product.category}</span>
+          </span>
+          <span className="mt-mono mt-cmp-opt-match">{product.match}%</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Toggle({
+  on,
+  onClick,
+}: Readonly<{
+  on: boolean
+  onClick: () => void
+}>) {
+  return (
+    <button
+      className={`mt-toggle ${on ? 'on' : ''}`}
+      role="switch"
+      aria-checked={on}
+      type="button"
+      onClick={onClick}
+    >
+      <span className="mt-toggle-knob" />
+    </button>
+  )
+}
+
+function PreferencesView({
+  allPrefs,
+  prefsOn,
+  onToggle,
+  onRemoveCustom,
+  onApplyDescription,
+  budget,
+  onBudget,
+  location,
+  onLocation,
+  profile,
+  onDone,
+}: Readonly<{
+  allPrefs: readonly Preference[]
+  prefsOn: ReadonlySet<PreferenceId>
+  onToggle: (id: PreferenceId) => void
+  onRemoveCustom: (id: PreferenceId) => void
+  onApplyDescription: (text: string) => void
+  budget: number
+  onBudget: (value: number) => void
+  location: UserLocation | null
+  onLocation: (location: UserLocation) => void
+  profile: typeof PROFILE
+  onDone: () => void
+}>) {
+  const [desc, setDesc] = useState('')
+  const [importText, setImportText] = useState('')
+  const [imported, setImported] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const enabled = allPrefs.filter((preference) => prefsOn.has(preference.id))
+
+  const copyQuestion = () => {
+    const done = () => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(IMPORT_ASK).then(done, done)
+    } else {
+      done()
+    }
+  }
+
+  const apply = (text: string, clear: () => void) => {
+    if (!text.trim()) {
+      return
+    }
+    onApplyDescription(text.trim())
+    clear()
+  }
+
+  return (
+    <main className="mt-feed mt-view mt-prefs-view">
+      <ViewHead
+        eyebrow={`${profile.name}'s profile`}
+        title="What matters to you"
+        sub="Start from prepared filters, describe it in your own words, or import your preferences from another AI."
+        right={<button className="mt-act mt-act-primary mt-prefs-done" type="button" onClick={onDone}>Done</button>}
+      />
+
+      <section className="mt-prefs-section">
+        <div className="mt-sechead">
+          <div>
+            <h3 className="mt-sectitle">Where it ships</h3>
+            <p className="mt-secsub">
+              Set where you are and Meant only shows products from merchants that can deliver to you.
+            </p>
+          </div>
+          {location ? <span className="mt-mono mt-sec-count">Active</span> : null}
+        </div>
+        <LocationSection location={location} onSet={onLocation} />
+      </section>
+
+      <section className="mt-prefs-section">
+        <div className="mt-sechead">
+          <div>
+            <h3 className="mt-sectitle">Describe it in your words</h3>
+            <p className="mt-secsub">
+              Tell Meant what you care about. We will turn it into filters you can fine-tune below.
+            </p>
+          </div>
+        </div>
+        <textarea
+          className="mt-describe"
+          value={desc}
+          onChange={(event) => setDesc(event.target.value)}
+          placeholder="I eat mostly organic, avoid polyester in clothing, prefer sustainable brands, and want gluten-free snacks."
+        />
+        <div className="mt-describe-actions">
+          <button
+            className="mt-act mt-act-primary"
+            type="button"
+            disabled={!desc.trim()}
+            onClick={() => apply(desc, () => setDesc(''))}
+          >
+            Create filters
+          </button>
+          <span className="mt-describe-hint">
+            Meant matches your words to filters and creates new ones for anything custom.
+          </span>
+        </div>
+      </section>
+
+      <section className="mt-prefs-section">
+        <div className="mt-sechead">
+          <div>
+            <h3 className="mt-sectitle">Your filters</h3>
+            <p className="mt-secsub">Applied everywhere automatically.</p>
+          </div>
+          <span className="mt-mono mt-sec-count">{enabled.length} active</span>
+        </div>
+        <div className="mt-prefs-list">
+          {allPrefs.map((preference) => {
+            const active = prefsOn.has(preference.id)
+            const custom = preference.id.startsWith('custom-')
+            return (
+              <div className={`mt-pref-row ${active ? '' : 'off'}`} key={preference.id}>
+                <div className="mt-pref-text">
+                  <div className="mt-pref-name">
+                    {preference.label}
+                    {custom ? <span className="mt-mono mt-pref-tag">custom</span> : null}
+                  </div>
+                  <div className="mt-pref-desc">{preference.desc}</div>
+                </div>
+                <div className="mt-pref-controls">
+                  {custom ? (
+                    <button
+                      className="mt-pref-remove"
+                      type="button"
+                      onClick={() => onRemoveCustom(preference.id)}
+                      aria-label="Remove filter"
+                    >
+                      <CloseIcon size={13} />
+                    </button>
+                  ) : null}
+                  <Toggle on={active} onClick={() => onToggle(preference.id)} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="mt-prefs-section">
+        <div className="mt-budget">
+          <div className="mt-budget-head">
+            <div>
+              <div className="mt-pref-name">Comfortable spend</div>
+              <div className="mt-pref-desc">
+                Meant looks for the best quality it can find under this.
+              </div>
+            </div>
+            <div className="mt-budget-val">${budget}</div>
+          </div>
+          <input
+            className="mt-range"
+            type="range"
+            min="20"
+            max="300"
+            step="5"
+            value={budget}
+            onChange={(event) => onBudget(Number(event.target.value))}
+          />
+          <div className="mt-budget-scale mt-mono">
+            <span>$20</span>
+            <span>$300</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-prefs-section">
+        <div className="mt-sechead">
+          <div>
+            <h3 className="mt-sectitle">Bring your profile from another AI</h3>
+            <p className="mt-secsub">
+              Already chat with ChatGPT or Claude? Ask it about you, then paste its answer here to build filters.
+            </p>
+          </div>
+        </div>
+        <div className="mt-sync-pane">
+          <div className="mt-sync-block">
+            <div className="mt-sync-row">
+              <div className="mt-sync-label"><span className="mt-step-num">1</span> Ask your assistant about you</div>
+              <button className={`mt-act mt-act-ghost mt-copy ${copied ? 'done' : ''}`} type="button" onClick={copyQuestion}>
+                {copied ? 'Copied' : 'Copy question'}
+              </button>
+            </div>
+            <p className="mt-sync-desc">
+              Paste this into another AI. It should reply with what it knows about your shopping preferences.
+            </p>
+            <textarea className="mt-prompt-text mt-mono" readOnly value={IMPORT_ASK} onFocus={(event) => event.currentTarget.select()} />
+          </div>
+          <div className="mt-sync-block">
+            <div className="mt-sync-row">
+              <div className="mt-sync-label"><span className="mt-step-num">2</span> Paste its answer back</div>
+            </div>
+            <textarea
+              className="mt-describe"
+              value={importText}
+              onChange={(event) => setImportText(event.target.value)}
+              placeholder="Paste your assistant's reply about your preferences here..."
+            />
+            <div className="mt-describe-actions">
+              <button
+                className="mt-act mt-act-primary"
+                type="button"
+                disabled={!importText.trim()}
+                onClick={() => {
+                  apply(importText, () => setImportText(''))
+                  setImported(true)
+                  window.setTimeout(() => setImported(false), 3200)
+                }}
+              >
+                Create filters from this
+              </button>
+              <span className="mt-describe-hint">
+                {imported
+                  ? 'Added to your filters above.'
+                  : 'Meant reads it the same way as your own description.'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function LocationSection({
+  location,
+  onSet,
+}: Readonly<{
+  location: UserLocation | null
+  onSet: (location: UserLocation) => void
+}>) {
+  const [editing, setEditing] = useState(!location)
+  const [code, setCode] = useState(location?.code ?? '')
+  const [city, setCity] = useState(location?.city ?? '')
+  const country = LOCATIONS.find((option) => option.code === code)
+
+  const save = () => {
+    if (!country || !city) {
+      return
+    }
+    onSet({ code: country.code, country: country.country, city })
+    setEditing(false)
+  }
+
+  if (location && !editing) {
+    return (
+      <div className="mt-loc-set">
+        <span className="mt-loc-pin">⌖</span>
+        <div className="mt-loc-text">
+          <div className="mt-loc-city">{location.city}, {location.country}</div>
+          <div className="mt-loc-note">
+            Meant is hiding anything that cannot ship here.
+          </div>
+        </div>
+        <button className="mt-loc-change" type="button" onClick={() => setEditing(true)}>
+          Change
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-loc-form">
+      <div className="mt-loc-fields">
+        <label className="mt-field">
+          <span className="mt-field-label mt-mono">Country</span>
+          <select
+            className="mt-select"
+            value={code}
+            onChange={(event) => {
+              setCode(event.target.value)
+              setCity('')
+            }}
+          >
+            <option value="">Select country</option>
+            {LOCATIONS.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.country}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="mt-field">
+          <span className="mt-field-label mt-mono">City</span>
+          <select
+            className="mt-select"
+            value={city}
+            disabled={!code}
+            onChange={(event) => setCity(event.target.value)}
+          >
+            <option value="">{code ? 'Select city' : 'Pick a country first'}</option>
+            {(country?.cities ?? []).map((candidate) => (
+              <option key={candidate} value={candidate}>
+                {candidate}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="mt-describe-actions">
+        <button className="mt-act mt-act-primary" type="button" onClick={save} disabled={!code || !city}>
+          Save location
+        </button>
+        {location ? (
+          <button className="mt-act mt-act-ghost" type="button" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        ) : null}
+        <span className="mt-describe-hint">
+          Meant only shows products from merchants that can deliver to you.
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function CartView({
+  cart,
+  products,
+  location,
+  onRemove,
+  onQty,
+  onAdd,
+  onCheckout,
+}: Readonly<{
+  cart: readonly CartItem[]
+  products: readonly Product[]
+  location: UserLocation | null
+  onRemove: (id: ProductId, merchant: string) => void
+  onQty: (id: ProductId, merchant: string, qty: number) => void
+  onAdd: (id: ProductId, merchant: string) => void
+  onCheckout: (payload: CheckoutPayload) => void
+}>) {
+  const [scanning, setScanning] = useState(true)
+
+  useEffect(() => {
+    setScanning(true)
+    const timeout = window.setTimeout(() => setScanning(false), 1700)
+    return () => window.clearTimeout(timeout)
+  }, [cart.length])
+
+  const lines = cartLines(cart, products)
+  const alerts = computeSmartAlerts(lines, products)
+  const shipWarnings = location
+    ? lines.filter((line) => !canMerchantShip(line.merchant, location))
+    : []
+  const groups = cartGroups(lines, scanning)
+  const itemsTotal = groups.reduce((sum, group) => sum + group.subtotal, 0)
+  const discountTotal = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
+  const deliveryTotal = groups.reduce((sum, group) => sum + group.delivery, 0)
+  const grandTotal = itemsTotal - discountTotal + deliveryTotal
+  const codeCount = groups.filter((group) => group.found).length
+  const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
+
+  if (lines.length === 0) {
+    return (
+      <main className="mt-feed mt-view">
+        <ViewHead eyebrow="Smart cart" title="Your cart" />
+        <EmptyState
+          title="Your cart is empty"
+          sub="Add products and Meant checks compatibility and hunts for codes."
+          mark={<CartIcon />}
+        />
+      </main>
+    )
+  }
+
+  return (
+    <main className="mt-feed mt-view mt-cart">
+      <ViewHead
+        eyebrow="Smart cart"
+        title="Your cart"
+        sub={`${lines.length} items from ${groups.length} merchants - one checkout, watched for compatibility and the best price.`}
+      />
+      <div className="mt-cart-grid">
+        <div className="mt-cart-main">
+          {alerts.length > 0 || shipWarnings.length > 0 ? (
+            <div className="mt-alerts">
+              {shipWarnings.map((line) => (
+                <div key={`ship-${line.id}-${line.merchant}`} className="mt-alert mt-alert-warn">
+                  <span className="mt-alert-ico">!</span>
+                  <div className="mt-alert-body">
+                    <div className="mt-alert-title">Does not ship to {location?.city}</div>
+                    <div className="mt-alert-text">
+                      {line.merchant} cannot deliver {line.product.name} to {location?.city}, {location?.country}.
+                    </div>
+                  </div>
+                  <button className="mt-alert-fix" type="button" onClick={() => onRemove(line.id, line.merchant)}>
+                    Remove item
+                    <span className="mt-alert-fix-sub mt-mono">will not ship</span>
+                  </button>
+                </div>
+              ))}
+              {alerts.map((alert) => (
+                <div key={alert.id} className={`mt-alert mt-alert-${alert.kind}`}>
+                  <span className="mt-alert-ico">{alert.kind === 'warn' ? '!' : 'ok'}</span>
+                  <div className="mt-alert-body">
+                    <div className="mt-alert-title">{alert.title}</div>
+                    <div className="mt-alert-text">{alert.body}</div>
+                  </div>
+                  {alert.fix ? (
+                    <button
+                      className="mt-alert-fix"
+                      type="button"
+                      onClick={() => onAdd(alert.fix?.id ?? 'adapter', alert.fix?.merchant ?? 'Lumen Store')}
+                    >
+                      {alert.fix.label}
+                      <span className="mt-alert-fix-sub mt-mono">{alert.fix.sub}</span>
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {groups.map((group) => (
+            <div className="mt-mgroup" key={group.merchant}>
+              <div className="mt-mgroup-head">
+                <div className="mt-mgroup-name">
+                  <span className="mt-mgroup-dot" />
+                  {group.merchant}
+                  <span className="mt-mono mt-mgroup-count">
+                    {group.items.length} item{group.items.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="mt-mono mt-mgroup-ship">
+                  {group.delivery === 0 ? 'Free delivery' : `${money(group.delivery)} delivery`}
+                </div>
+              </div>
+              {group.items.map((line) => (
+                <div className="mt-citem" key={`${line.id}-${line.merchant}`}>
+                  <div className="mt-citem-media">
+                    <Placeholder label={line.product.category.toLowerCase()} tone={line.product.tone} />
+                  </div>
+                  <div className="mt-citem-info">
+                    <div className="mt-mono mt-citem-brand">{line.product.brand}</div>
+                    <div className="mt-citem-name">{line.product.name}</div>
+                    <div className="mt-mono mt-citem-deliv">
+                      Arrives {line.delivery.toLowerCase()}
+                    </div>
+                  </div>
+                  <div className="mt-citem-right">
+                    <div className="mt-qty">
+                      <button type="button" onClick={() => onQty(line.id, line.merchant, line.qty - 1)} aria-label="Decrease">
+                        -
+                      </button>
+                      <span>{line.qty}</span>
+                      <button type="button" onClick={() => onQty(line.id, line.merchant, line.qty + 1)} aria-label="Increase">
+                        +
+                      </button>
+                    </div>
+                    <div className="mt-citem-price">{money(line.price * line.qty)}</div>
+                    <button className="mt-citem-remove" type="button" onClick={() => onRemove(line.id, line.merchant)} aria-label="Remove">
+                      <CloseIcon size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div className="mt-mgroup-foot">
+                {scanning ? (
+                  <div className="mt-scan">
+                    <span className="mt-scan-pulse" /> Scanning {group.merchant} for codes...
+                  </div>
+                ) : group.found ? (
+                  <div className="mt-found">
+                    <span className="mt-code">
+                      <span className="mt-code-val mt-mono">{group.found.code.code}</span>
+                      <span className="mt-code-act mt-mono">copy</span>
+                    </span>
+                    <span className="mt-found-label">{group.found.code.label}</span>
+                    <span className="mt-found-save mt-mono">-{money(group.found.save)}</span>
+                  </div>
+                ) : (
+                  <div className="mt-found mt-found-none mt-mono">
+                    No codes found for {group.merchant}
+                  </div>
+                )}
+                <div className="mt-mgroup-sub">
+                  Subtotal <span>{money(group.subtotal)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <aside className="mt-summary">
+          <div className="mt-summary-card">
+            <div className="mt-summary-title">Order summary</div>
+            <div className="mt-scan-banner">
+              {scanning ? (
+                <>
+                  <span className="mt-scan-pulse" /> Meant is searching the web for discount codes...
+                </>
+              ) : (
+                <>
+                  <SparkMark size={14} /> Found {codeCount} codes across {groups.length} merchants
+                </>
+              )}
+            </div>
+            <div className="mt-sum-row">
+              <span>Items ({lines.reduce((sum, line) => sum + line.qty, 0)})</span>
+              <span>{money(itemsTotal)}</span>
+            </div>
+            <div className={`mt-sum-row ${discountTotal > 0 ? 'save' : 'muted'}`}>
+              <span>Discounts found</span>
+              <span>{discountTotal > 0 ? `-${money(discountTotal)}` : scanning ? '...' : money(0)}</span>
+            </div>
+            <div className="mt-sum-row">
+              <span>Delivery</span>
+              <span>{deliveryTotal === 0 ? 'Free' : money(deliveryTotal)}</span>
+            </div>
+            <div className="mt-sum-total">
+              <span>Total</span>
+              <span>{money(grandTotal)}</span>
+            </div>
+            {!scanning && discountTotal > 0 ? (
+              <div className="mt-sum-note mt-mono">
+                You are saving {money(discountTotal)} with codes Meant found.
+              </div>
+            ) : null}
+            {warnCount > 0 ? (
+              <div className="mt-sum-warn">
+                <span className="mt-sum-warn-dot" /> {warnCount} compatibility issue to review above
+              </div>
+            ) : null}
+            <button
+              className="mt-checkout"
+              type="button"
+              onClick={() =>
+                onCheckout({
+                  items: cart,
+                  saved: discountTotal,
+                  savedNote: codeCount > 0 ? `${codeCount} codes applied` : '',
+                })
+              }
+            >
+              Check out · {money(grandTotal)}
+            </button>
+            <div className="mt-mono mt-summary-foot">
+              One secure checkout across all {groups.length} merchants.
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  )
+}
+
+function OrdersView({
+  orders,
+  products,
+  flashId,
+  preferences,
+  onOpen,
+  onReorder,
+}: Readonly<{
+  orders: readonly Order[]
+  products: readonly Product[]
+  flashId: string | null
+  preferences: readonly Preference[]
+  onOpen: (product: Product) => void
+  onReorder: (order: Order) => void
+}>) {
+  const [page, setPage] = useState(0)
+  const pageSize = 3
+  const pageCount = Math.ceil(orders.length / pageSize)
+  const safePage = Math.min(page, Math.max(0, pageCount - 1))
+  const start = safePage * pageSize
+  const visible = orders.slice(start, start + pageSize)
+  const totalSaved = orders.reduce((sum, order) => sum + order.saved, 0)
+
+  useEffect(() => {
+    if (flashId) {
+      setPage(0)
+    }
+  }, [flashId])
+
+  if (orders.length === 0) {
+    return (
+      <main className="mt-feed mt-view">
+        <ViewHead eyebrow="Your purchases" title="Order history" />
+        <EmptyState
+          title="No orders yet"
+          sub="When you check out, your orders land here."
+          mark={<CartIcon />}
+        />
+      </main>
+    )
+  }
+
+  return (
+    <main className="mt-feed mt-view">
+      <ViewHead
+        eyebrow="Your purchases"
+        title="Order history"
+        sub={`${orders.length} orders across your stores, each one filtered to what matters to you.`}
+        right={
+          totalSaved > 0 ? (
+            <div className="mt-order-lifetime">
+              <span className="mt-mono mt-order-lifetime-k">Saved with Meant</span>
+              <span className="mt-order-lifetime-v">{money(totalSaved)}</span>
+            </div>
+          ) : undefined
+        }
+      />
+      <div className="mt-orders">
+        {flashId && safePage === 0 ? (
+          <div className="mt-order-flash">Order {flashId} placed. Meant is preparing dispatch.</div>
+        ) : null}
+        {visible.map((order) => (
+          <OrderCard
+            key={order.id}
+            order={order}
+            products={products}
+            preferences={preferences}
+            flash={order.id === flashId}
+            onOpen={onOpen}
+            onReorder={onReorder}
+          />
+        ))}
+      </div>
+      {pageCount > 1 ? (
+        <nav className="mt-pager" aria-label="Order history pages">
+          <span className="mt-mono mt-pager-info">
+            Showing {start + 1}-{Math.min(start + pageSize, orders.length)} of {orders.length}
+          </span>
+          <div className="mt-pager-ctrls">
+            <button className="mt-pager-btn" type="button" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+              Prev
+            </button>
+            {Array.from({ length: pageCount }).map((_, index) => (
+              <button
+                key={index}
+                className={`mt-pager-num mt-mono ${index === safePage ? 'on' : ''}`}
+                type="button"
+                aria-current={index === safePage ? 'page' : undefined}
+                onClick={() => setPage(index)}
+              >
+                {index + 1}
+              </button>
+            ))}
+            <button className="mt-pager-btn" type="button" disabled={safePage === pageCount - 1} onClick={() => setPage(safePage + 1)}>
+              Next
+            </button>
+          </div>
+        </nav>
+      ) : null}
+    </main>
+  )
+}
+
+function OrderCard({
+  order,
+  preferences,
+  flash,
+  onOpen,
+  onReorder,
+}: Readonly<{
+  order: Order
+  products: readonly Product[]
+  preferences: readonly Preference[]
+  flash: boolean
+  onOpen: (product: Product) => void
+  onReorder: (order: Order) => void
+}>) {
+  const lines = order.items.map((item) => ({
+    item,
+    product: productById(item.id),
+  }))
+  const matched = Array.from(
+    new Set(lines.flatMap((line) => line.product.satisfies)),
+  )
+
+  return (
+    <div className={`mt-order ${flash ? 'flash' : ''}`}>
+      <div className="mt-order-head">
+        <div className="mt-order-head-l">
+          <span className="mt-mono mt-order-id">{order.id}</span>
+          <span className="mt-order-date">
+            Placed {formatOrderDate(order.date)} · {lines.length} items
+          </span>
+        </div>
+        <div className="mt-order-head-r">
+          <span className={`mt-order-status mt-order-status-${order.status.toLowerCase().replace(/\s+/g, '-')}`}>
+            <span className="mt-order-status-dot" /> {order.status}
+          </span>
+          <span className="mt-order-total">{money(orderTotal(order))}</span>
+        </div>
+      </div>
+      <div className="mt-order-track mt-mono">{order.statusNote}</div>
+      <div className="mt-order-items">
+        {lines.map(({ item, product }) => {
+          const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+          return (
+            <button
+              className="mt-order-item"
+              key={`${item.id}-${item.merchant}`}
+              type="button"
+              onClick={() => onOpen(product)}
+            >
+              <div className="mt-order-item-media">
+                <Placeholder label={product.category.toLowerCase()} tone={product.tone} />
+              </div>
+              <div className="mt-order-item-info">
+                <div className="mt-mono mt-order-item-brand">{product.brand}</div>
+                <div className="mt-order-item-name">{product.name}</div>
+                <div className="mt-mono mt-order-item-meta">
+                  {item.qty} × {money(offer.price)} · {item.merchant}
+                </div>
+              </div>
+              <div className="mt-order-item-price">{money(offer.price * item.qty)}</div>
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-order-foot">
+        <div className="mt-order-prefs">
+          <span className="mt-mono mt-order-prefs-label">Matched your preferences</span>
+          <div className="mt-chips">
+            {matched.slice(0, 4).map((id) => (
+              <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" small />
+            ))}
+          </div>
+        </div>
+        <div className="mt-order-foot-right">
+          {order.saved > 0 ? (
+            <div className="mt-order-saved mt-mono">
+              Meant saved you {money(order.saved)} {order.savedNote ? `· ${order.savedNote}` : ''}
+            </div>
+          ) : null}
+          <button className="mt-order-reorder" type="button" onClick={() => onReorder(order)}>
+            Order again
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccountView({
+  user,
+  onSave,
+  onSignOut,
+  onEditPrefs,
+  onDone,
+}: Readonly<{
+  user: UserAccount
+  onSave: (user: UserAccount) => void
+  onSignOut: () => void
+  onEditPrefs: () => void
+  onDone: () => void
+}>) {
+  const [name, setName] = useState(user.name)
+  const [email, setEmail] = useState(user.email)
+  const [avatar, setAvatar] = useState<string | null>(user.avatar)
+  const [saved, setSaved] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const preview: UserAccount = { name, email, avatar }
+  const dirty = name !== user.name || email !== user.email || avatar !== user.avatar
+
+  const onFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setAvatar(reader.result)
+      }
+    }
+    reader.readAsDataURL(file)
+    event.target.value = ''
+  }
+
+  return (
+    <main className="mt-feed mt-view">
+      <ViewHead
+        eyebrow="Account"
+        title="Your account"
+        sub="Your name and photo are how you show up across Meant. This is separate from your shopping preferences."
+        right={<button className="mt-act mt-act-primary mt-prefs-done" type="button" onClick={onDone}>Done</button>}
+      />
+      <div className="mt-acct-card">
+        <div className="mt-acct-idrow">
+          <div className="mt-acct-avatar">
+            <Avatar user={preview} size={84} />
+          </div>
+          <div className="mt-acct-photo-actions">
+            <button className="mt-acct-uploadbtn" type="button" onClick={() => fileRef.current?.click()}>
+              {avatar ? 'Change photo' : 'Upload photo'}
+            </button>
+            {avatar ? (
+              <button className="mt-acct-removebtn" type="button" onClick={() => setAvatar(null)}>
+                Remove
+              </button>
+            ) : null}
+            <div className="mt-acct-photo-hint">JPG or PNG. A square image works best.</div>
+            <input ref={fileRef} type="file" accept="image/*" onChange={onFile} hidden />
+          </div>
+        </div>
+        <div className="mt-acct-fields">
+          <label className="mt-field">
+            <span className="mt-field-label mt-mono">Full name</span>
+            <input className="mt-input" value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label className="mt-field">
+            <span className="mt-field-label mt-mono">Email</span>
+            <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+        </div>
+        <div className="mt-acct-save-row">
+          <button
+            className="mt-acct-save"
+            type="button"
+            disabled={!dirty}
+            onClick={() => {
+              onSave({ name: name.trim() || user.name, email: email.trim() || user.email, avatar })
+              setSaved(true)
+              window.setTimeout(() => setSaved(false), 1800)
+            }}
+          >
+            Save changes
+          </button>
+          {saved ? <span className="mt-acct-saved-note">Saved</span> : null}
+        </div>
+      </div>
+      <button className="mt-acct-link" type="button" onClick={onEditPrefs}>
+        <div>
+          <div className="mt-acct-link-t">Shopping preferences</div>
+          <div className="mt-acct-link-s">
+            The filters Meant applies to everything it shows you.
+          </div>
+        </div>
+      </button>
+      <div className="mt-acct-danger">
+        <div>
+          <div className="mt-acct-link-t">Sign out</div>
+          <div className="mt-acct-link-s">You will need your email and password to sign back in.</div>
+        </div>
+        <button className="mt-acct-signout" type="button" onClick={onSignOut}>
+          Sign out
+        </button>
+      </div>
+    </main>
+  )
+}
+
+function AuthScreen({
+  mode,
+  onMode,
+  onAuth,
+}: Readonly<{
+  mode: AuthMode
+  onMode: (mode: AuthMode) => void
+  onAuth: (user: Partial<UserAccount>) => void
+}>) {
+  const signup = mode === 'signup'
+  const reset = mode === 'reset'
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [sent, setSent] = useState(false)
+
+  if (reset) {
+    return (
+      <div className="mt-auth">
+        <AuthBrand />
+        <main className="mt-auth-panel">
+          <form className="mt-auth-card" onSubmit={(event) => event.preventDefault()}>
+            <button className="mt-reset-back mt-mono" type="button" onClick={() => onMode('signin')}>
+              Back to sign in
+            </button>
+            <div className="mt-mono mt-auth-eyebrow">Password reset</div>
+            <h2 className="mt-auth-title">Forgot your password?</h2>
+            <p className="mt-auth-sub">
+              Enter your email and Meant will send a reset code. This prototype keeps it local.
+            </p>
+            <label className="mt-field">
+              <span className="mt-field-label mt-mono">Email</span>
+              <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            </label>
+            {sent ? <div className="mt-reset-ok mt-mono">Demo code sent. Use any six digits.</div> : null}
+            <button className="mt-auth-primary" type="button" disabled={!email.trim()} onClick={() => setSent(true)}>
+              Send reset code
+            </button>
+          </form>
+        </main>
+      </div>
+    )
+  }
+
+  const canSubmit = Boolean(email.trim() && password.trim() && (!signup || name.trim()))
+
+  return (
+    <div className="mt-auth">
+      <AuthBrand />
+      <main className="mt-auth-panel">
+        <form
+          className="mt-auth-card"
+          onSubmit={(event: FormEvent<HTMLFormElement>) => {
+            event.preventDefault()
+            if (!canSubmit) {
+              return
+            }
+            onAuth(signup ? { name: name.trim(), email: email.trim() } : { email: email.trim() })
+          }}
+        >
+          <div className="mt-mono mt-auth-eyebrow">{signup ? 'Create your account' : 'Welcome back'}</div>
+          <h2 className="mt-auth-title">{signup ? 'Start shopping the way you mean it.' : 'Sign in to Meant.'}</h2>
+          <p className="mt-auth-sub">
+            {signup ? 'Set up your profile once and Meant applies it across every store.' : 'Pick up right where you left off.'}
+          </p>
+          {signup ? (
+            <label className="mt-field">
+              <span className="mt-field-label mt-mono">Full name</span>
+              <input className="mt-input" value={name} onChange={(event) => setName(event.target.value)} />
+            </label>
+          ) : null}
+          <label className="mt-field">
+            <span className="mt-field-label mt-mono">Email</span>
+            <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+          <label className="mt-field">
+            <span className="mt-field-label mt-mono">Password</span>
+            <input className="mt-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          {!signup ? (
+            <button className="mt-auth-forgot mt-mono" type="button" onClick={() => onMode('reset')}>
+              Forgot password?
+            </button>
+          ) : null}
+          <button className="mt-auth-primary" type="submit" disabled={!canSubmit}>
+            {signup ? 'Create account' : 'Sign in'}
+          </button>
+          <div className="mt-auth-toggle">
+            {signup ? 'Already have an account? ' : 'New to Meant? '}
+            <button type="button" onClick={() => onMode(signup ? 'signin' : 'signup')}>
+              {signup ? 'Sign in' : 'Create an account'}
+            </button>
+          </div>
+        </form>
+      </main>
+    </div>
+  )
+}
+
+function AuthBrand() {
+  return (
+    <aside className="mt-auth-brand">
+      <img className="mt-auth-brand-logo" src="/assets/meant-logo.png" alt="Meant" />
+      <div className="mt-auth-brand-mid">
+        <h1 className="mt-auth-brand-line">
+          Everything here is <em>meant</em> for you.
+        </h1>
+        <p className="mt-auth-brand-sub">
+          One account, every store. Meant learns what matters to you and quietly filters out the rest.
+        </p>
+        <div className="mt-auth-pills">
+          {['Organic', 'Natural materials', 'Strong reviews', 'Sustainable brands'].map((pill) => (
+            <span className="mt-auth-pill" key={pill}>{pill}</span>
+          ))}
+        </div>
+      </div>
+      <div className="mt-auth-brand-foot mt-mono">
+        Your preferences travel with you everywhere you shop.
+      </div>
+    </aside>
+  )
+}
+
+export function MeantApp() {
+  const [view, setView] = useState<View>('discover')
+  const [authMode, setAuthMode] = useState<AuthMode>('signin')
+  const [authed, setAuthed] = useStoredState('meant.authed', true)
+  const [theme, setTheme] = useStoredState<Theme>('meant.theme', 'light')
+  const [reply, setReply] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [activeProduct, setActiveProduct] = useState<Product | null>(null)
+  const [savedIds, setSavedIds] = useStoredState<ProductId[]>('meant.saved', [...DEFAULT_SAVED_IDS])
+  const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
+  const [customPrefs, setCustomPrefs] = useStoredState<Preference[]>('meant.customPrefs', [])
+  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...CORE_PREFERENCE_IDS])
+  const [budget, setBudget] = useStoredState('meant.budget', 120)
+  const [location, setLocation] = useStoredState<UserLocation | null>('meant.location', null)
+  const [cart, setCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
+  const [orders, setOrders] = useStoredState<Order[]>('meant.orders', [...DEFAULT_ORDERS])
+  const [lastPlaced, setLastPlaced] = useState<string | null>(null)
+  const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
+  const [cartPeek, setCartPeek] = useState(false)
+  const [accountMenu, setAccountMenu] = useState(false)
+
+  const allPreferences = useMemo(() => [...PREFERENCES, ...customPrefs], [customPrefs])
+  const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
+  const savedSet = useMemo(() => new Set(savedIds), [savedIds])
+  const compareSet = useMemo(() => new Set(compareIds), [compareIds])
+  const shippableProducts = useMemo(() => productsForLocation(PRODUCTS, location), [location])
+
+  const liveProfile = useMemo(
+    () => ({
+      ...PROFILE,
+      name: user.name,
+    }),
+    [user.name],
+  )
+
+  const baseFeed = useMemo(() => {
+    if (!reply) {
+      return PRODUCTS
+    }
+    const resolved = resolveReply(query)
+    return productsByIds(resolved.ids)
+  }, [query, reply])
+  const feedProducts = productsForLocation(baseFeed, location)
+  const hiddenByShip = baseFeed.length - feedProducts.length
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  const nav = (next: View) => {
+    setView(next)
+    setCartPeek(false)
+    setAccountMenu(false)
+    if (next !== 'orders') {
+      setLastPlaced(null)
+    }
+    window.scrollTo({ top: 0 })
+  }
+
+  const toggleSave = (id: ProductId) => {
+    setSavedIds((current) =>
+      current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id],
+    )
+  }
+
+  const addToCompare = (id: ProductId) => {
+    setCompareIds((current) => {
+      if (current.includes(id)) {
+        return current
+      }
+      return current.length < 4 ? [...current, id] : [...current.slice(1), id]
+    })
+    nav('compare')
+  }
+
+  const addToCart = (id: ProductId, merchant: string) => {
+    setCart((current) => {
+      const existing = current.find((item) => item.id === id && item.merchant === merchant)
+      if (existing) {
+        return current.map((item) =>
+          item.id === id && item.merchant === merchant
+            ? { ...item, qty: item.qty + 1 }
+            : item,
+        )
+      }
+      return [...current, { id, merchant, qty: 1 }]
+    })
+  }
+
+  const removeFromCart = (id: ProductId, merchant: string) => {
+    setCart((current) => current.filter((item) => item.id !== id || item.merchant !== merchant))
+  }
+
+  const updateQty = (id: ProductId, merchant: string, qty: number) => {
+    if (qty <= 0) {
+      removeFromCart(id, merchant)
+      return
+    }
+    setCart((current) =>
+      current.map((item) => (item.id === id && item.merchant === merchant ? { ...item, qty } : item)),
+    )
+  }
+
+  const applyDescription = (text: string) => {
+    const derived = deriveFilters(text)
+    setPrefsOn((current) => Array.from(new Set([...current, ...derived.matched, ...derived.customs.map((preference) => preference.id)])))
+    setCustomPrefs((current) => {
+      const ids = new Set(current.map((preference) => preference.id))
+      return [...current, ...derived.customs.filter((preference) => !ids.has(preference.id))]
+    })
+  }
+
+  const checkout = (payload: CheckoutPayload) => {
+    if (cart.length === 0) {
+      return
+    }
+    const order = createOrder(payload)
+    setOrders((current) => [order, ...current])
+    setCart([])
+    setLastPlaced(order.id)
+    nav('orders')
+  }
+
+  const content = (() => {
+    if (!authed) {
+      return (
+        <AuthScreen
+          mode={authMode}
+          onMode={setAuthMode}
+          onAuth={(partial) => {
+            setUser((current) => ({
+              ...current,
+              ...partial,
+              name: partial.name || current.name,
+              email: partial.email || current.email,
+            }))
+            setAuthed(true)
+            setAuthMode('signin')
+          }}
+        />
+      )
+    }
+
+    switch (view) {
+      case 'saved':
+        return (
+          <SavedView
+            products={shippableProducts.filter((product) => savedSet.has(product.id))}
+            location={location}
+            preferences={allPreferences}
+            savedSet={savedSet}
+            onOpen={setActiveProduct}
+            onToggleSave={toggleSave}
+          />
+        )
+      case 'compare':
+        return (
+          <CompareView
+            products={shippableProducts}
+            compareIds={compareIds}
+            preferences={allPreferences}
+            onPick={(index, id) =>
+              setCompareIds((current) => current.map((existing, currentIndex) => (currentIndex === index ? id : existing)))
+            }
+            onRemove={(index) => setCompareIds((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+            onAdd={(id) => setCompareIds((current) => (current.includes(id) ? current : [...current, id].slice(0, 4)))}
+          />
+        )
+      case 'preferences':
+        return (
+          <PreferencesView
+            allPrefs={allPreferences}
+            prefsOn={new Set(prefsOn)}
+            onToggle={(id) =>
+              setPrefsOn((current) => current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id])
+            }
+            onRemoveCustom={(id) => {
+              setCustomPrefs((current) => current.filter((preference) => preference.id !== id))
+              setPrefsOn((current) => current.filter((candidate) => candidate !== id))
+            }}
+            onApplyDescription={applyDescription}
+            budget={budget}
+            onBudget={setBudget}
+            location={location}
+            onLocation={setLocation}
+            profile={liveProfile}
+            onDone={() => nav('discover')}
+          />
+        )
+      case 'cart':
+        return (
+          <CartView
+            cart={cart}
+            products={PRODUCTS}
+            location={location}
+            onRemove={removeFromCart}
+            onQty={updateQty}
+            onAdd={addToCart}
+            onCheckout={checkout}
+          />
+        )
+      case 'orders':
+        return (
+          <OrdersView
+            orders={orders}
+            products={PRODUCTS}
+            preferences={allPreferences}
+            flashId={lastPlaced}
+            onOpen={setActiveProduct}
+            onReorder={(order) => {
+              setCart((current) => [...current, ...order.items])
+              nav('cart')
+            }}
+          />
+        )
+      case 'account':
+        return (
+          <AccountView
+            user={user}
+            onSave={setUser}
+            onSignOut={() => setAuthed(false)}
+            onEditPrefs={() => nav('preferences')}
+            onDone={() => nav('discover')}
+          />
+        )
+      case 'discover':
+      default:
+        return (
+          <FeedView
+            profile={liveProfile}
+            products={feedProducts}
+            hiddenByShip={hiddenByShip}
+            location={location}
+            reply={reply}
+            query={query}
+            preferences={allPreferences}
+            onSubmit={(nextQuery) => {
+              const nextReply = resolveReply(nextQuery)
+              setQuery(nextQuery)
+              setReply(nextReply.text)
+            }}
+            onClear={() => {
+              setReply(null)
+              setQuery('')
+            }}
+            onOpen={setActiveProduct}
+            savedSet={savedSet}
+            onToggleSave={toggleSave}
+          />
+        )
+    }
+  })()
+
+  if (!authed) {
+    return content
+  }
+
+  const askContext = askContexts[view]
+  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
+
+  return (
+    <div className="mt-app">
+      <TopBar
+        view={view}
+        theme={theme}
+        user={user}
+        savedCount={savedIds.length}
+        cart={cart}
+        cartPeek={cartPeek}
+        accountMenu={accountMenu}
+        onNav={nav}
+        onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+        onToggleCart={() => {
+          setCartPeek((current) => !current)
+          setAccountMenu(false)
+        }}
+        onToggleAccount={() => {
+          setAccountMenu((current) => !current)
+          setCartPeek(false)
+        }}
+        onRemoveFromCart={removeFromCart}
+        onSignOut={() => setAuthed(false)}
+      />
+      <ProfileBar
+        preferences={activePreferences}
+        location={location}
+        onEdit={() => nav('preferences')}
+      />
+      {content}
+      <ProductModal
+        product={activeProduct}
+        location={location}
+        preferences={allPreferences}
+        saved={activeProduct ? savedSet.has(activeProduct.id) : false}
+        inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
+        onClose={() => setActiveProduct(null)}
+        onToggleSave={toggleSave}
+        onCompare={addToCompare}
+        onAddToCart={addToCart}
+      />
+      {!activeProduct ? (
+        <FloatingAsk
+          contextLabel={askContext.label}
+          suggestions={askContext.suggestions}
+          preferences={allPreferences}
+        />
+      ) : null}
+      <span className="mt-cart-count-debug" aria-hidden>{cartCount}</span>
+    </div>
+  )
+}
