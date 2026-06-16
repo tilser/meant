@@ -3,11 +3,14 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
+import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
@@ -25,6 +28,7 @@ class MerchantSemanticProductSearchServiceTest {
 
     private FakeMerchantSemanticSearchService merchantSemanticSearchService;
     private FakeMerchantCatalogSearchClient merchantCatalogSearchClient;
+    private FakeMerchantProductDetailsClient merchantProductDetailsClient;
     private FakeVoyageRerankClient voyageRerankClient;
     private MerchantSemanticProductSearchService merchantSemanticProductSearchService;
 
@@ -32,10 +36,12 @@ class MerchantSemanticProductSearchServiceTest {
     void setUp() {
         merchantSemanticSearchService = new FakeMerchantSemanticSearchService();
         merchantCatalogSearchClient = new FakeMerchantCatalogSearchClient();
+        merchantProductDetailsClient = new FakeMerchantProductDetailsClient();
         voyageRerankClient = new FakeVoyageRerankClient();
         merchantSemanticProductSearchService = new MerchantSemanticProductSearchService(
                 merchantSemanticSearchService,
                 merchantCatalogSearchClient,
+                merchantProductDetailsClient,
                 voyageRerankClient,
                 new MerchantCatalogSearchProperties(3, 2, 2, 2)
         );
@@ -70,9 +76,15 @@ class MerchantSemanticProductSearchServiceTest {
                 .containsExactly("home.example", "shoe.example");
         assertThat(result.products()).extracting("productId")
                 .containsExactly("trail-runner", "casual-sneaker");
+        assertThat(merchantProductDetailsClient.calls).containsExactly(
+                "shoe.example:trail-runner",
+                "shoe.example:casual-sneaker"
+        );
         assertThat(result.products()).extracting("rank")
                 .containsExactly(1, 2);
         assertThat(result.products().getFirst().merchantDomain()).isEqualTo("shoe.example");
+        assertThat(result.products().getFirst().selectedVariantId()).isEqualTo("trail-runner-selected");
+        assertThat(result.products().getFirst().selectedVariantPriceAmount()).isEqualTo("12.95");
         assertThat(result.products().getFirst().productRerankScore()).isGreaterThan(result.products().getLast().productRerankScore());
     }
 
@@ -94,6 +106,25 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.merchants().getFirst().error()).contains("catalog unavailable");
         assertThat(result.merchants().getLast().productCount()).isEqualTo(1);
         assertThat(result.products()).extracting("productId").containsExactly("runner");
+    }
+
+    @Test
+    void keepsPartialProductWhenProductDetailsFails() {
+        MerchantSemanticSearchResult merchant = merchant("shoe.example", "Shoe Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("runner", "Running Shoe", "Light road shoe", "shoes")
+        )));
+        merchantProductDetailsClient.failures.put("runner", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("running shoes", null, null, null, null)
+        );
+
+        assertThat(result.products()).hasSize(1);
+        assertThat(result.products().getFirst().productId()).isEqualTo("runner");
+        assertThat(result.products().getFirst().detailError()).contains("details unavailable");
+        assertThat(result.products().getFirst().selectedVariantId()).isNull();
     }
 
     private MerchantSemanticSearchResult merchant(String domain, String name, int rank) {
@@ -164,7 +195,7 @@ class MerchantSemanticProductSearchServiceTest {
         private final List<String> calls = new ArrayList<>();
 
         FakeMerchantCatalogSearchClient() {
-            super(RestClient.builder(), null);
+            super(null, null);
         }
 
         @Override
@@ -174,6 +205,54 @@ class MerchantSemanticProductSearchServiceTest {
                 throw new MerchantCatalogSearchException(failures.get(merchant.domain()));
             }
             return results.get(merchant.domain());
+        }
+    }
+
+    static class FakeMerchantProductDetailsClient extends MerchantProductDetailsClient {
+
+        private final Map<String, String> failures = new HashMap<>();
+        private final List<String> calls = new ArrayList<>();
+
+        FakeMerchantProductDetailsClient() {
+            super(null, null);
+        }
+
+        @Override
+        public ProductDetailsResult getProductDetails(MerchantSemanticSearchResult merchant, String productId) {
+            calls.add(merchant.domain() + ":" + productId);
+            if (failures.containsKey(productId)) {
+                throw new MerchantProductDetailsException(failures.get(productId));
+            }
+            return new ProductDetailsResult(
+                    merchant.advertisedMcpEndpoint(),
+                    "{}",
+                    new ProductDetailsResponse.Product(
+                            productId,
+                            productId + " detail",
+                            "Detailed description",
+                            "https://example.com/products/" + productId,
+                            "https://example.com/" + productId + "-detail.jpg",
+                            List.of(new ProductDetailsResponse.Image(
+                                    "https://example.com/" + productId + "-detail.jpg",
+                                    "Product image"
+                            )),
+                            List.of(new ProductDetailsResponse.Option("Size", List.of("Default"))),
+                            1,
+                            new ProductDetailsResponse.PriceRange("12.95", "12.95", "USD"),
+                            false,
+                            List.of(),
+                            new ProductDetailsResponse.SelectedVariant(
+                                    productId + "-selected",
+                                    "Default",
+                                    "12.95",
+                                    "USD",
+                                    "https://example.com/" + productId + "-variant.jpg",
+                                    "Variant image",
+                                    true,
+                                    List.of(new ProductDetailsResponse.SelectedOption("Size", "Default"))
+                            )
+                    )
+            );
         }
     }
 

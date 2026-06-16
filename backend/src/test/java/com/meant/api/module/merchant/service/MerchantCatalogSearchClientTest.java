@@ -24,7 +24,10 @@ class MerchantCatalogSearchClientTest {
     void searchesProfileMcpEndpointAndDoesNotCallAdvertisedMcpEndpoint() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        MerchantCatalogSearchClient client = new MerchantCatalogSearchClient(restClientBuilder, new ObjectMapper());
+        MerchantCatalogSearchClient client = new MerchantCatalogSearchClient(
+                new MerchantMcpToolClient(restClientBuilder),
+                new ObjectMapper()
+        );
         server.expect(requestTo("https://profile.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"catalog\"")))

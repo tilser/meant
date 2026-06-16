@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.service.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 public record MerchantSemanticProductResult(
@@ -19,6 +20,25 @@ public record MerchantSemanticProductResult(
         Long priceMaxAmount,
         String priceCurrency,
         Boolean available,
+        String detailError,
+        String detailDescription,
+        String detailImageUrl,
+        List<ProductDetailsResponse.Image> detailImages,
+        List<ProductDetailsResponse.Option> detailOptions,
+        String detailPriceMin,
+        String detailPriceMax,
+        String detailPriceCurrency,
+        Integer totalVariants,
+        Boolean requiresSellingPlan,
+        List<Object> sellingPlanGroups,
+        String selectedVariantId,
+        String selectedVariantTitle,
+        List<ProductDetailsResponse.SelectedOption> selectedOptions,
+        String selectedVariantPriceAmount,
+        String selectedVariantPriceCurrency,
+        String selectedVariantImageUrl,
+        String selectedVariantImageAltText,
+        Boolean selectedVariantAvailable,
         int catalogRank,
         double productRerankScore,
         int rank
