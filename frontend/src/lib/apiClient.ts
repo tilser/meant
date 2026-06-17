@@ -83,6 +83,10 @@ export interface UserProductSearchProfile {
   products: UserProductSearchProductProfile[]
 }
 
+export interface UserProductSearchSuggestionsProfile {
+  suggestions: string[]
+}
+
 export interface UserProductDiscoveryProfile {
   savedProducts: UserSavedProductProfile[]
   recentProducts: UserProductSearchProductProfile[]
@@ -257,6 +261,17 @@ export async function searchUserProducts(input: {
     }),
   })
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
+}
+
+export async function getUserProductSearchSuggestions(): Promise<UserProductSearchSuggestionsProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/product-search-suggestions`, {
+    cache: 'no-store',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserProductSearchSuggestionsProfile>(
+    response,
+    'Failed to generate product search suggestions',
+  )
 }
 
 export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile> {

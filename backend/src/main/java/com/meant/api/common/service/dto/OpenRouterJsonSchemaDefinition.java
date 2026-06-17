@@ -12,6 +12,10 @@ public record OpenRouterJsonSchemaDefinition(
         List<String> required,
         Map<String, OpenRouterJsonSchemaDefinition> properties,
         OpenRouterJsonSchemaDefinition items,
+        @JsonProperty("minItems")
+        Integer minItems,
+        @JsonProperty("maxItems")
+        Integer maxItems,
         @JsonProperty("enum")
         List<String> enumValues
 ) {
@@ -26,17 +30,29 @@ public record OpenRouterJsonSchemaDefinition(
                 required,
                 properties,
                 null,
+                null,
+                null,
                 null
         );
     }
 
     public static OpenRouterJsonSchemaDefinition array(OpenRouterJsonSchemaDefinition items) {
+        return array(items, null, null);
+    }
+
+    public static OpenRouterJsonSchemaDefinition array(
+            OpenRouterJsonSchemaDefinition items,
+            Integer minItems,
+            Integer maxItems
+    ) {
         return new OpenRouterJsonSchemaDefinition(
                 "array",
                 null,
                 null,
                 null,
                 items,
+                minItems,
+                maxItems,
                 null
         );
     }
@@ -48,6 +64,8 @@ public record OpenRouterJsonSchemaDefinition(
                 null,
                 null,
                 null,
+                null,
+                null,
                 null
         );
     }
@@ -55,6 +73,8 @@ public record OpenRouterJsonSchemaDefinition(
     public static OpenRouterJsonSchemaDefinition stringEnum(List<String> values) {
         return new OpenRouterJsonSchemaDefinition(
                 "string",
+                null,
+                null,
                 null,
                 null,
                 null,
