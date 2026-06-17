@@ -39,6 +39,13 @@ ai:
     app-title: ${OPENROUTER_APP_TITLE:Meant}
     models:
       preference-filter-parser: ${OPENROUTER_PREFERENCE_FILTER_MODEL:google/gemini-2.5-flash-lite}
+      product-recommendation-explainer: ${OPENROUTER_PRODUCT_EXPLAINER_MODEL:google/gemini-2.5-flash-lite}
+
+user:
+  product-search:
+    search-version: v1
+    explanation-prompt-version: v1
+    cache-ttl: 24h
 
 crawling:
   ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train

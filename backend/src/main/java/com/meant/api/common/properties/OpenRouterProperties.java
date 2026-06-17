@@ -26,7 +26,10 @@ public record OpenRouterProperties(
 
     public record Models(
             @NotBlank
-            String preferenceFilterParser
+            String preferenceFilterParser,
+
+            @NotBlank
+            String productRecommendationExplainer
     ) {
     }
 }

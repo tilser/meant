@@ -34,6 +34,55 @@ export interface UserSettingsProfile {
   updatedAt: string
 }
 
+export interface UserProductSearchProductProfile {
+  productKey: string
+  productHash: string
+  merchantId: string
+  merchantDomain: string
+  merchantName: string | null
+  endpoint: string | null
+  merchantRank: number
+  merchantSemanticScore: number
+  merchantRerankScore: number
+  productId: string
+  title: string
+  descriptionHtml: string | null
+  url: string | null
+  imageUrl: string | null
+  priceMinAmount: number | null
+  priceMaxAmount: number | null
+  priceCurrency: string | null
+  available: boolean | null
+  detailError: string | null
+  detailDescription: string | null
+  detailImageUrl: string | null
+  detailPriceMin: string | null
+  detailPriceMax: string | null
+  detailPriceCurrency: string | null
+  selectedVariantId: string | null
+  selectedVariantTitle: string | null
+  selectedVariantPriceAmount: string | null
+  selectedVariantPriceCurrency: string | null
+  selectedVariantImageUrl: string | null
+  selectedVariantImageAltText: string | null
+  selectedVariantAvailable: boolean | null
+  catalogRank: number
+  productRerankScore: number
+  rank: number
+  matchScore: number
+  whyMeantForYou: string
+  matchedFilterIds: string[]
+  missedFilterIds: string[]
+}
+
+export interface UserProductSearchProfile {
+  query: string
+  normalizedQuery: string
+  profileHash: string
+  cached: boolean
+  products: UserProductSearchProductProfile[]
+}
+
 /** Injects the current Supabase access token as a Bearer header on every request. */
 const authMiddleware: Middleware = {
   async onRequest({ request }) {
@@ -111,4 +160,18 @@ export async function updateUserSettings(input: {
     }),
   })
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to update user settings')
+}
+
+export async function searchUserProducts(input: {
+  query: string
+}): Promise<UserProductSearchProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/product-searches`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: input.query }),
+  })
+  return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
 }

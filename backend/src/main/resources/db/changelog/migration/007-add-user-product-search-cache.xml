@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-user-product-searches" author="meant">
+        <createTable tableName="user_product_searches">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="profile_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="search_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_searches"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                constraintName="fk_user_product_searches_user"/>
+        <addUniqueConstraint
+                tableName="user_product_searches"
+                columnNames="user_id, normalized_query, profile_hash, search_version"
+                constraintName="uk_user_product_searches_cache_key"/>
+        <createIndex
+                tableName="user_product_searches"
+                indexName="idx_user_product_searches_lookup">
+            <column name="user_id"/>
+            <column name="normalized_query"/>
+            <column name="profile_hash"/>
+            <column name="search_version"/>
+            <column name="expires_at"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="002-create-user-product-search-results" author="meant">
+        <createTable tableName="user_product_search_results">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="search_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_domain" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_name" type="text"/>
+            <column name="endpoint" type="text"/>
+            <column name="merchant_rank" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_semantic_score" type="double precision">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_rerank_score" type="double precision">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description_html" type="text"/>
+            <column name="url" type="text"/>
+            <column name="image_url" type="text"/>
+            <column name="price_min_amount" type="bigint"/>
+            <column name="price_max_amount" type="bigint"/>
+            <column name="price_currency" type="text"/>
+            <column name="available" type="boolean"/>
+            <column name="detail_error" type="text"/>
+            <column name="detail_description" type="text"/>
+            <column name="detail_image_url" type="text"/>
+            <column name="detail_price_min" type="text"/>
+            <column name="detail_price_max" type="text"/>
+            <column name="detail_price_currency" type="text"/>
+            <column name="selected_variant_id" type="text"/>
+            <column name="selected_variant_title" type="text"/>
+            <column name="selected_variant_price_amount" type="text"/>
+            <column name="selected_variant_price_currency" type="text"/>
+            <column name="selected_variant_image_url" type="text"/>
+            <column name="selected_variant_image_alt_text" type="text"/>
+            <column name="selected_variant_available" type="boolean"/>
+            <column name="catalog_rank" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_rerank_score" type="double precision">
+                <constraints nullable="false"/>
+            </column>
+            <column name="rank" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_results"
+                baseColumnNames="search_id"
+                referencedTableName="user_product_searches"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_search_results_search"/>
+        <addUniqueConstraint
+                tableName="user_product_search_results"
+                columnNames="search_id, product_key"
+                constraintName="uk_user_product_search_results_product"/>
+        <createIndex
+                tableName="user_product_search_results"
+                indexName="idx_user_product_search_results_search_rank">
+            <column name="search_id"/>
+            <column name="rank"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="003-create-user-product-recommendation-explanations" author="meant">
+        <createTable tableName="user_product_recommendation_explanations">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="profile_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prompt_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="why_meant_for_you" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_recommendation_explanations"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                constraintName="fk_user_product_recommendation_explanations_user"/>
+        <addUniqueConstraint
+                tableName="user_product_recommendation_explanations"
+                columnNames="user_id, normalized_query, profile_hash, product_key, product_hash, model, prompt_version"
+                constraintName="uk_user_product_recommendation_explanations_cache_key"/>
+        <createIndex
+                tableName="user_product_recommendation_explanations"
+                indexName="idx_user_product_recommendation_explanations_lookup">
+            <column name="user_id"/>
+            <column name="normalized_query"/>
+            <column name="profile_hash"/>
+            <column name="model"/>
+            <column name="prompt_version"/>
+            <column name="product_key"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="004-create-user-product-recommendation-filter-matches" author="meant">
+        <createTable tableName="user_product_recommendation_filter_matches">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="explanation_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="filter_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="match_type" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="rank" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_recommendation_filter_matches"
+                baseColumnNames="explanation_id"
+                referencedTableName="user_product_recommendation_explanations"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_recommendation_filter_matches_explanation"/>
+        <addForeignKeyConstraint
+                baseTableName="user_product_recommendation_filter_matches"
+                baseColumnNames="filter_id"
+                referencedTableName="shopping_filters"
+                referencedColumnNames="id"
+                constraintName="fk_user_product_recommendation_filter_matches_filter"/>
+        <addUniqueConstraint
+                tableName="user_product_recommendation_filter_matches"
+                columnNames="explanation_id, filter_id, match_type"
+                constraintName="uk_user_product_recommendation_filter_matches_filter"/>
+        <createIndex
+                tableName="user_product_recommendation_filter_matches"
+                indexName="idx_user_product_recommendation_filter_matches_explanation">
+            <column name="explanation_id"/>
+            <column name="rank"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

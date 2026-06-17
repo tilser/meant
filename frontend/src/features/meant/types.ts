@@ -1,17 +1,7 @@
 export type CorePreferenceId = string
 export type PreferenceId = string
 
-export type ProductId =
-  | 'cereal'
-  | 'tee'
-  | 'brewer'
-  | 'oil'
-  | 'sweater'
-  | 'runners'
-  | 'laptop'
-  | 'monitor'
-  | 'drive'
-  | 'adapter'
+export type ProductId = string
 
 export type PortType = 'usb-c' | 'usb-a' | 'hdmi'
 
@@ -61,6 +51,9 @@ export interface Product {
   brand: string
   category: string
   tone: string
+  imageUrl?: string | null
+  productUrl?: string | null
+  remote?: boolean
   match: number
   priceFrom: number
   merchants: number

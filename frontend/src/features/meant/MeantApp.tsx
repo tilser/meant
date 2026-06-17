@@ -28,7 +28,9 @@ import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
   getCurrentUser,
   getUserSettings,
+  searchUserProducts,
   type ShoppingFilterProfile,
+  type UserProductSearchProductProfile,
   updateProfile,
   updateUserSettings,
   type UserSettingsProfile,
@@ -60,17 +62,13 @@ import {
   formatOrderDate,
   listJoin,
   money,
-  orderTotal,
   prefLabel,
-  productById,
   productMerchantCount,
   productPriceFrom,
   productsForPreferences,
-  productsByIds,
   productsForLocation,
   readStorage,
   resolveAsk,
-  resolveReply,
   writeStorage,
 } from './utils'
 
@@ -211,6 +209,106 @@ function applySettingsPayload(
   setLocation(settings.location)
 }
 
+function stripHtml(value: string | null | undefined): string {
+  return value?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+}
+
+function parsePriceAmount(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  if (typeof value === 'number') {
+    return value > 999 ? value / 100 : value
+  }
+  const parsed = Number.parseFloat(value.replace(/[^0-9.]+/g, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function searchProductPrice(product: UserProductSearchProductProfile): number {
+  return (
+    parsePriceAmount(product.selectedVariantPriceAmount) ??
+    parsePriceAmount(product.detailPriceMin) ??
+    parsePriceAmount(product.priceMinAmount) ??
+    0
+  )
+}
+
+function searchProductCategory(
+  product: UserProductSearchProductProfile,
+  preferences: readonly Preference[],
+): string {
+  const category = product.matchedFilterIds
+    .map((id) => preferences.find((preference) => preference.id === id)?.category)
+    .find(Boolean)
+
+  switch (category) {
+    case 'food':
+      return 'Groceries'
+    case 'materials':
+      return 'Clothing'
+    case 'technology':
+      return 'Technology'
+    case 'home':
+      return 'Home & Kitchen'
+    case 'personal-care':
+      return 'Personal Care'
+    default:
+      return 'Product'
+  }
+}
+
+function toneForSearchProduct(product: UserProductSearchProductProfile): string {
+  const tones = ['#e7ebef', '#eaede6', '#eceae7', '#eee9ed', '#e9ede8']
+  const code = Array.from(product.productKey).reduce(
+    (sum, char) => sum + char.charCodeAt(0),
+    0,
+  )
+  return tones[code % tones.length] ?? tones[0]
+}
+
+function productFromSearchResult(
+  product: UserProductSearchProductProfile,
+  preferences: readonly Preference[],
+): Product {
+  const price = searchProductPrice(product)
+  const brand = product.merchantName || product.merchantDomain
+  const detail = stripHtml(product.detailDescription || product.descriptionHtml)
+  return {
+    id: product.productKey,
+    name: product.title,
+    brand,
+    category: searchProductCategory(product, preferences),
+    tone: toneForSearchProduct(product),
+    imageUrl: product.imageUrl || product.detailImageUrl || product.selectedVariantImageUrl,
+    productUrl: product.url,
+    remote: true,
+    match: product.matchScore,
+    priceFrom: price,
+    merchants: 1,
+    satisfies: product.matchedFilterIds,
+    misses: product.missedFilterIds,
+    note: product.whyMeantForYou,
+    pros: product.matchedFilterIds.length > 0
+      ? product.matchedFilterIds.map((id) => `Matches ${prefLabel(preferences, id).toLowerCase()}`)
+      : [detail || 'Ranked highly for your search'],
+    cons: product.missedFilterIds.map((id) => `May miss ${prefLabel(preferences, id).toLowerCase()}`),
+    review: {
+      score: 0,
+      count: 0,
+      insight: detail || product.whyMeantForYou,
+    },
+    offers: [
+      {
+        merchant: brand,
+        price,
+        delivery: product.available === false || product.selectedVariantAvailable === false
+          ? 'Availability unclear'
+          : 'Available from merchant',
+      },
+    ],
+  }
+}
+
 function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
   size?: number
   color?: string
@@ -222,6 +320,30 @@ function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
         fill={color}
       />
     </svg>
+  )
+}
+
+function ProductSearchLoading() {
+  return (
+    <div
+      className="mt-search-state mt-search-state-loading"
+      role="status"
+      aria-live="polite"
+      aria-label="Searching products across stores"
+    >
+      <div className="mt-search-loader" aria-hidden="true">
+        <span className="mt-search-loader-spark"><SparkMark size={14} /></span>
+        <span className="mt-search-loader-dot" />
+        <span className="mt-search-loader-dot" />
+        <span className="mt-search-loader-dot" />
+      </div>
+      <span className="mt-search-loading-text">
+        Searching products across stores
+        <span className="mt-search-loading-dots" aria-hidden="true">
+          <span>.</span><span>.</span><span>.</span>
+        </span>
+      </span>
+    </div>
   )
 }
 
@@ -335,6 +457,23 @@ function Placeholder({
       <span className="mt-mono mt-ph-label">{label}</span>
     </div>
   )
+}
+
+function ProductArtwork({ product, label }: Readonly<{
+  product: Product
+  label: string
+}>) {
+  if (product.imageUrl) {
+    return (
+      <img
+        className="mt-product-img"
+        src={product.imageUrl}
+        alt=""
+        loading="lazy"
+      />
+    )
+  }
+  return <Placeholder label={label} tone={product.tone} />
 }
 
 function MatchRing({
@@ -613,7 +752,7 @@ function ProductCard({
       style={{ transitionDelay: `${index * 45}ms` }}
     >
       <div className="mt-card-media">
-        <Placeholder label={`${product.category.toLowerCase()} shot`} tone={product.tone} />
+        <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
         <span className="mt-mono mt-card-cat">{product.category}</span>
         <div className="mt-card-ring">
           <MatchRing value={product.match} />
@@ -675,15 +814,20 @@ function ChatHero({
   greeting,
   prompts,
   onSubmit,
+  loading,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
   prompts: readonly string[]
   onSubmit: (query: string) => void
+  loading: boolean
 }>) {
   const [value, setValue] = useState('')
 
   const submit = (text?: string) => {
+    if (loading) {
+      return
+    }
     const query = (text ?? value).trim()
     if (!query) {
       return
@@ -719,8 +863,9 @@ function ChatHero({
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder='Ask Meant anything - "a good cotton T-shirt under $50"'
+          disabled={loading}
         />
-        <button type="submit" className="mt-search-go" aria-label="Ask">
+        <button type="submit" className="mt-search-go" aria-label="Ask" disabled={loading}>
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
             <path
               d="M3.5 9h11M9.5 4l5 5-5 5"
@@ -739,6 +884,7 @@ function ChatHero({
             type="button"
             className="mt-prompt"
             onClick={() => submit(prompt)}
+            disabled={loading}
           >
             {prompt}
           </button>
@@ -756,6 +902,8 @@ function FeedView({
   location,
   reply,
   query,
+  loading,
+  error,
   preferences,
   onSubmit,
   onClear,
@@ -770,13 +918,21 @@ function FeedView({
   location: UserLocation | null
   reply: string | null
   query: string
+  loading: boolean
+  error: string | null
   preferences: readonly Preference[]
   onSubmit: (query: string) => void
   onClear: () => void
 } & ProductOpenProps & ProductSaveProps>) {
   return (
     <main className="mt-feed">
-      <ChatHero profile={profile} greeting={greeting} prompts={PROMPTS} onSubmit={onSubmit} />
+      <ChatHero
+        profile={profile}
+        greeting={greeting}
+        prompts={PROMPTS}
+        onSubmit={onSubmit}
+        loading={loading}
+      />
       {reply ? (
         <div className="mt-reply">
           <div className="mt-reply-av">
@@ -791,10 +947,15 @@ function FeedView({
           </button>
         </div>
       ) : null}
+      {error ? (
+        <div className="mt-search-state mt-search-state-error">
+          {error}
+        </div>
+      ) : null}
       <div className="mt-feed-head">
-        <h2 className="mt-feed-title">{reply ? 'Your matches' : 'Meant for you'}</h2>
+        <h2 className="mt-feed-title">{query ? 'Your matches' : 'Meant for you'}</h2>
         <span className="mt-mono mt-feed-count">
-          {products.length} shown · sorted by match
+          {loading ? 'Searching stores' : `${products.length} shown · sorted by match`}
         </span>
       </div>
       {location ? (
@@ -810,24 +971,36 @@ function FeedView({
           ) : null}
         </div>
       ) : null}
-      <div className="mt-grid">
-        {products.map((product, index) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            index={index}
-            location={location}
-            preferences={preferences}
-            onOpen={onOpen}
-            savedSet={savedSet}
-            onToggleSave={onToggleSave}
-          />
-        ))}
-      </div>
-      <p className="mt-mono mt-feed-foot">
-        Meant hid products that clash with your profile. Nothing here works
-        against what matters to you.
-      </p>
+      {loading ? (
+        <ProductSearchLoading />
+      ) : products.length > 0 ? (
+        <div className="mt-grid">
+          {products.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              index={index}
+              location={location}
+              preferences={preferences}
+              onOpen={onOpen}
+              savedSet={savedSet}
+              onToggleSave={onToggleSave}
+            />
+          ))}
+        </div>
+      ) : query ? (
+        <EmptyState
+          title="No products found"
+          sub="Try a broader search or adjust your preferences."
+          mark={<SparkMark />}
+        />
+      ) : null}
+      {!query ? (
+        <p className="mt-mono mt-feed-foot">
+          Meant hid products that clash with your profile. Nothing here works
+          against what matters to you.
+        </p>
+      ) : null}
     </main>
   )
 }
@@ -904,7 +1077,7 @@ function ProductModal({
         <div className="mt-modal-body">
           <div className="mt-modal-left">
             <div className="mt-modal-media">
-              <Placeholder label={`${product.category.toLowerCase()} shot`} tone={product.tone} />
+              <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
               <div className="mt-modal-ring">
                 <MatchRing value={product.match} size={56} stroke={4} />
               </div>
@@ -1171,7 +1344,7 @@ function CartPopover({
         {lines.map((line) => (
           <div className="mt-cart-pop-item" key={`${line.id}-${line.merchant}`}>
             <div className="mt-cart-pop-media">
-              <Placeholder label={line.product.category.toLowerCase()} tone={line.product.tone} />
+              <ProductArtwork product={line.product} label={line.product.category.toLowerCase()} />
             </div>
             <div className="mt-cart-pop-info">
               <div className="mt-cart-pop-name">{line.product.name}</div>
@@ -1215,6 +1388,7 @@ function TopBar({
   user,
   savedCount,
   cart,
+  products,
   cartPeek,
   accountMenu,
   onNav,
@@ -1229,6 +1403,7 @@ function TopBar({
   user: UserAccount
   savedCount: number
   cart: readonly CartItem[]
+  products: readonly Product[]
   cartPeek: boolean
   accountMenu: boolean
   onNav: (view: View) => void
@@ -1295,7 +1470,7 @@ function TopBar({
           {cartPeek ? (
             <CartPopover
               cart={cart}
-              products={PRODUCTS}
+              products={products}
               onViewFull={() => onNav('cart')}
               onClose={onToggleCart}
               onRemove={onRemoveFromCart}
@@ -1640,7 +1815,7 @@ function CompareSlot({
   return (
     <div className="mt-cmp-col">
       <div className="mt-cmp-media">
-        <Placeholder label={`${product.category.toLowerCase()} shot`} tone={product.tone} />
+        <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
         <div className="mt-cmp-ring">
           <MatchRing value={product.match} size={48} stroke={3} />
         </div>
@@ -2193,7 +2368,7 @@ function CartView({
               {group.items.map((line) => (
                 <div className="mt-citem" key={`${line.id}-${line.merchant}`}>
                   <div className="mt-citem-media">
-                    <Placeholder label={line.product.category.toLowerCase()} tone={line.product.tone} />
+                    <ProductArtwork product={line.product} label={line.product.category.toLowerCase()} />
                   </div>
                   <div className="mt-citem-info">
                     <div className="mt-mono mt-citem-brand">{line.product.brand}</div>
@@ -2414,6 +2589,7 @@ function OrdersView({
 
 function OrderCard({
   order,
+  products,
   preferences,
   flash,
   onOpen,
@@ -2428,8 +2604,12 @@ function OrderCard({
 }>) {
   const lines = order.items.map((item) => ({
     item,
-    product: productById(item.id),
-  }))
+    product: products.find((product) => product.id === item.id),
+  })).filter((line): line is { item: CartItem; product: Product } => Boolean(line.product))
+  const total = lines.reduce((sum, { item, product }) => {
+    const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+    return sum + offer.price * item.qty
+  }, 0)
   const matched = Array.from(
     new Set(lines.flatMap((line) => line.product.satisfies)),
   )
@@ -2447,7 +2627,7 @@ function OrderCard({
           <span className={`mt-order-status mt-order-status-${order.status.toLowerCase().replace(/\s+/g, '-')}`}>
             <span className="mt-order-status-dot" /> {order.status}
           </span>
-          <span className="mt-order-total">{money(orderTotal(order))}</span>
+          <span className="mt-order-total">{money(total)}</span>
         </div>
       </div>
       <div className="mt-order-track mt-mono">{order.statusNote}</div>
@@ -2462,7 +2642,7 @@ function OrderCard({
               onClick={() => onOpen(product)}
             >
               <div className="mt-order-item-media">
-                <Placeholder label={product.category.toLowerCase()} tone={product.tone} />
+                <ProductArtwork product={product} label={product.category.toLowerCase()} />
               </div>
               <div className="mt-order-item-info">
                 <div className="mt-mono mt-order-item-brand">{product.brand}</div>
@@ -2860,6 +3040,10 @@ export function MeantApp() {
   const [theme, setTheme] = useStoredState<Theme>('meant.theme', 'light')
   const [reply, setReply] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Product[]>([])
+  const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [savedIds, setSavedIds] = useStoredState<ProductId[]>('meant.saved', [...DEFAULT_SAVED_IDS])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
@@ -2873,12 +3057,23 @@ export function MeantApp() {
   const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
+  const searchRequestRef = useRef(0)
   const greeting = useBrowserGreeting()
 
   const allPreferences = availablePrefs
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
   const savedSet = useMemo(() => new Set(savedIds), [savedIds])
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
+  const allKnownProducts = useMemo(() => {
+    const seen = new Set<ProductId>()
+    return [...searchResults, ...remoteProducts, ...PRODUCTS].filter((product) => {
+      if (seen.has(product.id)) {
+        return false
+      }
+      seen.add(product.id)
+      return true
+    })
+  }, [remoteProducts, searchResults])
   const shippableProducts = useMemo(() => productsForLocation(PRODUCTS, location), [location])
   const visibleProducts = productsForPreferences(shippableProducts, activePreferences)
 
@@ -2890,15 +3085,12 @@ export function MeantApp() {
     [user.name],
   )
 
-  const baseFeed = useMemo(() => {
-    if (!reply) {
-      return PRODUCTS
-    }
-    const resolved = resolveReply(query)
-    return productsByIds(resolved.ids)
-  }, [query, reply])
+  const searchActive = Boolean(query || searchLoading || searchError)
+  const baseFeed = searchActive ? searchResults : PRODUCTS
   const localizedFeedProducts = productsForLocation(baseFeed, location)
-  const feedProducts = productsForPreferences(localizedFeedProducts, activePreferences)
+  const feedProducts = searchActive
+    ? localizedFeedProducts
+    : productsForPreferences(localizedFeedProducts, activePreferences)
   const hiddenByShip = baseFeed.length - localizedFeedProducts.length
 
   useEffect(() => {
@@ -2950,6 +3142,12 @@ export function MeantApp() {
     void signOut()
     setAuthMode('signin')
     setView('discover')
+    setQuery('')
+    setReply(null)
+    setSearchResults([])
+    setRemoteProducts([])
+    setSearchError(null)
+    setSearchLoading(false)
   }
 
   const nav = (next: View) => {
@@ -3031,6 +3229,50 @@ export function MeantApp() {
     })
   }
 
+  const runProductSearch = async (nextQuery: string) => {
+    const submittedQuery = nextQuery.trim()
+    if (!submittedQuery) {
+      return
+    }
+    const requestId = searchRequestRef.current + 1
+    searchRequestRef.current = requestId
+    setQuery(submittedQuery)
+    setReply(null)
+    setSearchError(null)
+    setSearchLoading(true)
+    setSearchResults([])
+    try {
+      const result = await searchUserProducts({ query: submittedQuery })
+      if (searchRequestRef.current !== requestId) {
+        return
+      }
+      const products = result.products.map((product) =>
+        productFromSearchResult(product, allPreferences),
+      )
+      setSearchResults(products)
+      setRemoteProducts((current) => {
+        const byId = new Map(current.map((product) => [product.id, product]))
+        products.forEach((product) => byId.set(product.id, product))
+        return Array.from(byId.values())
+      })
+      setReply(
+        result.cached
+          ? `Showing ${products.length} cached match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
+          : `Found ${products.length} match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`,
+      )
+    } catch {
+      if (searchRequestRef.current !== requestId) {
+        return
+      }
+      setSearchResults([])
+      setSearchError('Product search failed. Please try again.')
+    } finally {
+      if (searchRequestRef.current === requestId) {
+        setSearchLoading(false)
+      }
+    }
+  }
+
   const checkout = (payload: CheckoutPayload) => {
     if (cart.length === 0) {
       return
@@ -3108,7 +3350,7 @@ export function MeantApp() {
         return (
           <CartView
             cart={cart}
-            products={PRODUCTS}
+            products={allKnownProducts}
             location={location}
             onRemove={removeFromCart}
             onQty={updateQty}
@@ -3120,7 +3362,7 @@ export function MeantApp() {
         return (
           <OrdersView
             orders={orders}
-            products={PRODUCTS}
+            products={allKnownProducts}
             preferences={allPreferences}
             flashId={lastPlaced}
             onOpen={setActiveProduct}
@@ -3151,15 +3393,18 @@ export function MeantApp() {
             location={location}
             reply={reply}
             query={query}
+            loading={searchLoading}
+            error={searchError}
             preferences={allPreferences}
             onSubmit={(nextQuery) => {
-              const nextReply = resolveReply(nextQuery)
-              setQuery(nextQuery)
-              setReply(nextReply.text)
+              void runProductSearch(nextQuery)
             }}
             onClear={() => {
               setReply(null)
               setQuery('')
+              setSearchResults([])
+              setSearchError(null)
+              setSearchLoading(false)
             }}
             onOpen={setActiveProduct}
             savedSet={savedSet}
@@ -3184,6 +3429,7 @@ export function MeantApp() {
         user={user}
         savedCount={savedIds.length}
         cart={cart}
+        products={allKnownProducts}
         cartPeek={cartPeek}
         accountMenu={accountMenu}
         onNav={nav}

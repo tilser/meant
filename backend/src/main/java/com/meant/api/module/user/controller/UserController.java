@@ -3,13 +3,17 @@ package com.meant.api.module.user.controller;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
+import com.meant.api.module.user.controller.request.UserProductSearchRequest;
+import com.meant.api.module.user.controller.response.UserProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
+import com.meant.api.module.user.service.UserProductSearchService;
 import com.meant.api.module.user.service.UserService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.command.ParseUserPreferenceFiltersCommand;
+import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -23,6 +27,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +42,7 @@ public class UserController {
     private final UserService userService;
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
+    private final UserProductSearchService userProductSearchService;
 
     @GetMapping("/me")
     @Operation(
@@ -112,6 +118,27 @@ public class UserController {
         return UserSettingsResponse.from(userSettingsService.update(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 UserCommandMapper.toUpdateSettingsCommand(authenticatedUser.id(), request, parsedFilters)));
+    }
+
+    @PostMapping("/me/product-searches")
+    @Operation(
+            summary = "Search products for the current user",
+            description = "Searches merchant catalogs for the query, explains why products fit the user's shopping "
+                    + "profile, and caches product snapshots and explanations for repeated searches."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Product search results for the current user",
+            content = @Content(schema = @Schema(implementation = UserProductSearchResponse.class))
+    )
+    public UserProductSearchResponse searchProducts(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UserProductSearchRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserProductSearchResponse.from(userProductSearchService.search(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new SearchUserProductsCommand(authenticatedUser.id(), request.query())));
     }
 
     private ParsedUserPreferenceFilters parseFilters(

@@ -1,0 +1,365 @@
+package com.meant.api.module.user.service;
+
+import com.meant.api.common.exception.OpenRouterException;
+import com.meant.api.common.properties.OpenRouterProperties;
+import com.meant.api.common.service.OpenRouterChatClient;
+import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.user.exception.UserProductSearchException;
+import com.meant.api.module.user.properties.UserProductSearchProperties;
+import com.meant.api.module.user.service.dto.ShoppingFilterResult;
+import com.meant.api.module.user.service.dto.UserLocationResult;
+import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.validation.annotation.Validated;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+@Service
+@Validated
+@RequiredArgsConstructor
+public class UserProductRecommendationExplanationService {
+
+    private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
+    private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
+    private static final String SYSTEM_PROMPT = """
+            You write short product recommendation explanations for Meant.
+            Explain why each product is meant for this specific user and query.
+            Use only facts present in the product data, merchant data, query, and user filters.
+            Do not invent certifications, materials, review claims, discounts, or shipping promises.
+            matchedFilterIds and missedFilterIds must contain only filter IDs from the active user filters.
+            Keep whyMeantForYou one concise sentence, under 220 characters.
+            """;
+
+    private final OpenRouterChatClient openRouterChatClient;
+    private final OpenRouterProperties openRouterProperties;
+    private final UserProductSearchProperties userProductSearchProperties;
+    private final UserProductSearchPersistenceService userProductSearchPersistenceService;
+    private final ObjectMapper objectMapper;
+
+    public Map<String, UserProductRecommendationExplanationResult> explain(
+            UUID userId,
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            UserSettingsResult settings,
+            List<UserProductSearchProductSnapshot> products
+    ) {
+        String model = openRouterProperties.models().productRecommendationExplainer();
+        String promptVersion = userProductSearchProperties.explanationPromptVersion();
+        Map<String, UserProductRecommendationExplanationResult> cached =
+                new LinkedHashMap<>(userProductSearchPersistenceService.findExplanations(
+                        userId,
+                        normalizedQuery,
+                        profileHash,
+                        model,
+                        promptVersion,
+                        products
+                ));
+        List<UserProductSearchProductSnapshot> missing = products.stream()
+                .filter(product -> !cached.containsKey(product.productKey()))
+                .toList();
+        if (missing.isEmpty()) {
+            return cached;
+        }
+
+        List<UserProductRecommendationExplanationResult> generated = generate(
+                query,
+                settings,
+                missing
+        );
+        Map<String, UserProductRecommendationExplanationResult> saved =
+                userProductSearchPersistenceService.saveExplanations(
+                        userId,
+                        normalizedQuery,
+                        profileHash,
+                        model,
+                        promptVersion,
+                        generated,
+                        Instant.now()
+                );
+        cached.putAll(saved);
+        validateAllProductsExplained(products, cached.keySet());
+        return cached;
+    }
+
+    private List<UserProductRecommendationExplanationResult> generate(
+            String query,
+            UserSettingsResult settings,
+            List<UserProductSearchProductSnapshot> products
+    ) {
+        if (products.isEmpty()) {
+            return List.of();
+        }
+
+        String response = openRouterChatClient.completeJson(
+                openRouterProperties.models().productRecommendationExplainer(),
+                SYSTEM_PROMPT,
+                userPrompt(query, settings, products),
+                "product_recommendation_explanations",
+                responseSchema(products, settings.filters())
+        );
+        return sanitize(response, products, settings.filters());
+    }
+
+    private String userPrompt(
+            String query,
+            UserSettingsResult settings,
+            List<UserProductSearchProductSnapshot> products
+    ) {
+        return """
+                Search query:
+                %s
+
+                User profile:
+                Budget: %s
+                Location: %s
+                Active filters:
+                %s
+
+                Products:
+                %s
+                """.formatted(
+                query,
+                settings.budget() == null ? "not set" : settings.budget(),
+                location(settings.location()),
+                filterCatalog(settings.filters()),
+                productCatalog(products)
+        );
+    }
+
+    private String filterCatalog(List<ShoppingFilterResult> filters) {
+        if (filters.isEmpty()) {
+            return "- none";
+        }
+        return filters.stream()
+                .map(filter -> "- %s (%s, %s): %s".formatted(
+                        filter.id(),
+                        filter.label(),
+                        filter.polarity(),
+                        filter.description()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private String productCatalog(List<UserProductSearchProductSnapshot> products) {
+        return products.stream()
+                .map(this::productPrompt)
+                .collect(Collectors.joining("\n\n"));
+    }
+
+    private String productPrompt(UserProductSearchProductSnapshot snapshot) {
+        MerchantSemanticProductResult product = snapshot.product();
+        return """
+                Product key: %s
+                Merchant: %s (%s)
+                Title: %s
+                Description: %s
+                Price: %s
+                URL: %s
+                Available: %s
+                """.formatted(
+                snapshot.productKey(),
+                value(product.merchantName()),
+                value(product.merchantDomain()),
+                value(product.title()),
+                plainText(product.detailDescription(), product.descriptionHtml()),
+                price(product),
+                value(product.url()),
+                value(product.selectedVariantAvailable() == null ? product.available() : product.selectedVariantAvailable())
+        );
+    }
+
+    private OpenRouterJsonSchemaDefinition responseSchema(
+            List<UserProductSearchProductSnapshot> products,
+            List<ShoppingFilterResult> activeFilters
+    ) {
+        List<String> productKeys = products.stream()
+                .map(UserProductSearchProductSnapshot::productKey)
+                .toList();
+        OpenRouterJsonSchemaDefinition filterIdSchema = activeFilters.isEmpty()
+                ? OpenRouterJsonSchemaDefinition.string()
+                : OpenRouterJsonSchemaDefinition.stringEnum(activeFilters.stream()
+                        .map(ShoppingFilterResult::id)
+                        .toList());
+        OpenRouterJsonSchemaDefinition productSchema = OpenRouterJsonSchemaDefinition.object(
+                List.of("productKey", "whyMeantForYou", "matchedFilterIds", "missedFilterIds"),
+                Map.of(
+                        "productKey", OpenRouterJsonSchemaDefinition.stringEnum(productKeys),
+                        "whyMeantForYou", OpenRouterJsonSchemaDefinition.string(),
+                        "matchedFilterIds", OpenRouterJsonSchemaDefinition.array(filterIdSchema),
+                        "missedFilterIds", OpenRouterJsonSchemaDefinition.array(filterIdSchema)
+                )
+        );
+        return OpenRouterJsonSchemaDefinition.object(
+                List.of("products"),
+                Map.of("products", OpenRouterJsonSchemaDefinition.array(productSchema))
+        );
+    }
+
+    private List<UserProductRecommendationExplanationResult> sanitize(
+            String response,
+            List<UserProductSearchProductSnapshot> products,
+            List<ShoppingFilterResult> activeFilters
+    ) {
+        ExplanationBatchResponse parsed = parseResponse(response);
+        Map<String, UserProductSearchProductSnapshot> requestedProducts = products.stream()
+                .collect(Collectors.toMap(
+                        UserProductSearchProductSnapshot::productKey,
+                        product -> product,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        Set<String> validFilterIds = activeFilters.stream()
+                .map(ShoppingFilterResult::id)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<UserProductRecommendationExplanationResult> explanations = safeList(parsed.products()).stream()
+                .filter(product -> product.productKey() != null && requestedProducts.containsKey(product.productKey()))
+                .map(product -> sanitizeProductExplanation(product, requestedProducts.get(product.productKey()), validFilterIds))
+                .filter(explanation -> !explanation.whyMeantForYou().isBlank())
+                .collect(Collectors.toMap(
+                        UserProductRecommendationExplanationResult::productKey,
+                        explanation -> explanation,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ))
+                .values()
+                .stream()
+                .toList();
+        validateAllProductsExplained(products, explanations.stream()
+                .map(UserProductRecommendationExplanationResult::productKey)
+                .collect(Collectors.toSet()));
+        return explanations;
+    }
+
+    private UserProductRecommendationExplanationResult sanitizeProductExplanation(
+            ProductExplanationResponse product,
+            UserProductSearchProductSnapshot snapshot,
+            Set<String> validFilterIds
+    ) {
+        List<String> matchedFilterIds = sanitizeFilterIds(product.matchedFilterIds(), validFilterIds);
+        List<String> missedFilterIds = sanitizeFilterIds(product.missedFilterIds(), validFilterIds).stream()
+                .filter(filterId -> !matchedFilterIds.contains(filterId))
+                .toList();
+        return new UserProductRecommendationExplanationResult(
+                product.productKey(),
+                snapshot.productHash(),
+                sanitizeWhy(product.whyMeantForYou()),
+                matchedFilterIds,
+                missedFilterIds
+        );
+    }
+
+    private ExplanationBatchResponse parseResponse(String response) {
+        try {
+            ExplanationBatchResponse parsed = objectMapper.readValue(response, ExplanationBatchResponse.class);
+            return parsed == null ? new ExplanationBatchResponse(List.of()) : parsed;
+        } catch (JacksonException exception) {
+            throw new OpenRouterException("OpenRouter returned invalid product explanation JSON", exception);
+        }
+    }
+
+    private void validateAllProductsExplained(
+            List<UserProductSearchProductSnapshot> products,
+            Collection<String> explainedProductKeys
+    ) {
+        List<String> missing = products.stream()
+                .map(UserProductSearchProductSnapshot::productKey)
+                .filter(productKey -> !explainedProductKeys.contains(productKey))
+                .toList();
+        if (!missing.isEmpty()) {
+            throw new UserProductSearchException("OpenRouter did not explain products: " + missing);
+        }
+    }
+
+    private List<String> sanitizeFilterIds(List<String> filterIds, Set<String> validFilterIds) {
+        if (filterIds == null || validFilterIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> sanitized = new LinkedHashSet<>();
+        filterIds.stream()
+                .filter(filterId -> filterId != null && validFilterIds.contains(filterId))
+                .forEach(sanitized::add);
+        return List.copyOf(sanitized);
+    }
+
+    private String sanitizeWhy(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = SPACE_PATTERN.matcher(value.trim()).replaceAll(" ");
+        return trimmed.length() <= 260 ? trimmed : trimmed.substring(0, 260).trim();
+    }
+
+    private String location(UserLocationResult location) {
+        if (location == null) {
+            return "not set";
+        }
+        return "%s, %s (%s)".formatted(location.city(), location.country(), location.code());
+    }
+
+    private String price(MerchantSemanticProductResult product) {
+        String detailPrice = firstPresent(product.selectedVariantPriceAmount(), product.detailPriceMin());
+        if (detailPrice != null) {
+            return detailPrice + " " + value(firstPresent(product.selectedVariantPriceCurrency(), product.detailPriceCurrency()));
+        }
+        if (product.priceMinAmount() != null) {
+            return product.priceMinAmount() + " " + value(product.priceCurrency());
+        }
+        return "not available";
+    }
+
+    private String plainText(String detailDescription, String descriptionHtml) {
+        String value = firstPresent(detailDescription, descriptionHtml);
+        if (value == null) {
+            return "";
+        }
+        return SPACE_PATTERN.matcher(HTML_TAG_PATTERN.matcher(value).replaceAll(" "))
+                .replaceAll(" ")
+                .trim();
+    }
+
+    private String firstPresent(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
+    }
+
+    private String value(Object value) {
+        return value == null ? "" : value.toString().trim();
+    }
+
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
+    }
+
+    private record ExplanationBatchResponse(
+            List<ProductExplanationResponse> products
+    ) {
+    }
+
+    private record ProductExplanationResponse(
+            String productKey,
+            String whyMeantForYou,
+            List<String> matchedFilterIds,
+            List<String> missedFilterIds
+    ) {
+    }
+}

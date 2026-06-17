@@ -27,7 +27,9 @@ class UserPreferenceFilterParsingServiceTest {
                         "https://openrouter.test/api/v1",
                         "test-key",
                         "Meant",
-                        new OpenRouterProperties.Models("google/gemini-2.5-flash-lite")),
+                        new OpenRouterProperties.Models(
+                                "google/gemini-2.5-flash-lite",
+                                "google/gemini-2.5-flash-lite")),
                 new ObjectMapper());
 
         openRouterChatClient.response = """
@@ -82,7 +84,7 @@ class UserPreferenceFilterParsingServiceTest {
                     "https://openrouter.test/api/v1",
                     "test-key",
                     "Meant",
-                    new OpenRouterProperties.Models("test-model")));
+                    new OpenRouterProperties.Models("test-model", "test-model")));
         }
 
         @Override
