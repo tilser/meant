@@ -35,7 +35,7 @@ class UserProductRecommendationExplanationServiceTest {
                       "productKey": "merchant.example:tee",
                       "whyMeantForYou": "  Organic cotton and no polyester match your profile.  ",
                       "matchedFilterIds": ["organic-cotton", "unknown", "organic-cotton"],
-                      "missedFilterIds": ["no-polyester"]
+                      "missedFilterIds": ["no-polyester", "crypto"]
                     }
                   ]
                 }
@@ -143,11 +143,19 @@ class UserProductRecommendationExplanationServiceTest {
                 "avoid",
                 20
         );
+        ShoppingFilterResult crypto = new ShoppingFilterResult(
+                "crypto",
+                "Crypto",
+                "Prefer tasteful crypto references when relevant.",
+                "interests",
+                "prefer",
+                30
+        );
         return new UserSettingsResult(
                 100,
                 null,
-                List.of(organicCotton, noPolyester),
-                List.of(organicCotton, noPolyester),
+                List.of(organicCotton, noPolyester, crypto),
+                List.of(organicCotton, noPolyester, crypto),
                 List.of(),
                 List.of(),
                 Instant.now(),

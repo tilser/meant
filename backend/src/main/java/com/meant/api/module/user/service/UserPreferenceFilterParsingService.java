@@ -66,9 +66,10 @@ public class UserPreferenceFilterParsingService {
 
     private String filterCatalog(List<ShoppingFilter> filters) {
         return filters.stream()
-                .map(filter -> "- %s (%s): %s".formatted(
+                .map(filter -> "- %s (%s, %s): %s".formatted(
                         filter.getId(),
                         filter.getLabel(),
+                        filter.getCategory(),
                         filter.getDescription()))
                 .reduce((left, right) -> left + "\n" + right)
                 .orElse("");

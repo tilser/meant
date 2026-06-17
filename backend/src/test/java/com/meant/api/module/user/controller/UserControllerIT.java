@@ -238,7 +238,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body).isNotNull();
         assertThat(body.budget()).isEqualTo(120);
         assertThat(body.availableFilters()).extracting("id")
-                .contains("organic", "gluten-free", "no-polyester", "highly-rated");
+                .contains("organic", "gluten-free", "no-polyester", "highly-rated", "crypto");
         assertThat(body.filters()).extracting("id")
                 .containsExactly(
                         "organic",

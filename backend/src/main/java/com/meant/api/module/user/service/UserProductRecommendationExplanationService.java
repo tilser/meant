@@ -35,11 +35,13 @@ public class UserProductRecommendationExplanationService {
 
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
+    private static final String INTERESTS_CATEGORY = "interests";
     private static final String SYSTEM_PROMPT = """
             You write short product recommendation explanations for Meant.
             Explain why each product is meant for this specific user and query.
             Use only facts present in the product data, merchant data, query, and user filters.
             Do not invent certifications, materials, review claims, discounts, or shipping promises.
+            Filters in category interests are soft taste signals. Match them when the product clearly reflects the interest, but do not mark them missed just because the theme is absent.
             matchedFilterIds and missedFilterIds must contain only filter IDs from the active user filters.
             Keep whyMeantForYou one concise sentence, under 220 characters.
             """;
@@ -146,9 +148,10 @@ public class UserProductRecommendationExplanationService {
             return "- none";
         }
         return filters.stream()
-                .map(filter -> "- %s (%s, %s): %s".formatted(
+                .map(filter -> "- %s (%s, %s, %s): %s".formatted(
                         filter.id(),
                         filter.label(),
+                        filter.category(),
                         filter.polarity(),
                         filter.description()))
                 .collect(Collectors.joining("\n"));
@@ -225,10 +228,18 @@ public class UserProductRecommendationExplanationService {
         Set<String> validFilterIds = activeFilters.stream()
                 .map(ShoppingFilterResult::id)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> interestFilterIds = activeFilters.stream()
+                .filter(filter -> INTERESTS_CATEGORY.equals(filter.category()))
+                .map(ShoppingFilterResult::id)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
         List<UserProductRecommendationExplanationResult> explanations = safeList(parsed.products()).stream()
                 .filter(product -> product.productKey() != null && requestedProducts.containsKey(product.productKey()))
-                .map(product -> sanitizeProductExplanation(product, requestedProducts.get(product.productKey()), validFilterIds))
+                .map(product -> sanitizeProductExplanation(
+                        product,
+                        requestedProducts.get(product.productKey()),
+                        validFilterIds,
+                        interestFilterIds))
                 .filter(explanation -> !explanation.whyMeantForYou().isBlank())
                 .collect(Collectors.toMap(
                         UserProductRecommendationExplanationResult::productKey,
@@ -248,11 +259,13 @@ public class UserProductRecommendationExplanationService {
     private UserProductRecommendationExplanationResult sanitizeProductExplanation(
             ProductExplanationResponse product,
             UserProductSearchProductSnapshot snapshot,
-            Set<String> validFilterIds
+            Set<String> validFilterIds,
+            Set<String> interestFilterIds
     ) {
         List<String> matchedFilterIds = sanitizeFilterIds(product.matchedFilterIds(), validFilterIds);
         List<String> missedFilterIds = sanitizeFilterIds(product.missedFilterIds(), validFilterIds).stream()
                 .filter(filterId -> !matchedFilterIds.contains(filterId))
+                .filter(filterId -> !interestFilterIds.contains(filterId))
                 .toList();
         return new UserProductRecommendationExplanationResult(
                 product.productKey(),

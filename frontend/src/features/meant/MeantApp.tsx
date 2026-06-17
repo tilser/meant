@@ -1044,6 +1044,21 @@ function PlusIcon({ size = 16 }: Readonly<{ size?: number }>) {
   )
 }
 
+function SearchIcon({ size = 16 }: Readonly<{ size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
+      <circle cx="8" cy="8" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M11.5 11.5 15 15"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function Avatar({ user, size = 38 }: Readonly<{
   user: UserAccount
   size?: number
@@ -3794,24 +3809,104 @@ function CompareMenu({
   )
 }
 
-function Toggle({
-  on,
-  onClick,
-}: Readonly<{
-  on: boolean
-  onClick: () => void
-}>) {
-  return (
-    <button
-      className={`mt-toggle ${on ? 'on' : ''}`}
-      role="switch"
-      aria-checked={on}
-      type="button"
-      onClick={onClick}
-    >
-      <span className="mt-toggle-knob" />
-    </button>
+type PreferenceGroupId = 'needs' | 'values' | 'taste' | 'interests'
+
+const PREFERENCE_GROUPS: readonly {
+  id: PreferenceGroupId
+  label: string
+  description: string
+  categories: readonly string[]
+}[] = [
+  {
+    id: 'needs',
+    label: 'Needs',
+    description: 'Diet, materials, care, and home constraints',
+    categories: ['food', 'materials', 'personal-care', 'home'],
+  },
+  {
+    id: 'values',
+    label: 'Values',
+    description: 'Ethics, sustainability, and sourcing',
+    categories: ['sustainability'],
+  },
+  {
+    id: 'taste',
+    label: 'Taste',
+    description: 'Quality, shopping style, and tech preferences',
+    categories: ['shopping', 'technology'],
+  },
+  {
+    id: 'interests',
+    label: 'Interests',
+    description: 'Culture and hobbies that influence style',
+    categories: ['interests'],
+  },
+]
+
+const PREFERENCE_CATEGORY_LABELS: Record<string, string> = {
+  food: 'Food',
+  materials: 'Materials and fit',
+  sustainability: 'Values',
+  'personal-care': 'Personal care',
+  shopping: 'Shopping style',
+  technology: 'Technology',
+  home: 'Home',
+  interests: 'Interests',
+}
+
+const PREFERENCE_POLARITY_LABELS: Record<string, string> = {
+  avoid: 'Avoid',
+  prefer: 'Prefer',
+  require: 'Need',
+}
+
+function preferenceCategory(preference: Preference): string {
+  return preference.category || 'other'
+}
+
+function preferenceCategoryLabel(category: string): string {
+  return PREFERENCE_CATEGORY_LABELS[category] ?? category
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function preferenceSortValue(preference: Preference): number {
+  return preference.displayOrder ?? Number.MAX_SAFE_INTEGER
+}
+
+function sortPreferences(preferences: readonly Preference[]): Preference[] {
+  return [...preferences].sort((left, right) =>
+    preferenceSortValue(left) - preferenceSortValue(right) ||
+    left.label.localeCompare(right.label),
   )
+}
+
+function preferenceMatchesSearch(preference: Preference, searchText: string): boolean {
+  const category = preferenceCategoryLabel(preferenceCategory(preference))
+  return [
+    preference.label,
+    preference.desc,
+    preference.category,
+    preference.polarity,
+    category,
+  ]
+    .some((value) => typeof value === 'string' && value.toLowerCase().includes(searchText))
+}
+
+function preferenceGroupsFor(
+  preferences: readonly Preference[],
+): { category: string; label: string; preferences: Preference[] }[] {
+  const groups = new Map<string, Preference[]>()
+  sortPreferences(preferences).forEach((preference) => {
+    const category = preferenceCategory(preference)
+    groups.set(category, [...(groups.get(category) ?? []), preference])
+  })
+  return [...groups.entries()].map(([category, groupedPreferences]) => ({
+    category,
+    label: preferenceCategoryLabel(category),
+    preferences: groupedPreferences,
+  }))
 }
 
 function PreferencesView({
@@ -3842,7 +3937,22 @@ function PreferencesView({
   const [imported, setImported] = useState(false)
   const [copied, setCopied] = useState(false)
   const [parsing, setParsing] = useState(false)
-  const enabled = allPrefs.filter((preference) => prefsOn.has(preference.id))
+  const [activePreferenceGroup, setActivePreferenceGroup] = useState<PreferenceGroupId>('interests')
+  const [preferenceSearch, setPreferenceSearch] = useState('')
+  const enabled = sortPreferences(allPrefs.filter((preference) => prefsOn.has(preference.id)))
+  const preferenceSearchText = preferenceSearch.trim().toLowerCase()
+  const activeGroup = PREFERENCE_GROUPS.find((group) => group.id === activePreferenceGroup) ?? PREFERENCE_GROUPS[0]
+  const visiblePreferences = useMemo(() => {
+    if (preferenceSearchText) {
+      return sortPreferences(allPrefs.filter((preference) => preferenceMatchesSearch(preference, preferenceSearchText)))
+    }
+    const activeCategories = new Set(activeGroup.categories)
+    return sortPreferences(allPrefs.filter((preference) => activeCategories.has(preferenceCategory(preference))))
+  }, [activeGroup, allPrefs, preferenceSearchText])
+  const visiblePreferenceGroups = useMemo(
+    () => preferenceGroupsFor(visiblePreferences),
+    [visiblePreferences],
+  )
 
   const copyQuestion = () => {
     const done = () => {
@@ -3925,28 +4035,118 @@ function PreferencesView({
       <section className="mt-prefs-section">
         <div className="mt-sechead">
           <div>
-            <h3 className="mt-sectitle">Your filters</h3>
-            <p className="mt-secsub">Applied everywhere automatically.</p>
+            <h3 className="mt-sectitle">Shopping profile</h3>
+            <p className="mt-secsub">
+              Selected needs, values, taste, and interests shape every product Meant shows you.
+            </p>
           </div>
           <span className="mt-mono mt-sec-count">{enabled.length} active</span>
         </div>
-        <div className="mt-prefs-list">
-          {allPrefs.map((preference) => {
-            const active = prefsOn.has(preference.id)
-            return (
-              <div className={`mt-pref-row ${active ? '' : 'off'}`} key={preference.id}>
-                <div className="mt-pref-text">
-                  <div className="mt-pref-name">
-                    {preference.label}
-                  </div>
-                  <div className="mt-pref-desc">{preference.desc}</div>
+        <div className="mt-profile-summary">
+          {enabled.length > 0 ? (
+            <div className="mt-active-chip-grid" aria-label="Active shopping profile">
+              {enabled.map((preference) => (
+                <button
+                  className={`mt-active-chip ${preferenceCategory(preference) === 'interests' ? 'interest' : ''}`}
+                  key={preference.id}
+                  type="button"
+                  title={preference.desc}
+                  onClick={() => onToggle(preference.id)}
+                >
+                  <span>{preference.label}</span>
+                  <CloseIcon size={12} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-pref-empty">No profile filters selected yet.</div>
+          )}
+        </div>
+
+        <div className="mt-profile-builder">
+          <div className="mt-pref-builder-head">
+            <div>
+              <div className="mt-pref-name">Add to profile</div>
+              <div className="mt-pref-desc">
+                Interests tune themes and references; needs and values still guide fit and ranking.
+              </div>
+            </div>
+            <span className="mt-mono mt-sec-count">{visiblePreferences.length} shown</span>
+          </div>
+
+          <div className="mt-pref-tabs" role="tablist" aria-label="Preference groups">
+            {PREFERENCE_GROUPS.map((group) => (
+              <button
+                className={`mt-pref-tab ${group.id === activePreferenceGroup ? 'active' : ''}`}
+                key={group.id}
+                type="button"
+                role="tab"
+                aria-selected={group.id === activePreferenceGroup}
+                onClick={() => setActivePreferenceGroup(group.id)}
+              >
+                <span>{group.label}</span>
+                <small>{group.description}</small>
+              </button>
+            ))}
+          </div>
+
+          <label className="mt-pref-search">
+            <SearchIcon size={15} />
+            <input
+              value={preferenceSearch}
+              onChange={(event) => setPreferenceSearch(event.target.value)}
+              placeholder="Search filters and interests"
+              aria-label="Search filters and interests"
+            />
+            {preferenceSearchText ? (
+              <button
+                className="mt-pref-search-clear"
+                type="button"
+                aria-label="Clear preference search"
+                onClick={() => setPreferenceSearch('')}
+              >
+                <CloseIcon size={13} />
+              </button>
+            ) : null}
+          </label>
+
+          <div className="mt-pref-picker">
+            {visiblePreferenceGroups.length === 0 ? (
+              <div className="mt-pref-empty">No matching filters.</div>
+            ) : null}
+            {visiblePreferenceGroups.map((group) => (
+              <div className="mt-pref-category" key={group.category}>
+                <div className="mt-pref-category-head">
+                  <span>{group.label}</span>
+                  <span className="mt-mono">{group.preferences.length}</span>
                 </div>
-                <div className="mt-pref-controls">
-                  <Toggle on={active} onClick={() => onToggle(preference.id)} />
+                <div className="mt-pref-chip-grid">
+                  {group.preferences.map((preference) => {
+                    const active = prefsOn.has(preference.id)
+                    const category = preferenceCategory(preference)
+                    const polarity = preference.polarity || 'prefer'
+                    return (
+                      <button
+                        className={`mt-filter-chip ${active ? 'active' : ''} ${category === 'interests' ? 'interest' : ''} polarity-${polarity}`}
+                        key={preference.id}
+                        type="button"
+                        aria-pressed={active}
+                        title={preference.desc}
+                        onClick={() => onToggle(preference.id)}
+                      >
+                        <span className="mt-filter-chip-label">{preference.label}</span>
+                        {category === 'interests' ? null : (
+                          <span className="mt-filter-chip-meta">
+                            {PREFERENCE_POLARITY_LABELS[polarity] ?? polarity}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
-            )
-          })}
+            ))}
+          </div>
         </div>
       </section>
 
