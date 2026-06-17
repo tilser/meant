@@ -2,6 +2,7 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
@@ -76,6 +77,28 @@ class UserProductSearchSuggestionServiceTest {
     void generateFallsBackWhenOpenRouterReturnsBlankResponse() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         openRouterChatClient.response = " ";
+        UserProductSearchSuggestionService service = service(openRouterChatClient);
+
+        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+
+        assertThat(result.suggestions()).hasSize(4);
+        assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal under $80");
+    }
+
+    @Test
+    void generateFallsBackWhenOpenRouterThrowsException() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient() {
+            @Override
+            public String completeJson(
+                    String model,
+                    String systemPrompt,
+                    String userPrompt,
+                    String schemaName,
+                    OpenRouterJsonSchemaDefinition schema
+            ) {
+                throw new OpenRouterException("Simulated OpenRouter failure");
+            }
+        };
         UserProductSearchSuggestionService service = service(openRouterChatClient);
 
         UserProductSearchSuggestionsResult result = service.generate(upsertCommand());

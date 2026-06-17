@@ -46,14 +46,18 @@ public class UserProductSearchSuggestionService {
 
     public UserProductSearchSuggestionsResult generate(@NotNull @Valid UpsertUserCommand command) {
         UserSettingsResult settings = userSettingsService.get(command);
-        String response = openRouterChatClient.completeJson(
-                openRouterProperties.models().productSearchQueryParser(),
-                SYSTEM_PROMPT,
-                userPrompt(settings),
-                "product_search_suggestions",
-                responseSchema()
-        );
-        return new UserProductSearchSuggestionsResult(sanitize(response, settings));
+        try {
+            String response = openRouterChatClient.completeJson(
+                    openRouterProperties.models().productSearchQueryParser(),
+                    SYSTEM_PROMPT,
+                    userPrompt(settings),
+                    "product_search_suggestions",
+                    responseSchema()
+            );
+            return new UserProductSearchSuggestionsResult(sanitize(response, settings));
+        } catch (OpenRouterException exception) {
+            return new UserProductSearchSuggestionsResult(sanitize(null, settings));
+        }
     }
 
     private String userPrompt(UserSettingsResult settings) {
