@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -79,8 +80,7 @@ public class UserProductSearchSuggestionService {
         }
         return filters.stream()
                 .map(filter -> "- %s: %s".formatted(filter.label(), filter.description()))
-                .reduce((left, right) -> left + "\n" + right)
-                .orElse("No active filters.");
+                .collect(Collectors.joining("\n"));
     }
 
     private String location(UserLocationResult location) {
@@ -114,10 +114,13 @@ public class UserProductSearchSuggestionService {
                 break;
             }
         }
-        return List.copyOf(completed.subList(0, Math.min(SUGGESTION_COUNT, completed.size())));
+        return List.copyOf(completed);
     }
 
     private SuggestionsResponse parseResponse(String response) {
+        if (response == null || response.isBlank()) {
+            return new SuggestionsResponse(List.of());
+        }
         try {
             SuggestionsResponse parsed = objectMapper.readValue(response, SuggestionsResponse.class);
             return parsed == null ? new SuggestionsResponse(List.of()) : parsed;
@@ -133,7 +136,7 @@ public class UserProductSearchSuggestionService {
 
         List<String> suggestions = new ArrayList<>();
         values.forEach(value -> addSuggestion(suggestions, value));
-        return List.copyOf(suggestions.subList(0, Math.min(SUGGESTION_COUNT, suggestions.size())));
+        return List.copyOf(suggestions);
     }
 
     private void addSuggestion(List<String> suggestions, String value) {
@@ -148,7 +151,7 @@ public class UserProductSearchSuggestionService {
 
         Set<String> existing = suggestions.stream()
                 .map(current -> current.toLowerCase(Locale.ROOT))
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
         if (!existing.contains(suggestion.toLowerCase(Locale.ROOT))) {
             suggestions.add(suggestion);
         }
@@ -157,7 +160,7 @@ public class UserProductSearchSuggestionService {
     private List<String> fallbackSuggestions(UserSettingsResult settings) {
         Set<String> filterIds = settings.filters().stream()
                 .map(ShoppingFilterResult::id)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         String budgetSuffix = settings.budget() == null ? "" : " under $" + settings.budget();
         List<String> suggestions = new ArrayList<>();
 

@@ -72,6 +72,18 @@ class UserProductSearchSuggestionServiceTest {
         assertThat(first.suggestions().getFirst()).isEqualTo("Organic cereal");
     }
 
+    @Test
+    void generateFallsBackWhenOpenRouterReturnsBlankResponse() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = " ";
+        UserProductSearchSuggestionService service = service(openRouterChatClient);
+
+        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+
+        assertThat(result.suggestions()).hasSize(4);
+        assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal under $80");
+    }
+
     private UserProductSearchSuggestionService service(FakeOpenRouterChatClient openRouterChatClient) {
         return new UserProductSearchSuggestionService(
                 new FakeUserSettingsService(),

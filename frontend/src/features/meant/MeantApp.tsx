@@ -160,9 +160,12 @@ function currentBrowserGreeting(): string {
   return greetingForHour(new Date().getHours())
 }
 
-function completeSearchSuggestions(suggestions: readonly string[]): string[] {
+function completeSearchSuggestions(suggestions: unknown): string[] {
   const completed: string[] = []
-  const addSuggestion = (suggestion: string) => {
+  const addSuggestion = (suggestion: unknown) => {
+    if (typeof suggestion !== 'string') {
+      return
+    }
     const normalized = suggestion.trim().replace(/\s+/g, ' ')
     if (
       normalized &&
@@ -173,7 +176,9 @@ function completeSearchSuggestions(suggestions: readonly string[]): string[] {
     }
   }
 
-  suggestions.forEach(addSuggestion)
+  if (Array.isArray(suggestions)) {
+    suggestions.forEach(addSuggestion)
+  }
   PROMPTS.forEach(addSuggestion)
   return completed.slice(0, SEARCH_SUGGESTION_COUNT)
 }
