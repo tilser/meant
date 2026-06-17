@@ -53,6 +53,19 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
+    void parsesGroupedEuropeanPriceAmounts() {
+        UserProductSearchCatalogInput input = builder.build(
+                "linen shirt under 1.234,56 eur",
+                intent("linen shirt under 1.234,56 eur"),
+                settings(new UserLocationResult("France", "FR", "Paris"))
+        );
+
+        assertThat(input.searchQuery()).isEqualTo("linen shirt");
+        assertThat(input.context().currency()).isEqualTo("EUR");
+        assertThat(input.filters().price().max()).isEqualTo(123456L);
+    }
+
+    @Test
     void sendsLocationSignalsAndBudgetAsHardPriceFilterWhenQueryHasNoPrice() {
         UserProductSearchCatalogInput input = builder.build(
                 "throw pillow",
@@ -73,7 +86,8 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");
         assertThat(input.filters().price().max()).isEqualTo(12000L);
         assertThat(input.cacheKey())
-                .contains("country=CZ", "currency=CZK", "priceMax=12000", "buyerIp=203.0.113.4");
+                .contains("country=CZ", "currency=CZK", "priceMax=12000")
+                .doesNotContain("buyerIp", "userAgent", "203.0.113.4", "Meant Test");
     }
 
     private UserProductSearchQueryIntentResult intent(String searchQuery) {

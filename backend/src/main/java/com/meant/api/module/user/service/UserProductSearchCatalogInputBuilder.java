@@ -24,7 +24,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserProductSearchCatalogInputBuilder {
 
-    private static final String AMOUNT_PATTERN = "(?:[$€£¥]\\s*)?\\d+(?:[\\.,]\\d{1,2})?";
+    private static final String AMOUNT_NUMBER_PATTERN =
+            "(?:\\d{1,3}(?:[\\.,]\\d{3})+|\\d+)(?:[\\.,]\\d{1,2})?";
+    private static final String AMOUNT_PATTERN = "(?:[$€£¥]\\s*)?" + AMOUNT_NUMBER_PATTERN;
     private static final String CURRENCY_PATTERN =
             "(?:usd|u\\.s\\. dollars?|us dollars?|dollars?|eur|euros?|gbp|pounds?|czk|crowns?|cad|canadian dollars?|aud|australian dollars?|jpy|yen)";
     private static final Pattern BETWEEN_PRICE_PATTERN = Pattern.compile(
@@ -38,8 +40,8 @@ public class UserProductSearchCatalogInputBuilder {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MAX_PRICE_WITH_PREFIXED_CURRENCY_PATTERN = Pattern.compile(
-            "\\b(?:under|below|less than|up to|max(?:imum)?|no more than)\\s+(?<currency>%s)\\s+(?<max>\\d+(?:[\\.,]\\d{1,2})?)\\b"
-                    .formatted(CURRENCY_PATTERN),
+            "\\b(?:under|below|less than|up to|max(?:imum)?|no more than)\\s+(?<currency>%s)\\s+(?<max>%s)\\b"
+                    .formatted(CURRENCY_PATTERN, AMOUNT_NUMBER_PATTERN),
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MIN_PRICE_PATTERN = Pattern.compile(
@@ -48,8 +50,8 @@ public class UserProductSearchCatalogInputBuilder {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MIN_PRICE_WITH_PREFIXED_CURRENCY_PATTERN = Pattern.compile(
-            "\\b(?:over|above|more than|at least|min(?:imum)?|no less than)\\s+(?<currency>%s)\\s+(?<min>\\d+(?:[\\.,]\\d{1,2})?)\\b"
-                    .formatted(CURRENCY_PATTERN),
+            "\\b(?:over|above|more than|at least|min(?:imum)?|no less than)\\s+(?<currency>%s)\\s+(?<min>%s)\\b"
+                    .formatted(CURRENCY_PATTERN, AMOUNT_NUMBER_PATTERN),
             Pattern.CASE_INSENSITIVE
     );
     private static final List<Pattern> PRICE_PATTERNS = List.of(
@@ -100,7 +102,7 @@ public class UserProductSearchCatalogInputBuilder {
         CatalogSearchFilters filters = filters(priceFilter, currency);
         return new UserProductSearchCatalogInput(
                 searchQuery,
-                cacheKey(queryIntent, searchQuery, context, signals, filters),
+                cacheKey(queryIntent, searchQuery, context, filters),
                 context,
                 signals,
                 filters
@@ -305,7 +307,6 @@ public class UserProductSearchCatalogInputBuilder {
             UserProductSearchQueryIntentResult queryIntent,
             String searchQuery,
             CatalogSearchContext context,
-            CatalogSearchSignals signals,
             CatalogSearchFilters filters
     ) {
         CatalogSearchPriceFilter price = filters == null ? null : filters.price();
@@ -316,9 +317,7 @@ public class UserProductSearchCatalogInputBuilder {
                 "language=" + value(context.language()),
                 "currency=" + value(context.currency()),
                 "priceMin=" + value(price == null ? null : price.min()),
-                "priceMax=" + value(price == null ? null : price.max()),
-                "buyerIp=" + value(signals == null ? null : signals.buyerIp()),
-                "userAgent=" + value(signals == null ? null : signals.userAgent())
+                "priceMax=" + value(price == null ? null : price.max())
         );
     }
 
@@ -332,17 +331,31 @@ public class UserProductSearchCatalogInputBuilder {
     }
 
     private BigDecimal amount(String amount) {
+        String cleaned = normalizedDecimalAmount(amount);
+        return new BigDecimal(cleaned);
+    }
+
+    private String normalizedDecimalAmount(String amount) {
         String cleaned = amount == null ? "" : amount.trim()
                 .replaceAll("[^0-9,.\\-]", "");
         if (cleaned.contains(".") && cleaned.contains(",")) {
-            cleaned = cleaned.replace(",", "");
+            int lastDot = cleaned.lastIndexOf('.');
+            int lastComma = cleaned.lastIndexOf(',');
+            cleaned = lastComma > lastDot
+                    ? cleaned.replace(".", "").replace(',', '.')
+                    : cleaned.replace(",", "");
         } else if (cleaned.contains(",")) {
             int commaIndex = cleaned.lastIndexOf(',');
             cleaned = cleaned.length() - commaIndex == 3
                     ? cleaned.replace(',', '.')
                     : cleaned.replace(",", "");
+        } else if (cleaned.contains(".")) {
+            int dotIndex = cleaned.lastIndexOf('.');
+            if (cleaned.length() - dotIndex == 4) {
+                cleaned = cleaned.replace(".", "");
+            }
         }
-        return new BigDecimal(cleaned);
+        return cleaned;
     }
 
     private int currencyExponent(String currency) {

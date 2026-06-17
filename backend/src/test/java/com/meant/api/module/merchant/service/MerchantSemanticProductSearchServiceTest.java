@@ -248,6 +248,59 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(merchantProductDetailsClient.calls).containsExactly("home.example:cheap-pillow");
     }
 
+    @Test
+    void keepsProductWhenOnlyCatalogMaxPriceAndNoCurrencyAreKnown() {
+        MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("known-max-pillow", "Affordable Throw Pillow", "Soft pillow", "pillows", null, 8000L, null)
+        )));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "throw pillow",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new CatalogSearchContext("US", null, null, "en", "USD", "Original request: pillow under 100 USD"),
+                        null,
+                        new CatalogSearchFilters(List.of(), new CatalogSearchPriceFilter(null, 10000L))
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("known-max-pillow");
+        assertThat(merchantProductDetailsClient.calls).containsExactly("home.example:known-max-pillow");
+    }
+
+    @Test
+    void appliesDetailPriceFilterWithGroupedEuropeanDecimalSeparators() {
+        MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("euro-lamp", "European Lamp", "Warm lamp", "lighting", 123456L, 123456L, "EUR")
+        )));
+        merchantProductDetailsClient.prices.put("euro-lamp", "1.234,56");
+        merchantProductDetailsClient.currencies.put("euro-lamp", "EUR");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "lamp over 1000 EUR",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new CatalogSearchContext("DE", null, null, "en", "EUR", "Original request: lamp over 1000 EUR"),
+                        null,
+                        new CatalogSearchFilters(List.of(), new CatalogSearchPriceFilter(100000L, null))
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("euro-lamp");
+    }
+
     private MerchantSemanticSearchResult merchant(String domain, String name, int rank) {
         return new MerchantSemanticSearchResult(
                 UUID.randomUUID(),
@@ -280,20 +333,32 @@ class MerchantSemanticProductSearchServiceTest {
             String category,
             Long price
     ) {
+        return product(id, title, description, category, price, price, "USD");
+    }
+
+    private CatalogSearchResponse.Product product(
+            String id,
+            String title,
+            String description,
+            String category,
+            Long minPrice,
+            Long maxPrice,
+            String currency
+    ) {
         return new CatalogSearchResponse.Product(
                 id,
                 title,
                 new CatalogSearchResponse.Description("<p>" + description + "</p>"),
                 "https://example.com/products/" + id,
                 new CatalogSearchResponse.PriceRange(
-                        new CatalogSearchResponse.Money(price, "USD"),
-                        new CatalogSearchResponse.Money(price, "USD")
+                        new CatalogSearchResponse.Money(minPrice, currency),
+                        new CatalogSearchResponse.Money(maxPrice, currency)
                 ),
                 List.of(new CatalogSearchResponse.Variant(
                         id + "-variant",
                         "Default Title",
                         new CatalogSearchResponse.Description("<p>" + description + "</p>"),
-                        new CatalogSearchResponse.Money(price, "USD"),
+                        new CatalogSearchResponse.Money(minPrice == null ? maxPrice : minPrice, currency),
                         new CatalogSearchResponse.Availability(true),
                         List.of(new CatalogSearchResponse.Media("image", "https://example.com/" + id + ".jpg"))
                 )),
@@ -380,6 +445,8 @@ class MerchantSemanticProductSearchServiceTest {
     static class FakeMerchantProductDetailsClient extends MerchantProductDetailsClient {
 
         private final Map<String, String> failures = new HashMap<>();
+        private final Map<String, String> prices = new HashMap<>();
+        private final Map<String, String> currencies = new HashMap<>();
         private final List<String> calls = new CopyOnWriteArrayList<>();
         private CountDownLatch concurrentProductDetails;
 
@@ -398,6 +465,8 @@ class MerchantSemanticProductSearchServiceTest {
             if (failures.containsKey(productId)) {
                 throw new MerchantProductDetailsException(failures.get(productId));
             }
+            String price = prices.getOrDefault(productId, "12.95");
+            String currency = currencies.getOrDefault(productId, "USD");
             return new ProductDetailsResult(
                     merchant.advertisedMcpEndpoint(),
                     "{}",
@@ -413,14 +482,14 @@ class MerchantSemanticProductSearchServiceTest {
                             )),
                             List.of(new ProductDetailsResponse.Option("Size", List.of("Default"))),
                             1,
-                            new ProductDetailsResponse.PriceRange("12.95", "12.95", "USD"),
+                            new ProductDetailsResponse.PriceRange(price, price, currency),
                             false,
                             List.of(),
                             new ProductDetailsResponse.SelectedVariant(
                                     productId + "-selected",
                                     "Default",
-                                    "12.95",
-                                    "USD",
+                                    price,
+                                    currency,
                                     "https://example.com/" + productId + "-variant.jpg",
                                     "Variant image",
                                     true,

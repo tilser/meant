@@ -444,13 +444,28 @@ public class MerchantSemanticProductSearchService {
             return true;
         }
         String expectedCurrency = normalizedCurrency(context == null ? null : context.currency());
-        if (expectedCurrency != null && !expectedCurrency.equals(normalizedCurrency(currency))) {
+        String productCurrency = normalizedCurrency(currency);
+        if (expectedCurrency != null && productCurrency != null && !expectedCurrency.equals(productCurrency)) {
             return false;
         }
-        if (price.min() != null && (maxAmount == null || maxAmount < price.min())) {
+        if (price.min() != null && !hasKnownPriceAtOrAbove(minAmount, maxAmount, price.min())) {
             return false;
         }
-        return price.max() == null || (minAmount != null && minAmount <= price.max());
+        return price.max() == null || hasKnownPriceAtOrBelow(minAmount, maxAmount, price.max());
+    }
+
+    private boolean hasKnownPriceAtOrAbove(Long minAmount, Long maxAmount, Long threshold) {
+        if (maxAmount != null) {
+            return maxAmount >= threshold;
+        }
+        return minAmount != null && minAmount >= threshold;
+    }
+
+    private boolean hasKnownPriceAtOrBelow(Long minAmount, Long maxAmount, Long threshold) {
+        if (minAmount != null) {
+            return minAmount <= threshold;
+        }
+        return maxAmount != null && maxAmount <= threshold;
     }
 
     private Long decimalAmountToMinor(String amount, String currency) {
@@ -463,12 +478,21 @@ public class MerchantSemanticProductSearchService {
             return null;
         }
         if (cleaned.contains(".") && cleaned.contains(",")) {
-            cleaned = cleaned.replace(",", "");
+            int lastDot = cleaned.lastIndexOf('.');
+            int lastComma = cleaned.lastIndexOf(',');
+            cleaned = lastComma > lastDot
+                    ? cleaned.replace(".", "").replace(',', '.')
+                    : cleaned.replace(",", "");
         } else if (cleaned.contains(",")) {
             int commaIndex = cleaned.lastIndexOf(',');
             cleaned = cleaned.length() - commaIndex == 3
                     ? cleaned.replace(',', '.')
                     : cleaned.replace(",", "");
+        } else if (cleaned.contains(".")) {
+            int dotIndex = cleaned.lastIndexOf('.');
+            if (cleaned.length() - dotIndex == 4) {
+                cleaned = cleaned.replace(".", "");
+            }
         }
         try {
             BigDecimal decimal = new BigDecimal(cleaned);
