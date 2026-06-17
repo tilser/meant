@@ -6,10 +6,12 @@ import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserProductSearchResponse;
+import com.meant.api.module.user.controller.response.UserProductSearchSuggestionsResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
+import com.meant.api.module.user.service.UserProductSearchSuggestionService;
 import com.meant.api.module.user.service.UserProductSearchService;
 import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.UserService;
@@ -53,6 +55,7 @@ public class UserController {
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
     private final UserProductSearchService userProductSearchService;
+    private final UserProductSearchSuggestionService userProductSearchSuggestionService;
     private final UserSavedProductService userSavedProductService;
 
     @GetMapping("/me")
@@ -150,6 +153,23 @@ public class UserController {
         return UserProductSearchResponse.from(userProductSearchService.search(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 new SearchUserProductsCommand(authenticatedUser.id(), request.query(), request.merchantId())));
+    }
+
+    @GetMapping("/me/product-search-suggestions")
+    @Operation(
+            summary = "Generate product search suggestions",
+            description = "Generates four fresh product search suggestions from the current user's active shopping "
+                    + "filters, budget, and location."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Generated product search suggestions for the current user",
+            content = @Content(schema = @Schema(implementation = UserProductSearchSuggestionsResponse.class))
+    )
+    public UserProductSearchSuggestionsResponse productSearchSuggestions(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserProductSearchSuggestionsResponse.from(userProductSearchSuggestionService.generate(
+                UserCommandMapper.toUpsertCommand(authenticatedUser)));
     }
 
     @GetMapping("/me/saved-products")

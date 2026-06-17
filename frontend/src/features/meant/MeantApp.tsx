@@ -32,6 +32,7 @@ import {
   getCurrentUser,
   getMerchants,
   getSavedProducts,
+  getUserProductSearchSuggestions,
   getUserSettings,
   removeSavedProduct,
   saveUserProduct,
@@ -143,6 +144,7 @@ const askContexts: Readonly<Record<View, { label: string; suggestions: readonly 
   }
 
 const DEFAULT_GREETING = 'Good afternoon'
+const SEARCH_SUGGESTION_COUNT = 4
 
 function greetingForHour(hour: number): string {
   if (hour >= 5 && hour < 12) {
@@ -156,6 +158,24 @@ function greetingForHour(hour: number): string {
 
 function currentBrowserGreeting(): string {
   return greetingForHour(new Date().getHours())
+}
+
+function completeSearchSuggestions(suggestions: readonly string[]): string[] {
+  const completed: string[] = []
+  const addSuggestion = (suggestion: string) => {
+    const normalized = suggestion.trim().replace(/\s+/g, ' ')
+    if (
+      normalized &&
+      completed.length < SEARCH_SUGGESTION_COUNT &&
+      !completed.some((current) => current.toLowerCase() === normalized.toLowerCase())
+    ) {
+      completed.push(normalized)
+    }
+  }
+
+  suggestions.forEach(addSuggestion)
+  PROMPTS.forEach(addSuggestion)
+  return completed.slice(0, SEARCH_SUGGESTION_COUNT)
 }
 
 function useStoredState<T>(
@@ -1371,6 +1391,7 @@ function FeedView({
   products,
   hiddenByShip,
   location,
+  prompts,
   reply,
   query,
   loading,
@@ -1395,6 +1416,7 @@ function FeedView({
   products: readonly Product[]
   hiddenByShip: number
   location: UserLocation | null
+  prompts: readonly string[]
   reply: string | null
   query: string
   loading: boolean
@@ -1420,7 +1442,7 @@ function FeedView({
       <ChatHero
         profile={profile}
         greeting={greeting}
-        prompts={PROMPTS}
+        prompts={prompts}
         onSubmit={onSubmit}
         loading={loading}
         merchants={merchants}
@@ -3884,6 +3906,7 @@ export function MeantApp() {
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantsError, setMerchantsError] = useState<string | null>(null)
@@ -3908,6 +3931,7 @@ export function MeantApp() {
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
+  const searchSuggestionsRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
   const savePendingRef = useRef(new Set<ProductId>())
@@ -4065,6 +4089,32 @@ export function MeantApp() {
   // (which replace `session` hourly) don't trigger a redundant re-fetch.
   const userId = session?.user?.id
   const userEmail = session?.user?.email
+  const refreshSearchSuggestions = useCallback(async () => {
+    if (!userId) {
+      setSearchSuggestions([])
+      return
+    }
+
+    const requestId = searchSuggestionsRequestRef.current + 1
+    searchSuggestionsRequestRef.current = requestId
+    try {
+      const result = await getUserProductSearchSuggestions()
+      if (searchSuggestionsRequestRef.current !== requestId) {
+        return
+      }
+      setSearchSuggestions(completeSearchSuggestions(result.suggestions))
+    } catch {
+      if (searchSuggestionsRequestRef.current !== requestId) {
+        return
+      }
+      setSearchSuggestions([...PROMPTS])
+    }
+  }, [userId])
+
+  useEffect(() => {
+    void refreshSearchSuggestions()
+  }, [refreshSearchSuggestions])
+
   useEffect(() => {
     if (!userId) {
       return
@@ -4122,6 +4172,8 @@ export function MeantApp() {
     setRemoteProducts([])
     setSearchError(null)
     setSearchLoading(false)
+    searchSuggestionsRequestRef.current += 1
+    setSearchSuggestions([])
     setSelectedMerchantId(null)
     setSavedIds([])
     setSavedProducts([])
@@ -4439,6 +4491,7 @@ export function MeantApp() {
   }) => {
     try {
       applySavedSettings(await updateUserSettings(input))
+      void refreshSearchSuggestions()
       return true
     } catch {
       return false
@@ -4670,6 +4723,7 @@ export function MeantApp() {
             products={feedProducts}
             hiddenByShip={hiddenByShip}
             location={location}
+            prompts={searchSuggestions}
             reply={reply}
             query={query}
             loading={searchLoading}
