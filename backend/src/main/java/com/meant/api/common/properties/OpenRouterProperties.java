@@ -29,6 +29,9 @@ public record OpenRouterProperties(
             String preferenceFilterParser,
 
             @NotBlank
+            String productSearchQueryParser,
+
+            @NotBlank
             String productRecommendationExplainer
     ) {
     }

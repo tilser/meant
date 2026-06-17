@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-user-product-search-query-intents" author="meant">
+        <createTable tableName="user_product_search_query_intents">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="normalized_original_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prompt_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="search_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_search_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="intent_cache_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="constraints_text" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="preference_hints_text" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="confidence" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+                tableName="user_product_search_query_intents"
+                columnNames="normalized_original_query, model, prompt_version"
+                constraintName="uk_user_product_search_query_intents_cache_key"/>
+        <createIndex
+                tableName="user_product_search_query_intents"
+                indexName="idx_user_product_search_query_intents_lookup">
+            <column name="normalized_original_query"/>
+            <column name="model"/>
+            <column name="prompt_version"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

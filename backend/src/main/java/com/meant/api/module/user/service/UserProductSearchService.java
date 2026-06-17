@@ -11,6 +11,7 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
+import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import jakarta.validation.Valid;
@@ -19,7 +20,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -31,6 +31,7 @@ public class UserProductSearchService {
 
     private final UserSettingsService userSettingsService;
     private final MerchantSemanticProductSearchService merchantSemanticProductSearchService;
+    private final UserProductSearchQueryUnderstandingService userProductSearchQueryUnderstandingService;
     private final UserProductSearchHashService userProductSearchHashService;
     private final UserProductRecommendationExplanationService userProductRecommendationExplanationService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
@@ -46,8 +47,9 @@ public class UserProductSearchService {
         }
 
         String query = command.query().trim();
+        UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
         UserSettingsResult settings = userSettingsService.get(upsertCommand);
-        String normalizedQuery = userProductSearchHashService.normalizeQuery(query);
+        String normalizedQuery = queryIntent.intentCacheKey();
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
 
@@ -61,19 +63,28 @@ public class UserProductSearchService {
                         userProductSearchProperties.explanationPromptVersion(),
                         now
                 )
-                .orElseGet(() -> searchAndPersist(command.userId(), query, normalizedQuery, profileHash, settings, now));
+                .orElseGet(() -> searchAndPersist(
+                        command.userId(),
+                        query,
+                        queryIntent.searchQuery(),
+                        normalizedQuery,
+                        profileHash,
+                        settings,
+                        now
+                ));
     }
 
     private UserProductSearchResult searchAndPersist(
             UUID userId,
             String query,
+            String searchQuery,
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
             Instant now
     ) {
         MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery(query, null, null, null, null)
+                new SemanticProductSearchQuery(searchQuery, null, null, null, null)
         );
         List<UserProductSearchProductSnapshot> products = safeProducts(searchResult).stream()
                 .map(product -> new UserProductSearchProductSnapshot(

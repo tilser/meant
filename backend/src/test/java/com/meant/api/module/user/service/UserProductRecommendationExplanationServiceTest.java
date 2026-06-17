@@ -95,7 +95,7 @@ class UserProductRecommendationExplanationServiceTest {
         return new UserProductRecommendationExplanationService(
                 openRouterChatClient,
                 openRouterProperties(),
-                new UserProductSearchProperties("v1", "v1", Duration.ofHours(24)),
+                new UserProductSearchProperties("v1", "v1", "v1", Duration.ofHours(24)),
                 persistenceService,
                 new ObjectMapper()
         );
@@ -108,6 +108,7 @@ class UserProductRecommendationExplanationServiceTest {
                 "Meant",
                 new OpenRouterProperties.Models(
                         "preference-model",
+                        "query-model",
                         "google/gemini-2.5-flash-lite"
                 )
         );
@@ -202,7 +203,7 @@ class UserProductRecommendationExplanationServiceTest {
                     "https://openrouter.test/api/v1",
                     "test-key",
                     "Meant",
-                    new OpenRouterProperties.Models("test-model", "test-model")));
+                    new OpenRouterProperties.Models("test-model", "test-model", "test-model")));
         }
 
         @Override

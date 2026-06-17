@@ -14,6 +14,9 @@ public record UserProductSearchProperties(
         String searchVersion,
 
         @NotBlank
+        String queryParserPromptVersion,
+
+        @NotBlank
         String explanationPromptVersion,
 
         @NotNull
