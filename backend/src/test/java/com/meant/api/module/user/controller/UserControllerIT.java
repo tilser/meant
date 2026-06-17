@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.common.properties.OpenRouterProperties;
+import com.meant.api.common.service.OpenRouterChatClient;
+import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
@@ -45,6 +47,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.web.client.RestClient;
 
 /**
  * Boots the full app on a random port and drives it over HTTP. A test {@link JwtDecoder} turns
@@ -126,6 +129,44 @@ class UserControllerIT extends PostgresIntegrationTest {
                     builder.claim("user_metadata", Map.of("full_name", parts[2]));
                 }
                 return builder.build();
+            };
+        }
+
+        @Bean
+        @Primary
+        OpenRouterChatClient testOpenRouterChatClient() {
+            return new OpenRouterChatClient(
+                    RestClient.builder(),
+                    new OpenRouterProperties(
+                            "https://openrouter.test/api/v1",
+                            "test-key",
+                            "Meant",
+                            new OpenRouterProperties.Models(
+                                    "preference-model",
+                                    "openrouter/free",
+                                    "explainer-model"
+                            )
+                    )
+            ) {
+                @Override
+                public String completeJson(
+                        String model,
+                        String systemPrompt,
+                        String userPrompt,
+                        String schemaName,
+                        OpenRouterJsonSchemaDefinition schema
+                ) {
+                    return """
+                            {
+                              "searches": [
+                                {
+                                  "displayQuery": "Polished cotton tees under $50",
+                                  "query": "Polished cotton tees under $50"
+                                }
+                              ]
+                            }
+                            """;
+                }
             };
         }
     }
@@ -452,8 +493,8 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(popular).isNotNull();
         assertThat(popular).singleElement()
                 .satisfies(search -> {
-                    assertThat(search.displayQuery()).isEqualTo(displayQuery);
-                    assertThat(search.query()).isEqualTo(displayQuery);
+                    assertThat(search.displayQuery()).isEqualTo("Polished cotton tees under $50");
+                    assertThat(search.query()).isEqualTo("Polished cotton tees under $50");
                 });
     }
 
