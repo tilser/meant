@@ -399,6 +399,13 @@ function upsertProductSnapshot(products: Product[], product: Product): Product[]
   return products.map((candidate, index) => index === existingIndex ? product : candidate)
 }
 
+function productSnapshotsForIds(products: Product[], ids: readonly ProductId[]): Product[] {
+  const byId = new Map(products.map((product) => [product.id, product] as const))
+  return ids
+    .map((id) => byId.get(id))
+    .filter((product): product is Product => Boolean(product))
+}
+
 function normalizedMerchantName(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? ''
 }
@@ -1538,7 +1545,7 @@ function ProductModal({
   inCompare: boolean
   onClose: () => void
   onToggleSave: (product: Product) => void
-  onCompare: (id: ProductId) => void
+  onCompare: (product: Product) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   canPrev: boolean
   canNext: boolean
@@ -1756,7 +1763,7 @@ function ProductModal({
               <button
                 className={`mt-act mt-act-ghost ${inCompare ? 'on' : ''}`}
                 type="button"
-                onClick={() => onCompare(product.id)}
+                onClick={() => onCompare(product)}
               >
                 {inCompare ? 'In compare' : 'Add to compare'}
               </button>
@@ -2330,18 +2337,24 @@ function CompareView({
   products,
   compareIds,
   preferences,
+  location,
   onPick,
   onRemove,
   onAdd,
+  onOpen,
 }: Readonly<{
   products: readonly Product[]
   compareIds: readonly ProductId[]
   preferences: readonly Preference[]
-  onPick: (index: number, id: ProductId) => void
+  location: UserLocation | null
+  onPick: (index: number, product: Product) => void
   onRemove: (index: number) => void
-  onAdd: (id: ProductId) => void
+  onAdd: (product: Product) => void
+  onOpen: (product: Product, products: readonly Product[]) => void
 }>) {
-  const items = compareIds.map((id) => products.find((product) => product.id === id)).filter((product): product is Product => Boolean(product))
+  const items = compareIds
+    .map((id) => products.find((product) => product.id === id))
+    .filter((product): product is Product => Boolean(product))
   const selectedIds = items.map((product) => product.id)
   const showAdd = items.length < 4
   const enough = items.length >= 2
@@ -2349,7 +2362,14 @@ function CompareView({
     gridTemplateColumns: `190px repeat(${items.length + (showAdd ? 1 : 0)}, minmax(0, 1fr))`,
   }
   const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
-  const bestPrice = enough ? Math.min(...items.map((product) => product.priceFrom)) : null
+  const bestPrice = enough ? Math.min(...items.map((product) => productPriceFrom(product, location))) : null
+  const bestMerchantCount = enough ? Math.max(...items.map((product) => productMerchantCount(product, location))) : null
+  const winner = enough
+    ? [...items].sort((left, right) =>
+        right.match - left.match ||
+        productPriceFrom(left, location) - productPriceFrom(right, location),
+      )[0]
+    : null
   const comparisonPreferenceIds = preferences
     .map((preference) => preference.id)
     .filter((id) =>
@@ -2363,6 +2383,15 @@ function CompareView({
         title="Compare"
         sub="Compare up to four products at once. Swap, add, or remove any of them and Meant lines them up against everything you care about."
       />
+      {winner ? (
+        <div className="mt-cmp-verdict">
+          <div>
+            <div className="mt-mono mt-cmp-verdict-key">Meant pick</div>
+            <div className="mt-cmp-verdict-title">{winner.name}</div>
+          </div>
+          <p>{winner.note}</p>
+        </div>
+      ) : null}
       <div className="mt-cmp">
         <div className="mt-cmp-grid mt-cmp-headrow" style={gridStyle}>
           <div className="mt-cmp-rowlabel mt-cmp-corner mt-mono">
@@ -2378,6 +2407,7 @@ function CompareView({
               canRemove={items.length > 1}
               onPick={onPick}
               onRemove={onRemove}
+              onOpen={(item) => onOpen(item, items)}
             />
           ))}
           {showAdd ? (
@@ -2401,8 +2431,18 @@ function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: money(product.priceFrom),
-                win: bestPrice !== null && product.priceFrom === bestPrice,
+                value: money(productPriceFrom(product, location)),
+                win: bestPrice !== null && productPriceFrom(product, location) === bestPrice,
+              }))}
+              addSpacer={showAdd}
+            />
+            <CompareMetricRow
+              label="Stores"
+              gridStyle={gridStyle}
+              cells={items.map((product) => ({
+                key: product.id,
+                value: `${productMerchantCount(product, location)}`,
+                win: bestMerchantCount !== null && productMerchantCount(product, location) === bestMerchantCount,
               }))}
               addSpacer={showAdd}
             />
@@ -2410,12 +2450,27 @@ function CompareView({
               <div className="mt-cmp-rowlabel">Reviews</div>
               {items.map((product) => (
                 <div key={product.id} className="mt-cmp-cell">
-                  <span className="mt-stars">
-                    {'★'.repeat(Math.round(product.review.score))}
-                  </span>
-                  <span className="mt-mono mt-cmp-sub">
-                    {product.review.score.toFixed(1)} · {product.review.count.toLocaleString()}
-                  </span>
+                  {product.review.count > 0 ? (
+                    <>
+                      <span className="mt-stars">
+                        {'★'.repeat(Math.round(product.review.score))}
+                      </span>
+                      <span className="mt-mono mt-cmp-sub">
+                        {product.review.score.toFixed(1)} · {product.review.count.toLocaleString()}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="mt-mono mt-cmp-sub">No review data</span>
+                  )}
+                </div>
+              ))}
+              {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
+            </div>
+            <div className="mt-cmp-grid mt-cmp-row" style={gridStyle}>
+              <div className="mt-cmp-rowlabel">Meant take</div>
+              {items.map((product) => (
+                <div key={product.id} className="mt-cmp-cell">
+                  <span className="mt-cmp-text">{product.note}</span>
                 </div>
               ))}
               {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
@@ -2440,14 +2495,17 @@ function CompareView({
             ))}
             <div className="mt-cmp-grid mt-cmp-row mt-cmp-last" style={gridStyle}>
               <div className="mt-cmp-rowlabel">Best price at</div>
-              {items.map((product) => (
-                <div key={product.id} className="mt-cmp-cell">
-                  <span className="mt-cmp-store">{product.offers[0].merchant}</span>
-                  <span className="mt-mono mt-cmp-sub">
-                    {money(product.offers[0].price)} · {product.offers[0].delivery}
-                  </span>
-                </div>
-              ))}
+              {items.map((product) => {
+                const offer = bestOffer(product, location)
+                return (
+                  <div key={product.id} className="mt-cmp-cell">
+                    <span className="mt-cmp-store">{offer.merchant}</span>
+                    <span className="mt-mono mt-cmp-sub">
+                      {money(offer.price)} · {offer.delivery}
+                    </span>
+                  </div>
+                )
+              })}
               {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
             </div>
           </>
@@ -2509,23 +2567,32 @@ function CompareSlot({
   canRemove,
   onPick,
   onRemove,
+  onOpen,
 }: Readonly<{
   index: number
   product: Product
   products: readonly Product[]
   selectedIds: readonly ProductId[]
   canRemove: boolean
-  onPick: (index: number, id: ProductId) => void
+  onPick: (index: number, product: Product) => void
   onRemove: (index: number) => void
+  onOpen: (product: Product) => void
 }>) {
   const [open, setOpen] = useState(false)
   return (
     <div className="mt-cmp-col">
       <div className="mt-cmp-media">
-        <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
-        <div className="mt-cmp-ring">
-          <MatchRing value={product.match} size={48} stroke={3} />
-        </div>
+        <button
+          className="mt-cmp-media-open"
+          type="button"
+          onClick={() => onOpen(product)}
+          aria-label={`Open ${product.name}`}
+        >
+          <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
+          <div className="mt-cmp-ring">
+            <MatchRing value={product.match} size={48} stroke={3} />
+          </div>
+        </button>
         {canRemove ? (
           <button
             className="mt-cmp-remove"
@@ -2548,8 +2615,8 @@ function CompareSlot({
             products={products}
             selectedIds={selectedIds}
             currentId={product.id}
-            onChoose={(id) => {
-              onPick(index, id)
+            onChoose={(nextProduct) => {
+              onPick(index, nextProduct)
               setOpen(false)
             }}
           />
@@ -2566,7 +2633,7 @@ function CompareAddSlot({
 }: Readonly<{
   products: readonly Product[]
   selectedIds: readonly ProductId[]
-  onAdd: (id: ProductId) => void
+  onAdd: (product: Product) => void
 }>) {
   const [open, setOpen] = useState(false)
   return (
@@ -2580,8 +2647,8 @@ function CompareAddSlot({
             products={products}
             selectedIds={selectedIds}
             currentId={null}
-            onChoose={(id) => {
-              onAdd(id)
+            onChoose={(product) => {
+              onAdd(product)
               setOpen(false)
             }}
           />
@@ -2600,7 +2667,7 @@ function CompareMenu({
   products: readonly Product[]
   selectedIds: readonly ProductId[]
   currentId: ProductId | null
-  onChoose: (id: ProductId) => void
+  onChoose: (product: Product) => void
 }>) {
   const options = products.filter(
     (product) => product.id === currentId || !selectedIds.includes(product.id),
@@ -2612,7 +2679,7 @@ function CompareMenu({
           key={product.id}
           className={`mt-cmp-opt ${product.id === currentId ? 'on' : ''}`}
           type="button"
-          onClick={() => onChoose(product.id)}
+          onClick={() => onChoose(product)}
         >
           <span className="mt-cmp-opt-sw" style={{ background: product.tone }} />
           <span className="mt-cmp-opt-main">
@@ -3827,6 +3894,7 @@ export function MeantApp() {
   const [savedProducts, setSavedProducts] = useState<Product[]>([])
   const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
+  const [compareProducts, setCompareProducts] = useStoredState<Product[]>('meant.compareProducts', [])
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
   const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
   const [budget, setBudget] = useStoredState('meant.budget', 120)
@@ -3841,6 +3909,7 @@ export function MeantApp() {
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
+  const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
   const savePendingRef = useRef(new Set<ProductId>())
   const greeting = useBrowserGreeting()
   const closeAccountMenu = useCallback(() => {
@@ -3854,14 +3923,14 @@ export function MeantApp() {
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
   const allKnownProducts = useMemo(() => {
     const seen = new Set<ProductId>()
-    return [...searchResults, ...remoteProducts, ...savedProducts, ...PRODUCTS].filter((product) => {
+    return [...searchResults, ...remoteProducts, ...savedProducts, ...PRODUCTS, ...compareProducts].filter((product) => {
       if (seen.has(product.id)) {
         return false
       }
       seen.add(product.id)
       return true
     })
-  }, [remoteProducts, savedProducts, searchResults])
+  }, [compareProducts, remoteProducts, savedProducts, searchResults])
   const allKnownProductsMap = useMemo(
     () => new Map<ProductId, Product>(
       allKnownProducts.map((product) => [product.id, product] as const),
@@ -3949,6 +4018,10 @@ export function MeantApp() {
   useEffect(() => {
     cartRef.current = cart
   }, [cart])
+
+  useEffect(() => {
+    compareIdsRef.current = compareIds
+  }, [compareIds])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -4112,14 +4185,40 @@ export function MeantApp() {
       .finally(() => endSaveOperation(product.id))
   }
 
-  const addToCompare = (id: ProductId) => {
-    setCompareIds((current) => {
-      if (current.includes(id)) {
-        return current
-      }
-      return current.length < 4 ? [...current, id] : [...current.slice(1), id]
+  const commitCompareProducts = (nextIds: ProductId[], product?: Product) => {
+    compareIdsRef.current = nextIds
+    setCompareIds(nextIds)
+    setCompareProducts((current) => {
+      const withProduct = product ? upsertProductSnapshot(current, product) : current
+      return productSnapshotsForIds(withProduct, nextIds)
     })
+  }
+
+  const addToCompare = (product: Product) => {
+    const current = [...compareIdsRef.current]
+    const next = current.includes(product.id)
+      ? current
+      : current.length < 4 ? [...current, product.id] : [...current.slice(1), product.id]
+
+    commitCompareProducts(next, product)
     nav('compare')
+  }
+
+  const pickCompareProduct = (index: number, product: Product) => {
+    const next = [...compareIdsRef.current]
+    next[index] = product.id
+    commitCompareProducts(next, product)
+  }
+
+  const removeCompareProduct = (index: number) => {
+    const next = compareIdsRef.current.filter((_, currentIndex) => currentIndex !== index)
+    commitCompareProducts(next)
+  }
+
+  const addCompareProduct = (product: Product) => {
+    const current = [...compareIdsRef.current]
+    const next = current.includes(product.id) ? current : [...current, product.id].slice(0, 4)
+    commitCompareProducts(next, product)
   }
 
   const updateStoredCart = (updater: (current: CartItem[]) => CartItem[]) => {
@@ -4485,14 +4584,14 @@ export function MeantApp() {
       case 'compare':
         return (
           <CompareView
-            products={visibleProducts}
+            products={allKnownProducts}
             compareIds={compareIds}
             preferences={allPreferences}
-            onPick={(index, id) =>
-              setCompareIds((current) => current.map((existing, currentIndex) => (currentIndex === index ? id : existing)))
-            }
-            onRemove={(index) => setCompareIds((current) => current.filter((_, currentIndex) => currentIndex !== index))}
-            onAdd={(id) => setCompareIds((current) => (current.includes(id) ? current : [...current, id].slice(0, 4)))}
+            location={location}
+            onPick={pickCompareProduct}
+            onRemove={removeCompareProduct}
+            onAdd={addCompareProduct}
+            onOpen={openProduct}
           />
         )
       case 'preferences':
