@@ -3,10 +3,13 @@ package com.meant.api.module.merchant.service.query;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
+import java.util.UUID;
 
 public record SemanticProductSearchQuery(
         @NotBlank
         String query,
+
+        UUID merchantId,
 
         @Positive
         @Max(1000)

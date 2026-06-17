@@ -30,6 +30,7 @@ class MerchantSemanticProductSearchServiceTest {
     private FakeMerchantCatalogSearchClient merchantCatalogSearchClient;
     private FakeMerchantProductDetailsClient merchantProductDetailsClient;
     private FakeVoyageRerankClient voyageRerankClient;
+    private FakeMerchantLookupService merchantLookupService;
     private MerchantSemanticProductSearchService merchantSemanticProductSearchService;
 
     @BeforeEach
@@ -38,11 +39,13 @@ class MerchantSemanticProductSearchServiceTest {
         merchantCatalogSearchClient = new FakeMerchantCatalogSearchClient();
         merchantProductDetailsClient = new FakeMerchantProductDetailsClient();
         voyageRerankClient = new FakeVoyageRerankClient();
+        merchantLookupService = new FakeMerchantLookupService();
         merchantSemanticProductSearchService = new MerchantSemanticProductSearchService(
                 merchantSemanticSearchService,
                 merchantCatalogSearchClient,
                 merchantProductDetailsClient,
                 voyageRerankClient,
+                merchantLookupService,
                 new MerchantCatalogSearchProperties(3, 2, 2, 2)
         );
     }
@@ -63,7 +66,7 @@ class MerchantSemanticProductSearchServiceTest {
         )));
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery("running shoes", null, null, null, null)
+                new SemanticProductSearchQuery("running shoes", null, null, null, null, null)
         );
 
         assertThat(merchantSemanticSearchService.lastQuery.limit()).isEqualTo(3);
@@ -99,7 +102,7 @@ class MerchantSemanticProductSearchServiceTest {
         )));
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery("running shoes", null, null, null, null)
+                new SemanticProductSearchQuery("running shoes", null, null, null, null, null)
         );
 
         assertThat(result.merchants()).hasSize(2);
@@ -118,13 +121,43 @@ class MerchantSemanticProductSearchServiceTest {
         merchantProductDetailsClient.failures.put("runner", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery("running shoes", null, null, null, null)
+                new SemanticProductSearchQuery("running shoes", null, null, null, null, null)
         );
 
         assertThat(result.products()).hasSize(1);
         assertThat(result.products().getFirst().productId()).isEqualTo("runner");
         assertThat(result.products().getFirst().detailError()).contains("details unavailable");
         assertThat(result.products().getFirst().selectedVariantId()).isNull();
+    }
+
+    @Test
+    void searchesOnlyRequestedMerchantWhenMerchantIdIsProvided() {
+        UUID merchantId = UUID.randomUUID();
+        merchantLookupService.results.put(merchantId, new MerchantSemanticSearchResult(
+                merchantId,
+                "focused.example",
+                "Focused Store",
+                "https://focused.example/api/mcp",
+                null,
+                "Focused catalog",
+                1.0d,
+                1.0d,
+                1
+        ));
+        merchantSemanticSearchService.results = List.of(merchant("other.example", "Other Store", 1));
+        merchantCatalogSearchClient.results.put("focused.example", new CatalogSearchResult(
+                "https://focused.example/api/mcp",
+                List.of(product("focused-runner", "Focused Running Shoe", "Light road shoe", "shoes"))
+        ));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("running shoes", merchantId, null, null, null, null)
+        );
+
+        assertThat(merchantSemanticSearchService.lastQuery).isNull();
+        assertThat(merchantCatalogSearchClient.calls).containsExactly("focused.example:running shoes:2");
+        assertThat(result.merchants()).extracting("domain").containsExactly("focused.example");
+        assertThat(result.products()).extracting("productId").containsExactly("focused-runner");
     }
 
     private MerchantSemanticSearchResult merchant(String domain, String name, int rank) {
@@ -185,6 +218,20 @@ class MerchantSemanticProductSearchServiceTest {
         public List<MerchantSemanticSearchResult> search(SemanticMerchantSearchQuery query) {
             lastQuery = query;
             return results;
+        }
+    }
+
+    static class FakeMerchantLookupService extends MerchantLookupService {
+
+        private final Map<UUID, MerchantSemanticSearchResult> results = new HashMap<>();
+
+        FakeMerchantLookupService() {
+            super(null);
+        }
+
+        @Override
+        public MerchantSemanticSearchResult activeSearchResult(UUID merchantId) {
+            return results.get(merchantId);
         }
     }
 

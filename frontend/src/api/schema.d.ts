@@ -176,6 +176,8 @@ export interface components {
         };
         MerchantSemanticProductSearchRequest: {
             query: string;
+            /** Format: uuid */
+            merchantId?: string;
             /** Format: int32 */
             merchantCandidateLimit?: number;
             /** Format: int32 */

@@ -5,11 +5,13 @@ import com.meant.api.module.merchant.service.MerchantSemanticProductSearchServic
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
+import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
@@ -53,6 +55,18 @@ public class UserProductSearchService {
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
 
+        if (command.merchantId() != null) {
+            return searchWithoutPersisting(
+                    command.userId(),
+                    query,
+                    queryIntent.searchQuery(),
+                    normalizedQuery,
+                    profileHash,
+                    settings,
+                    command.merchantId()
+            );
+        }
+
         return userProductSearchPersistenceService.findCachedSearch(
                         command.userId(),
                         query,
@@ -74,6 +88,46 @@ public class UserProductSearchService {
                 ));
     }
 
+    private UserProductSearchResult searchWithoutPersisting(
+            UUID userId,
+            String query,
+            String searchQuery,
+            String normalizedQuery,
+            String profileHash,
+            UserSettingsResult settings,
+            UUID merchantId
+    ) {
+        List<UserProductSearchProductSnapshot> products = productSnapshots(searchQuery, merchantId);
+        Instant now = Instant.now();
+        Map<String, UserProductRecommendationExplanationResult> explanations =
+                userProductRecommendationExplanationService.explain(
+                        userId,
+                        query,
+                        normalizedQuery,
+                        profileHash,
+                        settings,
+                        products
+                );
+        return new UserProductSearchResult(
+                query,
+                normalizedQuery,
+                profileHash,
+                false,
+                products.stream()
+                        .map(product -> UserProductSearchProductResult.from(
+                                UserProductSearchResultItem.from(
+                                        UUID.randomUUID(),
+                                        product.productKey(),
+                                        product.productHash(),
+                                        product.product(),
+                                        now
+                                ),
+                                explanations.get(product.productKey())
+                        ))
+                        .toList()
+        );
+    }
+
     private UserProductSearchResult searchAndPersist(
             UUID userId,
             String query,
@@ -83,16 +137,7 @@ public class UserProductSearchService {
             UserSettingsResult settings,
             Instant now
     ) {
-        MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery(searchQuery, null, null, null, null)
-        );
-        List<UserProductSearchProductSnapshot> products = safeProducts(searchResult).stream()
-                .map(product -> new UserProductSearchProductSnapshot(
-                        userProductSearchHashService.productKey(product),
-                        userProductSearchHashService.productHash(product),
-                        product
-                ))
-                .toList();
+        List<UserProductSearchProductSnapshot> products = productSnapshots(searchQuery, null);
         Map<String, UserProductRecommendationExplanationResult> explanations =
                 userProductRecommendationExplanationService.explain(
                         userId,
@@ -113,6 +158,19 @@ public class UserProductSearchService {
                 products,
                 explanations
         );
+    }
+
+    private List<UserProductSearchProductSnapshot> productSnapshots(String searchQuery, UUID merchantId) {
+        MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(searchQuery, merchantId, null, null, null, null)
+        );
+        return safeProducts(searchResult).stream()
+                .map(product -> new UserProductSearchProductSnapshot(
+                        userProductSearchHashService.productKey(product),
+                        userProductSearchHashService.productHash(product),
+                        product
+                ))
+                .toList();
     }
 
     private List<MerchantSemanticProductResult> safeProducts(
