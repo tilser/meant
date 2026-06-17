@@ -13,6 +13,16 @@ public record SearchUserProductsCommand(
         @Size(max = 500)
         String query,
 
-        UUID merchantId
+        UUID merchantId,
+
+        @Size(max = 128)
+        String buyerIp,
+
+        @Size(max = 512)
+        String userAgent
 ) {
+
+    public SearchUserProductsCommand(UUID userId, String query, UUID merchantId) {
+        this(userId, query, merchantId, null, null);
+    }
 }

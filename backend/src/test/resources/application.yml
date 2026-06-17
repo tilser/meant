@@ -20,8 +20,8 @@ ai:
 
 user:
   product-search:
-    search-version: v1
-    query-parser-prompt-version: v1
+    search-version: v2
+    query-parser-prompt-version: v2
     explanation-prompt-version: v1
     cache-ttl: 24h
     discovery-recent-search-limit: 5

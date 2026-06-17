@@ -11,6 +11,7 @@ import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
@@ -34,6 +35,7 @@ public class UserProductSearchService {
     private final UserSettingsService userSettingsService;
     private final MerchantSemanticProductSearchService merchantSemanticProductSearchService;
     private final UserProductSearchQueryUnderstandingService userProductSearchQueryUnderstandingService;
+    private final UserProductSearchCatalogInputBuilder userProductSearchCatalogInputBuilder;
     private final UserProductSearchHashService userProductSearchHashService;
     private final UserProductRecommendationExplanationService userProductRecommendationExplanationService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
@@ -52,7 +54,15 @@ public class UserProductSearchService {
         String query = command.query().trim();
         UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
         UserSettingsResult settings = userSettingsService.get(upsertCommand);
-        String normalizedQuery = queryIntent.intentCacheKey();
+        UserProductSearchCatalogInput catalogInput =
+                userProductSearchCatalogInputBuilder.build(
+                        query,
+                        queryIntent,
+                        settings,
+                        command.buyerIp(),
+                        command.userAgent()
+                );
+        String normalizedQuery = catalogInput.cacheKey();
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
 
@@ -61,7 +71,7 @@ public class UserProductSearchService {
             result = searchWithoutPersisting(
                     command.userId(),
                     query,
-                    queryIntent.searchQuery(),
+                    catalogInput,
                     normalizedQuery,
                     profileHash,
                     settings,
@@ -81,7 +91,7 @@ public class UserProductSearchService {
                     .orElseGet(() -> searchAndPersist(
                             command.userId(),
                             query,
-                            queryIntent.searchQuery(),
+                            catalogInput,
                             normalizedQuery,
                             profileHash,
                             settings,
@@ -102,13 +112,13 @@ public class UserProductSearchService {
     private UserProductSearchResult searchWithoutPersisting(
             UUID userId,
             String query,
-            String searchQuery,
+            UserProductSearchCatalogInput catalogInput,
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
             UUID merchantId
     ) {
-        List<UserProductSearchProductSnapshot> products = productSnapshots(searchQuery, merchantId);
+        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, merchantId);
         Instant now = Instant.now();
         Map<String, UserProductRecommendationExplanationResult> explanations =
                 userProductRecommendationExplanationService.explain(
@@ -142,13 +152,13 @@ public class UserProductSearchService {
     private UserProductSearchResult searchAndPersist(
             UUID userId,
             String query,
-            String searchQuery,
+            UserProductSearchCatalogInput catalogInput,
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
             Instant now
     ) {
-        List<UserProductSearchProductSnapshot> products = productSnapshots(searchQuery, null);
+        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, null);
         Map<String, UserProductRecommendationExplanationResult> explanations =
                 userProductRecommendationExplanationService.explain(
                         userId,
@@ -171,9 +181,22 @@ public class UserProductSearchService {
         );
     }
 
-    private List<UserProductSearchProductSnapshot> productSnapshots(String searchQuery, UUID merchantId) {
+    private List<UserProductSearchProductSnapshot> productSnapshots(
+            UserProductSearchCatalogInput catalogInput,
+            UUID merchantId
+    ) {
         MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery(searchQuery, merchantId, null, null, null, null)
+                new SemanticProductSearchQuery(
+                        catalogInput.searchQuery(),
+                        merchantId,
+                        null,
+                        null,
+                        null,
+                        null,
+                        catalogInput.context(),
+                        catalogInput.signals(),
+                        catalogInput.filters()
+                )
         );
         return safeProducts(searchResult).stream()
                 .map(product -> new UserProductSearchProductSnapshot(

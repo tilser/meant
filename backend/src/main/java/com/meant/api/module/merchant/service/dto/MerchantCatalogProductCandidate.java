@@ -94,6 +94,21 @@ public record MerchantCatalogProductCandidate(
         return availability.stream().anyMatch(Boolean.TRUE::equals);
     }
 
+    public List<String> categoryValues() {
+        return safeList(product.categories()).stream()
+                .map(CatalogSearchResponse.Category::value)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    public List<String> tagValues() {
+        return safeList(product.tags()).stream()
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+    }
+
     private String plainDescription() {
         String description = descriptionHtml();
         if (description == null || description.isBlank()) {

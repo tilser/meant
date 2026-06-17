@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
+import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsArguments;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
@@ -20,11 +21,24 @@ public class MerchantProductDetailsClient {
     private final ObjectMapper objectMapper;
 
     public ProductDetailsResult getProductDetails(MerchantSemanticSearchResult merchant, String productId) {
+        return getProductDetails(merchant, productId, null);
+    }
+
+    public ProductDetailsResult getProductDetails(
+            MerchantSemanticSearchResult merchant,
+            String productId,
+            CatalogSearchContext context
+    ) {
         try {
             var result = merchantMcpToolClient.callTool(
                     merchant,
                     GET_PRODUCT_DETAILS_TOOL,
-                    new ProductDetailsArguments(productId)
+                    new ProductDetailsArguments(
+                            productId,
+                            null,
+                            context == null ? null : context.addressCountry(),
+                            context == null ? null : context.language()
+                    )
             );
             ProductDetailsResponse response = objectMapper.readValue(
                     result.contentText(),

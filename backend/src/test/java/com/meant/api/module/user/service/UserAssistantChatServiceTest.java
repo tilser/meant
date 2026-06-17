@@ -482,7 +482,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private static UserProductSearchResult nextResult;
 
         FakeUserProductSearchService() {
-            super(null, null, null, null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null, null, null, null);
         }
 
         void reset() {

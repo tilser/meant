@@ -1,5 +1,9 @@
 package com.meant.api.module.merchant.service.query;
 
+import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
+import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
@@ -25,6 +29,26 @@ public record SemanticProductSearchQuery(
 
         @Positive
         @Max(100)
-        Integer productLimit
+        Integer productLimit,
+
+        @Valid
+        CatalogSearchContext context,
+
+        @Valid
+        CatalogSearchSignals signals,
+
+        @Valid
+        CatalogSearchFilters filters
 ) {
+
+    public SemanticProductSearchQuery(
+            String query,
+            UUID merchantId,
+            Integer merchantCandidateLimit,
+            Integer merchantLimit,
+            Integer productsPerMerchant,
+            Integer productLimit
+    ) {
+        this(query, merchantId, merchantCandidateLimit, merchantLimit, productsPerMerchant, productLimit, null, null, null);
+    }
 }

@@ -44,6 +44,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -178,12 +179,18 @@ public class UserController {
     )
     public UserProductSearchResponse searchProducts(
             @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody UserProductSearchRequest request
+            @Valid @RequestBody UserProductSearchRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserProductSearchResponse.from(userProductSearchService.search(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
-                new SearchUserProductsCommand(authenticatedUser.id(), request.query(), request.merchantId())));
+                new SearchUserProductsCommand(
+                        authenticatedUser.id(),
+                        request.query(),
+                        request.merchantId(),
+                        buyerIp(httpRequest),
+                        userAgent(httpRequest))));
     }
 
     @GetMapping("/me/product-search-suggestions")
@@ -399,6 +406,23 @@ public class UserController {
         return userPreferenceFilterParsingService.parse(new ParseUserPreferenceFiltersCommand(
                 authenticatedUser.id(),
                 request.preferenceDescription().trim()));
+    }
+
+    private String buyerIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private String userAgent(HttpServletRequest request) {
+        String userAgent = request.getHeader("User-Agent");
+        return userAgent == null || userAgent.isBlank() ? null : userAgent.trim();
     }
 
     private UserAssistantPageContext toPageContext(UserAssistantChatContextRequest request) {

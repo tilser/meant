@@ -3,9 +3,12 @@ package com.meant.api.module.merchant.service;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.service.dto.CatalogSearchArguments;
 import com.meant.api.module.merchant.service.dto.CatalogSearchCatalog;
+import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.CatalogSearchPagination;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
+import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +26,33 @@ public class MerchantCatalogSearchClient {
     private final ObjectMapper objectMapper;
 
     public CatalogSearchResult searchCatalog(MerchantSemanticSearchResult merchant, String query, int limit) {
+        return searchCatalog(merchant, query, null, null, limit);
+    }
+
+    public CatalogSearchResult searchCatalog(
+            MerchantSemanticSearchResult merchant,
+            String query,
+            CatalogSearchContext context,
+            CatalogSearchFilters filters,
+            int limit
+    ) {
+        return searchCatalog(merchant, query, context, null, filters, limit);
+    }
+
+    public CatalogSearchResult searchCatalog(
+            MerchantSemanticSearchResult merchant,
+            String query,
+            CatalogSearchContext context,
+            CatalogSearchSignals signals,
+            CatalogSearchFilters filters,
+            int limit
+    ) {
         try {
-            var result = merchantMcpToolClient.callTool(merchant, SEARCH_CATALOG_TOOL, catalogRequest(query, limit));
+            var result = merchantMcpToolClient.callTool(
+                    merchant,
+                    SEARCH_CATALOG_TOOL,
+                    catalogRequest(query, context, signals, filters, limit)
+            );
             return new CatalogSearchResult(result.endpoint(), parseProducts(result.contentText()));
         } catch (MerchantCatalogSearchException exception) {
             throw exception;
@@ -48,10 +76,19 @@ public class MerchantCatalogSearchClient {
         }
     }
 
-    private CatalogSearchArguments catalogRequest(String query, int limit) {
+    private CatalogSearchArguments catalogRequest(
+            String query,
+            CatalogSearchContext context,
+            CatalogSearchSignals signals,
+            CatalogSearchFilters filters,
+            int limit
+    ) {
         return new CatalogSearchArguments(
                 new CatalogSearchCatalog(
                         query,
+                        context,
+                        signals,
+                        filters,
                         new CatalogSearchPagination(null, limit)
                 )
         );

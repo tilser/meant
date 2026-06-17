@@ -5,8 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
+import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
+import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
+import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
@@ -20,6 +24,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -70,7 +77,7 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(merchantSemanticSearchService.lastQuery.limit()).isEqualTo(3);
-        assertThat(merchantCatalogSearchClient.calls).containsExactly(
+        assertThat(merchantCatalogSearchClient.calls).containsExactlyInAnyOrder(
                 "home.example:running shoes:2",
                 "shoe.example:running shoes:2"
         );
@@ -79,7 +86,7 @@ class MerchantSemanticProductSearchServiceTest {
                 .containsExactly("home.example", "shoe.example");
         assertThat(result.products()).extracting("productId")
                 .containsExactly("trail-runner", "casual-sneaker");
-        assertThat(merchantProductDetailsClient.calls).containsExactly(
+        assertThat(merchantProductDetailsClient.calls).containsExactlyInAnyOrder(
                 "shoe.example:trail-runner",
                 "shoe.example:casual-sneaker"
         );
@@ -160,6 +167,87 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.products()).extracting("productId").containsExactly("focused-runner");
     }
 
+    @Test
+    void searchesMerchantCatalogsInParallel() {
+        MerchantSemanticSearchResult firstMerchant = merchant("first.example", "First Store", 1);
+        MerchantSemanticSearchResult secondMerchant = merchant("second.example", "Second Store", 2);
+        merchantSemanticSearchService.results = List.of(firstMerchant, secondMerchant);
+        merchantCatalogSearchClient.concurrentCatalogSearches = new CountDownLatch(2);
+        merchantCatalogSearchClient.results.put(firstMerchant.domain(), catalogSearchResult(firstMerchant, List.of(
+                product("first-lamp", "First Lamp", "Warm lamp", "lighting")
+        )));
+        merchantCatalogSearchClient.results.put(secondMerchant.domain(), catalogSearchResult(secondMerchant, List.of(
+                product("second-lamp", "Second Lamp", "Warm lamp", "lighting")
+        )));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("warm lamp", null, null, null, null, null)
+        );
+
+        assertThat(result.merchants()).extracting("domain")
+                .containsExactly("first.example", "second.example");
+        assertThat(merchantCatalogSearchClient.calls).containsExactlyInAnyOrder(
+                "first.example:warm lamp:2",
+                "second.example:warm lamp:2"
+        );
+    }
+
+    @Test
+    void fetchesProductDetailsInParallel() {
+        MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantProductDetailsClient.concurrentProductDetails = new CountDownLatch(2);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("first-lamp", "First Lamp", "Warm lamp", "lighting"),
+                product("second-lamp", "Second Lamp", "Warm lamp", "lighting")
+        )));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("warm lamp", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).hasSize(2);
+        assertThat(merchantProductDetailsClient.calls).containsExactlyInAnyOrder(
+                "home.example:first-lamp",
+                "home.example:second-lamp"
+        );
+    }
+
+    @Test
+    void appliesPriceFilterBeforeRerankingAndDetailsWhenMerchantReturnsUnfilteredProducts() {
+        MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("cheap-pillow", "Affordable Throw Pillow", "Soft pillow", "pillows", 8000L),
+                product("expensive-pillow", "Premium Throw Pillow", "Soft pillow", "pillows", 15000L)
+        )));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "throw pillow",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new CatalogSearchContext(
+                                "US",
+                                null,
+                                null,
+                                "en",
+                                "USD",
+                                "Original request: throw pillow under 100 USD"
+                        ),
+                        null,
+                        new CatalogSearchFilters(List.of(), new CatalogSearchPriceFilter(null, 10000L))
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("cheap-pillow");
+        assertThat(voyageRerankClient.documents).hasSize(1);
+        assertThat(merchantProductDetailsClient.calls).containsExactly("home.example:cheap-pillow");
+    }
+
     private MerchantSemanticSearchResult merchant(String domain, String name, int rank) {
         return new MerchantSemanticSearchResult(
                 UUID.randomUUID(),
@@ -182,20 +270,30 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     private CatalogSearchResponse.Product product(String id, String title, String description, String category) {
+        return product(id, title, description, category, 1000L);
+    }
+
+    private CatalogSearchResponse.Product product(
+            String id,
+            String title,
+            String description,
+            String category,
+            Long price
+    ) {
         return new CatalogSearchResponse.Product(
                 id,
                 title,
                 new CatalogSearchResponse.Description("<p>" + description + "</p>"),
                 "https://example.com/products/" + id,
                 new CatalogSearchResponse.PriceRange(
-                        new CatalogSearchResponse.Money(1000L, "USD"),
-                        new CatalogSearchResponse.Money(1000L, "USD")
+                        new CatalogSearchResponse.Money(price, "USD"),
+                        new CatalogSearchResponse.Money(price, "USD")
                 ),
                 List.of(new CatalogSearchResponse.Variant(
                         id + "-variant",
                         "Default Title",
                         new CatalogSearchResponse.Description("<p>" + description + "</p>"),
-                        new CatalogSearchResponse.Money(1000L, "USD"),
+                        new CatalogSearchResponse.Money(price, "USD"),
                         new CatalogSearchResponse.Availability(true),
                         List.of(new CatalogSearchResponse.Media("image", "https://example.com/" + id + ".jpg"))
                 )),
@@ -203,6 +301,21 @@ class MerchantSemanticProductSearchServiceTest {
                 List.of(new CatalogSearchResponse.Category(category, "shopify")),
                 List.of(category)
         );
+    }
+
+    private static void awaitConcurrentCalls(CountDownLatch latch, String operation) {
+        if (latch == null) {
+            return;
+        }
+        latch.countDown();
+        try {
+            if (!latch.await(1, TimeUnit.SECONDS)) {
+                throw new AssertionError(operation + " calls did not run in parallel");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(operation + " calls were interrupted", exception);
+        }
     }
 
     static class FakeMerchantSemanticSearchService extends MerchantSemanticSearchService {
@@ -239,15 +352,24 @@ class MerchantSemanticProductSearchServiceTest {
 
         private final Map<String, CatalogSearchResult> results = new HashMap<>();
         private final Map<String, String> failures = new HashMap<>();
-        private final List<String> calls = new ArrayList<>();
+        private final List<String> calls = new CopyOnWriteArrayList<>();
+        private CountDownLatch concurrentCatalogSearches;
 
         FakeMerchantCatalogSearchClient() {
             super(null, null);
         }
 
         @Override
-        public CatalogSearchResult searchCatalog(MerchantSemanticSearchResult merchant, String query, int limit) {
+        public CatalogSearchResult searchCatalog(
+                MerchantSemanticSearchResult merchant,
+                String query,
+                CatalogSearchContext context,
+                CatalogSearchSignals signals,
+                CatalogSearchFilters filters,
+                int limit
+        ) {
             calls.add(merchant.domain() + ":" + query + ":" + limit);
+            awaitConcurrentCalls(concurrentCatalogSearches, "Catalog search");
             if (failures.containsKey(merchant.domain())) {
                 throw new MerchantCatalogSearchException(failures.get(merchant.domain()));
             }
@@ -258,15 +380,21 @@ class MerchantSemanticProductSearchServiceTest {
     static class FakeMerchantProductDetailsClient extends MerchantProductDetailsClient {
 
         private final Map<String, String> failures = new HashMap<>();
-        private final List<String> calls = new ArrayList<>();
+        private final List<String> calls = new CopyOnWriteArrayList<>();
+        private CountDownLatch concurrentProductDetails;
 
         FakeMerchantProductDetailsClient() {
             super(null, null);
         }
 
         @Override
-        public ProductDetailsResult getProductDetails(MerchantSemanticSearchResult merchant, String productId) {
+        public ProductDetailsResult getProductDetails(
+                MerchantSemanticSearchResult merchant,
+                String productId,
+                CatalogSearchContext context
+        ) {
             calls.add(merchant.domain() + ":" + productId);
+            awaitConcurrentCalls(concurrentProductDetails, "Product details");
             if (failures.containsKey(productId)) {
                 throw new MerchantProductDetailsException(failures.get(productId));
             }

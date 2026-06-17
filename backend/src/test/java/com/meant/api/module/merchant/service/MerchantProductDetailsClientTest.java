@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import java.util.UUID;
@@ -31,6 +32,8 @@ class MerchantProductDetailsClientTest {
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"get_product_details\"")))
                 .andExpect(content().string(containsString("\"product_id\":\"gid://shopify/Product/1\"")))
+                .andExpect(content().string(containsString("\"country\":\"US\"")))
+                .andExpect(content().string(containsString("\"language\":\"en\"")))
                 .andRespond(withSuccess("""
                         {
                           "jsonrpc": "2.0",
@@ -49,7 +52,8 @@ class MerchantProductDetailsClientTest {
 
         ProductDetailsResult result = client.getProductDetails(
                 merchant(),
-                "gid://shopify/Product/1"
+                "gid://shopify/Product/1",
+                new CatalogSearchContext("US", null, null, "en", "USD", "Original request")
         );
 
         assertThat(result.product().productId()).isEqualTo("gid://shopify/Product/1");
