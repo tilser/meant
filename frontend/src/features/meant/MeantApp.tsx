@@ -1439,6 +1439,7 @@ function ProductModal({
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const addedTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     setMessages([])
@@ -1446,6 +1447,12 @@ function ProductModal({
     setAdding(false)
     setAddError(null)
   }, [product?.id])
+
+  useEffect(() => () => {
+    if (addedTimeoutRef.current !== null) {
+      window.clearTimeout(addedTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!product) {
@@ -1498,7 +1505,13 @@ function ProductModal({
         return
       }
       setAdded(true)
-      window.setTimeout(() => setAdded(false), 1600)
+      if (addedTimeoutRef.current !== null) {
+        window.clearTimeout(addedTimeoutRef.current)
+      }
+      addedTimeoutRef.current = window.setTimeout(() => {
+        setAdded(false)
+        addedTimeoutRef.current = null
+      }, 1600)
     } catch {
       setAddError('Could not add this offer to the merchant cart.')
     } finally {
@@ -4090,7 +4103,11 @@ export function MeantApp() {
       opener.href = checkoutUrl
       opener.target = '_blank'
       opener.rel = 'noopener noreferrer'
+      // Firefox/older Safari only act on a click if the anchor is in the
+      // document, so attach it briefly and remove it right after.
+      document.body.appendChild(opener)
       opener.click()
+      opener.remove()
     } catch {
       setCheckoutError({
         merchant,

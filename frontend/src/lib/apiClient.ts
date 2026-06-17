@@ -231,7 +231,7 @@ export async function updateCart(input: {
   removeCartLineIds?: readonly string[]
   removeRemoteCartLineIds?: readonly string[]
 }): Promise<CartProfile> {
-  const response = await fetch(`${API_URL}/api/carts/${input.cartId}`, {
+  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}`, {
     method: 'PATCH',
     headers: {
       ...(await authHeaders()),
@@ -257,7 +257,7 @@ export async function getCartCheckout(input: {
   }
   const query = search.toString()
   const suffix = query ? `?${query}` : ''
-  const response = await fetch(`${API_URL}/api/carts/${input.cartId}/checkout${suffix}`, {
+  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout${suffix}`, {
     headers: await authHeaders(),
   })
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
