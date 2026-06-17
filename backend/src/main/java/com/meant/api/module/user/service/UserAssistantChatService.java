@@ -3,6 +3,7 @@ package com.meant.api.module.user.service;
 import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
+import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterChatMessage;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.user.constant.UserAssistantMessageRole;
@@ -30,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
@@ -208,11 +210,33 @@ public class UserAssistantChatService {
                     "assistant_route",
                     routeSchema()
             );
-            AssistantRouteResponse route = objectMapper.readValue(response, AssistantRouteResponse.class);
+            AssistantRouteResponse route = parseRouteResponse(response);
             return AssistantRoute.from(route, userMessage);
         } catch (OpenRouterException | JacksonException exception) {
-            log.warn("Failed to classify assistant message; using local fallback", exception);
+            log.warn("Failed to classify assistant message; using local fallback ({})",
+                    exception.getClass().getSimpleName());
             return AssistantRoute.fallback(userMessage);
+        }
+    }
+
+    private AssistantRouteResponse parseRouteResponse(String response) throws JacksonException {
+        try {
+            return objectMapper.readValue(
+                    OpenRouterJsonExtractor.objectCandidate(response),
+                    AssistantRouteResponse.class);
+        } catch (JacksonException exception) {
+            Map<String, String> values = OpenRouterJsonExtractor.looseKeyValues(
+                    response,
+                    List.of("action", "searchQuery", "clarifyingQuestion")
+            );
+            if (!values.isEmpty()) {
+                return new AssistantRouteResponse(
+                        values.get("action"),
+                        values.get("searchQuery"),
+                        values.get("clarifyingQuestion")
+                );
+            }
+            throw exception;
         }
     }
 
@@ -297,7 +321,7 @@ public class UserAssistantChatService {
                 Use the user's profile preferences and the provided app context. Treat backend profile/settings as authoritative.
                 Treat page context as a snapshot of what the user currently sees; do not use it for authorization or irreversible actions.
                 If order, cart, account, saved item, or preference data is not present, say that you do not have that data yet.
-                For shopping answers, only recommend products listed in PRODUCT SEARCH RESULTS. Do not invent product names, prices, merchants, or availability.
+                For shopping answers, only recommend products listed in PRODUCT SEARCH RESULTS or visible products in PAGE CONTEXT. Do not invent product names, prices, merchants, or availability.
                 Do not claim that you bought, saved, changed, canceled, returned, or checked out anything.
                 Keep the answer under 120 words, direct, and useful.
 
@@ -351,7 +375,7 @@ public class UserAssistantChatService {
     private OpenRouterJsonSchemaDefinition routeSchema() {
         return OpenRouterJsonSchemaDefinition.object(
                 List.of("action", "searchQuery", "clarifyingQuestion"),
-                java.util.Map.of(
+                Map.of(
                         "action", OpenRouterJsonSchemaDefinition.stringEnum(List.of(
                                 ACTION_ANSWER,
                                 ACTION_SEARCH,
@@ -517,6 +541,15 @@ public class UserAssistantChatService {
             return "Your latest visible order is " + order.id() + ", marked " + order.status()
                     + ". " + value(order.statusNote());
         }
+        if (pageContext != null && !pageContext.visibleProducts().isEmpty()) {
+            UserAssistantPageContext.Product product = pageContext.visibleProducts().stream()
+                    .max((left, right) -> Integer.compare(score(left.match()), score(right.match())))
+                    .orElse(pageContext.visibleProducts().getFirst());
+            return "From the products visible here, I would start with " + product.name()
+                    + ". It has the strongest current match"
+                    + (product.match() == null ? "" : " at " + product.match() + "%")
+                    + (product.note() == null || product.note().isBlank() ? "." : ": " + product.note());
+        }
         List<String> preferences = settings.filters().stream()
                 .map(ShoppingFilterResult::label)
                 .limit(4)
@@ -544,6 +577,10 @@ public class UserAssistantChatService {
 
     private String value(String value) {
         return value == null || value.isBlank() ? "unknown" : value;
+    }
+
+    private int score(Integer value) {
+        return value == null ? -1 : value;
     }
 
     private String pageContextJson(UserAssistantPageContext pageContext) {
@@ -607,6 +644,9 @@ public class UserAssistantChatService {
 
         private static AssistantRoute fallback(String userMessage) {
             String normalized = userMessage.toLowerCase(Locale.ROOT);
+            if (asksAboutExistingContext(normalized)) {
+                return new AssistantRoute(ACTION_ANSWER, userMessage, "");
+            }
             boolean likelySearch = normalized.matches(".*\\b(find|search|recommend|show|buy|gift|under|cheaper|alternative|best)\\b.*");
             return new AssistantRoute(likelySearch ? ACTION_SEARCH : ACTION_ANSWER, userMessage, "");
         }
@@ -620,10 +660,34 @@ public class UserAssistantChatService {
         }
 
         private static String normalizeAction(String action) {
-            if (ACTION_SEARCH.equals(action) || ACTION_CLARIFY.equals(action) || ACTION_ANSWER.equals(action)) {
-                return action;
+            if (action == null || action.isBlank()) {
+                return ACTION_ANSWER;
+            }
+            String normalized = action.trim()
+                    .toLowerCase(Locale.ROOT)
+                    .replace('-', '_')
+                    .replace(' ', '_');
+            if (ACTION_SEARCH.equals(normalized)
+                    || normalized.contains("search")) {
+                return ACTION_SEARCH;
+            }
+            if (ACTION_CLARIFY.equals(normalized)
+                    || normalized.contains("clarif")) {
+                return ACTION_CLARIFY;
+            }
+            if (ACTION_ANSWER.equals(normalized)
+                    || normalized.contains("answer")) {
+                return ACTION_ANSWER;
             }
             return ACTION_ANSWER;
+        }
+
+        private static boolean asksAboutExistingContext(String normalized) {
+            return normalized.matches(".*\\b(saved|cart|order|orders|account|profile|preference|preferences|visible|shown|current|already)\\b.*")
+                    || normalized.contains("products i have")
+                    || normalized.contains("products that i have")
+                    || normalized.contains("items i have")
+                    || normalized.contains("my products");
         }
 
         private static String textOrFallback(String value, String fallback) {

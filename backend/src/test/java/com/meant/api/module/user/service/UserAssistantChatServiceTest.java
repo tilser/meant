@@ -116,6 +116,50 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void streamParsesLooseRouteResponse() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                * action: search_products
+                * searchQuery: organic cotton tee
+                * clarifyingQuestion:
+                """;
+        openRouterChatClient.streamChunks = List.of("I found a strong tee.");
+        UserProductSearchProductResult product = product();
+        FakeUserProductSearchService.nextResult = new UserProductSearchResult(
+                "organic cotton tee",
+                "organic cotton tee",
+                "profile",
+                false,
+                List.of(product)
+        );
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find me a tee"), events::add);
+
+        assertThat(FakeUserProductSearchService.lastCommand.query()).isEqualTo("organic cotton tee");
+        assertThat(events.getLast().products()).containsExactly(product);
+    }
+
+    @Test
+    void streamDoesNotSearchSavedContextQuestionWhenRouteResponseIsInvalid() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                * I would compare the saved products.
+                """;
+        openRouterChatClient.streamChunks = List.of("From your saved list, start with the strongest match.");
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(upsertCommand(userId), command(
+                userId,
+                null,
+                "what is the best from products I have in saved?"
+        ), events::add);
+
+        assertThat(FakeUserProductSearchService.lastCommand).isNull();
+        assertThat(events.getLast().text()).isEqualTo("From your saved list, start with the strongest match.");
+    }
+
+    @Test
     void latestRestoresPersistedMessagesWithProducts() throws Exception {
         UUID userId = UUID.randomUUID();
         Instant now = Instant.parse("2026-06-17T10:00:00Z");

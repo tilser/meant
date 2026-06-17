@@ -1,8 +1,10 @@
 import {
   type ChangeEvent,
+  type CSSProperties,
   type Dispatch,
   type FormEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type SetStateAction,
   type TouchEvent as ReactTouchEvent,
@@ -97,6 +99,11 @@ interface Message {
   pending?: boolean
 }
 
+interface AskPanelSize {
+  width: number
+  height: number
+}
+
 interface ViewHeadProps {
   eyebrow: string
   title: string
@@ -149,6 +156,12 @@ const askContexts: Readonly<Record<View, { label: string; suggestions: readonly 
       suggestions: ['Where are my saved items?', 'How do I change preferences?'],
     },
   }
+
+const ASK_PANEL_DEFAULT_SIZE: AskPanelSize = { width: 460, height: 620 }
+const ASK_PANEL_MIN_WIDTH = 360
+const ASK_PANEL_MIN_HEIGHT = 440
+const ASK_PANEL_MAX_WIDTH = 720
+const ASK_PANEL_MAX_HEIGHT = 760
 
 interface SearchSuggestion {
   label: string
@@ -249,6 +262,33 @@ function useStoredState<T>(
   }, [hydrated, key, value])
 
   return [value, setValue] as const
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+function normalizedAskPanelSize(size: AskPanelSize | null | undefined): AskPanelSize {
+  const candidate = size && typeof size === 'object'
+    ? size as Partial<AskPanelSize>
+    : {}
+  const width = typeof candidate.width === 'number' && Number.isFinite(candidate.width)
+    ? candidate.width
+    : ASK_PANEL_DEFAULT_SIZE.width
+  const height = typeof candidate.height === 'number' && Number.isFinite(candidate.height)
+    ? candidate.height
+    : ASK_PANEL_DEFAULT_SIZE.height
+  return {
+    width: Math.round(clampNumber(width, ASK_PANEL_MIN_WIDTH, ASK_PANEL_MAX_WIDTH)),
+    height: Math.round(clampNumber(height, ASK_PANEL_MIN_HEIGHT, ASK_PANEL_MAX_HEIGHT)),
+  }
+}
+
+function askPanelViewportMax(): AskPanelSize {
+  return {
+    width: Math.min(ASK_PANEL_MAX_WIDTH, Math.max(ASK_PANEL_MIN_WIDTH, window.innerWidth - 40)),
+    height: Math.min(ASK_PANEL_MAX_HEIGHT, Math.max(ASK_PANEL_MIN_HEIGHT, window.innerHeight - 118)),
+  }
 }
 
 function useChangePulse(value: number, duration = 440): boolean {
@@ -1142,8 +1182,19 @@ function FloatingAsk({
   const [loading, setLoading] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [panelSize, setPanelSize] = useStoredState<AskPanelSize>('meant.askPanelSize', ASK_PANEL_DEFAULT_SIZE)
   const historyAbortRef = useRef<AbortController | null>(null)
   const historyDirtyRef = useRef(false)
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+  const safePanelSize = normalizedAskPanelSize(panelSize)
+  const panelStyle = {
+    '--mt-askpanel-width': `${safePanelSize.width}px`,
+    '--mt-askpanel-height': `${safePanelSize.height}px`,
+  } as CSSProperties
+
+  useEffect(() => () => {
+    resizeCleanupRef.current?.()
+  }, [])
 
   useEffect(() => {
     if (!open || historyLoaded) {
@@ -1184,6 +1235,41 @@ function FloatingAsk({
       }
     }
   }, [historyLoaded, open, preferences])
+
+  const startPanelResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) {
+      return
+    }
+    event.preventDefault()
+    resizeCleanupRef.current?.()
+
+    const startX = event.clientX
+    const startY = event.clientY
+    const startSize = normalizedAskPanelSize(panelSize)
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+
+    let cleanup = () => {}
+    const onMove = (moveEvent: PointerEvent) => {
+      const maxSize = askPanelViewportMax()
+      setPanelSize({
+        width: clampNumber(startSize.width + startX - moveEvent.clientX, ASK_PANEL_MIN_WIDTH, maxSize.width),
+        height: clampNumber(startSize.height + startY - moveEvent.clientY, ASK_PANEL_MIN_HEIGHT, maxSize.height),
+      })
+    }
+    cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
+      document.body.style.userSelect = previousUserSelect
+      resizeCleanupRef.current = null
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', cleanup, { once: true })
+    window.addEventListener('pointercancel', cleanup, { once: true })
+    resizeCleanupRef.current = cleanup
+  }
 
   const updateStreamingMessage = (update: (message: Message) => Message) => {
     setMessages((current) => {
@@ -1266,7 +1352,15 @@ function FloatingAsk({
   return (
     <div className={`mt-fab-wrap ${open ? 'open' : ''}`}>
       {open ? (
-        <div className="mt-askpanel" role="dialog" aria-label="Ask Meant">
+        <div className="mt-askpanel" role="dialog" aria-label="Ask Meant" style={panelStyle}>
+          <button
+            className="mt-askpanel-resize"
+            type="button"
+            aria-label="Resize Ask Meant"
+            title="Drag to resize"
+            onPointerDown={startPanelResize}
+            onDoubleClick={() => setPanelSize({ ...ASK_PANEL_DEFAULT_SIZE })}
+          />
           <div className="mt-askpanel-head">
             <div className="mt-askpanel-title">
               <SparkMark size={15} /> Ask Meant

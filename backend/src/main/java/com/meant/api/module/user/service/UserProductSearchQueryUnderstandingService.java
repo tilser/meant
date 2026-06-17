@@ -3,24 +3,28 @@ package com.meant.api.module.user.service;
 import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
+import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.user.entity.UserProductSearchQueryIntent;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.repository.UserProductSearchQueryIntentRepository;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserProductSearchQueryUnderstandingService {
 
     private static final String HIGH = "high";
@@ -46,6 +50,13 @@ public class UserProductSearchQueryUnderstandingService {
             "\\b(something|anything|recommend|suggest|gift|present|for my|for someone|similar to|like the one|what should)\\b"
     );
     private static final Pattern CATALOG_TOKEN_PATTERN = Pattern.compile("[a-z0-9]{3,}");
+    private static final List<String> RESPONSE_KEYS = List.of(
+            "searchQuery",
+            "displayQuery",
+            "constraints",
+            "preferenceHints",
+            "confidence"
+    );
 
     private final OpenRouterChatClient openRouterChatClient;
     private final OpenRouterProperties openRouterProperties;
@@ -101,6 +112,14 @@ public class UserProductSearchQueryUnderstandingService {
             String originalQuery,
             String normalizedOriginalQuery
     ) {
+        return deterministicIntent(originalQuery, normalizedOriginalQuery, "deterministic");
+    }
+
+    private UserProductSearchQueryIntentResult deterministicIntent(
+            String originalQuery,
+            String normalizedOriginalQuery,
+            String source
+    ) {
         String stripped = stripDeterministicWrappers(normalizedOriginalQuery);
         String normalizedSearchQuery = userProductSearchHashService.normalizeQuery(stripped);
         String confidence = deterministicConfidence(normalizedOriginalQuery, normalizedSearchQuery);
@@ -115,7 +134,7 @@ public class UserProductSearchQueryUnderstandingService {
                 List.of(),
                 List.of(),
                 confidence,
-                "deterministic"
+                source
         );
     }
 
@@ -139,7 +158,7 @@ public class UserProductSearchQueryUnderstandingService {
             return LOW;
         }
         int tokenCount = normalizedSearchQuery.split("\\s+").length;
-        return tokenCount <= 7 ? HIGH : MEDIUM; 
+        return tokenCount <= 7 ? HIGH : MEDIUM;
     }
 
     private UserProductSearchQueryIntentResult generateIntent(
@@ -154,7 +173,13 @@ public class UserProductSearchQueryUnderstandingService {
                 "product_search_query_intent",
                 responseSchema()
         );
-        return sanitizeResponse(originalQuery, normalizedOriginalQuery, response);
+        try {
+            return sanitizeResponse(originalQuery, normalizedOriginalQuery, response);
+        } catch (OpenRouterException exception) {
+            log.warn("Could not parse product search query intent; using deterministic fallback ({})",
+                    exception.getClass().getSimpleName());
+            return deterministicIntent(originalQuery, normalizedOriginalQuery, "llm-fallback");
+        }
     }
 
     private OpenRouterJsonSchemaDefinition responseSchema() {
@@ -202,11 +227,48 @@ public class UserProductSearchQueryUnderstandingService {
 
     private QueryIntentResponse parseResponse(String response) {
         try {
-            QueryIntentResponse parsed = objectMapper.readValue(response, QueryIntentResponse.class);
+            QueryIntentResponse parsed = objectMapper.readValue(
+                    OpenRouterJsonExtractor.objectCandidate(response),
+                    QueryIntentResponse.class);
             return parsed == null ? new QueryIntentResponse(null, null, List.of(), List.of(), LOW) : parsed;
         } catch (JacksonException exception) {
+            QueryIntentResponse loose = parseLooseResponse(response);
+            if (loose != null) {
+                return loose;
+            }
             throw new OpenRouterException("OpenRouter returned invalid product search query JSON", exception);
         }
+    }
+
+    private QueryIntentResponse parseLooseResponse(String response) {
+        Map<String, String> values = OpenRouterJsonExtractor.looseKeyValues(response, RESPONSE_KEYS);
+        if (values.isEmpty()) {
+            return null;
+        }
+        return new QueryIntentResponse(
+                values.get("searchQuery"),
+                values.get("displayQuery"),
+                looseList(values.get("constraints")),
+                looseList(values.get("preferenceHints")),
+                values.get("confidence")
+        );
+    }
+
+    private List<String> looseList(String value) {
+        String cleaned = OpenRouterJsonExtractor.cleanLooseValue(value);
+        if (cleaned == null || cleaned.isBlank() || "[]".equals(cleaned)) {
+            return List.of();
+        }
+        if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+        }
+        if (cleaned.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(cleaned.split("[,;]"))
+                .map(OpenRouterJsonExtractor::cleanLooseValue)
+                .filter(item -> item != null && !item.isBlank())
+                .toList();
     }
 
     private String intentCacheKey(

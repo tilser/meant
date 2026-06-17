@@ -82,6 +82,66 @@ class UserProductSearchQueryUnderstandingServiceTest {
         assertThat(cached.source()).isEqualTo("llm-cache");
     }
 
+    @Test
+    void understandParsesFencedOpenRouterJson() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = """
+                Here is the normalized query:
+                ```json
+                {
+                  "searchQuery": "linen shirt",
+                  "displayQuery": "Linen shirt",
+                  "constraints": ["linen"],
+                  "preferenceHints": ["summer travel"],
+                  "confidence": "medium"
+                }
+                ```
+                """;
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understand("summer travel gift linen shirt for my dad");
+
+        assertThat(result.searchQuery()).isEqualTo("linen shirt");
+        assertThat(result.constraints()).containsExactly("linen");
+        assertThat(result.preferenceHints()).containsExactly("summer travel");
+        assertThat(result.source()).isEqualTo("llm");
+    }
+
+    @Test
+    void understandParsesLooseKeyValueOpenRouterResponse() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = """
+                searchQuery: ceramic mug
+                displayQuery: Ceramic mug for a teacher
+                constraints: handmade, ceramic
+                preferenceHints: teacher gift
+                confidence: medium
+                """;
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understand("teacher gift ceramic mug for my aunt");
+
+        assertThat(result.searchQuery()).isEqualTo("ceramic mug");
+        assertThat(result.displayQuery()).isEqualTo("Ceramic mug for a teacher");
+        assertThat(result.constraints()).containsExactly("handmade", "ceramic");
+        assertThat(result.preferenceHints()).containsExactly("teacher gift");
+        assertThat(result.source()).isEqualTo("llm");
+    }
+
+    @Test
+    void understandFallsBackWhenOpenRouterResponseIsNotUsable() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = """
+                * I would search broadly for this request.
+                """;
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understand("birthday gift candles for my mom");
+
+        assertThat(result.searchQuery()).isEqualTo("birthday gift candles for my mom");
+        assertThat(result.source()).isEqualTo("llm-fallback");
+    }
+
     private UserProductSearchQueryUnderstandingService service(
             FakeOpenRouterChatClient openRouterChatClient,
             UserProductSearchQueryIntentRepository repository
