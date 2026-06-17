@@ -1978,6 +1978,7 @@ function TopBar({
   onToggleTheme,
   onToggleCart,
   onToggleAccount,
+  onCloseAccount,
   onRemoveFromCart,
   onSignOut,
 }: Readonly<{
@@ -1993,6 +1994,7 @@ function TopBar({
   onToggleTheme: () => void
   onToggleCart: () => void
   onToggleAccount: () => void
+  onCloseAccount: () => void
   onRemoveFromCart: (id: ProductId, merchant: string) => void
   onSignOut: () => void
 }>) {
@@ -2076,7 +2078,7 @@ function TopBar({
             <AccountMenu
               user={user}
               onNav={onNav}
-              onClose={onToggleAccount}
+              onClose={onCloseAccount}
               onSignOut={onSignOut}
             />
           ) : null}
@@ -2097,6 +2099,7 @@ function AccountMenu({
   onClose: () => void
   onSignOut: () => void
 }>) {
+  const ref = useRef<HTMLDivElement | null>(null)
   const items: ReadonlyArray<{ key: View; label: string }> = [
     { key: 'account', label: 'Account settings' },
     { key: 'orders', label: 'Order history' },
@@ -2105,8 +2108,32 @@ function AccountMenu({
     { key: 'cart', label: 'Your cart' },
   ]
 
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      const anchor = ref.current?.closest('.mt-avatar-anchor')
+      if (anchor && anchor.contains(target)) {
+        return
+      }
+      if (ref.current && !ref.current.contains(target)) {
+        onClose()
+      }
+    }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
   return (
-    <div className="mt-acctmenu" role="menu">
+    <div className="mt-acctmenu" role="menu" ref={ref}>
       <div className="mt-acctmenu-head">
         <Avatar user={user} size={42} />
         <div className="mt-acctmenu-id">
@@ -2130,7 +2157,14 @@ function AccountMenu({
         ))}
       </div>
       <div className="mt-acctmenu-sep" />
-      <button className="mt-acctmenu-item mt-acctmenu-signout" type="button" onClick={onSignOut}>
+      <button
+        className="mt-acctmenu-item mt-acctmenu-signout"
+        type="button"
+        onClick={() => {
+          onClose()
+          onSignOut()
+        }}
+      >
         Sign out
       </button>
     </div>
@@ -3719,6 +3753,9 @@ export function MeantApp() {
   const searchRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
   const greeting = useBrowserGreeting()
+  const closeAccountMenu = useCallback(() => {
+    setAccountMenu(false)
+  }, [])
 
   const allPreferences = availablePrefs
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
@@ -4439,6 +4476,7 @@ export function MeantApp() {
           setAccountMenu((current) => !current)
           setCartPeek(false)
         }}
+        onCloseAccount={closeAccountMenu}
         onRemoveFromCart={removeFromCart}
         onSignOut={handleSignOut}
       />
