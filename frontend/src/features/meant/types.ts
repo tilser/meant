@@ -37,6 +37,11 @@ export interface Offer {
   merchant: string
   price: number
   delivery: string
+  merchantId?: string | null
+  merchantDomain?: string | null
+  productVariantId?: string | null
+  variantTitle?: string | null
+  available?: boolean | null
 }
 
 export interface ReviewSummary {
@@ -102,6 +107,17 @@ export interface CartItem {
   id: ProductId
   merchant: string
   qty: number
+  merchantId?: string | null
+  merchantDomain?: string | null
+  productVariantId?: string | null
+  variantTitle?: string | null
+  cartId?: string | null
+  remoteCartId?: string | null
+  checkoutUrl?: string | null
+  cartLineId?: string | null
+  remoteCartLineId?: string | null
+  syncing?: boolean
+  syncError?: string | null
 }
 
 export interface CartLine extends CartItem {
@@ -130,6 +146,8 @@ export interface CheckoutPayload {
   items: readonly CartItem[]
   saved: number
   savedNote: string
+  merchant?: string
+  checkoutUrl?: string
 }
 
 export interface SmartAlertFix {

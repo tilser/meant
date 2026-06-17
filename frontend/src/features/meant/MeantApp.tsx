@@ -26,12 +26,16 @@ import {
 } from './data'
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
+  createCart,
+  getCartCheckout,
   getCurrentUser,
   getMerchants,
   getUserSettings,
   searchUserProducts,
+  type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
+  updateCart,
   type UserProductSearchProductProfile,
   updateProfile,
   updateUserSettings,
@@ -42,6 +46,7 @@ import type {
   CartItem,
   CheckoutPayload,
   CorePreferenceId,
+  Offer,
   Order,
   Preference,
   PreferenceId,
@@ -60,7 +65,6 @@ import {
   cartGroups,
   cartLines,
   computeSmartAlerts,
-  createOrder,
   formatOrderDate,
   listJoin,
   money,
@@ -306,6 +310,13 @@ function productFromSearchResult(
         delivery: product.available === false || product.selectedVariantAvailable === false
           ? 'Availability unclear'
           : 'Available from merchant',
+        merchantId: product.merchantId,
+        merchantDomain: product.merchantDomain,
+        productVariantId: product.selectedVariantId,
+        variantTitle: product.selectedVariantTitle,
+        available: product.available === false || product.selectedVariantAvailable === false
+          ? false
+          : product.selectedVariantAvailable,
       },
     ],
   }
@@ -325,6 +336,8 @@ function merchantNameSet(merchant: MerchantProfile): ReadonlySet<string> {
 function productForMerchant(product: Product, merchant: MerchantProfile): Product | null {
   const merchantNames = merchantNameSet(merchant)
   const offers = product.offers.filter((offer) =>
+    offer.merchantId === merchant.id ||
+    merchantNames.has(normalizedMerchantName(offer.merchantDomain)) ||
     merchantNames.has(normalizedMerchantName(offer.merchant)),
   )
   if (offers.length > 0) {
@@ -339,6 +352,64 @@ function productForMerchant(product: Product, merchant: MerchantProfile): Produc
     return product
   }
   return null
+}
+
+function cartMerchantKey(input: {
+  merchant: string
+  merchantId?: string | null
+  merchantDomain?: string | null
+}): string {
+  return input.merchantId || normalizedMerchantName(input.merchantDomain) || normalizedMerchantName(input.merchant)
+}
+
+function offerCartable(offer: Offer): boolean {
+  return Boolean(
+    offer.productVariantId &&
+    offer.available !== false &&
+    (offer.merchantId || offer.merchantDomain),
+  )
+}
+
+function cartLineForItem(
+  snapshot: CartProfile,
+  item: CartItem,
+): NonNullable<CartProfile['lines']>[number] | undefined {
+  const lines = snapshot.lines ?? []
+  return lines.find((line) => {
+    return Boolean(
+      (item.cartLineId && line.cartLineId === item.cartLineId) ||
+      (item.remoteCartLineId && line.remoteCartLineId === item.remoteCartLineId) ||
+      (item.productVariantId && line.productVariantId === item.productVariantId),
+    )
+  })
+}
+
+function mergeCartSnapshot(
+  cart: readonly CartItem[],
+  merchantKey: string,
+  snapshot: CartProfile,
+): CartItem[] {
+  return cart.map((item) => {
+    if (cartMerchantKey(item) !== merchantKey) {
+      return item
+    }
+    const line = cartLineForItem(snapshot, item)
+    return {
+      ...item,
+      merchantId: snapshot.merchantId ?? item.merchantId,
+      merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
+      cartId: snapshot.cartId ?? item.cartId,
+      remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
+      checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
+      cartLineId: line?.cartLineId ?? item.cartLineId,
+      remoteCartLineId: line?.remoteCartLineId ?? item.remoteCartLineId,
+      productVariantId: line?.productVariantId ?? item.productVariantId,
+      variantTitle: line?.variantTitle ?? item.variantTitle,
+      qty: line?.quantity ?? item.qty,
+      syncing: false,
+      syncError: null,
+    }
+  })
 }
 
 function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
@@ -1362,14 +1433,18 @@ function ProductModal({
   onClose: () => void
   onToggleSave: (id: ProductId) => void
   onCompare: (id: ProductId) => void
-  onAddToCart: (id: ProductId, merchant: string) => void
+  onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
 }>) {
   const [messages, setMessages] = useState<Message[]>([])
   const [added, setAdded] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   useEffect(() => {
     setMessages([])
     setAdded(false)
+    setAdding(false)
+    setAddError(null)
   }, [product?.id])
 
   useEffect(() => {
@@ -1399,6 +1474,37 @@ function ProductModal({
     ])
   }
   const selectedOffer = bestOffer(product, location)
+  const canAddToCart = offerCartable(selectedOffer)
+  const addDisabled = adding || !canAddToCart
+  const addButtonLabel = added
+    ? 'Added to cart'
+    : adding
+      ? 'Adding...'
+      : selectedOffer.available === false
+        ? 'Unavailable'
+        : canAddToCart
+          ? 'Add to cart'
+          : 'Checkout unavailable'
+  const addSelectedOffer = async () => {
+    if (!canAddToCart || adding) {
+      return
+    }
+    setAdding(true)
+    setAddError(null)
+    try {
+      const addedToCart = await onAddToCart(product, selectedOffer)
+      if (!addedToCart) {
+        setAddError('Could not add this offer to the merchant cart.')
+        return
+      }
+      setAdded(true)
+      window.setTimeout(() => setAdded(false), 1600)
+    } catch {
+      setAddError('Could not add this offer to the merchant cart.')
+    } finally {
+      setAdding(false)
+    }
+  }
 
   return (
     <div className="mt-modal-root open">
@@ -1448,15 +1554,20 @@ function ProductModal({
               <button
                 className={`mt-act mt-act-primary ${added ? 'done' : ''}`}
                 type="button"
-                onClick={() => {
-                  onAddToCart(product.id, selectedOffer.merchant)
-                  setAdded(true)
-                  window.setTimeout(() => setAdded(false), 1600)
-                }}
+                onClick={() => void addSelectedOffer()}
+                disabled={addDisabled}
               >
-                {added ? 'Added to cart' : 'Add to cart'}
+                {addButtonLabel}
               </button>
             </div>
+            {addError ? (
+              <div className="mt-cart-inline-error">{addError}</div>
+            ) : null}
+            {!canAddToCart && !addError ? (
+              <div className="mt-cart-inline-error muted">
+                This offer is not available for merchant checkout.
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-modal-right">
@@ -1609,7 +1720,15 @@ function CartPopover({
 
   useEffect(() => {
     const onDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      // Ignore clicks on the cart button itself (it shares the anchor with the
+      // popover). Otherwise this would close the popover and the button's own
+      // onClick would immediately re-open it, so it could never be toggled shut.
+      const anchor = ref.current?.closest('.mt-cart-anchor')
+      if (anchor && anchor.contains(target)) {
+        return
+      }
+      if (ref.current && !ref.current.contains(target)) {
         onClose()
       }
     }
@@ -1751,7 +1870,9 @@ function TopBar({
   onRemoveFromCart: (id: ProductId, merchant: string) => void
   onSignOut: () => void
 }>) {
-  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
+  // Count only items that resolve to a known product, so the badge can never
+  // disagree with what the cart actually shows (e.g. a stale persisted cart).
+  const cartCount = cartLines(cart, products).reduce((sum, line) => sum + line.qty, 0)
 
   return (
     <div className="mt-topbar">
@@ -2598,6 +2719,8 @@ function CartView({
   onQty,
   onAdd,
   onCheckout,
+  checkoutMerchant,
+  checkoutError,
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
@@ -2605,7 +2728,9 @@ function CartView({
   onRemove: (id: ProductId, merchant: string) => void
   onQty: (id: ProductId, merchant: string, qty: number) => void
   onAdd: (id: ProductId, merchant: string) => void
-  onCheckout: (payload: CheckoutPayload) => void
+  onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  checkoutMerchant: string | null
+  checkoutError: { merchant: string; message: string } | null
 }>) {
   const [scanning, setScanning] = useState(true)
 
@@ -2646,7 +2771,7 @@ function CartView({
       <ViewHead
         eyebrow="Smart cart"
         title="Your cart"
-        sub={`${lines.length} items from ${groups.length} merchants - one checkout, watched for compatibility and the best price.`}
+        sub={`${lines.length} items from ${groups.length} merchants - one smart cart, with checkout handled at each merchant.`}
       />
       <div className="mt-cart-grid">
         <div className="mt-cart-main">
@@ -2689,74 +2814,143 @@ function CartView({
             </div>
           ) : null}
 
-          {groups.map((group) => (
-            <div className="mt-mgroup" key={group.merchant}>
-              <div className="mt-mgroup-head">
-                <div className="mt-mgroup-name">
-                  <span className="mt-mgroup-dot" />
-                  {group.merchant}
-                  <span className="mt-mono mt-mgroup-count">
-                    {group.items.length} item{group.items.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-                <div className="mt-mono mt-mgroup-ship">
-                  {group.delivery === 0 ? 'Free delivery' : `${money(group.delivery)} delivery`}
-                </div>
-              </div>
-              {group.items.map((line) => (
-                <div className="mt-citem" key={`${line.id}-${line.merchant}`}>
-                  <div className="mt-citem-media">
-                    <ProductArtwork product={line.product} label={line.product.category.toLowerCase()} />
-                  </div>
-                  <div className="mt-citem-info">
-                    <div className="mt-mono mt-citem-brand">{line.product.brand}</div>
-                    <div className="mt-citem-name">{line.product.name}</div>
-                    <div className="mt-mono mt-citem-deliv">
-                      Arrives {line.delivery.toLowerCase()}
-                    </div>
-                  </div>
-                  <div className="mt-citem-right">
-                    <div className="mt-qty">
-                      <button type="button" onClick={() => onQty(line.id, line.merchant, line.qty - 1)} aria-label="Decrease">
-                        -
-                      </button>
-                      <span>{line.qty}</span>
-                      <button type="button" onClick={() => onQty(line.id, line.merchant, line.qty + 1)} aria-label="Increase">
-                        +
-                      </button>
-                    </div>
-                    <div className="mt-citem-price">{money(line.price * line.qty)}</div>
-                    <button className="mt-citem-remove" type="button" onClick={() => onRemove(line.id, line.merchant)} aria-label="Remove">
-                      <CloseIcon size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              <div className="mt-mgroup-foot">
-                {scanning ? (
-                  <div className="mt-scan">
-                    <span className="mt-scan-pulse" /> Scanning {group.merchant} for codes...
-                  </div>
-                ) : group.found ? (
-                  <div className="mt-found">
-                    <span className="mt-code">
-                      <span className="mt-code-val mt-mono">{group.found.code.code}</span>
-                      <span className="mt-code-act mt-mono">copy</span>
+          {groups.map((group) => {
+            const groupTotal = group.subtotal - group.itemDiscount + group.delivery
+            const groupSyncing = group.items.some((item) => item.syncing)
+            const groupLineError = group.items.find((item) => item.syncError)?.syncError
+            const groupCheckoutError = checkoutError?.merchant === group.merchant
+              ? checkoutError.message
+              : null
+            const groupCheckoutable = group.items.every((item) =>
+              Boolean(item.cartId && item.productVariantId && !item.syncError),
+            )
+            const checkoutBusy = checkoutMerchant === group.merchant
+            const checkoutBlocked = scanning || groupSyncing || !groupCheckoutable || Boolean(checkoutMerchant)
+            const checkoutSub = groupLineError ?? groupCheckoutError ??
+              (groupSyncing
+                ? 'Syncing merchant cart'
+                : !groupCheckoutable
+                  ? 'Checkout needs a merchant cart-ready item'
+                  : group.found
+                    ? `${group.found.code.code} found · ${group.delivery === 0 ? 'free delivery' : `${money(group.delivery)} delivery`}`
+                    : group.delivery === 0
+                      ? 'Free delivery'
+                      : `${money(group.delivery)} delivery`)
+
+            return (
+              <div className="mt-mgroup" key={group.merchant}>
+                <div className="mt-mgroup-head">
+                  <div className="mt-mgroup-name">
+                    <span className="mt-mgroup-dot" />
+                    {group.merchant}
+                    <span className="mt-mono mt-mgroup-count">
+                      {group.items.length} item{group.items.length > 1 ? 's' : ''}
                     </span>
-                    <span className="mt-found-label">{group.found.code.label}</span>
-                    <span className="mt-found-save mt-mono">-{money(group.found.save)}</span>
                   </div>
-                ) : (
-                  <div className="mt-found mt-found-none mt-mono">
-                    No codes found for {group.merchant}
+                  <div className="mt-mono mt-mgroup-ship">
+                    {group.delivery === 0 ? 'Free delivery' : `${money(group.delivery)} delivery`}
                   </div>
-                )}
-                <div className="mt-mgroup-sub">
-                  Subtotal <span>{money(group.subtotal)}</span>
+                </div>
+                {group.items.map((line) => (
+                  <div className="mt-citem" key={`${line.id}-${line.merchant}`}>
+                    <div className="mt-citem-media">
+                      <ProductArtwork product={line.product} label={line.product.category.toLowerCase()} />
+                    </div>
+                    <div className="mt-citem-info">
+                      <div className="mt-mono mt-citem-brand">{line.product.brand}</div>
+                      <div className="mt-citem-name">{line.product.name}</div>
+                      <div className="mt-mono mt-citem-deliv">
+                        {line.syncing ? 'Syncing cart...' : `Arrives ${line.delivery.toLowerCase()}`}
+                      </div>
+                      {line.syncError ? (
+                        <div className="mt-mono mt-citem-error">{line.syncError}</div>
+                      ) : null}
+                    </div>
+                    <div className="mt-citem-right">
+                      <div className="mt-qty">
+                        <button
+                          type="button"
+                          onClick={() => onQty(line.id, line.merchant, line.qty - 1)}
+                          aria-label="Decrease"
+                          disabled={line.syncing}
+                        >
+                          -
+                        </button>
+                        <span>{line.qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => onQty(line.id, line.merchant, line.qty + 1)}
+                          aria-label="Increase"
+                          disabled={line.syncing}
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div className="mt-citem-price">{money(line.price * line.qty)}</div>
+                      <button
+                        className="mt-citem-remove"
+                        type="button"
+                        onClick={() => onRemove(line.id, line.merchant)}
+                        aria-label="Remove"
+                        disabled={line.syncing}
+                      >
+                        <CloseIcon size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="mt-mgroup-foot">
+                  {scanning ? (
+                    <div className="mt-scan">
+                      <span className="mt-scan-pulse" /> Scanning {group.merchant} for codes...
+                    </div>
+                  ) : group.found ? (
+                    <div className="mt-found">
+                      <span className="mt-code">
+                        <span className="mt-code-val mt-mono">{group.found.code.code}</span>
+                        <span className="mt-code-act mt-mono">copy</span>
+                      </span>
+                      <span className="mt-found-label">{group.found.code.label}</span>
+                      <span className="mt-found-save mt-mono">-{money(group.found.save)}</span>
+                    </div>
+                  ) : (
+                    <div className="mt-found mt-found-none mt-mono">
+                      No codes found for {group.merchant}
+                    </div>
+                  )}
+                  <div className="mt-mgroup-sub">
+                    Subtotal <span>{money(group.subtotal)}</span>
+                  </div>
+                </div>
+                <div className="mt-mgroup-pay">
+                  <div>
+                    <div className="mt-mgroup-pay-total">
+                      <span className="mt-mono">Merchant total</span>
+                      <strong>{money(groupTotal)}</strong>
+                    </div>
+                    <div className={`mt-mgroup-pay-sub ${groupLineError || groupCheckoutError ? 'error' : ''}`}>
+                      {checkoutSub}
+                    </div>
+                  </div>
+                  <button
+                    className="mt-mcheckout"
+                    type="button"
+                    disabled={checkoutBlocked}
+                    onClick={() =>
+                      void onCheckout({
+                        items: group.items,
+                        saved: group.itemDiscount,
+                        savedNote: group.found ? `${group.found.code.code} found` : '',
+                        merchant: group.merchant,
+                      })
+                    }
+                  >
+                    {checkoutBusy ? 'Opening checkout...' : `Check out at ${group.merchant}`}
+                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <aside className="mt-summary">
@@ -2799,21 +2993,14 @@ function CartView({
                 <span className="mt-sum-warn-dot" /> {warnCount} compatibility issue to review above
               </div>
             ) : null}
-            <button
-              className="mt-checkout"
-              type="button"
-              onClick={() =>
-                onCheckout({
-                  items: cart,
-                  saved: discountTotal,
-                  savedNote: codeCount > 0 ? `${codeCount} codes applied` : '',
-                })
-              }
-            >
-              Check out · {money(grandTotal)}
-            </button>
+            <div className="mt-sum-handoff">
+              <SparkMark size={14} />
+              <span>
+                Checkout happens on each merchant's site. Use the checkout button inside every merchant group.
+              </span>
+            </div>
             <div className="mt-mono mt-summary-foot">
-              One secure checkout across all {groups.length} merchants.
+              {groups.length} merchant checkout{groups.length > 1 ? 's' : ''} needed.
             </div>
           </div>
         </aside>
@@ -3395,12 +3582,15 @@ export function MeantApp() {
   const [budget, setBudget] = useStoredState('meant.budget', 120)
   const [location, setLocation] = useStoredState<UserLocation | null>('meant.location', null)
   const [cart, setCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
-  const [orders, setOrders] = useStoredState<Order[]>('meant.orders', [...DEFAULT_ORDERS])
+  const [checkoutMerchant, setCheckoutMerchant] = useState<string | null>(null)
+  const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(null)
+  const [orders] = useStoredState<Order[]>('meant.orders', [...DEFAULT_ORDERS])
   const [lastPlaced, setLastPlaced] = useState<string | null>(null)
   const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
+  const cartRef = useRef<readonly CartItem[]>(cart)
   const greeting = useBrowserGreeting()
 
   const allPreferences = availablePrefs
@@ -3459,6 +3649,10 @@ export function MeantApp() {
     ? merchantScopedFeedProducts.filter((product) => product.misses.length === 0)
     : merchantScopedFeedProducts
   const hiddenByShip = baseFeed.length - localizedFeedProducts.length
+
+  useEffect(() => {
+    cartRef.current = cart
+  }, [cart])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -3578,8 +3772,115 @@ export function MeantApp() {
     nav('compare')
   }
 
-  const addToCart = (id: ProductId, merchant: string) => {
+  const updateStoredCart = (updater: (current: CartItem[]) => CartItem[]) => {
     setCart((current) => {
+      const next = updater(current)
+      cartRef.current = next
+      return next
+    })
+  }
+
+  const cartItemMatches = (item: CartItem, id: ProductId, merchant: string) =>
+    item.id === id && item.merchant === merchant
+
+  const addProductOfferToCart = async (product: Product, offer: Offer): Promise<boolean> => {
+    const productVariantId = offer.productVariantId
+    if (!productVariantId || !offerCartable(offer)) {
+      return false
+    }
+
+    const merchantKey = cartMerchantKey(offer)
+    const existingGroup = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
+    const existingItem = cartRef.current.find((item) =>
+      item.id === product.id && cartMerchantKey(item) === merchantKey,
+    )
+
+    updateStoredCart((current) => {
+      const existing = current.find((item) =>
+        item.id === product.id && cartMerchantKey(item) === merchantKey,
+      )
+      if (existing) {
+        return current.map((item) =>
+          item.id === product.id && cartMerchantKey(item) === merchantKey
+            ? {
+                ...item,
+                merchant: offer.merchant,
+                merchantId: offer.merchantId ?? item.merchantId,
+                merchantDomain: offer.merchantDomain ?? item.merchantDomain,
+                productVariantId,
+                variantTitle: offer.variantTitle ?? item.variantTitle,
+                cartId: existingGroup?.cartId ?? item.cartId,
+                remoteCartId: existingGroup?.remoteCartId ?? item.remoteCartId,
+                checkoutUrl: existingGroup?.checkoutUrl ?? item.checkoutUrl,
+                qty: item.qty + 1,
+                syncing: true,
+                syncError: null,
+              }
+            : item,
+        )
+      }
+      return [
+        ...current,
+        {
+          id: product.id,
+          merchant: offer.merchant,
+          merchantId: offer.merchantId,
+          merchantDomain: offer.merchantDomain,
+          productVariantId,
+          variantTitle: offer.variantTitle,
+          cartId: existingGroup?.cartId,
+          remoteCartId: existingGroup?.remoteCartId,
+          checkoutUrl: existingGroup?.checkoutUrl,
+          qty: 1,
+          syncing: true,
+          syncError: null,
+        },
+      ]
+    })
+
+    try {
+      const currentGroup = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
+      const snapshot = currentGroup?.cartId
+        ? await updateCart({
+            cartId: currentGroup.cartId,
+            addItems: [{ productVariantId, quantity: 1 }],
+          })
+        : await createCart({
+            merchantId: offer.merchantId,
+            merchantDomain: offer.merchantDomain,
+            addItems: [{ productVariantId, quantity: 1 }],
+          })
+      updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+      return true
+    } catch {
+      updateStoredCart((current) => {
+        if (!existingItem) {
+          return current.filter((item) => !(item.id === product.id && cartMerchantKey(item) === merchantKey))
+        }
+        return current.map((item) =>
+          item.id === product.id && cartMerchantKey(item) === merchantKey
+            ? {
+                ...item,
+                qty: existingItem.qty,
+                syncing: false,
+                syncError: 'Could not add this item to the merchant cart.',
+              }
+            : item,
+        )
+      })
+      return false
+    }
+  }
+
+  const addToCart = (id: ProductId, merchant: string) => {
+    const product = allKnownProducts.find((candidate) => candidate.id === id)
+    const offer = product?.offers.find((candidate) => candidate.merchant === merchant)
+    if (product && offer && offerCartable(offer)) {
+      void addProductOfferToCart(product, offer)
+      return
+    }
+
+    updateStoredCart((current) => {
       const existing = current.find((item) => item.id === id && item.merchant === merchant)
       if (existing) {
         return current.map((item) =>
@@ -3593,7 +3894,35 @@ export function MeantApp() {
   }
 
   const removeFromCart = (id: ProductId, merchant: string) => {
-    setCart((current) => current.filter((item) => item.id !== id || item.merchant !== merchant))
+    const item = cartRef.current.find((candidate) => cartItemMatches(candidate, id, merchant))
+    if (!item) {
+      return
+    }
+    const merchantKey = cartMerchantKey(item)
+    updateStoredCart((current) => current.filter((candidate) => !cartItemMatches(candidate, id, merchant)))
+
+    if (!item.cartId || (!item.cartLineId && !item.remoteCartLineId)) {
+      return
+    }
+
+    void updateCart({
+      cartId: item.cartId,
+      removeCartLineIds: item.cartLineId ? [item.cartLineId] : undefined,
+      removeRemoteCartLineIds: item.remoteCartLineId ? [item.remoteCartLineId] : undefined,
+    })
+      .then((snapshot) => {
+        updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+      })
+      .catch(() => {
+        updateStoredCart((current) => [
+          ...current,
+          {
+            ...item,
+            syncing: false,
+            syncError: 'Could not remove this item from the merchant cart.',
+          },
+        ])
+      })
   }
 
   const updateQty = (id: ProductId, merchant: string, qty: number) => {
@@ -3601,9 +3930,52 @@ export function MeantApp() {
       removeFromCart(id, merchant)
       return
     }
-    setCart((current) =>
-      current.map((item) => (item.id === id && item.merchant === merchant ? { ...item, qty } : item)),
+
+    const item = cartRef.current.find((candidate) => cartItemMatches(candidate, id, merchant))
+    if (!item) {
+      return
+    }
+    const merchantKey = cartMerchantKey(item)
+    const shouldSync = Boolean(item.cartId && (item.cartLineId || item.remoteCartLineId))
+    updateStoredCart((current) =>
+      current.map((candidate) =>
+        cartItemMatches(candidate, id, merchant)
+          ? { ...candidate, qty, syncing: shouldSync, syncError: null }
+          : candidate,
+      ),
     )
+
+    if (!shouldSync || !item.cartId) {
+      return
+    }
+
+    void updateCart({
+      cartId: item.cartId,
+      updateItems: [
+        {
+          cartLineId: item.cartLineId,
+          remoteCartLineId: item.remoteCartLineId,
+          quantity: qty,
+        },
+      ],
+    })
+      .then((snapshot) => {
+        updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+      })
+      .catch(() => {
+        updateStoredCart((current) =>
+          current.map((candidate) =>
+            cartItemMatches(candidate, id, merchant)
+              ? {
+                  ...candidate,
+                  qty: item.qty,
+                  syncing: false,
+                  syncError: 'Could not update this item in the merchant cart.',
+                }
+              : candidate,
+          ),
+        )
+      })
   }
 
   const applySavedSettings = (settings: UserSettingsProfile) => {
@@ -3675,15 +4047,58 @@ export function MeantApp() {
     }
   }
 
-  const checkout = (payload: CheckoutPayload) => {
-    if (cart.length === 0) {
+  const checkout = async (payload: CheckoutPayload) => {
+    const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
+    const cartId = payload.items.find((item) => item.cartId)?.cartId
+    if (!cartId) {
+      setCheckoutError({
+        merchant,
+        message: 'Checkout is not available until this merchant cart syncs.',
+      })
       return
     }
-    const order = createOrder(payload)
-    setOrders((current) => [order, ...current])
-    setCart([])
-    setLastPlaced(order.id)
-    nav('orders')
+    setCheckoutMerchant(merchant)
+    setCheckoutError(null)
+    try {
+      const checkoutProfile = await getCartCheckout({ cartId, refresh: true })
+      const checkoutUrl = checkoutProfile.checkoutUrl ??
+        payload.checkoutUrl ??
+        payload.items.find((item) => item.checkoutUrl)?.checkoutUrl
+      if (!checkoutUrl) {
+        throw new Error('Missing checkout URL')
+      }
+
+      const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
+      updateStoredCart((current) =>
+        current.map((item) =>
+          checkoutItems.has(`${item.id}:${item.merchant}`)
+            ? {
+                ...item,
+                remoteCartId: checkoutProfile.remoteCartId ?? item.remoteCartId,
+                checkoutUrl,
+                syncError: null,
+              }
+            : item,
+        ),
+      )
+
+      // `window.open` with `noopener` returns null even on success, so its
+      // return value can't tell us whether the tab opened. Open via a detached
+      // anchor instead — this reliably opens a new tab and never falls through
+      // to navigating the current page.
+      const opener = document.createElement('a')
+      opener.href = checkoutUrl
+      opener.target = '_blank'
+      opener.rel = 'noopener noreferrer'
+      opener.click()
+    } catch {
+      setCheckoutError({
+        merchant,
+        message: 'Could not open merchant checkout. Try again.',
+      })
+    } finally {
+      setCheckoutMerchant(null)
+    }
   }
 
   const content = (() => {
@@ -3758,6 +4173,8 @@ export function MeantApp() {
             onQty={updateQty}
             onAdd={addToCart}
             onCheckout={checkout}
+            checkoutMerchant={checkoutMerchant}
+            checkoutError={checkoutError}
           />
         )
       case 'orders':
@@ -3835,7 +4252,7 @@ export function MeantApp() {
   }
 
   const askContext = askContexts[view]
-  const cartCount = cart.reduce((sum, item) => sum + item.qty, 0)
+  const cartCount = cartLines(cart, allKnownProducts).reduce((sum, line) => sum + line.qty, 0)
 
   return (
     <div className="mt-app">
@@ -3876,7 +4293,7 @@ export function MeantApp() {
         onClose={() => setActiveProduct(null)}
         onToggleSave={toggleSave}
         onCompare={addToCompare}
-        onAddToCart={addToCart}
+        onAddToCart={addProductOfferToCart}
       />
       {!activeProduct ? (
         <FloatingAsk
