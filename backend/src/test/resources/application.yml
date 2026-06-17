@@ -23,6 +23,8 @@ user:
     query-parser-prompt-version: v1
     explanation-prompt-version: v1
     cache-ttl: 24h
+    discovery-recent-search-limit: 5
+    discovery-recent-product-limit: 12
 
 crawling:
   ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train

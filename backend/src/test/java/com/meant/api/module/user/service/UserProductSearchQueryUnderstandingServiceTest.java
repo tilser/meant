@@ -92,13 +92,15 @@ class UserProductSearchQueryUnderstandingServiceTest {
                                 "preference-model",
                                 "cheap-query-model",
                                 "explainer-model")),
-                new UserProductSearchProperties("v1", "v1", "v1", Duration.ofHours(24)),
+                new UserProductSearchProperties("v1", "v1", "v1", Duration.ofHours(24), 5, 12),
                 repository,
                 new UserProductSearchHashService(new UserProductSearchProperties(
                         "v1",
                         "v1",
                         "v1",
-                        Duration.ofHours(24))),
+                        Duration.ofHours(24),
+                        5,
+                        12)),
                 new ObjectMapper()
         );
     }

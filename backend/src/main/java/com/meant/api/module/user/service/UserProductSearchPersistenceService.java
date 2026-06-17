@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,6 +82,50 @@ public class UserProductSearchPersistenceService {
                                 LinkedHashMap::new
                         ))
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserProductSearchProductResult> findRecentProducts(
+            UUID userId,
+            String profileHash,
+            String searchVersion,
+            String model,
+            String promptVersion,
+            Instant now,
+            int recentSearchLimit,
+            int productLimit
+    ) {
+        List<UserProductSearch> searches = userProductSearchRepository
+                .findByUserIdAndProfileHashAndSearchVersionAndExpiresAtAfterOrderByUpdatedAtDesc(
+                        userId,
+                        profileHash,
+                        searchVersion,
+                        now,
+                        PageRequest.of(0, recentSearchLimit)
+                );
+        Map<String, UserProductSearchProductResult> products = new LinkedHashMap<>();
+        for (UserProductSearch search : searches) {
+            resultFromSearch(
+                            search,
+                            search.getQuery(),
+                            search.getNormalizedQuery(),
+                            profileHash,
+                            model,
+                            promptVersion,
+                            true
+                    )
+                    .ifPresent(result -> result.products().forEach(product -> {
+                        if (products.size() < productLimit) {
+                            products.putIfAbsent(product.productKey(), product);
+                        }
+                    }));
+            if (products.size() >= productLimit) {
+                break;
+            }
+        }
+        return products.values().stream()
+                .limit(productLimit)
+                .toList();
     }
 
     @Transactional

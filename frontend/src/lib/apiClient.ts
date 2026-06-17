@@ -87,6 +87,11 @@ export interface UserProductSearchSuggestionsProfile {
   suggestions: string[]
 }
 
+export interface UserProductDiscoveryProfile {
+  savedProducts: UserSavedProductProfile[]
+  recentProducts: UserProductSearchProductProfile[]
+}
+
 export interface UserSavedProductOfferProfile {
   merchant: string
   price: number
@@ -262,6 +267,13 @@ export async function getUserProductSearchSuggestions(): Promise<UserProductSear
     response,
     'Failed to generate product search suggestions',
   )
+}
+
+export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/product-discovery`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserProductDiscoveryProfile>(response, 'Failed to load product discovery')
 }
 
 export async function getSavedProducts(): Promise<UserSavedProductProfile[]> {

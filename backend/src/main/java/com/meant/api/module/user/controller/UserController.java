@@ -6,11 +6,13 @@ import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserProductSearchResponse;
+import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchSuggestionsResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
+import com.meant.api.module.user.service.UserProductDiscoveryService;
 import com.meant.api.module.user.service.UserProductSearchSuggestionService;
 import com.meant.api.module.user.service.UserProductSearchService;
 import com.meant.api.module.user.service.UserSavedProductService;
@@ -21,6 +23,7 @@ import com.meant.api.module.user.service.command.ParseUserPreferenceFiltersComma
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
+import com.meant.api.module.user.service.query.GetUserProductDiscoveryQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -54,6 +57,7 @@ public class UserController {
     private final UserService userService;
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
+    private final UserProductDiscoveryService userProductDiscoveryService;
     private final UserProductSearchService userProductSearchService;
     private final UserProductSearchSuggestionService userProductSearchSuggestionService;
     private final UserSavedProductService userSavedProductService;
@@ -170,6 +174,24 @@ public class UserController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserProductSearchSuggestionsResponse.from(userProductSearchSuggestionService.generate(
                 UserCommandMapper.toUpsertCommand(authenticatedUser)));
+    }
+
+    @GetMapping("/me/product-discovery")
+    @Operation(
+            summary = "Get product discovery context",
+            description = "Returns product snapshots the authenticated user already owns through saved products "
+                    + "and valid recent search caches. This endpoint does not search other users' data."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Product discovery context for the current user",
+            content = @Content(schema = @Schema(implementation = UserProductDiscoveryResponse.class))
+    )
+    public UserProductDiscoveryResponse productDiscovery(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserProductDiscoveryResponse.from(userProductDiscoveryService.get(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new GetUserProductDiscoveryQuery(authenticatedUser.id())));
     }
 
     @GetMapping("/me/saved-products")

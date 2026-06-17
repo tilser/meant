@@ -39,7 +39,7 @@ ai:
     app-title: ${OPENROUTER_APP_TITLE:Meant}
     models:
       preference-filter-parser: ${OPENROUTER_PREFERENCE_FILTER_MODEL:google/gemini-2.5-flash-lite}
-      product-search-query-parser: ${OPENROUTER_PRODUCT_SEARCH_QUERY_MODEL:google/gemini-2.0-flash-lite-001}
+      product-search-query-parser: ${OPENROUTER_PRODUCT_SEARCH_QUERY_MODEL:openrouter/free}
       product-recommendation-explainer: ${OPENROUTER_PRODUCT_EXPLAINER_MODEL:google/gemini-2.5-flash-lite}
 
 user:
@@ -48,6 +48,8 @@ user:
     query-parser-prompt-version: v1
     explanation-prompt-version: v1
     cache-ttl: 24h
+    discovery-recent-search-limit: 5
+    discovery-recent-product-limit: 12
 
 crawling:
   ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train

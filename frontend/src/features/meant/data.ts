@@ -379,8 +379,8 @@ export const PRODUCTS: readonly Product[] = [
 export const PROMPTS: readonly string[] = [
   'Find me a healthy breakfast cereal',
   'A good cotton T-shirt under $50',
-  'Which coffee machine is best for me?',
-  'Why is this recommended for me?',
+  'Quiet coffee machine under $200',
+  'Fragrance-free sunscreen for sensitive skin',
 ]
 
 export const REPLIES: Readonly<Record<string, Reply>> = {
