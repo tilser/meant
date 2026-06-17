@@ -361,6 +361,73 @@ button {
   flex-shrink: 0;
 }
 
+.mt-search-spark {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+}
+
+.mt-search-spark::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 16%, transparent) 0%,
+    transparent 68%
+  );
+  opacity: 0.34;
+  transform: scale(0.72);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.mt-search-spark::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 1px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+  opacity: 0;
+  transform: translate(-8px, 8px) scale(0.7);
+}
+
+.mt-search-spark svg {
+  position: relative;
+  z-index: 1;
+  transform-origin: center;
+  transition: filter 180ms ease, transform 180ms ease;
+}
+
+.mt-search:focus-within .mt-search-spark::before {
+  opacity: 0.58;
+  transform: scale(0.92);
+}
+
+.mt-search:focus-within .mt-search-spark svg {
+  transform: rotate(8deg) scale(1.04);
+}
+
+.mt-search-writing .mt-search-spark::before {
+  opacity: 0.94;
+  animation: mt-search-spark-glow 1.15s ease-in-out infinite;
+}
+
+.mt-search-writing .mt-search-spark::after {
+  animation: mt-search-spark-orbit 1.15s ease-in-out infinite;
+}
+
+.mt-search-writing .mt-search-spark svg {
+  animation: mt-search-spark-roll 0.82s cubic-bezier(0.33, 1, 0.68, 1) infinite;
+  filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--accent) 24%, transparent));
+}
+
 .mt-search-input,
 .mt-ask-input {
   flex: 1;
@@ -3097,6 +3164,60 @@ button {
   }
 }
 
+@keyframes mt-search-spark-glow {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.68);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scale(1.16);
+  }
+}
+
+@keyframes mt-search-spark-roll {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+
+  38% {
+    transform: rotate(156deg) scale(1.18);
+  }
+
+  72% {
+    transform: rotate(292deg) scale(0.98);
+  }
+
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes mt-search-spark-orbit {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-9px, 9px) scale(0.62);
+  }
+
+  24% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+
+  58% {
+    opacity: 0.72;
+    transform: translate(-18px, 3px) scale(0.82);
+  }
+
+  82% {
+    opacity: 0;
+    transform: translate(-10px, 16px) scale(0.48);
+  }
+}
+
 @keyframes mt-search-sweep {
   0%,
   100% {
@@ -3133,6 +3254,9 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mt-search-spark::before,
+  .mt-search-spark::after,
+  .mt-search-spark svg,
   .mt-search-loader-spark,
   .mt-search-loader-dot,
   .mt-search-loading-dots span {

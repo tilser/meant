@@ -823,6 +823,7 @@ function ChatHero({
   loading: boolean
 }>) {
   const [value, setValue] = useState('')
+  const hasSearchText = value.trim().length > 0
 
   const submit = (text?: string) => {
     if (loading) {
@@ -849,7 +850,7 @@ function ChatHero({
         {profile.summary}
       </p>
       <form
-        className="mt-search"
+        className={`mt-search${hasSearchText ? ' mt-search-writing' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
           submit()
