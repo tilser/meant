@@ -15,6 +15,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -128,25 +129,25 @@ public class UserSavedProductService {
                 entity.getMatchScore(),
                 entity.getPriceFrom(),
                 entity.getMerchantCount(),
-                fromJson(entity.getSatisfies(), STRING_LIST_TYPE),
-                fromJson(entity.getMisses(), STRING_LIST_TYPE),
+                fromJson(entity.getSatisfies(), STRING_LIST_TYPE, List.<String>of()),
+                fromJson(entity.getMisses(), STRING_LIST_TYPE, List.<String>of()),
                 entity.getNote(),
-                fromJson(entity.getPros(), STRING_LIST_TYPE),
-                fromJson(entity.getCons(), STRING_LIST_TYPE),
+                fromJson(entity.getPros(), STRING_LIST_TYPE, List.<String>of()),
+                fromJson(entity.getCons(), STRING_LIST_TYPE, List.<String>of()),
                 new UserSavedProductResult.Review(
                         entity.getReviewScore(),
                         entity.getReviewCount(),
                         entity.getReviewInsight()
                 ),
-                fromJson(entity.getOffers(), OFFER_LIST_TYPE),
+                fromJson(entity.getOffers(), OFFER_LIST_TYPE, List.<UserSavedProductResult.Offer>of()),
                 entity.getNeeds(),
-                fromJson(entity.getProvides(), STRING_LIST_TYPE),
+                fromJson(entity.getProvides(), STRING_LIST_TYPE, List.<String>of()),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
     }
 
-    private void validateUser(UpsertUserCommand upsertCommand, java.util.UUID userId) {
+    private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
         if (!upsertCommand.id().equals(userId)) {
             throw new UserException("Saved product user does not match authenticated user");
         }
@@ -160,9 +161,9 @@ public class UserSavedProductService {
         }
     }
 
-    private <T> T fromJson(String value, TypeReference<T> type) {
+    private <T> T fromJson(String value, TypeReference<T> type, T defaultValue) {
         if (value == null || value.isBlank()) {
-            throw new UserException("Saved product snapshot data is empty");
+            return defaultValue;
         }
         try {
             return objectMapper.readValue(value, type);

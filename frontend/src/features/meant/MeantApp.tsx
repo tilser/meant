@@ -352,7 +352,7 @@ function savedProductFromProfile(product: UserSavedProductProfile): Product {
     review: product.review,
     offers: product.offers,
     needs: product.needs ? product.needs as Product['needs'] : undefined,
-    provides: product.provides.length > 0 ? product.provides as Product['provides'] : undefined,
+    provides: (product.provides?.length ?? 0) > 0 ? product.provides as Product['provides'] : undefined,
   }
 }
 

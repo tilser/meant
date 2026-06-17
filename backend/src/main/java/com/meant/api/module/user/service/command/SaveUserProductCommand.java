@@ -38,8 +38,10 @@ public record SaveUserProductCommand(
         @Size(max = 100)
         String tone,
 
+        @Size(max = 2048)
         String imageUrl,
 
+        @Size(max = 2048)
         String productUrl,
 
         @NotNull
@@ -109,12 +111,16 @@ public record SaveUserProductCommand(
             @Size(max = 500)
             String delivery,
 
+            @Size(max = 255)
             String merchantId,
 
+            @Size(max = 255)
             String merchantDomain,
 
+            @Size(max = 255)
             String productVariantId,
 
+            @Size(max = 255)
             String variantTitle,
 
             Boolean available
