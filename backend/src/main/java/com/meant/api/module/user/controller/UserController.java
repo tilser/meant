@@ -8,6 +8,7 @@ import com.meant.api.module.user.controller.request.UserAssistantChatContextRequ
 import com.meant.api.module.user.controller.request.UserAssistantChatRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserAssistantConversationResponse;
+import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
 import com.meant.api.module.user.controller.response.UserAssistantStreamEventResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
@@ -33,8 +34,10 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
+import com.meant.api.module.user.service.query.GetUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.GetUserProductDiscoveryQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
+import com.meant.api.module.user.service.query.ListUserAssistantConversationsQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -49,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -56,6 +60,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -233,6 +238,29 @@ public class UserController {
                 .toList();
     }
 
+    @GetMapping("/me/assistant/conversations")
+    @Operation(
+            summary = "List Ask Meant conversations",
+            description = "Returns recent persisted Ask Meant conversations for the authenticated user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Recent Ask Meant conversations",
+            content = @Content(schema = @Schema(implementation = UserAssistantConversationSummaryResponse.class))
+    )
+    public List<UserAssistantConversationSummaryResponse> assistantConversations(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return userAssistantChatService.list(
+                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        new ListUserAssistantConversationsQuery(authenticatedUser.id(), limit))
+                .stream()
+                .map(UserAssistantConversationSummaryResponse::from)
+                .toList();
+    }
+
     @GetMapping("/me/assistant/conversations/latest")
     @Operation(
             summary = "Get latest Ask Meant conversation",
@@ -248,6 +276,26 @@ public class UserController {
         return UserAssistantConversationResponse.from(userAssistantChatService.latest(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 new GetLatestUserAssistantConversationQuery(authenticatedUser.id())));
+    }
+
+    @GetMapping("/me/assistant/conversations/{conversationId}")
+    @Operation(
+            summary = "Get an Ask Meant conversation",
+            description = "Returns one persisted Ask Meant conversation and its messages for the authenticated user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Ask Meant conversation",
+            content = @Content(schema = @Schema(implementation = UserAssistantConversationResponse.class))
+    )
+    public UserAssistantConversationResponse assistantConversation(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID conversationId
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserAssistantConversationResponse.from(userAssistantChatService.get(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new GetUserAssistantConversationQuery(authenticatedUser.id(), conversationId)));
     }
 
     @PostMapping(value = "/me/assistant/messages:stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

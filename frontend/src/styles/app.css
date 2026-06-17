@@ -2728,6 +2728,44 @@ button:disabled {
   font-weight: 500;
 }
 
+.mt-askpanel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mt-askpanel-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-askpanel-icon:hover,
+.mt-askpanel-icon.on {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  color: var(--ink);
+}
+
+.mt-askpanel-icon:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.mt-askpanel-icon:active {
+  transform: scale(0.92);
+}
+
 .mt-askpanel-close {
   display: grid;
   place-items: center;
@@ -2757,6 +2795,67 @@ button:disabled {
   color: var(--faint);
   font-size: 10.5px;
   text-transform: uppercase;
+}
+
+.mt-ask-history {
+  display: grid;
+  flex-shrink: 0;
+  max-height: 156px;
+  overflow-y: auto;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.mt-ask-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 40px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--ink);
+  padding: 0 8px;
+  text-align: left;
+}
+
+.mt-ask-history-row:last-child {
+  border-bottom: 0;
+}
+
+.mt-ask-history-row:hover,
+.mt-ask-history-row.active {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.mt-ask-history-row:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.mt-ask-history-title {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-ask-history-date {
+  color: var(--faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.mt-ask-history-empty {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  color: var(--faint);
+  font-size: 12px;
 }
 
 .mt-askpanel-hint {

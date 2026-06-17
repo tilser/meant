@@ -17,13 +17,17 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.SendUserAssistantMessageCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.dto.UserAssistantConversationResult;
+import com.meant.api.module.user.service.dto.UserAssistantConversationSummaryResult;
+import com.meant.api.module.user.service.dto.UserAssistantMessageResult;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
 import com.meant.api.module.user.service.dto.UserAssistantStreamEvent;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
+import com.meant.api.module.user.service.query.GetUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
+import com.meant.api.module.user.service.query.ListUserAssistantConversationsQuery;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -261,9 +265,63 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 new GetLatestUserAssistantConversationQuery(userId));
 
         assertThat(result.conversationId()).isEqualTo(conversation.getId());
+        assertThat(result.title()).isEqualTo("Gift ideas");
+        assertThat(result.createdAt()).isEqualTo(now);
+        assertThat(result.updatedAt()).isEqualTo(now);
         assertThat(result.messages()).extracting(message -> message.role().name())
                 .containsExactly("USER", "ASSISTANT");
         assertThat(result.messages().getLast().products()).containsExactly(product);
+    }
+
+    @Test
+    void listReturnsUserConversationsByRecentActivity() {
+        UUID userId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-06-17T10:00:00Z");
+        UserAssistantConversation older = conversationRepository.save(
+                UserAssistantConversation.create(userId, "Older chat", now));
+        UserAssistantConversation newer = conversationRepository.save(
+                UserAssistantConversation.create(userId, "Newer chat", now.plusSeconds(60)));
+        conversationRepository.save(UserAssistantConversation.create(
+                otherUserId,
+                "Other user chat",
+                now.plusSeconds(120)));
+
+        List<UserAssistantConversationSummaryResult> result = userAssistantChatService.list(
+                upsertCommand(userId),
+                new ListUserAssistantConversationsQuery(userId, 20));
+
+        assertThat(result).extracting(UserAssistantConversationSummaryResult::conversationId)
+                .containsExactly(newer.getId(), older.getId());
+        assertThat(result.getFirst().title()).isEqualTo("Newer chat");
+        assertThat(result.getFirst().updatedAt()).isEqualTo(now.plusSeconds(60));
+    }
+
+    @Test
+    void getRestoresSelectedConversation() {
+        UUID userId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-06-17T10:00:00Z");
+        UserAssistantConversation conversation = conversationRepository.save(
+                UserAssistantConversation.create(userId, "Gift ideas", now));
+        messageRepository.save(UserAssistantMessage.create(
+                conversation.getId(),
+                userId,
+                UserAssistantMessageRole.USER,
+                "Find a gift",
+                null,
+                null,
+                null,
+                now
+        ));
+
+        UserAssistantConversationResult result = userAssistantChatService.get(
+                upsertCommand(userId),
+                new GetUserAssistantConversationQuery(userId, conversation.getId()));
+
+        assertThat(result.conversationId()).isEqualTo(conversation.getId());
+        assertThat(result.title()).isEqualTo("Gift ideas");
+        assertThat(result.messages()).extracting(UserAssistantMessageResult::content)
+                .containsExactly("Find a gift");
     }
 
     private SendUserAssistantMessageCommand command(UUID userId, UUID conversationId, String message) {

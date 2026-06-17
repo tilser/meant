@@ -30,6 +30,8 @@ import {
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
   createCart,
+  getAssistantConversation,
+  getAssistantConversations,
   getCartCheckout,
   getCurrentUser,
   getMerchants,
@@ -46,6 +48,8 @@ import {
   type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
+  type UserAssistantConversationProfile,
+  type UserAssistantConversationSummaryProfile,
   type UserPopularProductSearchProfile,
   type UserSavedProductProfile,
   updateCart,
@@ -468,6 +472,60 @@ function productFromSearchResult(
   }
 }
 
+function assistantMessageFromProfile(
+  message: UserAssistantConversationProfile['messages'][number],
+  preferences: readonly Preference[],
+): Message {
+  return {
+    role: message.role === 'assistant' ? 'ai' : 'you',
+    text: message.content,
+    products: message.products.map((product) => productFromSearchResult(product, preferences)),
+  }
+}
+
+function messagesFromAssistantConversation(
+  conversation: UserAssistantConversationProfile,
+  preferences: readonly Preference[],
+): Message[] {
+  return conversation.messages.map((message) => assistantMessageFromProfile(message, preferences))
+}
+
+function assistantConversationSummary(
+  conversation: UserAssistantConversationProfile,
+): UserAssistantConversationSummaryProfile | null {
+  if (!conversation.conversationId) {
+    return null
+  }
+  const timestamp = new Date().toISOString()
+  return {
+    conversationId: conversation.conversationId,
+    title: conversation.title?.trim() || 'New chat',
+    createdAt: conversation.createdAt ?? timestamp,
+    updatedAt: conversation.updatedAt ?? conversation.createdAt ?? timestamp,
+  }
+}
+
+function upsertAssistantConversationSummary(
+  history: readonly UserAssistantConversationSummaryProfile[],
+  summary: UserAssistantConversationSummaryProfile,
+): UserAssistantConversationSummaryProfile[] {
+  return [
+    summary,
+    ...history.filter((conversation) => conversation.conversationId !== summary.conversationId),
+  ].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+}
+
+function askConversationDateLabel(updatedAt: string): string {
+  const date = new Date(updatedAt)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
+}
+
 function savedProductFromProfile(product: UserSavedProductProfile): Product {
   return {
     id: product.id,
@@ -861,6 +919,43 @@ function ChevronIcon({ direction, size = 18 }: Readonly<{ direction: 'left' | 'r
         strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function HistoryIcon({ size = 16 }: Readonly<{ size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
+      <path
+        d="M5.4 5.2H2.8V2.6M3 8.8a6 6 0 1 0 1.9-4.4L2.8 6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 5.7V9l2.4 1.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function PlusIcon({ size = 16 }: Readonly<{ size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
+      <path
+        d="M9 3.8v10.4M3.8 9h10.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
       />
     </svg>
   )
@@ -1277,10 +1372,15 @@ function FloatingAsk({
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const [conversationHistory, setConversationHistory] = useState<UserAssistantConversationSummaryProfile[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [panelSize, setPanelSize] = useStoredState<AskPanelSize>('meant.askPanelSize', ASK_PANEL_DEFAULT_SIZE)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
   const assistantAbortRef = useRef<AbortController | null>(null)
+  const historyAbortRef = useRef<AbortController | null>(null)
   const mountedRef = useRef(true)
   const safePanelSize = normalizedAskPanelSize(panelSize)
   const panelStyle = {
@@ -1294,8 +1394,95 @@ function FloatingAsk({
       mountedRef.current = false
       resizeCleanupRef.current?.()
       assistantAbortRef.current?.abort()
+      historyAbortRef.current?.abort()
     }
   }, [])
+
+  const restoreConversation = useCallback((conversation: UserAssistantConversationProfile) => {
+    setConversationId(conversation.conversationId)
+    setMessages(messagesFromAssistantConversation(conversation, preferences))
+    const summary = assistantConversationSummary(conversation)
+    if (summary) {
+      setConversationHistory((current) => upsertAssistantConversationSummary(current, summary))
+    }
+  }, [preferences])
+
+  const loadConversationHistory = useCallback((restoreLatest: boolean) => {
+    historyAbortRef.current?.abort()
+    const controller = new AbortController()
+    historyAbortRef.current = controller
+    setHistoryLoading(true)
+
+    const run = async () => {
+      const history = await getAssistantConversations({ signal: controller.signal })
+      if (controller.signal.aborted || !mountedRef.current) {
+        return
+      }
+      setConversationHistory(history)
+      setHistoryLoaded(true)
+
+      if (restoreLatest) {
+        const latest = history[0]
+        if (!latest) {
+          setConversationId(null)
+          setMessages([])
+          return
+        }
+        const conversation = await getAssistantConversation(latest.conversationId, {
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || !mountedRef.current) {
+          return
+        }
+        restoreConversation(conversation)
+      }
+    }
+
+    run()
+      .catch(() => {
+        if (mountedRef.current && !controller.signal.aborted) {
+          setHistoryLoaded(true)
+        }
+      })
+      .finally(() => {
+        if (historyAbortRef.current === controller) {
+          historyAbortRef.current = null
+        }
+        if (mountedRef.current && !controller.signal.aborted) {
+          setHistoryLoading(false)
+        }
+      })
+  }, [restoreConversation])
+
+  const loadConversation = useCallback((nextConversationId: string) => {
+    historyAbortRef.current?.abort()
+    const controller = new AbortController()
+    historyAbortRef.current = controller
+    setHistoryLoading(true)
+
+    getAssistantConversation(nextConversationId, { signal: controller.signal })
+      .then((conversation) => {
+        if (controller.signal.aborted || !mountedRef.current) {
+          return
+        }
+        restoreConversation(conversation)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (historyAbortRef.current === controller) {
+          historyAbortRef.current = null
+        }
+        if (mountedRef.current && !controller.signal.aborted) {
+          setHistoryLoading(false)
+        }
+      })
+  }, [restoreConversation])
+
+  useEffect(() => {
+    if (open && !historyLoaded) {
+      loadConversationHistory(false)
+    }
+  }, [historyLoaded, loadConversationHistory, open])
 
   const startPanelResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) {
@@ -1344,6 +1531,23 @@ function FloatingAsk({
     })
   }
 
+  const selectConversation = (nextConversationId: string) => {
+    if (loading || historyLoading || nextConversationId === conversationId) {
+      return
+    }
+    setHistoryOpen(false)
+    loadConversation(nextConversationId)
+  }
+
+  const startNewConversation = () => {
+    if (loading) {
+      return
+    }
+    setConversationId(null)
+    setMessages([])
+    setHistoryOpen(false)
+  }
+
   const ask = (question: string) => {
     if (loading) {
       return
@@ -1371,6 +1575,20 @@ function FloatingAsk({
             return
           }
           setConversationId(event.conversationId)
+          if (event.conversationId) {
+            const metadataConversationId = event.conversationId
+            const normalizedTitle = question.replace(/\s+/g, ' ').trim()
+            const title = normalizedTitle.length > 80
+              ? `${normalizedTitle.slice(0, 77)}...`
+              : normalizedTitle
+            const timestamp = new Date().toISOString()
+            setConversationHistory((current) => upsertAssistantConversationSummary(current, {
+              conversationId: metadataConversationId,
+              title,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            }))
+          }
         },
         onDelta: (text) => {
           if (controller.signal.aborted || !mountedRef.current) {
@@ -1399,6 +1617,7 @@ function FloatingAsk({
           if (products.length > 0) {
             onProducts(products, question)
           }
+          loadConversationHistory(false)
         },
         onError: (message) => {
           if (controller.signal.aborted || !mountedRef.current) {
@@ -1461,16 +1680,62 @@ function FloatingAsk({
             <div className="mt-askpanel-title">
               <SparkMark size={15} /> Ask Meant
             </div>
-            <button
-              className="mt-askpanel-close"
-              type="button"
-              onClick={closeAsk}
-              aria-label="Close"
-            >
-              <CloseIcon size={14} />
-            </button>
+            <div className="mt-askpanel-actions">
+              <button
+                className={`mt-askpanel-icon ${historyOpen ? 'on' : ''}`}
+                type="button"
+                onClick={() => setHistoryOpen((current) => !current)}
+                aria-label="Chat history"
+                aria-pressed={historyOpen}
+                title="Chat history"
+              >
+                <HistoryIcon size={15} />
+              </button>
+              <button
+                className="mt-askpanel-icon"
+                type="button"
+                onClick={startNewConversation}
+                aria-label="New chat"
+                title="New chat"
+                disabled={loading}
+              >
+                <PlusIcon size={15} />
+              </button>
+              <button
+                className="mt-askpanel-close"
+                type="button"
+                onClick={closeAsk}
+                aria-label="Close"
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
           </div>
           <div className="mt-mono mt-askpanel-ctx">{contextLabel}</div>
+          {historyOpen ? (
+            <div className="mt-ask-history" role="listbox" aria-label="Ask Meant chat history">
+              {conversationHistory.length === 0 ? (
+                <div className="mt-ask-history-empty">
+                  {historyLoading ? 'Loading chats...' : 'No chats yet.'}
+                </div>
+              ) : conversationHistory.map((conversation) => (
+                <button
+                  key={conversation.conversationId}
+                  className={`mt-ask-history-row ${conversation.conversationId === conversationId ? 'active' : ''}`}
+                  type="button"
+                  role="option"
+                  aria-selected={conversation.conversationId === conversationId}
+                  onClick={() => selectConversation(conversation.conversationId)}
+                  disabled={loading || historyLoading}
+                >
+                  <span className="mt-ask-history-title">{conversation.title}</span>
+                  <span className="mt-mono mt-ask-history-date">
+                    {askConversationDateLabel(conversation.updatedAt)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {messages.length === 0 ? (
             <p className="mt-askpanel-hint">
               Ask anything. I already know your preferences.
@@ -1483,7 +1748,7 @@ function FloatingAsk({
             showChips={messages.length === 0}
             onAsk={ask}
             autoFocus
-            disabled={loading}
+            disabled={loading || historyLoading}
           />
         </div>
       ) : null}

@@ -144,7 +144,17 @@ export interface UserAssistantMessageProfile {
 
 export interface UserAssistantConversationProfile {
   conversationId: string | null
+  title: string | null
+  createdAt: string | null
+  updatedAt: string | null
   messages: UserAssistantMessageProfile[]
+}
+
+export interface UserAssistantConversationSummaryProfile {
+  conversationId: string
+  title: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface UserAssistantStreamEventProfile {
@@ -360,6 +370,38 @@ export async function getLatestAssistantConversation(options?: {
     headers: await authHeaders(),
     signal: options?.signal,
   })
+  return parseJsonResponse<UserAssistantConversationProfile>(
+    response,
+    'Failed to load Ask Meant conversation',
+  )
+}
+
+export async function getAssistantConversations(options?: {
+  signal?: AbortSignal
+}): Promise<UserAssistantConversationSummaryProfile[]> {
+  const response = await fetch(`${API_URL}/api/users/me/assistant/conversations`, {
+    headers: await authHeaders(),
+    signal: options?.signal,
+  })
+  return parseJsonResponse<UserAssistantConversationSummaryProfile[]>(
+    response,
+    'Failed to load Ask Meant conversations',
+  )
+}
+
+export async function getAssistantConversation(
+  conversationId: string,
+  options?: {
+    signal?: AbortSignal
+  },
+): Promise<UserAssistantConversationProfile> {
+  const response = await fetch(
+    `${API_URL}/api/users/me/assistant/conversations/${encodeURIComponent(conversationId)}`,
+    {
+      headers: await authHeaders(),
+      signal: options?.signal,
+    },
+  )
   return parseJsonResponse<UserAssistantConversationProfile>(
     response,
     'Failed to load Ask Meant conversation',

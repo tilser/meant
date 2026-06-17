@@ -17,6 +17,7 @@ import com.meant.api.module.user.service.command.SendUserAssistantMessageCommand
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserAssistantConversationResult;
+import com.meant.api.module.user.service.dto.UserAssistantConversationSummaryResult;
 import com.meant.api.module.user.service.dto.UserAssistantMessageResult;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
 import com.meant.api.module.user.service.dto.UserAssistantStreamEvent;
@@ -26,7 +27,9 @@ import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
+import com.meant.api.module.user.service.query.GetUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
+import com.meant.api.module.user.service.query.ListUserAssistantConversationsQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -82,10 +85,36 @@ public class UserAssistantChatService {
         validateUser(upsertCommand, query.userId());
         userService.upsert(upsertCommand);
         return conversationRepository.findFirstByUserIdOrderByUpdatedAtDesc(query.userId())
-                .map(conversation -> new UserAssistantConversationResult(
-                        conversation.getId(),
-                        restoreMessages(conversation.getId(), query.userId())))
-                .orElseGet(() -> new UserAssistantConversationResult(null, List.of()));
+                .map(conversation -> conversationResult(conversation, query.userId()))
+                .orElseGet(() -> new UserAssistantConversationResult(null, null, null, null, List.of()));
+    }
+
+    @Transactional
+    public List<UserAssistantConversationSummaryResult> list(
+            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid ListUserAssistantConversationsQuery query
+    ) {
+        validateUser(upsertCommand, query.userId());
+        userService.upsert(upsertCommand);
+        return conversationRepository.findByUserIdOrderByUpdatedAtDesc(
+                        query.userId(),
+                        PageRequest.of(0, query.limit()))
+                .stream()
+                .map(this::conversationSummary)
+                .toList();
+    }
+
+    @Transactional
+    public UserAssistantConversationResult get(
+            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid GetUserAssistantConversationQuery query
+    ) {
+        validateUser(upsertCommand, query.userId());
+        userService.upsert(upsertCommand);
+        UserAssistantConversation conversation = conversationRepository
+                .findByIdAndUserId(query.conversationId(), query.userId())
+                .orElseThrow(() -> new UserException("Assistant conversation not found"));
+        return conversationResult(conversation, query.userId());
     }
 
     public void stream(
@@ -171,6 +200,26 @@ public class UserAssistantChatService {
         if (!upsertCommand.id().equals(userId)) {
             throw new UserException("Assistant user does not match authenticated user");
         }
+    }
+
+    private UserAssistantConversationResult conversationResult(
+            UserAssistantConversation conversation,
+            UUID userId
+    ) {
+        return new UserAssistantConversationResult(
+                conversation.getId(),
+                conversation.getTitle(),
+                conversation.getCreatedAt(),
+                conversation.getUpdatedAt(),
+                restoreMessages(conversation.getId(), userId));
+    }
+
+    private UserAssistantConversationSummaryResult conversationSummary(UserAssistantConversation conversation) {
+        return new UserAssistantConversationSummaryResult(
+                conversation.getId(),
+                conversation.getTitle(),
+                conversation.getCreatedAt(),
+                conversation.getUpdatedAt());
     }
 
     private UserAssistantConversation conversation(
