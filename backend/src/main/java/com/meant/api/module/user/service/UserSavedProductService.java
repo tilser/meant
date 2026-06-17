@@ -161,6 +161,9 @@ public class UserSavedProductService {
     }
 
     private <T> T fromJson(String value, TypeReference<T> type) {
+        if (value == null || value.isBlank()) {
+            throw new UserException("Saved product snapshot data is empty");
+        }
         try {
             return objectMapper.readValue(value, type);
         } catch (JacksonException exception) {

@@ -102,6 +102,7 @@ interface ProductOpenProps {
 
 interface ProductSaveProps {
   savedSet: ReadonlySet<ProductId>
+  savePendingSet: ReadonlySet<ProductId>
   onToggleSave: (product: Product) => void
 }
 
@@ -949,6 +950,7 @@ function ProductCard({
   preferences,
   onOpen,
   savedSet,
+  savePendingSet,
   onToggleSave,
 }: Readonly<{
   product: Product
@@ -957,6 +959,7 @@ function ProductCard({
   preferences: readonly Preference[]
 } & ProductOpenProps & ProductSaveProps>) {
   const open = () => onOpen(product)
+  const savePending = savePendingSet.has(product.id)
   const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -982,7 +985,8 @@ function ProductCard({
         <button
           className={`mt-save ${savedSet.has(product.id) ? 'on' : ''}`}
           type="button"
-          aria-label={savedSet.has(product.id) ? 'Remove from saved' : 'Save'}
+          aria-label={savePending ? 'Saving' : savedSet.has(product.id) ? 'Remove from saved' : 'Save'}
+          disabled={savePending}
           onClick={(event) => {
             event.stopPropagation()
             onToggleSave(product)
@@ -1360,6 +1364,7 @@ function FeedView({
   onToggleMeantOnMerchant,
   onOpen,
   savedSet,
+  savePendingSet,
   onToggleSave,
 }: Readonly<{
   profile: typeof PROFILE
@@ -1462,6 +1467,7 @@ function FeedView({
               preferences={preferences}
               onOpen={onOpen}
               savedSet={savedSet}
+              savePendingSet={savePendingSet}
               onToggleSave={onToggleSave}
             />
           ))}
@@ -1510,6 +1516,7 @@ function ProductModal({
   location,
   preferences,
   saved,
+  savePending,
   inCompare,
   onClose,
   onToggleSave,
@@ -1524,6 +1531,7 @@ function ProductModal({
   location: UserLocation | null
   preferences: readonly Preference[]
   saved: boolean
+  savePending: boolean
   inCompare: boolean
   onClose: () => void
   onToggleSave: (product: Product) => void
@@ -1737,7 +1745,8 @@ function ProductModal({
                 className={`mt-act mt-act-icon ${saved ? 'on' : ''}`}
                 type="button"
                 onClick={() => onToggleSave(product)}
-                aria-label={saved ? 'Saved' : 'Save'}
+                disabled={savePending}
+                aria-label={savePending ? 'Saving saved product' : saved ? 'Saved' : 'Save'}
               >
                 <HeartIcon filled={saved} />
               </button>
@@ -2216,6 +2225,7 @@ function SavedView({
   location,
   preferences,
   savedSet,
+  savePendingSet,
   onOpen,
   onToggleSave,
 }: Readonly<{
@@ -2251,6 +2261,7 @@ function SavedView({
               preferences={preferences}
               onOpen={onOpen}
               savedSet={savedSet}
+              savePendingSet={savePendingSet}
               onToggleSave={onToggleSave}
             />
           ))}
@@ -3778,6 +3789,7 @@ export function MeantApp() {
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
   const [savedProducts, setSavedProducts] = useState<Product[]>([])
+  const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
   const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
@@ -3793,11 +3805,13 @@ export function MeantApp() {
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
+  const savePendingRef = useRef(new Set<ProductId>())
   const greeting = useBrowserGreeting()
 
   const allPreferences = availablePrefs
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
   const savedSet = useMemo(() => new Set(savedIds), [savedIds])
+  const savePendingSet = useMemo(() => new Set(savePendingIds), [savePendingIds])
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
   const allKnownProducts = useMemo(() => {
     const seen = new Set<ProductId>()
@@ -3809,11 +3823,17 @@ export function MeantApp() {
       return true
     })
   }, [remoteProducts, savedProducts, searchResults])
+  const allKnownProductsMap = useMemo(
+    () => new Map<ProductId, Product>(
+      allKnownProducts.map((product) => [product.id, product] as const),
+    ),
+    [allKnownProducts],
+  )
   const savedListProducts = useMemo(
     () => savedIds
-      .map((id) => allKnownProducts.find((product) => product.id === id))
+      .map((id) => allKnownProductsMap.get(id))
       .filter((product): product is Product => Boolean(product)),
-    [allKnownProducts, savedIds],
+    [allKnownProductsMap, savedIds],
   )
   const shippableProducts = useMemo(() => productsForLocation(PRODUCTS, location), [location])
   const visibleProducts = productsForPreferences(shippableProducts, activePreferences)
@@ -3997,6 +4017,8 @@ export function MeantApp() {
     setOnlyMeantOnMerchant(false)
     setSavedIds([])
     setSavedProducts([])
+    savePendingRef.current.clear()
+    setSavePendingIds([])
   }
 
   const nav = (next: View) => {
@@ -4009,15 +4031,34 @@ export function MeantApp() {
     window.scrollTo({ top: 0 })
   }
 
+  const beginSaveOperation = (id: ProductId) => {
+    if (savePendingRef.current.has(id)) {
+      return false
+    }
+    savePendingRef.current.add(id)
+    setSavePendingIds(Array.from(savePendingRef.current))
+    return true
+  }
+
+  const endSaveOperation = (id: ProductId) => {
+    savePendingRef.current.delete(id)
+    setSavePendingIds(Array.from(savePendingRef.current))
+  }
+
   const toggleSave = (product: Product) => {
+    if (!beginSaveOperation(product.id)) {
+      return
+    }
     const wasSaved = savedSet.has(product.id)
     if (wasSaved) {
       setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
-      void removeSavedProduct(product.id).catch(() => {
-        setSavedProducts((current) => upsertProductSnapshot(current, product))
-        setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
-      })
+      void removeSavedProduct(product.id)
+        .catch(() => {
+          setSavedProducts((current) => upsertProductSnapshot(current, product))
+          setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
+        })
+        .finally(() => endSaveOperation(product.id))
       return
     }
 
@@ -4033,6 +4074,7 @@ export function MeantApp() {
         setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
         setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       })
+      .finally(() => endSaveOperation(product.id))
   }
 
   const addToCompare = (id: ProductId) => {
@@ -4394,6 +4436,7 @@ export function MeantApp() {
             location={location}
             preferences={allPreferences}
             savedSet={savedSet}
+            savePendingSet={savePendingSet}
             onOpen={(product) =>
               openProduct(product, savedListProducts)
             }
@@ -4520,6 +4563,7 @@ export function MeantApp() {
             onToggleMeantOnMerchant={() => setOnlyMeantOnMerchant((current) => !current)}
             onOpen={(product) => openProduct(product, feedProducts)}
             savedSet={savedSet}
+            savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
           />
         )
@@ -4568,6 +4612,7 @@ export function MeantApp() {
         location={location}
         preferences={allPreferences}
         saved={activeProduct ? savedSet.has(activeProduct.id) : false}
+        savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
         inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
         onClose={() => setActiveProduct(null)}
         onToggleSave={toggleSave}
