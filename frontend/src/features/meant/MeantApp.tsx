@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type SetStateAction,
+  type TouchEvent as ReactTouchEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -1465,6 +1466,7 @@ function ProductModal({
   const [addError, setAddError] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     setMessages([])
@@ -1568,6 +1570,34 @@ function ProductModal({
   }
   addSelectedOfferRef.current = addDisabled ? null : addSelectedOffer
 
+  const onTouchStart = (event: ReactTouchEvent) => {
+    const touch = event.touches[0]
+    touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
+  }
+  const onTouchEnd = (event: ReactTouchEvent) => {
+    const start = touchStartRef.current
+    touchStartRef.current = null
+    if (!start) {
+      return
+    }
+    const touch = event.changedTouches[0]
+    if (!touch) {
+      return
+    }
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    // Horizontal swipe only: needs enough travel and must dominate vertical movement,
+    // so vertical scrolls inside the modal don't trigger navigation.
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) {
+      return
+    }
+    if (dx < 0 && canNext) {
+      onNext()
+    } else if (dx > 0 && canPrev) {
+      onPrev()
+    }
+  }
+
   return (
     <div className="mt-modal-root open">
       <button
@@ -1600,7 +1630,14 @@ function ProductModal({
           </button>
         </>
       ) : null}
-      <div className="mt-modal" role="dialog" aria-modal="true" aria-label={product.name}>
+      <div
+        className="mt-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={product.name}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
           <CloseIcon />
         </button>
