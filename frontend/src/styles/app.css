@@ -2709,10 +2709,14 @@ button:disabled {
   transform: translate(4px, 4px);
 }
 
-.mt-askpanel-resize:hover,
+.mt-askpanel-resize:hover {
+  color: var(--muted);
+}
+
 .mt-askpanel-resize:focus-visible {
   color: var(--muted);
   outline: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .mt-askpanel-title {

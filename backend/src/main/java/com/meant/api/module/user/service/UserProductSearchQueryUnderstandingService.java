@@ -175,7 +175,7 @@ public class UserProductSearchQueryUnderstandingService {
         );
         try {
             return sanitizeResponse(originalQuery, normalizedOriginalQuery, response);
-        } catch (OpenRouterException exception) {
+        } catch (RuntimeException exception) {
             log.warn("Could not parse product search query intent; using deterministic fallback ({})",
                     exception.getClass().getSimpleName());
             return deterministicIntent(originalQuery, normalizedOriginalQuery, "llm-fallback");

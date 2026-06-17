@@ -142,6 +142,26 @@ class UserProductSearchQueryUnderstandingServiceTest {
         assertThat(result.source()).isEqualTo("llm-fallback");
     }
 
+    @Test
+    void understandFallsBackWhenOpenRouterResponseHasUnexpectedShape() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = """
+                {
+                  "searchQuery": null,
+                  "displayQuery": "Gift candles",
+                  "constraints": [],
+                  "preferenceHints": [],
+                  "confidence": "medium"
+                }
+                """;
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understand("birthday gift candles for my mom");
+
+        assertThat(result.searchQuery()).isEqualTo("birthday gift candles for my mom");
+        assertThat(result.source()).isEqualTo("llm-fallback");
+    }
+
     private UserProductSearchQueryUnderstandingService service(
             FakeOpenRouterChatClient openRouterChatClient,
             UserProductSearchQueryIntentRepository repository

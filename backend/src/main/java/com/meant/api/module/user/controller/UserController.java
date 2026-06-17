@@ -48,6 +48,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -364,6 +365,7 @@ public class UserController {
                 request.savedProductCount(),
                 request.cartItemCount(),
                 request.visibleProducts() == null ? List.of() : request.visibleProducts().stream()
+                        .filter(Objects::nonNull)
                         .map(product -> new UserAssistantPageContext.Product(
                                 product.id(),
                                 product.name(),
@@ -374,6 +376,7 @@ public class UserController {
                                 product.note()))
                         .toList(),
                 request.cartItems() == null ? List.of() : request.cartItems().stream()
+                        .filter(Objects::nonNull)
                         .map(item -> new UserAssistantPageContext.CartItem(
                                 item.name(),
                                 item.merchant(),
@@ -381,6 +384,7 @@ public class UserController {
                                 item.price()))
                         .toList(),
                 request.orders() == null ? List.of() : request.orders().stream()
+                        .filter(Objects::nonNull)
                         .map(order -> new UserAssistantPageContext.Order(
                                 order.id(),
                                 order.date(),

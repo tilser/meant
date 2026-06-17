@@ -5,8 +5,12 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 public final class OpenRouterJsonExtractor {
+
+    private static final Pattern COMMENT_PATTERN = Pattern.compile("\\s+#.*$");
+    private static final Pattern TRAILING_COMMA_PATTERN = Pattern.compile(",\\s*$");
 
     private OpenRouterJsonExtractor() {
     }
@@ -77,9 +81,9 @@ public final class OpenRouterJsonExtractor {
         if (value == null) {
             return null;
         }
-        String cleaned = value
-                .replaceAll("\\s+#.*$", "")
-                .replaceAll(",\\s*$", "")
+        String cleaned = TRAILING_COMMA_PATTERN.matcher(
+                        COMMENT_PATTERN.matcher(value).replaceAll(""))
+                .replaceAll("")
                 .trim();
         while (isWrapped(cleaned, '"')
                 || isWrapped(cleaned, '\'')

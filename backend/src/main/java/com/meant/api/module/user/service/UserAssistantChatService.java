@@ -622,10 +622,14 @@ public class UserAssistantChatService {
             List<UserProductSearchProductResult> products
     ) {
         if (route.isSearch() && !products.isEmpty()) {
+            String productTitles = String.join(", ", products.stream()
+                    .map(UserProductSearchProductResult::title)
+                    .filter(title -> title != null && !title.isBlank())
+                    .toList());
             return "I found " + products.size() + " strong option"
                     + (products.size() == 1 ? "" : "s")
                     + ": "
-                    + products.stream().map(UserProductSearchProductResult::title).toList()
+                    + (productTitles.isBlank() ? "the top results" : productTitles)
                     + ". The first result is the safest place to start for your current preferences.";
         }
         if (toolContext != null && toolContext.hasSavedProducts()) {

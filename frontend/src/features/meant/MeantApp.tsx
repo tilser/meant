@@ -1280,14 +1280,21 @@ function FloatingAsk({
   const [loading, setLoading] = useState(false)
   const [panelSize, setPanelSize] = useStoredState<AskPanelSize>('meant.askPanelSize', ASK_PANEL_DEFAULT_SIZE)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
+  const assistantAbortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
   const safePanelSize = normalizedAskPanelSize(panelSize)
   const panelStyle = {
     '--mt-askpanel-width': `${safePanelSize.width}px`,
     '--mt-askpanel-height': `${safePanelSize.height}px`,
   } as CSSProperties
 
-  useEffect(() => () => {
-    resizeCleanupRef.current?.()
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      resizeCleanupRef.current?.()
+      assistantAbortRef.current?.abort()
+    }
   }, [])
 
   const startPanelResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1341,6 +1348,9 @@ function FloatingAsk({
     if (loading) {
       return
     }
+    assistantAbortRef.current?.abort()
+    const controller = new AbortController()
+    assistantAbortRef.current = controller
     let streamedText = ''
     setLoading(true)
     setMessages((current) => [
@@ -1353,12 +1363,19 @@ function FloatingAsk({
         conversationId,
         message: question,
         context,
+        signal: controller.signal,
       },
       {
         onMetadata: (event) => {
+          if (controller.signal.aborted || !mountedRef.current) {
+            return
+          }
           setConversationId(event.conversationId)
         },
         onDelta: (text) => {
+          if (controller.signal.aborted || !mountedRef.current) {
+            return
+          }
           streamedText += text
           updateStreamingMessage((message) => ({
             ...message,
@@ -1367,6 +1384,9 @@ function FloatingAsk({
           }))
         },
         onDone: (event) => {
+          if (controller.signal.aborted || !mountedRef.current) {
+            return
+          }
           const products = event.products.map((product) =>
             productFromSearchResult(product, preferences),
           )
@@ -1381,6 +1401,9 @@ function FloatingAsk({
           }
         },
         onError: (message) => {
+          if (controller.signal.aborted || !mountedRef.current) {
+            return
+          }
           updateStreamingMessage((current) => ({
             ...current,
             text: message,
@@ -1390,13 +1413,36 @@ function FloatingAsk({
       },
     )
       .catch(() => {
+        if (!mountedRef.current) {
+          return
+        }
+        if (controller.signal.aborted) {
+          updateStreamingMessage((message) => ({
+            ...message,
+            text: streamedText || 'Response stopped.',
+            pending: false,
+          }))
+          return
+        }
         updateStreamingMessage((message) => ({
           ...message,
           text: 'Ask Meant could not respond right now. Try again in a moment.',
           pending: false,
         }))
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (assistantAbortRef.current === controller) {
+          assistantAbortRef.current = null
+        }
+        if (mountedRef.current) {
+          setLoading(false)
+        }
+      })
+  }
+
+  const closeAsk = () => {
+    assistantAbortRef.current?.abort()
+    setOpen(false)
   }
 
   return (
@@ -1418,7 +1464,7 @@ function FloatingAsk({
             <button
               className="mt-askpanel-close"
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closeAsk}
               aria-label="Close"
             >
               <CloseIcon size={14} />

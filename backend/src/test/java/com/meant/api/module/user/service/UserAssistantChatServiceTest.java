@@ -3,6 +3,7 @@ package com.meant.api.module.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterChatMessage;
@@ -205,6 +206,29 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void streamFallbackFormatsProductTitlesWithoutJavaListSyntax() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                {"action":"search_products","searchQuery":"organic cotton clothes","clarifyingQuestion":""}
+                """;
+        openRouterChatClient.failStream = true;
+        FakeUserProductSearchService.nextResult = new UserProductSearchResult(
+                "organic cotton clothes",
+                "organic cotton clothes",
+                "profile",
+                false,
+                List.of(product("Heavyweight Organic Cotton Tee"), product("Linen Overshirt"))
+        );
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find organic cotton clothes"), events::add);
+
+        assertThat(events.getLast().text())
+                .contains("Heavyweight Organic Cotton Tee, Linen Overshirt")
+                .doesNotContain("[", "]");
+    }
+
+    @Test
     void latestRestoresPersistedMessagesWithProducts() throws Exception {
         UUID userId = UUID.randomUUID();
         Instant now = Instant.parse("2026-06-17T10:00:00Z");
@@ -266,6 +290,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     private UserProductSearchProductResult product() {
+        return product("Heavyweight Organic Cotton Tee");
+    }
+
+    private UserProductSearchProductResult product(String title) {
         return new UserProductSearchProductResult(
                 "product-key",
                 "product-hash",
@@ -277,7 +305,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 0.8,
                 0.9,
                 "remote-product",
-                "Heavyweight Organic Cotton Tee",
+                title,
                 null,
                 "https://fieldloom.example/tee",
                 null,
@@ -337,6 +365,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private String completeJsonModel;
         private String streamModel;
         private List<OpenRouterChatMessage> streamMessages = List.of();
+        private boolean failStream;
 
         FakeOpenRouterChatClient() {
             super(RestClient.builder(), new OpenRouterProperties(
@@ -359,6 +388,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             completeJsonModel = null;
             streamModel = null;
             streamMessages = List.of();
+            failStream = false;
         }
 
         @Override
@@ -381,6 +411,9 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         ) {
             streamModel = model;
             streamMessages = messages;
+            if (failStream) {
+                throw new OpenRouterException("stream failed");
+            }
             streamChunks.forEach(chunkConsumer);
         }
     }

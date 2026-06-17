@@ -371,6 +371,7 @@ export async function streamAssistantMessage(
     conversationId?: string | null
     message: string
     context: AssistantChatContextInput
+    signal?: AbortSignal
   },
   handlers: UserAssistantStreamHandlers,
 ): Promise<void> {
@@ -386,6 +387,7 @@ export async function streamAssistantMessage(
       message: input.message,
       context: input.context,
     }),
+    signal: input.signal,
   })
 
   if (!response.ok || !response.body) {
