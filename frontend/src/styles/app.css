@@ -21,6 +21,14 @@
   --serif: "Newsreader", Georgia, serif;
   --sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --motion-fast: 90ms;
+  --motion-quick: 140ms;
+  --motion-medium: 220ms;
+  --motion-slow: 420ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.38, 0.9);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.18, 1.08);
+  --shadow-pop: 0 18px 44px -24px rgba(20, 24, 28, 0.36);
   color: var(--ink);
   background: var(--bg);
   font-family: var(--sans);
@@ -72,6 +80,11 @@ textarea {
 
 button {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: default;
 }
 
 .mt-mono {
@@ -105,6 +118,11 @@ button {
   border: 0;
   background: transparent;
   padding: 0;
+  transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+}
+
+.mt-brand:active {
+  transform: scale(0.98);
 }
 
 .mt-brand-logo {
@@ -120,6 +138,7 @@ button {
 }
 
 .mt-nav-item {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -132,6 +151,25 @@ button {
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-nav-item::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 5px;
+  left: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleX(0.32);
+  transform-origin: center;
+  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-medium) var(--ease-spring);
 }
 
 .mt-nav-item:hover {
@@ -143,12 +181,26 @@ button {
   color: var(--ink);
 }
 
+.mt-nav-item.on::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.mt-nav-item:active {
+  transform: scale(0.97);
+}
+
 .mt-nav-count {
   padding: 1px 6px;
   border-radius: 20px;
   background: var(--line);
   color: var(--muted);
   font-size: 10.5px;
+  transform-origin: center;
+}
+
+.mt-nav-count.bump {
+  animation: mt-count-bump var(--motion-slow) var(--ease-spring);
 }
 
 .mt-topbar-right {
@@ -168,6 +220,12 @@ button {
   border-radius: 9px;
   background: var(--surface);
   color: var(--ink-soft);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-icon-btn:hover,
@@ -180,6 +238,10 @@ button {
   background: var(--accent-tint);
   border-color: var(--accent-line);
   color: var(--accent);
+}
+
+.mt-icon-btn:active {
+  transform: scale(0.94);
 }
 
 .mt-cart-anchor,
@@ -202,6 +264,11 @@ button {
   display: grid;
   place-items: center;
   font-size: 10px;
+  transform-origin: center;
+}
+
+.mt-cart-badge.bump {
+  animation: mt-count-bump var(--motion-slow) var(--ease-spring);
 }
 
 .mt-avatar {
@@ -211,11 +278,16 @@ button {
   border-radius: 50%;
   background: transparent;
   padding: 0;
+  transition: box-shadow var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-avatar:hover,
 .mt-avatar.on {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-line);
+}
+
+.mt-avatar:active {
+  transform: scale(0.94);
 }
 
 .mt-ava-img,
@@ -272,6 +344,11 @@ button {
   color: var(--ink-soft);
   font-size: 12.5px;
   white-space: nowrap;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-loc-chip {
@@ -294,12 +371,23 @@ button {
   text-decoration: underline;
   text-underline-offset: 3px;
   white-space: nowrap;
+  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-profile-edit:hover {
+  color: var(--ink);
+}
+
+.mt-profile-edit:active,
+.mt-loc-chip:active {
+  transform: scale(0.97);
 }
 
 .mt-feed {
   max-width: 1120px;
   margin: 0 auto;
   padding: 56px 32px 96px;
+  animation: mt-view-in var(--motion-slow) var(--ease-out) both;
 }
 
 .mt-hero {
@@ -339,19 +427,59 @@ button {
 
 .mt-search,
 .mt-ask-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--surface);
   padding: 8px 8px 8px 16px;
   box-shadow: 0 1px 2px rgba(20, 24, 28, 0.03), 0 12px 30px -18px rgba(20, 24, 28, 0.18);
+  transform-origin: center;
+  transition:
+    border-color var(--motion-medium) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-search > *,
+.mt-ask-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mt-search::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background:
+    linear-gradient(
+      110deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 9%, transparent) 42%,
+      transparent 72%
+    );
+  opacity: 0;
+  transform: translateX(-70%);
+  pointer-events: none;
+}
+
+.mt-search-submitted::before {
+  animation: mt-search-submit-sheen 520ms var(--ease-out);
 }
 
 .mt-search:focus-within,
 .mt-ask-bar:focus-within {
   border-color: var(--accent-line);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent),
+    0 18px 42px -24px rgba(20, 24, 28, 0.28);
+}
+
+.mt-search-submitted {
+  animation: mt-search-submit var(--motion-slow) var(--ease-spring);
 }
 
 .mt-search-spark,
@@ -462,6 +590,10 @@ button {
   border-radius: 11px;
   background: var(--accent);
   color: var(--on-accent);
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-search-go {
@@ -473,6 +605,20 @@ button {
 .mt-prompt:disabled {
   cursor: wait;
   opacity: 0.62;
+}
+
+.mt-search-go:not(:disabled):hover,
+.mt-ask-go:not(:disabled):hover {
+  box-shadow: 0 10px 22px -14px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+
+.mt-search-go:not(:disabled):active,
+.mt-ask-go:not(:disabled):active {
+  transform: scale(0.92);
+}
+
+.mt-search-submitted .mt-search-go svg {
+  animation: mt-search-arrow-send 520ms var(--ease-out);
 }
 
 .mt-ask-go {
@@ -502,12 +648,22 @@ button {
   color: var(--ink-soft);
   font-size: 13px;
   padding: 7px 14px;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-prompt:hover,
 .mt-ask-chip:hover {
   border-color: var(--faint);
   color: var(--ink);
+}
+
+.mt-prompt:not(:disabled):active,
+.mt-ask-chip:not(:disabled):active {
+  transform: scale(0.97);
 }
 
 .mt-starters {
@@ -567,13 +723,21 @@ button {
   color: var(--ink);
   padding: 14px 15px;
   text-align: left;
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transform-origin: center;
+  transition:
+    border-color var(--motion-medium) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out);
 }
 
 .mt-starter-card:hover {
   border-color: var(--accent-line);
-  box-shadow: 0 12px 34px -24px rgba(20, 24, 28, 0.34);
+  box-shadow: var(--shadow-pop);
   transform: translateY(-1px);
+}
+
+.mt-starter-card:active {
+  transform: translateY(0) scale(0.99);
 }
 
 .mt-starter-card:disabled {
@@ -606,11 +770,16 @@ button {
   border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--muted);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-medium) var(--ease-spring);
 }
 
 .mt-starter-card:hover .mt-starter-arrow {
   border-color: var(--accent-line);
   color: var(--accent);
+  transform: translateX(2px);
 }
 
 .mt-scope {
@@ -645,6 +814,11 @@ button {
   padding: 7px 13px;
   font-size: 13px;
   font-weight: 500;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-scope-btn:hover {
@@ -656,6 +830,10 @@ button {
   border-color: var(--accent-line);
   background: var(--accent-tint);
   color: var(--accent);
+}
+
+.mt-scope-btn:active {
+  transform: scale(0.97);
 }
 
 .mt-scope-dot {
@@ -670,6 +848,7 @@ button {
   color: var(--faint);
   font-size: 11px;
   line-height: 1;
+  transition: transform var(--motion-medium) var(--ease-spring);
 }
 
 .mt-caret.up {
@@ -691,6 +870,8 @@ button {
   padding: 6px;
   text-align: left;
   transform: translateX(-50%);
+  transform-origin: top center;
+  animation: mt-scope-menu-in var(--motion-medium) var(--ease-out);
 }
 
 .mt-scope-search {
@@ -706,6 +887,12 @@ button {
   border-radius: 10px;
   background: var(--surface);
   padding: 0 10px;
+  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+}
+
+.mt-scope-search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .mt-scope-search-icon {
@@ -745,10 +932,15 @@ button {
   color: var(--ink);
   padding: 9px 11px;
   text-align: left;
+  transition: background var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-scope-opt:hover {
   background: var(--line-soft);
+}
+
+.mt-scope-opt:active {
+  transform: scale(0.99);
 }
 
 .mt-scope-opt.on {
@@ -810,10 +1002,20 @@ button {
   font-size: 13px;
   font-weight: 600;
   box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    border-color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-scope-cta:hover {
   opacity: 0.92;
+}
+
+.mt-scope-cta:active,
+.mt-empty-btn:active {
+  transform: scale(0.98);
 }
 
 .mt-scope-cta.on {
@@ -844,6 +1046,12 @@ button {
   padding: 10px 18px;
   font-size: 13.5px;
   font-weight: 600;
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-empty-btn:hover {
@@ -871,6 +1079,7 @@ button {
   border-radius: 16px;
   background: var(--surface);
   padding: 18px 20px;
+  animation: mt-panel-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-reply-av,
@@ -914,6 +1123,15 @@ button {
   text-decoration: underline;
   text-underline-offset: 3px;
   white-space: nowrap;
+  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-reply-clear:hover {
+  color: var(--ink);
+}
+
+.mt-reply-clear:active {
+  transform: scale(0.96);
 }
 
 .mt-search-state {
@@ -928,6 +1146,7 @@ button {
   background: var(--surface);
   color: var(--muted);
   font-size: 14px;
+  animation: mt-panel-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-search-state-loading {
@@ -1045,6 +1264,7 @@ button {
 
 .mt-feed-head {
   margin-bottom: 22px;
+  animation: mt-soft-rise var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-feed-title,
@@ -1084,13 +1304,25 @@ button {
   border-radius: 18px;
   background: var(--surface);
   text-align: left;
-  transition: border-color 0.2s, box-shadow 0.25s, transform 0.25s;
+  transform-origin: center bottom;
+  transition:
+    border-color var(--motion-medium) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out),
+    transform var(--motion-medium) var(--ease-out);
+}
+
+.mt-card-in {
+  animation: mt-card-in var(--motion-slow) var(--ease-out) both;
 }
 
 .mt-card:hover {
   transform: translateY(-3px);
   border-color: var(--accent-line);
-  box-shadow: 0 18px 44px -24px rgba(20, 24, 28, 0.32);
+  box-shadow: var(--shadow-pop);
+}
+
+.mt-card:active {
+  transform: translateY(-1px) scale(0.995);
 }
 
 .mt-card-media {
@@ -1105,6 +1337,7 @@ button {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  transition: transform var(--motion-slow) var(--ease-out);
 }
 
 .mt-ph-stripes {
@@ -1126,6 +1359,12 @@ button {
   height: 100%;
   object-fit: cover;
   background: var(--line-soft);
+  transition: transform var(--motion-slow) var(--ease-out);
+}
+
+.mt-card:hover .mt-product-img,
+.mt-card:hover .mt-ph {
+  transform: scale(1.025);
 }
 
 .mt-card-cat,
@@ -1165,12 +1404,29 @@ button {
   border: 1px solid var(--line);
   border-radius: 10px;
   color: var(--muted);
+  transform-origin: center;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-save.on {
   border-color: var(--accent-line);
   background: var(--accent-tint);
   color: var(--accent);
+  animation: mt-save-pop var(--motion-slow) var(--ease-spring);
+}
+
+.mt-save:not(:disabled):hover {
+  box-shadow: 0 10px 22px -16px rgba(20, 24, 28, 0.42);
+  transform: translateY(-1px);
+}
+
+.mt-save:not(:disabled):active {
+  transform: scale(0.9);
 }
 
 .mt-card-body {
@@ -1215,6 +1471,10 @@ button {
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.mt-chip-in {
+  animation: mt-chip-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-chip-sm {
@@ -1530,11 +1790,19 @@ button {
   background: var(--glass);
   color: var(--muted);
   backdrop-filter: blur(4px);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-cmp-remove:hover {
   border-color: var(--faint);
   color: var(--ink);
+}
+
+.mt-cmp-remove:active {
+  transform: scale(0.92);
 }
 
 .mt-cmp-name {
@@ -1572,11 +1840,20 @@ button {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.18;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-cmp-choose:hover {
   border-color: var(--accent-line);
   color: var(--accent);
+}
+
+.mt-cmp-choose:active {
+  transform: scale(0.98);
 }
 
 .mt-cmp-plus {
@@ -1607,6 +1884,8 @@ button {
   background: var(--surface);
   box-shadow: 0 16px 34px -28px rgba(18, 20, 24, 0.44);
   padding: 6px;
+  transform-origin: top center;
+  animation: mt-popover-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-cmp-opt {
@@ -1620,10 +1899,15 @@ button {
   color: var(--ink);
   padding: 9px 10px;
   text-align: left;
+  transition: background var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-cmp-opt:hover {
   background: var(--line-soft);
+}
+
+.mt-cmp-opt:active {
+  transform: scale(0.99);
 }
 
 .mt-cmp-opt-sw {
@@ -1774,6 +2058,7 @@ button {
   display: grid;
   place-items: center;
   padding: 28px;
+  animation: mt-fade-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-modal-scrim {
@@ -1782,6 +2067,7 @@ button {
   border: 0;
   background: rgba(18, 20, 24, 0.4);
   backdrop-filter: blur(3px);
+  animation: mt-scrim-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-modal {
@@ -1796,6 +2082,8 @@ button {
   border-radius: 22px;
   background: var(--surface);
   box-shadow: 0 40px 90px -30px rgba(18, 20, 24, 0.5);
+  transform-origin: center bottom;
+  animation: mt-modal-in var(--motion-slow) var(--ease-spring) both;
 }
 
 .mt-modal-close {
@@ -1811,6 +2099,19 @@ button {
   border-radius: 9px;
   background: var(--glass);
   color: var(--ink-soft);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-modal-close:hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
+.mt-modal-close:active {
+  transform: scale(0.92);
 }
 
 .mt-modal-nav {
@@ -1831,11 +2132,15 @@ button {
   font-weight: 600;
   box-shadow: 0 16px 36px -12px rgba(18, 20, 24, 0.65);
   cursor: pointer;
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-quick) var(--ease-out);
 }
 
 .mt-modal-nav:hover:not(:disabled) {
   transform: translateY(-50%) scale(1.06);
+}
+
+.mt-modal-nav:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.96);
 }
 
 .mt-modal-nav:disabled {
@@ -1874,6 +2179,7 @@ button {
   flex: 1;
   min-height: 0;
   grid-template-columns: 43% 57%;
+  animation: mt-modal-content-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-modal-left {
@@ -2035,11 +2341,16 @@ button {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 13px 15px;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-offer.best {
   border-color: var(--accent-line);
   background: var(--accent-tint);
+  animation: mt-soft-glow 680ms var(--ease-out) both;
 }
 
 .mt-offer-merch,
@@ -2082,6 +2393,13 @@ button {
   font-weight: 600;
   padding: 0 16px;
   white-space: nowrap;
+  transform-origin: center;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-act:disabled,
@@ -2089,6 +2407,15 @@ button {
 .mt-acct-save:disabled {
   cursor: default;
   opacity: 0.42;
+}
+
+.mt-act:not(:disabled):hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.mt-act:not(:disabled):active {
+  transform: scale(0.97);
 }
 
 .mt-cart-inline-error {
@@ -2117,6 +2444,10 @@ button {
   color: var(--accent);
 }
 
+.mt-act-icon.on svg {
+  animation: mt-save-pop var(--motion-slow) var(--ease-spring);
+}
+
 .mt-act-ghost {
   color: var(--ink-soft);
 }
@@ -2125,6 +2456,18 @@ button {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.mt-act-primary:not(:disabled):hover {
+  color: var(--on-accent);
+  box-shadow: 0 12px 26px -16px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+
+.mt-act-primary.done {
+  border-color: #1f8a5b;
+  background: #1f8a5b;
+  color: #fff;
+  animation: mt-success-pop 520ms var(--ease-spring);
 }
 
 .mt-ask-thread {
@@ -2202,11 +2545,25 @@ button {
   padding: 0 20px;
   white-space: nowrap;
   box-shadow: 0 12px 30px -10px rgba(20, 24, 28, 0.42);
+  transform-origin: center;
+  transition:
+    width var(--motion-medium) var(--ease-spring),
+    padding var(--motion-medium) var(--ease-spring),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-fab-wrap.open .mt-fab {
   width: 48px;
   padding: 0;
+}
+
+.mt-fab:hover {
+  box-shadow: 0 18px 38px -14px rgba(20, 24, 28, 0.48);
+}
+
+.mt-fab:active {
+  transform: scale(0.96);
 }
 
 .mt-askpanel {
@@ -2217,6 +2574,8 @@ button {
   background: var(--surface);
   box-shadow: 0 24px 60px -20px rgba(20, 24, 28, 0.42);
   padding: 16px;
+  transform-origin: right bottom;
+  animation: mt-askpanel-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-askpanel-head {
@@ -2243,6 +2602,19 @@ button {
   border-radius: 8px;
   background: var(--surface);
   color: var(--muted);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-askpanel-close:hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
+.mt-askpanel-close:active {
+  transform: scale(0.92);
 }
 
 .mt-askpanel-ctx {
@@ -2305,6 +2677,15 @@ button {
   padding: 14px 16px;
   outline: 0;
   resize: vertical;
+  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+}
+
+.mt-describe:focus,
+.mt-prompt-text:focus,
+.mt-input:focus,
+.mt-select:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .mt-describe {
@@ -2355,6 +2736,11 @@ button {
   gap: 24px;
   border-bottom: 1px solid var(--line-soft);
   padding: 17px 22px;
+  transition: background var(--motion-quick) var(--ease-out), opacity var(--motion-quick) var(--ease-out);
+}
+
+.mt-pref-row:hover {
+  background: color-mix(in srgb, var(--line-soft) 52%, transparent);
 }
 
 .mt-pref-row:last-child {
@@ -2404,6 +2790,19 @@ button {
   border-radius: 8px;
   background: var(--surface);
   color: var(--faint);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-pref-remove:hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
+.mt-pref-remove:active {
+  transform: scale(0.92);
 }
 
 .mt-toggle {
@@ -2414,11 +2813,19 @@ button {
   border: 1px solid var(--line);
   border-radius: 20px;
   background: var(--line-soft);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-toggle.on {
   border-color: var(--accent);
   background: var(--accent);
+}
+
+.mt-toggle:active {
+  transform: scale(0.96);
 }
 
 .mt-toggle-knob {
@@ -2550,6 +2957,25 @@ button {
   font-weight: 600;
   padding: 10px 18px;
   white-space: nowrap;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-loc-change:hover,
+.mt-acct-uploadbtn:hover,
+.mt-acct-signout:hover {
+  border-color: var(--faint);
+}
+
+.mt-loc-change:active,
+.mt-acct-uploadbtn:active,
+.mt-acct-save:not(:disabled):active,
+.mt-acct-signout:active {
+  transform: scale(0.98);
 }
 
 .mt-loc-fields,
@@ -2588,6 +3014,10 @@ button {
   color: var(--ink);
   outline: 0;
   padding: 0 14px;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out);
 }
 
 .mt-ship-strip {
@@ -2628,6 +3058,8 @@ button {
   border-radius: 18px;
   background: var(--surface);
   box-shadow: 0 26px 64px -22px rgba(20, 24, 28, 0.42);
+  transform-origin: top right;
+  animation: mt-popover-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-cart-pop-head,
@@ -2734,6 +3166,7 @@ button {
   gap: 12px;
   border-bottom: 1px solid var(--line-soft);
   padding: 11px 18px;
+  animation: mt-soft-rise var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-cart-pop-media {
@@ -2780,6 +3213,19 @@ button {
   border-radius: 7px;
   background: transparent;
   color: var(--faint);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-cart-pop-x:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.mt-cart-pop-x:active {
+  transform: scale(0.9);
 }
 
 .mt-cart-pop-foot {
@@ -2815,6 +3261,15 @@ button {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
+  transition: box-shadow var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-cart-pop-detail:hover {
+  box-shadow: 0 12px 26px -16px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+
+.mt-cart-pop-detail:active {
+  transform: scale(0.98);
 }
 
 .mt-cart-grid {
@@ -2840,6 +3295,7 @@ button {
   border-radius: 15px;
   background: var(--surface);
   padding: 15px 17px;
+  animation: mt-panel-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-alert-warn {
@@ -2901,6 +3357,15 @@ button {
   line-height: 1.25;
   padding: 10px 14px;
   text-align: center;
+  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-alert-fix:hover {
+  opacity: 0.94;
+}
+
+.mt-alert-fix:active {
+  transform: scale(0.98);
 }
 
 .mt-alert-fix-sub {
@@ -2917,6 +3382,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--surface);
+  animation: mt-panel-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-mgroup-head,
@@ -2975,6 +3441,11 @@ button {
 
 .mt-citem {
   border-bottom: 1px solid var(--line-soft);
+  transition: background var(--motion-quick) var(--ease-out);
+}
+
+.mt-citem:hover {
+  background: color-mix(in srgb, var(--line-soft) 48%, transparent);
 }
 
 .mt-citem-media {
@@ -3015,6 +3486,12 @@ button {
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 2px;
+  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+}
+
+.mt-qty:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .mt-qty button {
@@ -3026,6 +3503,16 @@ button {
   border-radius: 7px;
   background: transparent;
   color: var(--ink-soft);
+  transition: background var(--motion-quick) var(--ease-out), color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-qty button:not(:disabled):hover {
+  background: var(--line-soft);
+  color: var(--ink);
+}
+
+.mt-qty button:not(:disabled):active {
+  transform: scale(0.88);
 }
 
 .mt-qty button:disabled,
@@ -3057,6 +3544,19 @@ button {
   border-radius: 8px;
   background: var(--surface);
   color: var(--faint);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-citem-remove:not(:disabled):hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
+.mt-citem-remove:not(:disabled):active {
+  transform: scale(0.92);
 }
 
 .mt-mgroup-foot {
@@ -3072,6 +3572,7 @@ button {
   gap: 9px;
   color: var(--muted);
   font-size: 12.5px;
+  animation: mt-soft-rise var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-scan-pulse {
@@ -3088,6 +3589,7 @@ button {
   border: 1px dashed var(--accent-line);
   border-radius: 8px;
   background: var(--accent-tint);
+  animation: mt-soft-glow 780ms var(--ease-out) both;
 }
 
 .mt-code-val {
@@ -3172,6 +3674,18 @@ button {
   font-size: 13px;
   font-weight: 700;
   padding: 0 16px;
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-mcheckout:not(:disabled):hover {
+  box-shadow: 0 12px 26px -16px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+
+.mt-mcheckout:not(:disabled):active {
+  transform: scale(0.98);
 }
 
 .mt-summary {
@@ -3282,6 +3796,7 @@ button {
 .mt-order.flash {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 3px var(--accent-tint);
+  animation: mt-soft-glow 760ms var(--ease-out) both;
 }
 
 .mt-order-head-l {
@@ -3354,10 +3869,15 @@ button {
   background: transparent;
   color: var(--ink);
   text-align: left;
+  transition: background var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-order-item:hover {
   background: var(--line-soft);
+}
+
+.mt-order-item:active {
+  transform: scale(0.995);
 }
 
 .mt-order-item-media {
@@ -3429,6 +3949,24 @@ button {
   font-size: 12.5px;
   font-weight: 600;
   padding: 8px 13px;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-order-reorder:hover,
+.mt-pager-btn:not(:disabled):hover,
+.mt-pager-num:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.mt-order-reorder:active,
+.mt-pager-btn:not(:disabled):active,
+.mt-pager-num:active {
+  transform: scale(0.96);
 }
 
 .mt-order-lifetime {
@@ -3504,6 +4042,8 @@ button {
   border-radius: 16px;
   background: var(--surface);
   box-shadow: 0 26px 64px -22px rgba(20, 24, 28, 0.42);
+  transform-origin: top right;
+  animation: mt-popover-in var(--motion-medium) var(--ease-out) both;
 }
 
 .mt-acctmenu-head {
@@ -3543,11 +4083,16 @@ button {
   font-weight: 500;
   padding: 9px 11px;
   text-align: left;
+  transition: background var(--motion-quick) var(--ease-out), color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-acctmenu-item:hover {
   background: var(--line-soft);
   color: var(--ink);
+}
+
+.mt-acctmenu-item:active {
+  transform: scale(0.98);
 }
 
 .mt-acctmenu-sep {
@@ -3589,12 +4134,25 @@ button {
   padding: 0;
   text-decoration: underline;
   text-underline-offset: 3px;
+  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-acct-removebtn:hover {
+  color: var(--ink);
+}
+
+.mt-acct-removebtn:active {
+  transform: scale(0.96);
 }
 
 .mt-acct-save {
   border: 0;
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.mt-acct-save:not(:disabled):hover {
+  box-shadow: 0 12px 26px -16px color-mix(in srgb, var(--accent) 90%, transparent);
 }
 
 .mt-acct-saved-note {
@@ -3629,6 +4187,21 @@ button {
   margin-bottom: 12px;
   padding: 18px 20px;
   text-align: left;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-acct-link:hover,
+.mt-acct-danger:hover {
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow-pop);
+}
+
+.mt-acct-link:active,
+.mt-acct-danger:active {
+  transform: scale(0.99);
 }
 
 .mt-auth {
@@ -3745,6 +4318,12 @@ button {
   font-size: 11px;
   text-decoration: underline;
   text-underline-offset: 3px;
+  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-auth-forgot:hover,
+.mt-reset-back:hover {
+  color: var(--ink);
 }
 
 .mt-reset-back {
@@ -3761,6 +4340,15 @@ button {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
+  transition: box-shadow var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out), opacity var(--motion-quick) var(--ease-out);
+}
+
+.mt-auth-primary:not(:disabled):hover {
+  box-shadow: 0 12px 26px -16px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+
+.mt-auth-primary:not(:disabled):active {
+  transform: scale(0.98);
 }
 
 .mt-auth-toggle {
@@ -3777,6 +4365,17 @@ button {
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
+  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-auth-toggle button:hover {
+  color: var(--accent);
+}
+
+.mt-auth-toggle button:active,
+.mt-auth-forgot:active,
+.mt-reset-back:active {
+  transform: scale(0.97);
 }
 
 .mt-reset-ok {
@@ -3811,12 +4410,19 @@ button {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-social-btn:hover {
   border-color: var(--faint);
   background: var(--line-soft);
+}
+
+.mt-social-btn:not(:disabled):active {
+  transform: scale(0.98);
 }
 
 .mt-social-btn:disabled {
@@ -3848,6 +4454,258 @@ button {
 
 .mt-cart-count-debug {
   display: none;
+}
+
+@keyframes mt-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mt-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mt-soft-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mt-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-scope-menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-askpanel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mt-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.965);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-modal-content-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes mt-search-submit {
+  0% {
+    transform: scale(1);
+  }
+
+  36% {
+    transform: scale(0.985);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-search-submit-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-70%);
+  }
+
+  28% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(70%);
+  }
+}
+
+@keyframes mt-search-arrow-send {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+
+  45% {
+    opacity: 0;
+    transform: translateX(10px) scale(0.86);
+  }
+
+  46% {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.86);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes mt-save-pop {
+  0% {
+    transform: scale(1);
+  }
+
+  42% {
+    transform: scale(1.18);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-success-pop {
+  0% {
+    transform: scale(0.97);
+  }
+
+  42% {
+    transform: scale(1.035);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-count-bump {
+  0% {
+    transform: scale(1);
+  }
+
+  32% {
+    transform: scale(1.32);
+  }
+
+  62% {
+    transform: scale(0.94);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-soft-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+  45% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 @keyframes mt-pulse {
@@ -3953,17 +4811,30 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mt-search-spark::before,
-  .mt-search-spark::after,
-  .mt-search-spark svg,
-  .mt-search-loader-spark,
-  .mt-search-loader-dot,
-  .mt-search-loading-dots span {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
   }
 
   .mt-search-loader-spark {
     transform: translateX(0);
+  }
+
+  .mt-card:hover,
+  .mt-card:hover .mt-product-img,
+  .mt-card:hover .mt-ph,
+  .mt-starter-card:hover,
+  .mt-save:not(:disabled):hover {
+    transform: none;
+  }
+
+  .mt-modal-nav:hover:not(:disabled),
+  .mt-modal-nav:active:not(:disabled) {
+    transform: translateY(-50%);
   }
 }
 
@@ -4229,6 +5100,10 @@ button {
   }
 
   .mt-modal-nav:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .mt-modal-nav:active:not(:disabled) {
     transform: none;
   }
 

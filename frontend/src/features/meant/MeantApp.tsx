@@ -245,6 +245,35 @@ function useStoredState<T>(
   return [value, setValue] as const
 }
 
+function useChangePulse(value: number, duration = 440): boolean {
+  const [pulse, setPulse] = useState(false)
+  const previousRef = useRef(value)
+  const timeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (previousRef.current === value) {
+      return
+    }
+    previousRef.current = value
+    setPulse(true)
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current)
+    }
+    timeoutRef.current = window.setTimeout(() => {
+      setPulse(false)
+      timeoutRef.current = null
+    }, duration)
+  }, [duration, value])
+
+  useEffect(() => () => {
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current)
+    }
+  }, [])
+
+  return pulse
+}
+
 function useBrowserGreeting(): string {
   const [greeting, setGreeting] = useState(DEFAULT_GREETING)
 
@@ -1103,7 +1132,10 @@ function ProductCard({
       tabIndex={0}
       onClick={open}
       onKeyDown={handleKey}
-      style={{ transitionDelay: `${index * 45}ms` }}
+      style={{
+        animationDelay: `${index * 45}ms`,
+        transitionDelay: `${index * 18}ms`,
+      }}
     >
       <div className="mt-card-media">
         <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
@@ -1192,7 +1224,15 @@ function ChatHero({
   onMerchant: (merchant: MerchantProfile | null) => void
 }>) {
   const [value, setValue] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const submittedTimeoutRef = useRef<number | null>(null)
   const hasSearchText = value.trim().length > 0
+
+  useEffect(() => () => {
+    if (submittedTimeoutRef.current !== null) {
+      window.clearTimeout(submittedTimeoutRef.current)
+    }
+  }, [])
 
   const submit = (text?: string) => {
     if (loading) {
@@ -1202,6 +1242,14 @@ function ChatHero({
     if (!query) {
       return
     }
+    setSubmitted(true)
+    if (submittedTimeoutRef.current !== null) {
+      window.clearTimeout(submittedTimeoutRef.current)
+    }
+    submittedTimeoutRef.current = window.setTimeout(() => {
+      setSubmitted(false)
+      submittedTimeoutRef.current = null
+    }, 520)
     setValue('')
     onSubmit(query)
   }
@@ -1219,7 +1267,7 @@ function ChatHero({
         {profile.summary}
       </p>
       <form
-        className={`mt-search${hasSearchText ? ' mt-search-writing' : ''}`}
+        className={`mt-search${hasSearchText ? ' mt-search-writing' : ''}${submitted ? ' mt-search-submitted' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
           submit()
@@ -1919,7 +1967,7 @@ function ProductModal({
         <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
           <CloseIcon />
         </button>
-        <div className="mt-modal-body">
+        <div className="mt-modal-body" key={product.id}>
           <div className="mt-modal-left">
             <div className="mt-modal-media">
               <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
@@ -2280,6 +2328,8 @@ function TopBar({
   // Count only items that resolve to a known product, so the badge can never
   // disagree with what the cart actually shows (e.g. a stale persisted cart).
   const cartCount = cartLines(cart, products).reduce((sum, line) => sum + line.qty, 0)
+  const savedBump = useChangePulse(savedCount)
+  const cartBump = useChangePulse(cartCount)
 
   return (
     <div className="mt-topbar">
@@ -2300,7 +2350,7 @@ function TopBar({
           >
             {label}
             {key === 'saved' && savedCount > 0 ? (
-              <span className="mt-mono mt-nav-count">{savedCount}</span>
+              <span className={`mt-mono mt-nav-count${savedBump ? ' bump' : ''}`}>{savedCount}</span>
             ) : null}
           </button>
         ))}
@@ -2331,7 +2381,9 @@ function TopBar({
             onClick={onToggleCart}
           >
             <CartIcon />
-            {cartCount > 0 ? <span className="mt-cart-badge mt-mono">{cartCount}</span> : null}
+            {cartCount > 0 ? (
+              <span className={`mt-cart-badge mt-mono${cartBump ? ' bump' : ''}`}>{cartCount}</span>
+            ) : null}
           </button>
           {cartPeek ? (
             <CartPopover
