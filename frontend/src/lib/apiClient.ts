@@ -92,6 +92,14 @@ export interface MerchantProfile {
   profileMcpEndpoint: string | null
 }
 
+export type CartProfile = components['schemas']['CartResponse']
+export type CheckoutProfile = components['schemas']['CheckoutResponse']
+
+export interface CartAddItemInput {
+  productVariantId: string
+  quantity: number
+}
+
 /** Injects the current Supabase access token as a Bearer header on every request. */
 const authMiddleware: Middleware = {
   async onRequest({ request }) {
@@ -190,4 +198,67 @@ export async function searchUserProducts(input: {
     body: JSON.stringify({ query: input.query }),
   })
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
+}
+
+export async function createCart(input: {
+  merchantId?: string | null
+  merchantDomain?: string | null
+  addItems: readonly CartAddItemInput[]
+}): Promise<CartProfile> {
+  const response = await fetch(`${API_URL}/api/carts`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      merchantId: input.merchantId ?? undefined,
+      merchantDomain: input.merchantDomain ?? undefined,
+      addItems: input.addItems,
+    }),
+  })
+  return parseJsonResponse<CartProfile>(response, 'Failed to create cart')
+}
+
+export async function updateCart(input: {
+  cartId: string
+  addItems?: readonly CartAddItemInput[]
+  updateItems?: readonly {
+    cartLineId?: string | null
+    remoteCartLineId?: string | null
+    quantity: number
+  }[]
+  removeCartLineIds?: readonly string[]
+  removeRemoteCartLineIds?: readonly string[]
+}): Promise<CartProfile> {
+  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      addItems: input.addItems,
+      updateItems: input.updateItems,
+      removeCartLineIds: input.removeCartLineIds,
+      removeRemoteCartLineIds: input.removeRemoteCartLineIds,
+    }),
+  })
+  return parseJsonResponse<CartProfile>(response, 'Failed to update cart')
+}
+
+export async function getCartCheckout(input: {
+  cartId: string
+  refresh?: boolean
+}): Promise<CheckoutProfile> {
+  const search = new URLSearchParams()
+  if (input.refresh !== undefined) {
+    search.set('refresh', String(input.refresh))
+  }
+  const query = search.toString()
+  const suffix = query ? `?${query}` : ''
+  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout${suffix}`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
 }
