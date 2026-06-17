@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 class UserProductSearchSuggestionServiceTest {
 
     @Test
-    void generateUsesProductSearchQueryParserModelAndActiveSettings() {
+    void generateUsesProductSearchQueryParserModelAndActiveFilters() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         openRouterChatClient.response = """
                 {
@@ -42,16 +42,47 @@ class UserProductSearchSuggestionServiceTest {
         assertThat(openRouterChatClient.userPrompt)
                 .contains("Organic: Prefer organic food.")
                 .contains("No polyester: Avoid polyester.")
-                .contains("$80")
-                .contains("Prague, Czechia");
+                .doesNotContain("$80")
+                .doesNotContain("Prague")
+                .doesNotContain("Czechia");
         assertThat(openRouterChatClient.schema.properties().get("suggestions").minItems()).isEqualTo(4);
         assertThat(openRouterChatClient.schema.properties().get("suggestions").maxItems()).isEqualTo(4);
         assertThat(result.suggestions()).containsExactly(
                 "Find me organic low-sugar cereal",
-                "A natural-material T-shirt under $80",
                 "Sustainable dish soap",
-                "Highly rated coffee beans"
+                "Highly rated coffee beans",
+                "Find me a healthy breakfast cereal"
         );
+    }
+
+    @Test
+    void generateFiltersPricesPlacesAndLongSuggestions() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = """
+                {
+                  "suggestions": [
+                    "Find me a breakfast cereal under 10 US in San Francisco",
+                    "Find me cereal near Prague",
+                    "Find me a very specific organic low-sugar gluten-free breakfast cereal for a family pantry",
+                    "Find me fragrance-free skincare",
+                    "Find me local dish soap"
+                  ]
+                }
+                """;
+        UserProductSearchSuggestionService service = service(openRouterChatClient);
+
+        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+
+        assertThat(result.suggestions()).containsExactly(
+                "Find me fragrance-free skincare",
+                "Find me a healthy breakfast cereal",
+                "Find me a natural-material T-shirt",
+                "Find me products that match my filters"
+        );
+        assertThat(result.suggestions()).allSatisfy(suggestion -> {
+            assertThat(suggestion).doesNotContain("$", "Prague", "San Francisco", "local");
+            assertThat(suggestion.length()).isLessThanOrEqualTo(64);
+        });
     }
 
     @Test
@@ -82,7 +113,7 @@ class UserProductSearchSuggestionServiceTest {
         UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
 
         assertThat(result.suggestions()).hasSize(4);
-        assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal under $80");
+        assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal");
     }
 
     @Test
@@ -104,7 +135,7 @@ class UserProductSearchSuggestionServiceTest {
         UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
 
         assertThat(result.suggestions()).hasSize(4);
-        assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal under $80");
+        assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal");
     }
 
     private UserProductSearchSuggestionService service(FakeOpenRouterChatClient openRouterChatClient) {

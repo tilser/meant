@@ -167,7 +167,7 @@ public class UserController {
     @Operation(
             summary = "Generate product search suggestions",
             description = "Generates four fresh product search suggestions from the current user's active shopping "
-                    + "filters, budget, and location."
+                    + "filters."
     )
     @ApiResponse(
             responseCode = "200",

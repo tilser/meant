@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,11 +31,26 @@ import tools.jackson.databind.ObjectMapper;
 public class UserProductSearchSuggestionService {
 
     private static final int SUGGESTION_COUNT = 4;
+    private static final int MAX_SUGGESTION_LENGTH = 64;
+    private static final Pattern PRICE_OR_BUDGET_PATTERN = Pattern.compile(
+            "(?i)([$€£¥]|\\b(usd|u\\.s\\. dollars?|us dollars?|dollars?|eur|euros?|gbp|pounds?|czk|crowns?)\\b"
+                    + "|\\d+(?:\\.\\d+)?\\s*(usd|u\\.s\\. dollars?|us dollars?|dollars?|eur|euros?|gbp|pounds?|czk|crowns?)\\b"
+                    + "|\\b(under|over|below|above|less than|more than|up to|around|about|approximately|max(?:imum)?|budget)\\s*[$€£¥]?\\s*\\d"
+                    + "|\\b(cheap|affordable|budget-friendly|low-cost)\\b)"
+    );
+    private static final Pattern PLACE_QUALIFIER_PATTERN = Pattern.compile(
+            "\\b(?:in|near|around)\\s+[A-Z][A-Za-z]+(?:\\s+[A-Z][A-Za-z]+){0,3}\\b"
+    );
+    private static final Pattern LOCAL_PLACE_PATTERN = Pattern.compile(
+            "(?i)\\b(near me|nearby|local|in my area|around me)\\b"
+    );
     private static final String SYSTEM_PROMPT = """
             You write concise Meant product search suggestions.
             Generate exactly four clickable shopping prompts for the user.
-            Base each prompt on the active shopping filters, budget, and location when provided.
+            Base each prompt on the active shopping filters when provided.
             Make each prompt specific enough to run as a merchant catalog search.
+            Keep each prompt short and product-focused.
+            Do not include prices, budgets, currency, cities, countries, stores, or places.
             Do not mention internal filter IDs, database fields, or model behavior.
             Avoid duplicates and avoid generic assistant questions.
             """;
@@ -65,17 +81,9 @@ public class UserProductSearchSuggestionService {
                 Active shopping filters:
                 %s
 
-                Budget:
-                %s
-
-                Location:
-                %s
-
-                Return product-search prompts only.
+                Return short product-search prompts only. Do not mention prices or places.
                 """.formatted(
-                filterCatalog(settings.filters()),
-                settings.budget() == null ? "Not set" : "$" + settings.budget(),
-                location(settings.location()));
+                filterCatalog(settings.filters()));
     }
 
     private String filterCatalog(List<ShoppingFilterResult> filters) {
@@ -85,13 +93,6 @@ public class UserProductSearchSuggestionService {
         return filters.stream()
                 .map(filter -> "- %s: %s".formatted(filter.label(), filter.description()))
                 .collect(Collectors.joining("\n"));
-    }
-
-    private String location(UserLocationResult location) {
-        if (location == null) {
-            return "Not set";
-        }
-        return "%s, %s".formatted(location.city(), location.country());
     }
 
     private OpenRouterJsonSchemaDefinition responseSchema() {
@@ -106,14 +107,14 @@ public class UserProductSearchSuggestionService {
     }
 
     private List<String> sanitize(String response, UserSettingsResult settings) {
-        List<String> suggestions = sanitizeSuggestions(parseResponse(response).suggestions());
+        List<String> suggestions = sanitizeSuggestions(parseResponse(response).suggestions(), settings);
         if (suggestions.size() == SUGGESTION_COUNT) {
             return suggestions;
         }
 
         List<String> completed = new ArrayList<>(suggestions);
         for (String fallback : fallbackSuggestions(settings)) {
-            addSuggestion(completed, fallback);
+            addSuggestion(completed, fallback, settings);
             if (completed.size() == SUGGESTION_COUNT) {
                 break;
             }
@@ -133,23 +134,26 @@ public class UserProductSearchSuggestionService {
         }
     }
 
-    private List<String> sanitizeSuggestions(List<String> values) {
+    private List<String> sanitizeSuggestions(List<String> values, UserSettingsResult settings) {
         if (values == null) {
             return List.of();
         }
 
         List<String> suggestions = new ArrayList<>();
-        values.forEach(value -> addSuggestion(suggestions, value));
+        values.forEach(value -> addSuggestion(suggestions, value, settings));
         return List.copyOf(suggestions);
     }
 
-    private void addSuggestion(List<String> suggestions, String value) {
+    private void addSuggestion(List<String> suggestions, String value, UserSettingsResult settings) {
         if (suggestions.size() >= SUGGESTION_COUNT || value == null) {
             return;
         }
 
         String suggestion = value.trim().replaceAll("\\s+", " ");
         if (suggestion.isBlank()) {
+            return;
+        }
+        if (hasDisallowedSuggestionContent(suggestion, settings)) {
             return;
         }
 
@@ -161,33 +165,57 @@ public class UserProductSearchSuggestionService {
         }
     }
 
+    private boolean hasDisallowedSuggestionContent(String suggestion, UserSettingsResult settings) {
+        if (suggestion.length() > MAX_SUGGESTION_LENGTH) {
+            return true;
+        }
+        if (PRICE_OR_BUDGET_PATTERN.matcher(suggestion).find()) {
+            return true;
+        }
+        if (PLACE_QUALIFIER_PATTERN.matcher(suggestion).find() || LOCAL_PLACE_PATTERN.matcher(suggestion).find()) {
+            return true;
+        }
+        return settings.location() != null && containsLocation(suggestion, settings.location());
+    }
+
+    private boolean containsLocation(String suggestion, UserLocationResult location) {
+        return containsWord(suggestion, location.city()) || containsWord(suggestion, location.country());
+    }
+
+    private boolean containsWord(String value, String word) {
+        if (word == null || word.isBlank()) {
+            return false;
+        }
+        Pattern pattern = Pattern.compile("(?i)(^|\\W)" + Pattern.quote(word.trim()) + "($|\\W)");
+        return pattern.matcher(value).find();
+    }
+
     private List<String> fallbackSuggestions(UserSettingsResult settings) {
         Set<String> filterIds = settings.filters().stream()
                 .map(ShoppingFilterResult::id)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        String budgetSuffix = settings.budget() == null ? "" : " under $" + settings.budget();
         List<String> suggestions = new ArrayList<>();
 
         if (filterIds.contains("organic") || filterIds.contains("low-sugar") || filterIds.contains("gluten-free")) {
-            suggestions.add("Find me a healthy breakfast cereal" + budgetSuffix);
+            suggestions.add("Find me a healthy breakfast cereal");
         }
         if (filterIds.contains("natural-materials") || filterIds.contains("no-polyester")) {
-            suggestions.add("A natural-material T-shirt" + budgetSuffix);
+            suggestions.add("Find me a natural-material T-shirt");
         }
         if (filterIds.contains("sustainable-brands")) {
-            suggestions.add("Show me sustainable everyday essentials" + budgetSuffix);
+            suggestions.add("Show me sustainable everyday essentials");
         }
         if (filterIds.contains("fragrance-free") || filterIds.contains("paraben-free")) {
-            suggestions.add("Find me gentle fragrance-free skincare" + budgetSuffix);
+            suggestions.add("Find me gentle fragrance-free skincare");
         }
         if (filterIds.contains("best-value") || filterIds.contains("highly-rated")) {
-            suggestions.add("Best value highly rated products" + budgetSuffix);
+            suggestions.add("Find me highly rated everyday products");
         }
         suggestions.addAll(List.of(
-                "Find me products that match my filters" + budgetSuffix,
-                "Show me better options for my preferences" + budgetSuffix,
-                "What should I buy next" + budgetSuffix,
-                "Find me something healthy" + budgetSuffix
+                "Find me products that match my filters",
+                "Show me better options for my preferences",
+                "What should I buy next",
+                "Find me something healthy"
         ));
         return suggestions;
     }
