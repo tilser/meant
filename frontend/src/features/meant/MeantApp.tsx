@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -543,6 +544,21 @@ function CloseIcon({ size = 16 }: Readonly<{ size?: number }>) {
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function ChevronIcon({ direction, size = 18 }: Readonly<{ direction: 'left' | 'right'; size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
+      <path
+        d={direction === 'left' ? 'M11 3 6 9l5 6' : 'M7 3l5 6-5 6'}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   )
@@ -1424,6 +1440,10 @@ function ProductModal({
   onToggleSave,
   onCompare,
   onAddToCart,
+  canPrev,
+  canNext,
+  onPrev,
+  onNext,
 }: Readonly<{
   product: Product | null
   location: UserLocation | null
@@ -1434,12 +1454,17 @@ function ProductModal({
   onToggleSave: (id: ProductId) => void
   onCompare: (id: ProductId) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
+  canPrev: boolean
+  canNext: boolean
+  onPrev: () => void
+  onNext: () => void
 }>) {
   const [messages, setMessages] = useState<Message[]>([])
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
+  const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
     setMessages([])
@@ -1459,13 +1484,36 @@ function ProductModal({
       return
     }
     const onKey = (event: globalThis.KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable === true
       if (event.key === 'Escape') {
         onClose()
+        return
+      }
+      if (typing) {
+        return
+      }
+      if (event.key === 'ArrowRight' && canNext) {
+        event.preventDefault()
+        onNext()
+        return
+      }
+      if (event.key === 'ArrowLeft' && canPrev) {
+        event.preventDefault()
+        onPrev()
+        return
+      }
+      if (event.key === 'Enter' && addSelectedOfferRef.current) {
+        event.preventDefault()
+        void addSelectedOfferRef.current()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, product])
+  }, [onClose, product, canNext, canPrev, onNext, onPrev])
 
   if (!product) {
     return null
@@ -1518,6 +1566,7 @@ function ProductModal({
       setAdding(false)
     }
   }
+  addSelectedOfferRef.current = addDisabled ? null : addSelectedOffer
 
   return (
     <div className="mt-modal-root open">
@@ -1527,6 +1576,30 @@ function ProductModal({
         aria-label="Close product detail"
         onClick={onClose}
       />
+      {canPrev || canNext ? (
+        <>
+          <button
+            className="mt-modal-nav mt-modal-nav-prev"
+            type="button"
+            onClick={onPrev}
+            disabled={!canPrev}
+            aria-label="Previous product"
+          >
+            <ChevronIcon direction="left" />
+            <span className="mt-modal-nav-text mt-mono">Prev</span>
+          </button>
+          <button
+            className="mt-modal-nav mt-modal-nav-next"
+            type="button"
+            onClick={onNext}
+            disabled={!canNext}
+            aria-label="Next product"
+          >
+            <span className="mt-modal-nav-text mt-mono">Next</span>
+            <ChevronIcon direction="right" />
+          </button>
+        </>
+      ) : null}
       <div className="mt-modal" role="dialog" aria-modal="true" aria-label={product.name}>
         <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
           <CloseIcon />
@@ -1570,7 +1643,10 @@ function ProductModal({
                 onClick={() => void addSelectedOffer()}
                 disabled={addDisabled}
               >
-                {addButtonLabel}
+                <span>{addButtonLabel}</span>
+                {!addDisabled && !added ? (
+                  <kbd className="mt-act-key" aria-hidden>↵</kbd>
+                ) : null}
               </button>
             </div>
             {addError ? (
@@ -3588,6 +3664,7 @@ export function MeantApp() {
   const [selectedMerchantId, setSelectedMerchantId] = useStoredState<string | null>('meant.merchant', null)
   const [onlyMeantOnMerchant, setOnlyMeantOnMerchant] = useState(false)
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
+  const [navProducts, setNavProducts] = useState<readonly Product[]>([])
   const [savedIds, setSavedIds] = useStoredState<ProductId[]>('meant.saved', [...DEFAULT_SAVED_IDS])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
@@ -3662,6 +3739,37 @@ export function MeantApp() {
     ? merchantScopedFeedProducts.filter((product) => product.misses.length === 0)
     : merchantScopedFeedProducts
   const hiddenByShip = baseFeed.length - localizedFeedProducts.length
+
+  const openProduct = useCallback((product: Product, list?: readonly Product[]) => {
+    setActiveProduct(product)
+    setNavProducts(list ?? [product])
+  }, [])
+
+  const navIndex = activeProduct
+    ? navProducts.findIndex((candidate) => candidate.id === activeProduct.id)
+    : -1
+  const canNavPrev = navIndex > 0
+  const canNavNext = navIndex >= 0 && navIndex < navProducts.length - 1
+
+  const navigateProduct = useCallback(
+    (direction: -1 | 1) => {
+      setActiveProduct((current) => {
+        if (!current) {
+          return current
+        }
+        const index = navProducts.findIndex((candidate) => candidate.id === current.id)
+        if (index < 0) {
+          return current
+        }
+        const nextIndex = index + direction
+        if (nextIndex < 0 || nextIndex >= navProducts.length) {
+          return current
+        }
+        return navProducts[nextIndex]
+      })
+    },
+    [navProducts],
+  )
 
   useEffect(() => {
     cartRef.current = cart
@@ -4134,7 +4242,9 @@ export function MeantApp() {
             location={location}
             preferences={allPreferences}
             savedSet={savedSet}
-            onOpen={setActiveProduct}
+            onOpen={(product) =>
+              openProduct(product, visibleProducts.filter((candidate) => savedSet.has(candidate.id)))
+            }
             onToggleSave={toggleSave}
           />
         )
@@ -4201,7 +4311,7 @@ export function MeantApp() {
             products={allKnownProducts}
             preferences={allPreferences}
             flashId={lastPlaced}
-            onOpen={setActiveProduct}
+            onOpen={(product) => openProduct(product)}
             onReorder={(order) => {
               setCart((current) => [...current, ...order.items])
               nav('cart')
@@ -4256,7 +4366,7 @@ export function MeantApp() {
               }
             }}
             onToggleMeantOnMerchant={() => setOnlyMeantOnMerchant((current) => !current)}
-            onOpen={setActiveProduct}
+            onOpen={(product) => openProduct(product, feedProducts)}
             savedSet={savedSet}
             onToggleSave={toggleSave}
           />
@@ -4311,6 +4421,10 @@ export function MeantApp() {
         onToggleSave={toggleSave}
         onCompare={addToCompare}
         onAddToCart={addProductOfferToCart}
+        canPrev={canNavPrev}
+        canNext={canNavNext}
+        onPrev={() => navigateProduct(-1)}
+        onNext={() => navigateProduct(1)}
       />
       {!activeProduct ? (
         <FloatingAsk

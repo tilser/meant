@@ -1313,6 +1313,62 @@ button {
   color: var(--ink-soft);
 }
 
+.mt-modal-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 62;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 48px;
+  padding: 0 18px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 16px 36px -12px rgba(18, 20, 24, 0.65);
+  cursor: pointer;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.mt-modal-nav:hover:not(:disabled) {
+  transform: translateY(-50%) scale(1.06);
+}
+
+.mt-modal-nav:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.mt-modal-nav-text {
+  letter-spacing: 0.02em;
+}
+
+.mt-modal-nav-prev {
+  left: max(20px, calc(50% - min(960px, 94vw) / 2 - 120px));
+}
+
+.mt-modal-nav-next {
+  right: max(20px, calc(50% - min(960px, 94vw) / 2 - 120px));
+}
+
+.mt-act-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.22);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: inherit;
+}
+
 .mt-modal-body {
   display: grid;
   flex: 1;
@@ -3864,6 +3920,32 @@ button {
 
   .mt-modal-media {
     max-height: 270px;
+  }
+
+  .mt-modal-nav {
+    top: auto;
+    bottom: 16px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    transform: none;
+  }
+
+  .mt-modal-nav:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .mt-modal-nav-text {
+    display: none;
+  }
+
+  .mt-modal-nav-prev {
+    left: 16px;
+  }
+
+  .mt-modal-nav-next {
+    right: 16px;
   }
 
   .mt-modal-name {
