@@ -101,6 +101,12 @@ interface Message {
   pending?: boolean
 }
 
+interface AssistantProductAction {
+  product: Product
+  shouldAddToCart: boolean
+  shouldOpen: boolean
+}
+
 interface AskPanelSize {
   width: number
   height: number
@@ -783,6 +789,83 @@ function mergeCartSnapshot(
   })
 }
 
+function normalizeAssistantActionText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function latestAssistantProductList(messages: readonly Message[]): readonly Product[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'ai' && message.products && message.products.length > 0) {
+      return message.products
+    }
+  }
+  return []
+}
+
+function assistantProductTargetIndex(text: string, productCount: number): number | null {
+  if (productCount <= 0) {
+    return null
+  }
+  if (/\b(first|1st|top|best)\b/.test(text)) {
+    return 0
+  }
+  if (/\b(second|2nd)\b/.test(text)) {
+    return productCount > 1 ? 1 : null
+  }
+  if (/\b(third|3rd)\b/.test(text)) {
+    return productCount > 2 ? 2 : null
+  }
+  if (/\b(fourth|4th)\b/.test(text)) {
+    return productCount > 3 ? 3 : null
+  }
+  if (/\blast\b/.test(text)) {
+    return productCount - 1
+  }
+  if (productCount === 1 && /\b(it|this|that|one|item|product)\b/.test(text)) {
+    return 0
+  }
+  return null
+}
+
+function resolveAssistantProductAction(
+  question: string,
+  messages: readonly Message[],
+): AssistantProductAction | null {
+  const products = latestAssistantProductList(messages)
+  if (products.length === 0) {
+    return null
+  }
+
+  const text = normalizeAssistantActionText(question)
+  const shouldAddToCart =
+    /\b(add|put|place)\b.*\b(cart|bag)\b/.test(text) ||
+    /\b(cart|bag)\b.*\b(add|put|place)\b/.test(text)
+  const shouldOpen = /\b(open|view)\b/.test(text) || /\bdetails?\b/.test(text)
+  if (!shouldAddToCart && !shouldOpen) {
+    return null
+  }
+
+  const targetIndex = assistantProductTargetIndex(text, products.length)
+  if (targetIndex === null) {
+    return null
+  }
+
+  return {
+    product: products[targetIndex],
+    shouldAddToCart,
+    shouldOpen,
+  }
+}
+
+function cartableOfferForProduct(product: Product): Offer | null {
+  return product.offers.find(offerCartable) ?? null
+}
+
 function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
   size?: number
   color?: string
@@ -1411,6 +1494,7 @@ function FloatingAsk({
   preferences,
   onProducts,
   onProductOpen,
+  onAddProductToCart,
   hidden = false,
 }: Readonly<{
   contextLabel: string
@@ -1419,6 +1503,7 @@ function FloatingAsk({
   preferences: readonly Preference[]
   onProducts: (products: readonly Product[], sourceQuery: string) => void
   onProductOpen: (product: Product) => void
+  onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   hidden?: boolean
 }>) {
   const [open, setOpen] = useState(false)
@@ -1600,8 +1685,93 @@ function FloatingAsk({
     setHistoryOpen(false)
   }
 
+  const executeProductAction = (question: string, action: AssistantProductAction) => {
+    assistantAbortRef.current?.abort()
+    const controller = new AbortController()
+    assistantAbortRef.current = controller
+    setLoading(true)
+    setHistoryOpen(false)
+    setMessages((current) => [
+      ...current,
+      { role: 'you', text: question },
+      { role: 'ai', text: '', pending: true },
+    ])
+
+    const run = async () => {
+      const offer = action.shouldAddToCart ? cartableOfferForProduct(action.product) : null
+      let added = false
+      let addAttempted = false
+
+      if (action.shouldAddToCart && offer) {
+        addAttempted = true
+        added = await onAddProductToCart(action.product, offer)
+      }
+
+      if (controller.signal.aborted || !mountedRef.current) {
+        return
+      }
+
+      if (action.shouldOpen) {
+        onProductOpen(action.product)
+      }
+
+      const text = (() => {
+        if (action.shouldAddToCart && !offer) {
+          return action.shouldOpen
+            ? `I opened ${action.product.name}, but this item is not available for merchant checkout.`
+            : `${action.product.name} is not available for merchant checkout.`
+        }
+        if (addAttempted && !added) {
+          return action.shouldOpen
+            ? `I opened ${action.product.name}, but could not add it to the merchant cart.`
+            : `I could not add ${action.product.name} to the merchant cart.`
+        }
+        if (action.shouldAddToCart && action.shouldOpen) {
+          return `I added ${action.product.name} to your cart and opened its details.`
+        }
+        if (action.shouldAddToCart) {
+          return `I added ${action.product.name} to your cart.`
+        }
+        return `I opened ${action.product.name}.`
+      })()
+
+      updateStreamingMessage((message) => ({
+        ...message,
+        text,
+        products: [action.product],
+        pending: false,
+      }))
+    }
+
+    run()
+      .catch(() => {
+        if (controller.signal.aborted || !mountedRef.current) {
+          return
+        }
+        updateStreamingMessage((message) => ({
+          ...message,
+          text: `I could not update ${action.product.name} right now. Try again in a moment.`,
+          products: [action.product],
+          pending: false,
+        }))
+      })
+      .finally(() => {
+        if (assistantAbortRef.current === controller) {
+          assistantAbortRef.current = null
+        }
+        if (mountedRef.current) {
+          setLoading(false)
+        }
+      })
+  }
+
   const ask = (question: string) => {
     if (loading) {
+      return
+    }
+    const productAction = resolveAssistantProductAction(question, messages)
+    if (productAction) {
+      executeProductAction(question, productAction)
       return
     }
     assistantAbortRef.current?.abort()
@@ -5843,6 +6013,7 @@ export function MeantApp() {
         preferences={allPreferences}
         onProducts={applyAssistantProducts}
         onProductOpen={(product) => openProduct(product, [product])}
+        onAddProductToCart={addProductOfferToCart}
         hidden={Boolean(activeProduct)}
       />
       <span className="mt-cart-count-debug" aria-hidden>{cartCount}</span>

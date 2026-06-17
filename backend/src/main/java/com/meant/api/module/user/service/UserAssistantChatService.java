@@ -423,6 +423,7 @@ public class UserAssistantChatService {
                 If order, cart, account, saved item, or preference data is not present in SERVER USER DATA or page context, say that you do not have that data yet.
                 For shopping answers, only recommend products listed in PRODUCT SEARCH RESULTS or visible products in PAGE CONTEXT. Do not invent product names, prices, merchants, or availability.
                 Do not claim that you bought, saved, changed, canceled, returned, or checked out anything.
+                Do not write fake app actions or bracketed pseudo-links such as [Open item in the Meant app]. If a real app action has not already happened, say what the user can do with the visible product cards.
                 Keep the answer under 120 words, direct, and useful.
 
                 MODE:
