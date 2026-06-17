@@ -144,7 +144,8 @@ class UserControllerIT extends PostgresIntegrationTest {
                             new OpenRouterProperties.Models(
                                     "preference-model",
                                     "openrouter/free",
-                                    "explainer-model"
+                                    "explainer-model",
+                                    "openrouter/free"
                             )
                     )
             ) {

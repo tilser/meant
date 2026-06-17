@@ -167,7 +167,8 @@ class UserProductSearchEventServiceTest {
                 new OpenRouterProperties.Models(
                         "preference-model",
                         "openrouter/free",
-                        "explainer-model"
+                        "explainer-model",
+                        "openrouter/free"
                 )
         );
     }
@@ -184,7 +185,7 @@ class UserProductSearchEventServiceTest {
                     "https://openrouter.test/api/v1",
                     "test-key",
                     "Meant",
-                    new OpenRouterProperties.Models("test-model", "test-model", "test-model")));
+                    new OpenRouterProperties.Models("test-model", "test-model", "test-model", "test-model")));
         }
 
         @Override

@@ -2468,11 +2468,19 @@ button:disabled {
   border-radius: 7px;
 }
 
+.mt-msg-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .mt-msg-bubble {
   border-radius: 13px;
   padding: 9px 13px;
   font-size: 14px;
   line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .mt-msg-you .mt-msg-bubble {
@@ -2486,6 +2494,68 @@ button:disabled {
   border-bottom-left-radius: 5px;
   background: var(--surface);
   color: var(--ink-soft);
+}
+
+.mt-msg-products {
+  display: grid;
+  gap: 8px;
+}
+
+.mt-msg-product {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 7px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-msg-product:not(:disabled):hover {
+  border-color: var(--accent-line);
+  transform: translateY(-1px);
+}
+
+.mt-msg-product:disabled {
+  cursor: default;
+}
+
+.mt-msg-product-media {
+  width: 46px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--line-soft);
+}
+
+.mt-msg-product-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mt-msg-product-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-msg-product-meta {
+  color: var(--faint);
+  font-size: 10.5px;
 }
 
 .mt-fab-wrap {

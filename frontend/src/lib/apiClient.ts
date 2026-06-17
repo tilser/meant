@@ -97,6 +97,71 @@ export interface UserPopularProductSearchProfile {
   query: string
 }
 
+export interface AssistantProductContextInput {
+  id: string
+  name: string
+  brand: string
+  category: string
+  match: number
+  priceFrom: number
+  note: string
+}
+
+export interface AssistantCartItemContextInput {
+  name: string
+  merchant: string
+  quantity: number
+  price: number
+}
+
+export interface AssistantOrderContextInput {
+  id: string
+  date: string
+  status: string
+  statusNote: string
+  itemCount: number
+}
+
+export interface AssistantChatContextInput {
+  view: string
+  contextLabel: string
+  currentSearchQuery?: string | null
+  selectedMerchantName?: string | null
+  savedProductCount: number
+  cartItemCount: number
+  visibleProducts: readonly AssistantProductContextInput[]
+  cartItems: readonly AssistantCartItemContextInput[]
+  orders: readonly AssistantOrderContextInput[]
+}
+
+export interface UserAssistantMessageProfile {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  products: UserProductSearchProductProfile[]
+  createdAt: string
+}
+
+export interface UserAssistantConversationProfile {
+  conversationId: string | null
+  messages: UserAssistantMessageProfile[]
+}
+
+export interface UserAssistantStreamEventProfile {
+  type: 'metadata' | 'delta' | 'done' | 'error'
+  conversationId: string | null
+  messageId: string | null
+  text: string | null
+  products: UserProductSearchProductProfile[]
+}
+
+export interface UserAssistantStreamHandlers {
+  onMetadata?: (event: UserAssistantStreamEventProfile) => void
+  onDelta?: (text: string) => void
+  onDone?: (event: UserAssistantStreamEventProfile) => void
+  onError?: (message: string) => void
+}
+
 export interface UserSavedProductOfferProfile {
   merchant: string
   price: number
@@ -288,6 +353,66 @@ export async function getPopularProductSearches(): Promise<UserPopularProductSea
   return parseJsonResponse<UserPopularProductSearchProfile[]>(response, 'Failed to load popular searches')
 }
 
+export async function getLatestAssistantConversation(options?: {
+  signal?: AbortSignal
+}): Promise<UserAssistantConversationProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/assistant/conversations/latest`, {
+    headers: await authHeaders(),
+    signal: options?.signal,
+  })
+  return parseJsonResponse<UserAssistantConversationProfile>(
+    response,
+    'Failed to load Ask Meant conversation',
+  )
+}
+
+export async function streamAssistantMessage(
+  input: {
+    conversationId?: string | null
+    message: string
+    context: AssistantChatContextInput
+  },
+  handlers: UserAssistantStreamHandlers,
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/users/me/assistant/messages:stream`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      conversationId: input.conversationId ?? undefined,
+      message: input.message,
+      context: input.context,
+    }),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error('Failed to stream Ask Meant response')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) {
+      break
+    }
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split(/\n\n/)
+    buffer = events.pop() ?? ''
+    events.forEach((rawEvent) => handleAssistantStreamEvent(rawEvent, handlers))
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    handleAssistantStreamEvent(buffer, handlers)
+  }
+}
+
 export async function getSavedProducts(): Promise<UserSavedProductProfile[]> {
   const response = await fetch(`${API_URL}/api/users/me/saved-products`, {
     headers: await authHeaders(),
@@ -379,4 +504,39 @@ export async function getCartCheckout(input: {
     headers: await authHeaders(),
   })
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
+}
+
+function handleAssistantStreamEvent(
+  rawEvent: string,
+  handlers: UserAssistantStreamHandlers,
+) {
+  const data = rawEvent
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trimStart())
+    .join('\n')
+
+  if (!data) {
+    return
+  }
+
+  const event = JSON.parse(data) as UserAssistantStreamEventProfile
+  switch (event.type) {
+    case 'metadata':
+      handlers.onMetadata?.(event)
+      break
+    case 'delta':
+      if (event.text) {
+        handlers.onDelta?.(event.text)
+      }
+      break
+    case 'done':
+      handlers.onDone?.(event)
+      break
+    case 'error':
+      handlers.onError?.(event.text ?? 'Ask Meant could not respond right now.')
+      break
+    default:
+      break
+  }
 }

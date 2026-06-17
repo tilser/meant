@@ -16,6 +16,7 @@ ai:
       preference-filter-parser: google/gemini-2.5-flash-lite
       product-search-query-parser: google/gemini-2.0-flash-lite-001
       product-recommendation-explainer: google/gemini-2.5-flash-lite
+      chat-model: openrouter/free
 
 user:
   product-search:

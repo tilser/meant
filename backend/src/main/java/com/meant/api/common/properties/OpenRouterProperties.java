@@ -32,7 +32,10 @@ public record OpenRouterProperties(
             String productSearchQueryParser,
 
             @NotBlank
-            String productRecommendationExplainer
+            String productRecommendationExplainer,
+
+            @NotBlank
+            String chatModel
     ) {
     }
 }

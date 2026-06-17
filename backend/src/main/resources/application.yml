@@ -41,6 +41,7 @@ ai:
       preference-filter-parser: ${OPENROUTER_PREFERENCE_FILTER_MODEL:google/gemini-2.5-flash-lite}
       product-search-query-parser: ${OPENROUTER_PRODUCT_SEARCH_QUERY_MODEL:openrouter/free}
       product-recommendation-explainer: ${OPENROUTER_PRODUCT_EXPLAINER_MODEL:google/gemini-2.5-flash-lite}
+      chat-model: ${OPENROUTER_CHAT_MODEL:openai/gpt-oss-120b:free}
 
 user:
   product-search:

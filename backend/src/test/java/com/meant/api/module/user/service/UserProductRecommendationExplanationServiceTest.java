@@ -120,7 +120,8 @@ class UserProductRecommendationExplanationServiceTest {
                 new OpenRouterProperties.Models(
                         "preference-model",
                         "query-model",
-                        "google/gemini-2.5-flash-lite"
+                        "google/gemini-2.5-flash-lite",
+                        "openrouter/free"
                 )
         );
     }
@@ -214,7 +215,7 @@ class UserProductRecommendationExplanationServiceTest {
                     "https://openrouter.test/api/v1",
                     "test-key",
                     "Meant",
-                    new OpenRouterProperties.Models("test-model", "test-model", "test-model")));
+                    new OpenRouterProperties.Models("test-model", "test-model", "test-model", "test-model")));
         }
 
         @Override

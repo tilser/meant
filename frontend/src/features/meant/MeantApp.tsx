@@ -30,6 +30,7 @@ import {
   createCart,
   getCartCheckout,
   getCurrentUser,
+  getLatestAssistantConversation,
   getMerchants,
   getProductDiscovery,
   getPopularProductSearches,
@@ -38,10 +39,13 @@ import {
   removeSavedProduct,
   saveUserProduct,
   searchUserProducts,
+  streamAssistantMessage,
+  type AssistantChatContextInput,
   type SaveUserProductInput,
   type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
+  type UserAssistantMessageProfile,
   type UserPopularProductSearchProfile,
   type UserSavedProductProfile,
   updateCart,
@@ -89,6 +93,8 @@ import {
 interface Message {
   role: 'you' | 'ai'
   text: string
+  products?: readonly Product[]
+  pending?: boolean
 }
 
 interface ViewHeadProps {
@@ -457,6 +463,26 @@ function searchSuggestionFromPopular(search: UserPopularProductSearchProfile): S
   }
 }
 
+function messageFromAssistantProfile(
+  message: UserAssistantMessageProfile,
+  preferences: readonly Preference[],
+): Message {
+  return {
+    role: message.role === 'user' ? 'you' : 'ai',
+    text: message.content,
+    products: message.products.map((product) => productFromSearchResult(product, preferences)),
+  }
+}
+
+function findLastAssistantMessageIndex(messages: readonly Message[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'ai') {
+      return index
+    }
+  }
+  return -1
+}
+
 function savedProductInput(product: Product): SaveUserProductInput {
   return {
     id: product.id,
@@ -489,6 +515,21 @@ function savedProductInput(product: Product): SaveUserProductInput {
     })),
     needs: product.needs ?? null,
     provides: product.provides ? [...product.provides] : [],
+  }
+}
+
+function assistantProductContext(
+  product: Product,
+  location: UserLocation | null,
+) {
+  return {
+    id: product.id,
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    match: product.match,
+    priceFrom: productPriceFrom(product, location),
+    note: product.note,
   }
 }
 
@@ -931,7 +972,13 @@ function ViewHead({ eyebrow, title, sub, right }: Readonly<ViewHeadProps>) {
   )
 }
 
-function AskThread({ messages }: Readonly<{ messages: readonly Message[] }>) {
+function AskThread({
+  messages,
+  onProductOpen,
+}: Readonly<{
+  messages: readonly Message[]
+  onProductOpen?: (product: Product) => void
+}>) {
   const endRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -953,7 +1000,34 @@ function AskThread({ messages }: Readonly<{ messages: readonly Message[] }>) {
               <SparkMark size={12} />
             </span>
           ) : null}
-          <div className="mt-msg-bubble">{message.text}</div>
+          <div className="mt-msg-stack">
+            <div className="mt-msg-bubble">
+              {message.text || (message.pending ? 'Thinking...' : '')}
+            </div>
+            {message.products && message.products.length > 0 ? (
+              <div className="mt-msg-products">
+                {message.products.map((product) => (
+                  <button
+                    key={product.id}
+                    className="mt-msg-product"
+                    type="button"
+                    onClick={() => onProductOpen?.(product)}
+                    disabled={!onProductOpen}
+                  >
+                    <div className="mt-msg-product-media">
+                      <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                    </div>
+                    <span className="mt-msg-product-main">
+                      <span className="mt-msg-product-name">{product.name}</span>
+                      <span className="mt-mono mt-msg-product-meta">
+                        {product.match}% · {money(product.priceFrom)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       ))}
     </div>
@@ -966,12 +1040,14 @@ function AskComposer({
   showChips,
   onAsk,
   autoFocus = false,
+  disabled = false,
 }: Readonly<{
   placeholder: string
   suggestions: readonly string[]
   showChips: boolean
   onAsk: (question: string) => void
   autoFocus?: boolean
+  disabled?: boolean
 }>) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -983,6 +1059,9 @@ function AskComposer({
   }, [autoFocus])
 
   const send = (text?: string) => {
+    if (disabled) {
+      return
+    }
     const question = (text ?? value).trim()
     if (!question) {
       return
@@ -1001,6 +1080,7 @@ function AskComposer({
               className="mt-ask-chip"
               type="button"
               onClick={() => send(suggestion)}
+              disabled={disabled}
             >
               {suggestion}
             </button>
@@ -1023,8 +1103,9 @@ function AskComposer({
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder={placeholder}
+          disabled={disabled}
         />
-        <button type="submit" className="mt-ask-go" aria-label="Ask">
+        <button type="submit" className="mt-ask-go" aria-label="Ask" disabled={disabled}>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden>
             <path
               d="M3.5 9h11M9.5 4l5 5-5 5"
@@ -1042,23 +1123,144 @@ function AskComposer({
 
 function FloatingAsk({
   contextLabel,
+  context,
   suggestions,
   preferences,
+  onProducts,
+  onProductOpen,
 }: Readonly<{
   contextLabel: string
+  context: AssistantChatContextInput
   suggestions: readonly string[]
   preferences: readonly Preference[]
+  onProducts: (products: readonly Product[], sourceQuery: string) => void
+  onProductOpen: (product: Product) => void
 }>) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const historyAbortRef = useRef<AbortController | null>(null)
+  const historyDirtyRef = useRef(false)
+
+  useEffect(() => {
+    if (!open || historyLoaded) {
+      return
+    }
+    let active = true
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 8000)
+    historyAbortRef.current = controller
+    setHistoryLoading(true)
+    getLatestAssistantConversation({ signal: controller.signal })
+      .then((conversation) => {
+        if (!active || historyDirtyRef.current) return
+        setConversationId(conversation.conversationId)
+        setMessages(conversation.messages.map((message) =>
+          messageFromAssistantProfile(message, preferences),
+        ))
+        setHistoryLoaded(true)
+      })
+      .catch(() => {
+        if (!active) return
+        setHistoryLoaded(true)
+      })
+      .finally(() => {
+        window.clearTimeout(timeout)
+        if (historyAbortRef.current === controller) {
+          historyAbortRef.current = null
+        }
+        if (!active) return
+        setHistoryLoading(false)
+      })
+    return () => {
+      active = false
+      window.clearTimeout(timeout)
+      controller.abort()
+      if (historyAbortRef.current === controller) {
+        historyAbortRef.current = null
+      }
+    }
+  }, [historyLoaded, open, preferences])
+
+  const updateStreamingMessage = (update: (message: Message) => Message) => {
+    setMessages((current) => {
+      const next = [...current]
+      const index = findLastAssistantMessageIndex(next)
+      if (index < 0) {
+        return current
+      }
+      next[index] = update(next[index])
+      return next
+    })
+  }
 
   const ask = (question: string) => {
-    const answer = resolveAsk(question, null, preferences)
+    if (loading) {
+      return
+    }
+    historyDirtyRef.current = true
+    historyAbortRef.current?.abort()
+    setHistoryLoaded(true)
+    setHistoryLoading(false)
+    let streamedText = ''
+    setLoading(true)
     setMessages((current) => [
       ...current,
       { role: 'you', text: question },
-      { role: 'ai', text: answer },
+      { role: 'ai', text: '', pending: true },
     ])
+    streamAssistantMessage(
+      {
+        conversationId,
+        message: question,
+        context,
+      },
+      {
+        onMetadata: (event) => {
+          setConversationId(event.conversationId)
+        },
+        onDelta: (text) => {
+          streamedText += text
+          updateStreamingMessage((message) => ({
+            ...message,
+            text: streamedText,
+            pending: true,
+          }))
+        },
+        onDone: (event) => {
+          const products = event.products.map((product) =>
+            productFromSearchResult(product, preferences),
+          )
+          updateStreamingMessage((message) => ({
+            ...message,
+            text: event.text ?? streamedText,
+            products,
+            pending: false,
+          }))
+          if (products.length > 0) {
+            onProducts(products, question)
+          }
+        },
+        onError: (message) => {
+          updateStreamingMessage((current) => ({
+            ...current,
+            text: message,
+            pending: false,
+          }))
+        },
+      },
+    )
+      .catch(() => {
+        updateStreamingMessage((message) => ({
+          ...message,
+          text: 'Ask Meant could not respond right now. Try again in a moment.',
+          pending: false,
+        }))
+      })
+      .finally(() => setLoading(false))
   }
 
   return (
@@ -1081,16 +1283,17 @@ function FloatingAsk({
           <div className="mt-mono mt-askpanel-ctx">{contextLabel}</div>
           {messages.length === 0 ? (
             <p className="mt-askpanel-hint">
-              Ask anything. I already know your preferences.
+              {historyLoading ? 'Loading conversation...' : 'Ask anything. I already know your preferences.'}
             </p>
           ) : null}
-          <AskThread messages={messages} />
+          <AskThread messages={messages} onProductOpen={onProductOpen} />
           <AskComposer
             placeholder="Ask Meant..."
             suggestions={suggestions}
             showChips={messages.length === 0}
             onAsk={ask}
             autoFocus
+            disabled={loading}
           />
         </div>
       ) : null}
@@ -4794,6 +4997,20 @@ export function MeantApp() {
     }
   }
 
+  const applyAssistantProducts = (products: readonly Product[], sourceQuery: string) => {
+    setView('discover')
+    setQuery(sourceQuery)
+    setReply(`Ask Meant found ${products.length} match${products.length === 1 ? '' : 'es'} for "${sourceQuery}".`)
+    setSearchError(null)
+    setSearchLoading(false)
+    setSearchResults([...products])
+    setRemoteProducts((current) => {
+      const byId = new Map(current.map((product) => [product.id, product]))
+      products.forEach((product) => byId.set(product.id, product))
+      return Array.from(byId.values())
+    })
+  }
+
   const checkout = async (payload: CheckoutPayload) => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const cartId = payload.items.find((item) => item.cartId)?.cartId
@@ -5007,7 +5224,52 @@ export function MeantApp() {
   }
 
   const askContext = askContexts[view]
-  const cartCount = cartLines(cart, allKnownProducts).reduce((sum, line) => sum + line.qty, 0)
+  const assistantCartLines = cartLines(cart, allKnownProducts)
+  const cartCount = assistantCartLines.reduce((sum, line) => sum + line.qty, 0)
+  const assistantVisibleProducts = (() => {
+    switch (view) {
+      case 'saved':
+        return savedListProducts
+      case 'compare':
+        return compareIds
+          .map((id) => allKnownProductsMap.get(id))
+          .filter((product): product is Product => Boolean(product))
+      case 'cart':
+        return assistantCartLines.map((line) => line.product)
+      case 'orders':
+        return orders
+          .flatMap((order) => order.items)
+          .map((item) => allKnownProductsMap.get(item.id))
+          .filter((product): product is Product => Boolean(product))
+      case 'discover':
+      default:
+        return feedProducts
+    }
+  })()
+  const assistantContext: AssistantChatContextInput = {
+    view,
+    contextLabel: askContext.label,
+    currentSearchQuery: query || null,
+    selectedMerchantName: selectedMerchant?.name ?? null,
+    savedProductCount: savedIds.length,
+    cartItemCount: cartCount,
+    visibleProducts: assistantVisibleProducts
+      .slice(0, 8)
+      .map((product) => assistantProductContext(product, location)),
+    cartItems: assistantCartLines.slice(0, 8).map((line) => ({
+      name: line.product.name,
+      merchant: line.merchant,
+      quantity: line.qty,
+      price: line.price,
+    })),
+    orders: orders.slice(0, 5).map((order) => ({
+      id: order.id,
+      date: order.date,
+      status: order.status,
+      statusNote: order.statusNote,
+      itemCount: order.items.reduce((sum, item) => sum + item.qty, 0),
+    })),
+  }
 
   return (
     <div className="mt-app">
@@ -5059,8 +5321,11 @@ export function MeantApp() {
       {!activeProduct ? (
         <FloatingAsk
           contextLabel={askContext.label}
+          context={assistantContext}
           suggestions={askContext.suggestions}
           preferences={allPreferences}
+          onProducts={applyAssistantProducts}
+          onProductOpen={(product) => openProduct(product, [product])}
         />
       ) : null}
       <span className="mt-cart-count-debug" aria-hidden>{cartCount}</span>

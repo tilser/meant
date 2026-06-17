@@ -95,7 +95,8 @@ class UserProductSearchQueryUnderstandingServiceTest {
                         new OpenRouterProperties.Models(
                                 "preference-model",
                                 "cheap-query-model",
-                                "explainer-model")),
+                                "explainer-model",
+                                "openrouter/free")),
                 properties(),
                 repository,
                 new UserProductSearchHashService(properties()),
@@ -156,7 +157,7 @@ class UserProductSearchQueryUnderstandingServiceTest {
                     "https://openrouter.test/api/v1",
                     "test-key",
                     "Meant",
-                    new OpenRouterProperties.Models("test-model", "test-model", "test-model")));
+                    new OpenRouterProperties.Models("test-model", "test-model", "test-model", "test-model")));
         }
 
         @Override
