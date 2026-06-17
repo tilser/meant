@@ -83,6 +83,15 @@ export interface UserProductSearchProfile {
   products: UserProductSearchProductProfile[]
 }
 
+export interface MerchantProfile {
+  id: string
+  domain: string
+  name: string
+  description: string
+  advertisedMcpEndpoint: string | null
+  profileMcpEndpoint: string | null
+}
+
 /** Injects the current Supabase access token as a Bearer header on every request. */
 const authMiddleware: Middleware = {
   async onRequest({ request }) {
@@ -138,6 +147,13 @@ export async function getUserSettings(): Promise<UserSettingsProfile> {
     headers: await authHeaders(),
   })
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to load user settings')
+}
+
+export async function getMerchants(): Promise<MerchantProfile[]> {
+  const response = await fetch(`${API_URL}/api/merchants`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<MerchantProfile[]>(response, 'Failed to load merchants')
 }
 
 export async function updateUserSettings(input: {

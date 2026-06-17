@@ -510,6 +510,255 @@ button {
   color: var(--ink);
 }
 
+.mt-scope {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.mt-scope-combo {
+  position: relative;
+}
+
+.mt-scope-btn,
+.mt-scope-cta,
+.mt-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.mt-scope-btn {
+  gap: 8px;
+  min-height: 34px;
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mt-scope-btn:hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
+.mt-scope-btn.on {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.mt-scope-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.mt-caret {
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.mt-caret.up {
+  transform: rotate(180deg);
+}
+
+.mt-scope-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 20;
+  width: min(320px, calc(100vw - 48px));
+  max-height: 332px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 22px 54px -22px rgba(20, 24, 28, 0.4);
+  padding: 6px;
+  text-align: left;
+  transform: translateX(-50%);
+}
+
+.mt-scope-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0 10px;
+}
+
+.mt-scope-search-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--faint);
+}
+
+.mt-scope-search-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.mt-scope-search-input::placeholder {
+  color: var(--faint);
+}
+
+.mt-scope-list {
+  display: grid;
+  gap: 0;
+}
+
+.mt-scope-opt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  padding: 9px 11px;
+  text-align: left;
+}
+
+.mt-scope-opt:hover {
+  background: var(--line-soft);
+}
+
+.mt-scope-opt.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mt-scope-opt-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.mt-scope-opt-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+
+.mt-scope-opt > .mt-scope-opt-name {
+  flex: 1;
+}
+
+.mt-scope-opt-domain,
+.mt-scope-opt-count,
+.mt-scope-status {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.mt-scope-opt-count {
+  flex-shrink: 0;
+}
+
+.mt-scope-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--line-soft);
+}
+
+.mt-scope-empty {
+  padding: 12px 10px;
+  color: var(--faint);
+  font-size: 11px;
+  text-align: center;
+}
+
+.mt-scope-cta {
+  gap: 8px;
+  min-height: 36px;
+  border-color: var(--accent);
+  border-radius: 20px;
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.mt-scope-cta:hover {
+  opacity: 0.92;
+}
+
+.mt-scope-cta.on {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.mt-scope-error {
+  color: var(--cart-warn);
+}
+
+.mt-empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.mt-empty-btn {
+  min-height: 40px;
+  border-color: var(--accent);
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 10px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.mt-empty-btn:hover {
+  opacity: 0.92;
+}
+
+.mt-empty-btn.ghost {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.mt-empty-btn.ghost:hover {
+  border-color: var(--faint);
+  color: var(--ink);
+  opacity: 1;
+}
+
 .mt-reply {
   display: flex;
   align-items: flex-start;

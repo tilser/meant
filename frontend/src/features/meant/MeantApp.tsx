@@ -27,8 +27,10 @@ import {
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
   getCurrentUser,
+  getMerchants,
   getUserSettings,
   searchUserProducts,
+  type MerchantProfile,
   type ShoppingFilterProfile,
   type UserProductSearchProductProfile,
   updateProfile,
@@ -309,6 +311,36 @@ function productFromSearchResult(
   }
 }
 
+function normalizedMerchantName(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function merchantNameSet(merchant: MerchantProfile): ReadonlySet<string> {
+  return new Set([
+    normalizedMerchantName(merchant.name),
+    normalizedMerchantName(merchant.domain),
+  ].filter(Boolean))
+}
+
+function productForMerchant(product: Product, merchant: MerchantProfile): Product | null {
+  const merchantNames = merchantNameSet(merchant)
+  const offers = product.offers.filter((offer) =>
+    merchantNames.has(normalizedMerchantName(offer.merchant)),
+  )
+  if (offers.length > 0) {
+    return {
+      ...product,
+      offers,
+      priceFrom: Math.min(...offers.map((offer) => offer.price)),
+      merchants: 1,
+    }
+  }
+  if (merchantNames.has(normalizedMerchantName(product.brand))) {
+    return product
+  }
+  return null
+}
+
 function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
   size?: number
   color?: string
@@ -344,6 +376,34 @@ function ProductSearchLoading() {
         </span>
       </span>
     </div>
+  )
+}
+
+function MerchantIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 18 18" fill="none" aria-hidden>
+      <path
+        d="M3 3h12l-.8 4a2 2 0 0 1-2 1.6H5.8a2 2 0 0 1-2-1.6L3 3zM4 8.6V15h10V8.6"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path
+        d="M3 7.3l2.6 2.6L11 4.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
@@ -815,12 +875,30 @@ function ChatHero({
   prompts,
   onSubmit,
   loading,
+  merchants,
+  selectedMerchant,
+  merchantCounts,
+  totalProductCount,
+  merchantsLoading,
+  merchantsError,
+  onlyMeantOnMerchant,
+  onMerchant,
+  onToggleMeantOnMerchant,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
   prompts: readonly string[]
   onSubmit: (query: string) => void
   loading: boolean
+  merchants: readonly MerchantProfile[]
+  selectedMerchant: MerchantProfile | null
+  merchantCounts: ReadonlyMap<string, number>
+  totalProductCount: number
+  merchantsLoading: boolean
+  merchantsError: string | null
+  onlyMeantOnMerchant: boolean
+  onMerchant: (merchant: MerchantProfile | null) => void
+  onToggleMeantOnMerchant: () => void
 }>) {
   const [value, setValue] = useState('')
   const hasSearchText = value.trim().length > 0
@@ -878,6 +956,17 @@ function ChatHero({
           </svg>
         </button>
       </form>
+      <MerchantScope
+        merchants={merchants}
+        selectedMerchant={selectedMerchant}
+        merchantCounts={merchantCounts}
+        totalProductCount={totalProductCount}
+        loading={merchantsLoading}
+        error={merchantsError}
+        onlyMeantOnMerchant={onlyMeantOnMerchant}
+        onMerchant={onMerchant}
+        onToggleMeantOnMerchant={onToggleMeantOnMerchant}
+      />
       <div className="mt-prompts">
         {prompts.map((prompt) => (
           <button
@@ -895,6 +984,196 @@ function ChatHero({
   )
 }
 
+function MerchantScope({
+  merchants,
+  selectedMerchant,
+  merchantCounts,
+  totalProductCount,
+  loading,
+  error,
+  onlyMeantOnMerchant,
+  onMerchant,
+  onToggleMeantOnMerchant,
+}: Readonly<{
+  merchants: readonly MerchantProfile[]
+  selectedMerchant: MerchantProfile | null
+  merchantCounts: ReadonlyMap<string, number>
+  totalProductCount: number
+  loading: boolean
+  error: string | null
+  onlyMeantOnMerchant: boolean
+  onMerchant: (merchant: MerchantProfile | null) => void
+  onToggleMeantOnMerchant: () => void
+}>) {
+  const [open, setOpen] = useState(false)
+  const [merchantSearch, setMerchantSearch] = useState('')
+  const ref = useRef<HTMLDivElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const merchantSearchText = merchantSearch.trim().toLowerCase()
+  const filteredMerchants = merchantSearchText
+    ? merchants.filter((merchant) =>
+        [
+          merchant.name,
+          merchant.domain,
+          merchant.description,
+          merchant.advertisedMcpEndpoint,
+          merchant.profileMcpEndpoint,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(merchantSearchText),
+      )
+    : merchants
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    const onDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      setMerchantSearch('')
+      return
+    }
+    const timeout = window.setTimeout(() => searchRef.current?.focus(), 0)
+    return () => window.clearTimeout(timeout)
+  }, [open])
+
+  if (loading && merchants.length === 0) {
+    return (
+      <div className="mt-scope">
+        <div className="mt-scope-status mt-mono">Loading merchants</div>
+      </div>
+    )
+  }
+
+  if (error && merchants.length === 0) {
+    return (
+      <div className="mt-scope">
+        <div className="mt-scope-status mt-scope-error mt-mono">{error}</div>
+      </div>
+    )
+  }
+
+  if (merchants.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="mt-scope">
+      <div className="mt-scope-combo" ref={ref}>
+        <button
+          className={`mt-scope-btn ${selectedMerchant ? 'on' : ''}`}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {selectedMerchant ? <span className="mt-scope-dot" aria-hidden /> : <MerchantIcon />}
+          <span>{selectedMerchant?.name ?? 'All merchants'}</span>
+          <span className={`mt-caret ${open ? 'up' : ''}`}>v</span>
+        </button>
+        {open ? (
+          <div className="mt-scope-menu">
+            <label className="mt-scope-search">
+              <span className="mt-scope-search-icon" aria-hidden>
+                <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+                  <circle cx="8" cy="8" r="4.6" stroke="currentColor" strokeWidth="1.4" />
+                  <path
+                    d="M11.4 11.4 15 15"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <input
+                ref={searchRef}
+                className="mt-scope-search-input"
+                value={merchantSearch}
+                onChange={(event) => setMerchantSearch(event.target.value)}
+                placeholder="Search merchants"
+                aria-label="Search merchants"
+              />
+            </label>
+            <div className="mt-scope-list" role="listbox">
+            <button
+              className={`mt-scope-opt ${selectedMerchant ? '' : 'on'}`}
+              type="button"
+              role="option"
+              aria-selected={!selectedMerchant}
+              onClick={() => {
+                onMerchant(null)
+                setOpen(false)
+              }}
+            >
+              <span className="mt-scope-opt-name">All merchants</span>
+              <span className="mt-mono mt-scope-opt-count">{totalProductCount}</span>
+            </button>
+            <div className="mt-scope-sep" />
+            {filteredMerchants.map((merchant) => (
+              <button
+                key={merchant.id}
+                className={`mt-scope-opt ${selectedMerchant?.id === merchant.id ? 'on' : ''}`}
+                type="button"
+                role="option"
+                aria-selected={selectedMerchant?.id === merchant.id}
+                onClick={() => {
+                  onMerchant(merchant)
+                  setOpen(false)
+                }}
+              >
+                <span className="mt-scope-opt-main">
+                  <span className="mt-scope-opt-name">{merchant.name}</span>
+                  <span className="mt-mono mt-scope-opt-domain">{merchant.domain}</span>
+                </span>
+                <span className="mt-mono mt-scope-opt-count">
+                  {merchantCounts.get(merchant.id) ?? 0}
+                </span>
+              </button>
+            ))}
+            {filteredMerchants.length === 0 ? (
+              <div className="mt-scope-empty mt-mono">No merchants found</div>
+            ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {selectedMerchant ? (
+        <button
+          className={`mt-scope-cta ${onlyMeantOnMerchant ? 'on' : ''}`}
+          type="button"
+          aria-pressed={onlyMeantOnMerchant}
+          onClick={onToggleMeantOnMerchant}
+        >
+          {onlyMeantOnMerchant ? <CheckIcon /> : <SparkMark size={15} color="currentColor" />}
+          {onlyMeantOnMerchant
+            ? `Showing what's meant for you on ${selectedMerchant.name}`
+            : `Find everything meant for me on ${selectedMerchant.name}`}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function FeedView({
   profile,
   greeting,
@@ -906,8 +1185,17 @@ function FeedView({
   loading,
   error,
   preferences,
+  merchants,
+  selectedMerchant,
+  merchantCounts,
+  totalProductCount,
+  merchantsLoading,
+  merchantsError,
+  onlyMeantOnMerchant,
   onSubmit,
   onClear,
+  onMerchant,
+  onToggleMeantOnMerchant,
   onOpen,
   savedSet,
   onToggleSave,
@@ -922,9 +1210,23 @@ function FeedView({
   loading: boolean
   error: string | null
   preferences: readonly Preference[]
+  merchants: readonly MerchantProfile[]
+  selectedMerchant: MerchantProfile | null
+  merchantCounts: ReadonlyMap<string, number>
+  totalProductCount: number
+  merchantsLoading: boolean
+  merchantsError: string | null
+  onlyMeantOnMerchant: boolean
   onSubmit: (query: string) => void
   onClear: () => void
+  onMerchant: (merchant: MerchantProfile | null) => void
+  onToggleMeantOnMerchant: () => void
 } & ProductOpenProps & ProductSaveProps>) {
+  const merchantName = selectedMerchant?.name
+  const title = query
+    ? merchantName ? `Your matches on ${merchantName}` : 'Your matches'
+    : merchantName ? `Meant for you on ${merchantName}` : 'Meant for you'
+
   return (
     <main className="mt-feed">
       <ChatHero
@@ -933,6 +1235,15 @@ function FeedView({
         prompts={PROMPTS}
         onSubmit={onSubmit}
         loading={loading}
+        merchants={merchants}
+        selectedMerchant={selectedMerchant}
+        merchantCounts={merchantCounts}
+        totalProductCount={totalProductCount}
+        merchantsLoading={merchantsLoading}
+        merchantsError={merchantsError}
+        onlyMeantOnMerchant={onlyMeantOnMerchant}
+        onMerchant={onMerchant}
+        onToggleMeantOnMerchant={onToggleMeantOnMerchant}
       />
       {reply ? (
         <div className="mt-reply">
@@ -954,9 +1265,13 @@ function FeedView({
         </div>
       ) : null}
       <div className="mt-feed-head">
-        <h2 className="mt-feed-title">{query ? 'Your matches' : 'Meant for you'}</h2>
+        <h2 className="mt-feed-title">{title}</h2>
         <span className="mt-mono mt-feed-count">
-          {loading ? 'Searching stores' : `${products.length} shown · sorted by match`}
+          {loading
+            ? 'Searching stores'
+            : merchantName
+              ? `${products.length} on ${merchantName}${onlyMeantOnMerchant ? ' · meant for you' : ''}`
+              : `${products.length} shown · sorted by match`}
         </span>
       </div>
       {location ? (
@@ -988,6 +1303,28 @@ function FeedView({
               onToggleSave={onToggleSave}
             />
           ))}
+        </div>
+      ) : merchantName ? (
+        <div className="mt-empty">
+          <div className="mt-empty-mark"><MerchantIcon /></div>
+          <h3 className="mt-empty-title">
+            {onlyMeantOnMerchant ? `Nothing meant for you on ${merchantName}` : `Nothing here on ${merchantName}`}
+          </h3>
+          <p className="mt-empty-sub">
+            {onlyMeantOnMerchant
+              ? `${merchantName} has no currently loaded products that cleanly match your profile.`
+              : `Meant has no currently loaded products from ${merchantName}. Try a search or return to all merchants.`}
+          </p>
+          <div className="mt-empty-actions">
+            {onlyMeantOnMerchant ? (
+              <button className="mt-empty-btn" type="button" onClick={onToggleMeantOnMerchant}>
+                Show all on {merchantName}
+              </button>
+            ) : null}
+            <button className="mt-empty-btn ghost" type="button" onClick={() => onMerchant(null)}>
+              Search all merchants
+            </button>
+          </div>
         </div>
       ) : query ? (
         <EmptyState
@@ -3045,6 +3382,11 @@ export function MeantApp() {
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [merchants, setMerchants] = useState<MerchantProfile[]>([])
+  const [merchantsLoading, setMerchantsLoading] = useState(false)
+  const [merchantsError, setMerchantsError] = useState<string | null>(null)
+  const [selectedMerchantId, setSelectedMerchantId] = useStoredState<string | null>('meant.merchant', null)
+  const [onlyMeantOnMerchant, setOnlyMeantOnMerchant] = useState(false)
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [savedIds, setSavedIds] = useStoredState<ProductId[]>('meant.saved', [...DEFAULT_SAVED_IDS])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
@@ -3089,14 +3431,71 @@ export function MeantApp() {
   const searchActive = Boolean(query || searchLoading || searchError)
   const baseFeed = searchActive ? searchResults : PRODUCTS
   const localizedFeedProducts = productsForLocation(baseFeed, location)
-  const feedProducts = searchActive
+  const unscopedFeedProducts = searchActive
     ? localizedFeedProducts
     : productsForPreferences(localizedFeedProducts, activePreferences)
+  const selectedMerchant = useMemo(
+    () => merchants.find((merchant) => merchant.id === selectedMerchantId) ?? null,
+    [merchants, selectedMerchantId],
+  )
+  const merchantCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    merchants.forEach((merchant) => counts.set(merchant.id, 0))
+    unscopedFeedProducts.forEach((product) => {
+      merchants.forEach((merchant) => {
+        if (productForMerchant(product, merchant)) {
+          counts.set(merchant.id, (counts.get(merchant.id) ?? 0) + 1)
+        }
+      })
+    })
+    return counts
+  }, [merchants, unscopedFeedProducts])
+  const merchantScopedFeedProducts = selectedMerchant
+    ? unscopedFeedProducts
+        .map((product) => productForMerchant(product, selectedMerchant))
+        .filter((product): product is Product => Boolean(product))
+    : unscopedFeedProducts
+  const feedProducts = selectedMerchant && onlyMeantOnMerchant
+    ? merchantScopedFeedProducts.filter((product) => product.misses.length === 0)
+    : merchantScopedFeedProducts
   const hiddenByShip = baseFeed.length - localizedFeedProducts.length
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    if (!authed) {
+      return
+    }
+    let active = true
+    setMerchantsLoading(true)
+    setMerchantsError(null)
+    getMerchants()
+      .then((result) => {
+        if (!active) return
+        setMerchants(result)
+      })
+      .catch(() => {
+        if (!active) return
+        setMerchants([])
+        setMerchantsError('Could not load merchants')
+      })
+      .finally(() => {
+        if (!active) return
+        setMerchantsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [authed])
+
+  useEffect(() => {
+    if (selectedMerchantId && merchants.length > 0 && !selectedMerchant) {
+      setSelectedMerchantId(null)
+      setOnlyMeantOnMerchant(false)
+    }
+  }, [merchants.length, selectedMerchant, selectedMerchantId, setSelectedMerchantId])
 
   // Once authenticated, hydrate the profile from the backend (which creates the users row on first
   // call). Falls back to the JWT email if the backend is unreachable so the shell still renders.
@@ -3149,6 +3548,8 @@ export function MeantApp() {
     setRemoteProducts([])
     setSearchError(null)
     setSearchLoading(false)
+    setSelectedMerchantId(null)
+    setOnlyMeantOnMerchant(false)
   }
 
   const nav = (next: View) => {
@@ -3397,6 +3798,13 @@ export function MeantApp() {
             loading={searchLoading}
             error={searchError}
             preferences={allPreferences}
+            merchants={merchants}
+            selectedMerchant={selectedMerchant}
+            merchantCounts={merchantCounts}
+            totalProductCount={unscopedFeedProducts.length}
+            merchantsLoading={merchantsLoading}
+            merchantsError={merchantsError}
+            onlyMeantOnMerchant={Boolean(selectedMerchant && onlyMeantOnMerchant)}
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
             }}
@@ -3407,6 +3815,13 @@ export function MeantApp() {
               setSearchError(null)
               setSearchLoading(false)
             }}
+            onMerchant={(merchant) => {
+              setSelectedMerchantId(merchant?.id ?? null)
+              if (!merchant) {
+                setOnlyMeantOnMerchant(false)
+              }
+            }}
+            onToggleMeantOnMerchant={() => setOnlyMeantOnMerchant((current) => !current)}
             onOpen={setActiveProduct}
             savedSet={savedSet}
             onToggleSave={toggleSave}

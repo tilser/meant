@@ -1,9 +1,11 @@
 package com.meant.api.module.merchant.controller;
 
-import com.meant.api.module.merchant.controller.request.MerchantSemanticSearchRequest;
 import com.meant.api.module.merchant.controller.request.MerchantSemanticProductSearchRequest;
-import com.meant.api.module.merchant.controller.response.MerchantSemanticSearchResponse;
+import com.meant.api.module.merchant.controller.request.MerchantSemanticSearchRequest;
+import com.meant.api.module.merchant.controller.response.MerchantListItemResponse;
 import com.meant.api.module.merchant.controller.response.MerchantSemanticProductSearchResponse;
+import com.meant.api.module.merchant.controller.response.MerchantSemanticSearchResponse;
+import com.meant.api.module.merchant.service.MerchantListingService;
 import com.meant.api.module.merchant.service.MerchantSemanticSearchService;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
@@ -17,6 +19,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,8 +31,27 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Merchants", description = "Merchant semantic search and catalog product search endpoints")
 public class MerchantController {
 
+    private final MerchantListingService merchantListingService;
     private final MerchantSemanticSearchService merchantSemanticSearchService;
     private final MerchantSemanticProductSearchService merchantSemanticProductSearchService;
+
+    @GetMapping
+    @Operation(
+            summary = "List active merchants",
+            description = "Returns active merchants available in Meant, ordered by merchant name."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Active merchants",
+            content = @Content(array = @ArraySchema(
+                    schema = @Schema(implementation = MerchantListItemResponse.class)
+            ))
+    )
+    public List<MerchantListItemResponse> listActiveMerchants() {
+        return merchantListingService.listActiveMerchants().stream()
+                .map(MerchantListItemResponse::from)
+                .toList();
+    }
 
     @PostMapping("/semantic-search")
     @Operation(

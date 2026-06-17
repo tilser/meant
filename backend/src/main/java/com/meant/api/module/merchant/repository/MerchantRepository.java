@@ -14,6 +14,8 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
 
     List<Merchant> findByDomainIn(Collection<String> domains);
 
+    List<Merchant> findByActiveTrueOrderByNameAsc();
+
     @Query(value = """
             select merchant.*
             from merchant merchant
