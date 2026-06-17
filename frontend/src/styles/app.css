@@ -545,6 +545,16 @@ button {
   gap: 10px;
 }
 
+.mt-starters-loading {
+  min-height: 54px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 11px;
+}
+
 .mt-starter-card {
   display: flex;
   align-items: center;

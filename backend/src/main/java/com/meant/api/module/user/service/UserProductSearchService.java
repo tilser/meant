@@ -37,6 +37,7 @@ public class UserProductSearchService {
     private final UserProductSearchHashService userProductSearchHashService;
     private final UserProductRecommendationExplanationService userProductRecommendationExplanationService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
+    private final UserProductSearchEventService userProductSearchEventService;
     private final UserProductSearchProperties userProductSearchProperties;
     private final OpenRouterProperties openRouterProperties;
 
@@ -55,8 +56,9 @@ public class UserProductSearchService {
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
 
+        UserProductSearchResult result;
         if (command.merchantId() != null) {
-            return searchWithoutPersisting(
+            result = searchWithoutPersisting(
                     command.userId(),
                     query,
                     queryIntent.searchQuery(),
@@ -65,27 +67,36 @@ public class UserProductSearchService {
                     settings,
                     command.merchantId()
             );
+        } else {
+            result = userProductSearchPersistenceService.findCachedSearch(
+                            command.userId(),
+                            query,
+                            normalizedQuery,
+                            profileHash,
+                            userProductSearchProperties.searchVersion(),
+                            openRouterProperties.models().productRecommendationExplainer(),
+                            userProductSearchProperties.explanationPromptVersion(),
+                            now
+                    )
+                    .orElseGet(() -> searchAndPersist(
+                            command.userId(),
+                            query,
+                            queryIntent.searchQuery(),
+                            normalizedQuery,
+                            profileHash,
+                            settings,
+                            now
+                    ));
         }
 
-        return userProductSearchPersistenceService.findCachedSearch(
-                        command.userId(),
-                        query,
-                        normalizedQuery,
-                        profileHash,
-                        userProductSearchProperties.searchVersion(),
-                        openRouterProperties.models().productRecommendationExplainer(),
-                        userProductSearchProperties.explanationPromptVersion(),
-                        now
-                )
-                .orElseGet(() -> searchAndPersist(
-                        command.userId(),
-                        query,
-                        queryIntent.searchQuery(),
-                        normalizedQuery,
-                        profileHash,
-                        settings,
-                        now
-                ));
+        userProductSearchEventService.record(
+                command.userId(),
+                command.merchantId(),
+                queryIntent,
+                result.products().size(),
+                now
+        );
+        return result;
     }
 
     private UserProductSearchResult searchWithoutPersisting(

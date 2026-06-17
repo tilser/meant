@@ -31,6 +31,7 @@ class UserProductSearchQueryUnderstandingServiceTest {
         );
 
         assertThat(direct.searchQuery()).isEqualTo("candles");
+        assertThat(direct.displayQuery()).isEqualTo("Candles");
         assertThat(direct.intentCacheKey()).isEqualTo("candles");
         assertThat(direct.confidence()).isEqualTo("high");
         assertThat(conversational.searchQuery()).isEqualTo("candles");
@@ -57,6 +58,7 @@ class UserProductSearchQueryUnderstandingServiceTest {
         openRouterChatClient.response = """
                 {
                   "searchQuery": "gift candles",
+                  "displayQuery": "Gift candles for mom",
                   "constraints": [],
                   "preferenceHints": ["for mom"],
                   "confidence": "medium"
@@ -71,9 +73,11 @@ class UserProductSearchQueryUnderstandingServiceTest {
         assertThat(openRouterChatClient.model).isEqualTo("cheap-query-model");
         assertThat(openRouterChatClient.calledCount).isEqualTo(1);
         assertThat(generated.searchQuery()).isEqualTo("gift candles");
+        assertThat(generated.displayQuery()).isEqualTo("Gift candles for mom");
         assertThat(generated.preferenceHints()).containsExactly("for mom");
         assertThat(generated.source()).isEqualTo("llm");
         assertThat(cached.searchQuery()).isEqualTo("gift candles");
+        assertThat(cached.displayQuery()).isEqualTo("Gift candles for mom");
         assertThat(cached.preferenceHints()).containsExactly("for mom");
         assertThat(cached.source()).isEqualTo("llm-cache");
     }
@@ -92,17 +96,26 @@ class UserProductSearchQueryUnderstandingServiceTest {
                                 "preference-model",
                                 "cheap-query-model",
                                 "explainer-model")),
-                new UserProductSearchProperties("v1", "v1", "v1", Duration.ofHours(24), 5, 12),
+                properties(),
                 repository,
-                new UserProductSearchHashService(new UserProductSearchProperties(
-                        "v1",
-                        "v1",
-                        "v1",
-                        Duration.ofHours(24),
-                        5,
-                        12)),
+                new UserProductSearchHashService(properties()),
                 new ObjectMapper()
         );
+    }
+
+    private UserProductSearchProperties properties() {
+        return new UserProductSearchProperties(
+                "v1",
+                "v1",
+                "v1",
+                Duration.ofHours(24),
+                5,
+                12,
+                Duration.ofHours(24),
+                Duration.ofDays(7),
+                6,
+                3,
+                80);
     }
 
     private UserProductSearchQueryIntentRepository queryIntentRepository() {

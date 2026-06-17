@@ -32,6 +32,7 @@ public class UserProductSearchQueryUnderstandingService {
             Preserve concrete product nouns and hard search constraints such as price, size, material, color, brand, scent, and count.
             Keep subjective or contextual details as preferenceHints when they should inform ranking/explanations but are not good catalog keywords.
             Return a short lower-case searchQuery that a merchant product catalog can match.
+            Return displayQuery as a concise human-facing search phrase in normal title/sentence casing.
             """;
     private static final List<Pattern> LEADING_WRAPPER_PATTERNS = List.of(
             Pattern.compile("^(please\\s+)?(can you|could you|would you)\\s+(please\\s+)?(show|find|get|look for|search for)\\s+(me\\s+)?"),
@@ -108,6 +109,8 @@ public class UserProductSearchQueryUnderstandingService {
                 normalizedOriginalQuery,
                 normalizedSearchQuery,
                 normalizedSearchQuery,
+                displayQuery(normalizedSearchQuery),
+                normalizedSearchQuery,
                 normalizedSearchQuery,
                 List.of(),
                 List.of(),
@@ -156,9 +159,10 @@ public class UserProductSearchQueryUnderstandingService {
 
     private OpenRouterJsonSchemaDefinition responseSchema() {
         return OpenRouterJsonSchemaDefinition.object(
-                List.of("searchQuery", "constraints", "preferenceHints", "confidence"),
+                List.of("searchQuery", "displayQuery", "constraints", "preferenceHints", "confidence"),
                 Map.of(
                         "searchQuery", OpenRouterJsonSchemaDefinition.string(),
+                        "displayQuery", OpenRouterJsonSchemaDefinition.string(),
                         "constraints", OpenRouterJsonSchemaDefinition.array(OpenRouterJsonSchemaDefinition.string()),
                         "preferenceHints", OpenRouterJsonSchemaDefinition.array(OpenRouterJsonSchemaDefinition.string()),
                         "confidence", OpenRouterJsonSchemaDefinition.stringEnum(List.of(HIGH, MEDIUM, LOW))
@@ -176,6 +180,8 @@ public class UserProductSearchQueryUnderstandingService {
         if (normalizedSearchQuery.isBlank()) {
             normalizedSearchQuery = normalizedOriginalQuery;
         }
+        String displayQuery = sanitizeDisplayQuery(parsed.displayQuery(), normalizedSearchQuery);
+        String normalizedDisplayQuery = userProductSearchHashService.normalizeQuery(displayQuery);
         List<String> constraints = sanitizeList(parsed.constraints());
         List<String> preferenceHints = sanitizeList(parsed.preferenceHints());
         String confidence = sanitizeConfidence(parsed.confidence());
@@ -184,6 +190,8 @@ public class UserProductSearchQueryUnderstandingService {
                 normalizedOriginalQuery,
                 normalizedSearchQuery,
                 normalizedSearchQuery,
+                displayQuery,
+                normalizedDisplayQuery,
                 intentCacheKey(normalizedSearchQuery, constraints, preferenceHints),
                 constraints,
                 preferenceHints,
@@ -195,7 +203,7 @@ public class UserProductSearchQueryUnderstandingService {
     private QueryIntentResponse parseResponse(String response) {
         try {
             QueryIntentResponse parsed = objectMapper.readValue(response, QueryIntentResponse.class);
-            return parsed == null ? new QueryIntentResponse(null, List.of(), List.of(), LOW) : parsed;
+            return parsed == null ? new QueryIntentResponse(null, null, List.of(), List.of(), LOW) : parsed;
         } catch (JacksonException exception) {
             throw new OpenRouterException("OpenRouter returned invalid product search query JSON", exception);
         }
@@ -237,8 +245,54 @@ public class UserProductSearchQueryUnderstandingService {
         return LOW;
     }
 
+    private String sanitizeDisplayQuery(String displayQuery, String normalizedSearchQuery) {
+        if (displayQuery == null || displayQuery.isBlank()) {
+            return displayQuery(normalizedSearchQuery);
+        }
+        String sanitized = displayQuery
+                .replaceAll("[\\r\\n]+", " ")
+                .replaceAll("\\s+", " ")
+                .replaceAll("^['\"“”‘’]+|['\"“”‘’]+$", "")
+                .trim();
+        if (sanitized.length() < 3 || sanitized.length() > 80) {
+            return displayQuery(normalizedSearchQuery);
+        }
+        return sanitized;
+    }
+
+    private String displayQuery(String normalizedSearchQuery) {
+        String normalized = userProductSearchHashService.normalizeQuery(normalizedSearchQuery);
+        if (normalized.isBlank()) {
+            return "Products";
+        }
+        String[] tokens = normalized.split("\\s+");
+        for (int index = 0; index < tokens.length; index++) {
+            tokens[index] = displayToken(tokens[index], index == 0);
+        }
+        return String.join(" ", tokens);
+    }
+
+    private String displayToken(String token, boolean first) {
+        return switch (token) {
+            case "usd" -> "USD";
+            case "usb-c" -> "USB-C";
+            case "usb-a" -> "USB-A";
+            case "hdmi" -> "HDMI";
+            case "t-shirt", "tee-shirt" -> "T-shirt";
+            default -> first ? capitalize(token) : token;
+        };
+    }
+
+    private String capitalize(String value) {
+        if (value.isBlank()) {
+            return value;
+        }
+        return value.substring(0, 1).toUpperCase(Locale.ROOT) + value.substring(1);
+    }
+
     private record QueryIntentResponse(
             String searchQuery,
+            String displayQuery,
             List<String> constraints,
             List<String> preferenceHints,
             String confidence

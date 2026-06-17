@@ -7,6 +7,8 @@ public record UserProductSearchQueryIntentResult(
         String normalizedOriginalQuery,
         String searchQuery,
         String normalizedSearchQuery,
+        String displayQuery,
+        String normalizedDisplayQuery,
         String intentCacheKey,
         List<String> constraints,
         List<String> preferenceHints,

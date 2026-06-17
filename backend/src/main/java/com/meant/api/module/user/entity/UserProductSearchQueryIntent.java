@@ -7,6 +7,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -49,6 +50,10 @@ public class UserProductSearchQueryIntent {
     @Column(nullable = false)
     private String normalizedSearchQuery;
 
+    private String displayQuery;
+
+    private String normalizedDisplayQuery;
+
     @Column(nullable = false)
     private String intentCacheKey;
 
@@ -81,6 +86,8 @@ public class UserProductSearchQueryIntent {
                 .promptVersion(promptVersion)
                 .searchQuery(result.searchQuery())
                 .normalizedSearchQuery(result.normalizedSearchQuery())
+                .displayQuery(result.displayQuery())
+                .normalizedDisplayQuery(result.normalizedDisplayQuery())
                 .intentCacheKey(result.intentCacheKey())
                 .constraintsText(String.join("\n", result.constraints()))
                 .preferenceHintsText(String.join("\n", result.preferenceHints()))
@@ -96,12 +103,26 @@ public class UserProductSearchQueryIntent {
                 normalizedOriginalQuery,
                 searchQuery,
                 normalizedSearchQuery,
+                displayQueryValue(),
+                normalizedDisplayQuery == null || normalizedDisplayQuery.isBlank()
+                        ? normalizedSearchQuery
+                        : normalizedDisplayQuery,
                 intentCacheKey,
                 lines(constraintsText),
                 lines(preferenceHintsText),
                 confidence,
                 "llm-cache"
         );
+    }
+
+    private String displayQueryValue() {
+        if (displayQuery != null && !displayQuery.isBlank()) {
+            return displayQuery;
+        }
+        if (searchQuery == null || searchQuery.isBlank()) {
+            return "Products";
+        }
+        return searchQuery.substring(0, 1).toUpperCase(Locale.ROOT) + searchQuery.substring(1);
     }
 
     private java.util.List<String> lines(String value) {

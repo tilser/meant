@@ -27,6 +27,21 @@ public record UserProductSearchProperties(
         int discoveryRecentSearchLimit,
 
         @Positive
-        int discoveryRecentProductLimit
+        int discoveryRecentProductLimit,
+
+        @NotNull
+        Duration popularSearchWindow,
+
+        @NotNull
+        Duration popularSearchFallbackWindow,
+
+        @Positive
+        int popularSearchLimit,
+
+        @Positive
+        int popularSearchMinDistinctUsers,
+
+        @Positive
+        int popularSearchMaxDisplayLength
 ) {
 }

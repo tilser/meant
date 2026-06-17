@@ -5,21 +5,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductSearch;
+import com.meant.api.module.user.entity.UserProductSearchEvent;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
+import com.meant.api.module.user.repository.UserProductSearchEventRepository;
 import com.meant.api.module.user.repository.UserProductSearchRepository;
 import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserProductSearchHashService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -67,6 +71,9 @@ class UserControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private UserProductSearchResultItemRepository userProductSearchResultItemRepository;
+
+    @Autowired
+    private UserProductSearchEventRepository userProductSearchEventRepository;
 
     @Autowired
     private UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
@@ -405,10 +412,72 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void popularProductSearchesReturnsDistinctUserAggregates() {
+        Instant now = Instant.now();
+        String displayQuery = "Organic cotton T-shirt under $50";
+        for (int index = 0; index < 3; index++) {
+            UUID userId = UUID.randomUUID();
+            String email = userId + "@example.com";
+            userSettingsService.get(new UpsertUserCommand(userId, email, "User", String.valueOf(index)));
+            userProductSearchEventRepository.save(UserProductSearchEvent.from(
+                    userId,
+                    null,
+                    openRouterProperties.models().productSearchQueryParser(),
+                    userProductSearchProperties.queryParserPromptVersion(),
+                    queryIntent("organic cotton t-shirt under $50", displayQuery),
+                    4,
+                    now.minusSeconds(index)
+            ));
+        }
+        UUID scopedUserId = UUID.randomUUID();
+        userSettingsService.get(new UpsertUserCommand(scopedUserId, scopedUserId + "@example.com", "Scoped", "User"));
+        userProductSearchEventRepository.save(UserProductSearchEvent.from(
+                scopedUserId,
+                UUID.randomUUID(),
+                openRouterProperties.models().productSearchQueryParser(),
+                userProductSearchProperties.queryParserPromptVersion(),
+                queryIntent("organic cotton t-shirt under $50", displayQuery),
+                4,
+                now
+        ));
+
+        UserPopularProductSearchResponse[] popular = client.get().uri("/api/users/me/popular-product-searches")
+                .headers(headers -> headers.setBearerAuth(token(UUID.randomUUID(), "viewer@example.com", "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserPopularProductSearchResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(popular).isNotNull();
+        assertThat(popular).singleElement()
+                .satisfies(search -> {
+                    assertThat(search.displayQuery()).isEqualTo(displayQuery);
+                    assertThat(search.query()).isEqualTo(displayQuery);
+                });
+    }
+
+    @Test
     void publicHealthEndpointStaysOpen() {
         client.get().uri("/actuator/health")
                 .exchange()
                 .expectStatus().isOk();
+    }
+
+    private static UserProductSearchQueryIntentResult queryIntent(String normalizedQuery, String displayQuery) {
+        return new UserProductSearchQueryIntentResult(
+                normalizedQuery,
+                normalizedQuery,
+                normalizedQuery,
+                normalizedQuery,
+                displayQuery,
+                normalizedQuery,
+                normalizedQuery,
+                List.of(),
+                List.of(),
+                "high",
+                "deterministic"
+        );
     }
 
     private static MerchantSemanticProductResult recentSearchProduct() {

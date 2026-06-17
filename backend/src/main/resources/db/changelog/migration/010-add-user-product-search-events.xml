@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-display-query-to-user-product-search-query-intents" author="meant">
+        <addColumn tableName="user_product_search_query_intents">
+            <column name="display_query" type="text"/>
+            <column name="normalized_display_query" type="text"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="002-create-user-product-search-events" author="meant">
+        <createTable tableName="user_product_search_events">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid"/>
+            <column name="original_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_original_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="display_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_display_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="search_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="intent_cache_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="result_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prompt_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_events"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_search_events_user"/>
+        <createIndex
+                tableName="user_product_search_events"
+                indexName="idx_user_product_search_events_popular">
+            <column name="created_at"/>
+            <column name="merchant_id"/>
+            <column name="normalized_display_query"/>
+        </createIndex>
+        <createIndex
+                tableName="user_product_search_events"
+                indexName="idx_user_product_search_events_user_created">
+            <column name="user_id"/>
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

@@ -32,6 +32,7 @@ import {
   getCurrentUser,
   getMerchants,
   getProductDiscovery,
+  getPopularProductSearches,
   getUserProductSearchSuggestions,
   getUserSettings,
   removeSavedProduct,
@@ -41,6 +42,7 @@ import {
   type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
+  type UserPopularProductSearchProfile,
   type UserSavedProductProfile,
   updateCart,
   type UserProductSearchProductProfile,
@@ -142,13 +144,13 @@ const askContexts: Readonly<Record<View, { label: string; suggestions: readonly 
     },
   }
 
-interface StarterSearch {
+interface SearchSuggestion {
   label: string
-  detail: string
+  detail?: string
   query: string
 }
 
-const STARTER_SEARCHES: readonly StarterSearch[] = [
+const STARTER_SEARCHES: readonly SearchSuggestion[] = [
   {
     label: 'Healthy breakfast',
     detail: 'Low sugar, high protein, organic options',
@@ -416,6 +418,13 @@ function savedProductFromProfile(product: UserSavedProductProfile): Product {
     offers: product.offers,
     needs: product.needs ? product.needs as Product['needs'] : undefined,
     provides: (product.provides?.length ?? 0) > 0 ? product.provides as Product['provides'] : undefined,
+  }
+}
+
+function searchSuggestionFromPopular(search: UserPopularProductSearchProfile): SearchSuggestion {
+  return {
+    label: search.displayQuery,
+    query: search.query,
   }
 }
 
@@ -1432,23 +1441,30 @@ function MerchantScope({
   )
 }
 
-function StarterSearchPanel({
+function SearchSuggestionPanel({
+  title,
+  note,
   searches,
   loading,
   compact,
   onSubmit,
 }: Readonly<{
-  searches: readonly StarterSearch[]
+  title: string
+  note: string
+  searches: readonly SearchSuggestion[]
   loading: boolean
   compact: boolean
   onSubmit: (query: string) => void
 }>) {
   return (
-    <section className={`mt-starters${compact ? ' compact' : ''}`} aria-label="Starter searches">
+    <section className={`mt-starters${compact ? ' compact' : ''}`} aria-label={title}>
       <div className="mt-starters-head">
-        <h2 className="mt-starters-title">Start with an occasion</h2>
-        <span className="mt-mono mt-starters-note">Searches run across supported merchants</span>
+        <h2 className="mt-starters-title">{title}</h2>
+        <span className="mt-mono mt-starters-note">{note}</span>
       </div>
+      {searches.length === 0 ? (
+        <div className="mt-starters-loading mt-mono">Loading searches</div>
+      ) : null}
       <div className="mt-starters-grid">
         {searches.map((search) => (
           <button
@@ -1460,7 +1476,9 @@ function StarterSearchPanel({
           >
             <span className="mt-starter-main">
               <span className="mt-starter-label">{search.label}</span>
-              <span className="mt-starter-detail">{search.detail}</span>
+              {search.detail ? (
+                <span className="mt-starter-detail">{search.detail}</span>
+              ) : null}
             </span>
             <span className="mt-starter-arrow" aria-hidden>
               <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
@@ -1487,6 +1505,8 @@ function FeedView({
   hiddenByShip,
   discoveryLoading,
   discoveryError,
+  popularSearches,
+  popularSearchesLoading,
   location,
   prompts,
   reply,
@@ -1514,6 +1534,8 @@ function FeedView({
   hiddenByShip: number
   discoveryLoading: boolean
   discoveryError: string | null
+  popularSearches: readonly SearchSuggestion[]
+  popularSearchesLoading: boolean
   location: UserLocation | null
   prompts: readonly string[]
   reply: string | null
@@ -1546,6 +1568,18 @@ function FeedView({
       : merchantName
         ? `${products.length} on ${merchantName}`
         : `${products.length} shown · sorted by match`
+  const waitingForPopularSearches = popularSearchesLoading && popularSearches.length === 0
+  const suggestionSearches = waitingForPopularSearches
+    ? []
+    : popularSearches.length > 0 ? popularSearches : STARTER_SEARCHES
+  const suggestionTitle = popularSearches.length > 0 || waitingForPopularSearches
+    ? 'What others search for'
+    : 'Try a starter search'
+  const suggestionNote = popularSearches.length > 0
+    ? 'Popular searches from the last 24 hours'
+    : waitingForPopularSearches
+      ? 'Loading popular searches'
+      : 'Searches run across supported merchants'
 
   return (
     <main className="mt-feed">
@@ -1583,8 +1617,10 @@ function FeedView({
         </div>
       ) : null}
       {preSearch ? (
-        <StarterSearchPanel
-          searches={STARTER_SEARCHES}
+        <SearchSuggestionPanel
+          title={suggestionTitle}
+          note={suggestionNote}
+          searches={suggestionSearches}
           loading={loading}
           compact={products.length > 0 || discoveryLoading}
           onSubmit={onSubmit}
@@ -4037,6 +4073,8 @@ export function MeantApp() {
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
+  const [popularSearches, setPopularSearches] = useState<SearchSuggestion[]>([])
+  const [popularSearchesLoading, setPopularSearchesLoading] = useState(false)
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantsError, setMerchantsError] = useState<string | null>(null)
@@ -4313,6 +4351,20 @@ export function MeantApp() {
         if (!active) return
         setDiscoveryLoading(false)
       })
+    setPopularSearchesLoading(true)
+    getPopularProductSearches()
+      .then((searches) => {
+        if (!active) return
+        setPopularSearches(searches.map(searchSuggestionFromPopular))
+      })
+      .catch(() => {
+        if (!active) return
+        setPopularSearches([])
+      })
+      .finally(() => {
+        if (!active) return
+        setPopularSearchesLoading(false)
+      })
     return () => {
       active = false
     }
@@ -4332,6 +4384,8 @@ export function MeantApp() {
     setSearchSuggestions([])
     setDiscoveryError(null)
     setDiscoveryLoading(false)
+    setPopularSearches([])
+    setPopularSearchesLoading(false)
     setSelectedMerchantId(null)
     setSavedIds([])
     setSavedProducts([])
@@ -4882,6 +4936,8 @@ export function MeantApp() {
             hiddenByShip={hiddenByShip}
             discoveryLoading={discoveryLoading}
             discoveryError={discoveryError}
+            popularSearches={popularSearches}
+            popularSearchesLoading={popularSearchesLoading}
             location={location}
             prompts={searchSuggestions}
             reply={reply}
