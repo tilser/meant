@@ -32,7 +32,6 @@ import {
   createCart,
   getCartCheckout,
   getCurrentUser,
-  getLatestAssistantConversation,
   getMerchants,
   getProductDiscovery,
   getPopularProductSearches,
@@ -47,7 +46,6 @@ import {
   type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
-  type UserAssistantMessageProfile,
   type UserPopularProductSearchProfile,
   type UserSavedProductProfile,
   updateCart,
@@ -500,17 +498,6 @@ function searchSuggestionFromPopular(search: UserPopularProductSearchProfile): S
   return {
     label: search.displayQuery,
     query: search.query,
-  }
-}
-
-function messageFromAssistantProfile(
-  message: UserAssistantMessageProfile,
-  preferences: readonly Preference[],
-): Message {
-  return {
-    role: message.role === 'user' ? 'you' : 'ai',
-    text: message.content,
-    products: message.products.map((product) => productFromSearchResult(product, preferences)),
   }
 }
 
@@ -1012,6 +999,113 @@ function ViewHead({ eyebrow, title, sub, right }: Readonly<ViewHeadProps>) {
   )
 }
 
+function renderAssistantMarkdown(text: string, pending?: boolean): ReactNode {
+  if (!text) {
+    return pending ? 'Thinking...' : ''
+  }
+
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const blocks: ReactNode[] = []
+  let index = 0
+
+  while (index < lines.length) {
+    const line = lines[index].trim()
+    if (!line) {
+      index += 1
+      continue
+    }
+
+    const orderedMatch = line.match(/^\d+\.\s+(.+)$/)
+    if (orderedMatch) {
+      const items: ReactNode[] = []
+      while (index < lines.length) {
+        const itemMatch = lines[index].trim().match(/^\d+\.\s+(.+)$/)
+        if (!itemMatch) {
+          if (!lines[index].trim()) {
+            index += 1
+            continue
+          }
+          break
+        }
+        items.push(
+          <li key={`ol-${blocks.length}-${items.length}`}>
+            {renderMarkdownInline(itemMatch[1], `ol-${blocks.length}-${items.length}`)}
+          </li>,
+        )
+        index += 1
+      }
+      blocks.push(<ol key={`block-${blocks.length}`}>{items}</ol>)
+      continue
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.+)$/)
+    if (bulletMatch) {
+      const items: ReactNode[] = []
+      while (index < lines.length) {
+        const itemMatch = lines[index].trim().match(/^[-*]\s+(.+)$/)
+        if (!itemMatch) {
+          if (!lines[index].trim()) {
+            index += 1
+            continue
+          }
+          break
+        }
+        items.push(
+          <li key={`ul-${blocks.length}-${items.length}`}>
+            {renderMarkdownInline(itemMatch[1], `ul-${blocks.length}-${items.length}`)}
+          </li>,
+        )
+        index += 1
+      }
+      blocks.push(<ul key={`block-${blocks.length}`}>{items}</ul>)
+      continue
+    }
+
+    const paragraphLines: string[] = []
+    while (index < lines.length) {
+      const current = lines[index].trim()
+      if (!current || current.match(/^\d+\.\s+.+$/) || current.match(/^[-*]\s+.+$/)) {
+        break
+      }
+      paragraphLines.push(current)
+      index += 1
+    }
+    blocks.push(
+      <p key={`block-${blocks.length}`}>
+        {renderMarkdownInline(paragraphLines.join(' '), `p-${blocks.length}`)}
+      </p>,
+    )
+  }
+
+  return blocks
+}
+
+function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*)/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index))
+    }
+    const token = match[0]
+    const key = `${keyPrefix}-${match.index}`
+    if (token.startsWith('**') && token.endsWith('**')) {
+      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
+    } else {
+      nodes.push(<em key={key}>{token.slice(1, -1)}</em>)
+    }
+    lastIndex = match.index + token.length
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex))
+  }
+  return nodes
+}
+
 function AskThread({
   messages,
   onProductOpen,
@@ -1042,7 +1136,9 @@ function AskThread({
           ) : null}
           <div className="mt-msg-stack">
             <div className="mt-msg-bubble">
-              {message.text || (message.pending ? 'Thinking...' : '')}
+              {message.role === 'ai'
+                ? renderAssistantMarkdown(message.text, message.pending)
+                : message.text}
             </div>
             {message.products && message.products.length > 0 ? (
               <div className="mt-msg-products">
@@ -1168,6 +1264,7 @@ function FloatingAsk({
   preferences,
   onProducts,
   onProductOpen,
+  hidden = false,
 }: Readonly<{
   contextLabel: string
   context: AssistantChatContextInput
@@ -1175,16 +1272,13 @@ function FloatingAsk({
   preferences: readonly Preference[]
   onProducts: (products: readonly Product[], sourceQuery: string) => void
   onProductOpen: (product: Product) => void
+  hidden?: boolean
 }>) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [historyLoaded, setHistoryLoaded] = useState(false)
-  const [historyLoading, setHistoryLoading] = useState(false)
   const [panelSize, setPanelSize] = useStoredState<AskPanelSize>('meant.askPanelSize', ASK_PANEL_DEFAULT_SIZE)
-  const historyAbortRef = useRef<AbortController | null>(null)
-  const historyDirtyRef = useRef(false)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
   const safePanelSize = normalizedAskPanelSize(panelSize)
   const panelStyle = {
@@ -1195,46 +1289,6 @@ function FloatingAsk({
   useEffect(() => () => {
     resizeCleanupRef.current?.()
   }, [])
-
-  useEffect(() => {
-    if (!open || historyLoaded) {
-      return
-    }
-    let active = true
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 8000)
-    historyAbortRef.current = controller
-    setHistoryLoading(true)
-    getLatestAssistantConversation({ signal: controller.signal })
-      .then((conversation) => {
-        if (!active || historyDirtyRef.current) return
-        setConversationId(conversation.conversationId)
-        setMessages(conversation.messages.map((message) =>
-          messageFromAssistantProfile(message, preferences),
-        ))
-        setHistoryLoaded(true)
-      })
-      .catch(() => {
-        if (!active) return
-        setHistoryLoaded(true)
-      })
-      .finally(() => {
-        window.clearTimeout(timeout)
-        if (historyAbortRef.current === controller) {
-          historyAbortRef.current = null
-        }
-        if (!active) return
-        setHistoryLoading(false)
-      })
-    return () => {
-      active = false
-      window.clearTimeout(timeout)
-      controller.abort()
-      if (historyAbortRef.current === controller) {
-        historyAbortRef.current = null
-      }
-    }
-  }, [historyLoaded, open, preferences])
 
   const startPanelResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) {
@@ -1287,10 +1341,6 @@ function FloatingAsk({
     if (loading) {
       return
     }
-    historyDirtyRef.current = true
-    historyAbortRef.current?.abort()
-    setHistoryLoaded(true)
-    setHistoryLoading(false)
     let streamedText = ''
     setLoading(true)
     setMessages((current) => [
@@ -1350,7 +1400,7 @@ function FloatingAsk({
   }
 
   return (
-    <div className={`mt-fab-wrap ${open ? 'open' : ''}`}>
+    <div className={`mt-fab-wrap ${open ? 'open' : ''} ${hidden ? 'mt-fab-wrap-hidden' : ''}`}>
       {open ? (
         <div className="mt-askpanel" role="dialog" aria-label="Ask Meant" style={panelStyle}>
           <button
@@ -1377,7 +1427,7 @@ function FloatingAsk({
           <div className="mt-mono mt-askpanel-ctx">{contextLabel}</div>
           {messages.length === 0 ? (
             <p className="mt-askpanel-hint">
-              {historyLoading ? 'Loading conversation...' : 'Ask anything. I already know your preferences.'}
+              Ask anything. I already know your preferences.
             </p>
           ) : null}
           <AskThread messages={messages} onProductOpen={onProductOpen} />
@@ -5412,16 +5462,15 @@ export function MeantApp() {
         onPrev={() => navigateProduct(-1)}
         onNext={() => navigateProduct(1)}
       />
-      {!activeProduct ? (
-        <FloatingAsk
-          contextLabel={askContext.label}
-          context={assistantContext}
-          suggestions={askContext.suggestions}
-          preferences={allPreferences}
-          onProducts={applyAssistantProducts}
-          onProductOpen={(product) => openProduct(product, [product])}
-        />
-      ) : null}
+      <FloatingAsk
+        contextLabel={askContext.label}
+        context={assistantContext}
+        suggestions={askContext.suggestions}
+        preferences={allPreferences}
+        onProducts={applyAssistantProducts}
+        onProductOpen={(product) => openProduct(product, [product])}
+        hidden={Boolean(activeProduct)}
+      />
       <span className="mt-cart-count-debug" aria-hidden>{cartCount}</span>
     </div>
   )

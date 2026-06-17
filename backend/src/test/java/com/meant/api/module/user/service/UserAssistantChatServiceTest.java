@@ -20,7 +20,9 @@ import com.meant.api.module.user.service.dto.UserAssistantPageContext;
 import com.meant.api.module.user.service.dto.UserAssistantStreamEvent;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
+import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
+import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -56,6 +58,9 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     private FakeUserProductSearchService userProductSearchService;
 
     @Autowired
+    private FakeUserSavedProductService userSavedProductService;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     @BeforeEach
@@ -64,6 +69,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         conversationRepository.deleteAll();
         openRouterChatClient.reset();
         userProductSearchService.reset();
+        userSavedProductService.reset();
     }
 
     @Test
@@ -157,6 +163,44 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
 
         assertThat(FakeUserProductSearchService.lastCommand).isNull();
         assertThat(events.getLast().text()).isEqualTo("From your saved list, start with the strongest match.");
+    }
+
+    @Test
+    void streamLoadsSavedProductsForSavedContextQuestion() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                * I would compare the saved products.
+                """;
+        openRouterChatClient.streamChunks = List.of(
+                "Merino Travel Hoodie is ", "the best saved match."
+        );
+        FakeUserSavedProductService.nextResults = List.of(
+                savedProduct("Merino Travel Hoodie", 94, 88.0, "Best saved match for travel and natural fabric."),
+                savedProduct("Cotton Everyday Tee", 82, 38.0, "Good basic, but less aligned than the hoodie.")
+        );
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(upsertCommand(userId), command(
+                userId,
+                null,
+                "what is the best from products I have in saved?"
+        ), events::add);
+
+        assertThat(FakeUserProductSearchService.lastCommand).isNull();
+        assertThat(FakeUserSavedProductService.lastQuery.userId()).isEqualTo(userId);
+        assertThat(openRouterChatClient.streamMessages.getFirst().content())
+                .contains("Saved products loaded from the user's account")
+                .contains("Merino Travel Hoodie");
+        assertThat(events.getFirst().type()).isEqualTo("metadata");
+        assertThat(events.getLast().type()).isEqualTo("done");
+        assertThat(events.stream()
+                .filter(event -> "delta".equals(event.type()))
+                .map(UserAssistantStreamEvent::text)
+                .toList())
+                .containsExactly("Merino Travel Hoodie is ", "the best saved match.");
+        assertThat(events.getLast().text())
+                .contains("Merino Travel Hoodie")
+                .contains("best saved match");
     }
 
     @Test
@@ -277,6 +321,12 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         FakeUserProductSearchService testUserProductSearchService() {
             return new FakeUserProductSearchService();
         }
+
+        @Bean
+        @Primary
+        FakeUserSavedProductService testUserSavedProductService() {
+            return new FakeUserSavedProductService();
+        }
     }
 
     static class FakeOpenRouterChatClient extends OpenRouterChatClient {
@@ -285,6 +335,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private List<String> streamChunks = List.of();
         private String completeJsonModel;
         private String streamModel;
+        private List<OpenRouterChatMessage> streamMessages = List.of();
 
         FakeOpenRouterChatClient() {
             super(RestClient.builder(), new OpenRouterProperties(
@@ -306,6 +357,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             streamChunks = List.of();
             completeJsonModel = null;
             streamModel = null;
+            streamMessages = List.of();
         }
 
         @Override
@@ -327,6 +379,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 Consumer<String> chunkConsumer
         ) {
             streamModel = model;
+            streamMessages = messages;
             streamChunks.forEach(chunkConsumer);
         }
     }
@@ -359,5 +412,57 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             lastCommand = command;
             return nextResult;
         }
+    }
+
+    static class FakeUserSavedProductService extends UserSavedProductService {
+
+        private static List<UserSavedProductResult> nextResults = List.of();
+        private static ListSavedProductsQuery lastQuery;
+
+        FakeUserSavedProductService() {
+            super(null, null, null);
+        }
+
+        void reset() {
+            nextResults = List.of();
+            lastQuery = null;
+        }
+
+        @Override
+        public List<UserSavedProductResult> list(
+                UpsertUserCommand upsertCommand,
+                ListSavedProductsQuery query
+        ) {
+            lastQuery = query;
+            return nextResults;
+        }
+    }
+
+    private UserSavedProductResult savedProduct(String name, int match, double priceFrom, String note) {
+        return new UserSavedProductResult(
+                name.toLowerCase().replaceAll("[^a-z0-9]+", "-"),
+                "hash-" + name,
+                name,
+                "Field Loom",
+                "Clothing",
+                "Quiet",
+                null,
+                "https://example.test/" + name,
+                false,
+                match,
+                priceFrom,
+                2,
+                List.of("natural fibers", "travel ready"),
+                List.of(),
+                note,
+                List.of("soft fabric"),
+                List.of(),
+                new UserSavedProductResult.Review(4.7, 120, "Strong owner feedback."),
+                List.of(),
+                null,
+                List.of("layering"),
+                Instant.parse("2026-06-17T10:00:00Z"),
+                Instant.parse("2026-06-17T10:00:00Z")
+        );
     }
 }

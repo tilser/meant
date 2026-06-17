@@ -20,10 +20,13 @@ import com.meant.api.module.user.service.dto.UserAssistantConversationResult;
 import com.meant.api.module.user.service.dto.UserAssistantMessageResult;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
 import com.meant.api.module.user.service.dto.UserAssistantStreamEvent;
+import com.meant.api.module.user.service.dto.UserAssistantToolContext;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
+import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
+import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -63,6 +66,7 @@ public class UserAssistantChatService {
     private final UserService userService;
     private final UserSettingsService userSettingsService;
     private final UserProductSearchService userProductSearchService;
+    private final UserSavedProductService userSavedProductService;
     private final UserAssistantConversationRepository conversationRepository;
     private final UserAssistantMessageRepository messageRepository;
     private final OpenRouterChatClient openRouterChatClient;
@@ -110,6 +114,10 @@ public class UserAssistantChatService {
         UserSettingsResult settings = userSettingsService.get(upsertCommand);
         List<UserAssistantMessage> history = promptHistory(conversation.getId(), command.userId());
         AssistantRoute route = route(userMessage, settings, command.pageContext());
+        UserAssistantToolContext toolContext = toolContext(upsertCommand, command, route);
+        if (route.isSearch() && shouldAnswerFromSavedProducts(userMessage, command.pageContext())) {
+            route = route.asAnswer();
+        }
 
         List<UserProductSearchProductResult> products = List.of();
         String searchError = null;
@@ -128,7 +136,15 @@ public class UserAssistantChatService {
             }
         }
 
-        String assistantText = answer(route, userMessage, settings, command.pageContext(), history, products, searchError,
+        String assistantText = answer(
+                route,
+                userMessage,
+                settings,
+                command.pageContext(),
+                toolContext,
+                history,
+                products,
+                searchError,
                 eventConsumer);
         UserAssistantMessage assistantMessage = messageRepository.save(UserAssistantMessage.create(
                 conversation.getId(),
@@ -213,7 +229,7 @@ public class UserAssistantChatService {
             AssistantRouteResponse route = parseRouteResponse(response);
             return AssistantRoute.from(route, userMessage);
         } catch (OpenRouterException | JacksonException exception) {
-            log.warn("Failed to classify assistant message; using local fallback ({})",
+            log.info("Failed to classify assistant message; using local fallback ({})",
                     exception.getClass().getSimpleName());
             return AssistantRoute.fallback(userMessage);
         }
@@ -240,11 +256,31 @@ public class UserAssistantChatService {
         }
     }
 
+    private UserAssistantToolContext toolContext(
+            UpsertUserCommand upsertCommand,
+            SendUserAssistantMessageCommand command,
+            AssistantRoute route
+    ) {
+        if (!shouldLoadSavedProducts(command.message(), command.pageContext(), route)) {
+            return UserAssistantToolContext.empty();
+        }
+        try {
+            return new UserAssistantToolContext(userSavedProductService.list(
+                    upsertCommand,
+                    new ListSavedProductsQuery(command.userId())
+            ));
+        } catch (RuntimeException exception) {
+            log.warn("Failed to load assistant saved-products tool context", exception);
+            return UserAssistantToolContext.empty();
+        }
+    }
+
     private String answer(
             AssistantRoute route,
             String userMessage,
             UserSettingsResult settings,
             UserAssistantPageContext pageContext,
+            UserAssistantToolContext toolContext,
             List<UserAssistantMessage> history,
             List<UserProductSearchProductResult> products,
             String searchError,
@@ -268,7 +304,7 @@ public class UserAssistantChatService {
         try {
             openRouterChatClient.streamText(
                     openRouterProperties.models().chatModel(),
-                    chatMessages(route, userMessage, settings, pageContext, history, products),
+                    chatMessages(route, userMessage, settings, pageContext, toolContext, history, products),
                     chunk -> {
                         streamed.append(chunk);
                         eventConsumer.accept(UserAssistantStreamEvent.delta(chunk));
@@ -276,14 +312,14 @@ public class UserAssistantChatService {
             );
         } catch (OpenRouterException exception) {
             log.warn("Failed to stream assistant answer; using local fallback", exception);
-            String fallback = fallbackAnswer(route, settings, pageContext, products);
+            String fallback = fallbackAnswer(route, settings, pageContext, toolContext, products);
             emitText(fallback, eventConsumer);
             return fallback;
         }
 
         String answer = streamed.toString().trim();
         if (answer.isBlank()) {
-            String fallback = fallbackAnswer(route, settings, pageContext, products);
+            String fallback = fallbackAnswer(route, settings, pageContext, toolContext, products);
             emitText(fallback, eventConsumer);
             return fallback;
         }
@@ -295,11 +331,17 @@ public class UserAssistantChatService {
             String userMessage,
             UserSettingsResult settings,
             UserAssistantPageContext pageContext,
+            UserAssistantToolContext toolContext,
             List<UserAssistantMessage> history,
             List<UserProductSearchProductResult> products
     ) {
         List<OpenRouterChatMessage> messages = new ArrayList<>();
-        messages.add(new OpenRouterChatMessage("system", chatSystemPrompt(route, settings, pageContext, products)));
+        messages.add(new OpenRouterChatMessage("system", chatSystemPrompt(
+                route,
+                settings,
+                pageContext,
+                toolContext,
+                products)));
         history.forEach(message -> messages.add(new OpenRouterChatMessage(
                 message.getRole() == UserAssistantMessageRole.USER ? "user" : "assistant",
                 message.getContent()
@@ -314,13 +356,15 @@ public class UserAssistantChatService {
             AssistantRoute route,
             UserSettingsResult settings,
             UserAssistantPageContext pageContext,
+            UserAssistantToolContext toolContext,
             List<UserProductSearchProductResult> products
     ) {
         return """
                 You are Ask Meant, a concise shopping and account assistant inside the Meant app.
-                Use the user's profile preferences and the provided app context. Treat backend profile/settings as authoritative.
+                Use server-loaded user data, profile preferences, and the provided app context. Treat backend profile/settings and SERVER USER DATA as authoritative.
                 Treat page context as a snapshot of what the user currently sees; do not use it for authorization or irreversible actions.
-                If order, cart, account, saved item, or preference data is not present, say that you do not have that data yet.
+                If SERVER USER DATA contains saved products, use those products for saved-item questions. Do not say saved-item details are unavailable when saved products are listed there.
+                If order, cart, account, saved item, or preference data is not present in SERVER USER DATA or page context, say that you do not have that data yet.
                 For shopping answers, only recommend products listed in PRODUCT SEARCH RESULTS or visible products in PAGE CONTEXT. Do not invent product names, prices, merchants, or availability.
                 Do not claim that you bought, saved, changed, canceled, returned, or checked out anything.
                 Keep the answer under 120 words, direct, and useful.
@@ -334,12 +378,16 @@ public class UserAssistantChatService {
                 PAGE CONTEXT:
                 %s
 
+                SERVER USER DATA:
+                %s
+
                 PRODUCT SEARCH RESULTS:
                 %s
                 """.formatted(
                 route.action(),
                 profilePrompt(settings),
                 pageContextPrompt(pageContext),
+                toolContextPrompt(toolContext),
                 productsPrompt(products)
         );
     }
@@ -482,6 +530,38 @@ public class UserAssistantChatService {
         return prompt.toString();
     }
 
+    private String toolContextPrompt(UserAssistantToolContext context) {
+        if (context == null || !context.hasSavedProducts()) {
+            return "No server-loaded user data for this turn.";
+        }
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("Saved products loaded from the user's account:\n");
+        context.savedProducts().stream()
+                .limit(12)
+                .forEach(product -> prompt.append("- ")
+                        .append(product.name())
+                        .append(" by ")
+                        .append(value(product.brand()))
+                        .append("; category ")
+                        .append(value(product.category()))
+                        .append("; match ")
+                        .append(product.match())
+                        .append("%; price ")
+                        .append(savedProductPrice(product))
+                        .append("; merchants ")
+                        .append(product.merchants())
+                        .append("; note ")
+                        .append(value(product.note()))
+                        .append("; satisfies ")
+                        .append(product.satisfies())
+                        .append("; misses ")
+                        .append(product.misses())
+                        .append("; review ")
+                        .append(product.review() == null ? "unknown" : product.review().score())
+                        .append('\n'));
+        return prompt.toString();
+    }
+
     private String productsPrompt(List<UserProductSearchProductResult> products) {
         if (products.isEmpty()) {
             return "No product search results provided.";
@@ -523,10 +603,15 @@ public class UserAssistantChatService {
         return "$%.2f %s".formatted(amount, value(product.priceCurrency()));
     }
 
+    private String savedProductPrice(UserSavedProductResult product) {
+        return "$%.2f".formatted(product.priceFrom());
+    }
+
     private String fallbackAnswer(
             AssistantRoute route,
             UserSettingsResult settings,
             UserAssistantPageContext pageContext,
+            UserAssistantToolContext toolContext,
             List<UserProductSearchProductResult> products
     ) {
         if (route.isSearch() && !products.isEmpty()) {
@@ -535,6 +620,9 @@ public class UserAssistantChatService {
                     + ": "
                     + products.stream().map(UserProductSearchProductResult::title).toList()
                     + ". The first result is the safest place to start for your current preferences.";
+        }
+        if (toolContext != null && toolContext.hasSavedProducts()) {
+            return savedProductsFallbackAnswer(toolContext.savedProducts());
         }
         if (pageContext != null && !pageContext.orders().isEmpty()) {
             UserAssistantPageContext.Order order = pageContext.orders().getFirst();
@@ -559,6 +647,33 @@ public class UserAssistantChatService {
                 + ".";
     }
 
+    private String savedProductsFallbackAnswer(List<UserSavedProductResult> savedProducts) {
+        UserSavedProductResult product = savedProducts.stream()
+                .max((left, right) -> Integer.compare(left.match(), right.match()))
+                .orElse(savedProducts.getFirst());
+        StringBuilder answer = new StringBuilder();
+        answer.append("From your saved products, I would start with ")
+                .append(product.name())
+                .append(". It has the strongest saved match at ")
+                .append(product.match())
+                .append("%");
+        if (product.priceFrom() > 0) {
+            answer.append(" and starts around ")
+                    .append(savedProductPrice(product));
+        }
+        if (product.note() != null && !product.note().isBlank()) {
+            answer.append(". ")
+                    .append(product.note());
+        } else if (!product.satisfies().isEmpty()) {
+            answer.append(". It fits ")
+                    .append(String.join(", ", product.satisfies().stream().limit(3).toList()))
+                    .append(".");
+        } else {
+            answer.append(".");
+        }
+        return answer.toString();
+    }
+
     private void emitText(String text, Consumer<UserAssistantStreamEvent> eventConsumer) {
         for (String chunk : text.split("(?<=\\s)")) {
             if (!chunk.isBlank()) {
@@ -581,6 +696,39 @@ public class UserAssistantChatService {
 
     private int score(Integer value) {
         return value == null ? -1 : value;
+    }
+
+    private boolean shouldLoadSavedProducts(
+            String userMessage,
+            UserAssistantPageContext pageContext,
+            AssistantRoute route
+    ) {
+        String normalized = normalize(userMessage);
+        return normalized.contains("saved")
+                || normalized.contains("save list")
+                || normalized.contains("wishlist")
+                || normalized.contains("products i have")
+                || normalized.contains("products that i have")
+                || normalized.contains("items i have")
+                || normalized.contains("my products")
+                || "saved".equalsIgnoreCase(pageContext == null ? null : pageContext.view())
+                || (route != null && route.isSearch() && normalized.contains("from products"));
+    }
+
+    private boolean shouldAnswerFromSavedProducts(String userMessage, UserAssistantPageContext pageContext) {
+        String normalized = normalize(userMessage);
+        boolean savedReference = shouldLoadSavedProducts(userMessage, pageContext, null);
+        boolean comparisonQuestion = normalized.matches(".*\\b(best|better|which|compare|pick|choose|recommend|worth|start)\\b.*")
+                || normalized.contains("what is the best");
+        boolean explicitDiscovery = normalized.matches(".*\\b(find|search|show|browse|buy|alternative|alternatives|similar)\\b.*");
+        return savedReference && comparisonQuestion && !explicitDiscovery;
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value
+                .replace('\u2018', '\'')
+                .replace('\u2019', '\'')
+                .toLowerCase(Locale.ROOT);
     }
 
     private String pageContextJson(UserAssistantPageContext pageContext) {
@@ -657,6 +805,10 @@ public class UserAssistantChatService {
 
         private boolean isClarify() {
             return ACTION_CLARIFY.equals(action);
+        }
+
+        private AssistantRoute asAnswer() {
+            return new AssistantRoute(ACTION_ANSWER, searchQuery, clarifyingQuestion);
         }
 
         private static String normalizeAction(String action) {

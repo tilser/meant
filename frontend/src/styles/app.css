@@ -2485,13 +2485,13 @@ button:disabled {
   padding: 9px 13px;
   font-size: 14px;
   line-height: 1.5;
-  white-space: pre-wrap;
 }
 
 .mt-msg-you .mt-msg-bubble {
   border-bottom-right-radius: 5px;
   background: var(--accent);
   color: var(--on-accent);
+  white-space: pre-wrap;
 }
 
 .mt-msg-ai .mt-msg-bubble {
@@ -2499,6 +2499,38 @@ button:disabled {
   border-bottom-left-radius: 5px;
   background: var(--surface);
   color: var(--ink-soft);
+  white-space: normal;
+}
+
+.mt-msg-bubble p {
+  margin: 0;
+}
+
+.mt-msg-bubble p + p,
+.mt-msg-bubble p + ol,
+.mt-msg-bubble p + ul,
+.mt-msg-bubble ol + p,
+.mt-msg-bubble ul + p {
+  margin-top: 8px;
+}
+
+.mt-msg-bubble ol,
+.mt-msg-bubble ul {
+  margin: 8px 0 0;
+  padding-left: 19px;
+}
+
+.mt-msg-bubble li + li {
+  margin-top: 8px;
+}
+
+.mt-msg-bubble strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.mt-msg-bubble em {
+  font-style: italic;
 }
 
 .mt-msg-products {
@@ -2572,6 +2604,10 @@ button:disabled {
   flex-direction: column;
   align-items: flex-end;
   gap: 12px;
+}
+
+.mt-fab-wrap-hidden {
+  display: none;
 }
 
 .mt-fab {
