@@ -50,6 +50,11 @@ user:
     cache-ttl: 24h
     discovery-recent-search-limit: 5
     discovery-recent-product-limit: 12
+    popular-search-window: 24h
+    popular-search-fallback-window: 7d
+    popular-search-limit: 6
+    popular-search-min-distinct-users: 3
+    popular-search-max-display-length: 80
 
 crawling:
   ucp-dataset-rows-url: https://datasets-server.huggingface.co/rows?dataset=UCPChecker%2Fucp-merchants&config=default&split=train

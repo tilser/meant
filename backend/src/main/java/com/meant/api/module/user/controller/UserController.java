@@ -5,13 +5,15 @@ import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
-import com.meant.api.module.user.controller.response.UserProductSearchResponse;
+import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
+import com.meant.api.module.user.controller.response.UserProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
 import com.meant.api.module.user.service.UserProductDiscoveryService;
+import com.meant.api.module.user.service.UserProductSearchEventService;
 import com.meant.api.module.user.service.UserProductSearchService;
 import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.UserService;
@@ -30,6 +32,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -56,6 +59,7 @@ public class UserController {
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
     private final UserProductDiscoveryService userProductDiscoveryService;
+    private final UserProductSearchEventService userProductSearchEventService;
     private final UserProductSearchService userProductSearchService;
     private final UserSavedProductService userSavedProductService;
 
@@ -172,6 +176,23 @@ public class UserController {
         return UserProductDiscoveryResponse.from(userProductDiscoveryService.get(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 new GetUserProductDiscoveryQuery(authenticatedUser.id())));
+    }
+
+    @GetMapping("/me/popular-product-searches")
+    @Operation(
+            summary = "List popular product searches",
+            description = "Returns anonymized popular product search prompts from recent aggregate search events."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Popular product search prompts",
+            content = @Content(schema = @Schema(implementation = UserPopularProductSearchResponse.class))
+    )
+    public List<UserPopularProductSearchResponse> popularProductSearches(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser.fromJwt(jwt);
+        return userProductSearchEventService.popular(Instant.now()).stream()
+                .map(UserPopularProductSearchResponse::from)
+                .toList();
     }
 
     @GetMapping("/me/saved-products")

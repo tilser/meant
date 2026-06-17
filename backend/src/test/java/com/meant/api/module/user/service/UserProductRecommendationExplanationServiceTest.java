@@ -95,7 +95,18 @@ class UserProductRecommendationExplanationServiceTest {
         return new UserProductRecommendationExplanationService(
                 openRouterChatClient,
                 openRouterProperties(),
-                new UserProductSearchProperties("v1", "v1", "v1", Duration.ofHours(24), 5, 12),
+                new UserProductSearchProperties(
+                        "v1",
+                        "v1",
+                        "v1",
+                        Duration.ofHours(24),
+                        5,
+                        12,
+                        Duration.ofHours(24),
+                        Duration.ofDays(7),
+                        6,
+                        3,
+                        80),
                 persistenceService,
                 new ObjectMapper()
         );
