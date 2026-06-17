@@ -796,7 +796,6 @@ button:disabled {
 }
 
 .mt-scope-btn,
-.mt-scope-cta,
 .mt-empty-btn {
   display: inline-flex;
   align-items: center;
@@ -991,38 +990,8 @@ button:disabled {
   text-align: center;
 }
 
-.mt-scope-cta {
-  gap: 8px;
-  min-height: 36px;
-  border-color: var(--accent);
-  border-radius: 20px;
-  background: var(--accent);
-  color: var(--on-accent);
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--accent) 70%, transparent);
-  transition:
-    opacity var(--motion-quick) var(--ease-out),
-    background var(--motion-quick) var(--ease-out),
-    border-color var(--motion-quick) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-
-.mt-scope-cta:hover {
-  opacity: 0.92;
-}
-
-.mt-scope-cta:active,
 .mt-empty-btn:active {
   transform: scale(0.98);
-}
-
-.mt-scope-cta.on {
-  border-color: var(--accent-line);
-  background: var(--accent-tint);
-  color: var(--accent);
-  box-shadow: none;
 }
 
 .mt-scope-error {

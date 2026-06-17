@@ -1479,12 +1479,6 @@ function MerchantScope({
           </div>
         ) : null}
       </div>
-      {selectedMerchant ? (
-        <button className="mt-scope-cta" type="button" aria-disabled="true">
-          <SparkMark size={15} color="currentColor" />
-          {`Searches scoped to ${selectedMerchant.name}`}
-        </button>
-      ) : null}
     </div>
   )
 }
