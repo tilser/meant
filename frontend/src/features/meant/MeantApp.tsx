@@ -2521,19 +2521,19 @@ function EmptyState({
 
 function CompareView({
   products,
+  savedProducts,
   compareIds,
   preferences,
   location,
-  onPick,
   onRemove,
   onAdd,
   onOpen,
 }: Readonly<{
   products: readonly Product[]
+  savedProducts: readonly Product[]
   compareIds: readonly ProductId[]
   preferences: readonly Preference[]
   location: UserLocation | null
-  onPick: (index: number, product: Product) => void
   onRemove: (index: number) => void
   onAdd: (product: Product) => void
   onOpen: (product: Product, products: readonly Product[]) => void
@@ -2567,7 +2567,7 @@ function CompareView({
       <ViewHead
         eyebrow="Side by side"
         title="Compare"
-        sub="Compare up to four products at once. Swap, add, or remove any of them and Meant lines them up against everything you care about."
+        sub="Compare up to four products at once. Add products from detail pages or add saved products here, then Meant lines them up against everything you care about."
       />
       {winner ? (
         <div className="mt-cmp-verdict">
@@ -2588,16 +2588,13 @@ function CompareView({
               key={product.id}
               index={index}
               product={product}
-              products={products}
-              selectedIds={selectedIds}
               canRemove={items.length > 1}
-              onPick={onPick}
               onRemove={onRemove}
               onOpen={(item) => onOpen(item, items)}
             />
           ))}
           {showAdd ? (
-            <CompareAddSlot products={products} selectedIds={selectedIds} onAdd={onAdd} />
+            <CompareAddSlot products={savedProducts} selectedIds={selectedIds} onAdd={onAdd} />
           ) : null}
         </div>
         {enough ? (
@@ -2701,6 +2698,10 @@ function CompareView({
           </div>
         )}
       </div>
+      <p className="mt-cmp-footnote">
+        Add products to Compare from a product detail page with Add to compare. Once a product is in compare,
+        In compare opens this page. The Add a saved product control only lists products you have saved.
+      </p>
     </main>
   )
 }
@@ -2748,23 +2749,16 @@ function CompareMark({
 function CompareSlot({
   index,
   product,
-  products,
-  selectedIds,
   canRemove,
-  onPick,
   onRemove,
   onOpen,
 }: Readonly<{
   index: number
   product: Product
-  products: readonly Product[]
-  selectedIds: readonly ProductId[]
   canRemove: boolean
-  onPick: (index: number, product: Product) => void
   onRemove: (index: number) => void
   onOpen: (product: Product) => void
 }>) {
-  const [open, setOpen] = useState(false)
   return (
     <div className="mt-cmp-col">
       <div className="mt-cmp-media">
@@ -2792,22 +2786,6 @@ function CompareSlot({
       </div>
       <div className="mt-mono mt-card-brand">{product.brand}</div>
       <div className="mt-cmp-name">{product.name}</div>
-      <div className="mt-cmp-picker">
-        <button className="mt-cmp-swap" type="button" onClick={() => setOpen((value) => !value)}>
-          Swap <span className={`mt-caret ${open ? 'up' : ''}`}>v</span>
-        </button>
-        {open ? (
-          <CompareMenu
-            products={products}
-            selectedIds={selectedIds}
-            currentId={product.id}
-            onChoose={(nextProduct) => {
-              onPick(index, nextProduct)
-              setOpen(false)
-            }}
-          />
-        ) : null}
-      </div>
     </div>
   )
 }
@@ -2826,13 +2804,13 @@ function CompareAddSlot({
     <div className="mt-cmp-col mt-cmp-col-empty">
       <div className="mt-cmp-picker">
         <button className="mt-cmp-choose" type="button" onClick={() => setOpen((value) => !value)}>
-          <span className="mt-cmp-plus">+</span> Add a product
+          <span className="mt-cmp-plus">+</span>
+          <span className="mt-cmp-choose-text">Add a saved product</span>
         </button>
         {open ? (
           <CompareMenu
             products={products}
             selectedIds={selectedIds}
-            currentId={null}
             onChoose={(product) => {
               onAdd(product)
               setOpen(false)
@@ -2847,23 +2825,22 @@ function CompareAddSlot({
 function CompareMenu({
   products,
   selectedIds,
-  currentId,
   onChoose,
 }: Readonly<{
   products: readonly Product[]
   selectedIds: readonly ProductId[]
-  currentId: ProductId | null
   onChoose: (product: Product) => void
 }>) {
-  const options = products.filter(
-    (product) => product.id === currentId || !selectedIds.includes(product.id),
-  )
+  const options = products.filter((product) => !selectedIds.includes(product.id))
   return (
     <div className="mt-cmp-menu">
+      {options.length === 0 ? (
+        <div className="mt-cmp-menu-empty">No saved products available to add.</div>
+      ) : null}
       {options.map((product) => (
         <button
           key={product.id}
-          className={`mt-cmp-opt ${product.id === currentId ? 'on' : ''}`}
+          className="mt-cmp-opt"
           type="button"
           onClick={() => onChoose(product)}
         >
@@ -4458,20 +4435,22 @@ export function MeantApp() {
     })
   }
 
-  const addToCompare = (product: Product) => {
+  const addProductToCompare = (product: Product) => {
     const current = [...compareIdsRef.current]
     const next = current.includes(product.id)
       ? current
       : current.length < 4 ? [...current, product.id] : [...current.slice(1), product.id]
 
     commitCompareProducts(next, product)
-    nav('compare')
   }
 
-  const pickCompareProduct = (index: number, product: Product) => {
-    const next = [...compareIdsRef.current]
-    next[index] = product.id
-    commitCompareProducts(next, product)
+  const handleProductCompare = (product: Product) => {
+    if (compareIdsRef.current.includes(product.id)) {
+      setActiveProduct(null)
+      nav('compare')
+      return
+    }
+    addProductToCompare(product)
   }
 
   const removeCompareProduct = (index: number) => {
@@ -4480,6 +4459,9 @@ export function MeantApp() {
   }
 
   const addCompareProduct = (product: Product) => {
+    if (!savedSet.has(product.id)) {
+      return
+    }
     const current = [...compareIdsRef.current]
     const next = current.includes(product.id) ? current : [...current, product.id].slice(0, 4)
     commitCompareProducts(next, product)
@@ -4850,10 +4832,10 @@ export function MeantApp() {
         return (
           <CompareView
             products={allKnownProducts}
+            savedProducts={savedListProducts}
             compareIds={compareIds}
             preferences={allPreferences}
             location={location}
-            onPick={pickCompareProduct}
             onRemove={removeCompareProduct}
             onAdd={addCompareProduct}
             onOpen={openProduct}
@@ -5020,7 +5002,7 @@ export function MeantApp() {
         inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
         onClose={() => setActiveProduct(null)}
         onToggleSave={toggleSave}
-        onCompare={addToCompare}
+        onCompare={handleProductCompare}
         onAddToCart={addProductOfferToCart}
         canPrev={canNavPrev}
         canNext={canNavNext}
