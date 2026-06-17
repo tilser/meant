@@ -138,7 +138,7 @@ public class UserController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserProductSearchResponse.from(userProductSearchService.search(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
-                new SearchUserProductsCommand(authenticatedUser.id(), request.query())));
+                new SearchUserProductsCommand(authenticatedUser.id(), request.query(), request.merchantId())));
     }
 
     private ParsedUserPreferenceFilters parseFilters(

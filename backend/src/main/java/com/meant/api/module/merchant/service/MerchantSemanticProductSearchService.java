@@ -38,6 +38,7 @@ public class MerchantSemanticProductSearchService {
     private final MerchantCatalogSearchClient merchantCatalogSearchClient;
     private final MerchantProductDetailsClient merchantProductDetailsClient;
     private final VoyageRerankClient voyageRerankClient;
+    private final MerchantLookupService merchantLookupService;
     private final MerchantCatalogSearchProperties merchantCatalogSearchProperties;
 
     public MerchantSemanticProductSearchResult search(@NotNull @Valid SemanticProductSearchQuery query) {
@@ -55,9 +56,7 @@ public class MerchantSemanticProductSearchService {
         );
         int productLimit = valueOrDefault(query.productLimit(), merchantCatalogSearchProperties.productLimit());
 
-        List<MerchantSemanticSearchResult> merchants = merchantSemanticSearchService.search(
-                new SemanticMerchantSearchQuery(query.query(), merchantCandidateLimit)
-        );
+        List<MerchantSemanticSearchResult> merchants = merchants(query, merchantCandidateLimit);
         List<MerchantSemanticSearchResult> topMerchants = merchants.stream()
                 .limit(merchantLimit)
                 .toList();
@@ -72,6 +71,13 @@ public class MerchantSemanticProductSearchService {
                 merchantAttempts,
                 rerankProducts(query.query(), productCandidates, productLimit)
         );
+    }
+
+    private List<MerchantSemanticSearchResult> merchants(SemanticProductSearchQuery query, int merchantCandidateLimit) {
+        if (query.merchantId() != null) {
+            return List.of(merchantLookupService.activeSearchResult(query.merchantId()));
+        }
+        return merchantSemanticSearchService.search(new SemanticMerchantSearchQuery(query.query(), merchantCandidateLimit));
     }
 
     private void searchMerchantCatalog(

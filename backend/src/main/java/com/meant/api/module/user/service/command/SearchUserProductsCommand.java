@@ -11,6 +11,8 @@ public record SearchUserProductsCommand(
 
         @NotBlank
         @Size(max = 500)
-        String query
+        String query,
+
+        UUID merchantId
 ) {
 }

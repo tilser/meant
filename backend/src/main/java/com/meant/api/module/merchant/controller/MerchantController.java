@@ -93,6 +93,7 @@ public class MerchantController {
                 merchantSemanticProductSearchService.search(
                         new SemanticProductSearchQuery(
                                 request.query(),
+                                request.merchantId(),
                                 request.merchantCandidateLimit(),
                                 request.merchantLimit(),
                                 request.productsPerMerchant(),

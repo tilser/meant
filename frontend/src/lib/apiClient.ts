@@ -188,6 +188,7 @@ export async function updateUserSettings(input: {
 
 export async function searchUserProducts(input: {
   query: string
+  merchantId?: string | null
 }): Promise<UserProductSearchProfile> {
   const response = await fetch(`${API_URL}/api/users/me/product-searches`, {
     method: 'POST',
@@ -195,7 +196,10 @@ export async function searchUserProducts(input: {
       ...(await authHeaders()),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ query: input.query }),
+    body: JSON.stringify({
+      query: input.query,
+      merchantId: input.merchantId ?? undefined,
+    }),
   })
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
 }
