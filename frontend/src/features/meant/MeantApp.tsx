@@ -1201,6 +1201,29 @@ function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes
 }
 
+function AskThinkingIndicator() {
+  return (
+    <span className="mt-msg-thinking" role="status" aria-label="Ask Meant is thinking">
+      <span aria-hidden="true" />
+      <span aria-hidden="true" />
+      <span aria-hidden="true" />
+    </span>
+  )
+}
+
+function renderAssistantMessageContent(message: Message): ReactNode {
+  if (message.pending && !message.text) {
+    return <AskThinkingIndicator />
+  }
+
+  return (
+    <>
+      {renderAssistantMarkdown(message.text, message.pending)}
+      {message.pending ? <span className="mt-msg-cursor" aria-hidden="true" /> : null}
+    </>
+  )
+}
+
 function AskThread({
   messages,
   onProductOpen,
@@ -1214,7 +1237,7 @@ function AskThread({
     if (endRef.current) {
       endRef.current.scrollTop = endRef.current.scrollHeight
     }
-  }, [messages.length])
+  }, [messages])
 
   if (messages.length === 0) {
     return null
@@ -1222,45 +1245,53 @@ function AskThread({
 
   return (
     <div className="mt-ask-thread" ref={endRef}>
-      {messages.map((message, index) => (
-        <div key={`${message.role}-${index}`} className={`mt-msg mt-msg-${message.role}`}>
-          {message.role === 'ai' ? (
-            <span className="mt-msg-av">
-              <SparkMark size={12} />
-            </span>
-          ) : null}
-          <div className="mt-msg-stack">
-            <div className="mt-msg-bubble">
-              {message.role === 'ai'
-                ? renderAssistantMarkdown(message.text, message.pending)
-                : message.text}
-            </div>
-            {message.products && message.products.length > 0 ? (
-              <div className="mt-msg-products">
-                {message.products.map((product) => (
-                  <button
-                    key={product.id}
-                    className="mt-msg-product"
-                    type="button"
-                    onClick={() => onProductOpen?.(product)}
-                    disabled={!onProductOpen}
-                  >
-                    <div className="mt-msg-product-media">
-                      <ProductArtwork product={product} label={product.category.toLowerCase()} />
-                    </div>
-                    <span className="mt-msg-product-main">
-                      <span className="mt-msg-product-name">{product.name}</span>
-                      <span className="mt-mono mt-msg-product-meta">
-                        {product.match}% · {money(product.priceFrom)}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
+      {messages.map((message, index) => {
+        const streaming = message.role === 'ai' && Boolean(message.pending)
+        return (
+          <div
+            key={`${message.role}-${index}`}
+            className={`mt-msg mt-msg-${message.role} ${streaming ? 'mt-msg-streaming' : ''}`}
+            style={{ '--mt-msg-index': index } as CSSProperties}
+          >
+            {message.role === 'ai' ? (
+              <span className="mt-msg-av">
+                <SparkMark size={12} />
+              </span>
             ) : null}
+            <div className="mt-msg-stack">
+              <div className={`mt-msg-bubble ${streaming ? 'mt-msg-bubble-streaming' : ''}`}>
+                {message.role === 'ai'
+                  ? renderAssistantMessageContent(message)
+                  : message.text}
+              </div>
+              {message.products && message.products.length > 0 ? (
+                <div className="mt-msg-products">
+                  {message.products.map((product, productIndex) => (
+                    <button
+                      key={product.id}
+                      className="mt-msg-product"
+                      type="button"
+                      onClick={() => onProductOpen?.(product)}
+                      disabled={!onProductOpen}
+                      style={{ '--mt-product-index': productIndex } as CSSProperties}
+                    >
+                      <div className="mt-msg-product-media">
+                        <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                      </div>
+                      <span className="mt-msg-product-main">
+                        <span className="mt-msg-product-name">{product.name}</span>
+                        <span className="mt-mono mt-msg-product-meta">
+                          {product.match}% · {money(product.priceFrom)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -1281,13 +1312,21 @@ function AskComposer({
   disabled?: boolean
 }>) {
   const [value, setValue] = useState('')
+  const [sentPulse, setSentPulse] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const sentPulseTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (autoFocus) {
       inputRef.current?.focus()
     }
   }, [autoFocus])
+
+  useEffect(() => () => {
+    if (sentPulseTimeoutRef.current !== null) {
+      window.clearTimeout(sentPulseTimeoutRef.current)
+    }
+  }, [])
 
   const send = (text?: string) => {
     if (disabled) {
@@ -1297,21 +1336,33 @@ function AskComposer({
     if (!question) {
       return
     }
+    setSentPulse(true)
+    if (sentPulseTimeoutRef.current !== null) {
+      window.clearTimeout(sentPulseTimeoutRef.current)
+    }
+    sentPulseTimeoutRef.current = window.setTimeout(() => {
+      setSentPulse(false)
+      sentPulseTimeoutRef.current = null
+    }, 520)
     setValue('')
     onAsk(question)
   }
 
+  const hasValue = value.trim().length > 0
+  const canSend = hasValue && !disabled
+
   return (
-    <div className="mt-ask-composer">
+    <div className={`mt-ask-composer ${disabled ? 'mt-ask-composer-disabled' : ''}`}>
       {showChips && suggestions.length > 0 ? (
         <div className="mt-ask-chips">
-          {suggestions.map((suggestion) => (
+          {suggestions.map((suggestion, index) => (
             <button
               key={suggestion}
               className="mt-ask-chip"
               type="button"
               onClick={() => send(suggestion)}
               disabled={disabled}
+              style={{ '--mt-chip-index': index } as CSSProperties}
             >
               {suggestion}
             </button>
@@ -1319,7 +1370,7 @@ function AskComposer({
         </div>
       ) : null}
       <form
-        className="mt-ask-bar"
+        className={`mt-ask-bar ${hasValue ? 'mt-ask-writing' : ''} ${sentPulse ? 'mt-ask-sent' : ''} ${disabled ? 'mt-ask-busy' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
           send()
@@ -1335,8 +1386,9 @@ function AskComposer({
           onChange={(event) => setValue(event.target.value)}
           placeholder={placeholder}
           disabled={disabled}
+          aria-label="Ask Meant message"
         />
-        <button type="submit" className="mt-ask-go" aria-label="Ask" disabled={disabled}>
+        <button type="submit" className="mt-ask-go" aria-label="Ask" disabled={!canSend}>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden>
             <path
               d="M3.5 9h11M9.5 4l5 5-5 5"
@@ -1665,9 +1717,14 @@ function FloatingAsk({
   }
 
   return (
-    <div className={`mt-fab-wrap ${open ? 'open' : ''} ${hidden ? 'mt-fab-wrap-hidden' : ''}`}>
+    <div className={`mt-fab-wrap ${open ? 'open' : ''} ${loading ? 'busy' : ''} ${hidden ? 'mt-fab-wrap-hidden' : ''}`}>
       {open ? (
-        <div className="mt-askpanel" role="dialog" aria-label="Ask Meant" style={panelStyle}>
+        <div
+          className={`mt-askpanel ${loading ? 'mt-askpanel-thinking' : ''}`}
+          role="dialog"
+          aria-label="Ask Meant"
+          style={panelStyle}
+        >
           <button
             className="mt-askpanel-resize"
             type="button"
@@ -1752,7 +1809,13 @@ function FloatingAsk({
           />
         </div>
       ) : null}
-      <button className="mt-fab" type="button" onClick={() => setOpen((current) => !current)}>
+      <button
+        className={`mt-fab ${loading ? 'mt-fab-busy' : ''}`}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-label={open ? 'Close Ask Meant' : 'Open Ask Meant'}
+        aria-expanded={open}
+      >
         {open ? <CloseIcon size={18} /> : <><SparkMark size={16} color="#fff" /> <span>Ask Meant</span></>}
       </button>
     </div>
