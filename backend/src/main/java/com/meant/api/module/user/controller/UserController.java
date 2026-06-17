@@ -1,20 +1,25 @@
 package com.meant.api.module.user.controller;
 
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
+import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
+import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
 import com.meant.api.module.user.service.UserProductSearchService;
+import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.UserService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.command.ParseUserPreferenceFiltersCommand;
+import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
+import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,14 +27,19 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -43,6 +53,7 @@ public class UserController {
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
     private final UserProductSearchService userProductSearchService;
+    private final UserSavedProductService userSavedProductService;
 
     @GetMapping("/me")
     @Operation(
@@ -139,6 +150,63 @@ public class UserController {
         return UserProductSearchResponse.from(userProductSearchService.search(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 new SearchUserProductsCommand(authenticatedUser.id(), request.query())));
+    }
+
+    @GetMapping("/me/saved-products")
+    @Operation(
+            summary = "List saved products",
+            description = "Returns the current user's saved product snapshots."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Saved products for the current user",
+            content = @Content(schema = @Schema(implementation = UserSavedProductResponse.class))
+    )
+    public List<UserSavedProductResponse> savedProducts(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return userSavedProductService.list(
+                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        new ListSavedProductsQuery(authenticatedUser.id()))
+                .stream()
+                .map(UserSavedProductResponse::from)
+                .toList();
+    }
+
+    @PostMapping("/me/saved-products")
+    @Operation(
+            summary = "Save a product",
+            description = "Adds or refreshes a product snapshot in the current user's saved products."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Saved product snapshot",
+            content = @Content(schema = @Schema(implementation = UserSavedProductResponse.class))
+    )
+    public UserSavedProductResponse saveProduct(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody SaveUserProductRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserSavedProductResponse.from(userSavedProductService.save(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toSaveUserProductCommand(authenticatedUser.id(), request)));
+    }
+
+    @DeleteMapping("/me/saved-products")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+            summary = "Remove a saved product",
+            description = "Removes a product from the current user's saved products."
+    )
+    @ApiResponse(responseCode = "204", description = "Saved product removed")
+    public void removeSavedProduct(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam String productKey
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        userSavedProductService.remove(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new RemoveSavedProductCommand(authenticatedUser.id(), productKey));
     }
 
     private ParsedUserPreferenceFilters parseFilters(

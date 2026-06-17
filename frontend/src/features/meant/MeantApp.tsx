@@ -18,7 +18,6 @@ import {
   DEFAULT_COMPARE,
   DEFAULT_ORDERS,
   DEFAULT_PREFERENCE_IDS,
-  DEFAULT_SAVED_IDS,
   DEFAULT_USER,
   LOCATIONS,
   PREFERENCES,
@@ -32,11 +31,16 @@ import {
   getCartCheckout,
   getCurrentUser,
   getMerchants,
+  getSavedProducts,
   getUserSettings,
+  removeSavedProduct,
+  saveUserProduct,
   searchUserProducts,
+  type SaveUserProductInput,
   type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
+  type UserSavedProductProfile,
   updateCart,
   type UserProductSearchProductProfile,
   updateProfile,
@@ -98,7 +102,7 @@ interface ProductOpenProps {
 
 interface ProductSaveProps {
   savedSet: ReadonlySet<ProductId>
-  onToggleSave: (id: ProductId) => void
+  onToggleSave: (product: Product) => void
 }
 
 const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> =
@@ -283,6 +287,7 @@ function productFromSearchResult(
   const detail = stripHtml(product.detailDescription || product.descriptionHtml)
   return {
     id: product.productKey,
+    productHash: product.productHash,
     name: product.title,
     brand,
     category: searchProductCategory(product, preferences),
@@ -322,6 +327,75 @@ function productFromSearchResult(
       },
     ],
   }
+}
+
+function savedProductFromProfile(product: UserSavedProductProfile): Product {
+  return {
+    id: product.id,
+    productHash: product.productHash,
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    tone: product.tone,
+    imageUrl: product.imageUrl,
+    productUrl: product.productUrl,
+    remote: product.remote,
+    match: product.match,
+    priceFrom: product.priceFrom,
+    merchants: product.merchants,
+    satisfies: product.satisfies,
+    misses: product.misses,
+    note: product.note,
+    pros: product.pros,
+    cons: product.cons,
+    review: product.review,
+    offers: product.offers,
+    needs: product.needs ? product.needs as Product['needs'] : undefined,
+    provides: product.provides.length > 0 ? product.provides as Product['provides'] : undefined,
+  }
+}
+
+function savedProductInput(product: Product): SaveUserProductInput {
+  return {
+    id: product.id,
+    productHash: product.productHash ?? null,
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    tone: product.tone,
+    imageUrl: product.imageUrl ?? null,
+    productUrl: product.productUrl ?? null,
+    remote: product.remote ?? false,
+    match: product.match,
+    priceFrom: product.priceFrom,
+    merchants: product.merchants,
+    satisfies: [...product.satisfies],
+    misses: [...product.misses],
+    note: product.note,
+    pros: [...product.pros],
+    cons: [...product.cons],
+    review: product.review,
+    offers: product.offers.map((offer) => ({
+      merchant: offer.merchant,
+      price: offer.price,
+      delivery: offer.delivery,
+      merchantId: offer.merchantId ?? null,
+      merchantDomain: offer.merchantDomain ?? null,
+      productVariantId: offer.productVariantId ?? null,
+      variantTitle: offer.variantTitle ?? null,
+      available: offer.available ?? null,
+    })),
+    needs: product.needs ?? null,
+    provides: product.provides ? [...product.provides] : [],
+  }
+}
+
+function upsertProductSnapshot(products: Product[], product: Product): Product[] {
+  const existingIndex = products.findIndex((candidate) => candidate.id === product.id)
+  if (existingIndex < 0) {
+    return [product, ...products]
+  }
+  return products.map((candidate, index) => index === existingIndex ? product : candidate)
 }
 
 function normalizedMerchantName(value: string | null | undefined): string {
@@ -911,7 +985,7 @@ function ProductCard({
           aria-label={savedSet.has(product.id) ? 'Remove from saved' : 'Save'}
           onClick={(event) => {
             event.stopPropagation()
-            onToggleSave(product.id)
+            onToggleSave(product)
           }}
         >
           <HeartIcon filled={savedSet.has(product.id)} />
@@ -1452,7 +1526,7 @@ function ProductModal({
   saved: boolean
   inCompare: boolean
   onClose: () => void
-  onToggleSave: (id: ProductId) => void
+  onToggleSave: (product: Product) => void
   onCompare: (id: ProductId) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   canPrev: boolean
@@ -1662,7 +1736,7 @@ function ProductModal({
               <button
                 className={`mt-act mt-act-icon ${saved ? 'on' : ''}`}
                 type="button"
-                onClick={() => onToggleSave(product.id)}
+                onClick={() => onToggleSave(product)}
                 aria-label={saved ? 'Saved' : 'Save'}
               >
                 <HeartIcon filled={saved} />
@@ -2156,7 +2230,7 @@ function SavedView({
         title="Saved"
         sub={
           products.length > 0
-            ? "Everything you've kept, still filtered to the preferences that matter to you."
+            ? "Everything you've kept waits here, even after the search moves on."
             : undefined
         }
       />
@@ -3702,7 +3776,8 @@ export function MeantApp() {
   const [onlyMeantOnMerchant, setOnlyMeantOnMerchant] = useState(false)
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
-  const [savedIds, setSavedIds] = useStoredState<ProductId[]>('meant.saved', [...DEFAULT_SAVED_IDS])
+  const [savedIds, setSavedIds] = useState<ProductId[]>([])
+  const [savedProducts, setSavedProducts] = useState<Product[]>([])
   const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
   const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
@@ -3726,14 +3801,20 @@ export function MeantApp() {
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
   const allKnownProducts = useMemo(() => {
     const seen = new Set<ProductId>()
-    return [...searchResults, ...remoteProducts, ...PRODUCTS].filter((product) => {
+    return [...searchResults, ...remoteProducts, ...savedProducts, ...PRODUCTS].filter((product) => {
       if (seen.has(product.id)) {
         return false
       }
       seen.add(product.id)
       return true
     })
-  }, [remoteProducts, searchResults])
+  }, [remoteProducts, savedProducts, searchResults])
+  const savedListProducts = useMemo(
+    () => savedIds
+      .map((id) => allKnownProducts.find((product) => product.id === id))
+      .filter((product): product is Product => Boolean(product)),
+    [allKnownProducts, savedIds],
+  )
   const shippableProducts = useMemo(() => productsForLocation(PRODUCTS, location), [location])
   const visibleProducts = productsForPreferences(shippableProducts, activePreferences)
 
@@ -3885,6 +3966,18 @@ export function MeantApp() {
         if (!active) return
         setAvailablePrefs([...PREFERENCES])
       })
+    getSavedProducts()
+      .then((products) => {
+        if (!active) return
+        const snapshots = products.map(savedProductFromProfile)
+        setSavedProducts(snapshots)
+        setSavedIds(snapshots.map((product) => product.id))
+      })
+      .catch(() => {
+        if (!active) return
+        setSavedProducts([])
+        setSavedIds([])
+      })
     return () => {
       active = false
     }
@@ -3902,6 +3995,8 @@ export function MeantApp() {
     setSearchLoading(false)
     setSelectedMerchantId(null)
     setOnlyMeantOnMerchant(false)
+    setSavedIds([])
+    setSavedProducts([])
   }
 
   const nav = (next: View) => {
@@ -3914,10 +4009,30 @@ export function MeantApp() {
     window.scrollTo({ top: 0 })
   }
 
-  const toggleSave = (id: ProductId) => {
-    setSavedIds((current) =>
-      current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id],
-    )
+  const toggleSave = (product: Product) => {
+    const wasSaved = savedSet.has(product.id)
+    if (wasSaved) {
+      setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
+      setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
+      void removeSavedProduct(product.id).catch(() => {
+        setSavedProducts((current) => upsertProductSnapshot(current, product))
+        setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
+      })
+      return
+    }
+
+    setSavedProducts((current) => upsertProductSnapshot(current, product))
+    setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
+    void saveUserProduct(savedProductInput(product))
+      .then((savedProduct) => {
+        const snapshot = savedProductFromProfile(savedProduct)
+        setSavedProducts((current) => upsertProductSnapshot(current, snapshot))
+        setSavedIds((current) => current.includes(snapshot.id) ? current : [snapshot.id, ...current])
+      })
+      .catch(() => {
+        setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
+        setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
+      })
   }
 
   const addToCompare = (id: ProductId) => {
@@ -4275,12 +4390,12 @@ export function MeantApp() {
       case 'saved':
         return (
           <SavedView
-            products={visibleProducts.filter((product) => savedSet.has(product.id))}
+            products={savedListProducts}
             location={location}
             preferences={allPreferences}
             savedSet={savedSet}
             onOpen={(product) =>
-              openProduct(product, visibleProducts.filter((candidate) => savedSet.has(candidate.id)))
+              openProduct(product, savedListProducts)
             }
             onToggleSave={toggleSave}
           />

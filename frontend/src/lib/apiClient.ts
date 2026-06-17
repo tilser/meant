@@ -83,6 +83,51 @@ export interface UserProductSearchProfile {
   products: UserProductSearchProductProfile[]
 }
 
+export interface UserSavedProductOfferProfile {
+  merchant: string
+  price: number
+  delivery: string
+  merchantId: string | null
+  merchantDomain: string | null
+  productVariantId: string | null
+  variantTitle: string | null
+  available: boolean | null
+}
+
+export interface UserSavedProductReviewProfile {
+  score: number
+  count: number
+  insight: string
+}
+
+export interface UserSavedProductProfile {
+  id: string
+  productHash: string | null
+  name: string
+  brand: string
+  category: string
+  tone: string
+  imageUrl: string | null
+  productUrl: string | null
+  remote: boolean
+  match: number
+  priceFrom: number
+  merchants: number
+  satisfies: string[]
+  misses: string[]
+  note: string
+  pros: string[]
+  cons: string[]
+  review: UserSavedProductReviewProfile
+  offers: UserSavedProductOfferProfile[]
+  needs: string | null
+  provides: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type SaveUserProductInput = Omit<UserSavedProductProfile, 'createdAt' | 'updatedAt'>
+
 export interface MerchantProfile {
   id: string
   domain: string
@@ -198,6 +243,36 @@ export async function searchUserProducts(input: {
     body: JSON.stringify({ query: input.query }),
   })
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
+}
+
+export async function getSavedProducts(): Promise<UserSavedProductProfile[]> {
+  const response = await fetch(`${API_URL}/api/users/me/saved-products`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserSavedProductProfile[]>(response, 'Failed to load saved products')
+}
+
+export async function saveUserProduct(input: SaveUserProductInput): Promise<UserSavedProductProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/saved-products`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+  return parseJsonResponse<UserSavedProductProfile>(response, 'Failed to save product')
+}
+
+export async function removeSavedProduct(productKey: string): Promise<void> {
+  const search = new URLSearchParams({ productKey })
+  const response = await fetch(`${API_URL}/api/users/me/saved-products?${search.toString()}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to remove saved product')
+  }
 }
 
 export async function createCart(input: {

@@ -2,6 +2,8 @@ package com.meant.api.module.user.controller.mapper;
 
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
+import com.meant.api.module.user.controller.request.SaveUserProductRequest;
+import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
@@ -50,5 +52,44 @@ public final class UserCommandMapper {
                 request.filterIds() == null ? null : new LinkedHashSet<>(request.filterIds()),
                 parsedFilters == null ? Set.of() : new LinkedHashSet<>(parsedFilters.filterIds()),
                 parsedFilters == null ? List.of() : parsedFilters.unmappedPreferences());
+    }
+
+    public static SaveUserProductCommand toSaveUserProductCommand(UUID userId, SaveUserProductRequest request) {
+        return new SaveUserProductCommand(
+                userId,
+                request.id(),
+                request.productHash(),
+                request.name(),
+                request.brand(),
+                request.category(),
+                request.tone(),
+                request.imageUrl(),
+                request.productUrl(),
+                request.remote(),
+                request.match(),
+                request.priceFrom(),
+                request.merchants(),
+                request.satisfies(),
+                request.misses(),
+                request.note(),
+                request.pros(),
+                request.cons(),
+                new SaveUserProductCommand.Review(
+                        request.review().score(),
+                        request.review().count(),
+                        request.review().insight()),
+                request.offers().stream()
+                        .map(offer -> new SaveUserProductCommand.Offer(
+                                offer.merchant(),
+                                offer.price(),
+                                offer.delivery(),
+                                offer.merchantId(),
+                                offer.merchantDomain(),
+                                offer.productVariantId(),
+                                offer.variantTitle(),
+                                offer.available()))
+                        .toList(),
+                request.needs(),
+                request.provides());
     }
 }
