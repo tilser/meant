@@ -2544,8 +2544,9 @@ function CompareView({
   const selectedIds = items.map((product) => product.id)
   const showAdd = items.length < 4
   const enough = items.length >= 2
+  const compareColumnCount = items.length + (showAdd ? 1 : 0)
   const gridStyle = {
-    gridTemplateColumns: `190px repeat(${items.length + (showAdd ? 1 : 0)}, minmax(0, 1fr))`,
+    gridTemplateColumns: `180px repeat(${compareColumnCount}, minmax(180px, 240px))`,
   }
   const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
   const bestPrice = enough ? Math.min(...items.map((product) => productPriceFrom(product, location))) : null
@@ -2588,7 +2589,7 @@ function CompareView({
               key={product.id}
               index={index}
               product={product}
-              canRemove={items.length > 1}
+              canRemove
               onRemove={onRemove}
               onOpen={(item) => onOpen(item, items)}
             />

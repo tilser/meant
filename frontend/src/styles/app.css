@@ -1413,7 +1413,7 @@ button {
 
 .mt-cmp-grid {
   display: grid;
-  min-width: 760px;
+  min-width: max-content;
 }
 
 .mt-cmp-headrow {
@@ -1475,18 +1475,18 @@ button {
 
 .mt-cmp-col-empty {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  min-height: 260px;
+  min-height: 220px;
   background: color-mix(in srgb, var(--line-soft) 56%, transparent);
 }
 
 .mt-cmp-media {
   position: relative;
   overflow: hidden;
+  height: clamp(132px, 12vw, 168px);
   margin-bottom: 14px;
   border-radius: 14px;
-  aspect-ratio: 4 / 3;
   background: var(--line-soft);
 }
 
@@ -1553,6 +1553,7 @@ button {
 
 .mt-cmp-picker {
   position: relative;
+  width: 100%;
 }
 
 .mt-cmp-choose {
@@ -1597,17 +1598,14 @@ button {
 }
 
 .mt-cmp-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 25;
-  width: min(320px, calc(100vw - 64px));
-  max-height: 330px;
+  width: 100%;
+  max-height: 260px;
   overflow-y: auto;
+  margin-top: 8px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 24px 60px -22px rgba(18, 20, 24, 0.42);
+  box-shadow: 0 16px 34px -28px rgba(18, 20, 24, 0.44);
   padding: 6px;
 }
 
@@ -1754,7 +1752,7 @@ button {
 }
 
 .mt-cmp-hint-row {
-  min-width: 760px;
+  min-width: max-content;
   padding: 26px 24px;
   color: var(--muted);
   font-size: 14px;
@@ -4333,14 +4331,7 @@ button {
   }
 
   .mt-cmp-menu {
-    position: fixed;
-    right: 14px;
-    left: 14px;
-    top: auto;
-    bottom: 16px;
-    width: auto;
-    max-height: 60vh;
-    overflow-y: auto;
+    max-height: 240px;
   }
 
   .mt-pref-row {
