@@ -39,6 +39,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -192,8 +193,7 @@ public class UserAssistantChatService {
     }
 
     private List<UserAssistantMessageResult> restoreMessages(UUID conversationId, UUID userId) {
-        List<UserAssistantMessage> messages = messageRepository
-                .findTop50ByConversationIdAndUserIdOrderByCreatedAtDesc(conversationId, userId);
+        List<UserAssistantMessage> messages = recentMessages(conversationId, userId, RESTORE_HISTORY_LIMIT);
         Collections.reverse(messages);
         return messages.stream()
                 .limit(RESTORE_HISTORY_LIMIT)
@@ -207,10 +207,17 @@ public class UserAssistantChatService {
     }
 
     private List<UserAssistantMessage> promptHistory(UUID conversationId, UUID userId) {
-        List<UserAssistantMessage> messages = messageRepository
-                .findTop12ByConversationIdAndUserIdOrderByCreatedAtDesc(conversationId, userId);
+        List<UserAssistantMessage> messages = recentMessages(conversationId, userId, PROMPT_HISTORY_LIMIT);
         Collections.reverse(messages);
         return messages.stream().limit(PROMPT_HISTORY_LIMIT).toList();
+    }
+
+    private List<UserAssistantMessage> recentMessages(UUID conversationId, UUID userId, int limit) {
+        return messageRepository.findByConversationIdAndUserIdOrderByCreatedAtDesc(
+                conversationId,
+                userId,
+                PageRequest.of(0, limit)
+        );
     }
 
     private AssistantRoute route(

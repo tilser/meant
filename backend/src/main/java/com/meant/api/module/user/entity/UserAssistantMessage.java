@@ -6,7 +6,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -14,6 +17,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.data.domain.Persistable;
 
 @Entity
 @Getter
@@ -21,7 +25,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "user_assistant_messages")
-public class UserAssistantMessage {
+public class UserAssistantMessage implements Persistable<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -49,6 +53,10 @@ public class UserAssistantMessage {
     @Column(nullable = false)
     private Instant createdAt;
 
+    @Transient
+    @Builder.Default
+    private boolean isNew = true;
+
     public static UserAssistantMessage create(
             UUID conversationId,
             UUID userId,
@@ -70,5 +78,16 @@ public class UserAssistantMessage {
                 .productsJson(productsJson)
                 .createdAt(now)
                 .build();
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostLoad
+    @PostPersist
+    void markNotNew() {
+        this.isNew = false;
     }
 }

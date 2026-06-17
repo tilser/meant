@@ -8,9 +8,6 @@ import com.meant.api.common.service.dto.OpenRouterChatResponse;
 import com.meant.api.common.service.dto.OpenRouterJsonSchema;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.common.service.dto.OpenRouterResponseFormat;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -23,6 +20,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -165,7 +165,7 @@ public class OpenRouterChatClient {
             }
             JsonNode content = choices.get(0).path("delta").path("content");
             return content.isTextual() ? content.asText() : "";
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new OpenRouterException("OpenRouter returned invalid stream JSON", exception);
         }
     }

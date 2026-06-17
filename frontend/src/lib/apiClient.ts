@@ -402,7 +402,7 @@ export async function streamAssistantMessage(
       break
     }
     buffer += decoder.decode(value, { stream: true })
-    const events = buffer.split(/\n\n/)
+    const events = buffer.split(/\r?\n\r?\n/)
     buffer = events.pop() ?? ''
     events.forEach((rawEvent) => handleAssistantStreamEvent(rawEvent, handlers))
   }
