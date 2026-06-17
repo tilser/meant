@@ -52,6 +52,7 @@ export interface ReviewSummary {
 
 export interface Product {
   id: ProductId
+  productHash?: string | null
   name: string
   brand: string
   category: string

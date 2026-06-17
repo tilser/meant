@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.module.user.controller.response.UserResponse;
+import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
@@ -197,6 +198,102 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body.location().code()).isEqualTo("US");
         assertThat(body.filters()).extracting("id")
                 .containsExactly("organic", "gluten-free", "fast-shipping");
+    }
+
+    @Test
+    void savedProductsCanBeSavedListedAndRemoved() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String productKey = "shop.example:gid://shopify/Product/123";
+
+        UserSavedProductResponse saved = client.post().uri("/api/users/me/saved-products")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, "Ada Lovelace"));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "id": "shop.example:gid://shopify/Product/123",
+                          "productHash": "hash-1",
+                          "name": "Saved Cereal",
+                          "brand": "Wholegrain Co.",
+                          "category": "Groceries",
+                          "tone": "#e9ede8",
+                          "imageUrl": "https://example.com/cereal.png",
+                          "productUrl": "https://shop.example/products/cereal",
+                          "remote": true,
+                          "match": 96,
+                          "priceFrom": 7.4,
+                          "merchants": 1,
+                          "satisfies": ["organic", "low-sugar"],
+                          "misses": [],
+                          "note": "Organic and low sugar.",
+                          "pros": ["No refined sugar"],
+                          "cons": ["Pricier than own-brand"],
+                          "review": {
+                            "score": 4.8,
+                            "count": 2140,
+                            "insight": "Reviewers consistently repurchase."
+                          },
+                          "offers": [
+                            {
+                              "merchant": "Whole Foods",
+                              "price": 7.4,
+                              "delivery": "Tomorrow",
+                              "merchantId": "merchant-1",
+                              "merchantDomain": "shop.example",
+                              "productVariantId": "variant-1",
+                              "variantTitle": "Default",
+                              "available": true
+                            }
+                          ],
+                          "needs": null,
+                          "provides": []
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSavedProductResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(saved).isNotNull();
+        assertThat(saved.id()).isEqualTo(productKey);
+        assertThat(saved.offers()).singleElement()
+                .extracting(UserSavedProductResponse.Offer::merchant)
+                .isEqualTo("Whole Foods");
+
+        UserSavedProductResponse[] listed = client.get().uri("/api/users/me/saved-products")
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSavedProductResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(listed).isNotNull();
+        assertThat(listed).singleElement()
+                .extracting(UserSavedProductResponse::id)
+                .isEqualTo(productKey);
+
+        client.delete()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/saved-products")
+                        .queryParam("productKey", productKey)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        UserSavedProductResponse[] afterDelete = client.get().uri("/api/users/me/saved-products")
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSavedProductResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(afterDelete).isEmpty();
     }
 
     @Test
