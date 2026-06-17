@@ -3,13 +3,28 @@ package com.meant.api.module.user.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.common.properties.OpenRouterProperties;
+import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
+import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
+import com.meant.api.module.user.entity.UserProductSearch;
+import com.meant.api.module.user.entity.UserProductSearchResultItem;
+import com.meant.api.module.user.properties.UserProductSearchProperties;
+import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
+import com.meant.api.module.user.repository.UserProductSearchRepository;
+import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.UserProductSearchHashService;
+import com.meant.api.module.user.service.UserSettingsService;
+import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +55,27 @@ class UserControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private UserSettingsService userSettingsService;
+
+    @Autowired
+    private UserProductSearchHashService userProductSearchHashService;
+
+    @Autowired
+    private UserProductSearchRepository userProductSearchRepository;
+
+    @Autowired
+    private UserProductSearchResultItemRepository userProductSearchResultItemRepository;
+
+    @Autowired
+    private UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
+
+    @Autowired
+    private UserProductSearchProperties userProductSearchProperties;
+
+    @Autowired
+    private OpenRouterProperties openRouterProperties;
 
     private RestTestClient client;
 
@@ -276,6 +312,20 @@ class UserControllerIT extends PostgresIntegrationTest {
                 .extracting(UserSavedProductResponse::id)
                 .isEqualTo(productKey);
 
+        UserProductDiscoveryResponse discovery = client.get().uri("/api/users/me/product-discovery")
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductDiscoveryResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(discovery).isNotNull();
+        assertThat(discovery.savedProducts()).singleElement()
+                .extracting(UserSavedProductResponse::id)
+                .isEqualTo(productKey);
+        assertThat(discovery.recentProducts()).isEmpty();
+
         client.delete()
                 .uri(uriBuilder -> uriBuilder
                         .path("/api/users/me/saved-products")
@@ -297,9 +347,110 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void productDiscoveryReturnsRecentSearchProductsFromUserCache() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        String profileHash = userProductSearchHashService.profileHash(settings);
+        Instant now = Instant.now();
+        String productKey = "merchant.example:tee";
+        String productHash = "hash-tee";
+
+        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
+                id,
+                "cotton tee",
+                "cotton tee",
+                profileHash,
+                userProductSearchProperties.searchVersion(),
+                now,
+                now.plusSeconds(3600)
+        ));
+        userProductSearchResultItemRepository.save(UserProductSearchResultItem.from(
+                search.getId(),
+                productKey,
+                productHash,
+                recentSearchProduct(),
+                now
+        ));
+        userProductRecommendationExplanationRepository.save(UserProductRecommendationExplanation.create(
+                id,
+                "cotton tee",
+                profileHash,
+                productKey,
+                productHash,
+                openRouterProperties.models().productRecommendationExplainer(),
+                userProductSearchProperties.explanationPromptVersion(),
+                "Organic cotton and no polyester match your profile.",
+                now
+        ));
+
+        UserProductDiscoveryResponse discovery = client.get().uri("/api/users/me/product-discovery")
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductDiscoveryResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(discovery).isNotNull();
+        assertThat(discovery.savedProducts()).isEmpty();
+        assertThat(discovery.recentProducts()).singleElement()
+                .satisfies(product -> {
+                    assertThat(product.productKey()).isEqualTo(productKey);
+                    assertThat(product.title()).isEqualTo("Organic Cotton Tee");
+                    assertThat(product.whyMeantForYou()).isEqualTo(
+                            "Organic cotton and no polyester match your profile.");
+                });
+    }
+
+    @Test
     void publicHealthEndpointStaysOpen() {
         client.get().uri("/actuator/health")
                 .exchange()
                 .expectStatus().isOk();
+    }
+
+    private static MerchantSemanticProductResult recentSearchProduct() {
+        return new MerchantSemanticProductResult(
+                UUID.randomUUID(),
+                "merchant.example",
+                "Merchant",
+                "https://merchant.example/mcp",
+                1,
+                0.9d,
+                0.8d,
+                "tee",
+                "Organic Cotton Tee",
+                "<p>Organic cotton tee with no polyester.</p>",
+                "https://merchant.example/products/tee",
+                "https://merchant.example/tee.jpg",
+                3800L,
+                3800L,
+                "USD",
+                true,
+                null,
+                "Organic cotton tee with no polyester.",
+                "https://merchant.example/tee.jpg",
+                List.of(),
+                List.of(),
+                "38.00",
+                "38.00",
+                "USD",
+                1,
+                false,
+                List.of(),
+                "variant-1",
+                "Default",
+                List.of(),
+                "38.00",
+                "USD",
+                "https://merchant.example/tee.jpg",
+                "Tee",
+                true,
+                1,
+                0.92d,
+                1
+        );
     }
 }

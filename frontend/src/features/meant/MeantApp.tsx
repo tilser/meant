@@ -31,7 +31,7 @@ import {
   getCartCheckout,
   getCurrentUser,
   getMerchants,
-  getSavedProducts,
+  getProductDiscovery,
   getUserSettings,
   removeSavedProduct,
   saveUserProduct,
@@ -77,7 +77,6 @@ import {
   prefLabel,
   productMerchantCount,
   productPriceFrom,
-  productsForPreferences,
   productsForLocation,
   readStorage,
   resolveAsk,
@@ -141,6 +140,45 @@ const askContexts: Readonly<Record<View, { label: string; suggestions: readonly 
       suggestions: ['Where are my saved items?', 'How do I change preferences?'],
     },
   }
+
+interface StarterSearch {
+  label: string
+  detail: string
+  query: string
+}
+
+const STARTER_SEARCHES: readonly StarterSearch[] = [
+  {
+    label: 'Healthy breakfast',
+    detail: 'Low sugar, high protein, organic options',
+    query: 'healthy breakfast cereal with low sugar and high protein',
+  },
+  {
+    label: 'Cotton basics',
+    detail: 'Natural materials, no polyester, under $50',
+    query: 'organic cotton T-shirt under $50 with no polyester',
+  },
+  {
+    label: 'Home upgrades',
+    detail: 'Quiet, durable, easy to clean',
+    query: 'quiet durable home products that are easy to clean',
+  },
+  {
+    label: 'Travel tech',
+    detail: 'Compact USB-C gear for a carry-on',
+    query: 'compact USB-C travel tech accessories',
+  },
+  {
+    label: 'Sensitive skin',
+    detail: 'Fragrance-free personal care',
+    query: 'fragrance-free personal care for sensitive skin',
+  },
+  {
+    label: 'Gift under $50',
+    detail: 'Strong reviews and easy returns',
+    query: 'highly rated gift under $50 with easy returns',
+  },
+]
 
 const DEFAULT_GREETING = 'Good afternoon'
 
@@ -570,13 +608,17 @@ function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
   )
 }
 
-function ProductSearchLoading() {
+function ProductSearchLoading({
+  label = 'Searching products across stores',
+}: Readonly<{
+  label?: string
+}>) {
   return (
     <div
       className="mt-search-state mt-search-state-loading"
       role="status"
       aria-live="polite"
-      aria-label="Searching products across stores"
+      aria-label={label}
     >
       <div className="mt-search-loader" aria-hidden="true">
         <span className="mt-search-loader-spark"><SparkMark size={14} /></span>
@@ -585,7 +627,7 @@ function ProductSearchLoading() {
         <span className="mt-search-loader-dot" />
       </div>
       <span className="mt-search-loading-text">
-        Searching products across stores
+        {label}
         <span className="mt-search-loading-dots" aria-hidden="true">
           <span>.</span><span>.</span><span>.</span>
         </span>
@@ -1139,7 +1181,7 @@ function ChatHero({
         Everything here is <em>meant</em> for you.
       </h1>
       <p className="mt-hero-sub">
-        Ask for anything across every store. Meant already knows you prefer{' '}
+        Ask for products across supported merchants. Meant already knows you prefer{' '}
         {profile.summary}
       </p>
       <form
@@ -1358,10 +1400,58 @@ function MerchantScope({
       {selectedMerchant ? (
         <button className="mt-scope-cta" type="button" aria-disabled="true">
           <SparkMark size={15} color="currentColor" />
-          {`Find everything meant for me on ${selectedMerchant.name}`}
+          {`Searches scoped to ${selectedMerchant.name}`}
         </button>
       ) : null}
     </div>
+  )
+}
+
+function StarterSearchPanel({
+  searches,
+  loading,
+  compact,
+  onSubmit,
+}: Readonly<{
+  searches: readonly StarterSearch[]
+  loading: boolean
+  compact: boolean
+  onSubmit: (query: string) => void
+}>) {
+  return (
+    <section className={`mt-starters${compact ? ' compact' : ''}`} aria-label="Starter searches">
+      <div className="mt-starters-head">
+        <h2 className="mt-starters-title">Start with an occasion</h2>
+        <span className="mt-mono mt-starters-note">Searches run across supported merchants</span>
+      </div>
+      <div className="mt-starters-grid">
+        {searches.map((search) => (
+          <button
+            key={search.query}
+            className="mt-starter-card"
+            type="button"
+            onClick={() => onSubmit(search.query)}
+            disabled={loading}
+          >
+            <span className="mt-starter-main">
+              <span className="mt-starter-label">{search.label}</span>
+              <span className="mt-starter-detail">{search.detail}</span>
+            </span>
+            <span className="mt-starter-arrow" aria-hidden>
+              <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M3.5 9h10M9.5 5l4 4-4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1370,6 +1460,8 @@ function FeedView({
   greeting,
   products,
   hiddenByShip,
+  discoveryLoading,
+  discoveryError,
   location,
   reply,
   query,
@@ -1394,6 +1486,8 @@ function FeedView({
   greeting: string
   products: readonly Product[]
   hiddenByShip: number
+  discoveryLoading: boolean
+  discoveryError: string | null
   location: UserLocation | null
   reply: string | null
   query: string
@@ -1411,9 +1505,20 @@ function FeedView({
   onMerchant: (merchant: MerchantProfile | null) => void
 } & ProductOpenProps & ProductSaveProps>) {
   const merchantName = selectedMerchant?.name
+  const searchActive = Boolean(query || loading || error)
+  const preSearch = !searchActive
   const title = query
     ? merchantName ? `Your matches on ${merchantName}` : 'Your matches'
-    : merchantName ? `Meant for you on ${merchantName}` : 'Meant for you'
+    : merchantName ? `Your context on ${merchantName}` : 'Your saved and recent products'
+  const count = loading
+    ? 'Searching stores'
+    : preSearch
+      ? discoveryLoading
+        ? 'Loading your context'
+        : `${products.length} from your context`
+      : merchantName
+        ? `${products.length} on ${merchantName}`
+        : `${products.length} shown · sorted by match`
 
   return (
     <main className="mt-feed">
@@ -1450,15 +1555,22 @@ function FeedView({
           {error}
         </div>
       ) : null}
+      {preSearch ? (
+        <StarterSearchPanel
+          searches={STARTER_SEARCHES}
+          loading={loading}
+          compact={products.length > 0 || discoveryLoading}
+          onSubmit={onSubmit}
+        />
+      ) : null}
+      {preSearch && discoveryError ? (
+        <div className="mt-search-state mt-search-state-error">
+          {discoveryError}
+        </div>
+      ) : null}
       <div className="mt-feed-head">
         <h2 className="mt-feed-title">{title}</h2>
-        <span className="mt-mono mt-feed-count">
-          {loading
-            ? 'Searching stores'
-            : merchantName
-              ? `${products.length} on ${merchantName}`
-              : `${products.length} shown · sorted by match`}
-        </span>
+        <span className="mt-mono mt-feed-count">{count}</span>
       </div>
       {location ? (
         <div className="mt-ship-strip">
@@ -1473,8 +1585,10 @@ function FeedView({
           ) : null}
         </div>
       ) : null}
-      {loading ? (
-        <ProductSearchLoading />
+      {loading || (preSearch && discoveryLoading && products.length === 0) ? (
+        <ProductSearchLoading
+          label={loading ? undefined : 'Loading your saved and recent products'}
+        />
       ) : products.length > 0 ? (
         <div className="mt-grid">
           {products.map((product, index) => (
@@ -1494,9 +1608,13 @@ function FeedView({
       ) : merchantName ? (
         <div className="mt-empty">
           <div className="mt-empty-mark"><MerchantIcon /></div>
-          <h3 className="mt-empty-title">Nothing here on {merchantName}</h3>
+          <h3 className="mt-empty-title">
+            {preSearch ? `No saved or recent products on ${merchantName}` : `Nothing here on ${merchantName}`}
+          </h3>
           <p className="mt-empty-sub">
-            Meant has no currently loaded products from {merchantName}. Try a search or return to all merchants.
+            {preSearch
+              ? `Run a search on ${merchantName} to build this view.`
+              : `Meant has no currently loaded products from ${merchantName}. Try a search or return to all merchants.`}
           </p>
           <div className="mt-empty-actions">
             <button className="mt-empty-btn ghost" type="button" onClick={() => onMerchant(null)}>
@@ -1510,11 +1628,16 @@ function FeedView({
           sub="Try a broader search or adjust your preferences."
           mark={<SparkMark />}
         />
+      ) : preSearch ? (
+        <EmptyState
+          title="No product context yet"
+          sub="Run a starter search above or save products you want to revisit."
+          mark={<SparkMark />}
+        />
       ) : null}
-      {!query ? (
+      {preSearch && products.length > 0 ? (
         <p className="mt-mono mt-feed-foot">
-          Meant hid products that clash with your profile. Nothing here works
-          against what matters to you.
+          These are only your saved products and recent search results.
         </p>
       ) : null}
     </main>
@@ -3785,7 +3908,7 @@ function AuthScreen({
           <div className="mt-mono mt-auth-eyebrow">{signup ? 'Create your account' : 'Welcome back'}</div>
           <h2 className="mt-auth-title">{signup ? 'Start shopping the way you mean it.' : 'Sign in to Meant.'}</h2>
           <p className="mt-auth-sub">
-            {signup ? 'Set up your profile once and Meant applies it across every store.' : 'Pick up right where you left off.'}
+            {signup ? 'Set up your profile once and Meant applies it across supported stores.' : 'Pick up right where you left off.'}
           </p>
           <div className="mt-auth-social">
             <button
@@ -3857,7 +3980,7 @@ function AuthBrand() {
           Everything here is <em>meant</em> for you.
         </h1>
         <p className="mt-auth-brand-sub">
-          One account, every store. Meant learns what matters to you and quietly filters out the rest.
+          One account for supported stores. Meant learns what matters to you and quietly filters out the rest.
         </p>
         <div className="mt-auth-pills">
           {['Organic', 'Natural materials', 'Strong reviews', 'Sustainable brands'].map((pill) => (
@@ -3884,6 +4007,8 @@ export function MeantApp() {
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantsError, setMerchantsError] = useState<string | null>(null)
@@ -3911,6 +4036,7 @@ export function MeantApp() {
   const cartRef = useRef<readonly CartItem[]>(cart)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
   const savePendingRef = useRef(new Set<ProductId>())
+  const allPreferencesRef = useRef<readonly Preference[]>(availablePrefs)
   const greeting = useBrowserGreeting()
   const closeAccountMenu = useCallback(() => {
     setAccountMenu(false)
@@ -3943,8 +4069,16 @@ export function MeantApp() {
       .filter((product): product is Product => Boolean(product)),
     [allKnownProductsMap, savedIds],
   )
-  const shippableProducts = useMemo(() => productsForLocation(PRODUCTS, location), [location])
-  const visibleProducts = productsForPreferences(shippableProducts, activePreferences)
+  const discoveryProducts = useMemo(() => {
+    const seen = new Set<ProductId>()
+    return [...savedListProducts, ...remoteProducts].filter((product) => {
+      if (seen.has(product.id)) {
+        return false
+      }
+      seen.add(product.id)
+      return true
+    })
+  }, [remoteProducts, savedListProducts])
 
   const liveProfile = useMemo(
     () => ({
@@ -3955,11 +4089,9 @@ export function MeantApp() {
   )
 
   const searchActive = Boolean(query || searchLoading || searchError)
-  const baseFeed = searchActive ? searchResults : PRODUCTS
+  const baseFeed = searchActive ? searchResults : discoveryProducts
   const localizedFeedProducts = productsForLocation(baseFeed, location)
-  const unscopedFeedProducts = searchActive
-    ? localizedFeedProducts
-    : productsForPreferences(localizedFeedProducts, activePreferences)
+  const unscopedFeedProducts = localizedFeedProducts
   const selectedMerchant = useMemo(
     () => merchants.find((merchant) => merchant.id === selectedMerchantId) ?? null,
     [merchants, selectedMerchantId],
@@ -4022,6 +4154,10 @@ export function MeantApp() {
   useEffect(() => {
     compareIdsRef.current = compareIds
   }, [compareIds])
+
+  useEffect(() => {
+    allPreferencesRef.current = allPreferences
+  }, [allPreferences])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -4095,17 +4231,32 @@ export function MeantApp() {
         if (!active) return
         setAvailablePrefs([...PREFERENCES])
       })
-    getSavedProducts()
-      .then((products) => {
+    setDiscoveryLoading(true)
+    setDiscoveryError(null)
+    getProductDiscovery()
+      .then((discovery) => {
         if (!active) return
-        const snapshots = products.map(savedProductFromProfile)
+        const snapshots = discovery.savedProducts.map(savedProductFromProfile)
+        const recentSnapshots = discovery.recentProducts.map((product) =>
+          productFromSearchResult(product, allPreferencesRef.current),
+        )
         setSavedProducts(snapshots)
         setSavedIds(snapshots.map((product) => product.id))
+        setRemoteProducts((current) => {
+          const byId = new Map(current.map((product) => [product.id, product]))
+          recentSnapshots.forEach((product) => byId.set(product.id, product))
+          return Array.from(byId.values())
+        })
       })
       .catch(() => {
         if (!active) return
         setSavedProducts([])
         setSavedIds([])
+        setDiscoveryError('Could not load your saved and recent products.')
+      })
+      .finally(() => {
+        if (!active) return
+        setDiscoveryLoading(false)
       })
     return () => {
       active = false
@@ -4122,6 +4273,8 @@ export function MeantApp() {
     setRemoteProducts([])
     setSearchError(null)
     setSearchLoading(false)
+    setDiscoveryError(null)
+    setDiscoveryLoading(false)
     setSelectedMerchantId(null)
     setSavedIds([])
     setSavedProducts([])
@@ -4669,6 +4822,8 @@ export function MeantApp() {
             greeting={greeting}
             products={feedProducts}
             hiddenByShip={hiddenByShip}
+            discoveryLoading={discoveryLoading}
+            discoveryError={discoveryError}
             location={location}
             reply={reply}
             query={query}

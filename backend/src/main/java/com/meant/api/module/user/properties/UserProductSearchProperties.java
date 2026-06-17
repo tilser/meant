@@ -2,6 +2,7 @@ package com.meant.api.module.user.properties;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -20,6 +21,12 @@ public record UserProductSearchProperties(
         String explanationPromptVersion,
 
         @NotNull
-        Duration cacheTtl
+        Duration cacheTtl,
+
+        @Positive
+        int discoveryRecentSearchLimit,
+
+        @Positive
+        int discoveryRecentProductLimit
 ) {
 }

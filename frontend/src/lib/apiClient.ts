@@ -83,6 +83,11 @@ export interface UserProductSearchProfile {
   products: UserProductSearchProductProfile[]
 }
 
+export interface UserProductDiscoveryProfile {
+  savedProducts: UserSavedProductProfile[]
+  recentProducts: UserProductSearchProductProfile[]
+}
+
 export interface UserSavedProductOfferProfile {
   merchant: string
   price: number
@@ -247,6 +252,13 @@ export async function searchUserProducts(input: {
     }),
   })
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
+}
+
+export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/product-discovery`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserProductDiscoveryProfile>(response, 'Failed to load product discovery')
 }
 
 export async function getSavedProducts(): Promise<UserSavedProductProfile[]> {
