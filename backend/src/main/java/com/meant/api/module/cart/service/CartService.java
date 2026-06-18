@@ -76,11 +76,11 @@ public class CartService {
     private MerchantCartProvider findProvider(UUID merchantId, String merchantDomain) {
         if (merchantId != null) {
             return merchantCartProviderLookupService.findById(merchantId)
-                    .orElseThrow(() -> new CartException("Merchant not found: " + merchantId));
+                    .orElseThrow(() -> CartException.notFound("Merchant not found: " + merchantId));
         }
         if (merchantDomain != null && !merchantDomain.isBlank()) {
             return merchantCartProviderLookupService.findByDomain(merchantDomain)
-                    .orElseThrow(() -> new CartException("Merchant not found: " + merchantDomain));
+                    .orElseThrow(() -> CartException.notFound("Merchant not found: " + merchantDomain));
         }
         throw new CartException("merchantId or merchantDomain is required");
     }
@@ -141,7 +141,7 @@ public class CartService {
         }
         String remoteCartLineId = remoteLineIdsByLocalId.get(item.cartLineId());
         if (remoteCartLineId == null) {
-            throw new CartException("Cart line not found: " + item.cartLineId());
+            throw CartException.notFound("Cart line not found: " + item.cartLineId());
         }
         return remoteCartLineId;
     }
@@ -154,7 +154,7 @@ public class CartService {
                 .map(cartLineId -> {
                     String remoteCartLineId = remoteLineIdsByLocalId.get(cartLineId);
                     if (remoteCartLineId == null) {
-                        throw new CartException("Cart line not found: " + cartLineId);
+                        throw CartException.notFound("Cart line not found: " + cartLineId);
                     }
                     return remoteCartLineId;
                 })

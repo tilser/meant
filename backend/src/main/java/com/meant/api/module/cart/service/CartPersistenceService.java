@@ -5,7 +5,6 @@ import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
-import com.meant.api.module.cart.exception.CartNotFoundException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.cart.service.dto.CartToolResponse;
 import com.meant.api.module.cart.service.dto.CartToolResult;
@@ -33,7 +32,7 @@ public class CartPersistenceService {
     @Transactional(readOnly = true)
     public Cart findCart(UUID cartId, UUID userId) {
         return cartRepository.findWithLinesByIdAndUserId(cartId, userId)
-                .orElseThrow(() -> new CartNotFoundException("Cart not found: " + cartId));
+                .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
     }
 
     @Transactional

@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
-import com.meant.api.module.cart.exception.CartNotFoundException;
+import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import tools.jackson.databind.ObjectMapper;
 
 class CartServiceTest {
@@ -202,8 +203,10 @@ class CartServiceTest {
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
 
         assertThatThrownBy(() -> cartService.get(new GetCartQuery(cartId, OTHER_USER_ID, true)))
-                .isInstanceOf(CartNotFoundException.class)
-                .hasMessage("Cart not found: " + cartId);
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart not found: " + cartId)
+                .satisfies(exception -> assertThat(((CartException) exception).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
         assertThat(cartClient.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
@@ -228,8 +231,10 @@ class CartServiceTest {
                 List.of(),
                 null
         )))
-                .isInstanceOf(CartNotFoundException.class)
-                .hasMessage("Cart not found: " + cartId);
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart not found: " + cartId)
+                .satisfies(exception -> assertThat(((CartException) exception).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
         assertThat(cartClient.updateCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
@@ -240,8 +245,10 @@ class CartServiceTest {
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
 
         assertThatThrownBy(() -> cartService.checkout(new GetCheckoutQuery(cartId, OTHER_USER_ID, true)))
-                .isInstanceOf(CartNotFoundException.class)
-                .hasMessage("Cart not found: " + cartId);
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart not found: " + cartId)
+                .satisfies(exception -> assertThat(((CartException) exception).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
         assertThat(cartClient.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }

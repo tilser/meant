@@ -50,7 +50,7 @@ public class UserSettingsService {
             @NotNull @Valid UpdateUserSettingsCommand command
     ) {
         if (!upsertCommand.id().equals(command.id())) {
-            throw new UserException("Settings user does not match authenticated user");
+            throw UserException.forbidden("Settings user does not match authenticated user");
         }
         userService.upsert(upsertCommand);
         Instant now = Instant.now();
