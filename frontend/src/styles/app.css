@@ -4811,6 +4811,181 @@ button:disabled {
   transform: scale(0.92);
 }
 
+.mt-delivery-panel {
+  display: grid;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+  padding: 16px 20px;
+}
+
+.mt-delivery-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.mt-delivery-title {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.mt-delivery-privacy,
+.mt-delivery-count,
+.mt-delivery-group-title,
+.mt-delivery-empty,
+.mt-delivery-error,
+.mt-delivery-option-speed,
+.mt-delivery-option-cost {
+  font-size: 10.5px;
+}
+
+.mt-delivery-privacy,
+.mt-delivery-empty {
+  color: var(--faint);
+}
+
+.mt-delivery-count {
+  border-radius: 20px;
+  background: var(--line-soft);
+  color: var(--muted);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.mt-delivery-address {
+  display: grid;
+  grid-template-columns: minmax(116px, 1.1fr) minmax(116px, 1fr) minmax(106px, 0.85fr) minmax(90px, 0.75fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.mt-delivery-address .mt-field {
+  margin-bottom: 0;
+}
+
+.mt-delivery-address .mt-input,
+.mt-delivery-address .mt-select {
+  height: 38px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+.mt-delivery-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 102px;
+  height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 13px;
+  white-space: nowrap;
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-delivery-refresh:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.mt-delivery-refresh:disabled {
+  opacity: 0.42;
+}
+
+.mt-delivery-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.mt-delivery-group {
+  display: grid;
+  gap: 7px;
+}
+
+.mt-delivery-group-title {
+  color: var(--muted);
+}
+
+.mt-delivery-options {
+  display: grid;
+  gap: 8px;
+}
+
+.mt-delivery-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 10px 12px;
+  text-align: left;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-delivery-option:not(:disabled):hover {
+  border-color: var(--accent-line);
+}
+
+.mt-delivery-option:not(:disabled):active {
+  transform: scale(0.99);
+}
+
+.mt-delivery-option.selected {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.mt-delivery-option:disabled {
+  opacity: 0.56;
+}
+
+.mt-delivery-option-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mt-delivery-option-title {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-delivery-option-speed {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-delivery-option-cost {
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mt-delivery-error {
+  color: var(--cart-warn);
+}
+
 .mt-mgroup-foot {
   justify-content: space-between;
   flex-wrap: wrap;
@@ -6907,6 +7082,11 @@ button:disabled {
     margin-left: 0;
   }
 
+  .mt-delivery-option {
+    flex-direction: column;
+    gap: 7px;
+  }
+
   .mt-cart-pop,
   .mt-acctmenu {
     position: fixed;
@@ -6960,6 +7140,24 @@ button:disabled {
     justify-content: space-between;
     width: 100%;
     padding-left: 76px;
+  }
+
+  .mt-delivery-panel {
+    padding: 14px;
+  }
+
+  .mt-delivery-head,
+  .mt-delivery-option {
+    align-items: flex-start;
+  }
+
+  .mt-delivery-address {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mt-delivery-refresh {
+    width: 100%;
+    grid-column: 1 / -1;
   }
 
   .mt-mgroup-head,
@@ -7021,6 +7219,10 @@ button:disabled {
 }
 
 @media (max-width: 520px) {
+  .mt-delivery-address {
+    grid-template-columns: 1fr;
+  }
+
   .mt-topbar {
     padding-inline: 12px;
   }

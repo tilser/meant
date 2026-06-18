@@ -76,6 +76,8 @@ import {
 } from '../../lib/apiClient'
 import type {
   AuthMode,
+  CartDeliveryGroup,
+  CartDeliveryOption,
   CartItem,
   ClothingFit,
   CheckoutPayload,
@@ -99,6 +101,7 @@ import {
   cartGroups,
   cartLines,
   computeSmartAlerts,
+  cartDeliveryOptionAmount,
   formatOrderDate,
   listJoin,
   money,
@@ -109,6 +112,7 @@ import {
   productsForClothingFit,
   readStorage,
   resolveAsk,
+  selectedCartDeliveryOption,
   writeStorage,
 } from './utils'
 
@@ -167,6 +171,27 @@ interface RemoveCartCodeInput {
   merchant: string
   cartId: string
   code: AppliedCartCode
+}
+
+interface DeliveryAddressDraft {
+  countryCode: string
+  city: string
+  postalCode: string
+  provinceCode: string
+}
+
+interface DeliveryAddressPayload extends DeliveryAddressDraft {
+  cartId: string
+  merchantKey: string
+  merchant: string
+}
+
+interface DeliveryOptionPayload {
+  cartId: string
+  merchantKey: string
+  merchant: string
+  group: CartDeliveryGroup
+  option: CartDeliveryOption
 }
 
 interface ViewHeadProps {
@@ -1140,6 +1165,113 @@ function cartMerchantKey(input: {
   return input.merchantId || normalizedMerchantName(input.merchantDomain) || normalizedMerchantName(input.merchant)
 }
 
+function emptyDeliveryAddressDraft(locations: readonly UserLocation[]): DeliveryAddressDraft {
+  const location = locations[0]
+  return {
+    countryCode: location?.code ?? 'US',
+    city: location?.city ?? '',
+    postalCode: '',
+    provinceCode: '',
+  }
+}
+
+function deliveryAddressArguments(input: DeliveryAddressDraft): Record<string, unknown> {
+  return {
+    country_code: input.countryCode.trim().toUpperCase(),
+    city: input.city.trim(),
+    postal_code: input.postalCode.trim(),
+    province_code: input.provinceCode.trim() || undefined,
+  }
+}
+
+function selectedDeliveryOptionArguments(
+  group: CartDeliveryGroup,
+  option: CartDeliveryOption | null | undefined,
+): Record<string, unknown> | null {
+  const deliveryGroupId = group.id || group.handle
+  const deliveryOptionHandle = option?.handle
+  if (!deliveryGroupId || !deliveryOptionHandle) {
+    return null
+  }
+  return {
+    delivery_group_id: deliveryGroupId,
+    delivery_option_handle: deliveryOptionHandle,
+  }
+}
+
+function sameDeliveryGroup(left: CartDeliveryGroup, right: CartDeliveryGroup): boolean {
+  if (left.id && right.id) {
+    return left.id === right.id
+  }
+  if (left.handle && right.handle) {
+    return left.handle === right.handle
+  }
+  return left === right
+}
+
+function selectedDeliveryOptionsForCart(
+  cart: readonly CartItem[],
+  merchantKey: string,
+  selectedGroup: CartDeliveryGroup,
+  selectedOption: CartDeliveryOption,
+): Record<string, unknown>[] {
+  const groups = cart.find((item) => cartMerchantKey(item) === merchantKey)?.deliveryGroups ?? []
+  const selectionGroups = groups.length > 0 ? groups : [selectedGroup]
+  return selectionGroups
+    .map((group) => selectedDeliveryOptionArguments(
+      group,
+      sameDeliveryGroup(group, selectedGroup) ? selectedOption : selectedCartDeliveryOption(group),
+    ))
+    .filter((selection): selection is Record<string, unknown> => Boolean(selection))
+}
+
+function formatCartAmount(amount: number, currency?: string | null): string {
+  if (!currency || currency.toUpperCase() === 'USD') {
+    return money(amount)
+  }
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+    }).format(amount)
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`
+  }
+}
+
+function deliveryOptionTitle(option: CartDeliveryOption): string {
+  return option.title || option.code || option.handle || 'Delivery option'
+}
+
+function deliveryOptionSpeed(option: CartDeliveryOption): string | null {
+  return option.deliveryEstimate || option.estimatedDeliveryTime || option.description || option.estimatedDeliveryAt || null
+}
+
+function deliveryOptionCost(option: CartDeliveryOption, fallbackCurrency?: string | null): string {
+  const amount = cartDeliveryOptionAmount(option)
+  if (amount === null) {
+    return 'Cost at checkout'
+  }
+  return formatCartAmount(amount, option.cost?.currency ?? fallbackCurrency)
+}
+
+function deliveryGroupSummary(
+  deliveryGroups: readonly CartDeliveryGroup[],
+  fallbackAmount: number,
+  fallbackCurrency?: string | null,
+): string {
+  const selected = deliveryGroups
+    .map((group) => selectedCartDeliveryOption(group))
+    .filter((option): option is CartDeliveryOption => Boolean(option))
+  if (selected.length === 0) {
+    return fallbackAmount === 0 ? 'Free delivery' : `${formatCartAmount(fallbackAmount, fallbackCurrency)} delivery`
+  }
+  return selected.map((option) => {
+    const speed = deliveryOptionSpeed(option)
+    return `${deliveryOptionTitle(option)} · ${deliveryOptionCost(option, fallbackCurrency)}${speed ? ` · ${speed}` : ''}`
+  }).join(' + ')
+}
+
 function offerCartable(offer: Offer): boolean {
   return Boolean(
     offer.productVariantId &&
@@ -1261,6 +1393,7 @@ function mergeCartSnapshot(
   merchantKey: string,
   snapshot: CartProfile,
 ): CartItem[] {
+  const deliveryGroups = snapshot.deliveryGroups as readonly CartDeliveryGroup[] | undefined
   return cart.map((item) => {
     if (cartMerchantKey(item) !== merchantKey) {
       return item
@@ -1277,6 +1410,10 @@ function mergeCartSnapshot(
       remoteCartLineId: line?.remoteCartLineId ?? item.remoteCartLineId,
       productVariantId: line?.productVariantId ?? item.productVariantId,
       variantTitle: line?.variantTitle ?? item.variantTitle,
+      cartTotalAmount: snapshot.totalAmount ?? item.cartTotalAmount,
+      cartSubtotalAmount: snapshot.subtotalAmount ?? item.cartSubtotalAmount,
+      cartCurrency: snapshot.currency ?? item.cartCurrency,
+      deliveryGroups: deliveryGroups ?? item.deliveryGroups ?? [],
       qty: line?.quantity ?? item.qty,
       syncing: false,
       syncError: null,
@@ -5587,6 +5724,151 @@ function LocationSection({
   )
 }
 
+function MerchantDeliveryPanel({
+  merchantKey,
+  merchant,
+  cartId,
+  deliveryGroups,
+  currency,
+  draft,
+  busy,
+  error,
+  onDraft,
+  onSubmitAddress,
+  onSelectOption,
+}: Readonly<{
+  merchantKey: string
+  merchant: string
+  cartId?: string | null
+  deliveryGroups: readonly CartDeliveryGroup[]
+  currency?: string | null
+  draft: DeliveryAddressDraft
+  busy: boolean
+  error: string | null
+  onDraft: (patch: Partial<DeliveryAddressDraft>) => void
+  onSubmitAddress: () => void
+  onSelectOption: (group: CartDeliveryGroup, option: CartDeliveryOption) => void
+}>) {
+  const hasOptions = deliveryGroups.some((group) => (group.deliveryOptions?.length ?? 0) > 0)
+  const canSubmit = Boolean(cartId && draft.countryCode.trim() && draft.city.trim() && draft.postalCode.trim())
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (canSubmit && !busy) {
+      onSubmitAddress()
+    }
+  }
+
+  return (
+    <div className="mt-delivery-panel">
+      <div className="mt-delivery-head">
+        <div>
+          <div className="mt-delivery-title">Delivery options</div>
+          <div className="mt-mono mt-delivery-privacy">City, postal code and country only</div>
+        </div>
+        {hasOptions ? (
+          <span className="mt-mono mt-delivery-count">
+            {deliveryGroups.reduce((sum, group) => sum + (group.deliveryOptions?.length ?? 0), 0)} options
+          </span>
+        ) : null}
+      </div>
+      <form className="mt-delivery-address" onSubmit={submit}>
+        <label className="mt-field">
+          <span className="mt-field-label">Country</span>
+          <select
+            className="mt-select"
+            value={draft.countryCode}
+            onChange={(event) => onDraft({ countryCode: event.target.value })}
+          >
+            {LOCATIONS.map((location) => (
+              <option key={location.code} value={location.code}>
+                {location.country}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="mt-field">
+          <span className="mt-field-label">City</span>
+          <input
+            className="mt-input"
+            value={draft.city}
+            onChange={(event) => onDraft({ city: event.target.value })}
+            autoComplete="address-level2"
+          />
+        </label>
+        <label className="mt-field">
+          <span className="mt-field-label">Postal code</span>
+          <input
+            className="mt-input"
+            value={draft.postalCode}
+            onChange={(event) => onDraft({ postalCode: event.target.value })}
+            autoComplete="postal-code"
+          />
+        </label>
+        <label className="mt-field">
+          <span className="mt-field-label">Region</span>
+          <input
+            className="mt-input"
+            value={draft.provinceCode}
+            onChange={(event) => onDraft({ provinceCode: event.target.value })}
+            autoComplete="address-level1"
+          />
+        </label>
+        <button className="mt-delivery-refresh" type="submit" disabled={!canSubmit || busy}>
+          {busy ? 'Updating...' : 'Get options'}
+        </button>
+      </form>
+      {error ? <div className="mt-mono mt-delivery-error">{error}</div> : null}
+      {hasOptions ? (
+        <div className="mt-delivery-groups">
+          {deliveryGroups.map((group, index) => {
+            const selected = selectedCartDeliveryOption(group)
+            const options = group.deliveryOptions ?? []
+            return (
+              <div className="mt-delivery-group" key={group.id ?? group.handle ?? `${merchantKey}-${index}`}>
+                {deliveryGroups.length > 1 ? (
+                  <div className="mt-mono mt-delivery-group-title">Shipment {index + 1}</div>
+                ) : null}
+                <div className="mt-delivery-options">
+                  {options.length > 0 ? options.map((option) => {
+                    const optionSelected = selected?.handle && option.handle
+                      ? selected.handle === option.handle
+                      : option.selected === true
+                    const speed = deliveryOptionSpeed(option)
+                    return (
+                      <button
+                        className={`mt-delivery-option ${optionSelected ? 'selected' : ''}`}
+                        key={option.handle ?? option.title ?? `${merchantKey}-${index}`}
+                        type="button"
+                        disabled={busy || !option.handle}
+                        onClick={() => onSelectOption(group, option)}
+                      >
+                        <span className="mt-delivery-option-main">
+                          <span className="mt-delivery-option-title">{deliveryOptionTitle(option)}</span>
+                          {speed ? <span className="mt-mono mt-delivery-option-speed">{speed}</span> : null}
+                        </span>
+                        <span className="mt-mono mt-delivery-option-cost">
+                          {deliveryOptionCost(option, currency)}
+                        </span>
+                      </button>
+                    )
+                  }) : (
+                    <div className="mt-mono mt-delivery-empty">No options available for this shipment.</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="mt-mono mt-delivery-empty">
+          {cartId ? `No delivery options loaded for ${merchant}.` : 'Merchant cart is syncing.'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CartView({
   cart,
   products,
@@ -5597,6 +5879,8 @@ function CartView({
   onAdd,
   onApplyCode,
   onRemoveCode,
+  onDeliveryAddress,
+  onDeliveryOption,
   onCheckout,
   checkoutMerchant,
   checkoutError,
@@ -5610,6 +5894,8 @@ function CartView({
   onAdd: (id: ProductId, merchant: string) => void
   onApplyCode: (input: ApplyCartCodeInput) => Promise<{ ok: boolean; message?: string }>
   onRemoveCode: (input: RemoveCartCodeInput) => Promise<{ ok: boolean; message?: string }>
+  onDeliveryAddress: (payload: DeliveryAddressPayload) => Promise<boolean> | boolean
+  onDeliveryOption: (payload: DeliveryOptionPayload) => Promise<boolean> | boolean
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   checkoutMerchant: string | null
   checkoutError: { merchant: string; message: string } | null
@@ -5618,6 +5904,9 @@ function CartView({
   const [codeEntries, setCodeEntries] = useState<Record<string, { discount: string; giftCard: string }>>({})
   const [codeBusy, setCodeBusy] = useState<Record<string, AppliedCartCodeType | 'REMOVE' | null>>({})
   const [codeErrors, setCodeErrors] = useState<Record<string, string | null>>({})
+  const [addressDrafts, setAddressDrafts] = useState<Record<string, DeliveryAddressDraft>>({})
+  const [deliveryBusyKey, setDeliveryBusyKey] = useState<string | null>(null)
+  const [deliveryError, setDeliveryError] = useState<{ merchantKey: string; message: string } | null>(null)
 
   useEffect(() => {
     setScanning(true)
@@ -5718,6 +6007,68 @@ function CartView({
     }))
   }
 
+  const addressDraft = (merchantKey: string) =>
+    addressDrafts[merchantKey] ?? emptyDeliveryAddressDraft(deliveryLocations)
+
+  const updateAddressDraft = (merchantKey: string, patch: Partial<DeliveryAddressDraft>) => {
+    setAddressDrafts((current) => ({
+      ...current,
+      [merchantKey]: {
+        ...(current[merchantKey] ?? emptyDeliveryAddressDraft(deliveryLocations)),
+        ...patch,
+      },
+    }))
+  }
+
+  const submitDeliveryAddress = async (
+    merchantKey: string,
+    merchant: string,
+    cartId: string | null | undefined,
+    draft: DeliveryAddressDraft,
+  ) => {
+    if (!cartId) {
+      setDeliveryError({ merchantKey, message: 'Merchant cart is still syncing.' })
+      return
+    }
+    setDeliveryBusyKey(`address:${merchantKey}`)
+    setDeliveryError(null)
+    try {
+      const ok = await onDeliveryAddress({ cartId, merchantKey, merchant, ...draft })
+      if (!ok) {
+        setDeliveryError({ merchantKey, message: 'Could not load delivery options.' })
+      }
+    } catch {
+      setDeliveryError({ merchantKey, message: 'Could not load delivery options.' })
+    } finally {
+      setDeliveryBusyKey(null)
+    }
+  }
+
+  const selectDeliveryOption = async (
+    merchantKey: string,
+    merchant: string,
+    cartId: string | null | undefined,
+    group: CartDeliveryGroup,
+    option: CartDeliveryOption,
+  ) => {
+    if (!cartId) {
+      setDeliveryError({ merchantKey, message: 'Merchant cart is still syncing.' })
+      return
+    }
+    setDeliveryBusyKey(`option:${merchantKey}`)
+    setDeliveryError(null)
+    try {
+      const ok = await onDeliveryOption({ cartId, merchantKey, merchant, group, option })
+      if (!ok) {
+        setDeliveryError({ merchantKey, message: 'Could not update delivery choice.' })
+      }
+    } catch {
+      setDeliveryError({ merchantKey, message: 'Could not update delivery choice.' })
+    } finally {
+      setDeliveryBusyKey(null)
+    }
+  }
+
   if (lines.length === 0) {
     return (
       <main className="mt-feed mt-view">
@@ -5780,13 +6131,18 @@ function CartView({
           ) : null}
 
           {groupSummaries.map(({ group, merchantKey, snapshot, subtotal, savings, total, currency }) => {
+            const cartId = snapshot?.cartId ?? group.items.find((item) => item.cartId)?.cartId
+            const groupCurrency = currency ?? group.items.find((item) => item.cartCurrency)?.cartCurrency
+            const groupDraft = addressDraft(merchantKey)
+            const groupDeliveryBusy = deliveryBusyKey?.endsWith(`:${merchantKey}`) ?? false
+            const groupDeliveryError = deliveryError?.merchantKey === merchantKey ? deliveryError.message : null
+            const deliverySummary = deliveryGroupSummary(group.deliveryGroups, group.delivery, groupCurrency)
             const groupSyncing = group.items.some((item) => item.syncing)
             const groupLineError = group.items.find((item) => item.syncError)?.syncError
             const groupCheckoutError = checkoutError?.merchant === group.merchant
               ? checkoutError.message
               : null
             const appliedCodes = snapshot?.appliedCodes ?? []
-            const cartId = group.items.find((item) => item.cartId)?.cartId
             const entry = codeEntries[merchantKey] ?? { discount: '', giftCard: '' }
             const busy = codeBusy[merchantKey] ?? null
             const codeError = codeErrors[merchantKey]
@@ -5794,18 +6150,24 @@ function CartView({
             const groupCheckoutable = group.items.every((item) =>
               Boolean(item.cartId && item.productVariantId && !item.syncError),
             )
+            const checkoutNeedsDelivery = group.hasDeliveryOptions && !group.hasSelectedDelivery
             const checkoutBusy = checkoutMerchant === group.merchant
-            const checkoutBlocked = scanning || groupSyncing || !groupCheckoutable || Boolean(checkoutMerchant)
+            const deliveryDisplay = checkoutNeedsDelivery ? 'Choose delivery option' : deliverySummary
+            const checkoutBlocked = scanning ||
+              groupSyncing ||
+              !groupCheckoutable ||
+              checkoutNeedsDelivery ||
+              Boolean(checkoutMerchant)
             const checkoutSub = groupLineError ?? groupCheckoutError ??
               (groupSyncing
                 ? 'Syncing merchant cart'
                 : !groupCheckoutable
                   ? 'Checkout needs a merchant cart-ready item'
+                  : checkoutNeedsDelivery
+                    ? 'Choose a delivery option'
                   : appliedCodes.length > 0
                     ? `${appliedCodes.length} applied · -${cartMoney(savings, currency)}`
-                    : group.delivery === 0
-                      ? 'Free delivery'
-                      : `${money(group.delivery)} delivery`)
+                    : deliveryDisplay)
 
             return (
               <div className="mt-mgroup" key={group.merchant}>
@@ -5818,7 +6180,7 @@ function CartView({
                     </span>
                   </div>
                   <div className="mt-mono mt-mgroup-ship">
-                    {group.delivery === 0 ? 'Free delivery' : `${money(group.delivery)} delivery`}
+                    {deliveryDisplay}
                   </div>
                 </div>
                 {group.items.map((line) => (
@@ -5869,6 +6231,23 @@ function CartView({
                     </div>
                   </div>
                 ))}
+                <MerchantDeliveryPanel
+                  merchantKey={merchantKey}
+                  merchant={group.merchant}
+                  cartId={cartId}
+                  deliveryGroups={group.deliveryGroups}
+                  currency={groupCurrency}
+                  draft={groupDraft}
+                  busy={groupDeliveryBusy}
+                  error={groupDeliveryError}
+                  onDraft={(patch) => updateAddressDraft(merchantKey, patch)}
+                  onSubmitAddress={() => {
+                    void submitDeliveryAddress(merchantKey, group.merchant, cartId, groupDraft)
+                  }}
+                  onSelectOption={(deliveryGroup, option) => {
+                    void selectDeliveryOption(merchantKey, group.merchant, cartId, deliveryGroup, option)
+                  }}
+                />
                 <div className="mt-mgroup-foot">
                   <div className="mt-code-panel">
                     <div className="mt-code-forms">
@@ -5955,7 +6334,7 @@ function CartView({
                   <div>
                     <div className="mt-mgroup-pay-total">
                       <span className="mt-mono">Merchant total</span>
-                      <strong>{cartMoney(total, currency)}</strong>
+                      <strong>{cartMoney(total, groupCurrency)}</strong>
                     </div>
                     <div className={`mt-mgroup-pay-sub ${groupLineError || groupCheckoutError ? 'error' : ''}`}>
                       {checkoutSub}
@@ -7209,6 +7588,15 @@ export function MeantApp() {
     }))
   }
 
+  const updateMerchantCartItems = (
+    merchantKey: string,
+    patch: Pick<CartItem, 'syncing' | 'syncError'>,
+  ) => {
+    updateStoredCart((current) =>
+      current.map((item) => cartMerchantKey(item) === merchantKey ? { ...item, ...patch } : item),
+    )
+  }
+
   const cartItemMatches = (item: CartItem, id: ProductId, merchant: string) =>
     item.id === id && item.merchant === merchant
 
@@ -7471,6 +7859,58 @@ export function MeantApp() {
         ok: false,
         message: error instanceof Error ? error.message : 'The merchant could not remove this code.',
       }
+    }
+  }
+
+  const updateDeliveryAddress = async (payload: DeliveryAddressPayload): Promise<boolean> => {
+    updateMerchantCartItems(payload.merchantKey, { syncing: true, syncError: null })
+    try {
+      const snapshot = await updateCart({
+        cartId: payload.cartId,
+        deliveryAddressesToAdd: [deliveryAddressArguments(payload)],
+      })
+      updateStoredCart((current) => mergeCartSnapshot(current, payload.merchantKey, snapshot))
+      storeCartSnapshot(payload.merchantKey, payload.merchant, snapshot)
+      return true
+    } catch {
+      updateMerchantCartItems(payload.merchantKey, {
+        syncing: false,
+        syncError: 'Could not load delivery options for this merchant.',
+      })
+      return false
+    }
+  }
+
+  const updateDeliveryOption = async (payload: DeliveryOptionPayload): Promise<boolean> => {
+    const selectedDeliveryOptions = selectedDeliveryOptionsForCart(
+      cartRef.current,
+      payload.merchantKey,
+      payload.group,
+      payload.option,
+    )
+    if (selectedDeliveryOptions.length === 0) {
+      updateMerchantCartItems(payload.merchantKey, {
+        syncing: false,
+        syncError: 'This merchant did not return a selectable delivery handle.',
+      })
+      return false
+    }
+
+    updateMerchantCartItems(payload.merchantKey, { syncing: true, syncError: null })
+    try {
+      const snapshot = await updateCart({
+        cartId: payload.cartId,
+        selectedDeliveryOptions,
+      })
+      updateStoredCart((current) => mergeCartSnapshot(current, payload.merchantKey, snapshot))
+      storeCartSnapshot(payload.merchantKey, payload.merchant, snapshot)
+      return true
+    } catch {
+      updateMerchantCartItems(payload.merchantKey, {
+        syncing: false,
+        syncError: 'Could not update the delivery option.',
+      })
+      return false
     }
   }
 
@@ -7810,6 +8250,8 @@ export function MeantApp() {
             onAdd={addToCart}
             onApplyCode={applyCartCode}
             onRemoveCode={removeCartCode}
+            onDeliveryAddress={updateDeliveryAddress}
+            onDeliveryOption={updateDeliveryOption}
             onCheckout={checkout}
             checkoutMerchant={checkoutMerchant}
             checkoutError={checkoutError}

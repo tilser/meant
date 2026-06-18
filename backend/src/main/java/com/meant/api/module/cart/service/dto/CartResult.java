@@ -1,10 +1,13 @@
 package com.meant.api.module.cart.service.dto;
 
+import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
+
 import com.meant.api.module.cart.entity.Cart;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.ObjectMapper;
 
 public record CartResult(
         UUID cartId,
@@ -25,8 +28,11 @@ public record CartResult(
         Instant updatedAt,
         Instant refreshedAt,
         List<CartAppliedCodeResult> appliedCodes,
-        List<CartLineResult> lines
+        List<CartLineResult> lines,
+        List<CartDeliveryGroupResult> deliveryGroups
 ) {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public static CartResult from(Cart cart) {
         return new CartResult(
@@ -55,7 +61,25 @@ public record CartResult(
                 cart.getLines().stream()
                         .map(CartLineResult::from)
                         .sorted(Comparator.comparing(CartLineResult::createdAt))
-                        .toList()
+                        .toList(),
+                deliveryGroups(cart.getRawCartResponse())
         );
+    }
+
+    private static List<CartDeliveryGroupResult> deliveryGroups(String rawCartResponse) {
+        if (rawCartResponse == null || rawCartResponse.isBlank()) {
+            return List.of();
+        }
+        try {
+            CartToolResponse response = OBJECT_MAPPER.readValue(rawCartResponse, CartToolResponse.class);
+            if (response == null || response.cart() == null) {
+                return List.of();
+            }
+            return safeNonNullList(response.cart().deliveryGroups()).stream()
+                    .map(CartDeliveryGroupResult::from)
+                    .toList();
+        } catch (RuntimeException exception) {
+            return List.of();
+        }
     }
 }

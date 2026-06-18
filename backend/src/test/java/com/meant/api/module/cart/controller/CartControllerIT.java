@@ -37,6 +37,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class CartControllerIT extends PostgresIntegrationTest {
@@ -118,6 +120,9 @@ class CartControllerIT extends PostgresIntegrationTest {
                 .getResponseBody();
         assertThat(updated).isNotNull();
         assertThat(updated.cartId()).isEqualTo(created.cartId());
+        assertThat(updated.deliveryGroups()).hasSize(1);
+        assertThat(updated.deliveryGroups().getFirst().deliveryOptions()).extracting("handle")
+                .containsExactly("standard", "express");
 
         CheckoutResponse checkout = client.get().uri("/api/carts/{cartId}/checkout", created.cartId())
                 .headers(headers -> headers.setBearerAuth(token(userId)))
@@ -326,30 +331,32 @@ class CartControllerIT extends PostgresIntegrationTest {
 
         private CartToolResult cartToolResult() {
             int sequence = cartSequence.incrementAndGet();
+            CartToolResponse response = new CartToolResponse(
+                    "Checkout when ready",
+                    new CartToolResponse.Cart(
+                            "gid://shopify/Cart/" + sequence,
+                            Instant.parse("2026-06-16T11:05:00Z"),
+                            Instant.parse("2026-06-16T11:05:01Z"),
+                            List.of(cartLine(sequence)),
+                            new CartToolResponse.Cost(
+                                    new CartToolResponse.Money("14.95", "USD"),
+                                    new CartToolResponse.Money("14.95", "USD")
+                            ),
+                            1,
+                            "https://merchant.example/checkout/" + sequence,
+                            List.of(),
+                            List.of(),
+                            List.of(),
+                            List.of(),
+                            List.of(),
+                            List.of(deliveryGroup())
+                    ),
+                    List.of()
+            );
             return new CartToolResult(
                     "https://merchant.example/api/mcp",
-                    "{}",
-                    new CartToolResponse(
-                            "Checkout when ready",
-                            new CartToolResponse.Cart(
-                                    "gid://shopify/Cart/" + sequence,
-                                    Instant.parse("2026-06-16T11:05:00Z"),
-                                    Instant.parse("2026-06-16T11:05:01Z"),
-                                    List.of(cartLine(sequence)),
-                                    new CartToolResponse.Cost(
-                                            new CartToolResponse.Money("14.95", "USD"),
-                                            new CartToolResponse.Money("14.95", "USD")
-                                    ),
-                                    1,
-                                    "https://merchant.example/checkout/" + sequence,
-                                    List.of(),
-                                    List.of(),
-                                    List.of(),
-                                    List.of(),
-                                    List.of()
-                            ),
-                            List.of()
-                    )
+                    raw(response),
+                    response
             );
         }
 
@@ -367,6 +374,49 @@ class CartControllerIT extends PostgresIntegrationTest {
                             new CartToolResponse.Product("gid://shopify/Product/" + sequence, "Candle")
                     )
             );
+        }
+
+        private CartToolResponse.DeliveryGroup deliveryGroup() {
+            CartToolResponse.DeliveryOption standard = new CartToolResponse.DeliveryOption(
+                    "standard",
+                    "Standard",
+                    "Arrives in 3 to 5 business days",
+                    null,
+                    new CartToolResponse.Money("5.00", "USD"),
+                    null,
+                    "shipping",
+                    "3 to 5 business days",
+                    null,
+                    null,
+                    true
+            );
+            CartToolResponse.DeliveryOption express = new CartToolResponse.DeliveryOption(
+                    "express",
+                    "Express",
+                    "Arrives in 1 to 2 business days",
+                    null,
+                    new CartToolResponse.Money("12.00", "USD"),
+                    null,
+                    "shipping",
+                    "1 to 2 business days",
+                    null,
+                    null,
+                    false
+            );
+            return new CartToolResponse.DeliveryGroup(
+                    "delivery-group-1",
+                    "delivery-group-handle-1",
+                    List.of(standard, express),
+                    standard
+            );
+        }
+
+        private String raw(CartToolResponse response) {
+            try {
+                return new ObjectMapper().writeValueAsString(response);
+            } catch (JacksonException exception) {
+                throw new AssertionError(exception);
+            }
         }
     }
 }

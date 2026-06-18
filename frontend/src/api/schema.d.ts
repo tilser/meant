@@ -318,6 +318,29 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
+        CartDeliveryMoneyResponse: {
+            amount?: string;
+            currency?: string;
+        };
+        CartDeliveryOptionResponse: {
+            handle?: string;
+            title?: string;
+            description?: string;
+            code?: string;
+            cost?: components["schemas"]["CartDeliveryMoneyResponse"];
+            deliveryMethodType?: string;
+            deliveryEstimate?: string;
+            estimatedDeliveryTime?: string;
+            /** Format: date-time */
+            estimatedDeliveryAt?: string;
+            selected?: boolean;
+        };
+        CartDeliveryGroupResponse: {
+            id?: string;
+            handle?: string;
+            deliveryOptions?: components["schemas"]["CartDeliveryOptionResponse"][];
+            selectedDeliveryOption?: components["schemas"]["CartDeliveryOptionResponse"];
+        };
         CartResponse: {
             /** Format: uuid */
             cartId?: string;
@@ -346,6 +369,7 @@ export interface components {
             refreshedAt?: string;
             appliedCodes?: components["schemas"]["CartAppliedCodeResponse"][];
             lines?: components["schemas"]["CartLineResponse"][];
+            deliveryGroups?: components["schemas"]["CartDeliveryGroupResponse"][];
         };
         UpdateUserProfileRequest: {
             firstName: string;

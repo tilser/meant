@@ -36,6 +36,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 class CartServiceTest {
@@ -119,12 +120,34 @@ class CartServiceTest {
         assertThat(result.totalAmount()).isEqualTo("7.95");
         assertThat(result.appliedCodes()).hasSize(2);
         assertThat(result.appliedCodes()).extracting("type")
-                .containsExactly(
-                        com.meant.api.module.cart.constant.CartAppliedCodeType.DISCOUNT,
-                        com.meant.api.module.cart.constant.CartAppliedCodeType.GIFT_CARD
-                );
+                .containsExactly(CartAppliedCodeType.DISCOUNT, CartAppliedCodeType.GIFT_CARD);
         assertThat(result.appliedCodes()).extracting("code").containsExactly("SAVE5", "CARD1234");
         assertThat(result.appliedCodes()).extracting("amount").containsExactly("5.00", "2.00");
+    }
+
+    @Test
+    void createCarriesDeliveryGroupsFromRemoteSnapshot() {
+        cartClient.cartToolResult = cartToolResult(List.of(cartLine()), 1, List.of(deliveryGroup()));
+
+        CartResult result = cartService.create(new CreateCartCommand(
+                USER_ID,
+                merchant.getId(),
+                null,
+                List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+
+        assertThat(result.deliveryGroups()).hasSize(1);
+        assertThat(result.deliveryGroups().getFirst().id()).isEqualTo("delivery-group-1");
+        assertThat(result.deliveryGroups().getFirst().deliveryOptions()).extracting("handle")
+                .containsExactly("standard", "express");
+        assertThat(result.deliveryGroups().getFirst().selectedDeliveryOption().handle()).isEqualTo("standard");
     }
 
     @Test
@@ -146,6 +169,32 @@ class CartServiceTest {
                 .filteredOn(code -> code.type() == CartAppliedCodeType.GIFT_CARD)
                 .extracting("code")
                 .containsExactly("CARD1234");
+    }
+
+    @Test
+    void getWithoutRefreshReturnsDeliveryGroupsFromStoredSnapshot() {
+        cartClient.cartToolResult = cartToolResult(List.of(cartLine()), 1, List.of(deliveryGroup()));
+        CartResult created = cartService.create(new CreateCartCommand(
+                USER_ID,
+                merchant.getId(),
+                null,
+                List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+        cartClient.getCount = 0;
+
+        CartResult result = cartService.get(new GetCartQuery(created.cartId(), USER_ID, false));
+
+        assertThat(result.deliveryGroups()).hasSize(1);
+        assertThat(result.deliveryGroups().getFirst().deliveryOptions()).extracting("cost.amount")
+                .containsExactly("5.00", "12.00");
+        assertThat(cartClient.getCount).isZero();
     }
 
     @Test
@@ -224,6 +273,37 @@ class CartServiceTest {
 
         assertThat(cartClient.lastUpdateArguments.discountCodes()).isNull();
         assertThat(cartClient.lastUpdateArguments.giftCardCodes()).isNull();
+    }
+
+    @Test
+    void updateForwardsSelectedDeliveryOptions() {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
+
+        cartService.update(new UpdateCartCommand(
+                cartId,
+                USER_ID,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(Map.of(
+                        "delivery_group_id", "delivery-group-1",
+                        "delivery_option_handle", "express"
+                )),
+                List.of(),
+                List.of(),
+                null
+        ));
+
+        assertThat(cartClient.lastUpdateArguments.selectedDeliveryOptions())
+                .containsExactly(Map.of(
+                        "delivery_group_id", "delivery-group-1",
+                        "delivery_option_handle", "express"
+                ));
     }
 
     @Test
@@ -473,7 +553,7 @@ class CartServiceTest {
     }
 
     private CartToolResult cartToolResult() {
-        return cartToolResult(List.of(cartLine()), 1);
+        return cartToolResult(List.of(cartLine()), 1, List.of());
     }
 
     static class FakeUserInventoryService extends UserInventoryService {
@@ -491,68 +571,80 @@ class CartServiceTest {
     }
 
     private CartToolResult cartToolResult(List<CartToolResponse.Line> lines, Integer totalQuantity) {
+        return cartToolResult(lines, totalQuantity, List.of());
+    }
+
+    private CartToolResult cartToolResult(
+            List<CartToolResponse.Line> lines,
+            Integer totalQuantity,
+            List<CartToolResponse.DeliveryGroup> deliveryGroups
+    ) {
+        CartToolResponse response = new CartToolResponse(
+                "Checkout when ready",
+                new CartToolResponse.Cart(
+                        "gid://shopify/Cart/1",
+                        CART_REMOTE_CREATED_AT,
+                        CART_REMOTE_UPDATED_AT,
+                        lines,
+                        new CartToolResponse.Cost(
+                                new CartToolResponse.Money("14.95", "USD"),
+                                new CartToolResponse.Money("14.95", "USD")
+                        ),
+                        totalQuantity,
+                        "https://merchant.example/checkout",
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        deliveryGroups
+                ),
+                List.of()
+        );
         return new CartToolResult(
                 "https://merchant.example/api/mcp",
-                "{}",
-                new CartToolResponse(
-                        "Checkout when ready",
-                        new CartToolResponse.Cart(
-                                "gid://shopify/Cart/1",
-                                CART_REMOTE_CREATED_AT,
-                                CART_REMOTE_UPDATED_AT,
-                                lines,
-                                new CartToolResponse.Cost(
-                                        new CartToolResponse.Money("14.95", "USD"),
-                                        new CartToolResponse.Money("14.95", "USD")
-                                ),
-                                totalQuantity,
-                                "https://merchant.example/checkout",
-                                List.of(),
-                                List.of(),
-                                List.of(),
-                                List.of(),
-                                List.of()
-                        ),
-                        List.of()
-                )
+                raw(response),
+                response
         );
     }
 
     private CartToolResult cartToolResultWithAppliedCodes() {
+        CartToolResponse response = new CartToolResponse(
+                "Checkout when ready",
+                new CartToolResponse.Cart(
+                        "gid://shopify/Cart/1",
+                        CART_REMOTE_CREATED_AT,
+                        CART_REMOTE_UPDATED_AT,
+                        List.of(cartLine()),
+                        new CartToolResponse.Cost(
+                                new CartToolResponse.Money("7.95", "USD"),
+                                new CartToolResponse.Money("14.95", "USD")
+                        ),
+                        1,
+                        "https://merchant.example/checkout",
+                        List.of(new CartToolResponse.AppliedCode(
+                                "SAVE5",
+                                "Spring discount",
+                                true,
+                                new CartToolResponse.Money("5.00", "USD")
+                        )),
+                        List.of(),
+                        List.of(),
+                        List.of(new CartToolResponse.AppliedCode(
+                                "1234",
+                                "Gift card",
+                                true,
+                                new CartToolResponse.Money("2.00", "USD")
+                        )),
+                        List.of(),
+                        List.of()
+                ),
+                List.of()
+        );
         return new CartToolResult(
                 "https://merchant.example/api/mcp",
-                "{}",
-                new CartToolResponse(
-                        "Checkout when ready",
-                        new CartToolResponse.Cart(
-                                "gid://shopify/Cart/1",
-                                Instant.parse("2026-06-16T11:05:00Z"),
-                                Instant.parse("2026-06-16T11:05:01Z"),
-                                List.of(cartLine()),
-                                new CartToolResponse.Cost(
-                                        new CartToolResponse.Money("7.95", "USD"),
-                                        new CartToolResponse.Money("14.95", "USD")
-                                ),
-                                1,
-                                "https://merchant.example/checkout",
-                                List.of(new CartToolResponse.AppliedCode(
-                                        "SAVE5",
-                                        "Spring discount",
-                                        true,
-                                        new CartToolResponse.Money("5.00", "USD")
-                                )),
-                                List.of(),
-                                List.of(),
-                                List.of(new CartToolResponse.AppliedCode(
-                                        "1234",
-                                        "Gift card",
-                                        true,
-                                        new CartToolResponse.Money("2.00", "USD")
-                                )),
-                                List.of()
-                        ),
-                        List.of()
-                )
+                raw(response),
+                response
         );
     }
 
@@ -570,6 +662,49 @@ class CartServiceTest {
                         new CartToolResponse.Product("gid://shopify/Product/1", "Candle")
                 )
         );
+    }
+
+    private CartToolResponse.DeliveryGroup deliveryGroup() {
+        CartToolResponse.DeliveryOption standard = new CartToolResponse.DeliveryOption(
+                "standard",
+                "Standard",
+                "Arrives in 3 to 5 business days",
+                null,
+                new CartToolResponse.Money("5.00", "USD"),
+                null,
+                "shipping",
+                "3 to 5 business days",
+                null,
+                null,
+                true
+        );
+        CartToolResponse.DeliveryOption express = new CartToolResponse.DeliveryOption(
+                "express",
+                "Express",
+                "Arrives in 1 to 2 business days",
+                null,
+                new CartToolResponse.Money("12.00", "USD"),
+                null,
+                "shipping",
+                "1 to 2 business days",
+                null,
+                null,
+                false
+        );
+        return new CartToolResponse.DeliveryGroup(
+                "delivery-group-1",
+                "delivery-group-handle-1",
+                List.of(standard, express),
+                standard
+        );
+    }
+
+    private String raw(CartToolResponse response) {
+        try {
+            return new ObjectMapper().writeValueAsString(response);
+        } catch (JacksonException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     static class FakeCartClient extends CartClient {

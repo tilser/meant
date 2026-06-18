@@ -40,7 +40,9 @@ public record CartToolResponse(
             List<AppliedCode> giftCardCodes,
             @JsonProperty("applied_gift_cards")
             @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
-            List<AppliedCode> appliedGiftCards
+            List<AppliedCode> appliedGiftCards,
+            @JsonProperty("delivery_groups")
+            List<DeliveryGroup> deliveryGroups
     ) {
     }
 
@@ -75,6 +77,38 @@ public record CartToolResponse(
             String label,
             Boolean applicable,
             Money amount
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record DeliveryGroup(
+            String id,
+            String handle,
+            @JsonProperty("delivery_options")
+            List<DeliveryOption> deliveryOptions,
+            @JsonProperty("selected_delivery_option")
+            DeliveryOption selectedDeliveryOption
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record DeliveryOption(
+            String handle,
+            String title,
+            String description,
+            String code,
+            Money cost,
+            @JsonProperty("cost_amount")
+            Money costAmount,
+            @JsonProperty("delivery_method_type")
+            String deliveryMethodType,
+            @JsonProperty("delivery_estimate")
+            String deliveryEstimate,
+            @JsonProperty("estimated_delivery_time")
+            String estimatedDeliveryTime,
+            @JsonProperty("estimated_delivery_at")
+            Instant estimatedDeliveryAt,
+            Boolean selected
     ) {
     }
 

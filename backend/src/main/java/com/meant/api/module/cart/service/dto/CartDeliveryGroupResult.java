@@ -1,0 +1,27 @@
+package com.meant.api.module.cart.service.dto;
+
+import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
+
+import java.util.List;
+
+public record CartDeliveryGroupResult(
+        String id,
+        String handle,
+        List<CartDeliveryOptionResult> deliveryOptions,
+        CartDeliveryOptionResult selectedDeliveryOption
+) {
+
+    public static CartDeliveryGroupResult from(CartToolResponse.DeliveryGroup group) {
+        if (group == null) {
+            return null;
+        }
+        return new CartDeliveryGroupResult(
+                group.id(),
+                group.handle(),
+                safeNonNullList(group.deliveryOptions()).stream()
+                        .map(CartDeliveryOptionResult::from)
+                        .toList(),
+                CartDeliveryOptionResult.from(group.selectedDeliveryOption())
+        );
+    }
+}

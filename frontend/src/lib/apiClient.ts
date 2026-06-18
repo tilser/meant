@@ -238,6 +238,7 @@ export interface MerchantProfile {
 }
 
 export type CartProfile = components['schemas']['CartResponse']
+export type CartDeliveryGroupProfile = NonNullable<CartProfile['deliveryGroups']>[number]
 export type CheckoutProfile = components['schemas']['CheckoutResponse']
 
 export type UserInventoryCategory = 'APPAREL' | 'PANTRY' | 'HOME' | 'OTHER'
@@ -333,6 +334,8 @@ export interface CartAddItemInput {
   productVariantId: string
   quantity: number
 }
+
+export type CartToolMapInput = Record<string, unknown>
 
 /** Injects the current Supabase access token as a Bearer header on every request. */
 const authMiddleware: Middleware = {
@@ -787,6 +790,9 @@ export async function createCart(input: {
   addItems: readonly CartAddItemInput[]
   discountCodes?: readonly string[]
   giftCardCodes?: readonly string[]
+  deliveryAddressesToAdd?: readonly CartToolMapInput[]
+  deliveryAddressesToReplace?: readonly CartToolMapInput[]
+  selectedDeliveryOptions?: readonly CartToolMapInput[]
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts`, {
     method: 'POST',
@@ -800,6 +806,9 @@ export async function createCart(input: {
       addItems: input.addItems,
       discountCodes: input.discountCodes,
       giftCardCodes: input.giftCardCodes,
+      deliveryAddressesToAdd: input.deliveryAddressesToAdd,
+      deliveryAddressesToReplace: input.deliveryAddressesToReplace,
+      selectedDeliveryOptions: input.selectedDeliveryOptions,
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to create cart')
@@ -817,6 +826,9 @@ export async function updateCart(input: {
   removeRemoteCartLineIds?: readonly string[]
   discountCodes?: readonly string[]
   giftCardCodes?: readonly string[]
+  deliveryAddressesToAdd?: readonly CartToolMapInput[]
+  deliveryAddressesToReplace?: readonly CartToolMapInput[]
+  selectedDeliveryOptions?: readonly CartToolMapInput[]
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}`, {
     method: 'PATCH',
@@ -831,6 +843,9 @@ export async function updateCart(input: {
       removeRemoteCartLineIds: input.removeRemoteCartLineIds,
       discountCodes: input.discountCodes,
       giftCardCodes: input.giftCardCodes,
+      deliveryAddressesToAdd: input.deliveryAddressesToAdd,
+      deliveryAddressesToReplace: input.deliveryAddressesToReplace,
+      selectedDeliveryOptions: input.selectedDeliveryOptions,
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to update cart')

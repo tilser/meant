@@ -125,6 +125,10 @@ export interface CartItem {
   checkoutUrl?: string | null
   cartLineId?: string | null
   remoteCartLineId?: string | null
+  cartTotalAmount?: string | null
+  cartSubtotalAmount?: string | null
+  cartCurrency?: string | null
+  deliveryGroups?: readonly CartDeliveryGroup[]
   syncing?: boolean
   syncError?: string | null
 }
@@ -133,6 +137,31 @@ export interface CartLine extends CartItem {
   product: Product
   price: number
   delivery: string
+}
+
+export interface CartDeliveryMoney {
+  amount?: string | null
+  currency?: string | null
+}
+
+export interface CartDeliveryOption {
+  handle?: string | null
+  title?: string | null
+  description?: string | null
+  code?: string | null
+  cost?: CartDeliveryMoney | null
+  deliveryMethodType?: string | null
+  deliveryEstimate?: string | null
+  estimatedDeliveryTime?: string | null
+  estimatedDeliveryAt?: string | null
+  selected?: boolean | null
+}
+
+export interface CartDeliveryGroup {
+  id?: string | null
+  handle?: string | null
+  deliveryOptions?: readonly CartDeliveryOption[]
+  selectedDeliveryOption?: CartDeliveryOption | null
 }
 
 export interface Order {

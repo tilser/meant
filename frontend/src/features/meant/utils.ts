@@ -6,6 +6,8 @@ import {
   REPLIES,
 } from './data'
 import type {
+  CartDeliveryGroup,
+  CartDeliveryOption,
   CartItem,
   CartLine,
   CheckoutPayload,
@@ -478,6 +480,12 @@ export interface CartGroup {
   subtotal: number
   deliveryRaw: number
   delivery: number
+  total: number
+  remoteTotal: number | null
+  remoteSubtotal: number | null
+  deliveryGroups: readonly CartDeliveryGroup[]
+  hasDeliveryOptions: boolean
+  hasSelectedDelivery: boolean
   found: DiscountResult | null
   itemDiscount: number
 }
@@ -493,21 +501,93 @@ export function cartGroups(
   })
 
   return [...groups.entries()].map(([merchant, items]) => {
-    const subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0)
-    const deliveryRaw = subtotal >= 50 ? 0 : 4.99
+    const localSubtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0)
+    const remoteSubtotal = firstCartAmount(items, (item) => item.cartSubtotalAmount)
+    const remoteTotal = firstCartAmount(items, (item) => item.cartTotalAmount)
+    const subtotal = remoteSubtotal ?? localSubtotal
+    const deliveryGroups = firstDeliveryGroups(items)
+    const selectedDeliveryCost = selectedDeliveryGroupsCost(deliveryGroups)
+    const inferredDelivery = remoteTotal !== null && remoteSubtotal !== null
+      ? Math.max(0, remoteTotal - remoteSubtotal)
+      : null
+    const deliveryRaw = selectedDeliveryCost ?? inferredDelivery ?? (subtotal >= 50 ? 0 : 4.99)
     const found = scanning ? null : bestCode(DISCOUNTS[merchant], subtotal, deliveryRaw)
     const itemDiscount = found && found.code.type !== 'shipping' ? found.save : 0
     const delivery = found && found.code.type === 'shipping' ? 0 : deliveryRaw
+    const total = remoteTotal ?? subtotal - itemDiscount + delivery
+    const hasDeliveryOptions = deliveryGroups.some((group) => (group.deliveryOptions?.length ?? 0) > 0)
+    const hasSelectedDelivery = deliveryGroups.some((group) => Boolean(selectedCartDeliveryOption(group)))
     return {
       merchant,
       items,
       subtotal,
       deliveryRaw,
       delivery,
+      total,
+      remoteTotal,
+      remoteSubtotal,
+      deliveryGroups,
+      hasDeliveryOptions,
+      hasSelectedDelivery,
       found,
       itemDiscount,
     }
   })
+}
+
+function firstCartAmount(
+  items: readonly CartLine[],
+  selector: (item: CartLine) => string | null | undefined,
+): number | null {
+  for (const item of items) {
+    const amount = parseCartAmount(selector(item))
+    if (amount !== null) {
+      return amount
+    }
+  }
+  return null
+}
+
+function firstDeliveryGroups(items: readonly CartLine[]): readonly CartDeliveryGroup[] {
+  for (const item of items) {
+    if (item.deliveryGroups && item.deliveryGroups.length > 0) {
+      return item.deliveryGroups
+    }
+  }
+  return []
+}
+
+function selectedDeliveryGroupsCost(groups: readonly CartDeliveryGroup[]): number | null {
+  let total = 0
+  let found = false
+  groups.forEach((group) => {
+    const amount = cartDeliveryOptionAmount(selectedCartDeliveryOption(group))
+    if (amount !== null) {
+      total += amount
+      found = true
+    }
+  })
+  return found ? total : null
+}
+
+export function selectedCartDeliveryOption(group: CartDeliveryGroup): CartDeliveryOption | null {
+  const explicit = group.selectedDeliveryOption
+  if (explicit?.handle || explicit?.title || explicit?.cost) {
+    return explicit
+  }
+  return group.deliveryOptions?.find((option) => option.selected) ?? null
+}
+
+export function cartDeliveryOptionAmount(option?: CartDeliveryOption | null): number | null {
+  return parseCartAmount(option?.cost?.amount)
+}
+
+function parseCartAmount(value?: string | null): number | null {
+  if (value === null || value === undefined || value.trim() === '') {
+    return null
+  }
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount : null
 }
 
 export function orderTotal(order: Order): number {

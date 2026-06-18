@@ -24,7 +24,8 @@ public record CartResponse(
         Instant updatedAt,
         Instant refreshedAt,
         List<CartAppliedCodeResponse> appliedCodes,
-        List<CartLineResponse> lines
+        List<CartLineResponse> lines,
+        List<CartDeliveryGroupResponse> deliveryGroups
 ) {
 
     public static CartResponse from(CartResult result) {
@@ -47,7 +48,10 @@ public record CartResponse(
                 result.updatedAt(),
                 result.refreshedAt(),
                 result.appliedCodes().stream().map(CartAppliedCodeResponse::from).toList(),
-                result.lines().stream().map(CartLineResponse::from).toList()
+                result.lines().stream().map(CartLineResponse::from).toList(),
+                result.deliveryGroups().stream()
+                        .map(CartDeliveryGroupResponse::from)
+                        .toList()
         );
     }
 }
