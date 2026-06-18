@@ -48,7 +48,7 @@ public class UserProductSearchService {
             @NotNull @Valid SearchUserProductsCommand command
     ) {
         if (!upsertCommand.id().equals(command.userId())) {
-            throw new UserException("Product search user does not match authenticated user");
+            throw UserException.forbidden("Product search user does not match authenticated user");
         }
 
         String query = command.query().trim();

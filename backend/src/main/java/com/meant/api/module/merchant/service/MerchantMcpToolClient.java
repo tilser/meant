@@ -35,7 +35,7 @@ public class MerchantMcpToolClient {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(merchantMcpToolProperties.connectTimeoutMilliseconds()));
         requestFactory.setReadTimeout(Duration.ofMillis(merchantMcpToolProperties.readTimeoutMilliseconds()));
-        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
+        this.restClient = restClientBuilder.clone().requestFactory(requestFactory).build();
     }
 
     public MerchantMcpToolClient(RestClient restClient) {

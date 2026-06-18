@@ -113,7 +113,7 @@ public class UserAssistantChatService {
         userService.upsert(upsertCommand);
         UserAssistantConversation conversation = conversationRepository
                 .findByIdAndUserId(query.conversationId(), query.userId())
-                .orElseThrow(() -> new UserException("Assistant conversation not found"));
+                .orElseThrow(() -> UserException.notFound("Assistant conversation not found"));
         return conversationResult(conversation, query.userId());
     }
 
@@ -161,7 +161,7 @@ public class UserAssistantChatService {
                         .limit(PRODUCT_RESPONSE_LIMIT)
                         .toList();
             } catch (RuntimeException exception) {
-                searchError = exception.getMessage();
+                searchError = "Product search is temporarily unavailable.";
                 log.warn("Failed to run assistant product search", exception);
             }
         }
@@ -198,7 +198,7 @@ public class UserAssistantChatService {
 
     private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
         if (!upsertCommand.id().equals(userId)) {
-            throw new UserException("Assistant user does not match authenticated user");
+            throw UserException.forbidden("Assistant user does not match authenticated user");
         }
     }
 
@@ -236,7 +236,7 @@ public class UserAssistantChatService {
         }
         UserAssistantConversation conversation = conversationRepository
                 .findByIdAndUserId(command.conversationId(), command.userId())
-                .orElseThrow(() -> new UserException("Assistant conversation not found"));
+                .orElseThrow(() -> UserException.notFound("Assistant conversation not found"));
         conversation.touch(now);
         return conversationRepository.save(conversation);
     }

@@ -149,7 +149,7 @@ public class UserSavedProductService {
 
     private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
         if (!upsertCommand.id().equals(userId)) {
-            throw new UserException("Saved product user does not match authenticated user");
+            throw UserException.forbidden("Saved product user does not match authenticated user");
         }
     }
 
