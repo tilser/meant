@@ -47,13 +47,59 @@ class UserPreferenceFilterParsingServiceTest {
         assertThat(result.unmappedPreferences()).containsExactly("wide toe box");
         assertThat(openRouterChatClient.model).isEqualTo("google/gemini-2.5-flash-lite");
         assertThat(openRouterChatClient.schema.properties()).containsKeys("filterIds", "unmappedPreferences");
+        assertThat(openRouterChatClient.schema.properties().get("filterIds").items().enumValues()).isNull();
+        assertThat(openRouterChatClient.userPrompt).contains("organic and no polyester");
+    }
+
+    @Test
+    void parseUsesBranchingSafeSchemaForLargeCanonicalFilterCatalog() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        UserPreferenceFilterParsingService service = new UserPreferenceFilterParsingService(
+                shoppingFilterRepository(List.of(
+                        filter("organic", "Organic", 10),
+                        filter("organic-cotton", "Organic cotton", 20),
+                        filter("cotton", "Cotton", 30),
+                        filter("gluten-free", "Gluten-free", 40),
+                        filter("crypto", "Crypto", 50),
+                        filter("ai", "AI", 60)
+                )),
+                openRouterChatClient,
+                new OpenRouterProperties(
+                        "https://openrouter.test/api/v1",
+                        "test-key",
+                        "Meant",
+                        new OpenRouterProperties.Models(
+                                "google/gemini-2.5-flash-lite",
+                                "google/gemini-2.0-flash-lite-001",
+                                "google/gemini-2.5-flash-lite",
+                                "openrouter/free")),
+                new ObjectMapper());
+
+        openRouterChatClient.response = """
+                {
+                  "filterIds": ["organic", "cotton", "gluten-free", "crypto", "ai"],
+                  "unmappedPreferences": ["tech-savvy"]
+                }
+                """;
+
+        var result = service.parse(new ParseUserPreferenceFiltersCommand(
+                null,
+                "Organic, cotton, gluten-free, crypto, AI, tech-savvy"));
+
+        assertThat(result.filterIds()).containsExactly("organic", "cotton", "gluten-free", "crypto", "ai");
+        assertThat(result.unmappedPreferences()).containsExactly("tech-savvy");
+        assertThat(openRouterChatClient.schema.properties().get("filterIds").items().type()).isEqualTo("string");
+        assertThat(openRouterChatClient.schema.properties().get("filterIds").items().enumValues()).isNull();
     }
 
     private ShoppingFilterRepository shoppingFilterRepository() {
-        List<ShoppingFilter> filters = List.of(
+        return shoppingFilterRepository(List.of(
                 filter("organic", "Organic", 10),
                 filter("no-polyester", "No polyester", 20)
-        );
+        ));
+    }
+
+    private ShoppingFilterRepository shoppingFilterRepository(List<ShoppingFilter> filters) {
         return (ShoppingFilterRepository) Proxy.newProxyInstance(
                 ShoppingFilterRepository.class.getClassLoader(),
                 new Class<?>[]{ShoppingFilterRepository.class},
@@ -79,6 +125,7 @@ class UserPreferenceFilterParsingServiceTest {
 
         private String response;
         private String model;
+        private String userPrompt;
         private OpenRouterJsonSchemaDefinition schema;
 
         FakeOpenRouterChatClient() {
@@ -98,6 +145,7 @@ class UserPreferenceFilterParsingServiceTest {
                 OpenRouterJsonSchemaDefinition schema
         ) {
             this.model = model;
+            this.userPrompt = userPrompt;
             this.schema = schema;
             return response;
         }

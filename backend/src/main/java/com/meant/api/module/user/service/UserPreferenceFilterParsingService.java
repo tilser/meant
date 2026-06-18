@@ -49,7 +49,7 @@ public class UserPreferenceFilterParsingService {
                 SYSTEM_PROMPT,
                 userPrompt(command.description(), filters),
                 "shopping_filter_mapping",
-                responseSchema(filters)
+                responseSchema()
         );
         return sanitize(response, filters);
     }
@@ -75,14 +75,12 @@ public class UserPreferenceFilterParsingService {
                 .orElse("");
     }
 
-    private OpenRouterJsonSchemaDefinition responseSchema(List<ShoppingFilter> filters) {
+    private OpenRouterJsonSchemaDefinition responseSchema() {
         return OpenRouterJsonSchemaDefinition.object(
                 List.of("filterIds", "unmappedPreferences"),
                 Map.of(
                         "filterIds", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.stringEnum(filters.stream()
-                                        .map(ShoppingFilter::getId)
-                                        .toList())
+                                OpenRouterJsonSchemaDefinition.string()
                         ),
                         "unmappedPreferences", OpenRouterJsonSchemaDefinition.array(
                                 OpenRouterJsonSchemaDefinition.string()
