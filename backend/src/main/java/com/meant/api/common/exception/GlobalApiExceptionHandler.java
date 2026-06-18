@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,7 @@ public class GlobalApiExceptionHandler {
     private static final String NOT_FOUND_DETAIL = "The requested resource was not found.";
     private static final String UPSTREAM_DETAIL = "Upstream service is temporarily unavailable.";
     private static final String INTERNAL_DETAIL = "An unexpected error occurred.";
+    private static final String TRACE_ID_MDC_KEY = "traceId";
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ProblemDetail> handleMethodArgumentNotValid(
@@ -240,7 +242,7 @@ public class GlobalApiExceptionHandler {
             Exception exception,
             List<Map<String, String>> validationErrors
     ) {
-        String traceId = UUID.randomUUID().toString();
+        String traceId = traceId();
         logException(status, traceId, exception);
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
@@ -316,8 +318,13 @@ public class GlobalApiExceptionHandler {
             log.error("API error traceId={}", traceId, exception);
             return;
         }
-        log.warn("API request rejected traceId={} status={} exception={}", traceId, status.value(),
-                exception.getClass().getName());
+        log.warn("API request rejected traceId={} status={} exception={} message={}", traceId, status.value(),
+                exception.getClass().getName(), exception.getMessage());
+    }
+
+    private static String traceId() {
+        String traceId = MDC.get(TRACE_ID_MDC_KEY);
+        return traceId == null || traceId.isBlank() ? UUID.randomUUID().toString() : traceId;
     }
 
     private static ApiErrorCode codeForStatus(HttpStatusCode status) {

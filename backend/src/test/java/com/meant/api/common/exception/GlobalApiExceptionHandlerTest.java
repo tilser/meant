@@ -2,6 +2,7 @@ package com.meant.api.common.exception;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -15,6 +16,10 @@ import jakarta.validation.constraints.NotBlank;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.MDC;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -25,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@ExtendWith(OutputCaptureExtension.class)
 class GlobalApiExceptionHandlerTest {
 
     private MockMvc mockMvc;
@@ -85,7 +91,7 @@ class GlobalApiExceptionHandlerTest {
     }
 
     @Test
-    void businessExceptionMessageTextDoesNotDetermineStatus() throws Exception {
+    void businessExceptionMessageTextDoesNotDetermineStatus(CapturedOutput output) throws Exception {
         mockMvc.perform(get("/test-errors/not-found-message-only"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -93,6 +99,8 @@ class GlobalApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.detail").value("The request could not be processed."))
                 .andExpect(jsonPath("$.code").value("bad_request"))
                 .andExpect(content().string(not(containsString("not found"))));
+
+        assertThat(output).contains("message=Cart processor not found in remote payload");
     }
 
     @Test
@@ -117,6 +125,15 @@ class GlobalApiExceptionHandlerTest {
                 .andExpect(content().string(not(containsString("select * from users"))))
                 .andExpect(content().string(not(containsString("com.meant.Secret"))))
                 .andExpect(content().string(not(containsString("stackTrace"))));
+    }
+
+    @Test
+    void problemDetailUsesMdcTraceIdWhenPresent() throws Exception {
+        try (MDC.MDCCloseable ignored = MDC.putCloseable("traceId", "trace-123")) {
+            mockMvc.perform(get("/test-errors/unhandled"))
+                    .andExpect(status().isInternalServerError())
+                    .andExpect(jsonPath("$.traceId").value("trace-123"));
+        }
     }
 
     @RestController
