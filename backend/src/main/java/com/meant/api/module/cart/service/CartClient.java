@@ -9,6 +9,9 @@ import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
@@ -96,13 +99,19 @@ public class CartClient {
             return;
         }
 
+        Set<String> normalizedSubmittedCodes = submittedCodes.stream()
+                .filter(submittedCode -> submittedCode != null && !submittedCode.isBlank())
+                .map(submittedCode -> submittedCode.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        if (normalizedSubmittedCodes.isEmpty()) {
+            return;
+        }
+
         List<String> rejectedCodes = responseCodes.stream()
-                .filter(code -> Boolean.FALSE.equals(code.applicable()))
+                .filter(appliedCode -> Boolean.FALSE.equals(appliedCode.applicable()))
                 .map(CartToolResponse.AppliedCode::code)
-                .filter(code -> code != null && !code.isBlank())
-                .filter(code -> submittedCodes.stream()
-                        .filter(submittedCode -> submittedCode != null && !submittedCode.isBlank())
-                        .anyMatch(submittedCode -> submittedCode.equalsIgnoreCase(code)))
+                .filter(responseCode -> responseCode != null && !responseCode.isBlank())
+                .filter(responseCode -> normalizedSubmittedCodes.contains(responseCode.toLowerCase(Locale.ROOT)))
                 .toList();
         if (!rejectedCodes.isEmpty()) {
             throw CartException.rejected(label + " " + rejectedCodes.getFirst() + " was not accepted by the merchant.");

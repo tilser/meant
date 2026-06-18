@@ -20,6 +20,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -36,7 +37,7 @@ public class CartPersistenceService {
     public Cart findCart(UUID cartId, UUID userId) {
         Cart cart = cartRepository.findWithLinesByIdAndUserId(cartId, userId)
                 .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
-        cart.getAppliedCodes().size();
+        Hibernate.initialize(cart.getAppliedCodes());
         return cart;
     }
 

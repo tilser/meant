@@ -123,7 +123,7 @@ type AppliedCartCodeType = 'DISCOUNT' | 'GIFT_CARD'
 
 interface AppliedCartCode {
   type: AppliedCartCodeType
-  code: string
+  code: string | null
   label: string | null
   applicable: boolean | null
   amount: number | null
@@ -890,9 +890,10 @@ function cartSnapshotFromProfile(
     appliedCodes: (snapshot.appliedCodes ?? [])
       .map((code): AppliedCartCode => {
         const type = code.type === 'GIFT_CARD' ? 'GIFT_CARD' : 'DISCOUNT'
+        const transportCode = code.code?.trim() || null
         return {
           type,
-          code: code.code || code.label || (type === 'GIFT_CARD' ? 'Gift card' : 'Discount'),
+          code: transportCode,
           label: code.label ?? null,
           applicable: code.applicable ?? null,
           amount: parseCartAmount(code.amount),
@@ -911,10 +912,11 @@ function cartMoney(value: number, currency?: string | null): string {
 }
 
 function appliedCodeDisplay(code: AppliedCartCode): string {
-  if (code.type === 'GIFT_CARD' && /^[a-z0-9]{1,4}$/i.test(code.code)) {
-    return `•••• ${code.code}`
+  const displayValue = code.code?.trim() || code.label?.trim() || (code.type === 'GIFT_CARD' ? 'Gift card' : 'Discount')
+  if (code.type === 'GIFT_CARD' && /^[a-z0-9]{1,4}$/i.test(displayValue)) {
+    return `•••• ${displayValue}`
   }
-  return code.code
+  return displayValue
 }
 
 function cartSnapshotSavings(
@@ -4966,7 +4968,7 @@ function CartView({
                     {appliedCodes.length > 0 ? (
                       <div className="mt-applied-codes">
                         {appliedCodes.map((code, index) => (
-                          <span className="mt-applied-code" key={`${code.type}-${code.code}-${index}`}>
+                          <span className="mt-applied-code" key={`${code.type}-${code.code ?? code.label ?? 'code'}-${index}`}>
                             <span className="mt-code-val mt-mono">{appliedCodeDisplay(code)}</span>
                             <span className="mt-found-label">{code.label ?? (code.type === 'GIFT_CARD' ? 'Gift card' : 'Discount')}</span>
                             {code.amount ? (
@@ -4975,7 +4977,7 @@ function CartView({
                             <button
                               className="mt-code-remove"
                               type="button"
-                              disabled={!cartId || Boolean(busy)}
+                              disabled={!cartId || Boolean(busy) || !code.code}
                               onClick={() => void removeCode(merchantKey, group.merchant, cartId, code)}
                               aria-label={`Remove ${appliedCodeDisplay(code)}`}
                             >
@@ -6420,7 +6422,7 @@ export function MeantApp() {
     return Array.from(new Set(
       (snapshot?.appliedCodes ?? [])
         .filter((code) => code.type === type && code.code)
-        .map((code) => code.code),
+        .map((code) => code.code as string),
     ))
   }
 
@@ -6438,7 +6440,7 @@ export function MeantApp() {
       const updated = await updateCart({
         cartId: input.cartId,
         discountCodes: input.type === 'DISCOUNT' ? nextCodes : undefined,
-        giftCardCodes: input.type === 'GIFT_CARD' ? [code] : undefined,
+        giftCardCodes: input.type === 'GIFT_CARD' ? nextCodes : undefined,
       })
       updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
       storeCartSnapshot(input.merchantKey, input.merchant, updated)
@@ -6452,9 +6454,13 @@ export function MeantApp() {
   }
 
   const removeCartCode = async (input: RemoveCartCodeInput): Promise<{ ok: boolean; message?: string }> => {
+    const codeToRemove = input.code.code
+    if (!codeToRemove) {
+      return { ok: false, message: 'The merchant did not return a removable code for this adjustment.' }
+    }
     const snapshot = cartSnapshotsRef.current[input.merchantKey]
     const remainingCodes = appliedCodesForType(snapshot, input.code.type)
-      .filter((code) => code !== input.code.code)
+      .filter((code) => code !== codeToRemove)
 
     try {
       const updated = await updateCart({

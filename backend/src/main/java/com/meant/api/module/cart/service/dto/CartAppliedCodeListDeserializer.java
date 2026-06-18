@@ -27,10 +27,11 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
         }
 
         List<CartToolResponse.AppliedCode> values = new ArrayList<>();
-        while (parser.nextToken() != JsonToken.END_ARRAY) {
-            if (parser.currentToken() == JsonToken.VALUE_STRING) {
+        JsonToken token;
+        while ((token = parser.nextToken()) != null && token != JsonToken.END_ARRAY) {
+            if (token == JsonToken.VALUE_STRING) {
                 values.add(new CartToolResponse.AppliedCode(parser.getValueAsString(), null, null, null));
-            } else if (parser.currentToken() == JsonToken.START_OBJECT) {
+            } else if (token == JsonToken.START_OBJECT) {
                 values.add(readAppliedCode(parser));
             } else {
                 parser.skipChildren();
@@ -45,9 +46,17 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
         Boolean applicable = null;
         CartToolResponse.Money amount = null;
 
-        while (parser.nextToken() != JsonToken.END_OBJECT) {
+        JsonToken token;
+        while ((token = parser.nextToken()) != null && token != JsonToken.END_OBJECT) {
+            if (token != JsonToken.PROPERTY_NAME) {
+                parser.skipChildren();
+                continue;
+            }
             String fieldName = parser.currentName();
-            parser.nextToken();
+            JsonToken valueToken = parser.nextToken();
+            if (fieldName == null || valueToken == null) {
+                break;
+            }
             switch (fieldName) {
                 case "code", "last_characters" -> code = scalarValue(parser);
                 case "title", "label", "name" -> label = scalarValue(parser);
@@ -69,9 +78,17 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
         if (parser.currentToken() == JsonToken.START_OBJECT) {
             String amount = null;
             String currency = null;
-            while (parser.nextToken() != JsonToken.END_OBJECT) {
+            JsonToken token;
+            while ((token = parser.nextToken()) != null && token != JsonToken.END_OBJECT) {
+                if (token != JsonToken.PROPERTY_NAME) {
+                    parser.skipChildren();
+                    continue;
+                }
                 String fieldName = parser.currentName();
-                parser.nextToken();
+                JsonToken valueToken = parser.nextToken();
+                if (fieldName == null || valueToken == null) {
+                    break;
+                }
                 switch (fieldName) {
                     case "amount", "value" -> amount = scalarValue(parser);
                     case "currency", "currency_code", "currencyCode" -> currency = scalarValue(parser);
