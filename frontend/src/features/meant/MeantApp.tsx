@@ -5830,7 +5830,7 @@ function MerchantDeliveryPanel({
                   <div className="mt-mono mt-delivery-group-title">Shipment {index + 1}</div>
                 ) : null}
                 <div className="mt-delivery-options">
-                  {options.length > 0 ? options.map((option) => {
+                  {options.length > 0 ? options.map((option, optionIndex) => {
                     const optionSelected = selected?.handle && option.handle
                       ? selected.handle === option.handle
                       : option.selected === true
@@ -5838,9 +5838,10 @@ function MerchantDeliveryPanel({
                     return (
                       <button
                         className={`mt-delivery-option ${optionSelected ? 'selected' : ''}`}
-                        key={option.handle ?? option.title ?? `${merchantKey}-${index}`}
+                        key={option.handle ?? option.title ?? `${merchantKey}-${index}-${optionIndex}`}
                         type="button"
                         disabled={busy || !option.handle}
+                        aria-pressed={optionSelected}
                         onClick={() => onSelectOption(group, option)}
                       >
                         <span className="mt-delivery-option-main">

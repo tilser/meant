@@ -38,22 +38,23 @@ public class CartService {
     private final CartPersistenceService cartPersistenceService;
     private final CartClient cartClient;
     private final UserInventoryService userInventoryService;
+    private final CartResultMapper cartResultMapper;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
         UpdateCartArguments arguments = createArguments(command);
         CartToolResult result = cartClient.updateCart(provider, arguments);
-        return CartResult.from(cartPersistenceService.saveSnapshot(null, command.userId(), provider, result, arguments));
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(null, command.userId(), provider, result, arguments));
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         if (!query.refresh()) {
-            return CartResult.from(cart);
+            return cartResultMapper.from(cart);
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         CartToolResult result = cartClient.getCart(provider, cart.getRemoteCartId());
-        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result));
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result));
     }
 
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
@@ -61,7 +62,7 @@ public class CartService {
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         UpdateCartArguments arguments = updateArguments(cart, command);
         CartToolResult result = cartClient.updateCart(provider, arguments);
-        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), command.userId(), provider, result, arguments));
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart.getId(), command.userId(), provider, result, arguments));
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {

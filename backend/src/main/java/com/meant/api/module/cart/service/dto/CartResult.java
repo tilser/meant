@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import tools.jackson.databind.ObjectMapper;
 
 public record CartResult(
         UUID cartId,
@@ -32,9 +31,7 @@ public record CartResult(
         List<CartDeliveryGroupResult> deliveryGroups
 ) {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-    public static CartResult from(Cart cart) {
+    public static CartResult from(Cart cart, List<CartDeliveryGroupResult> deliveryGroups) {
         return new CartResult(
                 cart.getId(),
                 cart.getMerchantId(),
@@ -62,24 +59,7 @@ public record CartResult(
                         .map(CartLineResult::from)
                         .sorted(Comparator.comparing(CartLineResult::createdAt))
                         .toList(),
-                deliveryGroups(cart.getRawCartResponse())
+                safeNonNullList(deliveryGroups)
         );
-    }
-
-    private static List<CartDeliveryGroupResult> deliveryGroups(String rawCartResponse) {
-        if (rawCartResponse == null || rawCartResponse.isBlank()) {
-            return List.of();
-        }
-        try {
-            CartToolResponse response = OBJECT_MAPPER.readValue(rawCartResponse, CartToolResponse.class);
-            if (response == null || response.cart() == null) {
-                return List.of();
-            }
-            return safeNonNullList(response.cart().deliveryGroups()).stream()
-                    .map(CartDeliveryGroupResult::from)
-                    .toList();
-        } catch (RuntimeException exception) {
-            return List.of();
-        }
     }
 }

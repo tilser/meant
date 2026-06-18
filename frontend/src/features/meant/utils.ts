@@ -513,8 +513,9 @@ export function cartGroups(
     const deliveryRaw = selectedDeliveryCost ?? inferredDelivery ?? (subtotal >= 50 ? 0 : 4.99)
     const found = scanning ? null : bestCode(DISCOUNTS[merchant], subtotal, deliveryRaw)
     const itemDiscount = found && found.code.type !== 'shipping' ? found.save : 0
+    const deliveryDiscount = found && found.code.type === 'shipping' ? deliveryRaw : 0
     const delivery = found && found.code.type === 'shipping' ? 0 : deliveryRaw
-    const total = remoteTotal ?? subtotal - itemDiscount + delivery
+    const total = Math.max(0, (remoteTotal ?? subtotal + deliveryRaw) - itemDiscount - deliveryDiscount)
     const hasDeliveryOptions = deliveryGroups.some((group) => (group.deliveryOptions?.length ?? 0) > 0)
     const hasSelectedDelivery = deliveryGroups.some((group) => Boolean(selectedCartDeliveryOption(group)))
     return {
@@ -582,11 +583,21 @@ export function cartDeliveryOptionAmount(option?: CartDeliveryOption | null): nu
   return parseCartAmount(option?.cost?.amount)
 }
 
-function parseCartAmount(value?: string | null): number | null {
-  if (value === null || value === undefined || value.trim() === '') {
+function parseCartAmount(value?: string | number | null): number | null {
+  if (value === null || value === undefined) {
     return null
   }
-  const amount = Number(value)
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  if (typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return null
+  }
+  const amount = Number(trimmed)
   return Number.isFinite(amount) ? amount : null
 }
 

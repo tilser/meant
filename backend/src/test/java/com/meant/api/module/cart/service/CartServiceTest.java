@@ -67,7 +67,8 @@ class CartServiceTest {
                 new MerchantCartProviderLookupService(merchantRepository.proxy()),
                 cartPersistenceService,
                 cartClient,
-                userInventoryService
+                userInventoryService,
+                new CartResultMapper(new ObjectMapper())
         );
         merchant = merchant();
         merchantRepository.save(merchant);
@@ -195,6 +196,15 @@ class CartServiceTest {
         assertThat(result.deliveryGroups().getFirst().deliveryOptions()).extracting("cost.amount")
                 .containsExactly("5.00", "12.00");
         assertThat(cartClient.getCount).isZero();
+    }
+
+    @Test
+    void cartResultMapperReturnsEmptyDeliveryGroupsWhenStoredSnapshotCannotBeParsed() {
+        Cart cart = cart(UUID.randomUUID(), "https://merchant.example/checkout", UUID.randomUUID(), "not-json");
+
+        CartResult result = new CartResultMapper(new ObjectMapper()).from(cart);
+
+        assertThat(result.deliveryGroups()).isEmpty();
     }
 
     @Test
@@ -506,6 +516,10 @@ class CartServiceTest {
     }
 
     private Cart cart(UUID cartId, String checkoutUrl, UUID cartLineId) {
+        return cart(cartId, checkoutUrl, cartLineId, "{}");
+    }
+
+    private Cart cart(UUID cartId, String checkoutUrl, UUID cartLineId, String rawCartResponse) {
         Instant now = Instant.parse("2026-06-16T11:05:00Z");
         CartLine line = CartLine.builder()
                 .id(cartLineId)
@@ -528,7 +542,7 @@ class CartServiceTest {
                 .remoteCartId("gid://shopify/Cart/1")
                 .remoteCartIdHash("hash")
                 .checkoutUrl(checkoutUrl)
-                .rawCartResponse("{}")
+                .rawCartResponse(rawCartResponse)
                 .totalQuantity(1)
                 .active(true)
                 .remoteCreatedAt(CART_REMOTE_CREATED_AT)
