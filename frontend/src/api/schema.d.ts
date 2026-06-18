@@ -347,6 +347,7 @@ export interface components {
             email?: string;
             firstName?: string;
             surname?: string;
+            profilePicturePath?: string;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */

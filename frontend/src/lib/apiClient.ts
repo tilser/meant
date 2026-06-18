@@ -4,6 +4,8 @@ import type { components, paths } from '../api/schema'
 import { supabase } from './supabase'
 
 const API_URL = import.meta.env.VITE_MEANT_API_URL ?? 'http://localhost:8080'
+const PROFILE_PICTURE_BUCKET = 'profile-pictures'
+const PROFILE_PICTURE_SIGNED_URL_SECONDS = 60 * 60
 
 /** Profile shape served by the backend, sourced from the generated OpenAPI schema. */
 export type UserProfile = components['schemas']['UserResponse']
@@ -284,6 +286,80 @@ export async function updateProfile(input: {
     throw new Error('Failed to update profile')
   }
   return data
+}
+
+export async function updateProfilePicture(profilePicturePath: string): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/profile-picture`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ profilePicturePath }),
+  })
+  return parseJsonResponse<UserProfile>(response, 'Failed to update profile picture')
+}
+
+export async function removeProfilePicture(): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/profile-picture`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserProfile>(response, 'Failed to remove profile picture')
+}
+
+export async function getProfilePictureUrl(profilePicturePath?: string | null): Promise<string | null> {
+  if (!profilePicturePath) {
+    return null
+  }
+  const { data, error } = await supabase.storage
+    .from(PROFILE_PICTURE_BUCKET)
+    .createSignedUrl(profilePicturePath, PROFILE_PICTURE_SIGNED_URL_SECONDS)
+  if (error) {
+    throw new Error('Failed to load profile picture')
+  }
+  return data.signedUrl
+}
+
+export async function uploadProfilePictureFile(userId: string, file: File): Promise<{
+  path: string
+  signedUrl: string | null
+}> {
+  const extension = profilePictureExtension(file)
+  const path = `${userId}/${crypto.randomUUID()}.${extension}`
+  const { data, error } = await supabase.storage
+    .from(PROFILE_PICTURE_BUCKET)
+    .upload(path, file, {
+      cacheControl: '3600',
+      contentType: file.type,
+      upsert: false,
+    })
+  if (error) {
+    throw new Error('Failed to upload profile picture')
+  }
+  return {
+    path: data.path,
+    signedUrl: await getProfilePictureUrl(data.path),
+  }
+}
+
+export async function deleteProfilePictureFile(profilePicturePath?: string | null): Promise<void> {
+  if (!profilePicturePath) {
+    return
+  }
+  await supabase.storage
+    .from(PROFILE_PICTURE_BUCKET)
+    .remove([profilePicturePath])
+}
+
+function profilePictureExtension(file: File): 'jpg' | 'png' | 'webp' {
+  if (file.type === 'image/png') {
+    return 'png'
+  }
+  if (file.type === 'image/webp') {
+    return 'webp'
+  }
+  return 'jpg'
 }
 
 export async function getUserSettings(): Promise<UserSettingsProfile> {

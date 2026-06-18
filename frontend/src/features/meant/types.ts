@@ -144,6 +144,7 @@ export interface UserAccount {
   name: string
   email: string
   avatar: string | null
+  avatarPath: string | null
 }
 
 export interface CheckoutPayload {

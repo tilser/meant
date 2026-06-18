@@ -143,6 +143,7 @@ export const DEFAULT_USER: UserAccount = {
   name: PROFILE.name,
   email: 'mara@meant.app',
   avatar: null,
+  avatarPath: null,
 }
 
 export const PRODUCTS: readonly Product[] = [

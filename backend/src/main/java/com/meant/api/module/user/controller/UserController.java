@@ -2,6 +2,7 @@ package com.meant.api.module.user.controller;
 
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
+import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UserAssistantChatContextRequest;
@@ -134,6 +135,42 @@ public class UserController {
         return UserResponse.from(userService.updateProfile(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+    }
+
+    @PatchMapping("/me/profile-picture")
+    @Operation(
+            summary = "Update current user profile picture",
+            description = "Stores the Supabase Storage object path for the authenticated user's profile picture."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated user profile",
+            content = @Content(schema = @Schema(implementation = UserResponse.class))
+    )
+    public UserResponse updateProfilePicture(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UpdateUserProfilePictureRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserResponse.from(userService.updateProfilePicture(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+    }
+
+    @DeleteMapping("/me/profile-picture")
+    @Operation(
+            summary = "Remove current user profile picture",
+            description = "Clears the stored profile picture object path for the authenticated user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated user profile",
+            content = @Content(schema = @Schema(implementation = UserResponse.class))
+    )
+    public UserResponse removeProfilePicture(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserResponse.from(userService.removeProfilePicture(
+                UserCommandMapper.toUpsertCommand(authenticatedUser)));
     }
 
     @GetMapping("/me/settings")

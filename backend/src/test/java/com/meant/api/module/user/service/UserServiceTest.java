@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.query.GetUserQuery;
@@ -84,6 +85,59 @@ class UserServiceTest {
         assertThat(created.getId()).isEqualTo(id);
         assertThat(created.getEmail()).isEqualTo("grace@example.com");
         assertThat(created.getSurname()).isEqualTo("Murray Hopper");
+        assertThat(userRepository.insertCount).isEqualTo(1);
+    }
+
+    @Test
+    void updateProfilePictureStoresOwnedObjectPath() {
+        UUID id = UUID.randomUUID();
+        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        String profilePicturePath = id + "/avatar.webp";
+
+        User updated = userService.updateProfilePicture(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserProfilePictureCommand(id, profilePicturePath));
+
+        assertThat(updated.getProfilePicturePath()).isEqualTo(profilePicturePath);
+        assertThat(userRepository.insertCount).isEqualTo(1);
+    }
+
+    @Test
+    void updateProfilePictureRejectsOtherUserPath() {
+        UUID id = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThatThrownBy(() -> userService.updateProfilePicture(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserProfilePictureCommand(id, otherUserId + "/avatar.webp")))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("Profile picture path");
+    }
+
+    @Test
+    void updateProfilePictureRejectsNestedOrUnsupportedObjectPath() {
+        UUID id = UUID.randomUUID();
+        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThatThrownBy(() -> userService.updateProfilePicture(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserProfilePictureCommand(id, id + "/nested/avatar.gif")))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("Profile picture path");
+    }
+
+    @Test
+    void removeProfilePictureClearsObjectPath() {
+        UUID id = UUID.randomUUID();
+        userService.updateProfilePicture(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserProfilePictureCommand(id, id + "/avatar.webp"));
+
+        User updated = userService.removeProfilePicture(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThat(updated.getProfilePicturePath()).isNull();
         assertThat(userRepository.insertCount).isEqualTo(1);
     }
 

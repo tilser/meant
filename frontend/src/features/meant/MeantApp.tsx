@@ -30,15 +30,18 @@ import {
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
   createCart,
+  deleteProfilePictureFile,
   getAssistantConversation,
   getAssistantConversations,
   getCartCheckout,
   getCurrentUser,
   getMerchants,
+  getProfilePictureUrl,
   getProductDiscovery,
   getPopularProductSearches,
   getUserProductSearchSuggestions,
   getUserSettings,
+  removeProfilePicture,
   removeSavedProduct,
   saveUserProduct,
   searchUserProducts,
@@ -55,7 +58,9 @@ import {
   updateCart,
   type UserProductSearchProductProfile,
   updateProfile,
+  updateProfilePicture,
   updateUserSettings,
+  uploadProfilePictureFile,
   type UserSettingsProfile,
 } from '../../lib/apiClient'
 import type {
@@ -4966,14 +4971,19 @@ function splitName(fullName: string): { firstName: string; surname: string | nul
   return { firstName, surname }
 }
 
+const PROFILE_PICTURE_ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const PROFILE_PICTURE_MAX_BYTES = 5 * 1024 * 1024
+
 function AccountView({
   user,
+  userId,
   onSave,
   onSignOut,
   onEditPrefs,
   onDone,
 }: Readonly<{
   user: UserAccount
+  userId?: string
   onSave: (user: UserAccount) => void
   onSignOut: () => void
   onEditPrefs: () => void
@@ -4981,26 +4991,95 @@ function AccountView({
 }>) {
   const [name, setName] = useState(user.name)
   const [avatar, setAvatar] = useState<string | null>(user.avatar)
+  const [avatarPath, setAvatarPath] = useState<string | null>(user.avatarPath)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
-  const preview: UserAccount = { name, email: user.email, avatar }
-  const dirty = name !== user.name || avatar !== user.avatar
+  const preview: UserAccount = { name, email: user.email, avatar, avatarPath }
+  const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
 
   const onFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) {
       return
     }
+    setSaved(false)
+    setError(null)
+    if (!PROFILE_PICTURE_ALLOWED_TYPES.has(file.type)) {
+      setError('Use a JPG, PNG, or WebP image.')
+      event.target.value = ''
+      return
+    }
+    if (file.size > PROFILE_PICTURE_MAX_BYTES) {
+      setError('Profile photo must be 5 MB or smaller.')
+      event.target.value = ''
+      return
+    }
     const reader = new FileReader()
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         setAvatar(reader.result)
+        setPendingFile(file)
       }
     }
     reader.readAsDataURL(file)
     event.target.value = ''
+  }
+
+  const saveAccount = async () => {
+    const nextName = name.trim() || user.name
+    const { firstName, surname } = splitName(nextName)
+    let uploadedPath: string | null = null
+    setSaving(true)
+    setError(null)
+    try {
+      let savedName = nextName
+      let savedEmail = user.email
+      let savedAvatar = avatar
+      let savedAvatarPath = avatarPath
+
+      if (nextName !== user.name) {
+        const profile = await updateProfile({ firstName, surname })
+        savedName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
+        savedEmail = profile.email || user.email
+      }
+
+      if (pendingFile) {
+        if (!userId) {
+          throw new Error('Missing authenticated user id')
+        }
+        const uploaded = await uploadProfilePictureFile(userId, pendingFile)
+        uploadedPath = uploaded.path
+        const profile = await updateProfilePicture(uploaded.path)
+        savedAvatarPath = profile.profilePicturePath ?? uploaded.path
+        savedAvatar = uploaded.signedUrl
+        if (user.avatarPath && user.avatarPath !== savedAvatarPath) {
+          void deleteProfilePictureFile(user.avatarPath)
+        }
+      } else if (avatarPath === null && user.avatarPath) {
+        const profile = await removeProfilePicture()
+        savedAvatarPath = profile.profilePicturePath ?? null
+        savedAvatar = null
+        void deleteProfilePictureFile(user.avatarPath)
+      }
+
+      onSave({ name: savedName, email: savedEmail, avatar: savedAvatar, avatarPath: savedAvatarPath })
+      setName(savedName)
+      setAvatar(savedAvatar)
+      setAvatarPath(savedAvatarPath)
+      setPendingFile(null)
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 1800)
+    } catch {
+      if (uploadedPath) {
+        void deleteProfilePictureFile(uploadedPath)
+      }
+      setError('Could not save your changes. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -5021,12 +5100,21 @@ function AccountView({
               {avatar ? 'Change photo' : 'Upload photo'}
             </button>
             {avatar ? (
-              <button className="mt-acct-removebtn" type="button" onClick={() => setAvatar(null)}>
+              <button
+                className="mt-acct-removebtn"
+                type="button"
+                onClick={() => {
+                  setSaved(false)
+                  setPendingFile(null)
+                  setAvatar(null)
+                  setAvatarPath(null)
+                }}
+              >
                 Remove
               </button>
             ) : null}
-            <div className="mt-acct-photo-hint">JPG or PNG. A square image works best.</div>
-            <input ref={fileRef} type="file" accept="image/*" onChange={onFile} hidden />
+            <div className="mt-acct-photo-hint">JPG, PNG, or WebP up to 5 MB. A square image works best.</div>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile} hidden />
           </div>
         </div>
         <div className="mt-acct-fields">
@@ -5046,20 +5134,7 @@ function AccountView({
             type="button"
             disabled={!dirty || saving}
             onClick={() => {
-              const nextName = name.trim() || user.name
-              const { firstName, surname } = splitName(nextName)
-              setSaving(true)
-              setError(null)
-              updateProfile({ firstName, surname })
-                .then((profile) => {
-                  const savedName =
-                    [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
-                  onSave({ name: savedName, email: user.email, avatar })
-                  setSaved(true)
-                  window.setTimeout(() => setSaved(false), 1800)
-                })
-                .catch(() => setError('Could not save your changes. Please try again.'))
-                .finally(() => setSaving(false))
+              void saveAccount()
             }}
           >
             {saving ? 'Saving…' : 'Save changes'}
@@ -5553,13 +5628,16 @@ export function MeantApp() {
     }
     let active = true
     getCurrentUser()
-      .then((profile) => {
+      .then(async (profile) => {
+        const avatar = await getProfilePictureUrl(profile.profilePicturePath).catch(() => null)
         if (!active) return
         const fullName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim()
         setUser((current) => ({
           ...current,
           name: fullName || current.name,
           email: profile.email || current.email,
+          avatar,
+          avatarPath: profile.profilePicturePath ?? null,
         }))
       })
       .catch(() => {
@@ -6198,6 +6276,7 @@ export function MeantApp() {
         return (
           <AccountView
             user={user}
+            userId={userId}
             onSave={setUser}
             onSignOut={handleSignOut}
             onEditPrefs={() => nav('preferences')}

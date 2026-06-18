@@ -41,6 +41,8 @@ public class User {
 
     private String surname;
 
+    private String profilePicturePath;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -65,6 +67,14 @@ public class User {
         }
         this.firstName = firstName;
         this.surname = surname;
+        this.updatedAt = now;
+    }
+
+    public void updateProfilePicture(String profilePicturePath, Instant now) {
+        if (Objects.equals(this.profilePicturePath, profilePicturePath)) {
+            return;
+        }
+        this.profilePicturePath = profilePicturePath;
         this.updatedAt = now;
     }
 }

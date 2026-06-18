@@ -232,6 +232,73 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void patchUpdatesProfilePicturePath() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String profilePicturePath = id + "/avatar.webp";
+
+        UserResponse body = client.patch().uri("/api/users/me/profile-picture")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"profilePicturePath\":\"%s\"}".formatted(profilePicturePath))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.profilePicturePath()).isEqualTo(profilePicturePath);
+        assertThat(userRepository.findById(id).orElseThrow().getProfilePicturePath()).isEqualTo(profilePicturePath);
+    }
+
+    @Test
+    void patchRejectsProfilePicturePathOutsideUserFolder() {
+        UUID id = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        String email = id + "@example.com";
+
+        client.patch().uri("/api/users/me/profile-picture")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"profilePicturePath\":\"%s/avatar.webp\"}".formatted(otherUserId))
+                .exchange()
+                .expectStatus().isBadRequest();
+    }
+
+    @Test
+    void deleteRemovesProfilePicturePath() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String profilePicturePath = id + "/avatar.webp";
+
+        client.patch().uri("/api/users/me/profile-picture")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"profilePicturePath\":\"%s\"}".formatted(profilePicturePath))
+                .exchange()
+                .expectStatus().isOk();
+
+        UserResponse body = client.delete().uri("/api/users/me/profile-picture")
+                .headers(headers -> headers.setBearerAuth(token(id, email, null)))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.profilePicturePath()).isNull();
+        assertThat(userRepository.findById(id).orElseThrow().getProfilePicturePath()).isNull();
+    }
+
+    @Test
     void settingsReturnsDefaultCanonicalFilters() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";

@@ -63,4 +63,28 @@ class UserTest {
         assertThat(user.getSurname()).isEqualTo("Byron");
         assertThat(user.getUpdatedAt()).isEqualTo(now);
     }
+
+    @Test
+    void updateProfilePictureIsNoOpWhenPathUnchanged() {
+        User user = newUser("ada@example.com", "Ada", "Lovelace");
+        Instant firstUpdate = Instant.parse("2024-01-01T00:00:00Z");
+        user.updateProfilePicture("%s/avatar.webp".formatted(user.getId()), firstUpdate);
+        Instant before = user.getUpdatedAt();
+
+        user.updateProfilePicture("%s/avatar.webp".formatted(user.getId()), Instant.parse("2025-01-01T00:00:00Z"));
+
+        assertThat(user.getUpdatedAt()).isEqualTo(before);
+    }
+
+    @Test
+    void updateProfilePictureAdvancesTimestampWhenPathChanges() {
+        User user = newUser("ada@example.com", "Ada", "Lovelace");
+        Instant now = Instant.parse("2025-01-01T00:00:00Z");
+        String profilePicturePath = "%s/avatar.webp".formatted(user.getId());
+
+        user.updateProfilePicture(profilePicturePath, now);
+
+        assertThat(user.getProfilePicturePath()).isEqualTo(profilePicturePath);
+        assertThat(user.getUpdatedAt()).isEqualTo(now);
+    }
 }

@@ -1,9 +1,11 @@
 package com.meant.api.module.user.controller.mapper;
 
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
+import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
+import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
@@ -33,6 +35,15 @@ public final class UserCommandMapper {
                 userId,
                 request.firstName(),
                 request.surname());
+    }
+
+    public static UpdateUserProfilePictureCommand toUpdateCommand(
+            UUID userId,
+            UpdateUserProfilePictureRequest request
+    ) {
+        return new UpdateUserProfilePictureCommand(
+                userId,
+                request.profilePicturePath());
     }
 
     public static UpdateUserSettingsCommand toUpdateSettingsCommand(

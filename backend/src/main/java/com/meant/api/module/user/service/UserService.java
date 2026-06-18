@@ -3,12 +3,15 @@ package com.meant.api.module.user.service;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.query.GetUserQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,6 +22,8 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @RequiredArgsConstructor
 public class UserService {
+
+    private static final Set<String> PROFILE_PICTURE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     private final UserRepository userRepository;
 
@@ -52,6 +57,28 @@ public class UserService {
         return user;
     }
 
+    @Transactional
+    public User updateProfilePicture(
+            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid UpdateUserProfilePictureCommand updateCommand) {
+        if (!upsertCommand.id().equals(updateCommand.id())) {
+            throw UserException.forbidden("Cannot update another user's profile picture");
+        }
+        Instant now = Instant.now();
+        User user = upsertInternal(upsertCommand, now);
+        String profilePicturePath = normalizeProfilePicturePath(updateCommand.id(), updateCommand.profilePicturePath());
+        user.updateProfilePicture(profilePicturePath, now);
+        return user;
+    }
+
+    @Transactional
+    public User removeProfilePicture(@NotNull @Valid UpsertUserCommand upsertCommand) {
+        Instant now = Instant.now();
+        User user = upsertInternal(upsertCommand, now);
+        user.updateProfilePicture(null, now);
+        return user;
+    }
+
     /**
      * Resolves the managed profile entity, writing only when necessary. Since this runs on every
      * read ({@code GET /api/users/me}), the common case — an existing row whose email is unchanged —
@@ -76,5 +103,30 @@ public class UserService {
     private User findUser(UUID id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> UserException.notFound("User not found: " + id));
+    }
+
+    private String normalizeProfilePicturePath(UUID userId, String profilePicturePath) {
+        String normalized = profilePicturePath.trim();
+        String expectedPrefix = userId + "/";
+        String fileName = normalized.startsWith(expectedPrefix)
+                ? normalized.substring(expectedPrefix.length())
+                : "";
+        if (!isAllowedProfilePictureFileName(fileName)) {
+            throw new UserException("Profile picture path must point to the authenticated user's image object");
+        }
+        return normalized;
+    }
+
+    private boolean isAllowedProfilePictureFileName(String fileName) {
+        if (fileName.isBlank() || fileName.contains("/") || fileName.contains("..")) {
+            return false;
+        }
+        int extensionStart = fileName.lastIndexOf('.');
+        if (extensionStart <= 0 || extensionStart == fileName.length() - 1) {
+            return false;
+        }
+        String baseName = fileName.substring(0, extensionStart);
+        String extension = fileName.substring(extensionStart + 1).toLowerCase(Locale.ROOT);
+        return baseName.matches("[A-Za-z0-9._-]+") && PROFILE_PICTURE_EXTENSIONS.contains(extension);
     }
 }
