@@ -32,6 +32,37 @@ management:
 server:
   port: ${MEANT_API_PORT:8080}
 
+app:
+  rate-limit:
+    enabled: ${APP_RATE_LIMIT_ENABLED:true}
+    expensive-endpoints:
+      limits:
+        - name: per-minute
+          capacity: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_MINUTE_CAPACITY:20}
+          refill-tokens: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_MINUTE_REFILL_TOKENS:20}
+          refill-period: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_MINUTE_REFILL_PERIOD:1m}
+        - name: per-day
+          capacity: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_DAY_CAPACITY:500}
+          refill-tokens: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_DAY_REFILL_TOKENS:500}
+          refill-period: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_DAY_REFILL_PERIOD:1d}
+      endpoints:
+        - method: POST
+          path: /api/users/me/product-searches
+        - method: GET
+          path: /api/users/me/product-search-suggestions
+        - method: POST
+          path: /api/users/me/assistant/messages:stream
+        - method: POST
+          path: /api/merchants/semantic-search
+        - method: POST
+          path: /api/merchants/semantic-product-search
+        - method: POST
+          path: /api/carts
+        - method: PATCH
+          path: /api/carts/{cartId}
+        - method: GET
+          path: /api/carts/{cartId}/checkout
+
 ai:
   openrouter:
     base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
