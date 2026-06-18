@@ -164,6 +164,50 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     @Test
+    void parsesLocalizedDecimalRatingValues() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
+                new CatalogSearchResponse.Money(5200L, "USD"),
+                Map.of("value", "4,75", "reviewCount", "1,234"),
+                "1,234",
+                Map.of("fabric", "100% organic cotton"),
+                Map.of("fit", "relaxed")
+        ))));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.ratingScore()).isEqualTo(4.75d);
+            assertThat(product.reviewCount()).isEqualTo(1234);
+        });
+    }
+
+    @Test
+    void handlesDeeplyNestedCatalogMetadata() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
+                new CatalogSearchResponse.Money(5200L, "USD"),
+                Map.of("value", 4.8d, "reviewCount", 214),
+                214,
+                deeplyNestedValue(10_000),
+                null
+        ))));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement()
+                .satisfies(product -> assertThat(product.productId()).isEqualTo("rich-tee"));
+    }
+
+    @Test
     void treatsRawNumericListPricesAsMajorUnits() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
@@ -389,6 +433,22 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     private CatalogSearchResponse.Product richProduct(Object listPrice) {
+        return richProduct(
+                listPrice,
+                Map.of("value", 4.8d, "reviewCount", 214),
+                214,
+                Map.of("fabric", "100% organic cotton"),
+                Map.of("fit", "relaxed")
+        );
+    }
+
+    private CatalogSearchResponse.Product richProduct(
+            Object listPrice,
+            Object rating,
+            Object reviewCount,
+            Object metadata,
+            Object techSpecs
+    ) {
         return new CatalogSearchResponse.Product(
                 "rich-tee",
                 "Organic Cotton Tee",
@@ -399,8 +459,8 @@ class MerchantSemanticProductSearchServiceTest {
                         new CatalogSearchResponse.Money(3800L, "USD")
                 ),
                 listPrice,
-                Map.of("value", 4.8d, "reviewCount", 214),
-                214,
+                rating,
+                reviewCount,
                 List.of(new CatalogSearchResponse.Variant(
                         "rich-tee-variant",
                         "Default Title",
@@ -428,10 +488,18 @@ class MerchantSemanticProductSearchServiceTest {
                 List.of("GOTS"),
                 List.of("Organic cotton"),
                 List.of("Basics"),
-                Map.of("fabric", "100% organic cotton"),
+                metadata,
                 null,
-                Map.of("fit", "relaxed")
+                techSpecs
         );
+    }
+
+    private Object deeplyNestedValue(int depth) {
+        Object value = "GOTS";
+        for (int index = 0; index < depth; index++) {
+            value = List.of(value);
+        }
+        return value;
     }
 
     private CatalogSearchResponse.Product product(String id, String title, String description, String category) {

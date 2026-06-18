@@ -55,6 +55,8 @@ import org.springframework.validation.annotation.Validated;
 @Slf4j
 public class MerchantSemanticProductSearchService {
 
+    private static final int MAX_METADATA_DEPTH = 64;
+
     private final MerchantSemanticSearchService merchantSemanticSearchService;
     private final MerchantCatalogSearchClient merchantCatalogSearchClient;
     private final MerchantProductDetailsClient merchantProductDetailsClient;
@@ -588,38 +590,26 @@ public class MerchantSemanticProductSearchService {
         if (value == null) {
             return List.of();
         }
-        if (value instanceof Collection<?> collection) {
-            return collection.stream()
-                    .flatMap(item -> attributes(item).stream())
-                    .toList();
-        }
-        if (value instanceof Map<?, ?> map) {
-            return attributes(map);
-        }
-        String scalar = scalarString(value);
-        return scalar == null ? List.of() : List.of(new ProductCatalogAttribute("metadata", scalar));
-    }
-
-    private List<ProductCatalogAttribute> attributes(Map<?, ?> map) {
-        Object namedValue = firstMapValue(map, "value", "values", "text", "description");
-        String namedKey = firstStringValue(map, "name", "key", "label", "title");
-        if (namedKey != null && namedValue != null) {
-            String value = String.join(", ", stringValues(namedValue));
-            return value.isBlank() ? List.of() : List.of(new ProductCatalogAttribute(namedKey, value));
-        }
-
         List<ProductCatalogAttribute> attributes = new ArrayList<>();
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            String key = scalarString(entry.getKey());
-            if (key == null) {
+        List<AttributeNode> stack = new ArrayList<>();
+        stack.add(new AttributeNode("metadata", value, 0));
+        while (!stack.isEmpty()) {
+            AttributeNode node = stack.removeLast();
+            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
                 continue;
             }
-            addAttributeValue(attributes, key, entry.getValue());
+            addAttributeValue(attributes, stack, node.name(), node.value(), node.depth());
         }
         return attributes;
     }
 
-    private void addAttributeValue(List<ProductCatalogAttribute> attributes, String key, Object value) {
+    private void addAttributeValue(
+            List<ProductCatalogAttribute> attributes,
+            List<AttributeNode> stack,
+            String key,
+            Object value,
+            int depth
+    ) {
         if (value instanceof Map<?, ?> map) {
             Object namedValue = firstMapValue(map, "value", "values", "text", "description");
             String namedKey = firstPresent(firstStringValue(map, "name", "key", "label", "title"), key);
@@ -630,18 +620,19 @@ public class MerchantSemanticProductSearchService {
                 }
                 return;
             }
-            map.forEach((nestedKey, nestedValue) -> {
-                String nestedName = scalarString(nestedKey);
+            List<Map.Entry<?, ?>> entries = new ArrayList<>(map.entrySet());
+            for (int index = entries.size() - 1; index >= 0; index--) {
+                Map.Entry<?, ?> entry = entries.get(index);
+                String nestedName = scalarString(entry.getKey());
                 if (nestedName != null) {
-                    addAttributeValue(attributes, key + " " + nestedName, nestedValue);
+                    String attributeName = "metadata".equals(key) ? nestedName : key + " " + nestedName;
+                    stack.add(new AttributeNode(attributeName, entry.getValue(), depth + 1));
                 }
-            });
+            }
             return;
         }
         if (value instanceof Collection<?> collection) {
-            List<String> values = collection.stream()
-                    .flatMap(item -> stringValues(item).stream())
-                    .toList();
+            List<String> values = stringValues(collection);
             if (!values.isEmpty()) {
                 attributes.add(new ProductCatalogAttribute(key, String.join(", ", values)));
             }
@@ -657,28 +648,42 @@ public class MerchantSemanticProductSearchService {
         if (value == null) {
             return List.of();
         }
-        if (value instanceof Collection<?> collection) {
-            return collection.stream()
-                    .flatMap(item -> stringValues(item).stream())
-                    .toList();
-        }
-        if (value instanceof Map<?, ?> map) {
-            Object values = firstMapValue(map, "values", "value", "name", "label", "title", "text");
-            if (values != null) {
-                return stringValues(values);
+        List<String> values = new ArrayList<>();
+        List<ValueNode> stack = new ArrayList<>();
+        stack.add(new ValueNode(value, 0));
+        while (!stack.isEmpty()) {
+            ValueNode node = stack.removeLast();
+            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
+                continue;
             }
-            return map.values().stream()
-                    .flatMap(item -> stringValues(item).stream())
-                    .toList();
+            if (node.value() instanceof Collection<?> collection) {
+                List<?> items = new ArrayList<>(collection);
+                for (int index = items.size() - 1; index >= 0; index--) {
+                    stack.add(new ValueNode(items.get(index), node.depth() + 1));
+                }
+                continue;
+            }
+            if (node.value() instanceof Map<?, ?> map) {
+                Object namedValues = firstMapValue(map, "values", "value", "name", "label", "title", "text");
+                if (namedValues != null) {
+                    stack.add(new ValueNode(namedValues, node.depth() + 1));
+                    continue;
+                }
+                List<?> mapValues = new ArrayList<>(map.values());
+                for (int index = mapValues.size() - 1; index >= 0; index--) {
+                    stack.add(new ValueNode(mapValues.get(index), node.depth() + 1));
+                }
+                continue;
+            }
+            String scalar = scalarString(node.value());
+            if (scalar != null) {
+                Stream.of(scalar.split("\\s*[,;/|]\\s*"))
+                        .map(this::blankToNull)
+                        .filter(Objects::nonNull)
+                        .forEach(values::add);
+            }
         }
-        String scalar = scalarString(value);
-        if (scalar == null) {
-            return List.of();
-        }
-        return Stream.of(scalar.split("\\s*[,;/|]\\s*"))
-                .map(this::blankToNull)
-                .filter(Objects::nonNull)
-                .toList();
+        return values;
     }
 
     private MoneyValue moneyValue(Object value, String fallbackCurrency) {
@@ -798,8 +803,31 @@ public class MerchantSemanticProductSearchService {
         if (scalar == null) {
             return null;
         }
+        String cleaned = scalar.trim().replaceAll("[^0-9,.\\-]", "");
+        if (cleaned.isBlank()) {
+            return null;
+        }
+        if (cleaned.contains(".") && cleaned.contains(",")) {
+            int lastDot = cleaned.lastIndexOf('.');
+            int lastComma = cleaned.lastIndexOf(',');
+            cleaned = lastComma > lastDot
+                    ? cleaned.replace(".", "").replace(',', '.')
+                    : cleaned.replace(",", "");
+        } else if (cleaned.contains(",")) {
+            int commaIndex = cleaned.lastIndexOf(',');
+            int fractionalDigits = cleaned.length() - commaIndex - 1;
+            cleaned = fractionalDigits == 3 && commaIndex <= 3
+                    ? cleaned.replace(",", "")
+                    : cleaned.replace(',', '.');
+        } else if (cleaned.contains(".")) {
+            int dotIndex = cleaned.lastIndexOf('.');
+            int fractionalDigits = cleaned.length() - dotIndex - 1;
+            if (fractionalDigits == 3 && dotIndex <= 3) {
+                cleaned = cleaned.replace(".", "");
+            }
+        }
         try {
-            return Double.parseDouble(scalar.replaceAll("[^0-9.\\-]", ""));
+            return Double.parseDouble(cleaned);
         } catch (NumberFormatException exception) {
             return null;
         }
@@ -1094,6 +1122,12 @@ public class MerchantSemanticProductSearchService {
             Long amount,
             String currency
     ) {
+    }
+
+    private record AttributeNode(String name, Object value, int depth) {
+    }
+
+    private record ValueNode(Object value, int depth) {
     }
 
 }

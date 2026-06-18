@@ -300,6 +300,9 @@ export function resolveAsk(
       if (product.review.count <= 0) {
         return 'No merchant review data is available for this product yet.'
       }
+      if (product.review.score === null) {
+        return `${product.review.count.toLocaleString()} merchant reviews are available. ${product.review.insight}`
+      }
       return `${product.review.score}/5 from ${product.review.count.toLocaleString()} reviews. ${product.review.insight}`
     }
 

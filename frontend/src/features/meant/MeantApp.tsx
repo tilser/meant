@@ -703,7 +703,7 @@ function productFromSearchResult(
   const brand = product.merchantName || product.merchantDomain
   const detail = stripHtml(product.detailDescription || product.descriptionHtml)
   const ratingScore = normalizeRatingScore(product.ratingScore)
-  const reviewCount = ratingScore === null ? 0 : Math.max(0, product.reviewCount ?? 0)
+  const reviewCount = Math.max(0, product.reviewCount ?? 0)
   return {
     id: product.productKey,
     productHash: product.productHash,
@@ -729,7 +729,7 @@ function productFromSearchResult(
       : [detail || 'Ranked highly for your search'],
     cons: product.missedFilterIds.map((id) => `May miss ${prefLabel(preferences, id).toLowerCase()}`),
     review: {
-      score: ratingScore ?? 0,
+      score: ratingScore,
       count: reviewCount,
       insight: detail || product.whyMeantForYou,
     },
@@ -877,7 +877,11 @@ function savedProductInput(product: Product): SaveUserProductInput {
     note: product.note,
     pros: [...product.pros],
     cons: [...product.cons],
-    review: product.review,
+    review: {
+      score: product.review.score ?? 0,
+      count: product.review.count,
+      insight: product.review.insight,
+    },
     offers: product.offers.map((offer) => ({
       merchant: offer.merchant,
       price: offer.price,
@@ -2806,6 +2810,13 @@ function ProductReviewSummary({ product }: Readonly<{ product: Product }>) {
   if (product.review.count <= 0) {
     return <span className="mt-mono mt-card-rating muted">No review data</span>
   }
+  if (product.review.score === null) {
+    return (
+      <span className="mt-mono mt-card-rating">
+        {product.review.count.toLocaleString()} reviews
+      </span>
+    )
+  }
   return (
     <span className="mt-mono mt-card-rating">
       ★ {product.review.score.toFixed(1)} · {product.review.count.toLocaleString()}
@@ -3905,12 +3916,15 @@ function ProductModal({
                 <div className="mt-block-label mt-mono">From the reviews</div>
                 {product.review.count > 0 ? (
                   <div className="mt-reviews-score">
-                    <span className="mt-stars">
-                      {'★'.repeat(Math.round(product.review.score))}
-                    </span>
+                    {product.review.score !== null ? (
+                      <span className="mt-stars">
+                        {'★'.repeat(Math.round(product.review.score))}
+                      </span>
+                    ) : null}
                     <span className="mt-mono">
-                      {product.review.score.toFixed(1)} ·{' '}
+                      {product.review.score !== null ? `${product.review.score.toFixed(1)} · ` : ''}
                       {product.review.count.toLocaleString()}
+                      {product.review.score === null ? ' reviews' : ''}
                     </span>
                   </div>
                 ) : (
@@ -5169,11 +5183,15 @@ function CompareView({
                 <div key={product.id} className="mt-cmp-cell">
                   {product.review.count > 0 ? (
                     <>
-                      <span className="mt-stars">
-                        {'★'.repeat(Math.round(product.review.score))}
-                      </span>
+                      {product.review.score !== null ? (
+                        <span className="mt-stars">
+                          {'★'.repeat(Math.round(product.review.score))}
+                        </span>
+                      ) : null}
                       <span className="mt-mono mt-cmp-sub">
-                        {product.review.score.toFixed(1)} · {product.review.count.toLocaleString()}
+                        {product.review.score !== null ? `${product.review.score.toFixed(1)} · ` : ''}
+                        {product.review.count.toLocaleString()}
+                        {product.review.score === null ? ' reviews' : ''}
                       </span>
                     </>
                   ) : (

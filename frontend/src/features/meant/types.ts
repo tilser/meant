@@ -49,7 +49,7 @@ export interface Offer {
 }
 
 export interface ReviewSummary {
-  score: number
+  score: number | null
   count: number
   insight: string
 }
