@@ -6,8 +6,10 @@ import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
+import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
@@ -71,6 +73,79 @@ class UserProductRecommendationExplanationServiceTest {
                 "Cached explanation",
                 List.of("organic-cotton"),
                 List.of()
+        );
+        persistenceService.cached.put(cached.productKey(), cached);
+        UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.explain(
+                UUID.randomUUID(),
+                "cotton tee",
+                "cotton tee",
+                "profile-hash",
+                settings(),
+                List.of(snapshot())
+        );
+
+        assertThat(openRouterChatClient.called).isFalse();
+        assertThat(result.get("merchant.example:tee")).isEqualTo(cached);
+    }
+
+    @Test
+    void explainAddsInventorySignalToPromptAndResult() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
+        UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
+        UUID inventoryItemId = UUID.randomUUID();
+        openRouterChatClient.response = """
+                {
+                  "products": [
+                    {
+                      "productKey": "merchant.example:tee",
+                      "whyMeantForYou": "It may duplicate your owned organic cotton tee.",
+                      "matchedFilterIds": ["organic-cotton"],
+                      "missedFilterIds": []
+                    }
+                  ]
+                }
+                """;
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.explain(
+                UUID.randomUUID(),
+                "cotton tee",
+                "cotton tee",
+                "profile-hash",
+                settings(),
+                List.of(snapshot()),
+                Map.of("merchant.example:tee", new UserInventoryRecommendationSignal(
+                        "merchant.example:tee",
+                        UserInventoryRecommendationRelationship.DUPLICATE,
+                        inventoryItemId,
+                        "Owned cotton tee",
+                        "Looks similar to Owned cotton tee already in inventory"
+                ))
+        );
+
+        assertThat(openRouterChatClient.userPrompt).contains("Owned inventory signal: DUPLICATE");
+        assertThat(result.get("merchant.example:tee").inventoryRelationship())
+                .isEqualTo(UserInventoryRecommendationRelationship.DUPLICATE);
+        assertThat(result.get("merchant.example:tee").inventoryItemId()).isEqualTo(inventoryItemId);
+        assertThat(result.get("merchant.example:tee").inventoryItemName()).isEqualTo("Owned cotton tee");
+    }
+
+    @Test
+    void explainUsesCachedInventoryRelationshipWithoutCallingOpenRouter() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
+        UUID inventoryItemId = UUID.randomUUID();
+        UserProductRecommendationExplanationResult cached = new UserProductRecommendationExplanationResult(
+                "merchant.example:tee",
+                "product-hash",
+                "Cached explanation",
+                List.of("organic-cotton"),
+                List.of(),
+                UserInventoryRecommendationRelationship.COMPLEMENT,
+                inventoryItemId,
+                "Merino sweater"
         );
         persistenceService.cached.put(cached.productKey(), cached);
         UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
@@ -296,6 +371,7 @@ class UserProductRecommendationExplanationServiceTest {
         private boolean fail;
         private boolean called;
         private String model;
+        private String userPrompt;
         private OpenRouterJsonSchemaDefinition schema;
 
         FakeOpenRouterChatClient() {
@@ -316,6 +392,7 @@ class UserProductRecommendationExplanationServiceTest {
         ) {
             called = true;
             this.model = model;
+            this.userPrompt = userPrompt;
             this.schema = schema;
             if (fail) {
                 throw new com.meant.api.common.exception.OpenRouterException("failed");

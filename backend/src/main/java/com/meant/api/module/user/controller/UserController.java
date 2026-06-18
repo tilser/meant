@@ -1,7 +1,11 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.module.user.constant.UserInventoryCategory;
+import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
+import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
+import com.meant.api.module.user.controller.request.UpdateUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
@@ -11,6 +15,8 @@ import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserAssistantConversationResponse;
 import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
 import com.meant.api.module.user.controller.response.UserAssistantStreamEventResponse;
+import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
+import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchResponse;
@@ -19,6 +25,7 @@ import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.service.UserAssistantChatService;
+import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
 import com.meant.api.module.user.service.UserProductDiscoveryService;
 import com.meant.api.module.user.service.UserProductSearchEventService;
@@ -28,15 +35,18 @@ import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.UserService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
+import com.meant.api.module.user.service.command.DeleteUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.ParseUserPreferenceFiltersCommand;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SendUserAssistantMessageCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
+import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.GetUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.GetUserProductDiscoveryQuery;
+import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import com.meant.api.module.user.service.query.ListUserAssistantConversationsQuery;
 import io.swagger.v3.oas.annotations.Operation;
@@ -97,6 +107,7 @@ public class UserController {
     private final UserProductSearchService userProductSearchService;
     private final UserProductSearchSuggestionService userProductSearchSuggestionService;
     private final UserSavedProductService userSavedProductService;
+    private final UserInventoryService userInventoryService;
     private final ObjectMapper objectMapper;
 
     @GetMapping("/me")
@@ -255,6 +266,126 @@ public class UserController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserProductSearchSuggestionsResponse.from(userProductSearchSuggestionService.generate(
                 UserCommandMapper.toUpsertCommand(authenticatedUser)));
+    }
+
+    @GetMapping("/me/inventory")
+    @Operation(
+            summary = "List current user inventory",
+            description = "Returns owned wardrobe, pantry, home, and other items for the authenticated user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Inventory items for the current user",
+            content = @Content(schema = @Schema(implementation = UserInventoryItemResponse.class))
+    )
+    public List<UserInventoryItemResponse> inventory(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) UserInventoryCategory category,
+            @RequestParam(defaultValue = "false") boolean restockOnly
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return userInventoryService.list(
+                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        new ListUserInventoryItemsQuery(authenticatedUser.id(), category, restockOnly))
+                .stream()
+                .map(UserInventoryItemResponse::from)
+                .toList();
+    }
+
+    @GetMapping("/me/inventory/export")
+    @Operation(
+            summary = "Export current user inventory",
+            description = "Returns an exportable copy of all owned inventory data for the authenticated user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Exportable inventory payload",
+            content = @Content(schema = @Schema(implementation = UserInventoryExportResponse.class))
+    )
+    public UserInventoryExportResponse exportInventory(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserInventoryExportResponse.from(userInventoryService.export(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new ExportUserInventoryQuery(authenticatedUser.id())));
+    }
+
+    @PostMapping("/me/inventory")
+    @Operation(
+            summary = "Add an owned inventory item",
+            description = "Adds a manual wardrobe, pantry, home, or other owned item for the current user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Created inventory item",
+            content = @Content(schema = @Schema(implementation = UserInventoryItemResponse.class))
+    )
+    public UserInventoryItemResponse addInventoryItem(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddUserInventoryItemRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserInventoryItemResponse.from(userInventoryService.create(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toCreateInventoryItemCommand(authenticatedUser.id(), request)));
+    }
+
+    @PostMapping("/me/inventory/photos")
+    @Operation(
+            summary = "Add an inventory item from a photo",
+            description = "Adds an owned item from a photo URL or data URL. When AI recognition is available, "
+                    + "recognized fields are merged with user-provided fallback fields."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Created inventory item",
+            content = @Content(schema = @Schema(implementation = UserInventoryItemResponse.class))
+    )
+    public UserInventoryItemResponse addInventoryPhoto(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AddUserInventoryPhotoRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserInventoryItemResponse.from(userInventoryService.createFromPhoto(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toCreateInventoryPhotoItemCommand(authenticatedUser.id(), request)));
+    }
+
+    @PatchMapping("/me/inventory/{itemId}")
+    @Operation(
+            summary = "Update an owned inventory item",
+            description = "Edits inventory item details, quantity, and restock settings for the current user."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated inventory item",
+            content = @Content(schema = @Schema(implementation = UserInventoryItemResponse.class))
+    )
+    public UserInventoryItemResponse updateInventoryItem(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID itemId,
+            @Valid @RequestBody UpdateUserInventoryItemRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserInventoryItemResponse.from(userInventoryService.update(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toUpdateInventoryItemCommand(authenticatedUser.id(), itemId, request)));
+    }
+
+    @DeleteMapping("/me/inventory/{itemId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+            summary = "Delete an owned inventory item",
+            description = "Deletes an inventory item owned by the current user."
+    )
+    @ApiResponse(responseCode = "204", description = "Inventory item deleted")
+    public void deleteInventoryItem(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID itemId
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        userInventoryService.delete(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new DeleteUserInventoryItemCommand(authenticatedUser.id(), itemId));
     }
 
     @GetMapping("/me/product-discovery")

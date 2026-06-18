@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="016-add-user-inventory" author="codex">
+        <createTable tableName="user_inventory_items">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_product_key" type="text"/>
+            <column name="product_hash" type="text"/>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="brand" type="text"/>
+            <column name="category" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text"/>
+            <column name="image_url" type="text"/>
+            <column name="product_url" type="text"/>
+            <column name="photo_url" type="text"/>
+            <column name="quantity" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="unit" type="text"/>
+            <column name="location" type="text"/>
+            <column name="notes" type="text"/>
+            <column name="attributes" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="consumable" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="restock_enabled" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="restock_threshold" type="integer"/>
+            <column name="purchased_at" type="timestamp with time zone"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_inventory_items"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_inventory_items_user"/>
+        <addUniqueConstraint
+                tableName="user_inventory_items"
+                columnNames="user_id, source, source_product_key"
+                constraintName="uk_user_inventory_items_source_product"/>
+        <createIndex tableName="user_inventory_items" indexName="idx_user_inventory_items_user_updated">
+            <column name="user_id"/>
+            <column name="updated_at"/>
+        </createIndex>
+        <createIndex tableName="user_inventory_items" indexName="idx_user_inventory_items_user_category">
+            <column name="user_id"/>
+            <column name="category"/>
+        </createIndex>
+        <createIndex tableName="user_inventory_items" indexName="idx_user_inventory_items_user_restock">
+            <column name="user_id"/>
+            <column name="restock_enabled"/>
+        </createIndex>
+
+        <addColumn tableName="user_product_recommendation_explanations">
+            <column name="inventory_relationship" type="text"/>
+            <column name="inventory_item_id" type="uuid"/>
+            <column name="inventory_item_name" type="text"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

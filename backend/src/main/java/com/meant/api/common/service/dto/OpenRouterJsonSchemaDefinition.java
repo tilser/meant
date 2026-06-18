@@ -82,4 +82,17 @@ public record OpenRouterJsonSchemaDefinition(
                 values
         );
     }
+
+    public static OpenRouterJsonSchemaDefinition bool() {
+        return new OpenRouterJsonSchemaDefinition(
+                "boolean",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
 }

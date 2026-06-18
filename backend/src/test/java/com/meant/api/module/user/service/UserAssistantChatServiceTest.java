@@ -9,6 +9,7 @@ import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterChatMessage;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.user.constant.UserAssistantMessageRole;
+import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserAssistantMessage;
 import com.meant.api.module.user.repository.UserAssistantConversationRepository;
@@ -642,7 +643,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 94,
                 whyMeantForYou,
                 List.of("organic-cotton"),
-                List.of()
+                List.of(),
+                UserInventoryRecommendationRelationship.NONE,
+                null,
+                null
         );
     }
 
@@ -740,7 +744,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private static UserProductSearchResult nextResult;
 
         FakeUserProductSearchService() {
-            super(null, null, null, null, null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null, null, null, null, null);
         }
 
         void reset() {

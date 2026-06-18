@@ -9,6 +9,7 @@ export type View =
   | 'discover'
   | 'saved'
   | 'compare'
+  | 'inventory'
   | 'preferences'
   | 'cart'
   | 'orders'
@@ -20,6 +21,7 @@ export type OrderStatus = 'Delivered' | 'In transit' | 'Processing'
 export type DiscountType = 'percent' | 'fixed' | 'shipping'
 export type ClothingFit = 'none' | 'men' | 'women' | 'other'
 export type ProductAudience = 'men' | 'women' | 'other' | 'unisex'
+export type InventoryRelationship = 'NONE' | 'DUPLICATE' | 'COMPLEMENT' | 'RESTOCK'
 
 export interface Preference {
   id: PreferenceId
@@ -75,6 +77,9 @@ export interface Product {
   needs?: PortType
   provides?: readonly PortType[]
   audiences?: readonly ProductAudience[]
+  inventoryRelationship?: InventoryRelationship
+  inventoryItemId?: string | null
+  inventoryItemName?: string | null
 }
 
 export interface Reply {

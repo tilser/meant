@@ -22,6 +22,8 @@ import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.user.service.UserInventoryService;
+import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -44,6 +46,7 @@ class CartServiceTest {
     private FakeMerchantRepository merchantRepository;
     private FakeCartRepository cartRepository;
     private FakeCartClient cartClient;
+    private FakeUserInventoryService userInventoryService;
     private CartService cartService;
     private Merchant merchant;
 
@@ -52,6 +55,7 @@ class CartServiceTest {
         merchantRepository = new FakeMerchantRepository();
         cartRepository = new FakeCartRepository();
         cartClient = new FakeCartClient();
+        userInventoryService = new FakeUserInventoryService();
         CartPersistenceService cartPersistenceService = new CartPersistenceService(
                 cartRepository.proxy(),
                 new ObjectMapper()
@@ -59,7 +63,8 @@ class CartServiceTest {
         cartService = new CartService(
                 new MerchantCartProviderLookupService(merchantRepository.proxy()),
                 cartPersistenceService,
-                cartClient
+                cartClient,
+                userInventoryService
         );
         merchant = merchant();
         merchantRepository.save(merchant);
@@ -281,6 +286,7 @@ class CartServiceTest {
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartClient.getCount).isEqualTo(1);
         assertThat(cartClient.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertImportedCandle();
     }
 
     @Test
@@ -292,6 +298,7 @@ class CartServiceTest {
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
         assertThat(cartClient.getCount).isZero();
+        assertImportedCandle();
     }
 
     @Test
@@ -303,6 +310,7 @@ class CartServiceTest {
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartClient.getCount).isEqualTo(1);
+        assertImportedCandle();
     }
 
     @Test
@@ -420,7 +428,10 @@ class CartServiceTest {
         CartLine line = CartLine.builder()
                 .id(cartLineId)
                 .remoteCartLineId("gid://shopify/CartLine/1")
+                .productId("gid://shopify/Product/1")
+                .productTitle("Candle")
                 .productVariantId("gid://shopify/ProductVariant/1")
+                .variantTitle("3x6")
                 .quantity(1)
                 .rawLineResponse("{}")
                 .createdAt(now)
@@ -445,8 +456,34 @@ class CartServiceTest {
                 .build();
     }
 
+    private void assertImportedCandle() {
+        assertThat(userInventoryService.lastCommand).isNotNull();
+        assertThat(userInventoryService.lastCommand.userId()).isEqualTo(USER_ID);
+        assertThat(userInventoryService.lastCommand.items()).singleElement().satisfies(item -> {
+            assertThat(item.productKey()).isEqualTo("merchant.example:gid://shopify/ProductVariant/1");
+            assertThat(item.name()).isEqualTo("Candle");
+            assertThat(item.brand()).isEqualTo("merchant.example");
+            assertThat(item.quantity()).isEqualTo(1);
+            assertThat(item.purchasedAt()).isNotNull();
+        });
+    }
+
     private CartToolResult cartToolResult() {
         return cartToolResult(List.of(cartLine()), 1);
+    }
+
+    static class FakeUserInventoryService extends UserInventoryService {
+
+        private ImportPurchasedInventoryItemsCommand lastCommand;
+
+        FakeUserInventoryService() {
+            super(null, null, null, null);
+        }
+
+        @Override
+        public void importPurchasedItems(ImportPurchasedInventoryItemsCommand command) {
+            lastCommand = command;
+        }
     }
 
     private CartToolResult cartToolResult(List<CartToolResponse.Line> lines, Integer totalQuantity) {

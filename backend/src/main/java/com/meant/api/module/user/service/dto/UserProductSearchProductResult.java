@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.dto;
 
+import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import java.util.List;
 import java.util.UUID;
@@ -42,7 +43,10 @@ public record UserProductSearchProductResult(
         int matchScore,
         String whyMeantForYou,
         List<String> matchedFilterIds,
-        List<String> missedFilterIds
+        List<String> missedFilterIds,
+        UserInventoryRecommendationRelationship inventoryRelationship,
+        UUID inventoryItemId,
+        String inventoryItemName
 ) {
 
     public static UserProductSearchProductResult from(
@@ -87,7 +91,10 @@ public record UserProductSearchProductResult(
                 matchScore(item, explanation),
                 explanation.whyMeantForYou(),
                 explanation.matchedFilterIds(),
-                explanation.missedFilterIds()
+                explanation.missedFilterIds(),
+                inventoryRelationship(explanation),
+                explanation.inventoryItemId(),
+                explanation.inventoryItemName()
         );
     }
 
@@ -99,6 +106,20 @@ public record UserProductSearchProductResult(
         int preferenceBoost = explanation.matchedFilterIds().size() * 3;
         int missPenalty = explanation.missedFilterIds().size() * 8;
         int rankPenalty = Math.max(0, item.getRank() - 1);
-        return Math.max(35, Math.min(99, base + preferenceBoost - missPenalty - rankPenalty));
+        int inventoryAdjustment = switch (inventoryRelationship(explanation)) {
+            case RESTOCK -> 8;
+            case COMPLEMENT -> 5;
+            case DUPLICATE -> -22;
+            case NONE -> 0;
+        };
+        return Math.max(25, Math.min(99, base + preferenceBoost - missPenalty - rankPenalty + inventoryAdjustment));
+    }
+
+    private static UserInventoryRecommendationRelationship inventoryRelationship(
+            UserProductRecommendationExplanationResult explanation
+    ) {
+        return explanation.inventoryRelationship() == null
+                ? UserInventoryRecommendationRelationship.NONE
+                : explanation.inventoryRelationship();
     }
 }

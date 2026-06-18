@@ -8,6 +8,8 @@ import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
+import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
+import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
@@ -530,6 +532,133 @@ class UserControllerIT extends PostgresIntegrationTest {
                 .getResponseBody();
 
         assertThat(afterDelete).isEmpty();
+    }
+
+    @Test
+    void inventoryItemsCanBeAddedFromManualEntryAndPhotoListedExportedUpdatedAndDeleted() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String bearer = token(id, email, "Ada Lovelace");
+
+        UserInventoryItemResponse manual = client.post().uri("/api/users/me/inventory")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "name": "Cold-Pressed Extra Virgin Olive Oil",
+                          "brand": "Casa Verde",
+                          "category": "PANTRY",
+                          "quantity": 1,
+                          "unit": "bottle",
+                          "location": "Pantry",
+                          "attributes": ["organic", "single-estate"],
+                          "consumable": true,
+                          "restockEnabled": true,
+                          "restockThreshold": 1
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserInventoryItemResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(manual).isNotNull();
+        assertThat(manual.name()).isEqualTo("Cold-Pressed Extra Virgin Olive Oil");
+        assertThat(manual.restockEnabled()).isTrue();
+
+        UserInventoryItemResponse photo = client.post().uri("/api/users/me/inventory/photos")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "photoUrl": "data:image/jpeg;base64,abc",
+                          "name": "Blue Linen Shirt",
+                          "category": "APPAREL",
+                          "quantity": 1,
+                          "location": "Closet"
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserInventoryItemResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(photo).isNotNull();
+        assertThat(photo.name()).isEqualTo("Blue Linen Shirt");
+        assertThat(photo.photoUrl()).isEqualTo("data:image/jpeg;base64,abc");
+
+        UserInventoryItemResponse[] restocks = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/inventory")
+                        .queryParam("restockOnly", true)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserInventoryItemResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(restocks).isNotNull();
+        assertThat(restocks).singleElement()
+                .extracting(UserInventoryItemResponse::id)
+                .isEqualTo(manual.id());
+
+        UserInventoryItemResponse updated = client.patch().uri("/api/users/me/inventory/{itemId}", manual.id())
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "quantity": 2,
+                          "restockEnabled": false
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserInventoryItemResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(updated).isNotNull();
+        assertThat(updated.quantity()).isEqualTo(2);
+        assertThat(updated.restockEnabled()).isFalse();
+
+        UserInventoryExportResponse export = client.get().uri("/api/users/me/inventory/export")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserInventoryExportResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(export).isNotNull();
+        assertThat(export.items()).hasSize(2);
+
+        client.delete().uri("/api/users/me/inventory/{itemId}", photo.id())
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        UserInventoryItemResponse[] listed = client.get().uri("/api/users/me/inventory")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserInventoryItemResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(listed).isNotNull();
+        assertThat(listed).singleElement()
+                .extracting(UserInventoryItemResponse::id)
+                .isEqualTo(manual.id());
     }
 
     @Test

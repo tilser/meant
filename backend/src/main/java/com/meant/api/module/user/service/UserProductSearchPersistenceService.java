@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.constant.UserProductSearchPagination;
+import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductRecommendationFilterMatch;
 import com.meant.api.module.user.entity.UserProductSearch;
@@ -163,6 +164,9 @@ public class UserProductSearchPersistenceService {
                     model,
                     promptVersion,
                     explanation.whyMeantForYou(),
+                    explanation.inventoryRelationship() == null ? null : explanation.inventoryRelationship().name(),
+                    explanation.inventoryItemId(),
+                    explanation.inventoryItemName(),
                     now
             );
             userProductRecommendationExplanationRepository.save(entity);
@@ -363,6 +367,9 @@ public class UserProductSearchPersistenceService {
                 .filter(item -> explanations.containsKey(item.getProductKey()))
                 .sorted(Comparator.comparingInt(UserProductSearchResultItem::getRank))
                 .map(item -> UserProductSearchProductResult.from(item, explanations.get(item.getProductKey())))
+                .sorted(Comparator.comparingInt(UserProductSearchProductResult::matchScore)
+                        .reversed()
+                        .thenComparingInt(UserProductSearchProductResult::rank))
                 .toList();
     }
 
@@ -415,11 +422,25 @@ public class UserProductSearchPersistenceService {
                                 filterIds(matches.getOrDefault(explanation.getId(), List.of()),
                                         UserProductRecommendationFilterMatch.MATCHED),
                                 filterIds(matches.getOrDefault(explanation.getId(), List.of()),
-                                        UserProductRecommendationFilterMatch.MISSED)
+                                        UserProductRecommendationFilterMatch.MISSED),
+                                inventoryRelationship(explanation.getInventoryRelationship()),
+                                explanation.getInventoryItemId(),
+                                explanation.getInventoryItemName()
                         ),
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
+    }
+
+    private UserInventoryRecommendationRelationship inventoryRelationship(String value) {
+        if (value == null || value.isBlank()) {
+            return UserInventoryRecommendationRelationship.NONE;
+        }
+        try {
+            return UserInventoryRecommendationRelationship.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            return UserInventoryRecommendationRelationship.NONE;
+        }
     }
 
     private void saveFilterMatches(

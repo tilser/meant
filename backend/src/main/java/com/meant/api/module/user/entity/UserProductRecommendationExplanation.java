@@ -65,6 +65,12 @@ public class UserProductRecommendationExplanation {
     @Column(nullable = false)
     private String whyMeantForYou;
 
+    private String inventoryRelationship;
+
+    private UUID inventoryItemId;
+
+    private String inventoryItemName;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -80,6 +86,9 @@ public class UserProductRecommendationExplanation {
             String model,
             String promptVersion,
             String whyMeantForYou,
+            String inventoryRelationship,
+            UUID inventoryItemId,
+            String inventoryItemName,
             Instant now
     ) {
         return UserProductRecommendationExplanation.builder()
@@ -92,8 +101,38 @@ public class UserProductRecommendationExplanation {
                 .model(model)
                 .promptVersion(promptVersion)
                 .whyMeantForYou(whyMeantForYou)
+                .inventoryRelationship(inventoryRelationship)
+                .inventoryItemId(inventoryItemId)
+                .inventoryItemName(inventoryItemName)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+    }
+
+    public static UserProductRecommendationExplanation create(
+            UUID userId,
+            String normalizedQuery,
+            String profileHash,
+            String productKey,
+            String productHash,
+            String model,
+            String promptVersion,
+            String whyMeantForYou,
+            Instant now
+    ) {
+        return create(
+                userId,
+                normalizedQuery,
+                profileHash,
+                productKey,
+                productHash,
+                model,
+                promptVersion,
+                whyMeantForYou,
+                null,
+                null,
+                null,
+                now
+        );
     }
 }

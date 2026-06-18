@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller.response;
 
+import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import java.util.List;
 import java.util.UUID;
@@ -42,7 +43,10 @@ public record UserProductSearchProductResponse(
         int matchScore,
         String whyMeantForYou,
         List<String> matchedFilterIds,
-        List<String> missedFilterIds
+        List<String> missedFilterIds,
+        UserInventoryRecommendationRelationship inventoryRelationship,
+        UUID inventoryItemId,
+        String inventoryItemName
 ) {
 
     public static UserProductSearchProductResponse from(UserProductSearchProductResult result) {
@@ -84,7 +88,10 @@ public record UserProductSearchProductResponse(
                 result.matchScore(),
                 result.whyMeantForYou(),
                 result.matchedFilterIds(),
-                result.missedFilterIds()
+                result.missedFilterIds(),
+                result.inventoryRelationship(),
+                result.inventoryItemId(),
+                result.inventoryItemName()
         );
     }
 }

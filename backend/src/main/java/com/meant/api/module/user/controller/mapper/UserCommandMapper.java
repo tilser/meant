@@ -1,10 +1,18 @@
 package com.meant.api.module.user.controller.mapper;
 
+import com.meant.api.module.user.constant.UserInventoryCategory;
+import com.meant.api.module.user.constant.UserInventorySource;
+import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
+import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
+import com.meant.api.module.user.controller.request.UpdateUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
+import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
+import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
+import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
@@ -112,5 +120,78 @@ public final class UserCommandMapper {
                         .toList(),
                 request.needs(),
                 request.provides());
+    }
+
+    public static CreateUserInventoryItemCommand toCreateInventoryItemCommand(
+            UUID userId,
+            AddUserInventoryItemRequest request
+    ) {
+        return new CreateUserInventoryItemCommand(
+                userId,
+                UserInventorySource.MANUAL,
+                null,
+                null,
+                request.name(),
+                request.brand(),
+                request.category() == null ? UserInventoryCategory.OTHER : request.category(),
+                request.description(),
+                request.imageUrl(),
+                request.productUrl(),
+                null,
+                request.quantity(),
+                request.unit(),
+                request.location(),
+                request.notes(),
+                request.attributes(),
+                request.consumable(),
+                request.restockEnabled(),
+                request.restockThreshold(),
+                null);
+    }
+
+    public static CreateUserInventoryPhotoItemCommand toCreateInventoryPhotoItemCommand(
+            UUID userId,
+            AddUserInventoryPhotoRequest request
+    ) {
+        return new CreateUserInventoryPhotoItemCommand(
+                userId,
+                request.photoUrl(),
+                request.name(),
+                request.brand(),
+                request.category(),
+                request.description(),
+                request.quantity(),
+                request.unit(),
+                request.location(),
+                request.notes(),
+                request.attributes(),
+                request.consumable(),
+                request.restockEnabled(),
+                request.restockThreshold());
+    }
+
+    public static UpdateUserInventoryItemCommand toUpdateInventoryItemCommand(
+            UUID userId,
+            UUID itemId,
+            UpdateUserInventoryItemRequest request
+    ) {
+        return new UpdateUserInventoryItemCommand(
+                userId,
+                itemId,
+                request.name(),
+                request.brand(),
+                request.category(),
+                request.description(),
+                request.imageUrl(),
+                request.productUrl(),
+                request.photoUrl(),
+                request.quantity(),
+                request.unit(),
+                request.location(),
+                request.notes(),
+                request.attributes(),
+                request.consumable(),
+                request.restockEnabled(),
+                request.restockThreshold());
     }
 }

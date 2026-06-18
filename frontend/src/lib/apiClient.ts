@@ -77,6 +77,9 @@ export interface UserProductSearchProductProfile {
   whyMeantForYou: string
   matchedFilterIds: string[]
   missedFilterIds: string[]
+  inventoryRelationship: UserInventoryRecommendationRelationship
+  inventoryItemId: string | null
+  inventoryItemName: string | null
 }
 
 export interface UserProductSearchProfile {
@@ -236,6 +239,95 @@ export interface MerchantProfile {
 
 export type CartProfile = components['schemas']['CartResponse']
 export type CheckoutProfile = components['schemas']['CheckoutResponse']
+
+export type UserInventoryCategory = 'APPAREL' | 'PANTRY' | 'HOME' | 'OTHER'
+export type UserInventorySource = 'MANUAL' | 'PHOTO' | 'MEANT_PURCHASE'
+export type UserInventoryRecommendationRelationship =
+  | 'NONE'
+  | 'DUPLICATE'
+  | 'COMPLEMENT'
+  | 'RESTOCK'
+
+export interface UserInventoryItemProfile {
+  id: string
+  source: UserInventorySource
+  sourceProductKey: string | null
+  productHash: string | null
+  name: string
+  brand: string | null
+  category: UserInventoryCategory
+  description: string | null
+  imageUrl: string | null
+  productUrl: string | null
+  photoUrl: string | null
+  quantity: number
+  unit: string | null
+  location: string | null
+  notes: string | null
+  attributes: string[]
+  consumable: boolean
+  restockEnabled: boolean
+  restockThreshold: number | null
+  purchasedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserInventoryExportProfile {
+  exportedAt: string
+  items: UserInventoryItemProfile[]
+}
+
+export interface UserInventoryItemInput {
+  name: string
+  brand?: string | null
+  category?: UserInventoryCategory | null
+  description?: string | null
+  imageUrl?: string | null
+  productUrl?: string | null
+  quantity?: number | null
+  unit?: string | null
+  location?: string | null
+  notes?: string | null
+  attributes?: readonly string[]
+  consumable?: boolean | null
+  restockEnabled?: boolean | null
+  restockThreshold?: number | null
+}
+
+export interface UserInventoryPhotoInput {
+  photoUrl: string
+  name?: string | null
+  brand?: string | null
+  category?: UserInventoryCategory | null
+  description?: string | null
+  quantity?: number | null
+  unit?: string | null
+  location?: string | null
+  notes?: string | null
+  attributes?: readonly string[]
+  consumable?: boolean | null
+  restockEnabled?: boolean | null
+  restockThreshold?: number | null
+}
+
+export interface UserInventoryItemUpdateInput {
+  name?: string | null
+  brand?: string | null
+  category?: UserInventoryCategory | null
+  description?: string | null
+  imageUrl?: string | null
+  productUrl?: string | null
+  photoUrl?: string | null
+  quantity?: number | null
+  unit?: string | null
+  location?: string | null
+  notes?: string | null
+  attributes?: readonly string[]
+  consumable?: boolean | null
+  restockEnabled?: boolean | null
+  restockThreshold?: number | null
+}
 
 export interface CartAddItemInput {
   productVariantId: string
@@ -476,6 +568,86 @@ export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile
     headers: await authHeaders(),
   })
   return parseJsonResponse<UserProductDiscoveryProfile>(response, 'Failed to load product discovery')
+}
+
+export async function getUserInventoryItems(input?: {
+  category?: UserInventoryCategory | null
+  restockOnly?: boolean
+}): Promise<UserInventoryItemProfile[]> {
+  const search = new URLSearchParams()
+  if (input?.category) {
+    search.set('category', input.category)
+  }
+  if (input?.restockOnly) {
+    search.set('restockOnly', 'true')
+  }
+  const query = search.toString()
+  const response = await fetch(`${API_URL}/api/users/me/inventory${query ? `?${query}` : ''}`, {
+    cache: 'no-store',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserInventoryItemProfile[]>(response, 'Failed to load inventory')
+}
+
+export async function exportUserInventory(): Promise<UserInventoryExportProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/inventory/export`, {
+    cache: 'no-store',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserInventoryExportProfile>(response, 'Failed to export inventory')
+}
+
+export async function createUserInventoryItem(
+  input: UserInventoryItemInput,
+): Promise<UserInventoryItemProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/inventory`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+  return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to add inventory item')
+}
+
+export async function createUserInventoryPhotoItem(
+  input: UserInventoryPhotoInput,
+): Promise<UserInventoryItemProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/inventory/photos`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+  return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to add photo inventory item')
+}
+
+export async function updateUserInventoryItem(input: {
+  itemId: string
+  item: UserInventoryItemUpdateInput
+}): Promise<UserInventoryItemProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/inventory/${encodeURIComponent(input.itemId)}`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input.item),
+  })
+  return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to update inventory item')
+}
+
+export async function deleteUserInventoryItem(itemId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/users/me/inventory/${encodeURIComponent(itemId)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to delete inventory item')
+  }
 }
 
 export async function getPopularProductSearches(): Promise<UserPopularProductSearchProfile[]> {

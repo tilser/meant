@@ -30,7 +30,11 @@ import {
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
   createCart,
+  createUserInventoryItem,
+  createUserInventoryPhotoItem,
+  deleteUserInventoryItem,
   deleteProfilePictureFile,
+  exportUserInventory,
   getAssistantConversation,
   getAssistantConversations,
   getCartCheckout,
@@ -39,6 +43,7 @@ import {
   getProfilePictureUrl,
   getProductDiscovery,
   getPopularProductSearches,
+  getUserInventoryItems,
   getUserProductSearchSuggestions,
   getUserSettings,
   removeProfilePicture,
@@ -51,11 +56,17 @@ import {
   type CartProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
+  type UserInventoryCategory,
+  type UserInventoryItemInput,
+  type UserInventoryItemProfile,
+  type UserInventoryItemUpdateInput,
+  type UserInventoryPhotoInput,
   type UserAssistantConversationProfile,
   type UserAssistantConversationSummaryProfile,
   type UserPopularProductSearchProfile,
   type UserSavedProductProfile,
   updateCart,
+  updateUserInventoryItem,
   type UserProductSearchProductProfile,
   updateProfile,
   updateProfilePicture,
@@ -193,6 +204,10 @@ const askContexts: Readonly<Record<View, { label: string; suggestions: readonly 
       label: 'Comparing products',
       suggestions: ['Which one is better for me?', 'Cheaper of these?'],
     },
+    inventory: {
+      label: 'Your inventory',
+      suggestions: ['What should I restock?', 'What complements this?'],
+    },
     preferences: {
       label: 'Your profile',
       suggestions: ['What should I add?', 'Suggest products for these filters'],
@@ -221,6 +236,24 @@ interface SearchSuggestion {
   label: string
   detail?: string
   query: string
+}
+
+interface InventoryFormState {
+  name: string
+  brand: string
+  category: UserInventoryCategory
+  description: string
+  imageUrl: string
+  productUrl: string
+  photoUrl: string
+  quantity: string
+  unit: string
+  location: string
+  notes: string
+  attributes: string
+  consumable: boolean
+  restockEnabled: boolean
+  restockThreshold: string
 }
 
 const STARTER_SEARCHES: readonly SearchSuggestion[] = [
@@ -255,6 +288,29 @@ const STARTER_SEARCHES: readonly SearchSuggestion[] = [
     query: 'highly rated gift under $50 with easy returns',
   },
 ]
+
+const INVENTORY_CATEGORIES: readonly UserInventoryCategory[] = ['APPAREL', 'PANTRY', 'HOME', 'OTHER']
+
+const INVENTORY_CATEGORY_LABELS: Readonly<Record<UserInventoryCategory, string>> = {
+  APPAREL: 'Wardrobe',
+  PANTRY: 'Pantry',
+  HOME: 'Home',
+  OTHER: 'Other',
+}
+
+const INVENTORY_SOURCE_LABELS: Readonly<Record<UserInventoryItemProfile['source'], string>> = {
+  MANUAL: 'Manual',
+  PHOTO: 'Photo',
+  MEANT_PURCHASE: 'Meant purchase',
+}
+
+const INVENTORY_RELATIONSHIP_LABELS = {
+  DUPLICATE: 'Already own',
+  COMPLEMENT: 'Complements',
+  RESTOCK: 'Restock',
+} as const
+
+const INVENTORY_PHOTO_DATA_URL_LIMIT = 1_900_000
 
 const DEFAULT_GREETING = 'Good afternoon'
 const DEFAULT_BUDGET = 120
@@ -565,6 +621,9 @@ function productFromSearchResult(
           : product.selectedVariantAvailable,
       },
     ],
+    inventoryRelationship: product.inventoryRelationship,
+    inventoryItemId: product.inventoryItemId,
+    inventoryItemName: product.inventoryItemName,
   }
 }
 
@@ -711,6 +770,243 @@ function assistantProductContext(
     match: product.match,
     priceFrom: productPriceFrom(product, deliveryLocations),
     note: product.note,
+  }
+}
+
+function inventoryCategoryLabel(category: UserInventoryCategory): string {
+  return INVENTORY_CATEGORY_LABELS[category] ?? INVENTORY_CATEGORY_LABELS.OTHER
+}
+
+function inventorySourceLabel(source: UserInventoryItemProfile['source']): string {
+  return INVENTORY_SOURCE_LABELS[source] ?? source
+}
+
+function inventoryRelationshipLabel(
+  relationship: Product['inventoryRelationship'] | undefined,
+): string | null {
+  if (!relationship || relationship === 'NONE') {
+    return null
+  }
+  return INVENTORY_RELATIONSHIP_LABELS[relationship] ?? null
+}
+
+function inventoryItemImage(item: UserInventoryItemProfile): string | null {
+  return item.imageUrl || item.photoUrl
+}
+
+function upsertInventorySnapshot(
+  items: readonly UserInventoryItemProfile[],
+  item: UserInventoryItemProfile,
+): UserInventoryItemProfile[] {
+  const existing = items.some((candidate) => candidate.id === item.id)
+    ? items.map((candidate) => candidate.id === item.id ? item : candidate)
+    : [item, ...items]
+  return [...existing].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+}
+
+function optionalText(value: string): string | undefined {
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function attributeList(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function positiveInteger(value: string, fallback: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return Math.round(parsed)
+}
+
+function nonNegativeInteger(value: string): number | undefined {
+  if (!value.trim()) {
+    return undefined
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined
+  }
+  return Math.round(parsed)
+}
+
+function inventoryDateLabel(value?: string | null): string | null {
+  if (!value) {
+    return null
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+        return
+      }
+      reject(new Error('Unsupported image file'))
+    }
+    reader.onerror = () => reject(new Error('Could not read image file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function fileToInventoryPhotoUrl(file: File): Promise<string> {
+  const dataUrl = await readFileAsDataUrl(file)
+  if (dataUrl.length <= INVENTORY_PHOTO_DATA_URL_LIMIT) {
+    return dataUrl
+  }
+  return resizeInventoryPhotoDataUrl(dataUrl)
+}
+
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not process image file'))
+    image.src = dataUrl
+  })
+}
+
+async function resizeInventoryPhotoDataUrl(dataUrl: string): Promise<string> {
+  const image = await loadImage(dataUrl)
+  const attempts = [
+    { max: 1280, quality: 0.78 },
+    { max: 1024, quality: 0.72 },
+    { max: 840, quality: 0.66 },
+  ]
+  let latest = dataUrl
+  for (const attempt of attempts) {
+    const ratio = Math.min(1, attempt.max / Math.max(image.width, image.height))
+    const width = Math.max(1, Math.round(image.width * ratio))
+    const height = Math.max(1, Math.round(image.height * ratio))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) {
+      break
+    }
+    context.drawImage(image, 0, 0, width, height)
+    latest = canvas.toDataURL('image/jpeg', attempt.quality)
+    if (latest.length <= INVENTORY_PHOTO_DATA_URL_LIMIT) {
+      return latest
+    }
+  }
+  if (latest.length > INVENTORY_PHOTO_DATA_URL_LIMIT) {
+    throw new Error('Photo is too large')
+  }
+  return latest
+}
+
+function initialInventoryForm(category: UserInventoryCategory = 'APPAREL'): InventoryFormState {
+  return {
+    name: '',
+    brand: '',
+    category,
+    description: '',
+    imageUrl: '',
+    productUrl: '',
+    photoUrl: '',
+    quantity: '1',
+    unit: '',
+    location: '',
+    notes: '',
+    attributes: '',
+    consumable: category === 'PANTRY',
+    restockEnabled: false,
+    restockThreshold: '',
+  }
+}
+
+function inventoryFormFromItem(item: UserInventoryItemProfile): InventoryFormState {
+  return {
+    name: item.name,
+    brand: item.brand ?? '',
+    category: item.category,
+    description: item.description ?? '',
+    imageUrl: item.imageUrl ?? '',
+    productUrl: item.productUrl ?? '',
+    photoUrl: item.photoUrl ?? '',
+    quantity: String(item.quantity),
+    unit: item.unit ?? '',
+    location: item.location ?? '',
+    notes: item.notes ?? '',
+    attributes: item.attributes.join(', '),
+    consumable: item.consumable,
+    restockEnabled: item.restockEnabled,
+    restockThreshold: item.restockThreshold === null ? '' : String(item.restockThreshold),
+  }
+}
+
+function inventoryItemInputFromForm(form: InventoryFormState): UserInventoryItemInput {
+  return {
+    name: form.name.trim(),
+    brand: optionalText(form.brand),
+    category: form.category,
+    description: optionalText(form.description),
+    imageUrl: optionalText(form.imageUrl),
+    productUrl: optionalText(form.productUrl),
+    quantity: positiveInteger(form.quantity, 1),
+    unit: optionalText(form.unit),
+    location: optionalText(form.location),
+    notes: optionalText(form.notes),
+    attributes: attributeList(form.attributes),
+    consumable: form.consumable,
+    restockEnabled: form.restockEnabled,
+    restockThreshold: form.restockEnabled ? nonNegativeInteger(form.restockThreshold) : undefined,
+  }
+}
+
+function inventoryPhotoInputFromForm(form: InventoryFormState): UserInventoryPhotoInput {
+  return {
+    photoUrl: form.photoUrl,
+    name: optionalText(form.name),
+    brand: optionalText(form.brand),
+    category: form.category,
+    description: optionalText(form.description),
+    quantity: positiveInteger(form.quantity, 1),
+    unit: optionalText(form.unit),
+    location: optionalText(form.location),
+    notes: optionalText(form.notes),
+    attributes: attributeList(form.attributes),
+    consumable: form.consumable,
+    restockEnabled: form.restockEnabled,
+    restockThreshold: form.restockEnabled ? nonNegativeInteger(form.restockThreshold) : undefined,
+  }
+}
+
+function inventoryUpdateInputFromForm(form: InventoryFormState): UserInventoryItemUpdateInput {
+  return {
+    name: optionalText(form.name),
+    brand: optionalText(form.brand),
+    category: form.category,
+    description: optionalText(form.description),
+    imageUrl: optionalText(form.imageUrl),
+    productUrl: optionalText(form.productUrl),
+    photoUrl: optionalText(form.photoUrl),
+    quantity: positiveInteger(form.quantity, 1),
+    unit: optionalText(form.unit),
+    location: optionalText(form.location),
+    notes: optionalText(form.notes),
+    attributes: attributeList(form.attributes),
+    consumable: form.consumable,
+    restockEnabled: form.restockEnabled,
+    restockThreshold: form.restockEnabled ? nonNegativeInteger(form.restockThreshold) : undefined,
   }
 }
 
@@ -1374,6 +1670,28 @@ function PrefChip({
       {variant === 'lit' && <span className="mt-chip-dot" />}
       {variant === 'missed' && <span className="mt-chip-x">x</span>}
       {label}
+    </span>
+  )
+}
+
+function InventorySignalBadge({
+  product,
+  compact = false,
+}: Readonly<{
+  product: Product
+  compact?: boolean
+}>) {
+  const label = inventoryRelationshipLabel(product.inventoryRelationship)
+  if (!label) {
+    return null
+  }
+  return (
+    <span className={`mt-inv-signal ${compact ? 'compact' : ''} ${product.inventoryRelationship?.toLowerCase()}`}>
+      <span className="mt-inv-signal-dot" />
+      {label}
+      {!compact && product.inventoryItemName ? (
+        <span className="mt-inv-signal-item">{product.inventoryItemName}</span>
+      ) : null}
     </span>
   )
 }
@@ -2264,6 +2582,7 @@ function ProductCard({
 
       <div className="mt-card-body">
         <div className="mt-mono mt-card-brand">{product.brand}</div>
+        <InventorySignalBadge product={product} compact />
         <div className="mt-card-name">{product.name}</div>
         <div className="mt-chips">
           {product.satisfies.slice(0, 3).map((id) => (
@@ -2645,10 +2964,44 @@ function SearchSuggestionPanel({
   )
 }
 
+function RestockNudges({
+  items,
+  onSubmit,
+}: Readonly<{
+  items: readonly UserInventoryItemProfile[]
+  onSubmit: (query: string) => void
+}>) {
+  return (
+    <section className="mt-restock-band" aria-label="Restock">
+      <div className="mt-restock-band-head">
+        <span className="mt-mono mt-restock-band-k">Restock</span>
+        <span className="mt-restock-band-count">{items.length}</span>
+      </div>
+      <div className="mt-restock-band-list">
+        {items.slice(0, 4).map((item) => (
+          <button
+            key={item.id}
+            className="mt-restock-pill"
+            type="button"
+            onClick={() => onSubmit(`restock ${item.name}`)}
+          >
+            <span className="mt-restock-pill-name">{item.name}</span>
+            <span className="mt-mono mt-restock-pill-meta">
+              {inventoryCategoryLabel(item.category)}
+              {item.quantity > 0 ? ` · ${item.quantity}${item.unit ? ` ${item.unit}` : ''}` : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function FeedView({
   profile,
   greeting,
   products,
+  restockItems,
   hiddenByShip,
   discoveryLoading,
   discoveryError,
@@ -2681,6 +3034,7 @@ function FeedView({
   profile: typeof PROFILE
   greeting: string
   products: readonly Product[]
+  restockItems: readonly UserInventoryItemProfile[]
   hiddenByShip: number
   discoveryLoading: boolean
   discoveryError: string | null
@@ -2785,6 +3139,9 @@ function FeedView({
         <div className="mt-search-state mt-search-state-error">
           {discoveryError}
         </div>
+      ) : null}
+      {preSearch && restockItems.length > 0 ? (
+        <RestockNudges items={restockItems} onSubmit={onSubmit} />
       ) : null}
       <div className="mt-feed-head">
         <h2 className="mt-feed-title">{title}</h2>
@@ -3106,6 +3463,7 @@ function ProductModal({
                 · {productMerchantCount(product, deliveryLocations)} stores
               </span>
             </div>
+            <InventorySignalBadge product={product} />
             <div className="mt-modal-actions">
               <button
                 className={`mt-act mt-act-icon ${saved ? 'on' : ''}`}
@@ -3482,6 +3840,7 @@ function TopBar({
           ['discover', 'Discover'],
           ['saved', 'Saved'],
           ['compare', 'Compare'],
+          ['inventory', 'Inventory'],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -3576,6 +3935,7 @@ function AccountMenu({
   const items: ReadonlyArray<{ key: View; label: string }> = [
     { key: 'account', label: 'Account settings' },
     { key: 'orders', label: 'Order history' },
+    { key: 'inventory', label: 'Inventory' },
     { key: 'preferences', label: 'Your preferences' },
     { key: 'saved', label: 'Saved items' },
     { key: 'cart', label: 'Your cart' },
@@ -3709,6 +4069,580 @@ function EmptyState({
       <div className="mt-empty-mark">{mark}</div>
       <h3 className="mt-empty-title">{title}</h3>
       <p className="mt-empty-sub">{sub}</p>
+    </div>
+  )
+}
+
+function InventoryView({
+  items,
+  loading,
+  error,
+  onRefresh,
+  onAddItem,
+  onAddPhotoItem,
+  onUpdateItem,
+  onDeleteItem,
+  onExport,
+}: Readonly<{
+  items: readonly UserInventoryItemProfile[]
+  loading: boolean
+  error: string | null
+  onRefresh: () => void
+  onAddItem: (input: UserInventoryItemInput) => Promise<UserInventoryItemProfile>
+  onAddPhotoItem: (input: UserInventoryPhotoInput) => Promise<UserInventoryItemProfile>
+  onUpdateItem: (itemId: string, input: UserInventoryItemUpdateInput) => Promise<UserInventoryItemProfile>
+  onDeleteItem: (itemId: string) => Promise<void>
+  onExport: () => Promise<void>
+}>) {
+  const [categoryFilter, setCategoryFilter] = useState<UserInventoryCategory | 'ALL'>('ALL')
+  const [restockOnly, setRestockOnly] = useState(false)
+  const [manualForm, setManualForm] = useState<InventoryFormState>(() => initialInventoryForm())
+  const [photoForm, setPhotoForm] = useState<InventoryFormState>(() => initialInventoryForm('OTHER'))
+  const [saving, setSaving] = useState<'manual' | 'photo' | null>(null)
+  const [photoProcessing, setPhotoProcessing] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const filteredItems = useMemo(
+    () => items.filter((item) =>
+      (categoryFilter === 'ALL' || item.category === categoryFilter) &&
+      (!restockOnly || item.restockEnabled),
+    ),
+    [categoryFilter, items, restockOnly],
+  )
+  const pantryCount = items.filter((item) => item.category === 'PANTRY').length
+  const restockCount = items.filter((item) => item.restockEnabled).length
+  const purchasedCount = items.filter((item) => item.source === 'MEANT_PURCHASE').length
+
+  const addManual = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!manualForm.name.trim() || saving) {
+      return
+    }
+    setSaving('manual')
+    setFormError(null)
+    setNotice(null)
+    try {
+      await onAddItem(inventoryItemInputFromForm(manualForm))
+      setManualForm(initialInventoryForm(manualForm.category))
+      setNotice('Item added')
+    } catch {
+      setFormError('Could not add item')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const addPhoto = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!photoForm.photoUrl.trim() || saving || photoProcessing) {
+      return
+    }
+    setSaving('photo')
+    setFormError(null)
+    setNotice(null)
+    try {
+      await onAddPhotoItem(inventoryPhotoInputFromForm(photoForm))
+      setPhotoForm(initialInventoryForm('OTHER'))
+      setNotice('Photo item added')
+    } catch {
+      setFormError('Could not add photo item')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const readPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) {
+      return
+    }
+    setPhotoProcessing(true)
+    setFormError(null)
+    setNotice(null)
+    try {
+      const photoUrl = await fileToInventoryPhotoUrl(file)
+      const fileName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim()
+      setPhotoForm((current) => ({
+        ...current,
+        photoUrl,
+        name: current.name || fileName,
+      }))
+    } catch {
+      setFormError('Photo is too large')
+    } finally {
+      setPhotoProcessing(false)
+      input.value = ''
+    }
+  }
+
+  const exportItems = async () => {
+    if (exporting) {
+      return
+    }
+    setExporting(true)
+    setFormError(null)
+    setNotice(null)
+    try {
+      await onExport()
+      setNotice('Inventory exported')
+    } catch {
+      setFormError('Could not export inventory')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <main className="mt-feed mt-view mt-inventory-view">
+      <ViewHead
+        eyebrow="Owned items"
+        title="Inventory"
+        right={(
+          <div className="mt-inv-head-actions">
+            <button className="mt-empty-btn ghost" type="button" onClick={onRefresh} disabled={loading}>
+              Refresh
+            </button>
+            <button className="mt-empty-btn" type="button" onClick={() => void exportItems()} disabled={exporting}>
+              {exporting ? 'Exporting' : 'Export data'}
+            </button>
+          </div>
+        )}
+      />
+
+      <div className="mt-inv-stats">
+        <InventoryStat label="Items" value={items.length} />
+        <InventoryStat label="Restock" value={restockCount} />
+        <InventoryStat label="Pantry" value={pantryCount} />
+        <InventoryStat label="Purchases" value={purchasedCount} />
+      </div>
+
+      <div className="mt-inv-workbench">
+        <InventoryManualFormPanel
+          form={manualForm}
+          pending={saving === 'manual'}
+          onChange={setManualForm}
+          onSubmit={addManual}
+        />
+        <InventoryPhotoFormPanel
+          form={photoForm}
+          pending={saving === 'photo'}
+          processing={photoProcessing}
+          onChange={setPhotoForm}
+          onPhoto={readPhoto}
+          onSubmit={addPhoto}
+        />
+      </div>
+
+      {error ? <div className="mt-search-state mt-search-state-error">{error}</div> : null}
+      {formError ? <div className="mt-search-state mt-search-state-error">{formError}</div> : null}
+      {notice ? <div className="mt-inv-notice mt-mono">{notice}</div> : null}
+
+      <div className="mt-inv-list-head">
+        <div className="mt-inv-tabs" role="tablist" aria-label="Inventory category">
+          <button
+            className={`mt-inv-tab ${categoryFilter === 'ALL' ? 'on' : ''}`}
+            type="button"
+            onClick={() => setCategoryFilter('ALL')}
+          >
+            All
+          </button>
+          {INVENTORY_CATEGORIES.map((category) => (
+            <button
+              key={category}
+              className={`mt-inv-tab ${categoryFilter === category ? 'on' : ''}`}
+              type="button"
+              onClick={() => setCategoryFilter(category)}
+            >
+              {inventoryCategoryLabel(category)}
+            </button>
+          ))}
+        </div>
+        <label className="mt-inv-check">
+          <input
+            type="checkbox"
+            checked={restockOnly}
+            onChange={(event) => setRestockOnly(event.target.checked)}
+          />
+          <span>Restock only</span>
+        </label>
+      </div>
+
+      {loading && items.length === 0 ? (
+        <ProductSearchLoading label="Loading inventory" />
+      ) : filteredItems.length > 0 ? (
+        <div className="mt-inv-list">
+          {filteredItems.map((item) => (
+            <InventoryItemCard
+              key={item.id}
+              item={item}
+              onUpdate={onUpdateItem}
+              onDelete={onDeleteItem}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title={items.length === 0 ? 'No owned items yet' : 'No items match this filter'}
+          sub={items.length === 0 ? 'Manual entries, photo adds, and Meant purchases will appear here.' : 'Change the category or restock filter.'}
+          mark={<SparkMark />}
+        />
+      )}
+    </main>
+  )
+}
+
+function InventoryStat({ label, value }: Readonly<{ label: string; value: number }>) {
+  return (
+    <div className="mt-inv-stat">
+      <span className="mt-mono mt-inv-stat-label">{label}</span>
+      <span className="mt-inv-stat-value">{value}</span>
+    </div>
+  )
+}
+
+function InventoryManualFormPanel({
+  form,
+  pending,
+  onChange,
+  onSubmit,
+}: Readonly<{
+  form: InventoryFormState
+  pending: boolean
+  onChange: Dispatch<SetStateAction<InventoryFormState>>
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}>) {
+  return (
+    <form className="mt-inv-panel" onSubmit={onSubmit}>
+      <div className="mt-inv-panel-head">
+        <h2 className="mt-inv-panel-title">Manual add</h2>
+        <button className="mt-act mt-act-primary" type="submit" disabled={!form.name.trim() || pending}>
+          {pending ? 'Adding' : 'Add item'}
+        </button>
+      </div>
+      <div className="mt-inv-form-grid">
+        <InventoryTextField label="Name" value={form.name} onChange={(name) => onChange((current) => ({ ...current, name }))} required />
+        <InventoryTextField label="Brand" value={form.brand} onChange={(brand) => onChange((current) => ({ ...current, brand }))} />
+        <InventoryCategoryField value={form.category} onChange={(category) => onChange((current) => ({
+          ...current,
+          category,
+          consumable: category === 'PANTRY' ? true : current.consumable,
+        }))} />
+        <InventoryTextField label="Quantity" type="number" value={form.quantity} onChange={(quantity) => onChange((current) => ({ ...current, quantity }))} min="1" />
+        <InventoryTextField label="Unit" value={form.unit} onChange={(unit) => onChange((current) => ({ ...current, unit }))} />
+        <InventoryTextField label="Location" value={form.location} onChange={(location) => onChange((current) => ({ ...current, location }))} />
+      </div>
+      <InventoryTextField label="Image URL" value={form.imageUrl} onChange={(imageUrl) => onChange((current) => ({ ...current, imageUrl }))} />
+      <InventoryTextField label="Product URL" value={form.productUrl} onChange={(productUrl) => onChange((current) => ({ ...current, productUrl }))} />
+      <InventoryTextArea label="Attributes" value={form.attributes} onChange={(attributes) => onChange((current) => ({ ...current, attributes }))} />
+      <InventoryTextArea label="Notes" value={form.notes} onChange={(notes) => onChange((current) => ({ ...current, notes }))} />
+      <InventoryRestockFields form={form} onChange={onChange} />
+    </form>
+  )
+}
+
+function InventoryPhotoFormPanel({
+  form,
+  pending,
+  processing,
+  onChange,
+  onPhoto,
+  onSubmit,
+}: Readonly<{
+  form: InventoryFormState
+  pending: boolean
+  processing: boolean
+  onChange: Dispatch<SetStateAction<InventoryFormState>>
+  onPhoto: (event: ChangeEvent<HTMLInputElement>) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}>) {
+  return (
+    <form className="mt-inv-panel" onSubmit={onSubmit}>
+      <div className="mt-inv-panel-head">
+        <h2 className="mt-inv-panel-title">Photo add</h2>
+        <button
+          className="mt-act mt-act-primary"
+          type="submit"
+          disabled={!form.photoUrl.trim() || pending || processing}
+        >
+          {pending ? 'Adding' : 'Use photo'}
+        </button>
+      </div>
+      <label className="mt-field">
+        <span className="mt-field-label mt-mono">Photo</span>
+        <input className="mt-file" type="file" accept="image/*" capture="environment" onChange={onPhoto} />
+      </label>
+      {form.photoUrl ? (
+        <div className="mt-inv-photo-preview">
+          <img src={form.photoUrl} alt="" />
+        </div>
+      ) : (
+        <div className="mt-inv-photo-empty mt-mono">{processing ? 'Processing photo' : 'No photo selected'}</div>
+      )}
+      <div className="mt-inv-form-grid">
+        <InventoryTextField label="Name" value={form.name} onChange={(name) => onChange((current) => ({ ...current, name }))} />
+        <InventoryTextField label="Brand" value={form.brand} onChange={(brand) => onChange((current) => ({ ...current, brand }))} />
+        <InventoryCategoryField value={form.category} onChange={(category) => onChange((current) => ({
+          ...current,
+          category,
+          consumable: category === 'PANTRY' ? true : current.consumable,
+        }))} />
+        <InventoryTextField label="Quantity" type="number" value={form.quantity} onChange={(quantity) => onChange((current) => ({ ...current, quantity }))} min="1" />
+      </div>
+      <InventoryTextArea label="Notes" value={form.notes} onChange={(notes) => onChange((current) => ({ ...current, notes }))} />
+      <InventoryRestockFields form={form} onChange={onChange} />
+    </form>
+  )
+}
+
+function InventoryItemCard({
+  item,
+  onUpdate,
+  onDelete,
+}: Readonly<{
+  item: UserInventoryItemProfile
+  onUpdate: (itemId: string, input: UserInventoryItemUpdateInput) => Promise<UserInventoryItemProfile>
+  onDelete: (itemId: string) => Promise<void>
+}>) {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<InventoryFormState>(() => inventoryFormFromItem(item))
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const image = inventoryItemImage(item)
+  const purchasedAt = inventoryDateLabel(item.purchasedAt)
+  const updatedAt = inventoryDateLabel(item.updatedAt)
+
+  useEffect(() => {
+    setForm(inventoryFormFromItem(item))
+    setEditing(false)
+    setConfirmDelete(false)
+    setError(null)
+  }, [item])
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!form.name.trim() || saving) {
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await onUpdate(item.id, inventoryUpdateInputFromForm(form))
+      setEditing(false)
+    } catch {
+      setError('Could not update item')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setDeleting(true)
+    setError(null)
+    try {
+      await onDelete(item.id)
+    } catch {
+      setError('Could not delete item')
+      setDeleting(false)
+      setConfirmDelete(false)
+    }
+  }
+
+  return (
+    <article className={`mt-inv-item ${editing ? 'editing' : ''}`}>
+      <div className="mt-inv-media">
+        {image ? (
+          <img src={image} alt="" loading="lazy" />
+        ) : (
+          <Placeholder label={inventoryCategoryLabel(item.category)} tone="#e7ebef" />
+        )}
+      </div>
+      <div className="mt-inv-main">
+        <div className="mt-inv-item-top">
+          <div>
+            <div className="mt-mono mt-inv-source">{inventorySourceLabel(item.source)} · {inventoryCategoryLabel(item.category)}</div>
+            <h3 className="mt-inv-name">{item.name}</h3>
+            {item.brand ? <div className="mt-inv-brand">{item.brand}</div> : null}
+          </div>
+          <div className="mt-inv-actions">
+            <button className="mt-act mt-act-ghost" type="button" onClick={() => setEditing((current) => !current)}>
+              {editing ? 'Cancel' : 'Edit'}
+            </button>
+            <button className="mt-act mt-act-ghost danger" type="button" onClick={() => void remove()} disabled={deleting}>
+              {confirmDelete ? 'Confirm delete' : deleting ? 'Deleting' : 'Delete'}
+            </button>
+          </div>
+        </div>
+
+        {editing ? (
+          <form className="mt-inv-edit" onSubmit={save}>
+            <div className="mt-inv-form-grid">
+              <InventoryTextField label="Name" value={form.name} onChange={(name) => setForm((current) => ({ ...current, name }))} required />
+              <InventoryTextField label="Brand" value={form.brand} onChange={(brand) => setForm((current) => ({ ...current, brand }))} />
+              <InventoryCategoryField value={form.category} onChange={(category) => setForm((current) => ({
+                ...current,
+                category,
+                consumable: category === 'PANTRY' ? true : current.consumable,
+              }))} />
+              <InventoryTextField label="Quantity" type="number" value={form.quantity} onChange={(quantity) => setForm((current) => ({ ...current, quantity }))} min="1" />
+              <InventoryTextField label="Unit" value={form.unit} onChange={(unit) => setForm((current) => ({ ...current, unit }))} />
+              <InventoryTextField label="Location" value={form.location} onChange={(location) => setForm((current) => ({ ...current, location }))} />
+            </div>
+            <InventoryTextArea label="Attributes" value={form.attributes} onChange={(attributes) => setForm((current) => ({ ...current, attributes }))} />
+            <InventoryTextArea label="Notes" value={form.notes} onChange={(notes) => setForm((current) => ({ ...current, notes }))} />
+            <InventoryRestockFields form={form} onChange={setForm} />
+            <div className="mt-inv-save-row">
+              <button className="mt-act mt-act-primary" type="submit" disabled={!form.name.trim() || saving}>
+                {saving ? 'Saving' : 'Save changes'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="mt-inv-meta">
+              <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
+              {item.location ? <span>{item.location}</span> : null}
+              {item.restockEnabled ? <span>Restock{item.restockThreshold !== null ? ` at ${item.restockThreshold}` : ''}</span> : null}
+              {purchasedAt ? <span>Bought {purchasedAt}</span> : null}
+              {updatedAt ? <span>Updated {updatedAt}</span> : null}
+            </div>
+            {item.attributes.length > 0 ? (
+              <div className="mt-chips mt-inv-attrs">
+                {item.attributes.map((attribute) => (
+                  <PrefChip key={attribute} label={attribute} variant="muted" small />
+                ))}
+              </div>
+            ) : null}
+            {item.notes ? <p className="mt-inv-notes">{item.notes}</p> : null}
+          </>
+        )}
+        {error ? <div className="mt-cart-inline-error">{error}</div> : null}
+      </div>
+    </article>
+  )
+}
+
+function InventoryTextField({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  required = false,
+  min,
+}: Readonly<{
+  label: string
+  value: string
+  onChange: (value: string) => void
+  type?: 'text' | 'number' | 'url'
+  required?: boolean
+  min?: string
+}>) {
+  return (
+    <label className="mt-field">
+      <span className="mt-field-label mt-mono">{label}</span>
+      <input
+        className="mt-input"
+        type={type}
+        value={value}
+        min={min}
+        required={required}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  )
+}
+
+function InventoryTextArea({
+  label,
+  value,
+  onChange,
+}: Readonly<{
+  label: string
+  value: string
+  onChange: (value: string) => void
+}>) {
+  return (
+    <label className="mt-field">
+      <span className="mt-field-label mt-mono">{label}</span>
+      <textarea
+        className="mt-input mt-textarea"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  )
+}
+
+function InventoryCategoryField({
+  value,
+  onChange,
+}: Readonly<{
+  value: UserInventoryCategory
+  onChange: (value: UserInventoryCategory) => void
+}>) {
+  return (
+    <label className="mt-field">
+      <span className="mt-field-label mt-mono">Category</span>
+      <select
+        className="mt-select"
+        value={value}
+        onChange={(event) => onChange(event.target.value as UserInventoryCategory)}
+      >
+        {INVENTORY_CATEGORIES.map((category) => (
+          <option key={category} value={category}>{inventoryCategoryLabel(category)}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function InventoryRestockFields({
+  form,
+  onChange,
+}: Readonly<{
+  form: InventoryFormState
+  onChange: Dispatch<SetStateAction<InventoryFormState>>
+}>) {
+  return (
+    <div className="mt-inv-restock-controls">
+      <label className="mt-inv-check">
+        <input
+          type="checkbox"
+          checked={form.consumable}
+          onChange={(event) => onChange((current) => ({ ...current, consumable: event.target.checked }))}
+        />
+        <span>Consumable</span>
+      </label>
+      <label className="mt-inv-check">
+        <input
+          type="checkbox"
+          checked={form.restockEnabled}
+          onChange={(event) => onChange((current) => ({
+            ...current,
+            restockEnabled: event.target.checked,
+            consumable: event.target.checked ? true : current.consumable,
+          }))}
+        />
+        <span>Restock</span>
+      </label>
+      <label className="mt-field mt-inv-threshold">
+        <span className="mt-field-label mt-mono">Threshold</span>
+        <input
+          className="mt-input"
+          type="number"
+          min="0"
+          value={form.restockThreshold}
+          disabled={!form.restockEnabled}
+          onChange={(event) => onChange((current) => ({ ...current, restockThreshold: event.target.value }))}
+        />
+      </label>
     </div>
   )
 }
@@ -5768,6 +6702,9 @@ export function MeantApp() {
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantsError, setMerchantsError] = useState<string | null>(null)
+  const [inventoryItems, setInventoryItems] = useState<UserInventoryItemProfile[]>([])
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventoryError, setInventoryError] = useState<string | null>(null)
   const [selectedMerchantId, setSelectedMerchantId] = useStoredState<string | null>('meant.merchant', null)
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
@@ -5798,6 +6735,7 @@ export function MeantApp() {
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
   const searchSuggestionsRequestRef = useRef(0)
+  const inventoryRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
@@ -5881,6 +6819,10 @@ export function MeantApp() {
     : unscopedFeedProducts
   const feedProducts = merchantScopedFeedProducts
   const hiddenByShip = baseFeed.length - shippingScopedFeedProducts.length
+  const restockInventoryItems = useMemo(
+    () => inventoryItems.filter((item) => item.restockEnabled),
+    [inventoryItems],
+  )
 
   const openProduct = useCallback((product: Product, list?: readonly Product[]) => {
     setActiveProduct(product)
@@ -5971,6 +6913,46 @@ export function MeantApp() {
   // (which replace `session` hourly) don't trigger a redundant re-fetch.
   const userId = session?.user?.id
   const userEmail = session?.user?.email
+  const loadInventory = useCallback(async (options?: { silent?: boolean }) => {
+    if (!userId) {
+      setInventoryItems([])
+      setInventoryError(null)
+      return
+    }
+    const requestId = inventoryRequestRef.current + 1
+    inventoryRequestRef.current = requestId
+    if (!options?.silent) {
+      setInventoryLoading(true)
+    }
+    setInventoryError(null)
+    try {
+      const items = await getUserInventoryItems()
+      if (inventoryRequestRef.current !== requestId) {
+        return
+      }
+      setInventoryItems(items)
+    } catch {
+      if (inventoryRequestRef.current !== requestId) {
+        return
+      }
+      setInventoryError('Could not load inventory')
+    } finally {
+      if (inventoryRequestRef.current === requestId && !options?.silent) {
+        setInventoryLoading(false)
+      }
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (!authed) {
+      setInventoryItems([])
+      setInventoryError(null)
+      setInventoryLoading(false)
+      return
+    }
+    void loadInventory()
+  }, [authed, loadInventory])
+
   const refreshSearchSuggestions = useCallback(async () => {
     if (!userId) {
       setSearchSuggestions([])
@@ -6519,6 +7501,42 @@ export function MeantApp() {
     })
   }
 
+  const addInventoryItem = async (input: UserInventoryItemInput) => {
+    const item = await createUserInventoryItem(input)
+    setInventoryItems((current) => upsertInventorySnapshot(current, item))
+    return item
+  }
+
+  const addInventoryPhotoItem = async (input: UserInventoryPhotoInput) => {
+    const item = await createUserInventoryPhotoItem(input)
+    setInventoryItems((current) => upsertInventorySnapshot(current, item))
+    return item
+  }
+
+  const editInventoryItem = async (itemId: string, item: UserInventoryItemUpdateInput) => {
+    const updated = await updateUserInventoryItem({ itemId, item })
+    setInventoryItems((current) => upsertInventorySnapshot(current, updated))
+    return updated
+  }
+
+  const removeInventoryItem = async (itemId: string) => {
+    await deleteUserInventoryItem(itemId)
+    setInventoryItems((current) => current.filter((item) => item.id !== itemId))
+  }
+
+  const downloadInventory = async () => {
+    const exported = await exportUserInventory()
+    const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `meant-inventory-${new Date(exported.exportedAt).toISOString().slice(0, 10)}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const runProductSearch = async (
     nextQuery: string,
     options?: { append?: boolean; offset?: number; merchantId?: string | null },
@@ -6685,6 +7703,7 @@ export function MeantApp() {
       document.body.appendChild(opener)
       opener.click()
       opener.remove()
+      void loadInventory({ silent: true })
     } catch {
       setCheckoutError({
         merchant,
@@ -6729,6 +7748,20 @@ export function MeantApp() {
             onRemove={removeCompareProduct}
             onAdd={addCompareProduct}
             onOpen={openProduct}
+          />
+        )
+      case 'inventory':
+        return (
+          <InventoryView
+            items={inventoryItems}
+            loading={inventoryLoading}
+            error={inventoryError}
+            onRefresh={() => void loadInventory()}
+            onAddItem={addInventoryItem}
+            onAddPhotoItem={addInventoryPhotoItem}
+            onUpdateItem={editInventoryItem}
+            onDeleteItem={removeInventoryItem}
+            onExport={downloadInventory}
           />
         )
       case 'preferences':
@@ -6814,6 +7847,7 @@ export function MeantApp() {
             profile={liveProfile}
             greeting={greeting}
             products={feedProducts}
+            restockItems={restockInventoryItems}
             hiddenByShip={hiddenByShip}
             discoveryLoading={discoveryLoading}
             discoveryError={discoveryError}
@@ -6884,6 +7918,8 @@ export function MeantApp() {
           .flatMap((order) => order.items)
           .map((item) => allKnownProductsMap.get(item.id))
           .filter((product): product is Product => Boolean(product))
+      case 'inventory':
+        return []
       case 'discover':
       default:
         return feedProducts

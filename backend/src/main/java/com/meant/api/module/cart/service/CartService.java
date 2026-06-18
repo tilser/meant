@@ -16,6 +16,8 @@ import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.module.user.service.UserInventoryService;
+import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.HashMap;
@@ -34,6 +36,7 @@ public class CartService {
     private final MerchantCartProviderLookupService merchantCartProviderLookupService;
     private final CartPersistenceService cartPersistenceService;
     private final CartClient cartClient;
+    private final UserInventoryService userInventoryService;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
@@ -63,11 +66,13 @@ public class CartService {
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         if (!query.refresh() && cart.getCheckoutUrl() != null && !cart.getCheckoutUrl().isBlank()) {
+            importCartInventory(cart);
             return new CheckoutResult(cart.getId(), cart.getRemoteCartId(), cart.getCheckoutUrl());
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         CartToolResult result = cartClient.getCart(provider, cart.getRemoteCartId());
         Cart refreshedCart = cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result);
+        importCartInventory(refreshedCart);
         return new CheckoutResult(
                 refreshedCart.getId(),
                 refreshedCart.getRemoteCartId(),
@@ -176,6 +181,35 @@ public class CartService {
                 .map(String::trim)
                 .distinct()
                 .toList();
+    }
+
+    private void importCartInventory(Cart cart) {
+        List<ImportPurchasedInventoryItemsCommand.PurchasedItem> items = cart.getLines().stream()
+                .filter(line -> line.getProductVariantId() != null && !line.getProductVariantId().isBlank())
+                .map(line -> new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        cart.getMerchantDomain() + ":" + line.getProductVariantId(),
+                        null,
+                        productName(line.getProductTitle(), line.getVariantTitle(), line.getProductVariantId()),
+                        cart.getMerchantDomain(),
+                        null,
+                        null,
+                        line.getQuantity(),
+                        cart.getRefreshedAt()
+                ))
+                .toList();
+        if (!items.isEmpty()) {
+            userInventoryService.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(cart.getUserId(), items));
+        }
+    }
+
+    private String productName(String productTitle, String variantTitle, String fallback) {
+        if (productTitle != null && !productTitle.isBlank()) {
+            return productTitle;
+        }
+        if (variantTitle != null && !variantTitle.isBlank()) {
+            return variantTitle;
+        }
+        return fallback;
     }
 
 }

@@ -6,8 +6,10 @@ import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.user.constant.UserClothingFit;
+import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
+import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
@@ -42,6 +44,7 @@ public class UserProductRecommendationExplanationService {
             Explain why each product is meant for this specific user and query.
             Use only facts present in the product data, merchant data, query, and user filters.
             Do not invent certifications, materials, review claims, discounts, or shipping promises.
+            Owned inventory signals are server-generated facts. Prefer complements and restocks; be explicit when a product looks duplicative.
             Filters in category interests are soft taste signals. Match them when the product clearly reflects the interest, but do not mark them missed just because the theme is absent.
             matchedFilterIds and missedFilterIds must contain only filter IDs from the active user filters.
             Keep whyMeantForYou one concise sentence, under 220 characters.
@@ -60,6 +63,18 @@ public class UserProductRecommendationExplanationService {
             String profileHash,
             UserSettingsResult settings,
             List<UserProductSearchProductSnapshot> products
+    ) {
+        return explain(userId, query, normalizedQuery, profileHash, settings, products, Map.of());
+    }
+
+    public Map<String, UserProductRecommendationExplanationResult> explain(
+            UUID userId,
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            UserSettingsResult settings,
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
     ) {
         String model = openRouterProperties.models().productRecommendationExplainer();
         String promptVersion = userProductSearchProperties.explanationPromptVersion();
@@ -84,7 +99,8 @@ public class UserProductRecommendationExplanationService {
             generated = generate(
                     query,
                     settings,
-                    missing
+                    missing,
+                    inventorySignals
             );
         } catch (OpenRouterException exception) {
             log.warn("Could not generate product explanations; returning explainable products only: {}",
@@ -108,7 +124,8 @@ public class UserProductRecommendationExplanationService {
     private List<UserProductRecommendationExplanationResult> generate(
             String query,
             UserSettingsResult settings,
-            List<UserProductSearchProductSnapshot> products
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
     ) {
         if (products.isEmpty()) {
             return List.of();
@@ -117,17 +134,18 @@ public class UserProductRecommendationExplanationService {
         String response = openRouterChatClient.completeJson(
                 openRouterProperties.models().productRecommendationExplainer(),
                 SYSTEM_PROMPT,
-                userPrompt(query, settings, products),
+                userPrompt(query, settings, products, inventorySignals),
                 "product_recommendation_explanations",
                 responseSchema(products, settings.filters())
         );
-        return sanitize(response, products, settings.filters());
+        return sanitize(response, products, settings.filters(), inventorySignals);
     }
 
     private String userPrompt(
             String query,
             UserSettingsResult settings,
-            List<UserProductSearchProductSnapshot> products
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
     ) {
         return """
                 Search query:
@@ -148,7 +166,7 @@ public class UserProductRecommendationExplanationService {
                 locations(settings.locations()),
                 clothingFit(settings.clothingFit()),
                 filterCatalog(settings.filters()),
-                productCatalog(products)
+                productCatalog(products, inventorySignals)
         );
     }
 
@@ -166,13 +184,19 @@ public class UserProductRecommendationExplanationService {
                 .collect(Collectors.joining("\n"));
     }
 
-    private String productCatalog(List<UserProductSearchProductSnapshot> products) {
+    private String productCatalog(
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
+    ) {
         return products.stream()
-                .map(this::productPrompt)
+                .map(product -> productPrompt(product, inventorySignals.get(product.productKey())))
                 .collect(Collectors.joining("\n\n"));
     }
 
-    private String productPrompt(UserProductSearchProductSnapshot snapshot) {
+    private String productPrompt(
+            UserProductSearchProductSnapshot snapshot,
+            UserInventoryRecommendationSignal inventorySignal
+    ) {
         MerchantSemanticProductResult product = snapshot.product();
         return """
                 Product key: %s
@@ -182,6 +206,7 @@ public class UserProductRecommendationExplanationService {
                 Price: %s
                 URL: %s
                 Available: %s
+                Owned inventory signal: %s
                 """.formatted(
                 snapshot.productKey(),
                 value(product.merchantName()),
@@ -190,7 +215,8 @@ public class UserProductRecommendationExplanationService {
                 plainText(product.detailDescription(), product.descriptionHtml()),
                 price(product),
                 value(product.url()),
-                value(product.selectedVariantAvailable() == null ? product.available() : product.selectedVariantAvailable())
+                value(product.selectedVariantAvailable() == null ? product.available() : product.selectedVariantAvailable()),
+                inventorySignal(inventorySignal)
         );
     }
 
@@ -224,7 +250,8 @@ public class UserProductRecommendationExplanationService {
     private List<UserProductRecommendationExplanationResult> sanitize(
             String response,
             List<UserProductSearchProductSnapshot> products,
-            List<ShoppingFilterResult> activeFilters
+            List<ShoppingFilterResult> activeFilters,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
     ) {
         ExplanationBatchResponse parsed = parseResponse(response);
         Map<String, UserProductSearchProductSnapshot> requestedProducts = products.stream()
@@ -247,6 +274,7 @@ public class UserProductRecommendationExplanationService {
                 .map(product -> sanitizeProductExplanation(
                         product,
                         requestedProducts.get(product.productKey()),
+                        inventorySignals.get(product.productKey()),
                         validFilterIds,
                         interestFilterIds))
                 .filter(explanation -> !explanation.whyMeantForYou().isBlank())
@@ -265,6 +293,7 @@ public class UserProductRecommendationExplanationService {
     private UserProductRecommendationExplanationResult sanitizeProductExplanation(
             ProductExplanationResponse product,
             UserProductSearchProductSnapshot snapshot,
+            UserInventoryRecommendationSignal inventorySignal,
             Set<String> validFilterIds,
             Set<String> interestFilterIds
     ) {
@@ -278,8 +307,22 @@ public class UserProductRecommendationExplanationService {
                 snapshot.productHash(),
                 sanitizeWhy(product.whyMeantForYou()),
                 matchedFilterIds,
-                missedFilterIds
+                missedFilterIds,
+                relationship(inventorySignal),
+                inventorySignal == null ? null : inventorySignal.inventoryItemId(),
+                inventorySignal == null ? null : inventorySignal.inventoryItemName()
         );
+    }
+
+    private String inventorySignal(UserInventoryRecommendationSignal signal) {
+        if (signal == null || signal.relationship() == UserInventoryRecommendationRelationship.NONE) {
+            return "none";
+        }
+        return "%s: %s".formatted(signal.relationship(), signal.reason());
+    }
+
+    private UserInventoryRecommendationRelationship relationship(UserInventoryRecommendationSignal signal) {
+        return signal == null ? UserInventoryRecommendationRelationship.NONE : signal.relationship();
     }
 
     private ExplanationBatchResponse parseResponse(String response) {
