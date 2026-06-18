@@ -31,6 +31,11 @@ management:
 
 server:
   port: ${MEANT_API_PORT:8080}
+  # Derive the client IP from X-Forwarded-For/Forwarded via Spring's ForwardedHeaderFilter rather
+  # than trusting those headers in application code. Defaults to "none" so direct (non-proxied)
+  # deployments ignore client-supplied forwarding headers entirely; set to "framework" in
+  # environments fronted by a trusted reverse proxy that sets them. See MEA-28.
+  forward-headers-strategy: ${MEANT_FORWARD_HEADERS_STRATEGY:none}
   error:
     include-message: never
     include-stacktrace: never

@@ -79,6 +79,14 @@ import tools.jackson.databind.ObjectMapper;
 @Tag(name = "Users", description = "Profile endpoints for the authenticated Supabase user")
 public class UserController {
 
+    /**
+     * Upper bound for the client-controlled assistant-conversation page size. Mirrors the
+     * {@code @Max} on {@link ListUserAssistantConversationsQuery}; the controller clamps to it so
+     * oversized requests return bounded results instead of being rejected (OWASP API4 —
+     * Unrestricted Resource Consumption).
+     */
+    private static final int MAX_CONVERSATION_LIMIT = 50;
+
     private final UserService userService;
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
@@ -262,7 +270,7 @@ public class UserController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return userAssistantChatService.list(
                         UserCommandMapper.toUpsertCommand(authenticatedUser),
-                        new ListUserAssistantConversationsQuery(authenticatedUser.id(), limit))
+                        new ListUserAssistantConversationsQuery(authenticatedUser.id(), clampConversationLimit(limit)))
                 .stream()
                 .map(UserAssistantConversationSummaryResponse::from)
                 .toList();
@@ -408,15 +416,18 @@ public class UserController {
                 request.preferenceDescription().trim()));
     }
 
+    private int clampConversationLimit(int limit) {
+        return Math.max(1, Math.min(limit, MAX_CONVERSATION_LIMIT));
+    }
+
+    /**
+     * Resolves the client IP without trusting client-supplied forwarding headers. With
+     * {@code server.forward-headers-strategy=framework} configured, the servlet container derives
+     * {@code getRemoteAddr()} from {@code X-Forwarded-For}/{@code Forwarded} only when the request
+     * arrives through a trusted proxy, so an arbitrary attacker-set header cannot poison the value
+     * (OWASP — proxy headers must only be trusted from known proxies).
+     */
     private String buyerIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
         return request.getRemoteAddr();
     }
 

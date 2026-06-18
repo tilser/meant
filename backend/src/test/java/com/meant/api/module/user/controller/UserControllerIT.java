@@ -500,6 +500,33 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void assistantConversationsClampsOversizedAndNonPositiveLimit() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+
+        // An unbounded page size must be clamped server-side and succeed, not pull excessive rows or
+        // 500 from PageRequest.of (MEA-27 — OWASP API4 Unrestricted Resource Consumption).
+        client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/assistant/conversations")
+                        .queryParam("limit", 1_000_000)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk();
+
+        // A non-positive limit must clamp to a valid page size rather than throwing from PageRequest.of.
+        client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/assistant/conversations")
+                        .queryParam("limit", 0)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
     void publicHealthEndpointStaysOpen() {
         client.get().uri("/actuator/health")
                 .exchange()
