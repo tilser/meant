@@ -40,6 +40,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -61,6 +62,12 @@ public class UserAssistantChatService {
     private static final int PRODUCT_RESPONSE_LIMIT = 4;
     private static final int UNTRUSTED_FIELD_LIMIT = 500;
     private static final int UNTRUSTED_MESSAGE_LIMIT = 2000;
+    private static final Pattern CONTROL_CHARS_PATTERN = Pattern.compile("\\p{C}+");
+    private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
+    private static final Pattern BEGIN_UNTRUSTED_DATA_PATTERN =
+            Pattern.compile("BEGIN UNTRUSTED DATA", Pattern.CASE_INSENSITIVE);
+    private static final Pattern END_UNTRUSTED_DATA_PATTERN =
+            Pattern.compile("END UNTRUSTED DATA", Pattern.CASE_INSENSITIVE);
     private static final TypeReference<List<UserProductSearchProductResult>> PRODUCT_LIST_TYPE =
             new TypeReference<>() {
             };
@@ -818,22 +825,29 @@ public class UserAssistantChatService {
         if (value == null || value.isBlank()) {
             return "unknown";
         }
-        String sanitized = value
-                .replaceAll("\\p{C}+", " ")
-                .replaceAll("\\s+", " ")
-                .trim()
-                .replaceAll("(?i)BEGIN UNTRUSTED DATA", "BEGIN_UNTRUSTED_DATA")
-                .replaceAll("(?i)END UNTRUSTED DATA", "END_UNTRUSTED_DATA");
+        if (maxLength <= 0) {
+            return "unknown";
+        }
+        boolean wasTruncated = value.length() > maxLength;
+        String capped = wasTruncated ? value.substring(0, maxLength) : value;
+        String sanitized = CONTROL_CHARS_PATTERN.matcher(capped).replaceAll(" ");
+        sanitized = WHITESPACE_PATTERN.matcher(sanitized).replaceAll(" ").trim();
+        sanitized = BEGIN_UNTRUSTED_DATA_PATTERN.matcher(sanitized).replaceAll("BEGIN_UNTRUSTED_DATA");
+        sanitized = END_UNTRUSTED_DATA_PATTERN.matcher(sanitized).replaceAll("END_UNTRUSTED_DATA");
         if (sanitized.isBlank()) {
             return "unknown";
         }
-        if (sanitized.length() <= maxLength) {
+        if (!wasTruncated && sanitized.length() <= maxLength) {
             return sanitized;
         }
         if (maxLength <= 3) {
-            return sanitized.substring(0, Math.max(0, maxLength));
+            return sanitized.substring(0, Math.min(sanitized.length(), maxLength));
         }
-        return sanitized.substring(0, maxLength - 3) + "...";
+        int targetLength = maxLength - 3;
+        if (sanitized.length() > targetLength) {
+            return sanitized.substring(0, targetLength) + "...";
+        }
+        return sanitized + "...";
     }
 
     private int score(Integer value) {
