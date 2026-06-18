@@ -38,34 +38,34 @@ public class CartService {
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
         CartToolResult result = cartClient.updateCart(provider, createArguments(command));
-        return CartResult.from(cartPersistenceService.saveSnapshot(null, provider, result));
+        return CartResult.from(cartPersistenceService.saveSnapshot(null, command.userId(), provider, result));
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
-        Cart cart = findCart(query.cartId());
+        Cart cart = findCart(query.cartId(), query.userId());
         if (!query.refresh()) {
             return CartResult.from(cart);
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         CartToolResult result = cartClient.getCart(provider, cart.getRemoteCartId());
-        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), provider, result));
+        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result));
     }
 
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
-        Cart cart = findCart(command.cartId());
+        Cart cart = findCart(command.cartId(), command.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         CartToolResult result = cartClient.updateCart(provider, updateArguments(cart, command));
-        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), provider, result));
+        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), command.userId(), provider, result));
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
-        Cart cart = findCart(query.cartId());
+        Cart cart = findCart(query.cartId(), query.userId());
         if (!query.refresh() && cart.getCheckoutUrl() != null && !cart.getCheckoutUrl().isBlank()) {
             return new CheckoutResult(cart.getId(), cart.getRemoteCartId(), cart.getCheckoutUrl());
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         CartToolResult result = cartClient.getCart(provider, cart.getRemoteCartId());
-        Cart refreshedCart = cartPersistenceService.saveSnapshot(cart.getId(), provider, result);
+        Cart refreshedCart = cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result);
         return new CheckoutResult(
                 refreshedCart.getId(),
                 refreshedCart.getRemoteCartId(),
@@ -76,17 +76,17 @@ public class CartService {
     private MerchantCartProvider findProvider(UUID merchantId, String merchantDomain) {
         if (merchantId != null) {
             return merchantCartProviderLookupService.findById(merchantId)
-                    .orElseThrow(() -> new CartException("Merchant not found: " + merchantId));
+                    .orElseThrow(() -> CartException.notFound("Merchant not found: " + merchantId));
         }
         if (merchantDomain != null && !merchantDomain.isBlank()) {
             return merchantCartProviderLookupService.findByDomain(merchantDomain)
-                    .orElseThrow(() -> new CartException("Merchant not found: " + merchantDomain));
+                    .orElseThrow(() -> CartException.notFound("Merchant not found: " + merchantDomain));
         }
         throw new CartException("merchantId or merchantDomain is required");
     }
 
-    private Cart findCart(UUID cartId) {
-        return cartPersistenceService.findCart(cartId);
+    private Cart findCart(UUID cartId, UUID userId) {
+        return cartPersistenceService.findCart(cartId, userId);
     }
 
     private UpdateCartArguments createArguments(CreateCartCommand command) {
@@ -141,7 +141,7 @@ public class CartService {
         }
         String remoteCartLineId = remoteLineIdsByLocalId.get(item.cartLineId());
         if (remoteCartLineId == null) {
-            throw new CartException("Cart line not found: " + item.cartLineId());
+            throw CartException.notFound("Cart line not found: " + item.cartLineId());
         }
         return remoteCartLineId;
     }
@@ -154,7 +154,7 @@ public class CartService {
                 .map(cartLineId -> {
                     String remoteCartLineId = remoteLineIdsByLocalId.get(cartLineId);
                     if (remoteCartLineId == null) {
-                        throw new CartException("Cart line not found: " + cartLineId);
+                        throw CartException.notFound("Cart line not found: " + cartLineId);
                     }
                     return remoteCartLineId;
                 })

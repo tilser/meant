@@ -30,22 +30,23 @@ public class CartPersistenceService {
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
-    public Cart findCart(UUID cartId) {
-        return cartRepository.findWithLinesById(cartId)
-                .orElseThrow(() -> new CartException("Cart not found: " + cartId));
+    public Cart findCart(UUID cartId, UUID userId) {
+        return cartRepository.findWithLinesByIdAndUserId(cartId, userId)
+                .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
     }
 
     @Transactional
-    public Cart saveSnapshot(UUID cartId, MerchantCartProvider provider, CartToolResult result) {
+    public Cart saveSnapshot(UUID cartId, UUID userId, MerchantCartProvider provider, CartToolResult result) {
         CartToolResponse.Cart remoteCart = result.response().cart();
         Instant now = Instant.now();
         Cart cart = cartId == null
                 ? Cart.builder()
+                        .userId(userId)
                         .merchantId(provider.merchantId())
                         .merchantDomain(provider.domain())
                         .createdAt(now)
                         .build()
-                : findCart(cartId);
+                : findCart(cartId, userId);
         cart.assignProvider(provider.merchantId(), provider.domain());
         String remoteCartId = required(remoteCart.id(), "Remote cart id is required");
         CartToolResponse.Money totalAmount = remoteCart.cost() == null ? null : remoteCart.cost().totalAmount();
