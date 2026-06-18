@@ -106,7 +106,7 @@ public class UserService {
     }
 
     private String normalizeProfilePicturePath(UUID userId, String profilePicturePath) {
-        String normalized = profilePicturePath.trim();
+        String normalized = profilePicturePath == null ? "" : profilePicturePath.trim();
         String expectedPrefix = userId + "/";
         String fileName = normalized.startsWith(expectedPrefix)
                 ? normalized.substring(expectedPrefix.length())

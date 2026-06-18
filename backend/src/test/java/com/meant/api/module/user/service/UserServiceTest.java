@@ -116,6 +116,18 @@ class UserServiceTest {
     }
 
     @Test
+    void updateProfilePictureRejectsNullObjectPath() {
+        UUID id = UUID.randomUUID();
+        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThatThrownBy(() -> userService.updateProfilePicture(
+                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserProfilePictureCommand(id, null)))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("Profile picture path");
+    }
+
+    @Test
     void updateProfilePictureRejectsNestedOrUnsupportedObjectPath() {
         UUID id = UUID.randomUUID();
         userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));

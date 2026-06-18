@@ -326,7 +326,7 @@ export async function uploadProfilePictureFile(userId: string, file: File): Prom
   signedUrl: string | null
 }> {
   const extension = profilePictureExtension(file)
-  const path = `${userId}/${crypto.randomUUID()}.${extension}`
+  const path = `${userId}/${randomUuid()}.${extension}`
   const { data, error } = await supabase.storage
     .from(PROFILE_PICTURE_BUCKET)
     .upload(path, file, {
@@ -360,6 +360,25 @@ function profilePictureExtension(file: File): 'jpg' | 'png' | 'webp' {
     return 'webp'
   }
   return 'jpg'
+}
+
+function randomUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    return [...bytes].map((byte, index) => {
+      const value = byte.toString(16).padStart(2, '0')
+      return [4, 6, 8, 10].includes(index) ? `-${value}` : value
+    }).join('')
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (candidate) => {
+    const random = Math.floor(Math.random() * 16)
+    return (candidate === 'x' ? random : (random & 0x3) | 0x8).toString(16)
+  })
 }
 
 export async function getUserSettings(): Promise<UserSettingsProfile> {

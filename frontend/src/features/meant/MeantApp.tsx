@@ -5065,6 +5065,8 @@ function AccountView({
         const profile = await updateProfile({ firstName, surname })
         savedName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
         savedEmail = profile.email || user.email
+        onSave({ ...user, name: savedName, email: savedEmail })
+        setName(savedName)
       }
 
       if (pendingFile) {
