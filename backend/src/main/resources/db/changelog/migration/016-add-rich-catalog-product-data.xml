@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-rich-catalog-product-data" author="meant">
+        <addColumn tableName="user_product_search_results">
+            <column name="list_price_amount" type="bigint"/>
+            <column name="list_price_currency" type="text"/>
+            <column name="rating_score" type="double precision"/>
+            <column name="review_count" type="integer"/>
+            <column name="media_json" type="text"/>
+            <column name="categories_json" type="text"/>
+            <column name="certifications_json" type="text"/>
+            <column name="materials_json" type="text"/>
+            <column name="skus_json" type="text"/>
+            <column name="collections_json" type="text"/>
+            <column name="attributes_json" type="text"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

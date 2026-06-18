@@ -8,6 +8,7 @@ import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
 import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
+import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
@@ -15,6 +16,9 @@ import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchAttemptRes
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
+import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
+import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
@@ -24,11 +28,16 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -327,6 +336,7 @@ public class MerchantSemanticProductSearchService {
         ProductDetailsResponse.SelectedVariant selectedVariant = detailProduct == null
                 ? null
                 : detailProduct.selectedOrFirstAvailableVariant();
+        RichCatalogData richCatalogData = richCatalogData(productCandidate, detailProduct, detailPriceRange, selectedVariant);
         return new MerchantSemanticProductResult(
                 merchant.merchantId(),
                 merchant.domain(),
@@ -343,6 +353,17 @@ public class MerchantSemanticProductSearchService {
                 productCandidate.priceMinAmount(),
                 productCandidate.priceMaxAmount(),
                 productCandidate.priceCurrency(),
+                richCatalogData.listPriceAmount(),
+                richCatalogData.listPriceCurrency(),
+                richCatalogData.ratingScore(),
+                richCatalogData.reviewCount(),
+                richCatalogData.media(),
+                richCatalogData.categories(),
+                richCatalogData.certifications(),
+                richCatalogData.materials(),
+                richCatalogData.skus(),
+                richCatalogData.collections(),
+                richCatalogData.attributes(),
                 productCandidate.available(),
                 detailError,
                 detailProduct == null ? null : detailProduct.description(),
@@ -367,6 +388,422 @@ public class MerchantSemanticProductSearchService {
                 rerankResult.relevanceScore(),
                 rank
         );
+    }
+
+    private RichCatalogData richCatalogData(
+            MerchantCatalogProductCandidate productCandidate,
+            ProductDetailsResponse.Product detailProduct,
+            ProductDetailsResponse.PriceRange detailPriceRange,
+            ProductDetailsResponse.SelectedVariant selectedVariant
+    ) {
+        CatalogSearchResponse.Product catalogProduct = productCandidate.product();
+        String currency = firstPresent(
+                selectedVariant == null ? null : selectedVariant.currency(),
+                detailPriceRange == null ? null : detailPriceRange.currency(),
+                productCandidate.priceCurrency()
+        );
+        MoneyValue listPrice = firstPresent(
+                moneyValue(selectedVariant == null ? null : selectedVariant.listPrice(), currency),
+                moneyValue(detailProduct == null ? null : detailProduct.listPrice(), currency),
+                firstVariantListPrice(catalogProduct, currency),
+                moneyValue(catalogProduct.listPrice(), currency)
+        );
+        List<ProductCatalogAttribute> attributes = richAttributes(catalogProduct, detailProduct);
+        return new RichCatalogData(
+                listPrice == null ? null : listPrice.amount(),
+                listPrice == null ? null : firstPresent(listPrice.currency(), currency),
+                firstPresent(
+                        ratingValue(detailProduct == null ? null : detailProduct.rating()),
+                        ratingValue(catalogProduct.rating())
+                ),
+                firstPresent(
+                        reviewCountValue(detailProduct == null ? null : detailProduct.reviewCount()),
+                        reviewCountValue(detailProduct == null ? null : detailProduct.rating()),
+                        reviewCountValue(catalogProduct.reviewCount()),
+                        reviewCountValue(catalogProduct.rating())
+                ),
+                richMedia(catalogProduct, detailProduct, selectedVariant),
+                richCategories(catalogProduct),
+                richMetadataValues(
+                        Stream.of(catalogProduct.certifications(), detailProduct == null ? null : detailProduct.certifications())
+                                .toList(),
+                        attributes,
+                        List.of("certif", "standard", "compliance")
+                ),
+                richMetadataValues(
+                        Stream.of(catalogProduct.materials(), detailProduct == null ? null : detailProduct.materials())
+                                .toList(),
+                        attributes,
+                        List.of("material", "fabric", "fiber", "fibre", "composition", "ingredient")
+                ),
+                richSkus(catalogProduct, detailProduct, selectedVariant),
+                distinctStrings(Stream.concat(
+                        stringValues(catalogProduct.collections()).stream(),
+                        stringValues(detailProduct == null ? null : detailProduct.collections()).stream()
+                )),
+                attributes
+        );
+    }
+
+    private MoneyValue firstVariantListPrice(CatalogSearchResponse.Product product, String currency) {
+        return safeList(product.variants()).stream()
+                .map(variant -> moneyValue(variant.listPrice(), currency))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<ProductCatalogMedia> richMedia(
+            CatalogSearchResponse.Product catalogProduct,
+            ProductDetailsResponse.Product detailProduct,
+            ProductDetailsResponse.SelectedVariant selectedVariant
+    ) {
+        Map<String, ProductCatalogMedia> media = new LinkedHashMap<>();
+        safeList(catalogProduct.media()).forEach(item -> addMedia(media, media(item)));
+        safeList(catalogProduct.variants()).stream()
+                .flatMap(variant -> safeList(variant.media()).stream())
+                .map(this::media)
+                .forEach(item -> addMedia(media, item));
+        if (detailProduct != null) {
+            addMedia(media, imageMedia(detailProduct.imageUrl(), null));
+            safeList(detailProduct.images()).stream()
+                    .map(this::media)
+                    .forEach(item -> addMedia(media, item));
+            safeList(detailProduct.media()).stream()
+                    .map(this::media)
+                    .forEach(item -> addMedia(media, item));
+        }
+        if (selectedVariant != null) {
+            addMedia(media, imageMedia(selectedVariant.imageUrl(), selectedVariant.imageAltText()));
+            safeList(selectedVariant.media()).stream()
+                    .map(this::media)
+                    .forEach(item -> addMedia(media, item));
+        }
+        return List.copyOf(media.values());
+    }
+
+    private ProductCatalogMedia media(CatalogSearchResponse.Media media) {
+        return new ProductCatalogMedia(
+                blankToDefault(media.type(), "image"),
+                firstPresent(media.url(), media.previewImageUrl()),
+                blankToNull(media.altText())
+        );
+    }
+
+    private ProductCatalogMedia media(ProductDetailsResponse.Image image) {
+        return imageMedia(image.url(), image.altText());
+    }
+
+    private ProductCatalogMedia media(ProductDetailsResponse.Media media) {
+        return new ProductCatalogMedia(
+                blankToDefault(media.type(), "image"),
+                firstPresent(media.url(), media.previewImageUrl()),
+                blankToNull(media.altText())
+        );
+    }
+
+    private ProductCatalogMedia imageMedia(String url, String altText) {
+        return new ProductCatalogMedia("image", blankToNull(url), blankToNull(altText));
+    }
+
+    private void addMedia(Map<String, ProductCatalogMedia> media, ProductCatalogMedia item) {
+        if (item == null || item.url() == null || item.url().isBlank()) {
+            return;
+        }
+        String type = blankToDefault(item.type(), "image");
+        media.putIfAbsent(type.toLowerCase(Locale.ROOT) + "|" + item.url(), new ProductCatalogMedia(
+                type,
+                item.url(),
+                blankToNull(item.altText())
+        ));
+    }
+
+    private List<ProductCatalogCategory> richCategories(CatalogSearchResponse.Product product) {
+        Map<String, ProductCatalogCategory> categories = new LinkedHashMap<>();
+        for (CatalogSearchResponse.Category category : safeList(product.categories())) {
+            String value = blankToNull(category.value());
+            if (value != null) {
+                categories.putIfAbsent(
+                        value.toLowerCase(Locale.ROOT) + "|" + blankToDefault(category.taxonomy(), ""),
+                        new ProductCatalogCategory(value, blankToNull(category.taxonomy()))
+                );
+            }
+        }
+        return List.copyOf(categories.values());
+    }
+
+    private List<String> richSkus(
+            CatalogSearchResponse.Product catalogProduct,
+            ProductDetailsResponse.Product detailProduct,
+            ProductDetailsResponse.SelectedVariant selectedVariant
+    ) {
+        return distinctStrings(Stream.of(
+                        stringValues(catalogProduct.skus()).stream(),
+                        safeList(catalogProduct.variants()).stream().map(CatalogSearchResponse.Variant::sku),
+                        stringValues(detailProduct == null ? null : detailProduct.skus()).stream(),
+                        Stream.of(selectedVariant == null ? null : selectedVariant.sku())
+                )
+                .flatMap(stream -> stream));
+    }
+
+    private List<ProductCatalogAttribute> richAttributes(
+            CatalogSearchResponse.Product catalogProduct,
+            ProductDetailsResponse.Product detailProduct
+    ) {
+        Map<String, ProductCatalogAttribute> attributes = new LinkedHashMap<>();
+        Stream.of(
+                        catalogProduct.metadata(),
+                        catalogProduct.metafields(),
+                        catalogProduct.techSpecs(),
+                        detailProduct == null ? null : detailProduct.metadata(),
+                        detailProduct == null ? null : detailProduct.metafields(),
+                        detailProduct == null ? null : detailProduct.techSpecs()
+                )
+                .flatMap(value -> attributes(value).stream())
+                .forEach(attribute -> {
+                    String name = blankToNull(attribute.name());
+                    String value = blankToNull(attribute.value());
+                    if (name != null && value != null) {
+                        attributes.putIfAbsent(name.toLowerCase(Locale.ROOT) + "|" + value.toLowerCase(Locale.ROOT),
+                                new ProductCatalogAttribute(name, value));
+                    }
+                });
+        return List.copyOf(attributes.values());
+    }
+
+    private List<String> richMetadataValues(
+            List<Object> explicitValues,
+            List<ProductCatalogAttribute> attributes,
+            List<String> attributeKeyFragments
+    ) {
+        Stream<String> explicit = explicitValues.stream()
+                .flatMap(value -> stringValues(value).stream());
+        Stream<String> inferred = attributes.stream()
+                .filter(attribute -> containsAny(attribute.name(), attributeKeyFragments))
+                .flatMap(attribute -> stringValues(attribute.value()).stream());
+        return distinctStrings(Stream.concat(explicit, inferred));
+    }
+
+    private List<ProductCatalogAttribute> attributes(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof Collection<?> collection) {
+            return collection.stream()
+                    .flatMap(item -> attributes(item).stream())
+                    .toList();
+        }
+        if (value instanceof Map<?, ?> map) {
+            return attributes(map);
+        }
+        String scalar = scalarString(value);
+        return scalar == null ? List.of() : List.of(new ProductCatalogAttribute("metadata", scalar));
+    }
+
+    private List<ProductCatalogAttribute> attributes(Map<?, ?> map) {
+        Object namedValue = firstMapValue(map, "value", "values", "text", "description");
+        String namedKey = firstStringValue(map, "name", "key", "label", "title");
+        if (namedKey != null && namedValue != null) {
+            String value = String.join(", ", stringValues(namedValue));
+            return value.isBlank() ? List.of() : List.of(new ProductCatalogAttribute(namedKey, value));
+        }
+
+        List<ProductCatalogAttribute> attributes = new ArrayList<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            String key = scalarString(entry.getKey());
+            if (key == null) {
+                continue;
+            }
+            addAttributeValue(attributes, key, entry.getValue());
+        }
+        return attributes;
+    }
+
+    private void addAttributeValue(List<ProductCatalogAttribute> attributes, String key, Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Object namedValue = firstMapValue(map, "value", "values", "text", "description");
+            String namedKey = firstPresent(firstStringValue(map, "name", "key", "label", "title"), key);
+            if (namedValue != null) {
+                String stringValue = String.join(", ", stringValues(namedValue));
+                if (!stringValue.isBlank()) {
+                    attributes.add(new ProductCatalogAttribute(namedKey, stringValue));
+                }
+                return;
+            }
+            map.forEach((nestedKey, nestedValue) -> {
+                String nestedName = scalarString(nestedKey);
+                if (nestedName != null) {
+                    addAttributeValue(attributes, key + " " + nestedName, nestedValue);
+                }
+            });
+            return;
+        }
+        if (value instanceof Collection<?> collection) {
+            List<String> values = collection.stream()
+                    .flatMap(item -> stringValues(item).stream())
+                    .toList();
+            if (!values.isEmpty()) {
+                attributes.add(new ProductCatalogAttribute(key, String.join(", ", values)));
+            }
+            return;
+        }
+        String scalar = scalarString(value);
+        if (scalar != null) {
+            attributes.add(new ProductCatalogAttribute(key, scalar));
+        }
+    }
+
+    private List<String> stringValues(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof Collection<?> collection) {
+            return collection.stream()
+                    .flatMap(item -> stringValues(item).stream())
+                    .toList();
+        }
+        if (value instanceof Map<?, ?> map) {
+            Object values = firstMapValue(map, "values", "value", "name", "label", "title", "text");
+            if (values != null) {
+                return stringValues(values);
+            }
+            return map.values().stream()
+                    .flatMap(item -> stringValues(item).stream())
+                    .toList();
+        }
+        String scalar = scalarString(value);
+        if (scalar == null) {
+            return List.of();
+        }
+        return Stream.of(scalar.split("\\s*[,;/|]\\s*"))
+                .map(this::blankToNull)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private MoneyValue moneyValue(Object value, String fallbackCurrency) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof CatalogSearchResponse.Money money) {
+            return money.amount() == null ? null : new MoneyValue(money.amount(), firstPresent(money.currency(), fallbackCurrency));
+        }
+        if (value instanceof Map<?, ?> map) {
+            String currency = firstPresent(firstStringValue(map, "currency", "currencyCode"), fallbackCurrency);
+            Object amount = firstMapValue(map, "amount", "value", "price", "min");
+            Long minorAmount = minorAmount(amount, currency);
+            return minorAmount == null ? null : new MoneyValue(minorAmount, currency);
+        }
+        Long minorAmount = minorAmount(value, fallbackCurrency);
+        return minorAmount == null ? null : new MoneyValue(minorAmount, fallbackCurrency);
+    }
+
+    private Long minorAmount(Object value, String currency) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number && number.doubleValue() % 1 == 0 && Math.abs(number.longValue()) >= 1000) {
+            return number.longValue();
+        }
+        return decimalAmountToMinor(value.toString(), currency);
+    }
+
+    private Double ratingValue(Object value) {
+        Object ratingValue = value;
+        if (value instanceof Map<?, ?> map) {
+            ratingValue = firstMapValue(map, "ratingValue", "rating_value", "value", "average", "score", "rating");
+        }
+        Double rating = decimalValue(ratingValue);
+        if (rating == null) {
+            return null;
+        }
+        if (rating > 5.0d && rating <= 10.0d) {
+            return rating / 2.0d;
+        }
+        if (rating > 10.0d && rating <= 100.0d) {
+            return rating / 20.0d;
+        }
+        return rating;
+    }
+
+    private Integer reviewCountValue(Object value) {
+        Object countValue = value;
+        if (value instanceof Map<?, ?> map) {
+            countValue = firstMapValue(map, "reviewCount", "review_count", "reviewsCount", "reviews_count",
+                    "ratingCount", "rating_count", "count");
+        }
+        Double count = decimalValue(countValue);
+        return count == null ? null : Math.max(0, count.intValue());
+    }
+
+    private Double decimalValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        String scalar = scalarString(value);
+        if (scalar == null) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(scalar.replaceAll("[^0-9.\\-]", ""));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private Object firstMapValue(Map<?, ?> map, String... keys) {
+        for (String key : keys) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (entry.getKey() != null && key.equalsIgnoreCase(entry.getKey().toString())) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    private String firstStringValue(Map<?, ?> map, String... keys) {
+        Object value = firstMapValue(map, keys);
+        return scalarString(value);
+    }
+
+    private List<String> distinctStrings(Stream<String> values) {
+        Set<String> seen = new LinkedHashSet<>();
+        return values
+                .map(this::blankToNull)
+                .filter(Objects::nonNull)
+                .filter(value -> seen.add(value.toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    private boolean containsAny(String value, List<String> fragments) {
+        String normalized = normalizedValue(value);
+        return fragments.stream().anyMatch(normalized::contains);
+    }
+
+    private String scalarString(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String string) {
+            return blankToNull(string);
+        }
+        if (value instanceof Number || value instanceof Boolean || value instanceof Character) {
+            return blankToNull(value.toString());
+        }
+        return null;
+    }
+
+    private String blankToDefault(String value, String defaultValue) {
+        String normalized = blankToNull(value);
+        return normalized == null ? defaultValue : normalized;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private int valueOrDefault(Integer value, Integer defaultValue) {
@@ -538,6 +975,10 @@ public class MerchantSemanticProductSearchService {
         return third;
     }
 
+    private String firstPresent(String first, String second) {
+        return firstPresent(first, second, null);
+    }
+
     private Long firstPresent(Long first, Long second, Long third) {
         if (first != null) {
             return first;
@@ -550,9 +991,57 @@ public class MerchantSemanticProductSearchService {
         return value == null ? fourth : value;
     }
 
+    private MoneyValue firstPresent(MoneyValue... values) {
+        for (MoneyValue value : values) {
+            if (value != null && value.amount() != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Double firstPresent(Double... values) {
+        for (Double value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Integer firstPresent(Integer... values) {
+        for (Integer value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private record MerchantCatalogSearchOutcome(
             MerchantCatalogSearchAttemptResult merchantAttempt,
             List<MerchantCatalogProductCandidate> productCandidates
+    ) {
+    }
+
+    private record RichCatalogData(
+            Long listPriceAmount,
+            String listPriceCurrency,
+            Double ratingScore,
+            Integer reviewCount,
+            List<ProductCatalogMedia> media,
+            List<ProductCatalogCategory> categories,
+            List<String> certifications,
+            List<String> materials,
+            List<String> skus,
+            List<String> collections,
+            List<ProductCatalogAttribute> attributes
+    ) {
+    }
+
+    private record MoneyValue(
+            Long amount,
+            String currency
     ) {
     }
 

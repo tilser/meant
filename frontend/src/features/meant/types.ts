@@ -54,6 +54,22 @@ export interface ReviewSummary {
   insight: string
 }
 
+export interface ProductMedia {
+  type: string
+  url: string
+  altText?: string | null
+}
+
+export interface ProductCatalogCategory {
+  value: string
+  taxonomy?: string | null
+}
+
+export interface ProductCatalogAttribute {
+  name: string
+  value: string
+}
+
 export interface Product {
   id: ProductId
   productHash?: string | null
@@ -66,6 +82,7 @@ export interface Product {
   remote?: boolean
   match: number
   priceFrom: number
+  listPrice?: number | null
   merchants: number
   satisfies: readonly PreferenceId[]
   misses: readonly PreferenceId[]
@@ -73,6 +90,13 @@ export interface Product {
   pros: readonly string[]
   cons: readonly string[]
   review: ReviewSummary
+  media?: readonly ProductMedia[]
+  catalogCategories?: readonly ProductCatalogCategory[]
+  certifications?: readonly string[]
+  materials?: readonly string[]
+  skus?: readonly string[]
+  collections?: readonly string[]
+  catalogAttributes?: readonly ProductCatalogAttribute[]
   offers: readonly Offer[]
   needs?: PortType
   provides?: readonly PortType[]

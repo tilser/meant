@@ -1,11 +1,17 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
+import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
+import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductRecommendationFilterMatch;
 import com.meant.api.module.user.entity.UserProductSearch;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
+import com.meant.api.module.user.entity.UserProductSearchResultItem.RichCatalogSnapshot;
+import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
 import com.meant.api.module.user.repository.UserProductRecommendationFilterMatchRepository;
 import com.meant.api.module.user.repository.UserProductSearchRepository;
@@ -21,15 +27,28 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
 public class UserProductSearchPersistenceService {
 
+    private static final TypeReference<List<ProductCatalogMedia>> MEDIA_LIST_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<ProductCatalogCategory>> CATEGORY_LIST_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<ProductCatalogAttribute>> ATTRIBUTE_LIST_TYPE = new TypeReference<>() {
+    };
+
     private final UserProductSearchRepository userProductSearchRepository;
     private final UserProductSearchResultItemRepository userProductSearchResultItemRepository;
     private final UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
     private final UserProductRecommendationFilterMatchRepository userProductRecommendationFilterMatchRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public Optional<UserProductSearchResult> findCachedSearch(
@@ -235,7 +254,8 @@ public class UserProductSearchPersistenceService {
                         product.productKey(),
                         product.productHash(),
                         product.product(),
-                        now
+                        now,
+                        richCatalogSnapshot(product.product())
                 ))
                 .toList();
         userProductSearchResultItemRepository.saveAll(items);
@@ -366,11 +386,58 @@ public class UserProductSearchPersistenceService {
         return items.stream()
                 .filter(item -> explanations.containsKey(item.getProductKey()))
                 .sorted(Comparator.comparingInt(UserProductSearchResultItem::getRank))
-                .map(item -> UserProductSearchProductResult.from(item, explanations.get(item.getProductKey())))
+                .map(item -> UserProductSearchProductResult.from(
+                        item,
+                        explanations.get(item.getProductKey()),
+                        richCatalogData(item)
+                ))
                 .sorted(Comparator.comparingInt(UserProductSearchProductResult::matchScore)
                         .reversed()
                         .thenComparingInt(UserProductSearchProductResult::rank))
                 .toList();
+    }
+
+    private RichCatalogSnapshot richCatalogSnapshot(MerchantSemanticProductResult product) {
+        return new RichCatalogSnapshot(
+                toJson(product.media()),
+                toJson(product.categories()),
+                toJson(product.certifications()),
+                toJson(product.materials()),
+                toJson(product.skus()),
+                toJson(product.collections()),
+                toJson(product.attributes())
+        );
+    }
+
+    private UserProductSearchProductResult.RichCatalogData richCatalogData(UserProductSearchResultItem item) {
+        return new UserProductSearchProductResult.RichCatalogData(
+                fromJson(item.getMediaJson(), MEDIA_LIST_TYPE, List.<ProductCatalogMedia>of()),
+                fromJson(item.getCategoriesJson(), CATEGORY_LIST_TYPE, List.<ProductCatalogCategory>of()),
+                fromJson(item.getCertificationsJson(), STRING_LIST_TYPE, List.<String>of()),
+                fromJson(item.getMaterialsJson(), STRING_LIST_TYPE, List.<String>of()),
+                fromJson(item.getSkusJson(), STRING_LIST_TYPE, List.<String>of()),
+                fromJson(item.getCollectionsJson(), STRING_LIST_TYPE, List.<String>of()),
+                fromJson(item.getAttributesJson(), ATTRIBUTE_LIST_TYPE, List.<ProductCatalogAttribute>of())
+        );
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? List.of() : value);
+        } catch (JacksonException exception) {
+            throw new UserException("Could not serialize product search catalog data", exception);
+        }
+    }
+
+    private <T> T fromJson(String value, TypeReference<T> type, T defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return objectMapper.readValue(value, type);
+        } catch (JacksonException exception) {
+            throw new UserException("Could not parse product search catalog data", exception);
+        }
     }
 
     private Map<String, UserProductRecommendationExplanationResult> loadExplanations(

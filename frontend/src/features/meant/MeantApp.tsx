@@ -87,7 +87,10 @@ import type {
   Preference,
   PreferenceId,
   Product,
+  ProductCatalogAttribute,
+  ProductCatalogCategory,
   ProductId,
+  ProductMedia,
   Theme,
   UserAccount,
   UserLocation,
@@ -557,6 +560,13 @@ function parsePriceAmount(value: string | number | null | undefined): number | n
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function normalizeRatingScore(value: number | null | undefined): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return 0
+  }
+  return Math.max(0, Math.min(5, value))
+}
+
 function searchProductPrice(product: UserProductSearchProductProfile): number {
   return (
     parsePriceAmount(product.selectedVariantPriceAmount) ??
@@ -566,10 +576,88 @@ function searchProductPrice(product: UserProductSearchProductProfile): number {
   )
 }
 
+function searchProductListPrice(product: UserProductSearchProductProfile, currentPrice: number): number | null {
+  const listPrice = parsePriceAmount(product.listPriceAmount)
+  if (listPrice === null || listPrice <= currentPrice) {
+    return null
+  }
+  return listPrice
+}
+
+function searchProductMedia(product: UserProductSearchProductProfile): ProductMedia[] {
+  const seen = new Set<string>()
+  const fromApi = (product.media ?? [])
+    .map((item): ProductMedia | null => {
+      if (!item.url) {
+        return null
+      }
+      return {
+        type: item.type || 'image',
+        url: item.url,
+        altText: item.altText,
+      }
+    })
+    .filter((item): item is ProductMedia => item !== null)
+  const fallback = [
+    product.selectedVariantImageUrl,
+    product.detailImageUrl,
+    product.imageUrl,
+  ]
+    .filter((url): url is string => Boolean(url))
+    .map((url) => ({ type: 'image', url, altText: product.selectedVariantImageAltText }))
+
+  return [...fromApi, ...fallback].filter((item) => {
+    const key = `${item.type.toLowerCase()}|${item.url}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+function searchProductCatalogCategories(product: UserProductSearchProductProfile): ProductCatalogCategory[] {
+  return (product.categories ?? [])
+    .filter((category) => Boolean(category.value))
+    .map((category) => ({
+      value: category.value ?? '',
+      taxonomy: category.taxonomy,
+    }))
+}
+
+function searchProductStringValues(values: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>()
+  return (values ?? [])
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase()
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    })
+}
+
+function searchProductAttributes(product: UserProductSearchProductProfile): ProductCatalogAttribute[] {
+  return (product.attributes ?? [])
+    .filter((attribute) => Boolean(attribute.name) && Boolean(attribute.value))
+    .map((attribute) => ({
+      name: attribute.name ?? '',
+      value: attribute.value ?? '',
+    }))
+}
+
 function searchProductCategory(
   product: UserProductSearchProductProfile,
   preferences: readonly Preference[],
 ): string {
+  const catalogCategory = (product.categories ?? []).find((category) => category.value)?.value
+  if (catalogCategory) {
+    return catalogCategory
+  }
+
   const category = product.matchedFilterIds
     .map((id) => preferences.find((preference) => preference.id === id)?.category)
     .find(Boolean)
@@ -604,6 +692,14 @@ function productFromSearchResult(
   preferences: readonly Preference[],
 ): Product {
   const price = searchProductPrice(product)
+  const media = searchProductMedia(product)
+  const listPrice = searchProductListPrice(product, price)
+  const catalogCategories = searchProductCatalogCategories(product)
+  const certifications = searchProductStringValues(product.certifications)
+  const materials = searchProductStringValues(product.materials)
+  const skus = searchProductStringValues(product.skus)
+  const collections = searchProductStringValues(product.collections)
+  const catalogAttributes = searchProductAttributes(product)
   const brand = product.merchantName || product.merchantDomain
   const detail = stripHtml(product.detailDescription || product.descriptionHtml)
   return {
@@ -613,11 +709,15 @@ function productFromSearchResult(
     brand,
     category: searchProductCategory(product, preferences),
     tone: toneForSearchProduct(product),
-    imageUrl: product.imageUrl || product.detailImageUrl || product.selectedVariantImageUrl,
+    imageUrl: media.find((item) => item.type.toLowerCase() === 'image')?.url
+      || product.imageUrl
+      || product.detailImageUrl
+      || product.selectedVariantImageUrl,
     productUrl: product.url,
     remote: true,
     match: product.matchScore,
     priceFrom: price,
+    listPrice,
     merchants: 1,
     satisfies: product.matchedFilterIds,
     misses: product.missedFilterIds,
@@ -627,10 +727,17 @@ function productFromSearchResult(
       : [detail || 'Ranked highly for your search'],
     cons: product.missedFilterIds.map((id) => `May miss ${prefLabel(preferences, id).toLowerCase()}`),
     review: {
-      score: 0,
-      count: 0,
+      score: normalizeRatingScore(product.ratingScore),
+      count: Math.max(0, product.reviewCount ?? 0),
       insight: detail || product.whyMeantForYou,
     },
+    media,
+    catalogCategories,
+    certifications,
+    materials,
+    skus,
+    collections,
+    catalogAttributes,
     offers: [
       {
         merchant: brand,
@@ -2664,6 +2771,81 @@ function FloatingAsk({
   )
 }
 
+function productWasPrice(product: Product, deliveryLocations: readonly UserLocation[]): number | null {
+  const price = productPriceFrom(product, deliveryLocations)
+  if (product.listPrice === null || product.listPrice === undefined || product.listPrice <= price) {
+    return null
+  }
+  return product.listPrice
+}
+
+function ProductPriceLine({
+  product,
+  deliveryLocations,
+  className,
+}: Readonly<{
+  product: Product
+  deliveryLocations: readonly UserLocation[]
+  className: string
+}>) {
+  const price = productPriceFrom(product, deliveryLocations)
+  const wasPrice = productWasPrice(product, deliveryLocations)
+
+  return (
+    <span className={className}>
+      <span className="mt-mono mt-card-from">from</span>{' '}
+      <span>{money(price)}</span>
+      {wasPrice ? <span className="mt-was-price">{money(wasPrice)}</span> : null}
+    </span>
+  )
+}
+
+function ProductReviewSummary({ product }: Readonly<{ product: Product }>) {
+  if (product.review.count <= 0) {
+    return <span className="mt-mono mt-card-rating muted">No review data</span>
+  }
+  return (
+    <span className="mt-mono mt-card-rating">
+      ★ {product.review.score.toFixed(1)} · {product.review.count.toLocaleString()}
+    </span>
+  )
+}
+
+function catalogBadgeLabels(product: Product): string[] {
+  const values = [
+    ...(product.certifications ?? []),
+    ...(product.materials ?? []),
+    ...(product.collections ?? []),
+  ]
+  const seen = new Set<string>()
+  return values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase()
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    })
+}
+
+function mediaSummary(product: Product): string | null {
+  const media = product.media ?? []
+  if (media.length <= 1) {
+    return null
+  }
+  const imageCount = media.filter((item) => item.type.toLowerCase() === 'image').length
+  const videoCount = media.filter((item) => item.type.toLowerCase() === 'video').length
+  const modelCount = media.filter((item) => item.type.toLowerCase().includes('3d') || item.type.toLowerCase() === 'model').length
+  return [
+    imageCount > 1 ? `${imageCount} images` : null,
+    videoCount > 0 ? `${videoCount} video${videoCount === 1 ? '' : 's'}` : null,
+    modelCount > 0 ? `${modelCount} 3D` : null,
+  ].filter(Boolean).join(' · ') || `${media.length} media`
+}
+
 function ProductCard({
   product,
   index,
@@ -2681,6 +2863,7 @@ function ProductCard({
 } & ProductOpenProps & ProductSaveProps>) {
   const open = () => onOpen(product)
   const savePending = savePendingSet.has(product.id)
+  const catalogBadges = catalogBadgeLabels(product).slice(0, 3)
   const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -2742,15 +2925,24 @@ function ProductCard({
             />
           ))}
         </div>
+        {catalogBadges.length > 0 ? (
+          <div className="mt-catalog-pills">
+            {catalogBadges.map((label) => (
+              <span className="mt-catalog-pill" key={label}>{label}</span>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-card-foot">
-          <span className="mt-card-price">
-            <span className="mt-mono mt-card-from">from</span>{' '}
-            {money(productPriceFrom(product, deliveryLocations))}
-          </span>
+          <ProductPriceLine
+            product={product}
+            deliveryLocations={deliveryLocations}
+            className="mt-card-price"
+          />
           <span className="mt-mono mt-card-stores">
             {productMerchantCount(product, deliveryLocations)} stores
           </span>
         </div>
+        <ProductReviewSummary product={product} />
         <div className="mt-card-note">
           <span className="mt-note-key">Why it is meant for you</span>
           {product.note}
@@ -3468,6 +3660,14 @@ function ProductModal({
 
   const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = offers.length > 0 ? offers : product.offers
+  const modalMedia = (product.media ?? []).slice(0, 4)
+  const catalogBadges = catalogBadgeLabels(product)
+  const mediaInfo = mediaSummary(product)
+  const hasCatalogDetails =
+    catalogBadges.length > 0 ||
+    (product.skus?.length ?? 0) > 0 ||
+    (product.catalogAttributes?.length ?? 0) > 0 ||
+    Boolean(mediaInfo)
   const ask = (question: string) => {
     setMessages((current) => [
       ...current,
@@ -3594,11 +3794,27 @@ function ProductModal({
                 <MatchRing value={product.match} size={56} stroke={4} />
               </div>
             </div>
+            {modalMedia.length > 1 ? (
+              <div className="mt-modal-thumbs">
+                {modalMedia.map((item) => (
+                  <div className="mt-modal-thumb" key={`${item.type}-${item.url}`}>
+                    {item.type.toLowerCase() === 'image' ? (
+                      <img src={item.url} alt={item.altText || product.name} loading="lazy" />
+                    ) : (
+                      <span className="mt-mono">{item.type}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="mt-mono mt-card-brand">{product.brand} · {product.category}</div>
             <h2 className="mt-modal-name">{product.name}</h2>
-            <div className="mt-modal-price">
-              <span className="mt-mono mt-card-from">from</span>{' '}
-              {money(productPriceFrom(product, deliveryLocations))}
+            <div className="mt-modal-price-row">
+              <ProductPriceLine
+                product={product}
+                deliveryLocations={deliveryLocations}
+                className="mt-modal-price"
+              />
               <span className="mt-mono mt-modal-stores">
                 · {productMerchantCount(product, deliveryLocations)} stores
               </span>
@@ -3685,18 +3901,63 @@ function ProductModal({
             <section className="mt-block">
               <div className="mt-reviews-head">
                 <div className="mt-block-label mt-mono">From the reviews</div>
-                <div className="mt-reviews-score">
-                  <span className="mt-stars">
-                    {'★'.repeat(Math.round(product.review.score))}
-                  </span>
-                  <span className="mt-mono">
-                    {product.review.score.toFixed(1)} ·{' '}
-                    {product.review.count.toLocaleString()}
-                  </span>
-                </div>
+                {product.review.count > 0 ? (
+                  <div className="mt-reviews-score">
+                    <span className="mt-stars">
+                      {'★'.repeat(Math.round(product.review.score))}
+                    </span>
+                    <span className="mt-mono">
+                      {product.review.score.toFixed(1)} ·{' '}
+                      {product.review.count.toLocaleString()}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="mt-mono mt-reviews-empty">No review data</span>
+                )}
               </div>
               <p className="mt-reviews-insight">{product.review.insight}</p>
             </section>
+
+            {hasCatalogDetails ? (
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">Catalog details</div>
+                <div className="mt-catalog-details">
+                  {catalogBadges.length > 0 ? (
+                    <div className="mt-catalog-detail-row">
+                      <span className="mt-mono">Signals</span>
+                      <div className="mt-catalog-pills">
+                        {catalogBadges.slice(0, 6).map((label) => (
+                          <span className="mt-catalog-pill" key={label}>{label}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {(product.skus?.length ?? 0) > 0 ? (
+                    <div className="mt-catalog-detail-row">
+                      <span className="mt-mono">SKU</span>
+                      <span>{product.skus?.slice(0, 3).join(', ')}</span>
+                    </div>
+                  ) : null}
+                  {mediaInfo ? (
+                    <div className="mt-catalog-detail-row">
+                      <span className="mt-mono">Media</span>
+                      <span>{mediaInfo}</span>
+                    </div>
+                  ) : null}
+                  {(product.catalogAttributes?.length ?? 0) > 0 ? (
+                    <div className="mt-catalog-detail-row">
+                      <span className="mt-mono">Specs</span>
+                      <span>
+                        {product.catalogAttributes
+                          ?.slice(0, 3)
+                          .map((attribute) => `${attribute.name}: ${attribute.value}`)
+                          .join(' · ')}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
 
             <section className="mt-block">
               <div className="mt-block-label mt-mono">Available offers</div>

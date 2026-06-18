@@ -80,6 +80,28 @@ public class UserProductSearchResultItem {
 
     private String priceCurrency;
 
+    private Long listPriceAmount;
+
+    private String listPriceCurrency;
+
+    private Double ratingScore;
+
+    private Integer reviewCount;
+
+    private String mediaJson;
+
+    private String categoriesJson;
+
+    private String certificationsJson;
+
+    private String materialsJson;
+
+    private String skusJson;
+
+    private String collectionsJson;
+
+    private String attributesJson;
+
     private Boolean available;
 
     private String detailError;
@@ -127,6 +149,17 @@ public class UserProductSearchResultItem {
             MerchantSemanticProductResult result,
             Instant now
     ) {
+        return from(searchId, productKey, productHash, result, now, RichCatalogSnapshot.empty());
+    }
+
+    public static UserProductSearchResultItem from(
+            UUID searchId,
+            String productKey,
+            String productHash,
+            MerchantSemanticProductResult result,
+            Instant now,
+            RichCatalogSnapshot richCatalogSnapshot
+    ) {
         return UserProductSearchResultItem.builder()
                 .id(UUID.randomUUID())
                 .searchId(searchId)
@@ -147,6 +180,17 @@ public class UserProductSearchResultItem {
                 .priceMinAmount(result.priceMinAmount())
                 .priceMaxAmount(result.priceMaxAmount())
                 .priceCurrency(result.priceCurrency())
+                .listPriceAmount(result.listPriceAmount())
+                .listPriceCurrency(result.listPriceCurrency())
+                .ratingScore(result.ratingScore())
+                .reviewCount(result.reviewCount())
+                .mediaJson(richCatalogSnapshot.mediaJson())
+                .categoriesJson(richCatalogSnapshot.categoriesJson())
+                .certificationsJson(richCatalogSnapshot.certificationsJson())
+                .materialsJson(richCatalogSnapshot.materialsJson())
+                .skusJson(richCatalogSnapshot.skusJson())
+                .collectionsJson(richCatalogSnapshot.collectionsJson())
+                .attributesJson(richCatalogSnapshot.attributesJson())
                 .available(result.available())
                 .detailError(result.detailError())
                 .detailDescription(result.detailDescription())
@@ -183,5 +227,20 @@ public class UserProductSearchResultItem {
             return value;
         }
         return fallback == null || fallback.isBlank() ? "Untitled product" : fallback;
+    }
+
+    public record RichCatalogSnapshot(
+            String mediaJson,
+            String categoriesJson,
+            String certificationsJson,
+            String materialsJson,
+            String skusJson,
+            String collectionsJson,
+            String attributesJson
+    ) {
+
+        static RichCatalogSnapshot empty() {
+            return new RichCatalogSnapshot(null, null, null, null, null, null, null);
+        }
     }
 }

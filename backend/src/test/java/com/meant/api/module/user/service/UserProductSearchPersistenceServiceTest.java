@@ -3,6 +3,9 @@ package com.meant.api.module.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
+import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
+import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductRecommendationFilterMatch;
 import com.meant.api.module.user.entity.UserProductSearch;
@@ -26,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class UserProductSearchPersistenceServiceTest {
 
@@ -47,7 +51,8 @@ class UserProductSearchPersistenceServiceTest {
                 searchRepository(),
                 resultItemRepository(savedItems),
                 unusedRepository(UserProductRecommendationExplanationRepository.class),
-                unusedRepository(UserProductRecommendationFilterMatchRepository.class)
+                unusedRepository(UserProductRecommendationFilterMatchRepository.class),
+                new ObjectMapper()
         );
         UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
                 "merchant.example:tee",
@@ -79,10 +84,21 @@ class UserProductSearchPersistenceServiceTest {
                 .satisfies(product -> {
                     assertThat(product.productKey()).isEqualTo("merchant.example:tee");
                     assertThat(product.whyMeantForYou()).isEqualTo("Organic cotton matches your profile.");
+                    assertThat(product.listPriceAmount()).isEqualTo(4800L);
+                    assertThat(product.ratingScore()).isEqualTo(4.7d);
+                    assertThat(product.reviewCount()).isEqualTo(128);
+                    assertThat(product.media()).extracting("type").containsExactly("image", "video");
+                    assertThat(product.certifications()).containsExactly("GOTS");
+                    assertThat(product.materials()).containsExactly("Organic cotton");
                 });
         assertThat(savedItems).singleElement()
-                .extracting(UserProductSearchResultItem::getProductKey)
-                .isEqualTo("merchant.example:tee");
+                .satisfies(item -> {
+                    assertThat(item.getProductKey()).isEqualTo("merchant.example:tee");
+                    assertThat(item.getListPriceAmount()).isEqualTo(4800L);
+                    assertThat(item.getRatingScore()).isEqualTo(4.7d);
+                    assertThat(item.getMediaJson()).contains("video");
+                    assertThat(item.getCertificationsJson()).contains("GOTS");
+                });
     }
 
     @Test
@@ -179,7 +195,8 @@ class UserProductSearchPersistenceServiceTest {
                 cachedSearchRepository(search),
                 cachedResultItemRepository(search.getId(), items),
                 explanationRepository(userId, items),
-                filterMatchRepository()
+                filterMatchRepository(),
+                new ObjectMapper()
         );
     }
 
@@ -369,6 +386,20 @@ class UserProductSearchPersistenceServiceTest {
                 3800L,
                 3800L,
                 "USD",
+                4800L,
+                "USD",
+                4.7d,
+                128,
+                List.of(
+                        new ProductCatalogMedia("image", "https://merchant.example/" + productId + ".jpg", title),
+                        new ProductCatalogMedia("video", "https://merchant.example/" + productId + ".mp4", null)
+                ),
+                List.of(new ProductCatalogCategory("Apparel", "shopify")),
+                List.of("GOTS"),
+                List.of("Organic cotton"),
+                List.of("SKU-" + productId),
+                List.of("Basics"),
+                List.of(new ProductCatalogAttribute("fabric", "100% organic cotton")),
                 true,
                 null,
                 "Organic cotton.",

@@ -297,6 +297,9 @@ export function resolveAsk(
     }
 
     if (/review|rating|people say|worth it|reliable|how good|quality/.test(normalized)) {
+      if (product.review.count <= 0) {
+        return 'No merchant review data is available for this product yet.'
+      }
       return `${product.review.score}/5 from ${product.review.count.toLocaleString()} reviews. ${product.review.insight}`
     }
 

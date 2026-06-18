@@ -221,6 +221,20 @@ export interface components {
             /** Format: int64 */
             priceMaxAmount?: number;
             priceCurrency?: string;
+            /** Format: int64 */
+            listPriceAmount?: number;
+            listPriceCurrency?: string;
+            /** Format: double */
+            ratingScore?: number;
+            /** Format: int32 */
+            reviewCount?: number;
+            media?: components["schemas"]["ProductMediaResponse"][];
+            categories?: components["schemas"]["ProductCategoryResponse"][];
+            certifications?: string[];
+            materials?: string[];
+            skus?: string[];
+            collections?: string[];
+            attributes?: components["schemas"]["ProductAttributeResponse"][];
             available?: boolean;
             detailError?: string;
             detailDescription?: string;
@@ -252,6 +266,19 @@ export interface components {
         MerchantSemanticProductSearchResponse: {
             merchants?: components["schemas"]["MerchantCatalogSearchAttemptResponse"][];
             products?: components["schemas"]["MerchantSemanticProductResponse"][];
+        };
+        ProductMediaResponse: {
+            type?: string;
+            url?: string;
+            altText?: string;
+        };
+        ProductCategoryResponse: {
+            value?: string;
+            taxonomy?: string;
+        };
+        ProductAttributeResponse: {
+            name?: string;
+            value?: string;
         };
         ProductImageResponse: {
             url?: string;

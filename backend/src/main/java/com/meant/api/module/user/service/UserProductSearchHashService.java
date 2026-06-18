@@ -63,6 +63,17 @@ public class UserProductSearchHashService {
                         "priceMin=" + value(firstPresent(product.detailPriceMin(), stringValue(product.priceMinAmount()))),
                         "priceMax=" + value(firstPresent(product.detailPriceMax(), stringValue(product.priceMaxAmount()))),
                         "currency=" + value(firstPresent(product.detailPriceCurrency(), product.priceCurrency())),
+                        "listPrice=" + value(product.listPriceAmount()),
+                        "listPriceCurrency=" + value(product.listPriceCurrency()),
+                        "rating=" + value(product.ratingScore()),
+                        "reviewCount=" + value(product.reviewCount()),
+                        "media=" + values(product.media()),
+                        "categories=" + values(product.categories()),
+                        "certifications=" + values(product.certifications()),
+                        "materials=" + values(product.materials()),
+                        "skus=" + values(product.skus()),
+                        "collections=" + values(product.collections()),
+                        "attributes=" + values(product.attributes()),
                         "variant=" + value(product.selectedVariantId()),
                         "available=" + value(product.selectedVariantAvailable() == null
                                 ? product.available()
@@ -123,6 +134,12 @@ public class UserProductSearchHashService {
 
     private String value(Object value) {
         return value == null ? "" : value.toString().trim();
+    }
+
+    private String values(List<?> values) {
+        return values == null ? "" : values.stream()
+                .map(this::value)
+                .collect(Collectors.joining("|"));
     }
 
     private String sha256(String value) {

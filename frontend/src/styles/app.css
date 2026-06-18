@@ -1653,6 +1653,26 @@ button:disabled {
   margin-bottom: 14px;
 }
 
+.mt-catalog-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.mt-catalog-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent-tint));
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 4px 7px;
+}
+
 .mt-chip {
   display: inline-flex;
   align-items: center;
@@ -1767,9 +1787,33 @@ button:disabled {
 }
 
 .mt-card-price {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
   color: var(--ink);
   font-size: 18px;
   font-weight: 600;
+}
+
+.mt-was-price {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: line-through;
+}
+
+.mt-card-rating {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--ink-soft);
+  font-size: 10.5px;
+}
+
+.mt-card-rating.muted {
+  color: var(--faint);
 }
 
 .mt-card-from,
@@ -2758,6 +2802,32 @@ button:disabled {
   aspect-ratio: 1 / 1;
 }
 
+.mt-modal-thumbs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: -6px 0 16px;
+}
+
+.mt-modal-thumb {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line-soft);
+  aspect-ratio: 1 / 1;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.mt-modal-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .mt-modal-ring {
   right: 12px;
   bottom: 12px;
@@ -2773,8 +2843,15 @@ button:disabled {
   line-height: 1.15;
 }
 
-.mt-modal-price {
+.mt-modal-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   margin-bottom: 20px;
+}
+
+.mt-modal-price {
   font-size: 22px;
   font-weight: 600;
 }
@@ -2874,6 +2951,11 @@ button:disabled {
   white-space: nowrap;
 }
 
+.mt-reviews-empty {
+  color: var(--faint);
+  white-space: nowrap;
+}
+
 .mt-stars {
   color: var(--accent);
   font-size: 13px;
@@ -2885,6 +2967,32 @@ button:disabled {
   font-family: var(--serif);
   font-size: 15px;
   line-height: 1.55;
+}
+
+.mt-catalog-details {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mt-catalog-detail-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.mt-catalog-detail-row > .mt-mono {
+  color: var(--faint);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.mt-catalog-detail-row .mt-catalog-pills {
+  margin-bottom: 0;
 }
 
 .mt-offers {

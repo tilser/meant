@@ -1,6 +1,9 @@
 package com.meant.api.module.merchant.controller.response;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
+import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
+import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +24,17 @@ public record MerchantSemanticProductResponse(
         Long priceMinAmount,
         Long priceMaxAmount,
         String priceCurrency,
+        Long listPriceAmount,
+        String listPriceCurrency,
+        Double ratingScore,
+        Integer reviewCount,
+        List<ProductMediaResponse> media,
+        List<ProductCategoryResponse> categories,
+        List<String> certifications,
+        List<String> materials,
+        List<String> skus,
+        List<String> collections,
+        List<ProductAttributeResponse> attributes,
         Boolean available,
         String detailError,
         String detailDescription,
@@ -63,6 +77,17 @@ public record MerchantSemanticProductResponse(
                 result.priceMinAmount(),
                 result.priceMaxAmount(),
                 result.priceCurrency(),
+                result.listPriceAmount(),
+                result.listPriceCurrency(),
+                result.ratingScore(),
+                result.reviewCount(),
+                result.media().stream().map(ProductMediaResponse::from).toList(),
+                result.categories().stream().map(ProductCategoryResponse::from).toList(),
+                result.certifications(),
+                result.materials(),
+                result.skus(),
+                result.collections(),
+                result.attributes().stream().map(ProductAttributeResponse::from).toList(),
                 result.available(),
                 result.detailError(),
                 result.detailDescription(),
@@ -87,6 +112,37 @@ public record MerchantSemanticProductResponse(
                 result.productRerankScore(),
                 result.rank()
         );
+    }
+
+    public record ProductMediaResponse(
+            String type,
+            String url,
+            String altText
+    ) {
+
+        static ProductMediaResponse from(ProductCatalogMedia media) {
+            return new ProductMediaResponse(media.type(), media.url(), media.altText());
+        }
+    }
+
+    public record ProductCategoryResponse(
+            String value,
+            String taxonomy
+    ) {
+
+        static ProductCategoryResponse from(ProductCatalogCategory category) {
+            return new ProductCategoryResponse(category.value(), category.taxonomy());
+        }
+    }
+
+    public record ProductAttributeResponse(
+            String name,
+            String value
+    ) {
+
+        static ProductAttributeResponse from(ProductCatalogAttribute attribute) {
+            return new ProductAttributeResponse(attribute.name(), attribute.value());
+        }
     }
 
     public record ProductImageResponse(

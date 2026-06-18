@@ -334,6 +334,17 @@ class UserProductRecommendationExplanationServiceTest {
                 3800L,
                 3800L,
                 "USD",
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
                 true,
                 null,
                 "Organic cotton tee with no polyester.",
@@ -407,7 +418,7 @@ class UserProductRecommendationExplanationServiceTest {
         private List<UserProductRecommendationExplanationResult> saved = List.of();
 
         FakeUserProductSearchPersistenceService() {
-            super(null, null, null, null);
+            super(null, null, null, null, new ObjectMapper());
         }
 
         @Override

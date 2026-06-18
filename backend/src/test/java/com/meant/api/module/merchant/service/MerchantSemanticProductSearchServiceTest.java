@@ -138,6 +138,32 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     @Test
+    void capturesRichCatalogDataWhenProductDetailsAreMissing() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct())));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.listPriceAmount()).isEqualTo(5200L);
+            assertThat(product.listPriceCurrency()).isEqualTo("USD");
+            assertThat(product.ratingScore()).isEqualTo(4.8d);
+            assertThat(product.reviewCount()).isEqualTo(214);
+            assertThat(product.media()).extracting("type").containsExactly("image", "video");
+            assertThat(product.categories()).extracting("value").containsExactly("Apparel");
+            assertThat(product.certifications()).containsExactly("GOTS");
+            assertThat(product.materials()).containsExactly("Organic cotton", "100% organic cotton");
+            assertThat(product.skus()).containsExactly("SKU-RICH", "SKU-RICH-VARIANT");
+            assertThat(product.collections()).containsExactly("Basics");
+            assertThat(product.attributes()).extracting("name").contains("fabric", "fit");
+        });
+    }
+
+    @Test
     void searchesOnlyRequestedMerchantWhenMerchantIdIsProvided() {
         UUID merchantId = UUID.randomUUID();
         merchantLookupService.results.put(merchantId, new MerchantSemanticSearchResult(
@@ -320,6 +346,52 @@ class MerchantSemanticProductSearchServiceTest {
             List<CatalogSearchResponse.Product> products
     ) {
         return new CatalogSearchResult(merchant.advertisedMcpEndpoint(), products);
+    }
+
+    private CatalogSearchResponse.Product richProduct() {
+        return new CatalogSearchResponse.Product(
+                "rich-tee",
+                "Organic Cotton Tee",
+                new CatalogSearchResponse.Description("<p>Organic cotton tee.</p>"),
+                "https://example.com/products/rich-tee",
+                new CatalogSearchResponse.PriceRange(
+                        new CatalogSearchResponse.Money(3800L, "USD"),
+                        new CatalogSearchResponse.Money(3800L, "USD")
+                ),
+                new CatalogSearchResponse.Money(5200L, "USD"),
+                Map.of("value", 4.8d, "reviewCount", 214),
+                214,
+                List.of(new CatalogSearchResponse.Variant(
+                        "rich-tee-variant",
+                        "Default Title",
+                        new CatalogSearchResponse.Description("<p>Organic cotton tee.</p>"),
+                        new CatalogSearchResponse.Money(3800L, "USD"),
+                        "SKU-RICH-VARIANT",
+                        new CatalogSearchResponse.Money(5200L, "USD"),
+                        new CatalogSearchResponse.Availability(true),
+                        List.of(new CatalogSearchResponse.Media(
+                                "video",
+                                "https://example.com/rich-tee.mp4",
+                                "Fit video",
+                                null
+                        ))
+                )),
+                List.of(new CatalogSearchResponse.Media(
+                        "image",
+                        "https://example.com/rich-tee.jpg",
+                        "Organic cotton tee",
+                        null
+                )),
+                List.of(new CatalogSearchResponse.Category("Apparel", "shopify")),
+                List.of("organic"),
+                List.of("SKU-RICH"),
+                List.of("GOTS"),
+                List.of("Organic cotton"),
+                List.of("Basics"),
+                Map.of("fabric", "100% organic cotton"),
+                null,
+                Map.of("fit", "relaxed")
+        );
     }
 
     private CatalogSearchResponse.Product product(String id, String title, String description, String category) {

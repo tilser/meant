@@ -1,5 +1,8 @@
 package com.meant.api.module.user.service.dto;
 
+import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
+import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
+import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import java.util.List;
@@ -23,6 +26,17 @@ public record UserProductSearchProductResult(
         Long priceMinAmount,
         Long priceMaxAmount,
         String priceCurrency,
+        Long listPriceAmount,
+        String listPriceCurrency,
+        Double ratingScore,
+        Integer reviewCount,
+        List<ProductCatalogMedia> media,
+        List<ProductCatalogCategory> categories,
+        List<String> certifications,
+        List<String> materials,
+        List<String> skus,
+        List<String> collections,
+        List<ProductCatalogAttribute> attributes,
         Boolean available,
         String detailError,
         String detailDescription,
@@ -53,6 +67,14 @@ public record UserProductSearchProductResult(
             UserProductSearchResultItem item,
             UserProductRecommendationExplanationResult explanation
     ) {
+        return from(item, explanation, RichCatalogData.empty());
+    }
+
+    public static UserProductSearchProductResult from(
+            UserProductSearchResultItem item,
+            UserProductRecommendationExplanationResult explanation,
+            RichCatalogData richCatalogData
+    ) {
         return new UserProductSearchProductResult(
                 item.getProductKey(),
                 item.getProductHash(),
@@ -71,6 +93,17 @@ public record UserProductSearchProductResult(
                 item.getPriceMinAmount(),
                 item.getPriceMaxAmount(),
                 item.getPriceCurrency(),
+                item.getListPriceAmount(),
+                item.getListPriceCurrency(),
+                item.getRatingScore(),
+                item.getReviewCount(),
+                richCatalogData.media(),
+                richCatalogData.categories(),
+                richCatalogData.certifications(),
+                richCatalogData.materials(),
+                richCatalogData.skus(),
+                richCatalogData.collections(),
+                richCatalogData.attributes(),
                 item.getAvailable(),
                 item.getDetailError(),
                 item.getDetailDescription(),
@@ -121,5 +154,20 @@ public record UserProductSearchProductResult(
         return explanation.inventoryRelationship() == null
                 ? UserInventoryRecommendationRelationship.NONE
                 : explanation.inventoryRelationship();
+    }
+
+    public record RichCatalogData(
+            List<ProductCatalogMedia> media,
+            List<ProductCatalogCategory> categories,
+            List<String> certifications,
+            List<String> materials,
+            List<String> skus,
+            List<String> collections,
+            List<ProductCatalogAttribute> attributes
+    ) {
+
+        static RichCatalogData empty() {
+            return new RichCatalogData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        }
     }
 }

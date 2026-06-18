@@ -56,6 +56,17 @@ export interface UserProductSearchProductProfile {
   priceMinAmount: number | null
   priceMaxAmount: number | null
   priceCurrency: string | null
+  listPriceAmount: number | null
+  listPriceCurrency: string | null
+  ratingScore: number | null
+  reviewCount: number | null
+  media: ProductMediaProfile[]
+  categories: ProductCategoryProfile[]
+  certifications: string[]
+  materials: string[]
+  skus: string[]
+  collections: string[]
+  attributes: ProductAttributeProfile[]
   available: boolean | null
   detailError: string | null
   detailDescription: string | null
@@ -80,6 +91,22 @@ export interface UserProductSearchProductProfile {
   inventoryRelationship: UserInventoryRecommendationRelationship
   inventoryItemId: string | null
   inventoryItemName: string | null
+}
+
+export interface ProductMediaProfile {
+  type: string | null
+  url: string | null
+  altText: string | null
+}
+
+export interface ProductCategoryProfile {
+  value: string | null
+  taxonomy: string | null
+}
+
+export interface ProductAttributeProfile {
+  name: string | null
+  value: string | null
 }
 
 export interface UserProductSearchProfile {
