@@ -7,6 +7,10 @@ spring:
       ddl-auto: validate
     open-in-view: false
 
+rest-client:
+  connect-timeout-milliseconds: 5000
+  read-timeout-milliseconds: 30000
+
 ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1
