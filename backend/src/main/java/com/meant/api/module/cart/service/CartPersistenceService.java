@@ -10,6 +10,7 @@ import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.cart.service.dto.CartToolResponse;
 import com.meant.api.module.cart.service.dto.CartToolResult;
+import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -18,6 +19,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
@@ -43,6 +45,17 @@ public class CartPersistenceService {
 
     @Transactional
     public Cart saveSnapshot(UUID cartId, UUID userId, MerchantCartProvider provider, CartToolResult result) {
+        return saveSnapshot(cartId, userId, provider, result, null);
+    }
+
+    @Transactional
+    public Cart saveSnapshot(
+            UUID cartId,
+            UUID userId,
+            MerchantCartProvider provider,
+            CartToolResult result,
+            UpdateCartArguments updateArguments
+    ) {
         CartToolResponse.Cart remoteCart = result.response().cart();
         Instant now = Instant.now();
         Cart cart = cartId == null
@@ -76,7 +89,12 @@ public class CartPersistenceService {
         cart.replaceLines(safeNonNullList(remoteCart.lines()).stream()
                 .map(line -> toCartLine(line, now))
                 .toList());
-        cart.replaceAppliedCodes(toAppliedCodes(remoteCart, currency));
+        cart.replaceAppliedCodes(toAppliedCodes(
+                remoteCart,
+                currency,
+                updateArguments == null ? null : updateArguments.giftCardCodes(),
+                cart.getAppliedCodes()
+        ));
         return cartRepository.save(cart);
     }
 
@@ -101,13 +119,19 @@ public class CartPersistenceService {
                 .build();
     }
 
-    private List<CartAppliedCode> toAppliedCodes(CartToolResponse.Cart remoteCart, String cartCurrency) {
+    private List<CartAppliedCode> toAppliedCodes(
+            CartToolResponse.Cart remoteCart,
+            String cartCurrency,
+            List<String> submittedGiftCardCodes,
+            List<CartAppliedCode> existingAppliedCodes
+    ) {
         List<AppliedCodeValue> values = new ArrayList<>();
-        addAppliedCodeValues(values, CartAppliedCodeType.DISCOUNT, remoteCart.discountCodes(), cartCurrency);
-        addAppliedCodeValues(values, CartAppliedCodeType.DISCOUNT, remoteCart.appliedDiscounts(), cartCurrency);
-        addAppliedCodeValues(values, CartAppliedCodeType.DISCOUNT, remoteCart.discountAllocations(), cartCurrency);
-        addAppliedCodeValues(values, CartAppliedCodeType.GIFT_CARD, remoteCart.giftCardCodes(), cartCurrency);
-        addAppliedCodeValues(values, CartAppliedCodeType.GIFT_CARD, remoteCart.appliedGiftCards(), cartCurrency);
+        List<String> knownGiftCardCodes = knownGiftCardCodes(submittedGiftCardCodes, existingAppliedCodes);
+        addAppliedCodeValues(values, CartAppliedCodeType.DISCOUNT, remoteCart.discountCodes(), cartCurrency, knownGiftCardCodes);
+        addAppliedCodeValues(values, CartAppliedCodeType.DISCOUNT, remoteCart.appliedDiscounts(), cartCurrency, knownGiftCardCodes);
+        addAppliedCodeValues(values, CartAppliedCodeType.DISCOUNT, remoteCart.discountAllocations(), cartCurrency, knownGiftCardCodes);
+        addAppliedCodeValues(values, CartAppliedCodeType.GIFT_CARD, remoteCart.giftCardCodes(), cartCurrency, knownGiftCardCodes);
+        addAppliedCodeValues(values, CartAppliedCodeType.GIFT_CARD, remoteCart.appliedGiftCards(), cartCurrency, knownGiftCardCodes);
 
         List<CartAppliedCode> appliedCodes = new ArrayList<>();
         for (int index = 0; index < values.size(); index++) {
@@ -129,12 +153,14 @@ public class CartPersistenceService {
             List<AppliedCodeValue> values,
             CartAppliedCodeType type,
             List<CartToolResponse.AppliedCode> appliedCodes,
-            String cartCurrency
+            String cartCurrency,
+            List<String> knownGiftCardCodes
     ) {
         for (CartToolResponse.AppliedCode appliedCode : safeNonNullList(appliedCodes)) {
+            String remoteCode = blankToNull(appliedCode.code());
             AppliedCodeValue value = new AppliedCodeValue(
                     type,
-                    blankToNull(appliedCode.code()),
+                    resolvedCode(type, remoteCode, knownGiftCardCodes),
                     blankToNull(appliedCode.label()),
                     appliedCode.applicable(),
                     amount(appliedCode.amount()),
@@ -151,6 +177,36 @@ public class CartPersistenceService {
                 values.add(value);
             }
         }
+    }
+
+    private List<String> knownGiftCardCodes(List<String> submittedGiftCardCodes, List<CartAppliedCode> existingAppliedCodes) {
+        return java.util.stream.Stream.concat(
+                        safeNonNullList(submittedGiftCardCodes).stream(),
+                        safeNonNullList(existingAppliedCodes).stream()
+                                .filter(code -> code.getType() == CartAppliedCodeType.GIFT_CARD)
+                                .map(CartAppliedCode::getCode)
+                )
+                .map(this::blankToNull)
+                .filter(code -> code != null)
+                .distinct()
+                .toList();
+    }
+
+    private String resolvedCode(CartAppliedCodeType type, String remoteCode, List<String> knownGiftCardCodes) {
+        if (type != CartAppliedCodeType.GIFT_CARD || remoteCode == null) {
+            return remoteCode;
+        }
+
+        String normalizedRemoteCode = remoteCode.toLowerCase(Locale.ROOT);
+        List<String> matchingKnownCodes = knownGiftCardCodes.stream()
+                .filter(knownCode -> {
+                    String normalizedKnownCode = knownCode.toLowerCase(Locale.ROOT);
+                    return !normalizedKnownCode.equals(normalizedRemoteCode)
+                            && normalizedKnownCode.endsWith(normalizedRemoteCode);
+                })
+                .distinct()
+                .toList();
+        return matchingKnownCodes.size() == 1 ? matchingKnownCodes.getFirst() : remoteCode;
     }
 
     private int indexOf(List<AppliedCodeValue> values, AppliedCodeValue value) {
@@ -255,7 +311,7 @@ public class CartPersistenceService {
         }
 
         private static String stringKey(String value) {
-            return value == null ? "" : value.toLowerCase();
+            return value == null ? "" : value.toLowerCase(Locale.ROOT);
         }
 
         private static <T> T firstPresent(T first, T second) {

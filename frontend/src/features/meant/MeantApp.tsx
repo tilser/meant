@@ -124,6 +124,7 @@ type AppliedCartCodeType = 'DISCOUNT' | 'GIFT_CARD'
 interface AppliedCartCode {
   type: AppliedCartCodeType
   code: string | null
+  displayCode: string | null
   label: string | null
   applicable: boolean | null
   amount: number | null
@@ -873,6 +874,10 @@ function parseCartAmount(value?: string | null): number | null {
   return Number.isFinite(amount) ? amount : null
 }
 
+function looksLikeGiftCardSuffix(value: string | null): boolean {
+  return Boolean(value && /^[a-z0-9]{1,4}$/i.test(value))
+}
+
 function cartSnapshotFromProfile(
   snapshot: CartProfile,
   merchantKey: string,
@@ -890,10 +895,14 @@ function cartSnapshotFromProfile(
     appliedCodes: (snapshot.appliedCodes ?? [])
       .map((code): AppliedCartCode => {
         const type = code.type === 'GIFT_CARD' ? 'GIFT_CARD' : 'DISCOUNT'
-        const transportCode = code.code?.trim() || null
+        const displayCode = code.code?.trim() || null
+        const transportCode = type === 'GIFT_CARD' && looksLikeGiftCardSuffix(displayCode)
+          ? null
+          : displayCode
         return {
           type,
           code: transportCode,
+          displayCode,
           label: code.label ?? null,
           applicable: code.applicable ?? null,
           amount: parseCartAmount(code.amount),
@@ -912,10 +921,11 @@ function cartMoney(value: number, currency?: string | null): string {
 }
 
 function appliedCodeDisplay(code: AppliedCartCode): string {
-  const displayValue = code.code?.trim() || code.label?.trim() || (code.type === 'GIFT_CARD' ? 'Gift card' : 'Discount')
-  if (code.type === 'GIFT_CARD' && /^[a-z0-9]{1,4}$/i.test(displayValue)) {
-    return `•••• ${displayValue}`
+  const codeValue = code.displayCode?.trim() || code.code?.trim()
+  if (code.type === 'GIFT_CARD' && codeValue) {
+    return `•••• ${codeValue.slice(-4)}`
   }
+  const displayValue = code.label?.trim() || (code.type === 'GIFT_CARD' ? 'Gift card' : 'Discount')
   return displayValue
 }
 
@@ -927,7 +937,7 @@ function cartSnapshotSavings(
   if (!snapshot) {
     return 0
   }
-  const codeSavings = snapshot.appliedCodes.reduce((sum, code) => sum + (code.amount ?? 0), 0)
+  const codeSavings = snapshot.appliedCodes.reduce((sum, code) => sum + Math.abs(code.amount ?? 0), 0)
   if (codeSavings > 0) {
     return codeSavings
   }
@@ -4968,11 +4978,14 @@ function CartView({
                     {appliedCodes.length > 0 ? (
                       <div className="mt-applied-codes">
                         {appliedCodes.map((code, index) => (
-                          <span className="mt-applied-code" key={`${code.type}-${code.code ?? code.label ?? 'code'}-${index}`}>
+                          <span
+                            className="mt-applied-code"
+                            key={`${code.type}-${code.code ?? code.displayCode ?? code.label ?? 'code'}-${index}`}
+                          >
                             <span className="mt-code-val mt-mono">{appliedCodeDisplay(code)}</span>
                             <span className="mt-found-label">{code.label ?? (code.type === 'GIFT_CARD' ? 'Gift card' : 'Discount')}</span>
                             {code.amount ? (
-                              <span className="mt-found-save mt-mono">-{cartMoney(code.amount, code.currency ?? currency)}</span>
+                              <span className="mt-found-save mt-mono">-{cartMoney(Math.abs(code.amount), code.currency ?? currency)}</span>
                             ) : null}
                             <button
                               className="mt-code-remove"

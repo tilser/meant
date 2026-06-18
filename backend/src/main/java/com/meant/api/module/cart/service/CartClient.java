@@ -81,19 +81,22 @@ public class CartClient {
         rejectInapplicableCodes(
                 "Discount code",
                 updateCartArguments.discountCodes(),
-                response.cart().discountCodes()
+                response.cart().discountCodes(),
+                false
         );
         rejectInapplicableCodes(
                 "Gift card code",
                 updateCartArguments.giftCardCodes(),
-                response.cart().giftCardCodes()
+                response.cart().giftCardCodes(),
+                true
         );
     }
 
     private void rejectInapplicableCodes(
             String label,
             Collection<String> submittedCodes,
-            List<CartToolResponse.AppliedCode> responseCodes
+            List<CartToolResponse.AppliedCode> responseCodes,
+            boolean matchSuffix
     ) {
         if (submittedCodes == null || submittedCodes.isEmpty() || responseCodes == null || responseCodes.isEmpty()) {
             return;
@@ -111,11 +114,20 @@ public class CartClient {
                 .filter(appliedCode -> Boolean.FALSE.equals(appliedCode.applicable()))
                 .map(CartToolResponse.AppliedCode::code)
                 .filter(responseCode -> responseCode != null && !responseCode.isBlank())
-                .filter(responseCode -> normalizedSubmittedCodes.contains(responseCode.toLowerCase(Locale.ROOT)))
+                .filter(responseCode -> matchesSubmittedCode(responseCode, normalizedSubmittedCodes, matchSuffix))
                 .toList();
         if (!rejectedCodes.isEmpty()) {
             throw CartException.rejected(label + " " + rejectedCodes.getFirst() + " was not accepted by the merchant.");
         }
+    }
+
+    private boolean matchesSubmittedCode(String responseCode, Set<String> normalizedSubmittedCodes, boolean matchSuffix) {
+        String normalizedResponseCode = responseCode.toLowerCase(Locale.ROOT);
+        if (normalizedSubmittedCodes.contains(normalizedResponseCode)) {
+            return true;
+        }
+        return matchSuffix && normalizedSubmittedCodes.stream()
+                .anyMatch(submittedCode -> submittedCode.endsWith(normalizedResponseCode));
     }
 
     private String safeCartErrorMessage(String message) {

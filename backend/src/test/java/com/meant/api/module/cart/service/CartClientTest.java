@@ -174,6 +174,39 @@ class CartClientTest {
     }
 
     @Test
+    void rejectsMaskedInapplicableGiftCardCode() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        CartClient client = new CartClient(
+                merchantMcpToolClient(restClientBuilder.build()),
+                new ObjectMapper()
+        );
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(inapplicableGiftCardResponse(), MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.updateCart(
+                provider(),
+                new UpdateCartArguments(
+                        "gid://shopify/Cart/1",
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of("CARD1234"),
+                        null
+                )
+        ))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Gift card code 1234 was not accepted by the merchant.");
+        server.verify();
+    }
+
+    @Test
     void getsCartByRemoteCartId() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
@@ -255,6 +288,24 @@ class CartClientTest {
                       {
                         "type": "text",
                         "text": "{\\"instructions\\":\\"Checkout when ready\\",\\"cart\\":{\\"id\\":\\"gid://shopify/Cart/1\\",\\"created_at\\":\\"2026-06-16T11:05:00.857Z\\",\\"updated_at\\":\\"2026-06-16T11:05:00.857Z\\",\\"lines\\":[],\\"cost\\":{\\"total_amount\\":{\\"amount\\":\\"14.95\\",\\"currency\\":\\"USD\\"},\\"subtotal_amount\\":{\\"amount\\":\\"14.95\\",\\"currency\\":\\"USD\\"}},\\"total_quantity\\":0,\\"checkout_url\\":\\"https://merchant.example/checkout\\"},\\"errors\\":[{\\"message\\":\\"Discount code EXPIRED is expired.\\"}]}"
+                      }
+                    ],
+                    "isError": false
+                  }
+                }
+                """;
+    }
+
+    private String inapplicableGiftCardResponse() {
+        return """
+                {
+                  "jsonrpc": "2.0",
+                  "id": 4,
+                  "result": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "{\\"instructions\\":\\"Checkout when ready\\",\\"cart\\":{\\"id\\":\\"gid://shopify/Cart/1\\",\\"created_at\\":\\"2026-06-16T11:05:00.857Z\\",\\"updated_at\\":\\"2026-06-16T11:05:00.857Z\\",\\"lines\\":[],\\"cost\\":{\\"total_amount\\":{\\"amount\\":\\"14.95\\",\\"currency\\":\\"USD\\"},\\"subtotal_amount\\":{\\"amount\\":\\"14.95\\",\\"currency\\":\\"USD\\"}},\\"total_quantity\\":0,\\"checkout_url\\":\\"https://merchant.example/checkout\\",\\"gift_card_codes\\":[{\\"last_characters\\":\\"1234\\",\\"applicable\\":false}]},\\"errors\\":[]}"
                       }
                     ],
                     "isError": false

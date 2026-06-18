@@ -37,8 +37,9 @@ public class CartService {
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
-        CartToolResult result = cartClient.updateCart(provider, createArguments(command));
-        return CartResult.from(cartPersistenceService.saveSnapshot(null, command.userId(), provider, result));
+        UpdateCartArguments arguments = createArguments(command);
+        CartToolResult result = cartClient.updateCart(provider, arguments);
+        return CartResult.from(cartPersistenceService.saveSnapshot(null, command.userId(), provider, result, arguments));
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
@@ -54,8 +55,9 @@ public class CartService {
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        CartToolResult result = cartClient.updateCart(provider, updateArguments(cart, command));
-        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), command.userId(), provider, result));
+        UpdateCartArguments arguments = updateArguments(cart, command);
+        CartToolResult result = cartClient.updateCart(provider, arguments);
+        return CartResult.from(cartPersistenceService.saveSnapshot(cart.getId(), command.userId(), provider, result, arguments));
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {

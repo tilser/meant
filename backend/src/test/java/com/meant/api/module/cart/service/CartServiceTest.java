@@ -3,7 +3,9 @@ package com.meant.api.module.cart.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meant.api.module.cart.constant.CartAppliedCodeType;
 import com.meant.api.module.cart.entity.Cart;
+import com.meant.api.module.cart.entity.CartAppliedCode;
 import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
@@ -114,8 +116,29 @@ class CartServiceTest {
                         com.meant.api.module.cart.constant.CartAppliedCodeType.DISCOUNT,
                         com.meant.api.module.cart.constant.CartAppliedCodeType.GIFT_CARD
                 );
-        assertThat(result.appliedCodes()).extracting("code").containsExactly("SAVE5", "1234");
+        assertThat(result.appliedCodes()).extracting("code").containsExactly("SAVE5", "CARD1234");
         assertThat(result.appliedCodes()).extracting("amount").containsExactly("5.00", "2.00");
+    }
+
+    @Test
+    void getRefreshPreservesKnownFullGiftCardCodeWhenMerchantReturnsLastCharacters() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stale-checkout");
+        cart.replaceAppliedCodes(List.of(CartAppliedCode.builder()
+                .type(CartAppliedCodeType.GIFT_CARD)
+                .code("CARD1234")
+                .label("Gift card")
+                .displayOrder(0)
+                .build()));
+        cartRepository.save(cart);
+        cartClient.cartToolResult = cartToolResultWithAppliedCodes();
+
+        CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, true));
+
+        assertThat(result.appliedCodes())
+                .filteredOn(code -> code.type() == CartAppliedCodeType.GIFT_CARD)
+                .extracting("code")
+                .containsExactly("CARD1234");
     }
 
     @Test
