@@ -102,6 +102,7 @@ import {
   cartLines,
   computeSmartAlerts,
   cartDeliveryOptionAmount,
+  cartDeliveryOptions,
   formatOrderDate,
   listJoin,
   money,
@@ -1215,7 +1216,8 @@ function selectedDeliveryOptionsForCart(
   selectedGroup: CartDeliveryGroup,
   selectedOption: CartDeliveryOption,
 ): Record<string, unknown>[] {
-  const groups = cart.find((item) => cartMerchantKey(item) === merchantKey)?.deliveryGroups ?? []
+  const groups = (cart.find((item) => cartMerchantKey(item) === merchantKey)?.deliveryGroups ?? [])
+    .filter((group): group is CartDeliveryGroup => Boolean(group))
   const selectionGroups = groups.length > 0 ? groups : [selectedGroup]
   return selectionGroups
     .map((group) => selectedDeliveryOptionArguments(
@@ -1393,7 +1395,8 @@ function mergeCartSnapshot(
   merchantKey: string,
   snapshot: CartProfile,
 ): CartItem[] {
-  const deliveryGroups = snapshot.deliveryGroups as readonly CartDeliveryGroup[] | undefined
+  const deliveryGroups = (snapshot.deliveryGroups as readonly CartDeliveryGroup[] | undefined)
+    ?.filter((group): group is CartDeliveryGroup => Boolean(group))
   return cart.map((item) => {
     if (cartMerchantKey(item) !== merchantKey) {
       return item
@@ -5749,7 +5752,8 @@ function MerchantDeliveryPanel({
   onSubmitAddress: () => void
   onSelectOption: (group: CartDeliveryGroup, option: CartDeliveryOption) => void
 }>) {
-  const hasOptions = deliveryGroups.some((group) => (group.deliveryOptions?.length ?? 0) > 0)
+  const deliveryOptionCount = deliveryGroups.reduce((sum, group) => sum + cartDeliveryOptions(group).length, 0)
+  const hasOptions = deliveryOptionCount > 0
   const canSubmit = Boolean(cartId && draft.countryCode.trim() && draft.city.trim() && draft.postalCode.trim())
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -5768,7 +5772,7 @@ function MerchantDeliveryPanel({
         </div>
         {hasOptions ? (
           <span className="mt-mono mt-delivery-count">
-            {deliveryGroups.reduce((sum, group) => sum + (group.deliveryOptions?.length ?? 0), 0)} options
+            {deliveryOptionCount} options
           </span>
         ) : null}
       </div>
@@ -5823,7 +5827,7 @@ function MerchantDeliveryPanel({
         <div className="mt-delivery-groups">
           {deliveryGroups.map((group, index) => {
             const selected = selectedCartDeliveryOption(group)
-            const options = (group.deliveryOptions ?? []).filter((option): option is CartDeliveryOption => Boolean(option))
+            const options = cartDeliveryOptions(group)
             return (
               <div className="mt-delivery-group" key={group.id ?? group.handle ?? `${merchantKey}-${index}`}>
                 {deliveryGroups.length > 1 ? (
@@ -5906,8 +5910,8 @@ function CartView({
   const [codeBusy, setCodeBusy] = useState<Record<string, AppliedCartCodeType | 'REMOVE' | null>>({})
   const [codeErrors, setCodeErrors] = useState<Record<string, string | null>>({})
   const [addressDrafts, setAddressDrafts] = useState<Record<string, DeliveryAddressDraft>>({})
-  const [deliveryBusyKey, setDeliveryBusyKey] = useState<string | null>(null)
-  const [deliveryError, setDeliveryError] = useState<{ merchantKey: string; message: string } | null>(null)
+  const [deliveryBusyByMerchant, setDeliveryBusyByMerchant] = useState<Record<string, number>>({})
+  const [deliveryErrorsByMerchant, setDeliveryErrorsByMerchant] = useState<Record<string, string>>({})
 
   useEffect(() => {
     setScanning(true)
@@ -6021,6 +6025,38 @@ function CartView({
     }))
   }
 
+  const beginDeliveryBusy = (merchantKey: string) => {
+    setDeliveryBusyByMerchant((current) => ({
+      ...current,
+      [merchantKey]: (current[merchantKey] ?? 0) + 1,
+    }))
+  }
+
+  const endDeliveryBusy = (merchantKey: string) => {
+    setDeliveryBusyByMerchant((current) => {
+      const next = { ...current }
+      const count = (next[merchantKey] ?? 0) - 1
+      if (count > 0) {
+        next[merchantKey] = count
+      } else {
+        delete next[merchantKey]
+      }
+      return next
+    })
+  }
+
+  const setDeliveryErrorForMerchant = (merchantKey: string, message: string | null) => {
+    setDeliveryErrorsByMerchant((current) => {
+      const next = { ...current }
+      if (message) {
+        next[merchantKey] = message
+      } else {
+        delete next[merchantKey]
+      }
+      return next
+    })
+  }
+
   const submitDeliveryAddress = async (
     merchantKey: string,
     merchant: string,
@@ -6028,20 +6064,20 @@ function CartView({
     draft: DeliveryAddressDraft,
   ) => {
     if (!cartId) {
-      setDeliveryError({ merchantKey, message: 'Merchant cart is still syncing.' })
+      setDeliveryErrorForMerchant(merchantKey, 'Merchant cart is still syncing.')
       return
     }
-    setDeliveryBusyKey(`address:${merchantKey}`)
-    setDeliveryError(null)
+    beginDeliveryBusy(merchantKey)
+    setDeliveryErrorForMerchant(merchantKey, null)
     try {
       const ok = await onDeliveryAddress({ cartId, merchantKey, merchant, ...draft })
       if (!ok) {
-        setDeliveryError({ merchantKey, message: 'Could not load delivery options.' })
+        setDeliveryErrorForMerchant(merchantKey, 'Could not load delivery options.')
       }
     } catch {
-      setDeliveryError({ merchantKey, message: 'Could not load delivery options.' })
+      setDeliveryErrorForMerchant(merchantKey, 'Could not load delivery options.')
     } finally {
-      setDeliveryBusyKey(null)
+      endDeliveryBusy(merchantKey)
     }
   }
 
@@ -6053,20 +6089,20 @@ function CartView({
     option: CartDeliveryOption,
   ) => {
     if (!cartId) {
-      setDeliveryError({ merchantKey, message: 'Merchant cart is still syncing.' })
+      setDeliveryErrorForMerchant(merchantKey, 'Merchant cart is still syncing.')
       return
     }
-    setDeliveryBusyKey(`option:${merchantKey}`)
-    setDeliveryError(null)
+    beginDeliveryBusy(merchantKey)
+    setDeliveryErrorForMerchant(merchantKey, null)
     try {
       const ok = await onDeliveryOption({ cartId, merchantKey, merchant, group, option })
       if (!ok) {
-        setDeliveryError({ merchantKey, message: 'Could not update delivery choice.' })
+        setDeliveryErrorForMerchant(merchantKey, 'Could not update delivery choice.')
       }
     } catch {
-      setDeliveryError({ merchantKey, message: 'Could not update delivery choice.' })
+      setDeliveryErrorForMerchant(merchantKey, 'Could not update delivery choice.')
     } finally {
-      setDeliveryBusyKey(null)
+      endDeliveryBusy(merchantKey)
     }
   }
 
@@ -6135,8 +6171,8 @@ function CartView({
             const cartId = snapshot?.cartId ?? group.items.find((item) => item.cartId)?.cartId
             const groupCurrency = currency ?? group.items.find((item) => item.cartCurrency)?.cartCurrency
             const groupDraft = addressDraft(merchantKey)
-            const groupDeliveryBusy = deliveryBusyKey?.endsWith(`:${merchantKey}`) ?? false
-            const groupDeliveryError = deliveryError?.merchantKey === merchantKey ? deliveryError.message : null
+            const groupDeliveryBusy = (deliveryBusyByMerchant[merchantKey] ?? 0) > 0
+            const groupDeliveryError = deliveryErrorsByMerchant[merchantKey] ?? null
             const deliverySummary = deliveryGroupSummary(group.deliveryGroups, group.delivery, groupCurrency)
             const groupSyncing = group.items.some((item) => item.syncing)
             const groupLineError = group.items.find((item) => item.syncError)?.syncError

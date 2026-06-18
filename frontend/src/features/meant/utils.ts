@@ -506,6 +506,7 @@ export function cartGroups(
     const remoteTotal = firstCartAmount(items, (item) => item.cartTotalAmount)
     const subtotal = remoteSubtotal ?? localSubtotal
     const deliveryGroups = firstDeliveryGroups(items)
+    const deliveryGroupsWithOptions = deliveryGroups.filter((group) => cartDeliveryOptions(group).length > 0)
     const selectedDeliveryCost = selectedDeliveryGroupsCost(deliveryGroups)
     const inferredDelivery = remoteTotal !== null && remoteSubtotal !== null
       ? Math.max(0, remoteTotal - remoteSubtotal)
@@ -516,8 +517,8 @@ export function cartGroups(
     const deliveryDiscount = found && found.code.type === 'shipping' ? deliveryRaw : 0
     const delivery = found && found.code.type === 'shipping' ? 0 : deliveryRaw
     const total = Math.max(0, (remoteTotal ?? subtotal + deliveryRaw) - itemDiscount - deliveryDiscount)
-    const hasDeliveryOptions = deliveryGroups.some((group) => (group.deliveryOptions?.length ?? 0) > 0)
-    const hasSelectedDelivery = deliveryGroups.some((group) => Boolean(selectedCartDeliveryOption(group)))
+    const hasDeliveryOptions = deliveryGroupsWithOptions.length > 0
+    const hasSelectedDelivery = deliveryGroupsWithOptions.every((group) => Boolean(selectedCartDeliveryOption(group)))
     return {
       merchant,
       items,
@@ -551,8 +552,9 @@ function firstCartAmount(
 
 function firstDeliveryGroups(items: readonly CartLine[]): readonly CartDeliveryGroup[] {
   for (const item of items) {
-    if (item.deliveryGroups && item.deliveryGroups.length > 0) {
-      return item.deliveryGroups
+    const deliveryGroups = (item.deliveryGroups ?? []).filter((group): group is CartDeliveryGroup => Boolean(group))
+    if (deliveryGroups.length > 0) {
+      return deliveryGroups
     }
   }
   return []
@@ -560,15 +562,18 @@ function firstDeliveryGroups(items: readonly CartLine[]): readonly CartDeliveryG
 
 function selectedDeliveryGroupsCost(groups: readonly CartDeliveryGroup[]): number | null {
   let total = 0
-  let found = false
-  groups.forEach((group) => {
+  const groupsWithOptions = groups.filter((group) => cartDeliveryOptions(group).length > 0)
+  if (groupsWithOptions.length === 0) {
+    return null
+  }
+  for (const group of groupsWithOptions) {
     const amount = cartDeliveryOptionAmount(selectedCartDeliveryOption(group))
-    if (amount !== null) {
-      total += amount
-      found = true
+    if (amount === null) {
+      return null
     }
-  })
-  return found ? total : null
+    total += amount
+  }
+  return total
 }
 
 export function selectedCartDeliveryOption(group: CartDeliveryGroup): CartDeliveryOption | null {
@@ -576,7 +581,11 @@ export function selectedCartDeliveryOption(group: CartDeliveryGroup): CartDelive
   if (explicit?.handle || explicit?.title || explicit?.cost) {
     return explicit
   }
-  return group.deliveryOptions?.find((option) => option.selected) ?? null
+  return cartDeliveryOptions(group).find((option) => option.selected) ?? null
+}
+
+export function cartDeliveryOptions(group: CartDeliveryGroup): readonly CartDeliveryOption[] {
+  return (group.deliveryOptions ?? []).filter((option): option is CartDeliveryOption => Boolean(option))
 }
 
 export function cartDeliveryOptionAmount(option?: CartDeliveryOption | null): number | null {
