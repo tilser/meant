@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class RateLimitService {
 
@@ -33,24 +34,31 @@ public class RateLimitService {
 
     public RateLimitDecision consume(String key) {
         Instant now = clock.instant();
-        List<TokenBucket> keyBuckets = buckets.get(key, ignored -> newBuckets(now));
-        synchronized (keyBuckets) {
-            List<Duration> retryAfters = new ArrayList<>();
-            for (TokenBucket bucket : keyBuckets) {
-                bucket.refill(now);
-                if (!bucket.hasToken()) {
-                    retryAfters.add(bucket.retryAfter());
-                }
+        AtomicReference<RateLimitDecision> decision = new AtomicReference<>();
+        buckets.asMap().compute(key, (ignored, keyBuckets) -> {
+            List<TokenBucket> bucketsForKey = keyBuckets != null ? keyBuckets : newBuckets(now);
+            decision.set(consume(bucketsForKey, now));
+            return bucketsForKey;
+        });
+        return decision.get();
+    }
+
+    private RateLimitDecision consume(List<TokenBucket> keyBuckets, Instant now) {
+        List<Duration> retryAfters = new ArrayList<>();
+        for (TokenBucket bucket : keyBuckets) {
+            bucket.refill(now);
+            if (!bucket.hasToken()) {
+                retryAfters.add(bucket.retryAfter());
             }
-            if (!retryAfters.isEmpty()) {
-                Duration retryAfter = retryAfters.stream()
-                        .max(Comparator.naturalOrder())
-                        .orElse(Duration.ofSeconds(1));
-                return RateLimitDecision.denied(retryAfter);
-            }
-            keyBuckets.forEach(TokenBucket::consume);
-            return RateLimitDecision.accepted();
         }
+        if (!retryAfters.isEmpty()) {
+            Duration retryAfter = retryAfters.stream()
+                    .max(Comparator.naturalOrder())
+                    .orElse(Duration.ofSeconds(1));
+            return RateLimitDecision.denied(retryAfter);
+        }
+        keyBuckets.forEach(TokenBucket::consume);
+        return RateLimitDecision.accepted();
     }
 
     private List<TokenBucket> newBuckets(Instant now) {

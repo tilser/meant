@@ -9,6 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -52,6 +53,7 @@ class ExpensiveEndpointRateLimitFilterTest {
         assertThat(response.getStatus()).isEqualTo(429);
         assertThat(response.getHeader(HttpHeaders.RETRY_AFTER)).isEqualTo("30");
         assertThat(response.getHeader("X-Rate-Limit-Retry-After-Seconds")).isEqualTo("30");
+        assertThat(response.getCharacterEncoding()).isEqualTo(StandardCharsets.UTF_8.name());
         assertThat(response.getContentAsString()).contains("rate_limit_exceeded");
     }
 

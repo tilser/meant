@@ -5,6 +5,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import java.time.Duration;
 import java.util.List;
@@ -27,7 +28,7 @@ public record RateLimitProperties(
 
     public record Endpoint(
             @NotBlank String method,
-            @NotBlank String path
+            @NotBlank @Pattern(regexp = "/.*", message = "Path must start with '/'") String path
     ) {
     }
 
