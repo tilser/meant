@@ -341,7 +341,12 @@ class CartControllerIT extends PostgresIntegrationTest {
                                             new CartToolResponse.Money("14.95", "USD")
                                     ),
                                     1,
-                                    "https://merchant.example/checkout/" + sequence
+                                    "https://merchant.example/checkout/" + sequence,
+                                    List.of(),
+                                    List.of(),
+                                    List.of(),
+                                    List.of(),
+                                    List.of()
                             ),
                             List.of()
                     )

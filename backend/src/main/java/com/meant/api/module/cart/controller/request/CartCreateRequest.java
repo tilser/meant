@@ -1,6 +1,7 @@
 package com.meant.api.module.cart.controller.request;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import java.util.Map;
@@ -15,8 +16,8 @@ public record CartCreateRequest(
         List<Map<String, Object>> deliveryAddressesToAdd,
         List<Map<String, Object>> deliveryAddressesToReplace,
         List<Map<String, Object>> selectedDeliveryOptions,
-        List<String> discountCodes,
-        List<String> giftCardCodes,
+        List<@NotBlank String> discountCodes,
+        List<@NotBlank String> giftCardCodes,
         String note
 ) {
 }

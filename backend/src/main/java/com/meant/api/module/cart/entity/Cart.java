@@ -91,6 +91,10 @@ public class Cart {
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartLine> lines = new ArrayList<>();
 
+    @Builder.Default
+    @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<CartAppliedCode> appliedCodes = new ArrayList<>();
+
     public void assignProvider(UUID merchantId, String merchantDomain) {
         this.merchantId = merchantId;
         this.merchantDomain = merchantDomain;
@@ -145,5 +149,11 @@ public class Cart {
 
         lines.removeIf(line -> existingLinesByRemoteId.containsKey(line.getRemoteCartLineId()));
         lines.addAll(newLines);
+    }
+
+    public void replaceAppliedCodes(List<CartAppliedCode> replacementAppliedCodes) {
+        appliedCodes.clear();
+        replacementAppliedCodes.forEach(appliedCode -> appliedCode.assignCart(this));
+        appliedCodes.addAll(replacementAppliedCodes);
     }
 }

@@ -89,6 +89,36 @@ class CartServiceTest {
     }
 
     @Test
+    void createSavesAppliedCodesAndAdjustedTotal() {
+        cartClient.cartToolResult = cartToolResultWithAppliedCodes();
+
+        CartResult result = cartService.create(new CreateCartCommand(
+                USER_ID,
+                merchant.getId(),
+                null,
+                List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("SAVE5"),
+                List.of("CARD1234"),
+                null
+        ));
+
+        assertThat(result.subtotalAmount()).isEqualTo("14.95");
+        assertThat(result.totalAmount()).isEqualTo("7.95");
+        assertThat(result.appliedCodes()).hasSize(2);
+        assertThat(result.appliedCodes()).extracting("type")
+                .containsExactly(
+                        com.meant.api.module.cart.constant.CartAppliedCodeType.DISCOUNT,
+                        com.meant.api.module.cart.constant.CartAppliedCodeType.GIFT_CARD
+                );
+        assertThat(result.appliedCodes()).extracting("code").containsExactly("SAVE5", "1234");
+        assertThat(result.appliedCodes()).extracting("amount").containsExactly("5.00", "2.00");
+    }
+
+    @Test
     void getWithoutRefreshUsesStoredSnapshotOnly() {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
@@ -138,6 +168,61 @@ class CartServiceTest {
         assertThat(cartClient.lastUpdateArguments.updateItems()).extracting("id")
                 .containsExactly("gid://shopify/CartLine/1");
         assertThat(cartClient.lastUpdateArguments.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
+    }
+
+    @Test
+    void updateOmitsCodesWhenNoCodeChangeIsRequested() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout", cartLineId));
+
+        cartService.update(new UpdateCartCommand(
+                cartId,
+                USER_ID,
+                List.of(),
+                List.of(new UpdateCartCommand.UpdateItem(cartLineId, null, 2)),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null
+        ));
+
+        assertThat(cartClient.lastUpdateArguments.discountCodes()).isNull();
+        assertThat(cartClient.lastUpdateArguments.giftCardCodes()).isNull();
+    }
+
+    @Test
+    void updateRejectedByMerchantLeavesStoredCartUnchanged() {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
+        cartClient.updateException = CartException.rejected("Discount code EXPIRED was not accepted by the merchant.");
+
+        assertThatThrownBy(() -> cartService.update(new UpdateCartCommand(
+                cartId,
+                USER_ID,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("EXPIRED"),
+                null,
+                null
+        )))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Discount code EXPIRED was not accepted by the merchant.");
+
+        assertThat(cartRepository.saveCount).isZero();
+        assertThat(cartRepository.carts.get(cartId).getTotalAmount()).isNull();
+        assertThat(cartRepository.carts.get(cartId).getCheckoutUrl()).isEqualTo("https://merchant.example/checkout");
     }
 
     @Test
@@ -357,7 +442,50 @@ class CartServiceTest {
                                         new CartToolResponse.Money("14.95", "USD")
                                 ),
                                 totalQuantity,
-                                "https://merchant.example/checkout"
+                                "https://merchant.example/checkout",
+                                List.of(),
+                                List.of(),
+                                List.of(),
+                                List.of(),
+                                List.of()
+                        ),
+                        List.of()
+                )
+        );
+    }
+
+    private CartToolResult cartToolResultWithAppliedCodes() {
+        return new CartToolResult(
+                "https://merchant.example/api/mcp",
+                "{}",
+                new CartToolResponse(
+                        "Checkout when ready",
+                        new CartToolResponse.Cart(
+                                "gid://shopify/Cart/1",
+                                Instant.parse("2026-06-16T11:05:00Z"),
+                                Instant.parse("2026-06-16T11:05:01Z"),
+                                List.of(cartLine()),
+                                new CartToolResponse.Cost(
+                                        new CartToolResponse.Money("7.95", "USD"),
+                                        new CartToolResponse.Money("14.95", "USD")
+                                ),
+                                1,
+                                "https://merchant.example/checkout",
+                                List.of(new CartToolResponse.AppliedCode(
+                                        "SAVE5",
+                                        "Spring discount",
+                                        true,
+                                        new CartToolResponse.Money("5.00", "USD")
+                                )),
+                                List.of(),
+                                List.of(),
+                                List.of(new CartToolResponse.AppliedCode(
+                                        "1234",
+                                        "Gift card",
+                                        true,
+                                        new CartToolResponse.Money("2.00", "USD")
+                                )),
+                                List.of()
                         ),
                         List.of()
                 )
@@ -384,6 +512,7 @@ class CartServiceTest {
 
         private CartToolResult cartToolResult;
         private UpdateCartArguments lastUpdateArguments;
+        private RuntimeException updateException;
         private String lastRemoteCartId;
         private int updateCount;
         private int getCount;
@@ -396,6 +525,9 @@ class CartServiceTest {
         public CartToolResult updateCart(MerchantCartProvider provider, UpdateCartArguments arguments) {
             updateCount++;
             lastUpdateArguments = arguments;
+            if (updateException != null) {
+                throw updateException;
+            }
             return cartToolResult;
         }
 

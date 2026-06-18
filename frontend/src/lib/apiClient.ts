@@ -265,9 +265,21 @@ async function authHeaders(): Promise<HeadersInit> {
 
 async function parseJsonResponse<T>(response: Response, message: string): Promise<T> {
   if (!response.ok) {
-    throw new Error(message)
+    throw new Error(await parseErrorResponse(response, message))
   }
   return (await response.json()) as T
+}
+
+async function parseErrorResponse(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await response.json() as { detail?: unknown; title?: unknown; message?: unknown }
+    const detail = typeof payload.detail === 'string' ? payload.detail : null
+    const title = typeof payload.title === 'string' ? payload.title : null
+    const payloadMessage = typeof payload.message === 'string' ? payload.message : null
+    return detail || payloadMessage || title || fallback
+  } catch {
+    return fallback
+  }
 }
 
 /** Fetches the current user, creating the backend profile row on first call (upsert-on-read). */
@@ -601,6 +613,8 @@ export async function createCart(input: {
   merchantId?: string | null
   merchantDomain?: string | null
   addItems: readonly CartAddItemInput[]
+  discountCodes?: readonly string[]
+  giftCardCodes?: readonly string[]
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts`, {
     method: 'POST',
@@ -612,6 +626,8 @@ export async function createCart(input: {
       merchantId: input.merchantId ?? undefined,
       merchantDomain: input.merchantDomain ?? undefined,
       addItems: input.addItems,
+      discountCodes: input.discountCodes,
+      giftCardCodes: input.giftCardCodes,
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to create cart')
@@ -627,6 +643,8 @@ export async function updateCart(input: {
   }[]
   removeCartLineIds?: readonly string[]
   removeRemoteCartLineIds?: readonly string[]
+  discountCodes?: readonly string[]
+  giftCardCodes?: readonly string[]
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}`, {
     method: 'PATCH',
@@ -639,6 +657,8 @@ export async function updateCart(input: {
       updateItems: input.updateItems,
       removeCartLineIds: input.removeCartLineIds,
       removeRemoteCartLineIds: input.removeRemoteCartLineIds,
+      discountCodes: input.discountCodes,
+      giftCardCodes: input.giftCardCodes,
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to update cart')

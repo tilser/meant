@@ -119,6 +119,44 @@ interface AskPanelSize {
   height: number
 }
 
+type AppliedCartCodeType = 'DISCOUNT' | 'GIFT_CARD'
+
+interface AppliedCartCode {
+  type: AppliedCartCodeType
+  code: string
+  label: string | null
+  applicable: boolean | null
+  amount: number | null
+  currency: string | null
+}
+
+interface MerchantCartSnapshot {
+  merchantKey: string
+  merchant: string
+  cartId: string | null
+  remoteCartId: string | null
+  checkoutUrl: string | null
+  subtotalAmount: number | null
+  totalAmount: number | null
+  currency: string | null
+  appliedCodes: AppliedCartCode[]
+}
+
+interface ApplyCartCodeInput {
+  merchantKey: string
+  merchant: string
+  cartId: string
+  code: string
+  type: AppliedCartCodeType
+}
+
+interface RemoveCartCodeInput {
+  merchantKey: string
+  merchant: string
+  cartId: string
+  code: AppliedCartCode
+}
+
 interface ViewHeadProps {
   eyebrow: string
   title: string
@@ -825,6 +863,89 @@ function cartLineForItem(
       (item.productVariantId && line.productVariantId === item.productVariantId),
     )
   })
+}
+
+function parseCartAmount(value?: string | null): number | null {
+  if (!value) {
+    return null
+  }
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount : null
+}
+
+function cartSnapshotFromProfile(
+  snapshot: CartProfile,
+  merchantKey: string,
+  merchant: string,
+): MerchantCartSnapshot {
+  return {
+    merchantKey,
+    merchant,
+    cartId: snapshot.cartId ?? null,
+    remoteCartId: snapshot.remoteCartId ?? null,
+    checkoutUrl: snapshot.checkoutUrl ?? null,
+    subtotalAmount: parseCartAmount(snapshot.subtotalAmount),
+    totalAmount: parseCartAmount(snapshot.totalAmount),
+    currency: snapshot.currency ?? null,
+    appliedCodes: (snapshot.appliedCodes ?? [])
+      .map((code): AppliedCartCode => {
+        const type = code.type === 'GIFT_CARD' ? 'GIFT_CARD' : 'DISCOUNT'
+        return {
+          type,
+          code: code.code || code.label || (type === 'GIFT_CARD' ? 'Gift card' : 'Discount'),
+          label: code.label ?? null,
+          applicable: code.applicable ?? null,
+          amount: parseCartAmount(code.amount),
+          currency: code.currency ?? snapshot.currency ?? null,
+        }
+      })
+      .filter((code) => code.code || code.label || code.amount !== null),
+  }
+}
+
+function cartMoney(value: number, currency?: string | null): string {
+  if (!currency || currency === 'USD') {
+    return money(value)
+  }
+  return `${currency} ${value.toFixed(2)}`
+}
+
+function appliedCodeDisplay(code: AppliedCartCode): string {
+  if (code.type === 'GIFT_CARD' && /^[a-z0-9]{1,4}$/i.test(code.code)) {
+    return `•••• ${code.code}`
+  }
+  return code.code
+}
+
+function cartSnapshotSavings(
+  snapshot: MerchantCartSnapshot | undefined,
+  fallbackSubtotal: number,
+  fallbackTotal: number,
+): number {
+  if (!snapshot) {
+    return 0
+  }
+  const codeSavings = snapshot.appliedCodes.reduce((sum, code) => sum + (code.amount ?? 0), 0)
+  if (codeSavings > 0) {
+    return codeSavings
+  }
+  const subtotal = snapshot.subtotalAmount ?? fallbackSubtotal
+  const total = snapshot.totalAmount ?? fallbackTotal
+  return Math.max(subtotal - total, 0)
+}
+
+function cartSnapshotTotal(
+  snapshot: MerchantCartSnapshot | undefined,
+  fallbackTotal: number,
+): number {
+  return snapshot?.totalAmount ?? fallbackTotal
+}
+
+function cartSnapshotSubtotal(
+  snapshot: MerchantCartSnapshot | undefined,
+  fallbackSubtotal: number,
+): number {
+  return snapshot?.subtotalAmount ?? fallbackSubtotal
 }
 
 function mergeCartSnapshot(
@@ -3153,12 +3274,14 @@ function ProfileBar({
 function CartPopover({
   cart,
   products,
+  cartSnapshots,
   onViewFull,
   onClose,
   onRemove,
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
+  cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
   onViewFull: () => void
   onClose: () => void
   onRemove: (id: ProductId, merchant: string) => void
@@ -3208,7 +3331,7 @@ function CartPopover({
           </div>
           <div className="mt-cart-pop-empty-title">Your cart is empty</div>
           <div className="mt-cart-pop-empty-sub">
-            Add products and Meant checks compatibility and hunts for codes.
+            Add products and Meant keeps merchant totals in sync.
           </div>
         </div>
       </div>
@@ -3218,11 +3341,21 @@ function CartPopover({
   const alerts = computeSmartAlerts(lines, products)
   const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
   const groups = cartGroups(lines, false)
-  const itemTotal = groups.reduce((sum, group) => sum + group.subtotal, 0)
-  const discountTotal = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
-  const deliveryTotal = groups.reduce((sum, group) => sum + group.delivery, 0)
-  const codeCount = groups.filter((group) => group.found).length
-  const grandTotal = itemTotal - discountTotal + deliveryTotal
+  const groupSummaries = groups.map((group) => {
+    const merchantKey = group.items[0] ? cartMerchantKey(group.items[0]) : normalizedMerchantName(group.merchant)
+    const snapshot = cartSnapshots[merchantKey]
+    const fallbackTotal = group.subtotal + group.delivery
+    return {
+      group,
+      snapshot,
+      subtotal: cartSnapshotSubtotal(snapshot, group.subtotal),
+      savings: cartSnapshotSavings(snapshot, group.subtotal, fallbackTotal),
+      total: cartSnapshotTotal(snapshot, fallbackTotal),
+    }
+  })
+  const discountTotal = groupSummaries.reduce((sum, summary) => sum + summary.savings, 0)
+  const codeCount = groupSummaries.reduce((sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0), 0)
+  const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
 
   return (
@@ -3241,7 +3374,7 @@ function CartPopover({
         </div>
         <div className={`mt-cart-sig ${codeCount > 0 ? 'mt-cart-sig-good' : 'mt-cart-sig-muted'}`}>
           <SparkMark size={13} />
-          {codeCount > 0 ? `${codeCount} codes · -${money(discountTotal)}` : 'No codes found'}
+          {codeCount > 0 ? `${codeCount} applied · -${money(discountTotal)}` : 'No applied codes'}
         </div>
       </div>
       <div className="mt-cart-pop-list">
@@ -3271,7 +3404,7 @@ function CartPopover({
       <div className="mt-cart-pop-foot">
         {discountTotal > 0 ? (
           <div className="mt-cart-pop-save mt-mono">
-            You are saving {money(discountTotal)} with codes Meant found.
+            You are saving {money(discountTotal)} with applied merchant codes.
           </div>
         ) : null}
         <div className="mt-cart-pop-total">
@@ -3293,6 +3426,7 @@ function TopBar({
   savedCount,
   cart,
   products,
+  cartSnapshots,
   cartPeek,
   accountMenu,
   onNav,
@@ -3309,6 +3443,7 @@ function TopBar({
   savedCount: number
   cart: readonly CartItem[]
   products: readonly Product[]
+  cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
   cartPeek: boolean
   accountMenu: boolean
   onNav: (view: View) => void
@@ -3383,6 +3518,7 @@ function TopBar({
             <CartPopover
               cart={cart}
               products={products}
+              cartSnapshots={cartSnapshots}
               onViewFull={() => onNav('cart')}
               onClose={onToggleCart}
               onRemove={onRemoveFromCart}
@@ -4508,25 +4644,34 @@ function LocationSection({
 function CartView({
   cart,
   products,
+  cartSnapshots,
   deliveryLocations,
   onRemove,
   onQty,
   onAdd,
+  onApplyCode,
+  onRemoveCode,
   onCheckout,
   checkoutMerchant,
   checkoutError,
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
+  cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
   deliveryLocations: readonly UserLocation[]
   onRemove: (id: ProductId, merchant: string) => void
   onQty: (id: ProductId, merchant: string, qty: number) => void
   onAdd: (id: ProductId, merchant: string) => void
+  onApplyCode: (input: ApplyCartCodeInput) => Promise<{ ok: boolean; message?: string }>
+  onRemoveCode: (input: RemoveCartCodeInput) => Promise<{ ok: boolean; message?: string }>
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   checkoutMerchant: string | null
   checkoutError: { merchant: string; message: string } | null
 }>) {
   const [scanning, setScanning] = useState(true)
+  const [codeEntries, setCodeEntries] = useState<Record<string, { discount: string; giftCard: string }>>({})
+  const [codeBusy, setCodeBusy] = useState<Record<string, AppliedCartCodeType | 'REMOVE' | null>>({})
+  const [codeErrors, setCodeErrors] = useState<Record<string, string | null>>({})
 
   useEffect(() => {
     setScanning(true)
@@ -4540,12 +4685,92 @@ function CartView({
     ? lines.filter((line) => !canMerchantShip(line.merchant, deliveryLocations))
     : []
   const groups = cartGroups(lines, scanning)
-  const itemsTotal = groups.reduce((sum, group) => sum + group.subtotal, 0)
-  const discountTotal = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
-  const deliveryTotal = groups.reduce((sum, group) => sum + group.delivery, 0)
-  const grandTotal = itemsTotal - discountTotal + deliveryTotal
-  const codeCount = groups.filter((group) => group.found).length
+  const groupSummaries = groups.map((group) => {
+    const merchantKey = group.items[0] ? cartMerchantKey(group.items[0]) : normalizedMerchantName(group.merchant)
+    const snapshot = cartSnapshots[merchantKey]
+    const fallbackTotal = group.subtotal + group.delivery
+    return {
+      group,
+      merchantKey,
+      snapshot,
+      subtotal: cartSnapshotSubtotal(snapshot, group.subtotal),
+      savings: cartSnapshotSavings(snapshot, group.subtotal, fallbackTotal),
+      total: cartSnapshotTotal(snapshot, fallbackTotal),
+      currency: snapshot?.currency ?? null,
+    }
+  })
+  const itemsTotal = groupSummaries.reduce((sum, summary) => sum + summary.subtotal, 0)
+  const discountTotal = groupSummaries.reduce((sum, summary) => sum + summary.savings, 0)
+  const deliveryTotal = groupSummaries.reduce((sum, summary) =>
+    summary.snapshot?.totalAmount == null ? sum + summary.group.delivery : sum, 0)
+  const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
+  const codeCount = groupSummaries.reduce((sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0), 0)
   const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
+
+  const updateCodeEntry = (merchantKey: string, field: 'discount' | 'giftCard', value: string) => {
+    setCodeEntries((current) => ({
+      ...current,
+      [merchantKey]: {
+        discount: current[merchantKey]?.discount ?? '',
+        giftCard: current[merchantKey]?.giftCard ?? '',
+        [field]: value,
+      },
+    }))
+    setCodeErrors((current) => ({ ...current, [merchantKey]: null }))
+  }
+
+  const submitCode = async (
+    merchantKey: string,
+    merchant: string,
+    cartId: string | null | undefined,
+    type: AppliedCartCodeType,
+  ) => {
+    if (!cartId) {
+      setCodeErrors((current) => ({
+        ...current,
+        [merchantKey]: 'This merchant cart is still syncing.',
+      }))
+      return
+    }
+    const field = type === 'DISCOUNT' ? 'discount' : 'giftCard'
+    const code = (codeEntries[merchantKey]?.[field] ?? '').trim()
+    setCodeBusy((current) => ({ ...current, [merchantKey]: type }))
+    const result = await onApplyCode({ merchantKey, merchant, cartId, code, type })
+    setCodeBusy((current) => ({ ...current, [merchantKey]: null }))
+    if (result.ok) {
+      setCodeEntries((current) => ({
+        ...current,
+        [merchantKey]: {
+          discount: type === 'DISCOUNT' ? '' : (current[merchantKey]?.discount ?? ''),
+          giftCard: type === 'GIFT_CARD' ? '' : (current[merchantKey]?.giftCard ?? ''),
+        },
+      }))
+      setCodeErrors((current) => ({ ...current, [merchantKey]: null }))
+      return
+    }
+    setCodeErrors((current) => ({
+      ...current,
+      [merchantKey]: result.message ?? 'The merchant did not accept this code.',
+    }))
+  }
+
+  const removeCode = async (
+    merchantKey: string,
+    merchant: string,
+    cartId: string | null | undefined,
+    code: AppliedCartCode,
+  ) => {
+    if (!cartId) {
+      return
+    }
+    setCodeBusy((current) => ({ ...current, [merchantKey]: 'REMOVE' }))
+    const result = await onRemoveCode({ merchantKey, merchant, cartId, code })
+    setCodeBusy((current) => ({ ...current, [merchantKey]: null }))
+    setCodeErrors((current) => ({
+      ...current,
+      [merchantKey]: result.ok ? null : (result.message ?? 'The merchant could not remove this code.'),
+    }))
+  }
 
   if (lines.length === 0) {
     return (
@@ -4553,7 +4778,7 @@ function CartView({
         <ViewHead eyebrow="Smart cart" title="Your cart" />
         <EmptyState
           title="Your cart is empty"
-          sub="Add products and Meant checks compatibility and hunts for codes."
+          sub="Add products and Meant keeps merchant totals in sync."
           mark={<CartIcon />}
         />
       </main>
@@ -4608,13 +4833,18 @@ function CartView({
             </div>
           ) : null}
 
-          {groups.map((group) => {
-            const groupTotal = group.subtotal - group.itemDiscount + group.delivery
+          {groupSummaries.map(({ group, merchantKey, snapshot, subtotal, savings, total, currency }) => {
             const groupSyncing = group.items.some((item) => item.syncing)
             const groupLineError = group.items.find((item) => item.syncError)?.syncError
             const groupCheckoutError = checkoutError?.merchant === group.merchant
               ? checkoutError.message
               : null
+            const appliedCodes = snapshot?.appliedCodes ?? []
+            const cartId = group.items.find((item) => item.cartId)?.cartId
+            const entry = codeEntries[merchantKey] ?? { discount: '', giftCard: '' }
+            const busy = codeBusy[merchantKey] ?? null
+            const codeError = codeErrors[merchantKey]
+            const codeControlsDisabled = groupSyncing || !cartId || Boolean(busy)
             const groupCheckoutable = group.items.every((item) =>
               Boolean(item.cartId && item.productVariantId && !item.syncError),
             )
@@ -4625,8 +4855,8 @@ function CartView({
                 ? 'Syncing merchant cart'
                 : !groupCheckoutable
                   ? 'Checkout needs a merchant cart-ready item'
-                  : group.found
-                    ? `${group.found.code.code} found · ${group.delivery === 0 ? 'free delivery' : `${money(group.delivery)} delivery`}`
+                  : appliedCodes.length > 0
+                    ? `${appliedCodes.length} applied · -${cartMoney(savings, currency)}`
                     : group.delivery === 0
                       ? 'Free delivery'
                       : `${money(group.delivery)} delivery`)
@@ -4694,33 +4924,89 @@ function CartView({
                   </div>
                 ))}
                 <div className="mt-mgroup-foot">
-                  {scanning ? (
-                    <div className="mt-scan">
-                      <span className="mt-scan-pulse" /> Scanning {group.merchant} for codes...
+                  <div className="mt-code-panel">
+                    <div className="mt-code-forms">
+                      <form
+                        className="mt-code-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void submitCode(merchantKey, group.merchant, cartId, 'DISCOUNT')
+                        }}
+                      >
+                        <input
+                          className="mt-code-input mt-mono"
+                          value={entry.discount}
+                          onChange={(event) => updateCodeEntry(merchantKey, 'discount', event.target.value)}
+                          placeholder="Discount code"
+                          disabled={codeControlsDisabled}
+                        />
+                        <button type="submit" disabled={codeControlsDisabled || !entry.discount.trim()}>
+                          {busy === 'DISCOUNT' ? 'Applying...' : 'Apply'}
+                        </button>
+                      </form>
+                      <form
+                        className="mt-code-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void submitCode(merchantKey, group.merchant, cartId, 'GIFT_CARD')
+                        }}
+                      >
+                        <input
+                          className="mt-code-input mt-mono"
+                          value={entry.giftCard}
+                          onChange={(event) => updateCodeEntry(merchantKey, 'giftCard', event.target.value)}
+                          placeholder="Gift card"
+                          disabled={codeControlsDisabled}
+                        />
+                        <button type="submit" disabled={codeControlsDisabled || !entry.giftCard.trim()}>
+                          {busy === 'GIFT_CARD' ? 'Applying...' : 'Apply'}
+                        </button>
+                      </form>
                     </div>
-                  ) : group.found ? (
-                    <div className="mt-found">
-                      <span className="mt-code">
-                        <span className="mt-code-val mt-mono">{group.found.code.code}</span>
-                        <span className="mt-code-act mt-mono">copy</span>
-                      </span>
-                      <span className="mt-found-label">{group.found.code.label}</span>
-                      <span className="mt-found-save mt-mono">-{money(group.found.save)}</span>
-                    </div>
-                  ) : (
-                    <div className="mt-found mt-found-none mt-mono">
-                      No codes found for {group.merchant}
-                    </div>
-                  )}
-                  <div className="mt-mgroup-sub">
-                    Subtotal <span>{money(group.subtotal)}</span>
+                    {appliedCodes.length > 0 ? (
+                      <div className="mt-applied-codes">
+                        {appliedCodes.map((code, index) => (
+                          <span className="mt-applied-code" key={`${code.type}-${code.code}-${index}`}>
+                            <span className="mt-code-val mt-mono">{appliedCodeDisplay(code)}</span>
+                            <span className="mt-found-label">{code.label ?? (code.type === 'GIFT_CARD' ? 'Gift card' : 'Discount')}</span>
+                            {code.amount ? (
+                              <span className="mt-found-save mt-mono">-{cartMoney(code.amount, code.currency ?? currency)}</span>
+                            ) : null}
+                            <button
+                              className="mt-code-remove"
+                              type="button"
+                              disabled={!cartId || Boolean(busy)}
+                              onClick={() => void removeCode(merchantKey, group.merchant, cartId, code)}
+                              aria-label={`Remove ${appliedCodeDisplay(code)}`}
+                            >
+                              <CloseIcon size={11} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-found mt-found-none mt-mono">
+                        No applied codes for {group.merchant}
+                      </div>
+                    )}
+                    {codeError ? (
+                      <div className="mt-cart-inline-error">{codeError}</div>
+                    ) : null}
                   </div>
+                  <div className="mt-mgroup-sub">
+                    Subtotal <span>{cartMoney(subtotal, currency)}</span>
+                  </div>
+                  {savings > 0 ? (
+                    <div className="mt-mgroup-sub save">
+                      Savings <span>-{cartMoney(savings, currency)}</span>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="mt-mgroup-pay">
                   <div>
                     <div className="mt-mgroup-pay-total">
                       <span className="mt-mono">Merchant total</span>
-                      <strong>{money(groupTotal)}</strong>
+                      <strong>{cartMoney(total, currency)}</strong>
                     </div>
                     <div className={`mt-mgroup-pay-sub ${groupLineError || groupCheckoutError ? 'error' : ''}`}>
                       {checkoutSub}
@@ -4733,8 +5019,10 @@ function CartView({
                     onClick={() =>
                       void onCheckout({
                         items: group.items,
-                        saved: group.itemDiscount,
-                        savedNote: group.found ? `${group.found.code.code} found` : '',
+                        saved: savings,
+                        savedNote: appliedCodes.length > 0
+                          ? appliedCodes.map((code) => `${appliedCodeDisplay(code)} applied`).join(', ')
+                          : '',
                         merchant: group.merchant,
                       })
                     }
@@ -4751,14 +5039,12 @@ function CartView({
           <div className="mt-summary-card">
             <div className="mt-summary-title">Order summary</div>
             <div className="mt-scan-banner">
-              {scanning ? (
+              {codeCount > 0 ? (
                 <>
-                  <span className="mt-scan-pulse" /> Meant is searching the web for discount codes...
+                  <SparkMark size={14} /> {codeCount} merchant code{codeCount > 1 ? 's' : ''} applied
                 </>
               ) : (
-                <>
-                  <SparkMark size={14} /> Found {codeCount} codes across {groups.length} merchants
-                </>
+                <>Apply discount or gift-card codes at each merchant.</>
               )}
             </div>
             <div className="mt-sum-row">
@@ -4766,8 +5052,8 @@ function CartView({
               <span>{money(itemsTotal)}</span>
             </div>
             <div className={`mt-sum-row ${discountTotal > 0 ? 'save' : 'muted'}`}>
-              <span>Discounts found</span>
-              <span>{discountTotal > 0 ? `-${money(discountTotal)}` : scanning ? '...' : money(0)}</span>
+              <span>Applied savings</span>
+              <span>{discountTotal > 0 ? `-${money(discountTotal)}` : money(0)}</span>
             </div>
             <div className="mt-sum-row">
               <span>Delivery</span>
@@ -4777,9 +5063,9 @@ function CartView({
               <span>Total</span>
               <span>{money(grandTotal)}</span>
             </div>
-            {!scanning && discountTotal > 0 ? (
+            {discountTotal > 0 ? (
               <div className="mt-sum-note mt-mono">
-                You are saving {money(discountTotal)} with codes Meant found.
+                You are saving {money(discountTotal)} with merchant-applied codes.
               </div>
             ) : null}
             {warnCount > 0 ? (
@@ -5484,6 +5770,10 @@ export function MeantApp() {
   )
   const [clothingFit, setClothingFit] = useStoredState<ClothingFit>('meant.clothingFit', 'none')
   const [cart, setCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
+  const [cartSnapshots, setCartSnapshots] = useStoredState<Record<string, MerchantCartSnapshot>>(
+    'meant.cartSnapshots',
+    {},
+  )
   const [checkoutMerchant, setCheckoutMerchant] = useState<string | null>(null)
   const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(null)
   const [orders] = useStoredState<Order[]>('meant.orders', [...DEFAULT_ORDERS])
@@ -5494,6 +5784,7 @@ export function MeantApp() {
   const searchRequestRef = useRef(0)
   const searchSuggestionsRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
+  const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
   const savePendingRef = useRef(new Set<ProductId>())
   const allPreferencesRef = useRef<readonly Preference[]>(availablePrefs)
@@ -5610,6 +5901,10 @@ export function MeantApp() {
   useEffect(() => {
     cartRef.current = cart
   }, [cart])
+
+  useEffect(() => {
+    cartSnapshotsRef.current = cartSnapshots
+  }, [cartSnapshots])
 
   useEffect(() => {
     compareIdsRef.current = compareIds
@@ -5900,6 +6195,23 @@ export function MeantApp() {
     })
   }
 
+  const updateStoredCartSnapshots = (
+    updater: (current: Record<string, MerchantCartSnapshot>) => Record<string, MerchantCartSnapshot>,
+  ) => {
+    setCartSnapshots((current) => {
+      const next = updater(current)
+      cartSnapshotsRef.current = next
+      return next
+    })
+  }
+
+  const storeCartSnapshot = (merchantKey: string, merchant: string, snapshot: CartProfile) => {
+    updateStoredCartSnapshots((current) => ({
+      ...current,
+      [merchantKey]: cartSnapshotFromProfile(snapshot, merchantKey, merchant),
+    }))
+  }
+
   const cartItemMatches = (item: CartItem, id: ProductId, merchant: string) =>
     item.id === id && item.merchant === merchant
 
@@ -5971,6 +6283,7 @@ export function MeantApp() {
             addItems: [{ productVariantId, quantity: 1 }],
           })
       updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+      storeCartSnapshot(merchantKey, offer.merchant, snapshot)
       return true
     } catch {
       updateStoredCart((current) => {
@@ -6032,6 +6345,7 @@ export function MeantApp() {
     })
       .then((snapshot) => {
         updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+        storeCartSnapshot(merchantKey, item.merchant, snapshot)
       })
       .catch(() => {
         updateStoredCart((current) => [
@@ -6081,6 +6395,7 @@ export function MeantApp() {
     })
       .then((snapshot) => {
         updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+        storeCartSnapshot(merchantKey, item.merchant, snapshot)
       })
       .catch(() => {
         updateStoredCart((current) =>
@@ -6096,6 +6411,66 @@ export function MeantApp() {
           ),
         )
       })
+  }
+
+  const appliedCodesForType = (
+    snapshot: MerchantCartSnapshot | undefined,
+    type: AppliedCartCodeType,
+  ): string[] => {
+    return Array.from(new Set(
+      (snapshot?.appliedCodes ?? [])
+        .filter((code) => code.type === type && code.code)
+        .map((code) => code.code),
+    ))
+  }
+
+  const applyCartCode = async (input: ApplyCartCodeInput): Promise<{ ok: boolean; message?: string }> => {
+    const code = input.code.trim()
+    if (!code) {
+      return { ok: false, message: 'Enter a code first.' }
+    }
+
+    const snapshot = cartSnapshotsRef.current[input.merchantKey]
+    const existingCodes = appliedCodesForType(snapshot, input.type)
+    const nextCodes = Array.from(new Set([...existingCodes, code]))
+
+    try {
+      const updated = await updateCart({
+        cartId: input.cartId,
+        discountCodes: input.type === 'DISCOUNT' ? nextCodes : undefined,
+        giftCardCodes: input.type === 'GIFT_CARD' ? [code] : undefined,
+      })
+      updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
+      storeCartSnapshot(input.merchantKey, input.merchant, updated)
+      return { ok: true }
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'The merchant did not accept this code.',
+      }
+    }
+  }
+
+  const removeCartCode = async (input: RemoveCartCodeInput): Promise<{ ok: boolean; message?: string }> => {
+    const snapshot = cartSnapshotsRef.current[input.merchantKey]
+    const remainingCodes = appliedCodesForType(snapshot, input.code.type)
+      .filter((code) => code !== input.code.code)
+
+    try {
+      const updated = await updateCart({
+        cartId: input.cartId,
+        discountCodes: input.code.type === 'DISCOUNT' ? remainingCodes : undefined,
+        giftCardCodes: input.code.type === 'GIFT_CARD' ? remainingCodes : undefined,
+      })
+      updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
+      storeCartSnapshot(input.merchantKey, input.merchant, updated)
+      return { ok: true }
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'The merchant could not remove this code.',
+      }
+    }
   }
 
   const applySavedSettings = (settings: UserSettingsProfile) => {
@@ -6376,10 +6751,13 @@ export function MeantApp() {
           <CartView
             cart={cart}
             products={allKnownProducts}
+            cartSnapshots={cartSnapshots}
             deliveryLocations={deliveryLocations}
             onRemove={removeFromCart}
             onQty={updateQty}
             onAdd={addToCart}
+            onApplyCode={applyCartCode}
+            onRemoveCode={removeCartCode}
             onCheckout={checkout}
             checkoutMerchant={checkoutMerchant}
             checkoutError={checkoutError}
@@ -6526,6 +6904,7 @@ export function MeantApp() {
         savedCount={savedIds.length}
         cart={cart}
         products={allKnownProducts}
+        cartSnapshots={cartSnapshots}
         cartPeek={cartPeek}
         accountMenu={accountMenu}
         onNav={nav}

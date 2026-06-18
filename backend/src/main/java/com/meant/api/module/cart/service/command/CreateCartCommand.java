@@ -20,8 +20,8 @@ public record CreateCartCommand(
         List<Map<String, Object>> deliveryAddressesToAdd,
         List<Map<String, Object>> deliveryAddressesToReplace,
         List<Map<String, Object>> selectedDeliveryOptions,
-        List<String> discountCodes,
-        List<String> giftCardCodes,
+        List<@NotBlank String> discountCodes,
+        List<@NotBlank String> giftCardCodes,
         String note
 ) {
 

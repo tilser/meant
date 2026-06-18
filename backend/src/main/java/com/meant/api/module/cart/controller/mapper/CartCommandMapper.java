@@ -28,8 +28,8 @@ public final class CartCommandMapper {
                 safeList(request.deliveryAddressesToAdd()),
                 safeList(request.deliveryAddressesToReplace()),
                 safeList(request.selectedDeliveryOptions()),
-                safeList(request.discountCodes()),
-                safeList(request.giftCardCodes()),
+                request.discountCodes(),
+                request.giftCardCodes(),
                 request.note()
         );
     }
@@ -57,8 +57,8 @@ public final class CartCommandMapper {
                 safeList(request.deliveryAddressesToAdd()),
                 safeList(request.deliveryAddressesToReplace()),
                 safeList(request.selectedDeliveryOptions()),
-                safeList(request.discountCodes()),
-                safeList(request.giftCardCodes()),
+                request.discountCodes(),
+                request.giftCardCodes(),
                 request.note()
         );
     }

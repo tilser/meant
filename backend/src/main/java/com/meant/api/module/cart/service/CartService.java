@@ -101,8 +101,8 @@ public class CartService {
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
                 safeList(command.selectedDeliveryOptions()),
-                safeList(command.discountCodes()),
-                safeList(command.giftCardCodes()),
+                normalizeCodes(command.discountCodes()),
+                normalizeCodes(command.giftCardCodes()),
                 command.note()
         );
     }
@@ -123,8 +123,8 @@ public class CartService {
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
                 safeList(command.selectedDeliveryOptions()),
-                safeList(command.discountCodes()),
-                safeList(command.giftCardCodes()),
+                normalizeCodes(command.discountCodes()),
+                normalizeCodes(command.giftCardCodes()),
                 command.note()
         );
     }
@@ -161,6 +161,17 @@ public class CartService {
                 .toList();
         return java.util.stream.Stream.concat(localRemoteIds.stream(), safeList(command.removeRemoteCartLineIds()).stream())
                 .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private List<String> normalizeCodes(List<String> codes) {
+        if (codes == null) {
+            return null;
+        }
+        return codes.stream()
+                .filter(code -> code != null && !code.isBlank())
+                .map(String::trim)
                 .distinct()
                 .toList();
     }

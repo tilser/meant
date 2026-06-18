@@ -24,8 +24,10 @@ public record UpdateCartArguments(
         @JsonProperty("selected_delivery_options")
         List<Map<String, Object>> selectedDeliveryOptions,
         @JsonProperty("discount_codes")
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         List<String> discountCodes,
         @JsonProperty("gift_card_codes")
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         List<String> giftCardCodes,
         String note
 ) {

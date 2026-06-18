@@ -42,6 +42,11 @@ public class CartException extends RuntimeException implements ApiException {
         return new CartException(message, null, HttpStatus.NOT_FOUND, ApiErrorCode.NOT_FOUND, NOT_FOUND_DETAIL);
     }
 
+    public static CartException rejected(String message) {
+        String safeMessage = message == null || message.isBlank() ? BAD_REQUEST_DETAIL : message;
+        return new CartException(safeMessage, null, HttpStatus.BAD_REQUEST, ApiErrorCode.BAD_REQUEST, safeMessage);
+    }
+
     public static CartException upstream(String message) {
         return upstream(message, null);
     }

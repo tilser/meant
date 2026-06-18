@@ -4375,6 +4375,111 @@ button:disabled {
   animation: mt-soft-rise var(--motion-medium) var(--ease-out) both;
 }
 
+.mt-code-panel {
+  display: flex;
+  min-width: min(100%, 420px);
+  flex: 1 1 420px;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mt-code-forms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mt-code-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.mt-code-input {
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  outline: 0;
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+
+.mt-code-input::placeholder {
+  color: var(--faint);
+  text-transform: none;
+}
+
+.mt-code-input:disabled {
+  color: var(--muted);
+  opacity: 0.72;
+}
+
+.mt-code-form button {
+  min-width: 64px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.mt-code-form button:disabled {
+  background: var(--line);
+  color: var(--muted);
+}
+
+.mt-applied-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.mt-applied-code {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--accent-line);
+  border-radius: 9px;
+  background: var(--accent-tint);
+}
+
+.mt-applied-code .mt-found-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-code-remove {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: 4px 5px 4px 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.mt-code-remove:not(:disabled):hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
 .mt-scan-pulse {
   width: 8px;
   height: 8px;
@@ -4422,6 +4527,10 @@ button:disabled {
   margin-left: 6px;
   color: var(--ink);
   font-weight: 700;
+}
+
+.mt-mgroup-sub.save span {
+  color: var(--accent);
 }
 
 .mt-mgroup-pay {
@@ -6344,6 +6453,10 @@ button:disabled {
 
   .mt-mgroup-pay {
     flex-direction: column;
+  }
+
+  .mt-code-forms {
+    grid-template-columns: 1fr;
   }
 
   .mt-mcheckout {

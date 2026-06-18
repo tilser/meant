@@ -24,6 +24,7 @@ public record CartResult(
         Instant createdAt,
         Instant updatedAt,
         Instant refreshedAt,
+        List<CartAppliedCodeResult> appliedCodes,
         List<CartLineResult> lines
 ) {
 
@@ -46,6 +47,11 @@ public record CartResult(
                 cart.getCreatedAt(),
                 cart.getUpdatedAt(),
                 cart.getRefreshedAt(),
+                cart.getAppliedCodes().stream()
+                        .sorted(Comparator.comparingInt(appliedCode ->
+                                appliedCode.getDisplayOrder() == null ? Integer.MAX_VALUE : appliedCode.getDisplayOrder()))
+                        .map(CartAppliedCodeResult::from)
+                        .toList(),
                 cart.getLines().stream()
                         .map(CartLineResult::from)
                         .sorted(Comparator.comparing(CartLineResult::createdAt))

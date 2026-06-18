@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CartToolResponse(
@@ -24,7 +25,22 @@ public record CartToolResponse(
             @JsonProperty("total_quantity")
             Integer totalQuantity,
             @JsonProperty("checkout_url")
-            String checkoutUrl
+            String checkoutUrl,
+            @JsonProperty("discount_codes")
+            @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
+            List<AppliedCode> discountCodes,
+            @JsonProperty("applied_discounts")
+            @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
+            List<AppliedCode> appliedDiscounts,
+            @JsonProperty("discount_allocations")
+            @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
+            List<AppliedCode> discountAllocations,
+            @JsonProperty("gift_card_codes")
+            @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
+            List<AppliedCode> giftCardCodes,
+            @JsonProperty("applied_gift_cards")
+            @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
+            List<AppliedCode> appliedGiftCards
     ) {
     }
 
@@ -50,6 +66,15 @@ public record CartToolResponse(
     public record Money(
             String amount,
             String currency
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record AppliedCode(
+            String code,
+            String label,
+            Boolean applicable,
+            Money amount
     ) {
     }
 

@@ -291,6 +291,15 @@ export interface components {
             giftCardCodes?: string[];
             note?: string;
         };
+        CartAppliedCodeResponse: {
+            /** @enum {string} */
+            type?: "DISCOUNT" | "GIFT_CARD";
+            code?: string;
+            label?: string;
+            applicable?: boolean;
+            amount?: string;
+            currency?: string;
+        };
         CartLineResponse: {
             /** Format: uuid */
             cartLineId?: string;
@@ -335,6 +344,7 @@ export interface components {
             updatedAt?: string;
             /** Format: date-time */
             refreshedAt?: string;
+            appliedCodes?: components["schemas"]["CartAppliedCodeResponse"][];
             lines?: components["schemas"]["CartLineResponse"][];
         };
         UpdateUserProfileRequest: {

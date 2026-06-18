@@ -23,6 +23,7 @@ public record CartResponse(
         Instant createdAt,
         Instant updatedAt,
         Instant refreshedAt,
+        List<CartAppliedCodeResponse> appliedCodes,
         List<CartLineResponse> lines
 ) {
 
@@ -45,6 +46,7 @@ public record CartResponse(
                 result.createdAt(),
                 result.updatedAt(),
                 result.refreshedAt(),
+                result.appliedCodes().stream().map(CartAppliedCodeResponse::from).toList(),
                 result.lines().stream().map(CartLineResponse::from).toList()
         );
     }
