@@ -20,6 +20,7 @@ public record CartDeliveryGroupResult(
                 group.handle(),
                 safeNonNullList(group.deliveryOptions()).stream()
                         .map(CartDeliveryOptionResult::from)
+                        .filter(option -> option != null)
                         .toList(),
                 CartDeliveryOptionResult.from(group.selectedDeliveryOption())
         );

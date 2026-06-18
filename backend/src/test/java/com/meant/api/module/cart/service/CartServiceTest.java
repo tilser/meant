@@ -208,6 +208,24 @@ class CartServiceTest {
     }
 
     @Test
+    void cartResultMapperFiltersNullDeliveryGroupsAndOptions() {
+        CartToolResponse.DeliveryGroup group = new CartToolResponse.DeliveryGroup(
+                "delivery-group-1",
+                "delivery-group-handle-1",
+                Arrays.asList(null, deliveryOption("standard", true)),
+                null
+        );
+        CartToolResponse response = cartToolResponse(List.of(cartLine()), 1, Arrays.asList(null, group));
+        Cart cart = cart(UUID.randomUUID(), "https://merchant.example/checkout", UUID.randomUUID(), raw(response));
+
+        CartResult result = new CartResultMapper(new ObjectMapper()).from(cart);
+
+        assertThat(result.deliveryGroups()).hasSize(1);
+        assertThat(result.deliveryGroups().getFirst().deliveryOptions()).extracting("handle")
+                .containsExactly("standard");
+    }
+
+    @Test
     void getWithoutRefreshUsesStoredSnapshotOnly() {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
@@ -593,7 +611,20 @@ class CartServiceTest {
             Integer totalQuantity,
             List<CartToolResponse.DeliveryGroup> deliveryGroups
     ) {
-        CartToolResponse response = new CartToolResponse(
+        CartToolResponse response = cartToolResponse(lines, totalQuantity, deliveryGroups);
+        return new CartToolResult(
+                "https://merchant.example/api/mcp",
+                raw(response),
+                response
+        );
+    }
+
+    private CartToolResponse cartToolResponse(
+            List<CartToolResponse.Line> lines,
+            Integer totalQuantity,
+            List<CartToolResponse.DeliveryGroup> deliveryGroups
+    ) {
+        return new CartToolResponse(
                 "Checkout when ready",
                 new CartToolResponse.Cart(
                         "gid://shopify/Cart/1",
@@ -614,11 +645,6 @@ class CartServiceTest {
                         deliveryGroups
                 ),
                 List.of()
-        );
-        return new CartToolResult(
-                "https://merchant.example/api/mcp",
-                raw(response),
-                response
         );
     }
 
@@ -679,37 +705,32 @@ class CartServiceTest {
     }
 
     private CartToolResponse.DeliveryGroup deliveryGroup() {
-        CartToolResponse.DeliveryOption standard = new CartToolResponse.DeliveryOption(
-                "standard",
-                "Standard",
-                "Arrives in 3 to 5 business days",
-                null,
-                new CartToolResponse.Money("5.00", "USD"),
-                null,
-                "shipping",
-                "3 to 5 business days",
-                null,
-                null,
-                true
-        );
-        CartToolResponse.DeliveryOption express = new CartToolResponse.DeliveryOption(
-                "express",
-                "Express",
-                "Arrives in 1 to 2 business days",
-                null,
-                new CartToolResponse.Money("12.00", "USD"),
-                null,
-                "shipping",
-                "1 to 2 business days",
-                null,
-                null,
-                false
-        );
+        CartToolResponse.DeliveryOption standard = deliveryOption("standard", true);
+        CartToolResponse.DeliveryOption express = deliveryOption("express", false);
         return new CartToolResponse.DeliveryGroup(
                 "delivery-group-1",
                 "delivery-group-handle-1",
                 List.of(standard, express),
                 standard
+        );
+    }
+
+    private CartToolResponse.DeliveryOption deliveryOption(String handle, boolean selected) {
+        String title = handle.equals("standard") ? "Standard" : "Express";
+        String speed = handle.equals("standard") ? "3 to 5 business days" : "1 to 2 business days";
+        String cost = handle.equals("standard") ? "5.00" : "12.00";
+        return new CartToolResponse.DeliveryOption(
+                handle,
+                title,
+                "Arrives in " + speed,
+                null,
+                new CartToolResponse.Money(cost, "USD"),
+                null,
+                "shipping",
+                speed,
+                null,
+                null,
+                selected
         );
     }
 

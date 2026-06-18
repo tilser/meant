@@ -5823,7 +5823,7 @@ function MerchantDeliveryPanel({
         <div className="mt-delivery-groups">
           {deliveryGroups.map((group, index) => {
             const selected = selectedCartDeliveryOption(group)
-            const options = group.deliveryOptions ?? []
+            const options = (group.deliveryOptions ?? []).filter((option): option is CartDeliveryOption => Boolean(option))
             return (
               <div className="mt-delivery-group" key={group.id ?? group.handle ?? `${merchantKey}-${index}`}>
                 {deliveryGroups.length > 1 ? (

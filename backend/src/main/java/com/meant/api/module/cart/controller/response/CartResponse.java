@@ -1,5 +1,7 @@
 package com.meant.api.module.cart.controller.response;
 
+import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
+
 import com.meant.api.module.cart.service.dto.CartResult;
 import java.time.Instant;
 import java.util.List;
@@ -47,10 +49,11 @@ public record CartResponse(
                 result.createdAt(),
                 result.updatedAt(),
                 result.refreshedAt(),
-                result.appliedCodes().stream().map(CartAppliedCodeResponse::from).toList(),
-                result.lines().stream().map(CartLineResponse::from).toList(),
-                result.deliveryGroups().stream()
+                safeNonNullList(result.appliedCodes()).stream().map(CartAppliedCodeResponse::from).toList(),
+                safeNonNullList(result.lines()).stream().map(CartLineResponse::from).toList(),
+                safeNonNullList(result.deliveryGroups()).stream()
                         .map(CartDeliveryGroupResponse::from)
+                        .filter(group -> group != null)
                         .toList()
         );
     }

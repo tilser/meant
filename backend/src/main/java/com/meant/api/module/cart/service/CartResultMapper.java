@@ -36,6 +36,7 @@ public class CartResultMapper {
             }
             return safeNonNullList(response.cart().deliveryGroups()).stream()
                     .map(CartDeliveryGroupResult::from)
+                    .filter(group -> group != null)
                     .toList();
         } catch (JacksonException exception) {
             log.warn("Could not parse stored cart delivery groups for cart {}: {}", cart.getId(), exception.getMessage());
