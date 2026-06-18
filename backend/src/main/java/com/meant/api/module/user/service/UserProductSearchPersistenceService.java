@@ -434,7 +434,8 @@ public class UserProductSearchPersistenceService {
             return defaultValue;
         }
         try {
-            return objectMapper.readValue(value, type);
+            T parsed = objectMapper.readValue(value, type);
+            return parsed == null ? defaultValue : parsed;
         } catch (JacksonException exception) {
             throw new UserException("Could not parse product search catalog data", exception);
         }

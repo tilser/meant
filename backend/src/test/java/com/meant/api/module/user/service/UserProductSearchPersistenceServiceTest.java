@@ -133,6 +133,54 @@ class UserProductSearchPersistenceServiceTest {
     }
 
     @Test
+    void findCachedSearchTreatsStoredJsonNullAsEmptyRichCatalogData() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, false);
+        UserProductSearchResultItem item = UserProductSearchResultItem.from(
+                search.getId(),
+                "merchant.example:item-1",
+                "hash-1",
+                product(1),
+                NOW,
+                new UserProductSearchResultItem.RichCatalogSnapshot(
+                        "null",
+                        "null",
+                        "null",
+                        "null",
+                        "null",
+                        "null",
+                        "null"
+                )
+        );
+        UserProductSearchPersistenceService service = service(userId, search, List.of(item));
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                NOW,
+                0,
+                20
+        );
+
+        assertThat(result).isPresent();
+        assertThat(result.get().products()).singleElement()
+                .satisfies(product -> {
+                    assertThat(product.media()).isEmpty();
+                    assertThat(product.categories()).isEmpty();
+                    assertThat(product.certifications()).isEmpty();
+                    assertThat(product.materials()).isEmpty();
+                    assertThat(product.skus()).isEmpty();
+                    assertThat(product.collections()).isEmpty();
+                    assertThat(product.attributes()).isEmpty();
+                });
+    }
+
+    @Test
     void findCachedSearchReturnsEmptyWhenWindowIsTooSmallAndMoreMayExist() {
         UUID userId = UUID.randomUUID();
         UserProductSearch search = search(userId, true);

@@ -560,9 +560,9 @@ function parsePriceAmount(value: string | number | null | undefined): number | n
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function normalizeRatingScore(value: number | null | undefined): number {
+function normalizeRatingScore(value: number | null | undefined): number | null {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return 0
+    return null
   }
   return Math.max(0, Math.min(5, value))
 }
@@ -702,6 +702,8 @@ function productFromSearchResult(
   const catalogAttributes = searchProductAttributes(product)
   const brand = product.merchantName || product.merchantDomain
   const detail = stripHtml(product.detailDescription || product.descriptionHtml)
+  const ratingScore = normalizeRatingScore(product.ratingScore)
+  const reviewCount = ratingScore === null ? 0 : Math.max(0, product.reviewCount ?? 0)
   return {
     id: product.productKey,
     productHash: product.productHash,
@@ -727,8 +729,8 @@ function productFromSearchResult(
       : [detail || 'Ranked highly for your search'],
     cons: product.missedFilterIds.map((id) => `May miss ${prefLabel(preferences, id).toLowerCase()}`),
     review: {
-      score: normalizeRatingScore(product.ratingScore),
-      count: Math.max(0, product.reviewCount ?? 0),
+      score: ratingScore ?? 0,
+      count: reviewCount,
       insight: detail || product.whyMeantForYou,
     },
     media,
