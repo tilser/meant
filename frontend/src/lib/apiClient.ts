@@ -339,7 +339,7 @@ export async function uploadProfilePictureFile(userId: string, file: File): Prom
   }
   return {
     path: data.path,
-    signedUrl: await getProfilePictureUrl(data.path),
+    signedUrl: await getProfilePictureUrl(data.path).catch(() => null),
   }
 }
 
