@@ -4,7 +4,6 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -19,8 +18,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *
  * <p>Authentication is performed by Supabase (email/Google/Apple); this service only verifies the
  * bearer token against Supabase's JWKS endpoint (configured via
- * {@code spring.security.oauth2.resourceserver.jwt.*}). Existing open endpoints stay public so that
- * adding the {@code user} module does not break the current testing surface.
+ * {@code spring.security.oauth2.resourceserver.jwt.*}). Only explicit operational and API
+ * documentation endpoints are public; business APIs require authentication by default.
  */
 @Configuration
 public class SecurityConfiguration {
@@ -48,10 +47,7 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
-                        // Merchant discovery remains open for now; cart state is user-owned.
-                        .requestMatchers("/api/merchants/**").permitAll()
                         .requestMatchers("/api/carts/**").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
                         .requestMatchers("/api/users/**").authenticated()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {
