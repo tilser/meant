@@ -2,6 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.merchant.controller.response.MerchantSemanticProductResponse;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
@@ -169,8 +170,8 @@ class MerchantSemanticProductSearchServiceTest {
         merchantSemanticSearchService.results = List.of(merchant);
         merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
-                Map.of("value", "4,75", "reviewCount", "1,234"),
-                "1,234",
+                Map.of("value", "4,75", "reviewCount", "1,234,567"),
+                "1,234,567",
                 Map.of("fabric", "100% organic cotton"),
                 Map.of("fit", "relaxed")
         ))));
@@ -182,7 +183,54 @@ class MerchantSemanticProductSearchServiceTest {
 
         assertThat(result.products()).singleElement().satisfies(product -> {
             assertThat(product.ratingScore()).isEqualTo(4.75d);
-            assertThat(product.reviewCount()).isEqualTo(1234);
+            assertThat(product.reviewCount()).isEqualTo(1234567);
+        });
+    }
+
+    @Test
+    void ignoresNullRichCatalogListItems() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                richProductWithNullCatalogItems()
+        )));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.listPriceAmount()).isEqualTo(5200L);
+            assertThat(product.media()).extracting("type").containsExactly("image", "video");
+            assertThat(product.categories()).extracting("value").containsExactly("Apparel");
+            assertThat(product.skus()).containsExactly("SKU-RICH", "SKU-RICH-VARIANT");
+        });
+    }
+
+    @Test
+    void filtersNullProductDetailListItems() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("detail-tee", "Detail Tee", "Soft tee", "apparel")
+        )));
+        merchantProductDetailsClient.products.put("detail-tee", detailProductWithNullListItems("detail-tee"));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("soft tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.detailImages()).extracting("url")
+                    .containsExactly("https://example.com/detail-tee-detail.jpg");
+            assertThat(product.detailOptions()).extracting("name").containsExactly("Size");
+            assertThat(product.sellingPlanGroups()).containsExactly(Map.of("name", "Subscribe"));
+            assertThat(product.selectedOptions()).extracting("name").containsExactly("Size");
+            MerchantSemanticProductResponse response = MerchantSemanticProductResponse.from(product);
+            assertThat(response.detailImages()).hasSize(1);
+            assertThat(response.detailOptions()).hasSize(1);
+            assertThat(response.selectedOptions()).hasSize(1);
         });
     }
 
@@ -494,6 +542,105 @@ class MerchantSemanticProductSearchServiceTest {
         );
     }
 
+    private ProductDetailsResponse.Product detailProductWithNullListItems(String productId) {
+        List<ProductDetailsResponse.Image> images = new ArrayList<>();
+        images.add(null);
+        images.add(new ProductDetailsResponse.Image(
+                "https://example.com/" + productId + "-detail.jpg",
+                "Product image"
+        ));
+        List<ProductDetailsResponse.Option> options = new ArrayList<>();
+        options.add(null);
+        options.add(new ProductDetailsResponse.Option("Size", List.of("Default")));
+        List<Object> sellingPlanGroups = new ArrayList<>();
+        sellingPlanGroups.add(null);
+        sellingPlanGroups.add(Map.of("name", "Subscribe"));
+        List<ProductDetailsResponse.SelectedOption> selectedOptions = new ArrayList<>();
+        selectedOptions.add(null);
+        selectedOptions.add(new ProductDetailsResponse.SelectedOption("Size", "Default"));
+        return new ProductDetailsResponse.Product(
+                productId,
+                productId + " detail",
+                "Detailed description",
+                "https://example.com/products/" + productId,
+                "https://example.com/" + productId + "-detail.jpg",
+                images,
+                options,
+                1,
+                new ProductDetailsResponse.PriceRange("12.95", "12.95", "USD"),
+                false,
+                sellingPlanGroups,
+                new ProductDetailsResponse.SelectedVariant(
+                        productId + "-selected",
+                        "Default",
+                        "12.95",
+                        "USD",
+                        "https://example.com/" + productId + "-variant.jpg",
+                        "Variant image",
+                        true,
+                        selectedOptions
+                )
+        );
+    }
+
+    private CatalogSearchResponse.Product richProductWithNullCatalogItems() {
+        List<CatalogSearchResponse.Media> variantMedia = new ArrayList<>();
+        variantMedia.add(null);
+        variantMedia.add(new CatalogSearchResponse.Media(
+                "video",
+                "https://example.com/rich-tee.mp4",
+                "Fit video",
+                null
+        ));
+        List<CatalogSearchResponse.Variant> variants = new ArrayList<>();
+        variants.add(null);
+        variants.add(new CatalogSearchResponse.Variant(
+                "rich-tee-variant",
+                "Default Title",
+                new CatalogSearchResponse.Description("<p>Organic cotton tee.</p>"),
+                new CatalogSearchResponse.Money(3800L, "USD"),
+                "SKU-RICH-VARIANT",
+                new CatalogSearchResponse.Money(5200L, "USD"),
+                new CatalogSearchResponse.Availability(true),
+                variantMedia
+        ));
+        List<CatalogSearchResponse.Media> media = new ArrayList<>();
+        media.add(null);
+        media.add(new CatalogSearchResponse.Media(
+                "image",
+                "https://example.com/rich-tee.jpg",
+                "Organic cotton tee",
+                null
+        ));
+        List<CatalogSearchResponse.Category> categories = new ArrayList<>();
+        categories.add(null);
+        categories.add(new CatalogSearchResponse.Category("Apparel", "shopify"));
+        return new CatalogSearchResponse.Product(
+                "rich-tee",
+                "Organic Cotton Tee",
+                new CatalogSearchResponse.Description("<p>Organic cotton tee.</p>"),
+                "https://example.com/products/rich-tee",
+                new CatalogSearchResponse.PriceRange(
+                        new CatalogSearchResponse.Money(3800L, "USD"),
+                        new CatalogSearchResponse.Money(3800L, "USD")
+                ),
+                null,
+                Map.of("value", 4.8d, "reviewCount", 214),
+                214,
+                variants,
+                media,
+                categories,
+                List.of("organic"),
+                List.of("SKU-RICH"),
+                List.of("GOTS"),
+                List.of("Organic cotton"),
+                List.of("Basics"),
+                Map.of("fabric", "100% organic cotton"),
+                null,
+                Map.of("fit", "relaxed")
+        );
+    }
+
     private Object deeplyNestedValue(int depth) {
         Object value = "GOTS";
         for (int index = 0; index < depth; index++) {
@@ -625,6 +772,7 @@ class MerchantSemanticProductSearchServiceTest {
     static class FakeMerchantProductDetailsClient extends MerchantProductDetailsClient {
 
         private final Map<String, String> failures = new HashMap<>();
+        private final Map<String, ProductDetailsResponse.Product> products = new HashMap<>();
         private final Map<String, String> prices = new HashMap<>();
         private final Map<String, String> currencies = new HashMap<>();
         private final List<String> calls = new CopyOnWriteArrayList<>();
@@ -644,6 +792,10 @@ class MerchantSemanticProductSearchServiceTest {
             awaitConcurrentCalls(concurrentProductDetails, "Product details");
             if (failures.containsKey(productId)) {
                 throw new MerchantProductDetailsException(failures.get(productId));
+            }
+            ProductDetailsResponse.Product product = products.get(productId);
+            if (product != null) {
+                return new ProductDetailsResult(merchant.advertisedMcpEndpoint(), "{}", product);
             }
             String price = prices.getOrDefault(productId, "12.95");
             String currency = currencies.getOrDefault(productId, "USD");

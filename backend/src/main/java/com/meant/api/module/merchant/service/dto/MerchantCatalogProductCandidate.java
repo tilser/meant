@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.service.dto;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
+import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import java.util.List;
 import java.util.Objects;
@@ -41,9 +42,9 @@ public record MerchantCatalogProductCandidate(
 
     public String imageUrl() {
         return Stream.concat(
-                        safeList(product.media()).stream(),
-                        safeList(product.variants()).stream()
-                                .flatMap(variant -> safeList(variant.media()).stream())
+                        safeNonNullList(product.media()).stream(),
+                        safeNonNullList(product.variants()).stream()
+                                .flatMap(variant -> safeNonNullList(variant.media()).stream())
                 )
                 .map(CatalogSearchResponse.Media::url)
                 .filter(value -> value != null && !value.isBlank())
@@ -82,7 +83,7 @@ public record MerchantCatalogProductCandidate(
     }
 
     public Boolean available() {
-        List<Boolean> availability = safeList(product.variants()).stream()
+        List<Boolean> availability = safeNonNullList(product.variants()).stream()
                 .map(CatalogSearchResponse.Variant::availability)
                 .filter(Objects::nonNull)
                 .map(CatalogSearchResponse.Availability::available)
@@ -95,7 +96,7 @@ public record MerchantCatalogProductCandidate(
     }
 
     public List<String> categoryValues() {
-        return safeList(product.categories()).stream()
+        return safeNonNullList(product.categories()).stream()
                 .map(CatalogSearchResponse.Category::value)
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
@@ -120,7 +121,7 @@ public record MerchantCatalogProductCandidate(
     }
 
     private String categories() {
-        return safeList(product.categories()).stream()
+        return safeNonNullList(product.categories()).stream()
                 .map(CatalogSearchResponse.Category::value)
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()

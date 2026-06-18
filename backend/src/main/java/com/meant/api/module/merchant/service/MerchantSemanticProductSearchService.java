@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
+import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
@@ -158,7 +159,7 @@ public class MerchantSemanticProductSearchService {
                     MerchantCatalogSearchAttemptResult.success(
                             merchant,
                             catalogSearchResult.endpoint(),
-                            catalogSearchResult.products().size()
+                            safeNonNullList(catalogSearchResult.products()).size()
                     ),
                     productCandidates(merchant, catalogSearchResult)
             );
@@ -197,11 +198,12 @@ public class MerchantSemanticProductSearchService {
             MerchantSemanticSearchResult merchant,
             CatalogSearchResult catalogSearchResult
     ) {
-        return IntStream.range(0, catalogSearchResult.products().size())
+        List<CatalogSearchResponse.Product> products = safeNonNullList(catalogSearchResult.products());
+        return IntStream.range(0, products.size())
                 .mapToObj(index -> new MerchantCatalogProductCandidate(
                         merchant,
                         catalogSearchResult.endpoint(),
-                        catalogSearchResult.products().get(index),
+                        products.get(index),
                         index + 1
                 ))
                 .toList();
@@ -370,17 +372,17 @@ public class MerchantSemanticProductSearchService {
                 detailError,
                 detailProduct == null ? null : detailProduct.description(),
                 detailProduct == null ? null : detailProduct.imageUrl(),
-                detailProduct == null ? List.of() : safeList(detailProduct.images()),
-                detailProduct == null ? List.of() : safeList(detailProduct.options()),
+                detailProduct == null ? List.of() : safeNonNullList(detailProduct.images()),
+                detailProduct == null ? List.of() : safeNonNullList(detailProduct.options()),
                 detailPriceRange == null ? null : detailPriceRange.min(),
                 detailPriceRange == null ? null : detailPriceRange.max(),
                 detailPriceRange == null ? null : detailPriceRange.currency(),
                 detailProduct == null ? null : detailProduct.totalVariants(),
                 detailProduct == null ? null : detailProduct.requiresSellingPlan(),
-                detailProduct == null ? List.of() : safeList(detailProduct.sellingPlanGroups()),
+                detailProduct == null ? List.of() : safeNonNullList(detailProduct.sellingPlanGroups()),
                 selectedVariant == null ? null : selectedVariant.variantId(),
                 selectedVariant == null ? null : selectedVariant.title(),
-                selectedVariant == null ? List.of() : safeList(selectedVariant.selectedOptions()),
+                selectedVariant == null ? List.of() : safeNonNullList(selectedVariant.selectedOptions()),
                 selectedVariant == null ? null : selectedVariant.price(),
                 selectedVariant == null ? null : selectedVariant.currency(),
                 selectedVariant == null ? null : selectedVariant.imageUrl(),
@@ -448,7 +450,10 @@ public class MerchantSemanticProductSearchService {
     }
 
     private MoneyValue firstVariantListPrice(CatalogSearchResponse.Product product, String currency) {
-        return safeList(product.variants()).stream()
+        if (product == null) {
+            return null;
+        }
+        return safeNonNullList(product.variants()).stream()
                 .map(variant -> moneyValue(variant.listPrice(), currency))
                 .filter(Objects::nonNull)
                 .findFirst()
@@ -461,23 +466,23 @@ public class MerchantSemanticProductSearchService {
             ProductDetailsResponse.SelectedVariant selectedVariant
     ) {
         Map<String, ProductCatalogMedia> media = new LinkedHashMap<>();
-        safeList(catalogProduct.media()).forEach(item -> addMedia(media, media(item)));
-        safeList(catalogProduct.variants()).stream()
-                .flatMap(variant -> safeList(variant.media()).stream())
+        safeNonNullList(catalogProduct.media()).forEach(item -> addMedia(media, media(item)));
+        safeNonNullList(catalogProduct.variants()).stream()
+                .flatMap(variant -> safeNonNullList(variant.media()).stream())
                 .map(this::media)
                 .forEach(item -> addMedia(media, item));
         if (detailProduct != null) {
             addMedia(media, imageMedia(detailProduct.imageUrl(), null));
-            safeList(detailProduct.images()).stream()
+            safeNonNullList(detailProduct.images()).stream()
                     .map(this::media)
                     .forEach(item -> addMedia(media, item));
-            safeList(detailProduct.media()).stream()
+            safeNonNullList(detailProduct.media()).stream()
                     .map(this::media)
                     .forEach(item -> addMedia(media, item));
         }
         if (selectedVariant != null) {
             addMedia(media, imageMedia(selectedVariant.imageUrl(), selectedVariant.imageAltText()));
-            safeList(selectedVariant.media()).stream()
+            safeNonNullList(selectedVariant.media()).stream()
                     .map(this::media)
                     .forEach(item -> addMedia(media, item));
         }
@@ -485,6 +490,9 @@ public class MerchantSemanticProductSearchService {
     }
 
     private ProductCatalogMedia media(CatalogSearchResponse.Media media) {
+        if (media == null) {
+            return null;
+        }
         return new ProductCatalogMedia(
                 blankToDefault(media.type(), "image"),
                 firstPresent(media.url(), media.previewImageUrl()),
@@ -493,10 +501,16 @@ public class MerchantSemanticProductSearchService {
     }
 
     private ProductCatalogMedia media(ProductDetailsResponse.Image image) {
+        if (image == null) {
+            return null;
+        }
         return imageMedia(image.url(), image.altText());
     }
 
     private ProductCatalogMedia media(ProductDetailsResponse.Media media) {
+        if (media == null) {
+            return null;
+        }
         return new ProductCatalogMedia(
                 blankToDefault(media.type(), "image"),
                 firstPresent(media.url(), media.previewImageUrl()),
@@ -522,7 +536,7 @@ public class MerchantSemanticProductSearchService {
 
     private List<ProductCatalogCategory> richCategories(CatalogSearchResponse.Product product) {
         Map<String, ProductCatalogCategory> categories = new LinkedHashMap<>();
-        for (CatalogSearchResponse.Category category : safeList(product.categories())) {
+        for (CatalogSearchResponse.Category category : safeNonNullList(product.categories())) {
             String value = blankToNull(category.value());
             if (value != null) {
                 categories.putIfAbsent(
@@ -541,7 +555,7 @@ public class MerchantSemanticProductSearchService {
     ) {
         return distinctStrings(Stream.of(
                         stringValues(catalogProduct.skus()).stream(),
-                        safeList(catalogProduct.variants()).stream().map(CatalogSearchResponse.Variant::sku),
+                        safeNonNullList(catalogProduct.variants()).stream().map(CatalogSearchResponse.Variant::sku),
                         stringValues(detailProduct == null ? null : detailProduct.skus()).stream(),
                         Stream.of(selectedVariant == null ? null : selectedVariant.sku())
                 )
@@ -814,23 +828,53 @@ public class MerchantSemanticProductSearchService {
                     ? cleaned.replace(".", "").replace(',', '.')
                     : cleaned.replace(",", "");
         } else if (cleaned.contains(",")) {
-            int commaIndex = cleaned.lastIndexOf(',');
-            int fractionalDigits = cleaned.length() - commaIndex - 1;
-            cleaned = fractionalDigits == 3 && commaIndex <= 3
-                    ? cleaned.replace(",", "")
-                    : cleaned.replace(',', '.');
+            cleaned = normalizeSingleSeparatorDecimal(cleaned, ',');
         } else if (cleaned.contains(".")) {
-            int dotIndex = cleaned.lastIndexOf('.');
-            int fractionalDigits = cleaned.length() - dotIndex - 1;
-            if (fractionalDigits == 3 && dotIndex <= 3) {
-                cleaned = cleaned.replace(".", "");
-            }
+            cleaned = normalizeSingleSeparatorDecimal(cleaned, '.');
+        }
+        if (cleaned == null) {
+            return null;
         }
         try {
             return Double.parseDouble(cleaned);
         } catch (NumberFormatException exception) {
             return null;
         }
+    }
+
+    private String normalizeSingleSeparatorDecimal(String value, char separator) {
+        int firstSeparator = value.indexOf(separator);
+        int lastSeparator = value.lastIndexOf(separator);
+        if (firstSeparator != lastSeparator) {
+            return hasGroupedThousands(value, separator)
+                    ? value.replace(String.valueOf(separator), "")
+                    : null;
+        }
+        int signedOffset = value.startsWith("-") ? 1 : 0;
+        int integralDigits = lastSeparator - signedOffset;
+        int fractionalDigits = value.length() - lastSeparator - 1;
+        if (fractionalDigits == 3 && integralDigits >= 1 && integralDigits <= 3) {
+            return value.replace(String.valueOf(separator), "");
+        }
+        return separator == ',' ? value.replace(',', '.') : value;
+    }
+
+    private boolean hasGroupedThousands(String value, char separator) {
+        int start = value.startsWith("-") ? 1 : 0;
+        int firstSeparator = value.indexOf(separator, start);
+        if (firstSeparator <= start || firstSeparator - start > 3) {
+            return false;
+        }
+        int groupStart = firstSeparator + 1;
+        while (groupStart < value.length()) {
+            int nextSeparator = value.indexOf(separator, groupStart);
+            int groupEnd = nextSeparator == -1 ? value.length() : nextSeparator;
+            if (groupEnd - groupStart != 3) {
+                return false;
+            }
+            groupStart = groupEnd + 1;
+        }
+        return true;
     }
 
     private Object firstMapValue(Map<?, ?> map, String... keys) {
