@@ -10,6 +10,7 @@
             <column name="user_id" type="uuid"/>
         </addColumn>
         <!-- Existing carts were anonymous UUID-only objects and cannot be safely assigned an owner. -->
+        <delete tableName="cart_line"/>
         <delete tableName="cart"/>
         <addNotNullConstraint
                 tableName="cart"
