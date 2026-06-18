@@ -9,5 +9,8 @@
         <addColumn tableName="users">
             <column name="profile_picture_path" type="text"/>
         </addColumn>
+        <rollback>
+            <dropColumn tableName="users" columnName="profile_picture_path"/>
+        </rollback>
     </changeSet>
 </databaseChangeLog>

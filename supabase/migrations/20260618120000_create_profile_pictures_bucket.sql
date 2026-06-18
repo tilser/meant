@@ -21,7 +21,7 @@ for select
 to authenticated
 using (
   bucket_id = 'profile-pictures'
-  and (storage.foldername(name))[1] = (select auth.jwt() ->> 'sub')
+  and (storage.foldername(name))[1] = auth.uid()::text
 );
 
 create policy "Users can upload own profile pictures"
@@ -30,7 +30,7 @@ for insert
 to authenticated
 with check (
   bucket_id = 'profile-pictures'
-  and (storage.foldername(name))[1] = (select auth.jwt() ->> 'sub')
+  and (storage.foldername(name))[1] = auth.uid()::text
 );
 
 create policy "Users can delete own profile pictures"
@@ -39,5 +39,5 @@ for delete
 to authenticated
 using (
   bucket_id = 'profile-pictures'
-  and (storage.foldername(name))[1] = (select auth.jwt() ->> 'sub')
+  and (storage.foldername(name))[1] = auth.uid()::text
 );

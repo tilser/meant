@@ -4997,8 +4997,29 @@ function AccountView({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const savedTimeoutRef = useRef<number | null>(null)
   const preview: UserAccount = { name, email: user.email, avatar, avatarPath }
   const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
+  const hasProfilePicture = Boolean(avatar || avatarPath)
+
+  useEffect(() => {
+    return () => {
+      if (savedTimeoutRef.current !== null) {
+        window.clearTimeout(savedTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const showSaved = () => {
+    if (savedTimeoutRef.current !== null) {
+      window.clearTimeout(savedTimeoutRef.current)
+    }
+    setSaved(true)
+    savedTimeoutRef.current = window.setTimeout(() => {
+      setSaved(false)
+      savedTimeoutRef.current = null
+    }, 1800)
+  }
 
   const onFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -5070,8 +5091,7 @@ function AccountView({
       setAvatar(savedAvatar)
       setAvatarPath(savedAvatarPath)
       setPendingFile(null)
-      setSaved(true)
-      window.setTimeout(() => setSaved(false), 1800)
+      showSaved()
     } catch {
       if (uploadedPath) {
         void deleteProfilePictureFile(uploadedPath)
@@ -5097,9 +5117,9 @@ function AccountView({
           </div>
           <div className="mt-acct-photo-actions">
             <button className="mt-acct-uploadbtn" type="button" onClick={() => fileRef.current?.click()}>
-              {avatar ? 'Change photo' : 'Upload photo'}
+              {hasProfilePicture ? 'Change photo' : 'Upload photo'}
             </button>
-            {avatar ? (
+            {hasProfilePicture ? (
               <button
                 className="mt-acct-removebtn"
                 type="button"
@@ -5629,6 +5649,7 @@ export function MeantApp() {
     let active = true
     getCurrentUser()
       .then(async (profile) => {
+        if (!active) return
         const avatar = await getProfilePictureUrl(profile.profilePicturePath).catch(() => null)
         if (!active) return
         const fullName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim()
