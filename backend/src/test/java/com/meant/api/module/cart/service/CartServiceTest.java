@@ -1,9 +1,11 @@
 package com.meant.api.module.cart.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
+import com.meant.api.module.cart.exception.CartNotFoundException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
@@ -33,6 +35,9 @@ import tools.jackson.databind.ObjectMapper;
 
 class CartServiceTest {
 
+    private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+
     private FakeMerchantRepository merchantRepository;
     private FakeCartRepository cartRepository;
     private FakeCartClient cartClient;
@@ -61,6 +66,7 @@ class CartServiceTest {
     @Test
     void createCallsRemoteCartAndSavesSnapshot() {
         CartResult result = cartService.create(new CreateCartCommand(
+                USER_ID,
                 merchant.getId(),
                 null,
                 List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
@@ -86,7 +92,7 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
 
-        CartResult result = cartService.get(new GetCartQuery(cartId, false));
+        CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartClient.getCount).isZero();
@@ -98,7 +104,7 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/stale-checkout"));
 
-        CartResult result = cartService.get(new GetCartQuery(cartId, true));
+        CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, true));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartClient.getCount).isEqualTo(1);
@@ -114,6 +120,7 @@ class CartServiceTest {
 
         cartService.update(new UpdateCartCommand(
                 cartId,
+                USER_ID,
                 List.of(),
                 List.of(new UpdateCartCommand.UpdateItem(cartLineId, null, 2)),
                 List.of(cartLineId),
@@ -137,6 +144,7 @@ class CartServiceTest {
         cartClient.cartToolResult = cartToolResult(Arrays.asList(null, cartLine()), null);
 
         CartResult result = cartService.create(new CreateCartCommand(
+                USER_ID,
                 merchant.getId(),
                 null,
                 List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
@@ -159,7 +167,7 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, null));
 
-        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, false));
+        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartClient.getCount).isEqualTo(1);
@@ -171,7 +179,7 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/stored-checkout"));
 
-        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, false));
+        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
         assertThat(cartClient.getCount).isZero();
@@ -182,10 +190,60 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/stored-checkout"));
 
-        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, true));
+        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, true));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartClient.getCount).isEqualTo(1);
+    }
+
+    @Test
+    void getWithDifferentUserReturnsNotFoundWithoutRemoteRefresh() {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
+
+        assertThatThrownBy(() -> cartService.get(new GetCartQuery(cartId, OTHER_USER_ID, true)))
+                .isInstanceOf(CartNotFoundException.class)
+                .hasMessage("Cart not found: " + cartId);
+        assertThat(cartClient.getCount).isZero();
+        assertThat(merchantRepository.findByIdCount).isZero();
+    }
+
+    @Test
+    void updateWithDifferentUserReturnsNotFoundWithoutRemoteUpdate() {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
+
+        assertThatThrownBy(() -> cartService.update(new UpdateCartCommand(
+                cartId,
+                OTHER_USER_ID,
+                List.of(new UpdateCartCommand.AddItem("gid://shopify/ProductVariant/2", 1)),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        )))
+                .isInstanceOf(CartNotFoundException.class)
+                .hasMessage("Cart not found: " + cartId);
+        assertThat(cartClient.updateCount).isZero();
+        assertThat(merchantRepository.findByIdCount).isZero();
+    }
+
+    @Test
+    void checkoutWithDifferentUserReturnsNotFoundWithoutRemoteRefresh() {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
+
+        assertThatThrownBy(() -> cartService.checkout(new GetCheckoutQuery(cartId, OTHER_USER_ID, true)))
+                .isInstanceOf(CartNotFoundException.class)
+                .hasMessage("Cart not found: " + cartId);
+        assertThat(cartClient.getCount).isZero();
+        assertThat(merchantRepository.findByIdCount).isZero();
     }
 
     @Test
@@ -255,6 +313,7 @@ class CartServiceTest {
                 .build();
         return Cart.builder()
                 .id(cartId)
+                .userId(USER_ID)
                 .merchantId(merchant.getId())
                 .merchantDomain(merchant.getDomain())
                 .endpoint("https://merchant.example/api/mcp")
@@ -382,7 +441,12 @@ class CartServiceTest {
                     CartRepository.class.getClassLoader(),
                     new Class<?>[]{CartRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
-                        case "findWithLinesById" -> Optional.ofNullable(carts.get(args[0]));
+                        case "findWithLinesByIdAndUserId" -> {
+                            Cart cart = carts.get(args[0]);
+                            yield cart == null || !cart.getUserId().equals(args[1])
+                                    ? Optional.empty()
+                                    : Optional.of(cart);
+                        }
                         case "save" -> {
                             Cart cart = (Cart) args[0];
                             save(cart);

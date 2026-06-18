@@ -48,8 +48,9 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
-                        // Existing testing endpoints remain open for now (see plan follow-ups).
-                        .requestMatchers("/api/carts/**", "/api/merchants/**").permitAll()
+                        // Merchant discovery remains open for now; cart state is user-owned.
+                        .requestMatchers("/api/merchants/**").permitAll()
+                        .requestMatchers("/api/carts/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
                         .requestMatchers("/api/users/**").authenticated()
                         .anyRequest().authenticated())

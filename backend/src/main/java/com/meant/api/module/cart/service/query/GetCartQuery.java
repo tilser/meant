@@ -6,6 +6,8 @@ import java.util.UUID;
 public record GetCartQuery(
         @NotNull
         UUID cartId,
+        @NotNull
+        UUID userId,
         boolean refresh
 ) {
 }

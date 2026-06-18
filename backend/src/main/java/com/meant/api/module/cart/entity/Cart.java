@@ -38,6 +38,9 @@ public class Cart {
     private UUID id = UUID.randomUUID();
 
     @Column(nullable = false)
+    private UUID userId;
+
+    @Column(nullable = false)
     private UUID merchantId;
 
     @Column(nullable = false)
