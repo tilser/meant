@@ -421,11 +421,14 @@ public class UserController {
     }
 
     /**
-     * Resolves the client IP without trusting client-supplied forwarding headers. With
-     * {@code server.forward-headers-strategy=framework} configured, the servlet container derives
-     * {@code getRemoteAddr()} from {@code X-Forwarded-For}/{@code Forwarded} only when the request
-     * arrives through a trusted proxy, so an arbitrary attacker-set header cannot poison the value
-     * (OWASP — proxy headers must only be trusted from known proxies).
+     * Resolves the client IP without parsing client-supplied forwarding headers in application code.
+     * With the default {@code server.forward-headers-strategy=none}, {@code getRemoteAddr()} is the
+     * real socket peer and attacker-set {@code X-Forwarded-For}/{@code Forwarded} headers are ignored
+     * entirely. Behind a trusted reverse proxy, set the strategy to {@code native} so Tomcat's
+     * {@code RemoteIpValve} rewrites {@code getRemoteAddr()} from forwarded headers only when the
+     * immediate peer is a configured trusted proxy ({@code server.tomcat.remoteip.internal-proxies},
+     * default private/loopback ranges) — the framework strategy's {@code ForwardedHeaderFilter}
+     * performs no such trust check (OWASP — proxy headers must only be trusted from known proxies).
      */
     private String buyerIp(HttpServletRequest request) {
         return request.getRemoteAddr();

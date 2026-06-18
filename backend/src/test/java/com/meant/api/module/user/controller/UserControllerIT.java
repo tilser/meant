@@ -7,11 +7,13 @@ import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
+import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductSearch;
 import com.meant.api.module.user.entity.UserProductSearchEvent;
@@ -20,6 +22,7 @@ import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
 import com.meant.api.module.user.repository.UserProductSearchEventRepository;
 import com.meant.api.module.user.repository.UserProductSearchRepository;
+import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserProductSearchHashService;
@@ -57,6 +60,9 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class UserControllerIT extends PostgresIntegrationTest {
 
+    /** Mirrors {@code UserController.MAX_CONVERSATION_LIMIT}; kept local to avoid exposing the constant. */
+    private static final int MAX_CONVERSATION_LIMIT_FIXTURE = 50;
+
     @LocalServerPort
     private int port;
 
@@ -80,6 +86,9 @@ class UserControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
+
+    @Autowired
+    private UserAssistantConversationRepository userAssistantConversationRepository;
 
     @Autowired
     private UserProductSearchProperties userProductSearchProperties;
@@ -504,26 +513,43 @@ class UserControllerIT extends PostgresIntegrationTest {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
 
-        // An unbounded page size must be clamped server-side and succeed, not pull excessive rows or
-        // 500 from PageRequest.of (MEA-27 — OWASP API4 Unrestricted Resource Consumption).
-        client.get()
+        // Seed more conversations than the server-side cap so an oversized page request can be observed
+        // to return a bounded slice rather than every row (MEA-27 — OWASP API4 Unrestricted Resource
+        // Consumption). The endpoint upserts the user on read, so no users row is required up front.
+        Instant now = Instant.now();
+        int seeded = MAX_CONVERSATION_LIMIT_FIXTURE + 5;
+        for (int i = 0; i < seeded; i++) {
+            userAssistantConversationRepository.save(
+                    UserAssistantConversation.create(id, "Conversation " + i, now.plusSeconds(i)));
+        }
+
+        // An unbounded page size must be clamped to MAX_CONVERSATION_LIMIT_FIXTURE, not pull excessive rows.
+        var clamped = client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/api/users/me/assistant/conversations")
                         .queryParam("limit", 1_000_000)
                         .build())
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isOk()
+                .expectBody(UserAssistantConversationSummaryResponse[].class)
+                .returnResult()
+                .getResponseBody();
+        assertThat(clamped).hasSize(MAX_CONVERSATION_LIMIT_FIXTURE);
 
-        // A non-positive limit must clamp to a valid page size rather than throwing from PageRequest.of.
-        client.get()
+        // A non-positive limit must clamp to a single row rather than throwing from PageRequest.of.
+        var floored = client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/api/users/me/assistant/conversations")
                         .queryParam("limit", 0)
                         .build())
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isOk()
+                .expectBody(UserAssistantConversationSummaryResponse[].class)
+                .returnResult()
+                .getResponseBody();
+        assertThat(floored).hasSize(1);
     }
 
     @Test
