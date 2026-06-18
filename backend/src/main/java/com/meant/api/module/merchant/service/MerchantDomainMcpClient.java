@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
+import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
 import com.meant.api.module.merchant.service.dto.McpContent;
 import com.meant.api.module.merchant.service.dto.McpToolCallParams;
 import com.meant.api.module.merchant.service.dto.McpToolCallRequest;
@@ -11,6 +12,7 @@ import com.meant.api.module.merchant.service.dto.StoreProfileArguments;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -27,10 +29,23 @@ public class MerchantDomainMcpClient {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final MerchantOutboundUrlValidator merchantOutboundUrlValidator;
+
+    @Autowired
+    public MerchantDomainMcpClient(
+            RestClient.Builder restClientBuilder,
+            ObjectMapper objectMapper,
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator
+    ) {
+        this.restClient = restClientBuilder.clone()
+                .requestFactory(new MerchantClientHttpRequestFactory(merchantOutboundUrlValidator))
+                .build();
+        this.objectMapper = objectMapper;
+        this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
+    }
 
     public MerchantDomainMcpClient(RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
-        this.restClient = restClientBuilder.build();
-        this.objectMapper = objectMapper;
+        this(restClientBuilder, objectMapper, new MerchantOutboundUrlValidator());
     }
 
     public MerchantMcpProfileResult fetchStoreProfile(String domain) {
@@ -38,8 +53,12 @@ public class MerchantDomainMcpClient {
         MerchantEnrichmentException lastException = null;
         for (String endpoint : endpoints) {
             try {
-                return new MerchantMcpProfileResult(endpoint, fetchStoreProfileFromEndpoint(endpoint));
-            } catch (RestClientException | MerchantEnrichmentException exception) {
+                URI endpointUri = merchantOutboundUrlValidator.validateMerchantUrl(domain, endpoint);
+                return new MerchantMcpProfileResult(
+                        endpointUri.toString(),
+                        fetchStoreProfileFromEndpoint(endpointUri)
+                );
+            } catch (RestClientException | MerchantEnrichmentException | MerchantOutboundUrlException exception) {
                 lastException = new MerchantEnrichmentException("MCP profile fetch failed for " + endpoint, exception);
             }
         }
@@ -60,9 +79,9 @@ public class MerchantDomainMcpClient {
         }
     }
 
-    private StorePolicyFaqEntry fetchStoreProfileFromEndpoint(String endpoint) {
+    private StorePolicyFaqEntry fetchStoreProfileFromEndpoint(URI endpoint) {
         McpToolCallResponse response = restClient.post()
-                .uri(URI.create(endpoint))
+                .uri(endpoint)
                 .body(request())
                 .retrieve()
                 .body(McpToolCallResponse.class);
@@ -99,10 +118,14 @@ public class MerchantDomainMcpClient {
     }
 
     private List<String> endpointCandidates(String domain) {
+        if (domain == null || domain.isBlank()) {
+            return List.of();
+        }
+        String trimmedDomain = domain.trim();
         List<String> endpoints = new ArrayList<>();
-        endpoints.add("https://" + domain + "/api/mcp");
-        if (!domain.startsWith("www.")) {
-            endpoints.add("https://www." + domain + "/api/mcp");
+        endpoints.add("https://" + trimmedDomain + "/api/mcp");
+        if (!trimmedDomain.startsWith("www.")) {
+            endpoints.add("https://www." + trimmedDomain + "/api/mcp");
         }
         return endpoints.stream().distinct().toList();
     }

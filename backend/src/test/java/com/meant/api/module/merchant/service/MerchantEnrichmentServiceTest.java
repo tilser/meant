@@ -283,7 +283,7 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         }
 
         @Override
-        public UcpProfile fetchProfile(String ucpUrl) {
+        public UcpProfile fetchProfile(String merchantDomain, String ucpUrl) {
             return profile;
         }
     }

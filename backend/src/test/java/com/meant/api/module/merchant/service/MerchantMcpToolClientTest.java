@@ -1,20 +1,26 @@
 package com.meant.api.module.merchant.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import java.net.InetAddress;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.hc.client5.http.config.Configurable;
+import org.apache.hc.client5.http.config.RequestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -22,10 +28,10 @@ import org.springframework.web.client.RestClient;
 class MerchantMcpToolClientTest {
 
     @Test
-    void usesAbsoluteEndpointWhenDomainIsMissing() {
+    void usesAllowedAbsoluteEndpoint() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        MerchantMcpToolClient client = new MerchantMcpToolClient(restClientBuilder.build());
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
         server.expect(requestTo("https://advertised.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
@@ -47,10 +53,10 @@ class MerchantMcpToolClientTest {
         MerchantMcpToolCallResult result = client.callTool(
                 new MerchantSemanticSearchResult(
                         UUID.randomUUID(),
-                        null,
+                        "advertised.example",
                         "Merchant",
                         "https://advertised.example/api/mcp",
-                        "/relative/mcp",
+                        null,
                         "Context",
                         0.9d,
                         0.8d,
@@ -66,6 +72,32 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
+    void blocksLocalhostEndpointWithoutSendingRequest() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "127.0.0.1");
+
+        assertThatThrownBy(() -> client.callTool(
+                new MerchantSemanticSearchResult(
+                        UUID.randomUUID(),
+                        "localhost",
+                        "Merchant",
+                        "https://localhost/api/mcp",
+                        null,
+                        "Context",
+                        0.9d,
+                        0.8d,
+                        1
+                ),
+                "search_catalog",
+                Map.of("catalog", Map.of("query", "candle"))
+        ))
+                .isInstanceOf(MerchantMcpToolException.class)
+                .hasMessageContaining("failed for all endpoint candidates");
+        server.verify();
+    }
+
+    @Test
     void customTimeoutsDoNotMutateSharedBuilder() {
         SimpleClientHttpRequestFactory sharedRequestFactory = new SimpleClientHttpRequestFactory();
         sharedRequestFactory.setConnectTimeout(Duration.ofMillis(1234));
@@ -74,21 +106,39 @@ class MerchantMcpToolClientTest {
 
         MerchantMcpToolClient client = new MerchantMcpToolClient(
                 restClientBuilder,
-                new MerchantMcpToolProperties(5000, 5000)
+                new MerchantMcpToolProperties(5000, 5000),
+                new MerchantOutboundUrlValidator()
         );
 
-        Object mcpRequestFactory = restClientRequestFactory(ReflectionTestUtils.getField(client, "restClient"));
-        Object sharedBuilderRequestFactory = restClientRequestFactory(restClientBuilder.build());
+        MerchantClientHttpRequestFactory mcpRequestFactory = merchantRequestFactory(
+                ReflectionTestUtils.getField(client, "restClient")
+        );
+        SimpleClientHttpRequestFactory sharedBuilderRequestFactory = simpleRequestFactory(restClientBuilder.build());
+        RequestConfig mcpRequestConfig = ((Configurable) mcpRequestFactory.getHttpClient()).getConfig();
 
-        assertThat(ReflectionTestUtils.getField(mcpRequestFactory, "connectTimeout")).isEqualTo(5000);
-        assertThat(ReflectionTestUtils.getField(mcpRequestFactory, "readTimeout")).isEqualTo(5000);
+        assertThat(mcpRequestConfig.getConnectTimeout().toMilliseconds()).isEqualTo(5000L);
+        assertThat(mcpRequestConfig.getResponseTimeout().toMilliseconds()).isEqualTo(5000L);
+        assertThat(mcpRequestConfig.isRedirectsEnabled()).isFalse();
         assertThat(ReflectionTestUtils.getField(sharedBuilderRequestFactory, "connectTimeout")).isEqualTo(1234);
         assertThat(ReflectionTestUtils.getField(sharedBuilderRequestFactory, "readTimeout")).isEqualTo(5678);
     }
 
-    private Object restClientRequestFactory(Object restClient) {
+    private MerchantMcpToolClient client(RestClient restClient, String resolvedAddress) {
+        return new MerchantMcpToolClient(
+                restClient,
+                MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName(resolvedAddress)))
+        );
+    }
+
+    private MerchantClientHttpRequestFactory merchantRequestFactory(Object restClient) {
+        Object requestFactory = ReflectionTestUtils.getField(restClient, "clientRequestFactory");
+        assertThat(requestFactory).isInstanceOf(MerchantClientHttpRequestFactory.class);
+        return (MerchantClientHttpRequestFactory) requestFactory;
+    }
+
+    private SimpleClientHttpRequestFactory simpleRequestFactory(Object restClient) {
         Object requestFactory = ReflectionTestUtils.getField(restClient, "clientRequestFactory");
         assertThat(requestFactory).isInstanceOf(SimpleClientHttpRequestFactory.class);
-        return requestFactory;
+        return (SimpleClientHttpRequestFactory) requestFactory;
     }
 }
