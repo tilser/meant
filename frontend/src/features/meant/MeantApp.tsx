@@ -592,13 +592,30 @@ function normalizeSingleSeparatorPriceAmount(value: string, separator: ',' | '.'
   const lastSeparator = value.lastIndexOf(separator)
   const separatorPattern = separator === ',' ? /,/g : /\./g
   if (firstSeparator !== lastSeparator) {
-    return value.replace(separatorPattern, '')
+    return hasGroupedThousandsPriceAmount(value, separator) ? value.replace(separatorPattern, '') : ''
   }
   const fractionalDigits = value.length - lastSeparator - 1
-  if (fractionalDigits === 3 && lastSeparator <= 3) {
+  if (separator === ',' && fractionalDigits === 3 && lastSeparator <= 3) {
     return value.replace(separatorPattern, '')
   }
   return separator === ',' ? value.replace(',', '.') : value
+}
+
+function hasGroupedThousandsPriceAmount(value: string, separator: ',' | '.'): boolean {
+  const firstSeparator = value.indexOf(separator)
+  if (firstSeparator <= 0 || firstSeparator > 3) {
+    return false
+  }
+  let groupStart = firstSeparator + 1
+  while (groupStart < value.length) {
+    const nextSeparator = value.indexOf(separator, groupStart)
+    const groupEnd = nextSeparator === -1 ? value.length : nextSeparator
+    if (groupEnd - groupStart !== 3) {
+      return false
+    }
+    groupStart = groupEnd + 1
+  }
+  return groupStart === value.length + 1
 }
 
 function normalizeRatingScore(value: number | null | undefined): number | null {

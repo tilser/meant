@@ -188,6 +188,29 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     @Test
+    void treatsSingleDotRatingDecimalAsDecimalValue() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
+                new CatalogSearchResponse.Money(5200L, "USD"),
+                Map.of("value", "4.500"),
+                "214",
+                Map.of("fabric", "100% organic cotton"),
+                Map.of("fit", "relaxed")
+        ))));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.ratingScore()).isEqualTo(4.5d);
+            assertThat(product.reviewCount()).isEqualTo(214);
+        });
+    }
+
+    @Test
     void ignoresNullRichCatalogListItems() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
@@ -453,6 +476,33 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(result.products()).extracting("productId").containsExactly("euro-lamp");
+    }
+
+    @Test
+    void appliesDetailPriceFilterWithSingleDotDecimalSeparator() {
+        MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("decimal-candle", "Decimal Candle", "Small candle", "decor", 450L, 450L, "USD")
+        )));
+        merchantProductDetailsClient.prices.put("decimal-candle", "4.500");
+        merchantProductDetailsClient.currencies.put("decimal-candle", "USD");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "candle under 5 USD",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new CatalogSearchContext("US", null, null, "en", "USD", "Original request: candle under 5 USD"),
+                        null,
+                        new CatalogSearchFilters(List.of(), new CatalogSearchPriceFilter(null, 500L))
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("decimal-candle");
     }
 
     private MerchantSemanticSearchResult merchant(String domain, String name, int rank) {

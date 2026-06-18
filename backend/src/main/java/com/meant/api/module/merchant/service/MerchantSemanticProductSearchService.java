@@ -853,7 +853,7 @@ public class MerchantSemanticProductSearchService {
         int signedOffset = value.startsWith("-") ? 1 : 0;
         int integralDigits = lastSeparator - signedOffset;
         int fractionalDigits = value.length() - lastSeparator - 1;
-        if (fractionalDigits == 3 && integralDigits >= 1 && integralDigits <= 3) {
+        if (separator == ',' && fractionalDigits == 3 && integralDigits >= 1 && integralDigits <= 3) {
             return value.replace(String.valueOf(separator), "");
         }
         return separator == ',' ? value.replace(',', '.') : value;
@@ -874,7 +874,7 @@ public class MerchantSemanticProductSearchService {
             }
             groupStart = groupEnd + 1;
         }
-        return true;
+        return groupStart == value.length() + 1;
     }
 
     private Object firstMapValue(Map<?, ?> map, String... keys) {
@@ -1044,15 +1044,12 @@ public class MerchantSemanticProductSearchService {
                     ? cleaned.replace(".", "").replace(',', '.')
                     : cleaned.replace(",", "");
         } else if (cleaned.contains(",")) {
-            int commaIndex = cleaned.lastIndexOf(',');
-            cleaned = cleaned.length() - commaIndex == 3
-                    ? cleaned.replace(',', '.')
-                    : cleaned.replace(",", "");
+            cleaned = normalizeSingleSeparatorDecimal(cleaned, ',');
         } else if (cleaned.contains(".")) {
-            int dotIndex = cleaned.lastIndexOf('.');
-            if (cleaned.length() - dotIndex == 4) {
-                cleaned = cleaned.replace(".", "");
-            }
+            cleaned = normalizeSingleSeparatorDecimal(cleaned, '.');
+        }
+        if (cleaned == null) {
+            return null;
         }
         try {
             BigDecimal decimal = new BigDecimal(cleaned);
