@@ -556,8 +556,49 @@ function parsePriceAmount(value: string | number | null | undefined): number | n
   if (typeof value === 'number') {
     return value / 100
   }
-  const parsed = Number.parseFloat(value.replace(/[^0-9.]+/g, ''))
+  const parsed = Number.parseFloat(normalizeLocalizedPriceAmount(value))
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeLocalizedPriceAmount(value: string): string {
+  const cleaned = value.trim().replace(/[^0-9.,-]+/g, '')
+  if (!cleaned) {
+    return ''
+  }
+  const sign = cleaned.includes('-') ? '-' : ''
+  const unsigned = cleaned.replace(/-/g, '')
+  if (!/[0-9]/.test(unsigned)) {
+    return ''
+  }
+  const lastDot = unsigned.lastIndexOf('.')
+  const lastComma = unsigned.lastIndexOf(',')
+
+  if (lastDot !== -1 && lastComma !== -1) {
+    return sign + (lastComma > lastDot
+      ? unsigned.replace(/\./g, '').replace(',', '.')
+      : unsigned.replace(/,/g, ''))
+  }
+  if (lastComma !== -1) {
+    return sign + normalizeSingleSeparatorPriceAmount(unsigned, ',')
+  }
+  if (lastDot !== -1) {
+    return sign + normalizeSingleSeparatorPriceAmount(unsigned, '.')
+  }
+  return sign + unsigned
+}
+
+function normalizeSingleSeparatorPriceAmount(value: string, separator: ',' | '.'): string {
+  const firstSeparator = value.indexOf(separator)
+  const lastSeparator = value.lastIndexOf(separator)
+  const separatorPattern = separator === ',' ? /,/g : /\./g
+  if (firstSeparator !== lastSeparator) {
+    return value.replace(separatorPattern, '')
+  }
+  const fractionalDigits = value.length - lastSeparator - 1
+  if (fractionalDigits === 3 && lastSeparator <= 3) {
+    return value.replace(separatorPattern, '')
+  }
+  return separator === ',' ? value.replace(',', '.') : value
 }
 
 function normalizeRatingScore(value: number | null | undefined): number | null {
