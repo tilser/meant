@@ -554,7 +554,7 @@ function parsePriceAmount(value: string | number | null | undefined): number | n
     return null
   }
   if (typeof value === 'number') {
-    return value > 999 ? value / 100 : value
+    return value / 100
   }
   const parsed = Number.parseFloat(value.replace(/[^0-9.]+/g, ''))
   return Number.isFinite(parsed) ? parsed : null
