@@ -6,7 +6,9 @@ import java.util.List;
 
 public record UserSettingsResponse(
         Integer budget,
+        String clothingFit,
         UserLocationResponse location,
+        List<UserLocationResponse> locations,
         List<ShoppingFilterResponse> filters,
         List<ShoppingFilterResponse> availableFilters,
         List<String> parsedFilterIds,
@@ -18,7 +20,9 @@ public record UserSettingsResponse(
     public static UserSettingsResponse from(UserSettingsResult result) {
         return new UserSettingsResponse(
                 result.budget(),
+                result.clothingFit(),
                 UserLocationResponse.from(result.location()),
+                result.locations().stream().map(UserLocationResponse::from).toList(),
                 result.filters().stream().map(ShoppingFilterResponse::from).toList(),
                 result.availableFilters().stream().map(ShoppingFilterResponse::from).toList(),
                 result.parsedFilterIds(),

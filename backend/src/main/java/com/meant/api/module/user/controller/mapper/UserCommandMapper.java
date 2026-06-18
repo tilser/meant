@@ -43,12 +43,22 @@ public final class UserCommandMapper {
         return new UpdateUserSettingsCommand(
                 userId,
                 request.budget(),
+                Boolean.TRUE.equals(request.budgetUnlimited()),
+                request.clothingFit(),
                 request.location() == null
                         ? null
                         : new UserLocationCommand(
                                 request.location().country(),
                                 request.location().code(),
                                 request.location().city()),
+                request.locations() == null
+                        ? null
+                        : request.locations().stream()
+                                .map(location -> new UserLocationCommand(
+                                        location.country(),
+                                        location.code(),
+                                        location.city()))
+                                .toList(),
                 request.filterIds() == null ? null : new LinkedHashSet<>(request.filterIds()),
                 parsedFilters == null ? Set.of() : new LinkedHashSet<>(parsedFilters.filterIds()),
                 parsedFilters == null ? List.of() : parsedFilters.unmappedPreferences());

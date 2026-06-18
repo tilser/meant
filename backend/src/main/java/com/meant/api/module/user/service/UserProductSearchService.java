@@ -135,6 +135,7 @@ public class UserProductSearchService {
                 profileHash,
                 false,
                 products.stream()
+                        .filter(product -> explanations.containsKey(product.productKey()))
                         .map(product -> UserProductSearchProductResult.from(
                                 UserProductSearchResultItem.from(
                                         UUID.randomUUID(),

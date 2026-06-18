@@ -206,6 +206,7 @@ public class UserProductSearchPersistenceService {
         UserProductSearch savedSearch = userProductSearchRepository.save(search);
         userProductSearchResultItemRepository.deleteBySearchId(savedSearch.getId());
         List<UserProductSearchResultItem> items = products.stream()
+                .filter(product -> explanations.containsKey(product.productKey()))
                 .map(product -> UserProductSearchResultItem.from(
                         savedSearch.getId(),
                         product.productKey(),
@@ -220,10 +221,7 @@ public class UserProductSearchPersistenceService {
                 normalizedQuery,
                 profileHash,
                 false,
-                items.stream()
-                        .sorted(Comparator.comparingInt(UserProductSearchResultItem::getRank))
-                        .map(item -> UserProductSearchProductResult.from(item, explanations.get(item.getProductKey())))
-                        .toList()
+                productResults(items, explanations)
         );
     }
 
@@ -252,9 +250,8 @@ public class UserProductSearchPersistenceService {
                                 LinkedHashMap::new
                         ))
         );
-        if (!explanations.keySet().containsAll(items.stream()
-                .map(UserProductSearchResultItem::getProductKey)
-                .toList())) {
+        List<UserProductSearchProductResult> products = productResults(items, explanations);
+        if (!items.isEmpty() && products.isEmpty()) {
             return java.util.Optional.empty();
         }
         return java.util.Optional.of(new UserProductSearchResult(
@@ -262,10 +259,19 @@ public class UserProductSearchPersistenceService {
                 normalizedQuery,
                 profileHash,
                 cached,
-                items.stream()
-                        .map(item -> UserProductSearchProductResult.from(item, explanations.get(item.getProductKey())))
-                        .toList()
+                products
         ));
+    }
+
+    private List<UserProductSearchProductResult> productResults(
+            List<UserProductSearchResultItem> items,
+            Map<String, UserProductRecommendationExplanationResult> explanations
+    ) {
+        return items.stream()
+                .filter(item -> explanations.containsKey(item.getProductKey()))
+                .sorted(Comparator.comparingInt(UserProductSearchResultItem::getRank))
+                .map(item -> UserProductSearchProductResult.from(item, explanations.get(item.getProductKey())))
+                .toList();
     }
 
     private Map<String, UserProductRecommendationExplanationResult> loadExplanations(

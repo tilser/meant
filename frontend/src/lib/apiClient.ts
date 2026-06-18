@@ -25,7 +25,9 @@ export interface UserSettingsLocation {
 
 export interface UserSettingsProfile {
   budget: number | null
+  clothingFit: 'men' | 'women' | 'other' | null
   location: UserSettingsLocation | null
+  locations: UserSettingsLocation[]
   filters: ShoppingFilterProfile[]
   availableFilters: ShoppingFilterProfile[]
   parsedFilterIds: string[]
@@ -299,8 +301,10 @@ export async function getMerchants(): Promise<MerchantProfile[]> {
 }
 
 export async function updateUserSettings(input: {
-  budget?: number
+  budget?: number | null
+  clothingFit?: 'men' | 'women' | 'other' | 'none'
   location?: UserSettingsLocation | null
+  locations?: readonly UserSettingsLocation[]
   filterIds?: readonly string[]
   preferenceDescription?: string
 }): Promise<UserSettingsProfile> {
@@ -311,8 +315,11 @@ export async function updateUserSettings(input: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      budget: input.budget,
+      budget: typeof input.budget === 'number' ? input.budget : undefined,
+      budgetUnlimited: input.budget === null ? true : undefined,
+      clothingFit: input.clothingFit,
       location: input.location,
+      locations: input.locations,
       filterIds: input.filterIds,
       preferenceDescription: input.preferenceDescription,
     }),

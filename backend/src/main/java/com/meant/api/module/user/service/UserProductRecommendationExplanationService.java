@@ -5,7 +5,7 @@ import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
-import com.meant.api.module.user.exception.UserProductSearchException;
+import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -13,7 +13,6 @@ import com.meant.api.module.user.service.dto.UserProductRecommendationExplanatio
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.time.Instant;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,6 +22,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
@@ -31,6 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class UserProductRecommendationExplanationService {
 
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
@@ -78,11 +79,18 @@ public class UserProductRecommendationExplanationService {
             return cached;
         }
 
-        List<UserProductRecommendationExplanationResult> generated = generate(
-                query,
-                settings,
-                missing
-        );
+        List<UserProductRecommendationExplanationResult> generated;
+        try {
+            generated = generate(
+                    query,
+                    settings,
+                    missing
+            );
+        } catch (OpenRouterException exception) {
+            log.warn("Could not generate product explanations; returning explainable products only: {}",
+                    exception.getMessage());
+            return cached;
+        }
         Map<String, UserProductRecommendationExplanationResult> saved =
                 userProductSearchPersistenceService.saveExplanations(
                         userId,
@@ -94,7 +102,6 @@ public class UserProductRecommendationExplanationService {
                         Instant.now()
                 );
         cached.putAll(saved);
-        validateAllProductsExplained(products, cached.keySet());
         return cached;
     }
 
@@ -128,7 +135,8 @@ public class UserProductRecommendationExplanationService {
 
                 User profile:
                 Budget: %s
-                Location: %s
+                Delivery locations: %s
+                Clothing fit: %s
                 Active filters:
                 %s
 
@@ -137,7 +145,8 @@ public class UserProductRecommendationExplanationService {
                 """.formatted(
                 query,
                 settings.budget() == null ? "not set" : settings.budget(),
-                location(settings.location()),
+                locations(settings.locations()),
+                clothingFit(settings.clothingFit()),
                 filterCatalog(settings.filters()),
                 productCatalog(products)
         );
@@ -250,9 +259,6 @@ public class UserProductRecommendationExplanationService {
                 .values()
                 .stream()
                 .toList();
-        validateAllProductsExplained(products, explanations.stream()
-                .map(UserProductRecommendationExplanationResult::productKey)
-                .collect(Collectors.toSet()));
         return explanations;
     }
 
@@ -285,19 +291,6 @@ public class UserProductRecommendationExplanationService {
         }
     }
 
-    private void validateAllProductsExplained(
-            List<UserProductSearchProductSnapshot> products,
-            Collection<String> explainedProductKeys
-    ) {
-        List<String> missing = products.stream()
-                .map(UserProductSearchProductSnapshot::productKey)
-                .filter(productKey -> !explainedProductKeys.contains(productKey))
-                .toList();
-        if (!missing.isEmpty()) {
-            throw new UserProductSearchException("OpenRouter did not explain products: " + missing);
-        }
-    }
-
     private List<String> sanitizeFilterIds(List<String> filterIds, Set<String> validFilterIds) {
         if (filterIds == null || validFilterIds.isEmpty()) {
             return List.of();
@@ -322,6 +315,20 @@ public class UserProductRecommendationExplanationService {
             return "not set";
         }
         return "%s, %s (%s)".formatted(location.city(), location.country(), location.code());
+    }
+
+    private String locations(List<UserLocationResult> locations) {
+        if (locations.isEmpty()) {
+            return "not set";
+        }
+        return locations.stream()
+                .map(this::location)
+                .collect(Collectors.joining("; "));
+    }
+
+    private String clothingFit(String clothingFit) {
+        String label = UserClothingFit.labelFor(clothingFit);
+        return label == null ? "not set" : label;
     }
 
     private String price(MerchantSemanticProductResult product) {

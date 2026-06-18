@@ -18,6 +18,8 @@ export type Theme = 'light' | 'dark'
 export type AuthMode = 'signin' | 'signup' | 'reset'
 export type OrderStatus = 'Delivered' | 'In transit' | 'Processing'
 export type DiscountType = 'percent' | 'fixed' | 'shipping'
+export type ClothingFit = 'none' | 'men' | 'women' | 'other'
+export type ProductAudience = 'men' | 'women' | 'other' | 'unisex'
 
 export interface Preference {
   id: PreferenceId
@@ -72,6 +74,7 @@ export interface Product {
   offers: readonly Offer[]
   needs?: PortType
   provides?: readonly PortType[]
+  audiences?: readonly ProductAudience[]
 }
 
 export interface Reply {

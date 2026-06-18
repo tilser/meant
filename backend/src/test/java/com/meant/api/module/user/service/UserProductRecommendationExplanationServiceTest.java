@@ -88,6 +88,74 @@ class UserProductRecommendationExplanationServiceTest {
         assertThat(result.get("merchant.example:tee")).isEqualTo(cached);
     }
 
+    @Test
+    void explainSkipsProductsMissingFromGeneratedExplanations() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
+        UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
+        openRouterChatClient.response = """
+                {
+                  "products": [
+                    {
+                      "productKey": "merchant.example:tee",
+                      "whyMeantForYou": "Organic cotton matches your profile.",
+                      "matchedFilterIds": ["organic-cotton"],
+                      "missedFilterIds": []
+                    }
+                  ]
+                }
+                """;
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.explain(
+                UUID.randomUUID(),
+                "cotton tee",
+                "cotton tee",
+                "profile-hash",
+                settings(),
+                List.of(
+                        snapshot(),
+                        snapshot("merchant.example:socks", "product-hash-socks", "socks", "Organic Cotton Socks")
+                )
+        );
+
+        assertThat(result).containsOnlyKeys("merchant.example:tee");
+        assertThat(persistenceService.saved).singleElement()
+                .extracting(UserProductRecommendationExplanationResult::productKey)
+                .isEqualTo("merchant.example:tee");
+    }
+
+    @Test
+    void explainReturnsCachedExplanationsWhenGenerationFails() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.fail = true;
+        FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
+        UserProductRecommendationExplanationResult cached = new UserProductRecommendationExplanationResult(
+                "merchant.example:tee",
+                "product-hash",
+                "Cached explanation",
+                List.of("organic-cotton"),
+                List.of()
+        );
+        persistenceService.cached.put(cached.productKey(), cached);
+        UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.explain(
+                UUID.randomUUID(),
+                "cotton tee",
+                "cotton tee",
+                "profile-hash",
+                settings(),
+                List.of(
+                        snapshot(),
+                        snapshot("merchant.example:socks", "product-hash-socks", "socks", "Organic Cotton Socks")
+                )
+        );
+
+        assertThat(openRouterChatClient.called).isTrue();
+        assertThat(result).containsOnly(Map.entry("merchant.example:tee", cached));
+        assertThat(persistenceService.saved).isEmpty();
+    }
+
     private UserProductRecommendationExplanationService service(
             FakeOpenRouterChatClient openRouterChatClient,
             FakeUserProductSearchPersistenceService persistenceService
@@ -154,6 +222,8 @@ class UserProductRecommendationExplanationServiceTest {
         return new UserSettingsResult(
                 100,
                 null,
+                null,
+                List.of(),
                 List.of(organicCotton, noPolyester, crypto),
                 List.of(organicCotton, noPolyester, crypto),
                 List.of(),
@@ -164,6 +234,15 @@ class UserProductRecommendationExplanationServiceTest {
     }
 
     private UserProductSearchProductSnapshot snapshot() {
+        return snapshot("merchant.example:tee", "product-hash", "tee", "Organic Cotton Tee");
+    }
+
+    private UserProductSearchProductSnapshot snapshot(
+            String productKey,
+            String productHash,
+            String productId,
+            String title
+    ) {
         MerchantSemanticProductResult product = new MerchantSemanticProductResult(
                 UUID.randomUUID(),
                 "merchant.example",
@@ -172,11 +251,11 @@ class UserProductRecommendationExplanationServiceTest {
                 1,
                 0.9d,
                 0.8d,
-                "tee",
-                "Organic Cotton Tee",
+                productId,
+                title,
                 "<p>Organic cotton tee with no polyester.</p>",
-                "https://merchant.example/products/tee",
-                "https://merchant.example/tee.jpg",
+                "https://merchant.example/products/" + productId,
+                "https://merchant.example/" + productId + ".jpg",
                 3800L,
                 3800L,
                 "USD",
@@ -205,8 +284,8 @@ class UserProductRecommendationExplanationServiceTest {
                 1
         );
         return new UserProductSearchProductSnapshot(
-                "merchant.example:tee",
-                "product-hash",
+                productKey,
+                productHash,
                 product
         );
     }
@@ -214,6 +293,7 @@ class UserProductRecommendationExplanationServiceTest {
     static class FakeOpenRouterChatClient extends OpenRouterChatClient {
 
         private String response;
+        private boolean fail;
         private boolean called;
         private String model;
         private OpenRouterJsonSchemaDefinition schema;
@@ -237,6 +317,9 @@ class UserProductRecommendationExplanationServiceTest {
             called = true;
             this.model = model;
             this.schema = schema;
+            if (fail) {
+                throw new com.meant.api.common.exception.OpenRouterException("failed");
+            }
             return response;
         }
     }

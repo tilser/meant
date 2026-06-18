@@ -199,7 +199,7 @@ class UserProductSearchSuggestionServiceTest {
     static class FakeUserSettingsService extends UserSettingsService {
 
         FakeUserSettingsService() {
-            super(null, null, null, null);
+            super(null, null, null, null, null);
         }
 
         @Override
@@ -222,7 +222,9 @@ class UserProductSearchSuggestionServiceTest {
             );
             return new UserSettingsResult(
                     80,
+                    null,
                     new UserLocationResult("Czechia", "CZ", "Prague"),
+                    List.of(new UserLocationResult("Czechia", "CZ", "Prague")),
                     List.of(organic, noPolyester),
                     List.of(organic, noPolyester),
                     List.of(),

@@ -6,6 +6,7 @@ import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
@@ -250,7 +251,8 @@ public class UserProductSearchCatalogInputBuilder {
         addPart(parts, priceIntent(parsedPrice, priceFilter, currency));
         addPart(parts, listPart("Hard constraints", queryIntent.constraints()));
         addPart(parts, listPart("Preference hints", queryIntent.preferenceHints()));
-        addPart(parts, locationIntent(settings.location()));
+        addPart(parts, locationsIntent(settings.locations()));
+        addPart(parts, clothingFitIntent(settings.clothingFit()));
         addPart(parts, activeFiltersIntent(settings.filters()));
 
         String intent = parts.stream()
@@ -276,15 +278,21 @@ public class UserProductSearchCatalogInputBuilder {
                 .formatted(prefix, priceFilter.minAmount(), valueSuffix(currency));
     }
 
-    private String locationIntent(UserLocationResult location) {
-        if (location == null) {
+    private String locationsIntent(List<UserLocationResult> locations) {
+        if (safeList(locations).isEmpty()) {
             return null;
         }
-        return "User location signal: %s, %s (%s)".formatted(
-                location.city(),
-                location.country(),
-                location.code()
-        );
+        return "User delivery location signals: " + safeList(locations).stream()
+                .map(location -> "%s, %s (%s)".formatted(
+                        location.city(),
+                        location.country(),
+                        location.code()))
+                .collect(Collectors.joining("; "));
+    }
+
+    private String clothingFitIntent(String clothingFit) {
+        String label = UserClothingFit.labelFor(clothingFit);
+        return label == null ? null : "Clothing fit signal: prefer " + label + " for apparel and footwear";
     }
 
     private String activeFiltersIntent(List<ShoppingFilterResult> filters) {

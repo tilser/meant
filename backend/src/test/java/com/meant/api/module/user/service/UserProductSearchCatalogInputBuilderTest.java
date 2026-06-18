@@ -70,7 +70,7 @@ class UserProductSearchCatalogInputBuilderTest {
         UserProductSearchCatalogInput input = builder.build(
                 "throw pillow",
                 intent("throw pillow"),
-                settings(new UserLocationResult("Czechia", "CZ", "Prague")),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague"), "men"),
                 "203.0.113.4",
                 "Meant Test"
         );
@@ -80,7 +80,8 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().currency()).isEqualTo("CZK");
         assertThat(input.context().intent())
                 .contains("Hard budget price filter: at most 120 CZK")
-                .contains("User location signal: Prague, Czechia (CZ)")
+                .contains("User delivery location signals: Prague, Czechia (CZ)")
+                .contains("Clothing fit signal: prefer men's sizing")
                 .contains("Organic - Prefer organic materials.");
         assertThat(input.signals().buyerIp()).isEqualTo("203.0.113.4");
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");
@@ -107,9 +108,16 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     private UserSettingsResult settings(UserLocationResult location) {
+        return settings(location, null);
+    }
+
+    private UserSettingsResult settings(UserLocationResult location, String clothingFit) {
+        List<UserLocationResult> locations = location == null ? List.of() : List.of(location);
         return new UserSettingsResult(
                 120,
+                clothingFit,
                 location,
+                locations,
                 List.of(new ShoppingFilterResult(
                         "organic",
                         "Organic",

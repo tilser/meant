@@ -28,6 +28,8 @@ public class UserSettings {
 
     private Integer budget;
 
+    private String clothingFit;
+
     private String locationCountry;
 
     private String locationCode;
@@ -42,8 +44,7 @@ public class UserSettings {
 
     public boolean update(Integer budget, UserLocationCommand location, Instant now) {
         boolean changed = false;
-        if (budget != null && !Objects.equals(this.budget, budget)) {
-            this.budget = budget;
+        if (budget != null && updateBudgetValue(budget)) {
             changed = true;
         }
         if (location != null && updateLocation(location)) {
@@ -55,8 +56,41 @@ public class UserSettings {
         return changed;
     }
 
+    public boolean updateBudget(Integer budget, Instant now) {
+        if (!updateBudgetValue(budget)) {
+            return false;
+        }
+        this.updatedAt = now;
+        return true;
+    }
+
+    public boolean updateClothingFit(String clothingFit, Instant now) {
+        if (Objects.equals(this.clothingFit, clothingFit)) {
+            return false;
+        }
+        this.clothingFit = clothingFit;
+        this.updatedAt = now;
+        return true;
+    }
+
+    public boolean updatePrimaryLocation(UserLocationCommand location, Instant now) {
+        boolean changed = location == null ? clearLocation() : updateLocation(location);
+        if (changed) {
+            this.updatedAt = now;
+        }
+        return changed;
+    }
+
     public void touch(Instant now) {
         this.updatedAt = now;
+    }
+
+    private boolean updateBudgetValue(Integer budget) {
+        if (Objects.equals(this.budget, budget)) {
+            return false;
+        }
+        this.budget = budget;
+        return true;
     }
 
     private boolean updateLocation(UserLocationCommand location) {
@@ -68,6 +102,18 @@ public class UserSettings {
         this.locationCountry = location.country();
         this.locationCode = location.code();
         this.locationCity = location.city();
+        return true;
+    }
+
+    private boolean clearLocation() {
+        if (this.locationCountry == null
+                && this.locationCode == null
+                && this.locationCity == null) {
+            return false;
+        }
+        this.locationCountry = null;
+        this.locationCode = null;
+        this.locationCity = null;
         return true;
     }
 }

@@ -61,6 +61,7 @@ import {
 import type {
   AuthMode,
   CartItem,
+  ClothingFit,
   CheckoutPayload,
   CorePreferenceId,
   Offer,
@@ -89,6 +90,7 @@ import {
   productMerchantCount,
   productPriceFrom,
   productsForLocation,
+  productsForClothingFit,
   readStorage,
   resolveAsk,
   writeStorage,
@@ -211,7 +213,15 @@ const STARTER_SEARCHES: readonly SearchSuggestion[] = [
 ]
 
 const DEFAULT_GREETING = 'Good afternoon'
+const DEFAULT_BUDGET = 120
 const SEARCH_SUGGESTION_COUNT = 4
+
+const CLOTHING_FIT_OPTIONS: readonly { value: ClothingFit; label: string }[] = [
+  { value: 'none', label: 'No preference' },
+  { value: 'men', label: "Men's" },
+  { value: 'women', label: "Women's" },
+  { value: 'other', label: 'Other' },
+]
 
 function greetingForHour(hour: number): string {
   if (hour >= 5 && hour < 12) {
@@ -357,17 +367,52 @@ function preferenceFromFilter(filter: ShoppingFilterProfile): Preference {
   }
 }
 
+function initialDeliveryLocations(): UserLocation[] {
+  const locations = readStorage<UserLocation[]>('meant.locations', [])
+  if (Array.isArray(locations) && locations.length > 0) {
+    return locations
+  }
+  const legacyLocation = readStorage<UserLocation | null>('meant.location', null)
+  return legacyLocation ? [legacyLocation] : []
+}
+
+function settingsLocations(settings: UserSettingsProfile): UserLocation[] {
+  if (settings.locations?.length) {
+    return settings.locations
+  }
+  return settings.location ? [settings.location] : []
+}
+
+function clothingFitFromSettings(settings: UserSettingsProfile): ClothingFit {
+  return settings.clothingFit ?? 'none'
+}
+
+function clothingFitLabel(value: ClothingFit): string {
+  return CLOTHING_FIT_OPTIONS.find((option) => option.value === value)?.label ?? 'No preference'
+}
+
+function deliveryLocationSummary(locations: readonly UserLocation[]): string {
+  if (locations.length === 0) {
+    return 'Anywhere'
+  }
+  const [primary, ...rest] = locations
+  const primaryLabel = `${primary.city}, ${primary.country}`
+  return rest.length > 0 ? `${primaryLabel} +${rest.length}` : primaryLabel
+}
+
 function applySettingsPayload(
   settings: UserSettingsProfile,
   setAvailablePrefs: Dispatch<SetStateAction<Preference[]>>,
   setPrefsOn: Dispatch<SetStateAction<PreferenceId[]>>,
-  setBudget: Dispatch<SetStateAction<number>>,
-  setLocation: Dispatch<SetStateAction<UserLocation | null>>,
+  setBudget: Dispatch<SetStateAction<number | null>>,
+  setDeliveryLocations: Dispatch<SetStateAction<UserLocation[]>>,
+  setClothingFit: Dispatch<SetStateAction<ClothingFit>>,
 ) {
   setAvailablePrefs(settings.availableFilters.map(preferenceFromFilter))
   setPrefsOn(settings.filters.map((filter) => filter.id))
-  setBudget(settings.budget ?? 120)
-  setLocation(settings.location)
+  setBudget(settings.budget)
+  setDeliveryLocations(settingsLocations(settings))
+  setClothingFit(clothingFitFromSettings(settings))
 }
 
 function stripHtml(value: string | null | undefined): string {
@@ -611,7 +656,7 @@ function savedProductInput(product: Product): SaveUserProductInput {
 
 function assistantProductContext(
   product: Product,
-  location: UserLocation | null,
+  deliveryLocations: readonly UserLocation[],
 ) {
   return {
     id: product.id,
@@ -619,7 +664,7 @@ function assistantProductContext(
     brand: product.brand,
     category: product.category,
     match: product.match,
-    priceFrom: productPriceFrom(product, location),
+    priceFrom: productPriceFrom(product, deliveryLocations),
     note: product.note,
   }
 }
@@ -2010,7 +2055,7 @@ function FloatingAsk({
 function ProductCard({
   product,
   index,
-  location,
+  deliveryLocations,
   preferences,
   onOpen,
   savedSet,
@@ -2019,7 +2064,7 @@ function ProductCard({
 }: Readonly<{
   product: Product
   index: number
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
 } & ProductOpenProps & ProductSaveProps>) {
   const open = () => onOpen(product)
@@ -2087,10 +2132,10 @@ function ProductCard({
         <div className="mt-card-foot">
           <span className="mt-card-price">
             <span className="mt-mono mt-card-from">from</span>{' '}
-            {money(productPriceFrom(product, location))}
+            {money(productPriceFrom(product, deliveryLocations))}
           </span>
           <span className="mt-mono mt-card-stores">
-            {productMerchantCount(product, location)} stores
+            {productMerchantCount(product, deliveryLocations)} stores
           </span>
         </div>
         <div className="mt-card-note">
@@ -2455,7 +2500,7 @@ function FeedView({
   discoveryError,
   popularSearches,
   popularSearchesLoading,
-  location,
+  deliveryLocations,
   prompts,
   reply,
   query,
@@ -2484,7 +2529,7 @@ function FeedView({
   discoveryError: string | null
   popularSearches: readonly SearchSuggestion[]
   popularSearchesLoading: boolean
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
   prompts: readonly string[]
   reply: string | null
   query: string
@@ -2583,11 +2628,11 @@ function FeedView({
         <h2 className="mt-feed-title">{title}</h2>
         <span className="mt-mono mt-feed-count">{count}</span>
       </div>
-      {location ? (
+      {deliveryLocations.length > 0 ? (
         <div className="mt-ship-strip">
           <span aria-hidden>⌖</span>
           <span>
-            Shipping to <strong>{location.city}, {location.country}</strong>
+            Shipping to <strong>{deliveryLocationSummary(deliveryLocations)}</strong>
           </span>
           {hiddenByShip > 0 ? (
             <span className="mt-ship-strip-hidden mt-mono">
@@ -2607,7 +2652,7 @@ function FeedView({
               key={product.id}
               product={product}
               index={index}
-              location={location}
+              deliveryLocations={deliveryLocations}
               preferences={preferences}
               onOpen={onOpen}
               savedSet={savedSet}
@@ -2657,7 +2702,7 @@ function FeedView({
 
 function ProductModal({
   product,
-  location,
+  deliveryLocations,
   preferences,
   saved,
   savePending,
@@ -2672,7 +2717,7 @@ function ProductModal({
   onNext,
 }: Readonly<{
   product: Product | null
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   saved: boolean
   savePending: boolean
@@ -2747,7 +2792,7 @@ function ProductModal({
     return null
   }
 
-  const offers = availableOffers(product, location)
+  const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = offers.length > 0 ? offers : product.offers
   const ask = (question: string) => {
     setMessages((current) => [
@@ -2756,7 +2801,7 @@ function ProductModal({
       { role: 'ai', text: resolveAsk(question, product, preferences) },
     ])
   }
-  const selectedOffer = bestOffer(product, location)
+  const selectedOffer = bestOffer(product, deliveryLocations)
   const canAddToCart = offerCartable(selectedOffer)
   const addDisabled = adding || !canAddToCart
   const addButtonLabel = added
@@ -2879,9 +2924,9 @@ function ProductModal({
             <h2 className="mt-modal-name">{product.name}</h2>
             <div className="mt-modal-price">
               <span className="mt-mono mt-card-from">from</span>{' '}
-              {money(productPriceFrom(product, location))}
+              {money(productPriceFrom(product, deliveryLocations))}
               <span className="mt-mono mt-modal-stores">
-                · {productMerchantCount(product, location)} stores
+                · {productMerchantCount(product, deliveryLocations)} stores
               </span>
             </div>
             <div className="mt-modal-actions">
@@ -3018,26 +3063,31 @@ function ProductModal({
 
 function ProfileBar({
   preferences,
-  location,
+  deliveryLocations,
+  clothingFit,
   onEdit,
 }: Readonly<{
   preferences: readonly Preference[]
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
+  clothingFit: ClothingFit
   onEdit: () => void
 }>) {
   return (
     <div className="mt-profile">
       <span className="mt-mono mt-profile-key">Your profile</span>
       <button
-        className={`mt-loc-chip ${location ? '' : 'empty'}`}
+        className={`mt-loc-chip ${deliveryLocations.length > 0 ? '' : 'empty'}`}
         type="button"
         onClick={onEdit}
       >
         <span aria-hidden>⌖</span>
-        {location
-          ? `${location.city}, ${location.country}`
-          : 'Set delivery location'}
+        {deliveryLocationSummary(deliveryLocations)}
       </button>
+      {clothingFit !== 'none' ? (
+        <button className="mt-loc-chip" type="button" onClick={onEdit}>
+          {clothingFitLabel(clothingFit)}
+        </button>
+      ) : null}
       <div className="mt-profile-chips">
         {preferences.length === 0 ? (
           <span className="mt-profile-empty mt-mono">No active preferences</span>
@@ -3404,7 +3454,7 @@ function AccountMenu({
 
 function SavedView({
   products,
-  location,
+  deliveryLocations,
   preferences,
   savedSet,
   savePendingSet,
@@ -3412,7 +3462,7 @@ function SavedView({
   onToggleSave,
 }: Readonly<{
   products: readonly Product[]
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
 } & ProductOpenProps & ProductSaveProps>) {
   return (
@@ -3439,7 +3489,7 @@ function SavedView({
               key={product.id}
               product={product}
               index={index}
-              location={location}
+              deliveryLocations={deliveryLocations}
               preferences={preferences}
               onOpen={onOpen}
               savedSet={savedSet}
@@ -3476,7 +3526,7 @@ function CompareView({
   savedProducts,
   compareIds,
   preferences,
-  location,
+  deliveryLocations,
   onRemove,
   onAdd,
   onOpen,
@@ -3485,7 +3535,7 @@ function CompareView({
   savedProducts: readonly Product[]
   compareIds: readonly ProductId[]
   preferences: readonly Preference[]
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
   onRemove: (index: number) => void
   onAdd: (product: Product) => void
   onOpen: (product: Product, products: readonly Product[]) => void
@@ -3501,12 +3551,14 @@ function CompareView({
     gridTemplateColumns: `180px repeat(${compareColumnCount}, minmax(180px, 240px))`,
   }
   const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
-  const bestPrice = enough ? Math.min(...items.map((product) => productPriceFrom(product, location))) : null
-  const bestMerchantCount = enough ? Math.max(...items.map((product) => productMerchantCount(product, location))) : null
+  const bestPrice = enough ? Math.min(...items.map((product) => productPriceFrom(product, deliveryLocations))) : null
+  const bestMerchantCount = enough
+    ? Math.max(...items.map((product) => productMerchantCount(product, deliveryLocations)))
+    : null
   const winner = enough
     ? [...items].sort((left, right) =>
         right.match - left.match ||
-        productPriceFrom(left, location) - productPriceFrom(right, location),
+        productPriceFrom(left, deliveryLocations) - productPriceFrom(right, deliveryLocations),
       )[0]
     : null
   const comparisonPreferenceIds = preferences
@@ -3567,8 +3619,8 @@ function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: money(productPriceFrom(product, location)),
-                win: bestPrice !== null && productPriceFrom(product, location) === bestPrice,
+                value: money(productPriceFrom(product, deliveryLocations)),
+                win: bestPrice !== null && productPriceFrom(product, deliveryLocations) === bestPrice,
               }))}
               addSpacer={showAdd}
             />
@@ -3577,8 +3629,8 @@ function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: `${productMerchantCount(product, location)}`,
-                win: bestMerchantCount !== null && productMerchantCount(product, location) === bestMerchantCount,
+                value: `${productMerchantCount(product, deliveryLocations)}`,
+                win: bestMerchantCount !== null && productMerchantCount(product, deliveryLocations) === bestMerchantCount,
               }))}
               addSpacer={showAdd}
             />
@@ -3632,7 +3684,7 @@ function CompareView({
             <div className="mt-cmp-grid mt-cmp-row mt-cmp-last" style={gridStyle}>
               <div className="mt-cmp-rowlabel">Best price at</div>
               {items.map((product) => {
-                const offer = bestOffer(product, location)
+                const offer = bestOffer(product, deliveryLocations)
                 return (
                   <div key={product.id} className="mt-cmp-cell">
                     <span className="mt-cmp-store">{offer.merchant}</span>
@@ -3916,8 +3968,10 @@ function PreferencesView({
   onApplyDescription,
   budget,
   onBudget,
-  location,
-  onLocation,
+  deliveryLocations,
+  onDeliveryLocations,
+  clothingFit,
+  onClothingFit,
   profile,
   onDone,
 }: Readonly<{
@@ -3925,10 +3979,12 @@ function PreferencesView({
   prefsOn: ReadonlySet<PreferenceId>
   onToggle: (id: PreferenceId) => void
   onApplyDescription: (text: string) => Promise<boolean>
-  budget: number
-  onBudget: (value: number) => void
-  location: UserLocation | null
-  onLocation: (location: UserLocation) => void
+  budget: number | null
+  onBudget: (value: number | null) => void
+  deliveryLocations: readonly UserLocation[]
+  onDeliveryLocations: (locations: UserLocation[]) => void
+  clothingFit: ClothingFit
+  onClothingFit: (value: ClothingFit) => void
   profile: typeof PROFILE
   onDone: () => void
 }>) {
@@ -3953,6 +4009,7 @@ function PreferencesView({
     () => preferenceGroupsFor(visiblePreferences),
     [visiblePreferences],
   )
+  const finiteBudget = budget ?? DEFAULT_BUDGET
 
   const copyQuestion = () => {
     const done = () => {
@@ -3994,12 +4051,40 @@ function PreferencesView({
           <div>
             <h3 className="mt-sectitle">Where it ships</h3>
             <p className="mt-secsub">
-              Set where you are and Meant only shows products from merchants that can deliver to you.
+              Leave shipping unrestricted, or add every place you want merchants to be able to deliver.
             </p>
           </div>
-          {location ? <span className="mt-mono mt-sec-count">Active</span> : null}
+          <span className="mt-mono mt-sec-count">
+            {deliveryLocations.length > 0 ? `${deliveryLocations.length} active` : 'Anywhere'}
+          </span>
         </div>
-        <LocationSection location={location} onSet={onLocation} />
+        <LocationSection locations={deliveryLocations} onSet={onDeliveryLocations} />
+      </section>
+
+      <section className="mt-prefs-section">
+        <div className="mt-sechead">
+          <div>
+            <h3 className="mt-sectitle">Clothing fit</h3>
+            <p className="mt-secsub">
+              Used when apparel, shoes, or sizing-specific products need a fit signal.
+            </p>
+          </div>
+          <span className="mt-mono mt-sec-count">{clothingFitLabel(clothingFit)}</span>
+        </div>
+        <div className="mt-fit-options" role="radiogroup" aria-label="Clothing fit">
+          {CLOTHING_FIT_OPTIONS.map((option) => (
+            <button
+              className={`mt-fit-option ${clothingFit === option.value ? 'active' : ''}`}
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={clothingFit === option.value}
+              onClick={() => onClothingFit(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="mt-prefs-section">
@@ -4156,18 +4241,29 @@ function PreferencesView({
             <div>
               <div className="mt-pref-name">Comfortable spend</div>
               <div className="mt-pref-desc">
-                Meant looks for the best quality it can find under this.
+                {budget === null
+                  ? 'Meant will not apply a profile-level price ceiling.'
+                  : 'Meant looks for the best quality it can find under this.'}
               </div>
             </div>
-            <div className="mt-budget-val">${budget}</div>
+            <div className="mt-budget-val">{budget === null ? 'Unlimited' : `$${budget}`}</div>
           </div>
+          <label className="mt-budget-toggle">
+            <input
+              type="checkbox"
+              checked={budget === null}
+              onChange={(event) => onBudget(event.target.checked ? null : finiteBudget)}
+            />
+            <span>No spend limit</span>
+          </label>
           <input
             className="mt-range"
             type="range"
             min="20"
             max="300"
             step="5"
-            value={budget}
+            value={finiteBudget}
+            disabled={budget === null}
             onChange={(event) => onBudget(Number(event.target.value))}
           />
           <div className="mt-budget-scale mt-mono">
@@ -4236,93 +4332,131 @@ function PreferencesView({
 }
 
 function LocationSection({
-  location,
+  locations,
   onSet,
 }: Readonly<{
-  location: UserLocation | null
-  onSet: (location: UserLocation) => void
+  locations: readonly UserLocation[]
+  onSet: (locations: UserLocation[]) => void
 }>) {
-  const [editing, setEditing] = useState(!location)
-  const [code, setCode] = useState(location?.code ?? '')
-  const [city, setCity] = useState(location?.city ?? '')
+  const [adding, setAdding] = useState(false)
+  const [code, setCode] = useState('')
+  const [city, setCity] = useState('')
   const country = LOCATIONS.find((option) => option.code === code)
+  const locationKeys = new Set(locations.map((location) => `${location.code}:${location.city}`))
 
   const save = () => {
     if (!country || !city) {
       return
     }
-    onSet({ code: country.code, country: country.country, city })
-    setEditing(false)
-  }
-
-  if (location && !editing) {
-    return (
-      <div className="mt-loc-set">
-        <span className="mt-loc-pin">⌖</span>
-        <div className="mt-loc-text">
-          <div className="mt-loc-city">{location.city}, {location.country}</div>
-          <div className="mt-loc-note">
-            Meant is hiding anything that cannot ship here.
-          </div>
-        </div>
-        <button className="mt-loc-change" type="button" onClick={() => setEditing(true)}>
-          Change
-        </button>
-      </div>
-    )
+    const nextLocation = { code: country.code, country: country.country, city }
+    const nextKey = `${nextLocation.code}:${nextLocation.city}`
+    onSet(locationKeys.has(nextKey) ? [...locations] : [...locations, nextLocation])
+    setCode('')
+    setCity('')
+    setAdding(false)
   }
 
   return (
-    <div className="mt-loc-form">
-      <div className="mt-loc-fields">
-        <label className="mt-field">
-          <span className="mt-field-label mt-mono">Country</span>
-          <select
-            className="mt-select"
-            value={code}
-            onChange={(event) => {
-              setCode(event.target.value)
-              setCity('')
-            }}
-          >
-            <option value="">Select country</option>
-            {LOCATIONS.map((option) => (
-              <option key={option.code} value={option.code}>
-                {option.country}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mt-field">
-          <span className="mt-field-label mt-mono">City</span>
-          <select
-            className="mt-select"
-            value={city}
-            disabled={!code}
-            onChange={(event) => setCity(event.target.value)}
-          >
-            <option value="">{code ? 'Select city' : 'Pick a country first'}</option>
-            {(country?.cities ?? []).map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="mt-describe-actions">
-        <button className="mt-act mt-act-primary" type="button" onClick={save} disabled={!code || !city}>
-          Save location
-        </button>
-        {location ? (
-          <button className="mt-act mt-act-ghost" type="button" onClick={() => setEditing(false)}>
-            Cancel
+    <div className="mt-loc-stack">
+      <div className={`mt-loc-set ${locations.length === 0 ? 'unrestricted' : ''}`}>
+        <span className="mt-loc-pin">⌖</span>
+        <div className="mt-loc-text">
+          <div className="mt-loc-city">
+            {locations.length === 0 ? 'Anywhere' : deliveryLocationSummary(locations)}
+          </div>
+          <div className="mt-loc-note">
+            {locations.length === 0
+              ? 'Meant is not hiding products by delivery destination.'
+              : 'Meant shows products that can ship to at least one selected destination.'}
+          </div>
+        </div>
+        <div className="mt-loc-actions">
+          {locations.length > 0 ? (
+            <button className="mt-loc-change" type="button" onClick={() => onSet([])}>
+              No delivery filter
+            </button>
+          ) : null}
+          <button className="mt-loc-change" type="button" onClick={() => setAdding(true)}>
+            <PlusIcon size={14} />
+            Add location
           </button>
-        ) : null}
-        <span className="mt-describe-hint">
-          Meant only shows products from merchants that can deliver to you.
-        </span>
+        </div>
       </div>
+
+      {locations.length > 0 ? (
+        <div className="mt-loc-selected" aria-label="Delivery locations">
+          {locations.map((location) => (
+            <button
+              className="mt-active-chip"
+              key={`${location.code}:${location.city}`}
+              type="button"
+              onClick={() => onSet(locations.filter((candidate) =>
+                candidate.code !== location.code || candidate.city !== location.city
+              ))}
+            >
+              <span>{location.city}, {location.country}</span>
+              <CloseIcon size={12} />
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {adding ? (
+        <div className="mt-loc-form">
+          <div className="mt-loc-fields">
+            <label className="mt-field">
+              <span className="mt-field-label mt-mono">Country</span>
+              <select
+                className="mt-select"
+                value={code}
+                onChange={(event) => {
+                  setCode(event.target.value)
+                  setCity('')
+                }}
+              >
+                <option value="">Select country</option>
+                {LOCATIONS.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.country}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-field">
+              <span className="mt-field-label mt-mono">City</span>
+              <select
+                className="mt-select"
+                value={city}
+                disabled={!code}
+                onChange={(event) => setCity(event.target.value)}
+              >
+                <option value="">{code ? 'Select city' : 'Pick a country first'}</option>
+                {(country?.cities ?? []).map((candidate) => (
+                  <option key={candidate} value={candidate}>
+                    {candidate}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-describe-actions">
+            <button className="mt-act mt-act-primary" type="button" onClick={save} disabled={!code || !city}>
+              Add location
+            </button>
+            <button
+              className="mt-act mt-act-ghost"
+              type="button"
+              onClick={() => {
+                setAdding(false)
+                setCode('')
+                setCity('')
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -4330,7 +4464,7 @@ function LocationSection({
 function CartView({
   cart,
   products,
-  location,
+  deliveryLocations,
   onRemove,
   onQty,
   onAdd,
@@ -4340,7 +4474,7 @@ function CartView({
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
-  location: UserLocation | null
+  deliveryLocations: readonly UserLocation[]
   onRemove: (id: ProductId, merchant: string) => void
   onQty: (id: ProductId, merchant: string, qty: number) => void
   onAdd: (id: ProductId, merchant: string) => void
@@ -4358,8 +4492,8 @@ function CartView({
 
   const lines = cartLines(cart, products)
   const alerts = computeSmartAlerts(lines, products)
-  const shipWarnings = location
-    ? lines.filter((line) => !canMerchantShip(line.merchant, location))
+  const shipWarnings = deliveryLocations.length > 0
+    ? lines.filter((line) => !canMerchantShip(line.merchant, deliveryLocations))
     : []
   const groups = cartGroups(lines, scanning)
   const itemsTotal = groups.reduce((sum, group) => sum + group.subtotal, 0)
@@ -4397,9 +4531,9 @@ function CartView({
                 <div key={`ship-${line.id}-${line.merchant}`} className="mt-alert mt-alert-warn">
                   <span className="mt-alert-ico">!</span>
                   <div className="mt-alert-body">
-                    <div className="mt-alert-title">Does not ship to {location?.city}</div>
+                    <div className="mt-alert-title">Does not ship to selected destinations</div>
                     <div className="mt-alert-text">
-                      {line.merchant} cannot deliver {line.product.name} to {location?.city}, {location?.country}.
+                      {line.merchant} cannot deliver {line.product.name} to {deliveryLocationSummary(deliveryLocations)}.
                     </div>
                   </div>
                   <button className="mt-alert-fix" type="button" onClick={() => onRemove(line.id, line.merchant)}>
@@ -5203,8 +5337,12 @@ export function MeantApp() {
   const [compareProducts, setCompareProducts] = useStoredState<Product[]>('meant.compareProducts', [])
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
   const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
-  const [budget, setBudget] = useStoredState('meant.budget', 120)
-  const [location, setLocation] = useStoredState<UserLocation | null>('meant.location', null)
+  const [budget, setBudget] = useStoredState<number | null>('meant.budget', DEFAULT_BUDGET)
+  const [deliveryLocations, setDeliveryLocations] = useStoredState<UserLocation[]>(
+    'meant.locations',
+    initialDeliveryLocations(),
+  )
+  const [clothingFit, setClothingFit] = useStoredState<ClothingFit>('meant.clothingFit', 'none')
   const [cart, setCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
   const [checkoutMerchant, setCheckoutMerchant] = useState<string | null>(null)
   const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(null)
@@ -5272,8 +5410,8 @@ export function MeantApp() {
 
   const searchActive = Boolean(query || searchLoading || searchError)
   const baseFeed = searchActive ? searchResults : discoveryProducts
-  const localizedFeedProducts = productsForLocation(baseFeed, location)
-  const unscopedFeedProducts = localizedFeedProducts
+  const shippingScopedFeedProducts = productsForLocation(baseFeed, deliveryLocations)
+  const unscopedFeedProducts = productsForClothingFit(shippingScopedFeedProducts, clothingFit)
   const selectedMerchant = useMemo(
     () => merchants.find((merchant) => merchant.id === selectedMerchantId) ?? null,
     [merchants, selectedMerchantId],
@@ -5296,7 +5434,7 @@ export function MeantApp() {
         .filter((product): product is Product => Boolean(product))
     : unscopedFeedProducts
   const feedProducts = merchantScopedFeedProducts
-  const hiddenByShip = baseFeed.length - localizedFeedProducts.length
+  const hiddenByShip = baseFeed.length - shippingScopedFeedProducts.length
 
   const openProduct = useCallback((product: Product, list?: readonly Product[]) => {
     setActiveProduct(product)
@@ -5433,7 +5571,7 @@ export function MeantApp() {
     getUserSettings()
       .then((settings) => {
         if (!active) return
-        applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setLocation)
+        applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit)
       })
       .catch(() => {
         if (!active) return
@@ -5483,7 +5621,7 @@ export function MeantApp() {
     return () => {
       active = false
     }
-  }, [userId, userEmail, setUser, setPrefsOn, setBudget, setLocation])
+  }, [userId, userEmail, setUser, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit])
 
   const handleSignOut = () => {
     void signOut()
@@ -5812,12 +5950,13 @@ export function MeantApp() {
   }
 
   const applySavedSettings = (settings: UserSettingsProfile) => {
-    applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setLocation)
+    applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit)
   }
 
   const saveSettings = async (input: {
-    budget?: number
-    location?: UserLocation | null
+    budget?: number | null
+    clothingFit?: ClothingFit
+    locations?: readonly UserLocation[]
     filterIds?: readonly PreferenceId[]
     preferenceDescription?: string
   }) => {
@@ -5970,7 +6109,7 @@ export function MeantApp() {
         return (
           <SavedView
             products={savedListProducts}
-            location={location}
+            deliveryLocations={deliveryLocations}
             preferences={allPreferences}
             savedSet={savedSet}
             savePendingSet={savePendingSet}
@@ -5987,7 +6126,7 @@ export function MeantApp() {
             savedProducts={savedListProducts}
             compareIds={compareIds}
             preferences={allPreferences}
-            location={location}
+            deliveryLocations={deliveryLocations}
             onRemove={removeCompareProduct}
             onAdd={addCompareProduct}
             onOpen={openProduct}
@@ -6013,10 +6152,15 @@ export function MeantApp() {
               setBudget(value)
               void saveSettings({ budget: value })
             }}
-            location={location}
-            onLocation={(nextLocation) => {
-              setLocation(nextLocation)
-              void saveSettings({ location: nextLocation })
+            deliveryLocations={deliveryLocations}
+            onDeliveryLocations={(nextLocations) => {
+              setDeliveryLocations(nextLocations)
+              void saveSettings({ locations: nextLocations })
+            }}
+            clothingFit={clothingFit}
+            onClothingFit={(nextClothingFit) => {
+              setClothingFit(nextClothingFit)
+              void saveSettings({ clothingFit: nextClothingFit })
             }}
             profile={liveProfile}
             onDone={() => nav('discover')}
@@ -6027,7 +6171,7 @@ export function MeantApp() {
           <CartView
             cart={cart}
             products={allKnownProducts}
-            location={location}
+            deliveryLocations={deliveryLocations}
             onRemove={removeFromCart}
             onQty={updateQty}
             onAdd={addToCart}
@@ -6072,7 +6216,7 @@ export function MeantApp() {
             discoveryError={discoveryError}
             popularSearches={popularSearches}
             popularSearchesLoading={popularSearchesLoading}
-            location={location}
+            deliveryLocations={deliveryLocations}
             prompts={searchSuggestions}
             reply={reply}
             query={query}
@@ -6143,7 +6287,7 @@ export function MeantApp() {
     cartItemCount: cartCount,
     visibleProducts: assistantVisibleProducts
       .slice(0, 8)
-      .map((product) => assistantProductContext(product, location)),
+      .map((product) => assistantProductContext(product, deliveryLocations)),
     cartItems: assistantCartLines.slice(0, 8).map((line) => ({
       name: line.product.name,
       merchant: line.merchant,
@@ -6186,13 +6330,14 @@ export function MeantApp() {
       />
       <ProfileBar
         preferences={activePreferences}
-        location={location}
+        deliveryLocations={deliveryLocations}
+        clothingFit={clothingFit}
         onEdit={() => nav('preferences')}
       />
       {content}
       <ProductModal
         product={activeProduct}
-        location={location}
+        deliveryLocations={deliveryLocations}
         preferences={allPreferences}
         saved={activeProduct ? savedSet.has(activeProduct.id) : false}
         savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}

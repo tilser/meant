@@ -9,6 +9,7 @@ import type {
   CartItem,
   CartLine,
   CheckoutPayload,
+  ClothingFit,
   CorePreferenceId,
   DiscountCode,
   Offer,
@@ -20,6 +21,8 @@ import type {
   SmartAlert,
   UserLocation,
 } from './types'
+
+type DeliveryLocations = readonly UserLocation[]
 
 export const IMPORT_ASK = `Based on everything you know about me from our past conversations, describe my shopping preferences in detail: my dietary needs, the materials and brands I care about, my values, my budget, and anything I like to avoid.
 
@@ -60,40 +63,59 @@ export function listJoin(values: readonly string[]): string {
 
 export function canMerchantShip(
   merchant: string,
-  location: UserLocation | null,
+  locations: DeliveryLocations,
 ): boolean {
-  if (!location) {
+  if (locations.length === 0) {
     return true
   }
   const coverage = MERCHANTS[merchant]
   if (!coverage) {
     return true
   }
-  const shipsToCountry =
-    coverage.ships === 'global' || coverage.ships.includes(location.code)
-  if (!shipsToCountry) {
-    return false
+  return locations.some((location) => {
+    const shipsToCountry =
+      coverage.ships === 'global' || coverage.ships.includes(location.code)
+    if (!shipsToCountry) {
+      return false
+    }
+    if (coverage.cities) {
+      return coverage.cities.includes(location.city)
+    }
+    return true
+  })
+}
+
+export function productMatchesClothingFit(
+  product: Product,
+  clothingFit: ClothingFit,
+): boolean {
+  if (clothingFit === 'none' || !product.audiences || product.audiences.length === 0) {
+    return true
   }
-  if (coverage.cities) {
-    return coverage.cities.includes(location.city)
-  }
-  return true
+  return product.audiences.includes('unisex') || product.audiences.includes(clothingFit)
+}
+
+export function productsForClothingFit(
+  products: readonly Product[],
+  clothingFit: ClothingFit,
+): Product[] {
+  return products.filter((product) => productMatchesClothingFit(product, clothingFit))
 }
 
 export function availableOffers(
   product: Product,
-  location: UserLocation | null,
+  locations: DeliveryLocations,
 ): Offer[] {
   return product.offers.filter((offer) =>
-    canMerchantShip(offer.merchant, location),
+    canMerchantShip(offer.merchant, locations),
   )
 }
 
 export function productsForLocation(
   products: readonly Product[],
-  location: UserLocation | null,
+  locations: DeliveryLocations,
 ): Product[] {
-  return products.filter((product) => availableOffers(product, location).length > 0)
+  return products.filter((product) => availableOffers(product, locations).length > 0)
 }
 
 export function productsForPreferences(
@@ -119,23 +141,23 @@ function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>)
 
 export function productPriceFrom(
   product: Product,
-  location: UserLocation | null,
+  locations: DeliveryLocations,
 ): number {
-  const offers = availableOffers(product, location)
+  const offers = availableOffers(product, locations)
   const prices = offers.map((offer) => offer.price)
   return prices.length > 0 ? Math.min(...prices) : product.priceFrom
 }
 
 export function productMerchantCount(
   product: Product,
-  location: UserLocation | null,
+  locations: DeliveryLocations,
 ): number {
-  const offers = availableOffers(product, location)
+  const offers = availableOffers(product, locations)
   return offers.length > 0 ? offers.length : product.merchants
 }
 
-export function bestOffer(product: Product, location: UserLocation | null): Offer {
-  const offers = availableOffers(product, location)
+export function bestOffer(product: Product, locations: DeliveryLocations): Offer {
+  const offers = availableOffers(product, locations)
   return (offers.length > 0 ? offers : product.offers).reduce((best, offer) =>
     offer.price < best.price ? offer : best,
   )

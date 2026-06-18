@@ -7,6 +7,7 @@ import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterChatMessage;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.user.constant.UserAssistantMessageRole;
+import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserAssistantMessage;
 import com.meant.api.module.user.exception.UserException;
@@ -522,14 +523,17 @@ public class UserAssistantChatService {
     private String profilePrompt(UserSettingsResult settings) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("Budget: ").append(settings.budget() == null ? "unknown" : "$" + settings.budget()).append('\n');
-        if (settings.location() == null) {
-            prompt.append("Location: unknown\n");
+        String clothingFit = UserClothingFit.labelFor(settings.clothingFit());
+        prompt.append("Clothing fit: ").append(clothingFit == null ? "unknown" : clothingFit).append('\n');
+        if (settings.locations().isEmpty()) {
+            prompt.append("Delivery locations: unrestricted\n");
         } else {
-            prompt.append("Location: ")
-                    .append(promptValue(settings.location().city()))
+            prompt.append("Delivery locations:\n");
+            settings.locations().forEach(location -> prompt.append("- ")
+                    .append(promptValue(location.city()))
                     .append(", ")
-                    .append(promptValue(settings.location().country()))
-                    .append('\n');
+                    .append(promptValue(location.country()))
+                    .append('\n'));
         }
         prompt.append("Active preferences:\n");
         if (settings.filters().isEmpty()) {

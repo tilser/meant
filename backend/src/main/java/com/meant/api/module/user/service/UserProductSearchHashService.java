@@ -43,7 +43,8 @@ public class UserProductSearchHashService {
         return sha256(String.join("\n",
                 "promptVersion=" + userProductSearchProperties.explanationPromptVersion(),
                 "budget=" + value(settings.budget()),
-                "location=" + locationValue(settings.location()),
+                "clothingFit=" + value(settings.clothingFit()),
+                "locations=" + locationsValue(settings.locations()),
                 "filters=" + filtersValue(settings.filters())
         ));
     }
@@ -83,13 +84,12 @@ public class UserProductSearchHashService {
                 .collect(Collectors.joining(";"));
     }
 
-    private String locationValue(UserLocationResult location) {
-        if (location == null) {
-            return "";
-        }
-        return Stream.of(location.country(), location.code(), location.city())
-                .map(this::value)
-                .collect(Collectors.joining("|"));
+    private String locationsValue(List<UserLocationResult> locations) {
+        return locations.stream()
+                .map(location -> Stream.of(location.country(), location.code(), location.city())
+                        .map(this::value)
+                        .collect(Collectors.joining("|")))
+                .collect(Collectors.joining(";"));
     }
 
     private String plainText(String detailDescription, String descriptionHtml) {

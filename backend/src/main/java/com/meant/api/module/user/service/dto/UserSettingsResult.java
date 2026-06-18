@@ -6,7 +6,9 @@ import java.util.List;
 
 public record UserSettingsResult(
         Integer budget,
+        String clothingFit,
         UserLocationResult location,
+        List<UserLocationResult> locations,
         List<ShoppingFilterResult> filters,
         List<ShoppingFilterResult> availableFilters,
         List<String> parsedFilterIds,
@@ -17,14 +19,18 @@ public record UserSettingsResult(
 
     public static UserSettingsResult from(
             UserSettings settings,
+            List<UserLocationResult> locations,
             List<ShoppingFilterResult> filters,
             List<ShoppingFilterResult> availableFilters,
             List<String> parsedFilterIds,
             List<String> unmappedPreferences
     ) {
+        UserLocationResult location = locations.isEmpty() ? null : locations.get(0);
         return new UserSettingsResult(
                 settings.getBudget(),
-                UserLocationResult.from(settings),
+                settings.getClothingFit(),
+                location,
+                locations,
                 filters,
                 availableFilters,
                 parsedFilterIds,

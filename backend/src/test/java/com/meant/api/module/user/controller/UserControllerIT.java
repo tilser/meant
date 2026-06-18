@@ -260,7 +260,7 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void patchSettingsUpdatesFiltersBudgetAndLocation() {
+    void patchSettingsUpdatesFiltersBudgetLocationAndClothingFit() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
 
@@ -272,11 +272,19 @@ class UserControllerIT extends PostgresIntegrationTest {
                 .body("""
                         {
                           "budget": 95,
-                          "location": {
-                            "country": "United States",
-                            "code": "US",
-                            "city": "New York"
-                          },
+                          "clothingFit": "men",
+                          "locations": [
+                            {
+                              "country": "United States",
+                              "code": "US",
+                              "city": "New York"
+                            },
+                            {
+                              "country": "Canada",
+                              "code": "CA",
+                              "city": "Toronto"
+                            }
+                          ],
                           "filterIds": ["organic", "gluten-free", "fast-shipping"]
                         }
                         """)
@@ -288,10 +296,63 @@ class UserControllerIT extends PostgresIntegrationTest {
 
         assertThat(body).isNotNull();
         assertThat(body.budget()).isEqualTo(95);
+        assertThat(body.clothingFit()).isEqualTo("men");
         assertThat(body.location()).isNotNull();
         assertThat(body.location().code()).isEqualTo("US");
+        assertThat(body.locations()).extracting("code").containsExactly("US", "CA");
         assertThat(body.filters()).extracting("id")
                 .containsExactly("organic", "gluten-free", "fast-shipping");
+    }
+
+    @Test
+    void patchSettingsClearsBudgetLocationsAndClothingFit() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+
+        client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "budget": 95,
+                          "clothingFit": "women",
+                          "locations": [
+                            {
+                              "country": "United States",
+                              "code": "US",
+                              "city": "New York"
+                            }
+                          ]
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk();
+
+        UserSettingsResponse body = client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "budgetUnlimited": true,
+                          "clothingFit": "none",
+                          "locations": []
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.budget()).isNull();
+        assertThat(body.clothingFit()).isNull();
+        assertThat(body.location()).isNull();
+        assertThat(body.locations()).isEmpty();
     }
 
     @Test

@@ -175,7 +175,7 @@ public class UserProductSearchSuggestionService {
         if (PLACE_QUALIFIER_PATTERN.matcher(suggestion).find() || LOCAL_PLACE_PATTERN.matcher(suggestion).find()) {
             return true;
         }
-        return settings.location() != null && containsLocation(suggestion, settings.location());
+        return settings.locations().stream().anyMatch(location -> containsLocation(suggestion, location));
     }
 
     private boolean containsLocation(String suggestion, UserLocationResult location) {

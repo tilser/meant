@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-clothing-fit-to-user-settings" author="meant">
+        <addColumn tableName="user_settings">
+            <column name="clothing_fit" type="text"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="002-create-user-settings-locations" author="meant">
+        <createTable tableName="user_settings_locations">
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="location_code" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="location_city" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="country" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="display_order" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addPrimaryKey
+                tableName="user_settings_locations"
+                columnNames="user_id, location_code, location_city"
+                constraintName="pk_user_settings_locations"/>
+        <addForeignKeyConstraint
+                baseTableName="user_settings_locations"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                constraintName="fk_user_settings_locations_user"/>
+    </changeSet>
+</databaseChangeLog>
