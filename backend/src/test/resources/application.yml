@@ -20,6 +20,9 @@ app:
           capacity: 500
           refill-tokens: 500
           refill-period: 1d
+      bucket-cache:
+        maximum-size: 100000
+        expire-after-access: 25h
       endpoints:
         - method: POST
           path: /api/users/me/product-searches

@@ -45,6 +45,9 @@ app:
           capacity: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_DAY_CAPACITY:500}
           refill-tokens: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_DAY_REFILL_TOKENS:500}
           refill-period: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_PER_DAY_REFILL_PERIOD:1d}
+      bucket-cache:
+        maximum-size: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_BUCKET_CACHE_MAXIMUM_SIZE:100000}
+        expire-after-access: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_BUCKET_CACHE_EXPIRE_AFTER_ACCESS:25h}
       endpoints:
         - method: POST
           path: /api/users/me/product-searches

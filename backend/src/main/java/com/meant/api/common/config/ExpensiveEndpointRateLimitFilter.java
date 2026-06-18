@@ -19,6 +19,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ServletRequestPathUtils;
 import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
 
@@ -49,8 +50,13 @@ public class ExpensiveEndpointRateLimitFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        String path = requestPath(request);
-        if (!properties.enabled() || !matchesEndpoint(request.getMethod(), path)) {
+        if (!properties.enabled()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        PathContainer path = ServletRequestPathUtils.parseAndCache(request).pathWithinApplication();
+        if (!matchesEndpoint(request.getMethod(), path)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -68,7 +74,7 @@ public class ExpensiveEndpointRateLimitFilter extends OncePerRequestFilter {
                 key.type(),
                 key.value(),
                 request.getMethod(),
-                path,
+                path.value(),
                 retryAfterSeconds
         );
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
@@ -80,8 +86,7 @@ public class ExpensiveEndpointRateLimitFilter extends OncePerRequestFilter {
                 """);
     }
 
-    private boolean matchesEndpoint(String method, String path) {
-        PathContainer pathContainer = PathContainer.parsePath(path);
+    private boolean matchesEndpoint(String method, PathContainer pathContainer) {
         return endpoints.stream()
                 .anyMatch(endpoint -> endpoint.matches(method, pathContainer));
     }
@@ -98,21 +103,8 @@ public class ExpensiveEndpointRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String clientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwardedFor)) {
-            return forwardedFor.split(",")[0].trim();
-        }
         String remoteAddr = request.getRemoteAddr();
         return StringUtils.hasText(remoteAddr) ? remoteAddr : "unknown";
-    }
-
-    private String requestPath(HttpServletRequest request) {
-        String requestUri = request.getRequestURI();
-        String contextPath = request.getContextPath();
-        if (StringUtils.hasText(contextPath) && requestUri.startsWith(contextPath)) {
-            return requestUri.substring(contextPath.length());
-        }
-        return requestUri;
     }
 
     private long retryAfterSeconds(Duration retryAfter) {

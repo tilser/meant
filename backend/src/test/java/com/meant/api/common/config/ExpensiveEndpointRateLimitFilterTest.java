@@ -74,6 +74,51 @@ class ExpensiveEndpointRateLimitFilterTest {
     }
 
     @Test
+    void ignoresSpoofableForwardedForHeaderForAnonymousRateLimitKeys() throws Exception {
+        ExpensiveEndpointRateLimitFilter filter = filter(
+                1,
+                endpoint("POST", "/api/merchants/semantic-product-search")
+        );
+
+        assertAllowed(filter, request(
+                "POST",
+                "/api/merchants/semantic-product-search",
+                "203.0.113.20",
+                "198.51.100.1"
+        ));
+
+        MockHttpServletResponse limited = doFilter(
+                filter,
+                request(
+                        "POST",
+                        "/api/merchants/semantic-product-search",
+                        "203.0.113.20",
+                        "198.51.100.2"
+                )
+        );
+
+        assertThat(limited.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void matchesMatrixParameterVariantsOfConfiguredExpensivePaths() throws Exception {
+        ExpensiveEndpointRateLimitFilter filter = filter(
+                1,
+                endpoint("POST", "/api/users/me/product-searches")
+        );
+        authenticate("user-1");
+
+        assertAllowed(filter, request("POST", "/api/users/me/product-searches;v=1", "203.0.113.10"));
+
+        MockHttpServletResponse limited = doFilter(
+                filter,
+                request("POST", "/api/users/me/product-searches;v=2", "203.0.113.10")
+        );
+
+        assertThat(limited.getStatus()).isEqualTo(429);
+    }
+
+    @Test
     void allowsUnmatchedTrafficWithoutConsumingRateLimit() throws Exception {
         ExpensiveEndpointRateLimitFilter filter = filter(
                 1,
@@ -107,12 +152,17 @@ class ExpensiveEndpointRateLimitFilterTest {
                                         100,
                                         Duration.ofDays(1)
                                 )
-                        )
+                        ),
+                        new RateLimitProperties.BucketCache(1_000L, Duration.ofHours(25))
                 )
         );
         return new ExpensiveEndpointRateLimitFilter(
                 properties,
-                new RateLimitService(properties.expensiveEndpoints().limits(), Clock.fixed(NOW, ZoneId.of("UTC")))
+                new RateLimitService(
+                        properties.expensiveEndpoints().limits(),
+                        properties.expensiveEndpoints().bucketCache(),
+                        Clock.fixed(NOW, ZoneId.of("UTC"))
+                )
         );
     }
 
@@ -135,6 +185,17 @@ class ExpensiveEndpointRateLimitFilterTest {
     private static MockHttpServletRequest request(String method, String path, String remoteAddr) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRemoteAddr(remoteAddr);
+        return request;
+    }
+
+    private static MockHttpServletRequest request(
+            String method,
+            String path,
+            String remoteAddr,
+            String forwardedFor
+    ) {
+        MockHttpServletRequest request = request(method, path, remoteAddr);
+        request.addHeader("X-Forwarded-For", forwardedFor);
         return request;
     }
 

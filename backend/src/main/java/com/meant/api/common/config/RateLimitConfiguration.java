@@ -16,7 +16,11 @@ public class RateLimitConfiguration {
 
     @Bean
     RateLimitService expensiveEndpointRateLimitService(RateLimitProperties properties, Clock rateLimitClock) {
-        return new RateLimitService(properties.expensiveEndpoints().limits(), rateLimitClock);
+        return new RateLimitService(
+                properties.expensiveEndpoints().limits(),
+                properties.expensiveEndpoints().bucketCache(),
+                rateLimitClock
+        );
     }
 
     @Bean

@@ -20,7 +20,8 @@ public record RateLimitProperties(
 
     public record ExpensiveEndpoints(
             @NotEmpty List<@Valid Endpoint> endpoints,
-            @NotEmpty List<@Valid Limit> limits
+            @NotEmpty List<@Valid Limit> limits,
+            @NotNull @Valid BucketCache bucketCache
     ) {
     }
 
@@ -40,6 +41,17 @@ public record RateLimitProperties(
         @AssertTrue(message = "refillPeriod must be positive")
         public boolean isRefillPeriodPositive() {
             return refillPeriod != null && !refillPeriod.isZero() && !refillPeriod.isNegative();
+        }
+    }
+
+    public record BucketCache(
+            @NotNull @Positive Long maximumSize,
+            @NotNull Duration expireAfterAccess
+    ) {
+
+        @AssertTrue(message = "expireAfterAccess must be positive")
+        public boolean isExpireAfterAccessPositive() {
+            return expireAfterAccess != null && !expireAfterAccess.isZero() && !expireAfterAccess.isNegative();
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.meant.api.common.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.meant.api.common.properties.RateLimitProperties;
 import java.time.Clock;
 import java.time.Duration;
@@ -7,25 +9,31 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 public class RateLimitService {
 
     private final List<RateLimitPolicy> policies;
     private final Clock clock;
-    private final ConcurrentMap<String, List<TokenBucket>> buckets = new ConcurrentHashMap<>();
+    private final Cache<String, List<TokenBucket>> buckets;
 
-    public RateLimitService(List<RateLimitProperties.Limit> limits, Clock clock) {
+    public RateLimitService(
+            List<RateLimitProperties.Limit> limits,
+            RateLimitProperties.BucketCache bucketCache,
+            Clock clock
+    ) {
         this.policies = limits.stream()
                 .map(RateLimitPolicy::from)
                 .toList();
         this.clock = clock;
+        this.buckets = Caffeine.newBuilder()
+                .expireAfterAccess(bucketCache.expireAfterAccess())
+                .maximumSize(bucketCache.maximumSize())
+                .build();
     }
 
     public RateLimitDecision consume(String key) {
         Instant now = clock.instant();
-        List<TokenBucket> keyBuckets = buckets.computeIfAbsent(key, ignored -> newBuckets(now));
+        List<TokenBucket> keyBuckets = buckets.get(key, ignored -> newBuckets(now));
         synchronized (keyBuckets) {
             List<Duration> retryAfters = new ArrayList<>();
             for (TokenBucket bucket : keyBuckets) {
