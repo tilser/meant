@@ -1,12 +1,16 @@
 package com.meant.api.module.merchant.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
+import java.net.InetAddress;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -23,9 +27,9 @@ class UcpProfileClientTest {
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
         server.expect(once(), requestTo("https://www.reebok.com/.well-known/ucp"))
                 .andRespond(withSuccess(profileResponse(), MediaType.APPLICATION_JSON));
-        UcpProfileClient client = new UcpProfileClient(restClientBuilder, new ObjectMapper());
+        UcpProfileClient client = client(restClientBuilder, "93.184.216.34");
 
-        UcpProfile profile = client.fetchProfile("https://reebok.com/.well-known/ucp");
+        UcpProfile profile = client.fetchProfile("reebok.com", "https://reebok.com/.well-known/ucp");
 
         assertThat(profile.version()).isEqualTo("2026-04-08");
         server.verify();
@@ -41,11 +45,23 @@ class UcpProfileClientTest {
                 .andRespond(withResourceNotFound().body("<html>not found</html>"));
         server.expect(once(), requestTo("https://cupshe.com/.well-known/ucp.json"))
                 .andRespond(withSuccess(profileResponse(), MediaType.APPLICATION_JSON));
-        UcpProfileClient client = new UcpProfileClient(restClientBuilder, new ObjectMapper());
+        UcpProfileClient client = client(restClientBuilder, "93.184.216.34");
 
-        UcpProfile profile = client.fetchProfile("https://cupshe.com/.well-known/ucp");
+        UcpProfile profile = client.fetchProfile("cupshe.com", "https://cupshe.com/.well-known/ucp");
 
         assertThat(profile.version()).isEqualTo("2026-04-08");
+        server.verify();
+    }
+
+    @Test
+    void blocksProfileUrlResolvingToLocalAddress() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpProfileClient client = client(restClientBuilder, "127.0.0.1");
+
+        assertThatThrownBy(() -> client.fetchProfile("localhost", "https://localhost/.well-known/ucp"))
+                .isInstanceOf(MerchantEnrichmentException.class)
+                .hasMessageContaining("Blocked UCP profile URL");
         server.verify();
     }
 
@@ -69,5 +85,13 @@ class UcpProfileClientTest {
                   }
                 }
                 """;
+    }
+
+    private UcpProfileClient client(RestClient.Builder restClientBuilder, String resolvedAddress) {
+        return new UcpProfileClient(
+                restClientBuilder.build(),
+                new ObjectMapper(),
+                MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName(resolvedAddress)))
+        );
     }
 }

@@ -6,6 +6,8 @@ import java.util.UUID;
 public record GetCheckoutQuery(
         @NotNull
         UUID cartId,
+        @NotNull
+        UUID userId,
         boolean refresh
 ) {
 }

@@ -14,6 +14,7 @@ import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import java.net.InetAddress;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -30,10 +31,10 @@ class MerchantCatalogSearchClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantCatalogSearchClient client = new MerchantCatalogSearchClient(
-                new MerchantMcpToolClient(restClientBuilder.build()),
+                merchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
-        server.expect(requestTo("https://profile.example/api/mcp"))
+        server.expect(requestTo("https://api.merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"catalog\"")))
                 .andExpect(content().string(containsString("\"limit\":10")))
@@ -59,8 +60,8 @@ class MerchantCatalogSearchClientTest {
                         UUID.randomUUID(),
                         "merchant.example",
                         "Merchant",
-                        "https://advertised.example/api/ucp/mcp",
-                        "https://profile.example/api/mcp",
+                        "https://merchant.example/api/ucp/mcp",
+                        "https://api.merchant.example/api/mcp",
                         "Categories: Shoes",
                         0.9d,
                         0.8d,
@@ -70,7 +71,7 @@ class MerchantCatalogSearchClientTest {
                 10
         );
 
-        assertThat(result.endpoint()).isEqualTo("https://profile.example/api/mcp");
+        assertThat(result.endpoint()).isEqualTo("https://api.merchant.example/api/mcp");
         assertThat(result.products()).extracting("id").containsExactly("product-1");
         server.verify();
     }
@@ -80,10 +81,10 @@ class MerchantCatalogSearchClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantCatalogSearchClient client = new MerchantCatalogSearchClient(
-                new MerchantMcpToolClient(restClientBuilder.build()),
+                merchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
-        server.expect(requestTo("https://profile.example/api/mcp"))
+        server.expect(requestTo("https://api.merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"query\":\"throw pillow\"")))
                 .andExpect(content().string(containsString("\"context\"")))
@@ -138,12 +139,19 @@ class MerchantCatalogSearchClientTest {
                 UUID.randomUUID(),
                 "merchant.example",
                 "Merchant",
-                "https://advertised.example/api/ucp/mcp",
-                "https://profile.example/api/mcp",
+                "https://merchant.example/api/ucp/mcp",
+                "https://api.merchant.example/api/mcp",
                 "Categories: Shoes",
                 0.9d,
                 0.8d,
                 1
+        );
+    }
+
+    private MerchantMcpToolClient merchantMcpToolClient(RestClient restClient) {
+        return new MerchantMcpToolClient(
+                restClient,
+                MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName("93.184.216.34")))
         );
     }
 }

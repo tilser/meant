@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-cart-user-id" author="codex">
+        <addColumn tableName="cart">
+            <column name="user_id" type="uuid"/>
+        </addColumn>
+        <!-- Existing carts were anonymous UUID-only objects and cannot be safely assigned an owner. -->
+        <delete tableName="cart_line"/>
+        <delete tableName="cart"/>
+        <addNotNullConstraint
+                tableName="cart"
+                columnName="user_id"
+                columnDataType="uuid"/>
+        <addForeignKeyConstraint
+                baseTableName="cart"
+                baseColumnNames="user_id"
+                constraintName="fk_cart_user"
+                referencedTableName="users"
+                referencedColumnNames="id"/>
+        <createIndex tableName="cart" indexName="idx_cart_user">
+            <column name="user_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

@@ -13,8 +13,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class CartCommandMapper {
 
-    public static CreateCartCommand toCommand(CartCreateRequest request) {
+    public static CreateCartCommand toCommand(UUID userId, CartCreateRequest request) {
         return new CreateCartCommand(
+                userId,
                 request.merchantId(),
                 request.merchantDomain(),
                 safeList(request.addItems()).stream()
@@ -33,9 +34,10 @@ public final class CartCommandMapper {
         );
     }
 
-    public static UpdateCartCommand toCommand(UUID cartId, CartUpdateRequest request) {
+    public static UpdateCartCommand toCommand(UUID cartId, UUID userId, CartUpdateRequest request) {
         return new UpdateCartCommand(
                 cartId,
+                userId,
                 safeList(request.addItems()).stream()
                         .map(item -> new UpdateCartCommand.AddItem(
                                 item.productVariantId(),

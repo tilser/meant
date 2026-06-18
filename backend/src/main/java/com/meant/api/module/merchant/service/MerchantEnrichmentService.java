@@ -46,7 +46,7 @@ public class MerchantEnrichmentService {
 
     private void enrichMerchant(MerchantRaw merchantRaw) {
         try {
-            UcpProfile ucpProfile = ucpProfileClient.fetchProfile(merchantRaw.getUcpUrl());
+            UcpProfile ucpProfile = ucpProfileClient.fetchProfile(merchantRaw.getDomain(), merchantRaw.getUcpUrl());
             MerchantMcpProfileResult mcpProfile = merchantDomainMcpClient.fetchStoreProfile(merchantRaw.getDomain());
             MerchantProfileData profileData = merchantProfileParser.parse(merchantRaw.getDomain(), mcpProfile.entry());
             String profileHash = merchantProfileHashService.hash(ucpProfile, profileData);
