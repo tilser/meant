@@ -4,6 +4,7 @@ import static com.meant.api.common.util.CollectionUtils.safeList;
 
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
+import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.McpContent;
 import com.meant.api.module.merchant.service.dto.McpToolCallParams;
@@ -17,7 +18,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -26,20 +26,28 @@ import org.springframework.web.client.RestClientException;
 public class MerchantMcpToolClient {
 
     private final RestClient restClient;
+    private final MerchantOutboundUrlValidator merchantOutboundUrlValidator;
 
     @Autowired
     public MerchantMcpToolClient(
             RestClient.Builder restClientBuilder,
-            MerchantMcpToolProperties merchantMcpToolProperties
+            MerchantMcpToolProperties merchantMcpToolProperties,
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator
     ) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        NoRedirectSimpleClientHttpRequestFactory requestFactory = new NoRedirectSimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(merchantMcpToolProperties.connectTimeoutMilliseconds()));
         requestFactory.setReadTimeout(Duration.ofMillis(merchantMcpToolProperties.readTimeoutMilliseconds()));
-        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
+        this.restClient = restClientBuilder.clone().requestFactory(requestFactory).build();
+        this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
     }
 
     public MerchantMcpToolClient(RestClient restClient) {
+        this(restClient, new MerchantOutboundUrlValidator());
+    }
+
+    public MerchantMcpToolClient(RestClient restClient, MerchantOutboundUrlValidator merchantOutboundUrlValidator) {
         this.restClient = restClient;
+        this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
     }
 
     public MerchantMcpToolCallResult callTool(
@@ -86,17 +94,21 @@ public class MerchantMcpToolClient {
         List<MerchantMcpToolException> failures = new ArrayList<>();
         for (String endpoint : endpointCandidates(domain, advertisedMcpEndpoint, profileMcpEndpoint)) {
             try {
-                return new MerchantMcpToolCallResult(endpoint, callToolFromEndpoint(endpoint, toolName, arguments));
-            } catch (RestClientException | MerchantMcpToolException exception) {
+                URI endpointUri = merchantOutboundUrlValidator.validateMerchantUrl(domain, endpoint);
+                return new MerchantMcpToolCallResult(
+                        endpointUri.toString(),
+                        callToolFromEndpoint(endpointUri, toolName, arguments)
+                );
+            } catch (RestClientException | MerchantMcpToolException | MerchantOutboundUrlException exception) {
                 failures.add(new MerchantMcpToolException("MCP tool call failed for " + endpoint, exception));
             }
         }
         throw mcpToolException(domain, toolName, failures);
     }
 
-    private String callToolFromEndpoint(String endpoint, String toolName, Object arguments) {
+    private String callToolFromEndpoint(URI endpoint, String toolName, Object arguments) {
         McpToolCallResponse response = restClient.post()
-                .uri(URI.create(endpoint))
+                .uri(endpoint)
                 .body(toolRequest(toolName, arguments))
                 .retrieve()
                 .body(McpToolCallResponse.class);

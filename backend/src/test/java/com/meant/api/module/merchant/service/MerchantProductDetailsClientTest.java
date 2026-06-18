@@ -10,6 +10,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
+import java.net.InetAddress;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -25,7 +27,7 @@ class MerchantProductDetailsClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantProductDetailsClient client = new MerchantProductDetailsClient(
-                new MerchantMcpToolClient(restClientBuilder.build()),
+                merchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
         server.expect(requestTo("https://merchant.example/api/mcp"))
@@ -76,6 +78,13 @@ class MerchantProductDetailsClientTest {
                 0.9d,
                 0.8d,
                 1
+        );
+    }
+
+    private MerchantMcpToolClient merchantMcpToolClient(RestClient restClient) {
+        return new MerchantMcpToolClient(
+                restClient,
+                MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName("93.184.216.34")))
         );
     }
 }

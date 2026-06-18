@@ -1,13 +1,14 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
+import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
 import com.meant.api.module.merchant.service.dto.UcpProfileResponse;
 import java.net.URI;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -15,23 +16,60 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
-@RequiredArgsConstructor
 public class UcpProfileClient {
 
-    private final RestClient.Builder restClientBuilder;
+    private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final MerchantOutboundUrlValidator merchantOutboundUrlValidator;
 
-    public UcpProfile fetchProfile(String ucpUrl) {
-        URI originalUri = URI.create(ucpUrl);
+    @Autowired
+    public UcpProfileClient(
+            RestClient.Builder restClientBuilder,
+            ObjectMapper objectMapper,
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator
+    ) {
+        this(
+                restClientBuilder.clone()
+                        .requestFactory(new NoRedirectSimpleClientHttpRequestFactory())
+                        .build(),
+                objectMapper,
+                merchantOutboundUrlValidator
+        );
+    }
+
+    public UcpProfileClient(
+            RestClient restClient,
+            ObjectMapper objectMapper,
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator
+    ) {
+        this.restClient = restClient;
+        this.objectMapper = objectMapper;
+        this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
+    }
+
+    public UcpProfileClient(RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
+        this(restClientBuilder, objectMapper, new MerchantOutboundUrlValidator());
+    }
+
+    public UcpProfile fetchProfile(String merchantDomain, String ucpUrl) {
+        URI originalUri;
+        try {
+            originalUri = merchantOutboundUrlValidator.validateMerchantUrl(merchantDomain, ucpUrl);
+        } catch (MerchantOutboundUrlException exception) {
+            throw new MerchantEnrichmentException("Blocked UCP profile URL", exception);
+        }
         MerchantEnrichmentException lastFailure = null;
         for (URI candidateUri : candidateUris(originalUri)) {
             try {
-                String body = fetchBody(candidateUri);
+                URI validatedUri = merchantOutboundUrlValidator.validateMerchantUrl(merchantDomain, candidateUri);
+                String body = fetchBody(validatedUri);
                 if (body == null || body.isBlank()) {
                     lastFailure = new MerchantEnrichmentException("UCP profile response was empty");
                     continue;
                 }
                 return parseBody(body);
+            } catch (MerchantOutboundUrlException exception) {
+                lastFailure = new MerchantEnrichmentException("Blocked UCP profile URL", exception);
             } catch (MerchantEnrichmentException exception) {
                 lastFailure = exception;
             } catch (RestClientException exception) {
@@ -63,7 +101,7 @@ public class UcpProfileClient {
     }
 
     private String fetchBody(URI uri) {
-        return restClientBuilder.build().get()
+        return restClient.get()
                 .uri(uri)
                 .retrieve()
                 .body(String.class);

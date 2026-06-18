@@ -13,7 +13,9 @@ import com.meant.api.module.cart.service.dto.CartToolResult;
 import com.meant.api.module.cart.service.dto.CartUpdateItem;
 import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
+import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import java.net.InetAddress;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -30,7 +32,7 @@ class CartClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         CartClient client = new CartClient(
-                new MerchantMcpToolClient(restClientBuilder.build()),
+                merchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
         server.expect(requestTo("https://merchant.example/api/mcp"))
@@ -69,7 +71,7 @@ class CartClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         CartClient client = new CartClient(
-                new MerchantMcpToolClient(restClientBuilder.build()),
+                merchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
         server.expect(requestTo("https://merchant.example/api/mcp"))
@@ -104,7 +106,7 @@ class CartClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         CartClient client = new CartClient(
-                new MerchantMcpToolClient(restClientBuilder.build()),
+                merchantMcpToolClient(restClientBuilder.build()),
                 new ObjectMapper()
         );
         server.expect(requestTo("https://merchant.example/api/mcp"))
@@ -125,6 +127,13 @@ class CartClientTest {
                 "merchant.example",
                 "https://merchant.example/api/mcp",
                 null
+        );
+    }
+
+    private MerchantMcpToolClient merchantMcpToolClient(RestClient restClient) {
+        return new MerchantMcpToolClient(
+                restClient,
+                MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName("93.184.216.34")))
         );
     }
 
