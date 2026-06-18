@@ -164,6 +164,42 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     @Test
+    void treatsRawNumericListPricesAsMajorUnits() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(1200))));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.listPriceAmount()).isEqualTo(120000L);
+            assertThat(product.listPriceCurrency()).isEqualTo("USD");
+        });
+    }
+
+    @Test
+    void preservesExplicitMinorUnitListPrices() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                richProduct(Map.of("amount_cents", 5200, "currency", "USD"))
+        )));
+        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
+        );
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.listPriceAmount()).isEqualTo(5200L);
+            assertThat(product.listPriceCurrency()).isEqualTo("USD");
+        });
+    }
+
+    @Test
     void searchesOnlyRequestedMerchantWhenMerchantIdIsProvided() {
         UUID merchantId = UUID.randomUUID();
         merchantLookupService.results.put(merchantId, new MerchantSemanticSearchResult(
@@ -349,6 +385,10 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     private CatalogSearchResponse.Product richProduct() {
+        return richProduct(new CatalogSearchResponse.Money(5200L, "USD"));
+    }
+
+    private CatalogSearchResponse.Product richProduct(Object listPrice) {
         return new CatalogSearchResponse.Product(
                 "rich-tee",
                 "Organic Cotton Tee",
@@ -358,7 +398,7 @@ class MerchantSemanticProductSearchServiceTest {
                         new CatalogSearchResponse.Money(3800L, "USD"),
                         new CatalogSearchResponse.Money(3800L, "USD")
                 ),
-                new CatalogSearchResponse.Money(5200L, "USD"),
+                listPrice,
                 Map.of("value", 4.8d, "reviewCount", 214),
                 214,
                 List.of(new CatalogSearchResponse.Variant(
@@ -367,7 +407,7 @@ class MerchantSemanticProductSearchServiceTest {
                         new CatalogSearchResponse.Description("<p>Organic cotton tee.</p>"),
                         new CatalogSearchResponse.Money(3800L, "USD"),
                         "SKU-RICH-VARIANT",
-                        new CatalogSearchResponse.Money(5200L, "USD"),
+                        listPrice,
                         new CatalogSearchResponse.Availability(true),
                         List.of(new CatalogSearchResponse.Media(
                                 "video",

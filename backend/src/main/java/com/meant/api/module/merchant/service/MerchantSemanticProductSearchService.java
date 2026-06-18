@@ -690,8 +690,24 @@ public class MerchantSemanticProductSearchService {
         }
         if (value instanceof Map<?, ?> map) {
             String currency = firstPresent(firstStringValue(map, "currency", "currencyCode"), fallbackCurrency);
+            Object explicitMinorAmount = firstMapValue(map,
+                    "minorAmount",
+                    "minor_amount",
+                    "amountMinor",
+                    "amount_minor",
+                    "amountInMinorUnits",
+                    "amount_in_minor_units",
+                    "amountCents",
+                    "amount_cents",
+                    "cents");
+            Long explicitMinor = wholeNumberAmount(explicitMinorAmount);
+            if (explicitMinor != null) {
+                return new MoneyValue(explicitMinor, currency);
+            }
             Object amount = firstMapValue(map, "amount", "value", "price", "min");
-            Long minorAmount = minorAmount(amount, currency);
+            Long minorAmount = hasMinorUnitHint(map)
+                    ? wholeNumberAmount(amount)
+                    : minorAmount(amount, currency);
             return minorAmount == null ? null : new MoneyValue(minorAmount, currency);
         }
         Long minorAmount = minorAmount(value, fallbackCurrency);
@@ -702,10 +718,45 @@ public class MerchantSemanticProductSearchService {
         if (value == null) {
             return null;
         }
-        if (value instanceof Number number && number.doubleValue() % 1 == 0 && Math.abs(number.longValue()) >= 1000) {
-            return number.longValue();
-        }
         return decimalAmountToMinor(value.toString(), currency);
+    }
+
+    private Long wholeNumberAmount(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String amount = value.toString().trim();
+        if (amount.isBlank()) {
+            return null;
+        }
+        String wholeNumber = amount.replace(",", "").replaceAll("\\s+", "");
+        if (!wholeNumber.matches("-?\\d+")) {
+            return null;
+        }
+        try {
+            return Long.parseLong(wholeNumber);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private boolean hasMinorUnitHint(Map<?, ?> map) {
+        String unit = firstStringValue(map,
+                "unit",
+                "units",
+                "amountUnit",
+                "amount_unit",
+                "scale",
+                "format");
+        if (unit == null) {
+            return false;
+        }
+        String normalized = normalizedValue(unit);
+        return normalized.contains("minor")
+                || normalized.equals("cent")
+                || normalized.equals("cents")
+                || normalized.equals("centavo")
+                || normalized.equals("centavos");
     }
 
     private Double ratingValue(Object value) {
