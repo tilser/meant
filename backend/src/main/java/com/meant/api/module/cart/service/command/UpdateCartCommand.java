@@ -11,6 +11,8 @@ import java.util.UUID;
 public record UpdateCartCommand(
         @NotNull
         UUID cartId,
+        @NotNull
+        UUID userId,
         List<@Valid AddItem> addItems,
         List<@Valid UpdateItem> updateItems,
         List<UUID> removeCartLineIds,

@@ -8,15 +8,21 @@ import com.meant.api.module.cart.controller.response.CheckoutResponse;
 import com.meant.api.module.cart.service.CartService;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.user.service.UserService;
+import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,10 +35,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/carts")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearer-jwt")
 @Tag(name = "Carts", description = "Testing endpoints for MCP-backed carts")
 public class CartController {
 
     private final CartService cartService;
+    private final UserService userService;
 
     @PostMapping
     @Operation(
@@ -44,8 +52,13 @@ public class CartController {
             description = "Created cart snapshot",
             content = @Content(schema = @Schema(implementation = CartResponse.class))
     )
-    public CartResponse create(@Valid @RequestBody CartCreateRequest request) {
-        return CartResponse.from(cartService.create(CartCommandMapper.toCommand(request)));
+    public CartResponse create(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody CartCreateRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        userService.upsert(toUpsertCommand(authenticatedUser));
+        return CartResponse.from(cartService.create(CartCommandMapper.toCommand(authenticatedUser.id(), request)));
     }
 
     @GetMapping("/{cartId}")
@@ -59,12 +72,14 @@ public class CartController {
             content = @Content(schema = @Schema(implementation = CartResponse.class))
     )
     public CartResponse get(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
             @Parameter(description = "Refresh the local snapshot from the remote MCP cart before returning it.")
             @RequestParam(defaultValue = "false") boolean refresh
     ) {
-        return CartResponse.from(cartService.get(new GetCartQuery(cartId, refresh)));
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return CartResponse.from(cartService.get(new GetCartQuery(cartId, authenticatedUser.id(), refresh)));
     }
 
     @PatchMapping("/{cartId}")
@@ -78,12 +93,14 @@ public class CartController {
             content = @Content(schema = @Schema(implementation = CartResponse.class))
     )
     public CartResponse update(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
             @Valid @RequestBody CartUpdateRequest request
     ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CartResponse.from(
-                cartService.update(CartCommandMapper.toCommand(cartId, request))
+                cartService.update(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
         );
     }
 
@@ -98,14 +115,28 @@ public class CartController {
             content = @Content(schema = @Schema(implementation = CheckoutResponse.class))
     )
     public CheckoutResponse checkout(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
             @Parameter(description = "Refresh the local snapshot from the remote MCP cart before returning checkout.")
             @RequestParam(defaultValue = "false") boolean refresh
     ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutResponse.from(
-                cartService.checkout(new GetCheckoutQuery(cartId, refresh))
+                cartService.checkout(new GetCheckoutQuery(cartId, authenticatedUser.id(), refresh))
         );
     }
 
+    private AuthenticatedUser authenticatedUser(Jwt jwt) {
+        return AuthenticatedUser.fromJwt(jwt);
+    }
+
+    private UpsertUserCommand toUpsertCommand(AuthenticatedUser authenticatedUser) {
+        return new UpsertUserCommand(
+                authenticatedUser.id(),
+                authenticatedUser.email(),
+                authenticatedUser.firstName(),
+                authenticatedUser.surname()
+        );
+    }
 }
