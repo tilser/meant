@@ -65,7 +65,7 @@ public class UserProductDiscoveryService {
 
     private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
         if (!upsertCommand.id().equals(userId)) {
-            throw new UserException("Product discovery user does not match authenticated user");
+            throw UserException.forbidden("Product discovery user does not match authenticated user");
         }
     }
 }

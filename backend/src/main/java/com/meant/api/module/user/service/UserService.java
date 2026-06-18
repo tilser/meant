@@ -75,6 +75,6 @@ public class UserService {
 
     private User findUser(UUID id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new UserException("User not found: " + id));
+                .orElseThrow(() -> UserException.notFound("User not found: " + id));
     }
 }

@@ -35,15 +35,15 @@ public class CartClient {
             var result = merchantMcpToolClient.callTool(provider, toolName, arguments);
             CartToolResponse response = objectMapper.readValue(result.contentText(), CartToolResponse.class);
             if (response == null || response.cart() == null) {
-                throw new CartException("MCP cart response did not contain cart");
+                throw CartException.upstream("MCP cart response did not contain cart");
             }
             return new CartToolResult(result.endpoint(), result.contentText(), response);
         } catch (CartException exception) {
             throw exception;
         } catch (JacksonException exception) {
-            throw new CartException("MCP cart content was not a cart response", exception);
+            throw CartException.upstream("MCP cart content was not a cart response", exception);
         } catch (RuntimeException exception) {
-            throw new CartException("MCP cart tool " + toolName + " failed", exception);
+            throw CartException.upstream("MCP cart tool " + toolName + " failed", exception);
         }
     }
 }

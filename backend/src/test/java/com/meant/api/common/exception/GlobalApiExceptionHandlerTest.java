@@ -9,8 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.meant.api.module.cart.exception.CartException;
+import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -83,6 +85,27 @@ class GlobalApiExceptionHandlerTest {
     }
 
     @Test
+    void businessExceptionMessageTextDoesNotDetermineStatus() throws Exception {
+        mockMvc.perform(get("/test-errors/not-found-message-only"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.detail").value("The request could not be processed."))
+                .andExpect(jsonPath("$.code").value("bad_request"))
+                .andExpect(content().string(not(containsString("not found"))));
+    }
+
+    @Test
+    void constraintViolationsReturnValidationFailedCode() throws Exception {
+        mockMvc.perform(get("/test-errors/constraint-violation"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.detail").value("Request validation failed."))
+                .andExpect(jsonPath("$.code").value("validation_failed"));
+    }
+
+    @Test
     void unhandledErrorsReturnGenericProblemDetail() throws Exception {
         mockMvc.perform(get("/test-errors/unhandled"))
                 .andExpect(status().isInternalServerError())
@@ -113,7 +136,17 @@ class GlobalApiExceptionHandlerTest {
 
         @GetMapping("/not-found")
         void notFound() {
-            throw new CartException("Cart not found: 00000000-0000-0000-0000-000000000001");
+            throw CartException.notFound("Cart not found: 00000000-0000-0000-0000-000000000001");
+        }
+
+        @GetMapping("/not-found-message-only")
+        void notFoundMessageOnly() {
+            throw new CartException("Cart processor not found in remote payload");
+        }
+
+        @GetMapping("/constraint-violation")
+        void constraintViolation() {
+            throw new ConstraintViolationException("Service validation failed", Set.of());
         }
 
         @GetMapping("/unhandled")

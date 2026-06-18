@@ -11,13 +11,14 @@ import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.exception.UserProductSearchException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -28,6 +29,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -65,9 +68,40 @@ public class GlobalApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler(ConstraintViolationException.class)
+    ResponseEntity<ProblemDetail> handleConstraintViolation(
+            ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        List<Map<String, String>> errors = exception.getConstraintViolations().stream()
+                .map(violation -> validationError(pathName(violation.getPropertyPath()), violation.getMessage()))
+                .toList();
+        return problem(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorCode.VALIDATION_FAILED,
+                VALIDATION_DETAIL,
+                request,
+                exception,
+                errors
+        );
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    ResponseEntity<ProblemDetail> handleHandlerMethodValidation(
+            HandlerMethodValidationException exception,
+            HttpServletRequest request
+    ) {
+        return problem(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorCode.VALIDATION_FAILED,
+                VALIDATION_DETAIL,
+                request,
+                exception,
+                methodValidationErrors(exception)
+        );
+    }
+
     @ExceptionHandler({
-            ConstraintViolationException.class,
-            HandlerMethodValidationException.class,
             MissingServletRequestParameterException.class,
             MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class,
@@ -93,14 +127,8 @@ public class GlobalApiExceptionHandler {
             UserProductSearchException.class
     })
     ResponseEntity<ProblemDetail> handleIntegrationException(RuntimeException exception, HttpServletRequest request) {
-        if (isNotFound(exception)) {
-            return problem(
-                    HttpStatus.NOT_FOUND,
-                    ApiErrorCode.NOT_FOUND,
-                    NOT_FOUND_DETAIL,
-                    request,
-                    exception
-            );
+        if (exception instanceof ApiException apiException) {
+            return handleApiException(apiException, exception, request);
         }
         return problem(
                 HttpStatus.BAD_GATEWAY,
@@ -113,28 +141,27 @@ public class GlobalApiExceptionHandler {
 
     @ExceptionHandler({CartException.class, UserException.class})
     ResponseEntity<ProblemDetail> handleBusinessException(RuntimeException exception, HttpServletRequest request) {
-        if (isNotFound(exception)) {
-            return problem(
-                    HttpStatus.NOT_FOUND,
-                    ApiErrorCode.NOT_FOUND,
-                    NOT_FOUND_DETAIL,
-                    request,
-                    exception
-            );
-        }
-        if (isForbidden(exception)) {
-            return problem(
-                    HttpStatus.FORBIDDEN,
-                    ApiErrorCode.FORBIDDEN,
-                    FORBIDDEN_DETAIL,
-                    request,
-                    exception
-            );
+        if (exception instanceof ApiException apiException) {
+            return handleApiException(apiException, exception, request);
         }
         return problem(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
                 BAD_REQUEST_DETAIL,
+                request,
+                exception
+        );
+    }
+
+    private ResponseEntity<ProblemDetail> handleApiException(
+            ApiException apiException,
+            RuntimeException exception,
+            HttpServletRequest request
+    ) {
+        return problem(
+                apiException.getStatus(),
+                apiException.getErrorCode(),
+                apiException.getSafeMessage(),
                 request,
                 exception
         );
@@ -234,10 +261,54 @@ public class GlobalApiExceptionHandler {
     }
 
     private static Map<String, String> toValidationError(FieldError error) {
-        return Map.of(
-                "field", error.getField(),
-                "message", error.getDefaultMessage() == null ? "Invalid value." : error.getDefaultMessage()
-        );
+        return validationError(error.getField(), error.getDefaultMessage());
+    }
+
+    private static Map<String, String> validationError(String field, String message) {
+        return Map.of("field", safeField(field), "message", safeMessage(message));
+    }
+
+    private static String safeField(String field) {
+        return field == null || field.isBlank() ? "unknown" : field;
+    }
+
+    private static String safeMessage(String message) {
+        return message == null || message.isBlank() ? "Invalid value." : message;
+    }
+
+    private static List<Map<String, String>> methodValidationErrors(HandlerMethodValidationException exception) {
+        return exception.getParameterValidationResults().stream()
+                .flatMap(result -> validationErrors(result).stream())
+                .toList();
+    }
+
+    private static List<Map<String, String>> validationErrors(ParameterValidationResult result) {
+        String parameterName = result.getMethodParameter().getParameterName();
+        if (result instanceof ParameterErrors parameterErrors) {
+            return parameterErrors.getFieldErrors().stream()
+                    .map(GlobalApiExceptionHandler::toValidationError)
+                    .toList();
+        }
+        return result.getResolvableErrors().stream()
+                .map(error -> validationError(parameterName, message(error)))
+                .toList();
+    }
+
+    private static String message(MessageSourceResolvable error) {
+        return error.getDefaultMessage();
+    }
+
+    private static String pathName(Path path) {
+        if (path == null) {
+            return null;
+        }
+        String name = null;
+        for (Path.Node node : path) {
+            if (node.getName() != null && !node.getName().isBlank()) {
+                name = node.getName();
+            }
+        }
+        return name;
     }
 
     private void logException(HttpStatusCode status, String traceId, Exception exception) {
@@ -287,20 +358,6 @@ public class GlobalApiExceptionHandler {
     private static String title(HttpStatusCode status) {
         HttpStatus httpStatus = HttpStatus.resolve(status.value());
         return httpStatus == null ? "HTTP " + status.value() : httpStatus.getReasonPhrase();
-    }
-
-    private static boolean isNotFound(RuntimeException exception) {
-        return lowerMessage(exception).contains("not found");
-    }
-
-    private static boolean isForbidden(RuntimeException exception) {
-        String message = lowerMessage(exception);
-        return message.contains("does not match authenticated user") || message.contains("does not match user");
-    }
-
-    private static String lowerMessage(RuntimeException exception) {
-        String message = exception.getMessage();
-        return message == null ? "" : message.toLowerCase(Locale.ROOT);
     }
 
 }

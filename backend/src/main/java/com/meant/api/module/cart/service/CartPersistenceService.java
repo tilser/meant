@@ -32,7 +32,7 @@ public class CartPersistenceService {
     @Transactional(readOnly = true)
     public Cart findCart(UUID cartId) {
         return cartRepository.findWithLinesById(cartId)
-                .orElseThrow(() -> new CartException("Cart not found: " + cartId));
+                .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
     }
 
     @Transactional

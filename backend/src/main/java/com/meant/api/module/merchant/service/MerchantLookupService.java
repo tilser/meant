@@ -16,7 +16,9 @@ public class MerchantLookupService {
 
     public MerchantSemanticSearchResult activeSearchResult(UUID merchantId) {
         Merchant merchant = merchantRepository.findByIdAndActiveTrue(merchantId)
-                .orElseThrow(() -> new MerchantCatalogSearchException("Active merchant not found: " + merchantId));
+                .orElseThrow(() -> MerchantCatalogSearchException.notFound(
+                        "Active merchant not found: " + merchantId
+                ));
         return new MerchantSemanticSearchResult(
                 merchant.getId(),
                 merchant.getDomain(),
