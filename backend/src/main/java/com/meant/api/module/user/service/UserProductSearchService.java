@@ -5,6 +5,7 @@ import com.meant.api.module.merchant.service.MerchantSemanticProductSearchServic
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
+import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
@@ -65,6 +66,9 @@ public class UserProductSearchService {
         String normalizedQuery = catalogInput.cacheKey();
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
+        int offset = command.offset();
+        int limit = command.limit();
+        int fetchLimit = fetchLimit(offset, limit);
 
         UserProductSearchResult result;
         if (command.merchantId() != null) {
@@ -75,7 +79,10 @@ public class UserProductSearchService {
                     normalizedQuery,
                     profileHash,
                     settings,
-                    command.merchantId()
+                    command.merchantId(),
+                    offset,
+                    limit,
+                    fetchLimit
             );
         } else {
             result = userProductSearchPersistenceService.findCachedSearch(
@@ -86,7 +93,9 @@ public class UserProductSearchService {
                             userProductSearchProperties.searchVersion(),
                             openRouterProperties.models().productRecommendationExplainer(),
                             userProductSearchProperties.explanationPromptVersion(),
-                            now
+                            now,
+                            offset,
+                            limit
                     )
                     .orElseGet(() -> searchAndPersist(
                             command.userId(),
@@ -95,7 +104,10 @@ public class UserProductSearchService {
                             normalizedQuery,
                             profileHash,
                             settings,
-                            now
+                            now,
+                            offset,
+                            limit,
+                            fetchLimit
                     ));
         }
 
@@ -116,9 +128,12 @@ public class UserProductSearchService {
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
-            UUID merchantId
+            UUID merchantId,
+            int offset,
+            int limit,
+            int fetchLimit
     ) {
-        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, merchantId);
+        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, merchantId, fetchLimit);
         Instant now = Instant.now();
         Map<String, UserProductRecommendationExplanationResult> explanations =
                 userProductRecommendationExplanationService.explain(
@@ -129,24 +144,29 @@ public class UserProductSearchService {
                         settings,
                         products
                 );
+        List<UserProductSearchProductResult> productResults = products.stream()
+                .map(product -> UserProductSearchProductResult.from(
+                        UserProductSearchResultItem.from(
+                                UUID.randomUUID(),
+                                product.productKey(),
+                                product.productHash(),
+                                product.product(),
+                                now
+                        ),
+                        explanations.get(product.productKey())
+                ))
+                .toList();
+        boolean hasMore = hasMoreProducts(products.size(), fetchLimit);
         return new UserProductSearchResult(
                 query,
                 normalizedQuery,
                 profileHash,
                 false,
-                products.stream()
-                        .filter(product -> explanations.containsKey(product.productKey()))
-                        .map(product -> UserProductSearchProductResult.from(
-                                UserProductSearchResultItem.from(
-                                        UUID.randomUUID(),
-                                        product.productKey(),
-                                        product.productHash(),
-                                        product.product(),
-                                        now
-                                ),
-                                explanations.get(product.productKey())
-                        ))
-                        .toList()
+                offset,
+                limit,
+                hasMore ? pageEnd(offset, limit) : null,
+                hasMore,
+                page(productResults, offset, limit)
         );
     }
 
@@ -157,9 +177,12 @@ public class UserProductSearchService {
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
-            Instant now
+            Instant now,
+            int offset,
+            int limit,
+            int fetchLimit
     ) {
-        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, null);
+        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, null, fetchLimit);
         Map<String, UserProductRecommendationExplanationResult> explanations =
                 userProductRecommendationExplanationService.explain(
                         userId,
@@ -178,13 +201,17 @@ public class UserProductSearchService {
                 now,
                 now.plus(userProductSearchProperties.cacheTtl()),
                 products,
-                explanations
+                explanations,
+                hasMoreProducts(products.size(), fetchLimit),
+                offset,
+                limit
         );
     }
 
     private List<UserProductSearchProductSnapshot> productSnapshots(
             UserProductSearchCatalogInput catalogInput,
-            UUID merchantId
+            UUID merchantId,
+            int productLimit
     ) {
         MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery(
@@ -193,7 +220,7 @@ public class UserProductSearchService {
                         null,
                         null,
                         null,
-                        null,
+                        productLimit,
                         catalogInput.context(),
                         catalogInput.signals(),
                         catalogInput.filters()
@@ -212,5 +239,30 @@ public class UserProductSearchService {
             MerchantSemanticProductSearchResult searchResult
     ) {
         return searchResult == null || searchResult.products() == null ? List.of() : searchResult.products();
+    }
+
+    private int fetchLimit(int offset, int limit) {
+        int pageEnd = pageEnd(offset, limit);
+        if (pageEnd >= UserProductSearchPagination.MAX_RESULT_WINDOW) {
+            return UserProductSearchPagination.MAX_RESULT_WINDOW;
+        }
+        return pageEnd + 1;
+    }
+
+    private boolean hasMoreProducts(int productCount, int fetchLimit) {
+        return fetchLimit < UserProductSearchPagination.MAX_RESULT_WINDOW && productCount >= fetchLimit;
+    }
+
+    private List<UserProductSearchProductResult> page(
+            List<UserProductSearchProductResult> products,
+            int offset,
+            int limit
+    ) {
+        int toIndex = Math.min(pageEnd(offset, limit), products.size());
+        return offset >= products.size() ? List.of() : products.subList(offset, toIndex);
+    }
+
+    private int pageEnd(int offset, int limit) {
+        return Math.min(offset + limit, UserProductSearchPagination.MAX_RESULT_WINDOW);
     }
 }

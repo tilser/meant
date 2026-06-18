@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductRecommendationFilterMatch;
 import com.meant.api.module.user.entity.UserProductSearch;
@@ -38,7 +39,9 @@ public class UserProductSearchPersistenceService {
             String searchVersion,
             String model,
             String promptVersion,
-            Instant now
+            Instant now,
+            int offset,
+            int limit
     ) {
         return userProductSearchRepository
                 .findFirstByUserIdAndNormalizedQueryAndProfileHashAndSearchVersionAndExpiresAtAfterOrderByUpdatedAtDesc(
@@ -48,15 +51,25 @@ public class UserProductSearchPersistenceService {
                         searchVersion,
                         now
                 )
-                .flatMap(search -> resultFromSearch(
-                        search,
-                        query,
-                        normalizedQuery,
-                        profileHash,
-                        model,
-                        promptVersion,
-                        true
-                ));
+                .flatMap(search -> {
+                    List<UserProductSearchResultItem> items = userProductSearchResultItemRepository
+                            .findBySearchIdOrderByRankAsc(search.getId());
+                    if (!canServePage(items.size(), search.isHasMoreProducts(), offset, limit)) {
+                        return Optional.empty();
+                    }
+                    return resultFromSearch(
+                            search,
+                            query,
+                            normalizedQuery,
+                            profileHash,
+                            model,
+                            promptVersion,
+                            true,
+                            offset,
+                            limit,
+                            items
+                    );
+                });
     }
 
     @Transactional(readOnly = true)
@@ -112,7 +125,9 @@ public class UserProductSearchPersistenceService {
                             profileHash,
                             model,
                             promptVersion,
-                            true
+                            true,
+                            UserProductSearchPagination.DEFAULT_OFFSET,
+                            UserProductSearchPagination.MAX_RESULT_WINDOW
                     )
                     .ifPresent(result -> result.products().forEach(product -> {
                         if (products.size() < productLimit) {
@@ -181,7 +196,10 @@ public class UserProductSearchPersistenceService {
             Instant now,
             Instant expiresAt,
             List<UserProductSearchProductSnapshot> products,
-            Map<String, UserProductRecommendationExplanationResult> explanations
+            Map<String, UserProductRecommendationExplanationResult> explanations,
+            boolean hasMoreProducts,
+            int offset,
+            int limit
     ) {
         UserProductSearch search = userProductSearchRepository
                 .findByUserIdAndNormalizedQueryAndProfileHashAndSearchVersion(
@@ -191,7 +209,7 @@ public class UserProductSearchPersistenceService {
                         searchVersion
                 )
                 .map(existing -> {
-                    existing.refresh(query, now, expiresAt);
+                    existing.refresh(query, now, expiresAt, hasMoreProducts);
                     return existing;
                 })
                 .orElseGet(() -> UserProductSearch.create(
@@ -201,7 +219,8 @@ public class UserProductSearchPersistenceService {
                         profileHash,
                         searchVersion,
                         now,
-                        expiresAt
+                        expiresAt,
+                        hasMoreProducts
                 ));
         UserProductSearch savedSearch = userProductSearchRepository.save(search);
         userProductSearchResultItemRepository.deleteBySearchId(savedSearch.getId());
@@ -216,26 +235,57 @@ public class UserProductSearchPersistenceService {
                 ))
                 .toList();
         userProductSearchResultItemRepository.saveAll(items);
-        return new UserProductSearchResult(
+        return result(
                 query,
                 normalizedQuery,
                 profileHash,
                 false,
+                offset,
+                limit,
+                hasMoreProducts,
                 productResults(items, explanations)
         );
     }
 
-    private java.util.Optional<UserProductSearchResult> resultFromSearch(
+    private Optional<UserProductSearchResult> resultFromSearch(
             UserProductSearch search,
             String query,
             String normalizedQuery,
             String profileHash,
             String model,
             String promptVersion,
-            boolean cached
+            boolean cached,
+            int offset,
+            int limit
     ) {
         List<UserProductSearchResultItem> items = userProductSearchResultItemRepository
                 .findBySearchIdOrderByRankAsc(search.getId());
+        return resultFromSearch(
+                search,
+                query,
+                normalizedQuery,
+                profileHash,
+                model,
+                promptVersion,
+                cached,
+                offset,
+                limit,
+                items
+        );
+    }
+
+    private Optional<UserProductSearchResult> resultFromSearch(
+            UserProductSearch search,
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            String model,
+            String promptVersion,
+            boolean cached,
+            int offset,
+            int limit,
+            List<UserProductSearchResultItem> items
+    ) {
         Map<String, UserProductRecommendationExplanationResult> explanations = loadExplanations(
                 search.getUserId(),
                 normalizedQuery,
@@ -252,15 +302,57 @@ public class UserProductSearchPersistenceService {
         );
         List<UserProductSearchProductResult> products = productResults(items, explanations);
         if (!items.isEmpty() && products.isEmpty()) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
-        return java.util.Optional.of(new UserProductSearchResult(
+        return Optional.of(result(
                 query,
                 normalizedQuery,
                 profileHash,
                 cached,
+                offset,
+                limit,
+                search.isHasMoreProducts(),
                 products
         ));
+    }
+
+    private boolean canServePage(int itemCount, boolean hasMoreProducts, int offset, int limit) {
+        return itemCount >= pageEnd(offset, limit) || !hasMoreProducts;
+    }
+
+    private UserProductSearchResult result(
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            boolean cached,
+            int offset,
+            int limit,
+            boolean hasMoreProducts,
+            List<UserProductSearchProductResult> products
+    ) {
+        int pageEnd = pageEnd(offset, limit);
+        int toIndex = Math.min(pageEnd, products.size());
+        List<UserProductSearchProductResult> page = offset >= products.size()
+                ? List.of()
+                : products.subList(offset, toIndex);
+        boolean hasMore = pageEnd < UserProductSearchPagination.MAX_RESULT_WINDOW
+                && (products.size() > pageEnd || hasMoreProducts);
+        Integer nextOffset = hasMore ? pageEnd : null;
+        return new UserProductSearchResult(
+                query,
+                normalizedQuery,
+                profileHash,
+                cached,
+                offset,
+                limit,
+                nextOffset,
+                hasMore,
+                page
+        );
+    }
+
+    private int pageEnd(int offset, int limit) {
+        return Math.min(offset + limit, UserProductSearchPagination.MAX_RESULT_WINDOW);
     }
 
     private List<UserProductSearchProductResult> productResults(

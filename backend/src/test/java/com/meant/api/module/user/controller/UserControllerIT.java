@@ -550,7 +550,8 @@ class UserControllerIT extends PostgresIntegrationTest {
                 profileHash,
                 userProductSearchProperties.searchVersion(),
                 now,
-                now.plusSeconds(3600)
+                now.plusSeconds(3600),
+                false
         ));
         userProductSearchResultItemRepository.save(UserProductSearchResultItem.from(
                 search.getId(),

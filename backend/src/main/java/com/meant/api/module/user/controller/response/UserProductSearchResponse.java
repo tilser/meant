@@ -8,6 +8,10 @@ public record UserProductSearchResponse(
         String normalizedQuery,
         String profileHash,
         boolean cached,
+        int offset,
+        int limit,
+        Integer nextOffset,
+        boolean hasMore,
         List<UserProductSearchProductResponse> products
 ) {
 
@@ -17,6 +21,10 @@ public record UserProductSearchResponse(
                 result.normalizedQuery(),
                 result.profileHash(),
                 result.cached(),
+                result.offset(),
+                result.limit(),
+                result.nextOffset(),
+                result.hasMore(),
                 result.products().stream()
                         .map(UserProductSearchProductResponse::from)
                         .toList()

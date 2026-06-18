@@ -57,6 +57,9 @@ public class UserProductSearch {
     @Column(nullable = false)
     private Instant expiresAt;
 
+    @Column(nullable = false)
+    private boolean hasMoreProducts;
+
     public static UserProductSearch create(
             UUID userId,
             String query,
@@ -64,7 +67,8 @@ public class UserProductSearch {
             String profileHash,
             String searchVersion,
             Instant now,
-            Instant expiresAt
+            Instant expiresAt,
+            boolean hasMoreProducts
     ) {
         return UserProductSearch.builder()
                 .id(UUID.randomUUID())
@@ -76,12 +80,14 @@ public class UserProductSearch {
                 .createdAt(now)
                 .updatedAt(now)
                 .expiresAt(expiresAt)
+                .hasMoreProducts(hasMoreProducts)
                 .build();
     }
 
-    public void refresh(String query, Instant now, Instant expiresAt) {
+    public void refresh(String query, Instant now, Instant expiresAt, boolean hasMoreProducts) {
         this.query = query;
         this.updatedAt = now;
         this.expiresAt = expiresAt;
+        this.hasMoreProducts = hasMoreProducts;
     }
 }

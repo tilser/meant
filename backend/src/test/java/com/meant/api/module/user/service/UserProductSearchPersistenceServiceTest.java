@@ -3,6 +3,8 @@ package com.meant.api.module.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
+import com.meant.api.module.user.entity.UserProductRecommendationFilterMatch;
 import com.meant.api.module.user.entity.UserProductSearch;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
@@ -13,7 +15,9 @@ import com.meant.api.module.user.service.dto.UserProductRecommendationExplanatio
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +28,17 @@ import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 
 class UserProductSearchPersistenceServiceTest {
+
+    private static final String QUERY = "organic cotton tee";
+    private static final String NORMALIZED_QUERY = "organic cotton tee";
+    private static final String PROFILE_HASH = "profile";
+    private static final String SEARCH_VERSION = "v1";
+    private static final String MODEL = "model";
+    private static final String PROMPT_VERSION = "prompt";
+    private static final Instant NOW = Instant.parse("2026-06-18T10:00:00Z");
+
+    private boolean explanationsLoaded;
+    private boolean matchesLoaded;
 
     @Test
     void saveSearchSkipsProductsWithoutExplanations() {
@@ -47,14 +62,17 @@ class UserProductSearchPersistenceServiceTest {
                 "cotton basics",
                 "cotton basics",
                 "profile-hash",
-                "v1",
-                Instant.now(),
-                Instant.now().plusSeconds(3600),
+                SEARCH_VERSION,
+                NOW,
+                NOW.plusSeconds(3600),
                 List.of(
                         snapshot("merchant.example:tee", "hash-tee", "tee", "Organic Cotton Tee", 1),
                         snapshot("merchant.example:socks", "hash-socks", "socks", "Organic Cotton Socks", 2)
                 ),
-                Map.of(explanation.productKey(), explanation)
+                Map.of(explanation.productKey(), explanation),
+                false,
+                0,
+                20
         );
 
         assertThat(result.products()).singleElement()
@@ -67,11 +85,119 @@ class UserProductSearchPersistenceServiceTest {
                 .isEqualTo("merchant.example:tee");
     }
 
+    @Test
+    void findCachedSearchReturnsRequestedPageWithNextOffset() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, true);
+        List<UserProductSearchResultItem> items = items(search.getId(), 21);
+        UserProductSearchPersistenceService service = service(userId, search, items);
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                NOW,
+                0,
+                20
+        );
+
+        assertThat(result).isPresent();
+        assertThat(result.get().cached()).isTrue();
+        assertThat(result.get().offset()).isZero();
+        assertThat(result.get().limit()).isEqualTo(20);
+        assertThat(result.get().nextOffset()).isEqualTo(20);
+        assertThat(result.get().hasMore()).isTrue();
+        assertThat(result.get().products()).hasSize(20);
+        assertThat(result.get().products().getFirst().productKey()).isEqualTo("merchant.example:item-1");
+        assertThat(result.get().products().getLast().productKey()).isEqualTo("merchant.example:item-20");
+    }
+
+    @Test
+    void findCachedSearchReturnsEmptyWhenWindowIsTooSmallAndMoreMayExist() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, true);
+        List<UserProductSearchResultItem> items = items(search.getId(), 21);
+        UserProductSearchPersistenceService service = service(userId, search, items);
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                NOW,
+                20,
+                20
+        );
+
+        assertThat(result).isEmpty();
+        assertThat(explanationsLoaded).isFalse();
+        assertThat(matchesLoaded).isFalse();
+    }
+
+    @Test
+    void findCachedSearchServesPartialFinalPageWhenSearchIsExhausted() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, false);
+        List<UserProductSearchResultItem> items = items(search.getId(), 21);
+        UserProductSearchPersistenceService service = service(userId, search, items);
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                NOW,
+                20,
+                20
+        );
+
+        assertThat(result).isPresent();
+        assertThat(result.get().nextOffset()).isNull();
+        assertThat(result.get().hasMore()).isFalse();
+        assertThat(result.get().products()).singleElement()
+                .satisfies(product -> assertThat(product.productKey()).isEqualTo("merchant.example:item-21"));
+    }
+
+    private UserProductSearchPersistenceService service(
+            UUID userId,
+            UserProductSearch search,
+            List<UserProductSearchResultItem> items
+    ) {
+        explanationsLoaded = false;
+        matchesLoaded = false;
+        return new UserProductSearchPersistenceService(
+                cachedSearchRepository(search),
+                cachedResultItemRepository(search.getId(), items),
+                explanationRepository(userId, items),
+                filterMatchRepository()
+        );
+    }
+
     private UserProductSearchRepository searchRepository() {
         return repository(UserProductSearchRepository.class, (proxy, method, args) -> switch (method.getName()) {
             case "findByUserIdAndNormalizedQueryAndProfileHashAndSearchVersion" -> Optional.empty();
             case "save" -> args[0];
             default -> throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductSearchRepository cachedSearchRepository(UserProductSearch search) {
+        return repository(UserProductSearchRepository.class, (proxy, method, args) -> {
+            if ("findFirstByUserIdAndNormalizedQueryAndProfileHashAndSearchVersionAndExpiresAtAfterOrderByUpdatedAtDesc"
+                    .equals(method.getName())) {
+                return Optional.of(search);
+            }
+            throw new UnsupportedOperationException(method.getName());
         });
     }
 
@@ -91,6 +217,56 @@ class UserProductSearchPersistenceServiceTest {
         });
     }
 
+    private UserProductSearchResultItemRepository cachedResultItemRepository(
+            UUID searchId,
+            List<UserProductSearchResultItem> items
+    ) {
+        return repository(UserProductSearchResultItemRepository.class, (proxy, method, args) -> {
+            if ("findBySearchIdOrderByRankAsc".equals(method.getName())) {
+                return items.stream()
+                        .filter(item -> item.getSearchId().equals(searchId))
+                        .toList();
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductRecommendationExplanationRepository explanationRepository(
+            UUID userId,
+            List<UserProductSearchResultItem> items
+    ) {
+        return repository(UserProductRecommendationExplanationRepository.class, (proxy, method, args) -> {
+            if ("findByUserIdAndNormalizedQueryAndProfileHashAndModelAndPromptVersionAndProductKeyIn"
+                    .equals(method.getName())) {
+                explanationsLoaded = true;
+                return items.stream()
+                        .map(item -> UserProductRecommendationExplanation.create(
+                                userId,
+                                NORMALIZED_QUERY,
+                                PROFILE_HASH,
+                                item.getProductKey(),
+                                item.getProductHash(),
+                                MODEL,
+                                PROMPT_VERSION,
+                                "Matches your profile.",
+                                NOW
+                        ))
+                        .toList();
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductRecommendationFilterMatchRepository filterMatchRepository() {
+        return repository(UserProductRecommendationFilterMatchRepository.class, (proxy, method, args) -> {
+            if ("findByExplanationIdInOrderByRankAsc".equals(method.getName())) {
+                matchesLoaded = true;
+                return List.<UserProductRecommendationFilterMatch>of();
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
     @SuppressWarnings("unchecked")
     private Iterable<UserProductSearchResultItem> resultItems(Object value) {
         return (Iterable<UserProductSearchResultItem>) value;
@@ -105,9 +281,52 @@ class UserProductSearchPersistenceServiceTest {
     private <T> T repository(Class<T> type, InvocationHandler handler) {
         return type.cast(Proxy.newProxyInstance(
                 type.getClassLoader(),
-                new Class<?>[]{type},
-                handler
+                new Class<?>[] {type},
+                objectAwareHandler(handler)
         ));
+    }
+
+    private InvocationHandler objectAwareHandler(InvocationHandler handler) {
+        return (proxy, method, args) -> {
+            if (method.getDeclaringClass().equals(Object.class)) {
+                return objectMethod(proxy, method, args);
+            }
+            return handler.invoke(proxy, method, args);
+        };
+    }
+
+    private Object objectMethod(Object proxy, Method method, Object[] args) {
+        return switch (method.getName()) {
+            case "toString" -> "FakeRepository{" + proxy.getClass().getInterfaces()[0].getSimpleName() + "}";
+            case "hashCode" -> System.identityHashCode(proxy);
+            case "equals" -> proxy == args[0];
+            default -> throw new UnsupportedOperationException(method.getName());
+        };
+    }
+
+    private UserProductSearch search(UUID userId, boolean hasMoreProducts) {
+        return UserProductSearch.create(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                NOW,
+                NOW.plusSeconds(3600),
+                hasMoreProducts
+        );
+    }
+
+    private List<UserProductSearchResultItem> items(UUID searchId, int count) {
+        return java.util.stream.IntStream.rangeClosed(1, count)
+                .mapToObj(index -> UserProductSearchResultItem.from(
+                        searchId,
+                        "merchant.example:item-" + index,
+                        "hash-" + index,
+                        product(index),
+                        NOW
+                ))
+                .toList();
     }
 
     private UserProductSearchProductSnapshot snapshot(
@@ -117,8 +336,25 @@ class UserProductSearchPersistenceServiceTest {
             String title,
             int rank
     ) {
-        MerchantSemanticProductResult product = new MerchantSemanticProductResult(
-                UUID.randomUUID(),
+        return new UserProductSearchProductSnapshot(productKey, productHash, product(productId, title, rank));
+    }
+
+    private MerchantSemanticProductResult product(int index) {
+        return product(
+                UUID.nameUUIDFromBytes(("merchant-" + index).getBytes(StandardCharsets.UTF_8)),
+                "item-" + index,
+                "Item " + index,
+                index
+        );
+    }
+
+    private MerchantSemanticProductResult product(String productId, String title, int rank) {
+        return product(UUID.randomUUID(), productId, title, rank);
+    }
+
+    private MerchantSemanticProductResult product(UUID merchantId, String productId, String title, int rank) {
+        return new MerchantSemanticProductResult(
+                merchantId,
                 "merchant.example",
                 "Merchant",
                 "https://merchant.example/mcp",
@@ -157,6 +393,5 @@ class UserProductSearchPersistenceServiceTest {
                 0.92d,
                 rank
         );
-        return new UserProductSearchProductSnapshot(productKey, productHash, product);
     }
 }

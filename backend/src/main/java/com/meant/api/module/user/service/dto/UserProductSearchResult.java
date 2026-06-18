@@ -7,6 +7,10 @@ public record UserProductSearchResult(
         String normalizedQuery,
         String profileHash,
         boolean cached,
+        int offset,
+        int limit,
+        Integer nextOffset,
+        boolean hasMore,
         List<UserProductSearchProductResult> products
 ) {
 }

@@ -1368,6 +1368,42 @@ button:disabled {
   gap: 22px;
 }
 
+.mt-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 26px;
+}
+
+.mt-load-more-btn {
+  min-width: 132px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-load-more-btn:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+}
+
+.mt-load-more-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mt-load-more-btn:disabled {
+  cursor: wait;
+  color: var(--muted);
+}
+
 .mt-card {
   display: flex;
   flex-direction: column;

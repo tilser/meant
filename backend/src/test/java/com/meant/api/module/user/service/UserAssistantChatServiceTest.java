@@ -117,6 +117,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 "organic cotton tee",
                 "profile",
                 false,
+                0,
+                20,
+                null,
+                false,
                 List.of(product)
         );
 
@@ -141,6 +145,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 "organic cotton tee",
                 "organic cotton tee",
                 "profile",
+                false,
+                0,
+                20,
+                null,
                 false,
                 List.of(product)
         );
@@ -222,6 +230,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 "organic tee",
                 "organic tee",
                 "profile",
+                false,
+                0,
+                20,
+                null,
                 false,
                 List.of(product(
                         "Remote Tee " + injectedInstruction,
@@ -324,6 +336,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 "organic socks",
                 "profile",
                 false,
+                0,
+                20,
+                null,
+                false,
                 List.of(productWithCatalogPrice("Organic Cotton Socks", 500L))
         );
 
@@ -349,6 +365,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 "organic socks",
                 "organic socks",
                 "profile",
+                false,
+                0,
+                20,
+                null,
                 false,
                 List.of(product("Organic Cotton Socks", "Field Loom", longWhy))
         );
@@ -421,6 +441,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 "organic cotton clothes",
                 "organic cotton clothes",
                 "profile",
+                false,
+                0,
+                20,
+                null,
                 false,
                 List.of(product("Heavyweight Organic Cotton Tee"), product("Linen Overshirt"))
         );
@@ -725,6 +749,10 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                     "empty",
                     "empty",
                     "profile",
+                    false,
+                    0,
+                    20,
+                    null,
                     false,
                     List.of()
             );

@@ -220,6 +220,7 @@ const STARTER_SEARCHES: readonly SearchSuggestion[] = [
 const DEFAULT_GREETING = 'Good afternoon'
 const DEFAULT_BUDGET = 120
 const SEARCH_SUGGESTION_COUNT = 4
+const PRODUCT_SEARCH_PAGE_SIZE = 20
 
 const CLOTHING_FIT_OPTIONS: readonly { value: ClothingFit; label: string }[] = [
   { value: 'none', label: 'No preference' },
@@ -687,6 +688,21 @@ function productSnapshotsForIds(products: Product[], ids: readonly ProductId[]):
   return ids
     .map((id) => byId.get(id))
     .filter((product): product is Product => Boolean(product))
+}
+
+function appendProductSnapshots(products: Product[], nextProducts: readonly Product[]): Product[] {
+  const merged = [...products]
+  const indexes = new Map(merged.map((product, index) => [product.id, index] as const))
+  nextProducts.forEach((product) => {
+    const index = indexes.get(product.id)
+    if (index === undefined) {
+      indexes.set(product.id, merged.length)
+      merged.push(product)
+      return
+    }
+    merged[index] = product
+  })
+  return merged
 }
 
 function normalizedMerchantName(value: string | null | undefined): string {
@@ -2510,6 +2526,8 @@ function FeedView({
   reply,
   query,
   loading,
+  loadingMore,
+  hasMore,
   error,
   preferences,
   merchants,
@@ -2519,6 +2537,7 @@ function FeedView({
   merchantsLoading,
   merchantsError,
   onSubmit,
+  onLoadMore,
   onClear,
   onMerchant,
   onOpen,
@@ -2539,6 +2558,8 @@ function FeedView({
   reply: string | null
   query: string
   loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
   error: string | null
   preferences: readonly Preference[]
   merchants: readonly MerchantProfile[]
@@ -2548,6 +2569,7 @@ function FeedView({
   merchantsLoading: boolean
   merchantsError: string | null
   onSubmit: (query: string) => void
+  onLoadMore: () => void
   onClear: () => void
   onMerchant: (merchant: MerchantProfile | null) => void
 } & ProductOpenProps & ProductSaveProps>) {
@@ -2563,6 +2585,8 @@ function FeedView({
       ? discoveryLoading
         ? 'Loading your context'
         : `${products.length} from your context`
+      : loadingMore
+        ? `${products.length} shown · loading more`
       : merchantName
         ? `${products.length} on ${merchantName}`
         : `${products.length} shown · sorted by match`
@@ -2651,21 +2675,36 @@ function FeedView({
           label={loading ? undefined : 'Loading your saved and recent products'}
         />
       ) : products.length > 0 ? (
-        <div className="mt-grid">
-          {products.map((product, index) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              index={index}
-              deliveryLocations={deliveryLocations}
-              preferences={preferences}
-              onOpen={onOpen}
-              savedSet={savedSet}
-              savePendingSet={savePendingSet}
-              onToggleSave={onToggleSave}
-            />
-          ))}
-        </div>
+        <>
+          <div className="mt-grid">
+            {products.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                index={index}
+                deliveryLocations={deliveryLocations}
+                preferences={preferences}
+                onOpen={onOpen}
+                savedSet={savedSet}
+                savePendingSet={savePendingSet}
+                onToggleSave={onToggleSave}
+              />
+            ))}
+          </div>
+          {!preSearch && hasMore ? (
+            <div className="mt-load-more">
+              <button
+                className="mt-load-more-btn"
+                type="button"
+                onClick={onLoadMore}
+                disabled={loadingMore}
+                aria-busy={loadingMore}
+              >
+                {loadingMore ? 'Loading more' : 'Load more'}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : merchantName ? (
         <div className="mt-empty">
           <div className="mt-empty-mark"><MerchantIcon /></div>
@@ -5415,6 +5454,10 @@ export function MeantApp() {
   const [searchResults, setSearchResults] = useState<Product[]>([])
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
+  const [searchHasMore, setSearchHasMore] = useState(false)
+  const [searchNextOffset, setSearchNextOffset] = useState<number | null>(null)
+  const [searchMerchantId, setSearchMerchantId] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
@@ -5734,6 +5777,11 @@ export function MeantApp() {
     setRemoteProducts([])
     setSearchError(null)
     setSearchLoading(false)
+    setSearchLoadingMore(false)
+    setSearchHasMore(false)
+    setSearchNextOffset(null)
+    setSearchMerchantId(null)
+    searchRequestRef.current += 1
     searchSuggestionsRequestRef.current += 1
     setSearchSuggestions([])
     setDiscoveryError(null)
@@ -6077,23 +6125,41 @@ export function MeantApp() {
     })
   }
 
-  const runProductSearch = async (nextQuery: string) => {
+  const runProductSearch = async (
+    nextQuery: string,
+    options?: { append?: boolean; offset?: number; merchantId?: string | null },
+  ) => {
     const submittedQuery = nextQuery.trim()
     if (!submittedQuery) {
       return
     }
+    const append = options?.append === true
+    const offset = options?.offset ?? 0
+    const merchantId = append
+      ? options?.merchantId ?? searchMerchantId
+      : selectedMerchant?.id ?? null
+    const merchantAtSubmit = merchants.find((merchant) => merchant.id === merchantId) ?? null
     const requestId = searchRequestRef.current + 1
     searchRequestRef.current = requestId
     setQuery(submittedQuery)
-    setReply(null)
     setSearchError(null)
-    setSearchLoading(true)
-    setSearchResults([])
+    if (append) {
+      setSearchLoadingMore(true)
+    } else {
+      setReply(null)
+      setSearchLoading(true)
+      setSearchLoadingMore(false)
+      setSearchResults([])
+      setSearchHasMore(false)
+      setSearchNextOffset(null)
+      setSearchMerchantId(merchantId)
+    }
     try {
-      const merchantAtSubmit = selectedMerchant
       const result = await searchUserProducts({
         query: submittedQuery,
-        merchantId: merchantAtSubmit?.id,
+        merchantId,
+        offset,
+        limit: PRODUCT_SEARCH_PAGE_SIZE,
       })
       if (searchRequestRef.current !== requestId) {
         return
@@ -6101,28 +6167,62 @@ export function MeantApp() {
       const products = result.products.map((product) =>
         productFromSearchResult(product, allPreferences),
       )
-      setSearchResults(products)
+      setSearchResults((current) => append ? appendProductSnapshots(current, products) : products)
       setRemoteProducts((current) => {
         const byId = new Map(current.map((product) => [product.id, product]))
         products.forEach((product) => byId.set(product.id, product))
         return Array.from(byId.values())
       })
-      setReply(
-        result.cached
-          ? `Showing ${products.length} cached match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
-          : `Found ${products.length} match${products.length === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
-      )
+      setSearchHasMore(result.hasMore)
+      setSearchNextOffset(result.nextOffset)
+      setSearchMerchantId(merchantId)
+      if (append) {
+        setReply(
+          products.length > 0
+            ? `Loaded ${products.length} more match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
+            : `No more matches found for "${submittedQuery}".`,
+        )
+      } else {
+        setReply(
+          result.cached
+            ? `Showing ${products.length} cached match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
+            : `Found ${products.length} match${products.length === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
+        )
+      }
     } catch {
       if (searchRequestRef.current !== requestId) {
         return
       }
-      setSearchResults([])
-      setSearchError('Product search failed. Please try again.')
+      if (!append) {
+        setSearchResults([])
+        setSearchHasMore(false)
+        setSearchNextOffset(null)
+      }
+      setSearchError(
+        append
+          ? 'Could not load more products. Please try again.'
+          : 'Product search failed. Please try again.',
+      )
     } finally {
       if (searchRequestRef.current === requestId) {
-        setSearchLoading(false)
+        if (append) {
+          setSearchLoadingMore(false)
+        } else {
+          setSearchLoading(false)
+        }
       }
     }
+  }
+
+  const loadMoreSearchResults = () => {
+    if (!query || !searchHasMore || searchNextOffset === null || searchLoading || searchLoadingMore) {
+      return
+    }
+    void runProductSearch(query, {
+      append: true,
+      offset: searchNextOffset,
+      merchantId: searchMerchantId,
+    })
   }
 
   const applyAssistantProducts = (products: readonly Product[], sourceQuery: string) => {
@@ -6131,6 +6231,10 @@ export function MeantApp() {
     setReply(`Ask Meant found ${products.length} match${products.length === 1 ? '' : 'es'} for "${sourceQuery}".`)
     setSearchError(null)
     setSearchLoading(false)
+    setSearchLoadingMore(false)
+    setSearchHasMore(false)
+    setSearchNextOffset(null)
+    setSearchMerchantId(null)
     setSearchResults([...products])
     setRemoteProducts((current) => {
       const byId = new Map(current.map((product) => [product.id, product]))
@@ -6323,6 +6427,8 @@ export function MeantApp() {
             reply={reply}
             query={query}
             loading={searchLoading}
+            loadingMore={searchLoadingMore}
+            hasMore={searchHasMore}
             error={searchError}
             preferences={allPreferences}
             merchants={merchants}
@@ -6334,12 +6440,18 @@ export function MeantApp() {
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
             }}
+            onLoadMore={loadMoreSearchResults}
             onClear={() => {
+              searchRequestRef.current += 1
               setReply(null)
               setQuery('')
               setSearchResults([])
               setSearchError(null)
               setSearchLoading(false)
+              setSearchLoadingMore(false)
+              setSearchHasMore(false)
+              setSearchNextOffset(null)
+              setSearchMerchantId(null)
             }}
             onMerchant={(merchant) => {
               setSelectedMerchantId(merchant?.id ?? null)

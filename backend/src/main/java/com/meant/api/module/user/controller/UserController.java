@@ -235,7 +235,9 @@ public class UserController {
                         request.query(),
                         request.merchantId(),
                         buyerIp(httpRequest),
-                        userAgent(httpRequest))));
+                        userAgent(httpRequest),
+                        request.offset(),
+                        request.limit())));
     }
 
     @GetMapping("/me/product-search-suggestions")
