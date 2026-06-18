@@ -38,7 +38,7 @@ public class MerchantDomainMcpClient {
             MerchantOutboundUrlValidator merchantOutboundUrlValidator
     ) {
         this.restClient = restClientBuilder.clone()
-                .requestFactory(new NoRedirectSimpleClientHttpRequestFactory())
+                .requestFactory(new MerchantClientHttpRequestFactory(merchantOutboundUrlValidator))
                 .build();
         this.objectMapper = objectMapper;
         this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;

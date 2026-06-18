@@ -30,7 +30,7 @@ public class UcpProfileClient {
     ) {
         this(
                 restClientBuilder.clone()
-                        .requestFactory(new NoRedirectSimpleClientHttpRequestFactory())
+                        .requestFactory(new MerchantClientHttpRequestFactory(merchantOutboundUrlValidator))
                         .build(),
                 objectMapper,
                 merchantOutboundUrlValidator

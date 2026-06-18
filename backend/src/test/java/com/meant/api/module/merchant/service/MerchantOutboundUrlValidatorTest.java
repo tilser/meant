@@ -57,13 +57,20 @@ class MerchantOutboundUrlValidatorTest {
             "127.0.0.1",
             "169.254.169.254",
             "172.16.0.1",
+            "192.0.0.1",
+            "192.0.2.1",
             "192.168.1.1",
             "198.18.0.1",
+            "198.51.100.1",
+            "203.0.113.1",
             "224.0.0.1",
             "::1",
             "fc00::1",
             "fe80::1",
-            "ff02::1"
+            "ff02::1",
+            "::ffff:10.0.0.1",
+            "::10.0.0.1",
+            "2002:0a00:0001::1"
     })
     void rejectsNonPublicResolvedAddresses(String address) {
         MerchantOutboundUrlValidator validator = validatorResolvingTo(address);
@@ -71,6 +78,27 @@ class MerchantOutboundUrlValidatorTest {
         assertThatThrownBy(() -> validator.validateMerchantUrl("merchant.example", "https://merchant.example/api/mcp"))
                 .isInstanceOf(MerchantOutboundUrlException.class)
                 .hasMessageContaining("non-public");
+    }
+
+    @Test
+    void allowsPublicAddressInNarrowNineteenTwoRange() {
+        MerchantOutboundUrlValidator validator = validatorResolvingTo("192.0.3.1");
+
+        URI uri = validator.validateMerchantUrl("merchant.example", "https://merchant.example/api/mcp");
+
+        assertThat(uri).isEqualTo(URI.create("https://merchant.example/api/mcp"));
+    }
+
+    @Test
+    void rejectsIpv6LiteralHostsBecauseMerchantEndpointsMustUseMerchantDomains() {
+        MerchantOutboundUrlValidator validator = validatorResolvingTo("2001:4860:4860::8888");
+
+        assertThatThrownBy(() -> validator.validateMerchantUrl(
+                "merchant.example",
+                "https://[2001:4860:4860::8888]/api/mcp"
+        ))
+                .isInstanceOf(MerchantOutboundUrlException.class)
+                .hasMessageContaining("host is invalid");
     }
 
     private MerchantOutboundUrlValidator validatorResolvingTo(String address) {

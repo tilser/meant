@@ -51,7 +51,7 @@ public class MerchantOutboundUrlValidator {
                     "Merchant outbound URL host is not under merchant domain " + normalizedDomain
             );
         }
-        validatePublicHost(normalizedHost);
+        resolveAndValidatePublicHost(normalizedHost);
         return uri;
     }
 
@@ -74,14 +74,18 @@ public class MerchantOutboundUrlValidator {
         return normalizedHost.equals(normalizedDomain) || normalizedHost.endsWith("." + normalizedDomain);
     }
 
-    private void validatePublicHost(String normalizedHost) {
+    private void resolveAndValidatePublicHost(String normalizedHost) {
         List<InetAddress> addresses;
         try {
             addresses = addressResolver.resolve(normalizedHost);
         } catch (UnknownHostException exception) {
             throw new MerchantOutboundUrlException("Merchant outbound URL host could not be resolved", exception);
         }
-        if (addresses.isEmpty()) {
+        validatePublicAddresses(addresses);
+    }
+
+    void validatePublicAddresses(List<InetAddress> addresses) {
+        if (addresses == null || addresses.isEmpty()) {
             throw new MerchantOutboundUrlException("Merchant outbound URL host did not resolve to an address");
         }
         addresses.forEach(address -> {
@@ -121,7 +125,8 @@ public class MerchantOutboundUrlValidator {
                 || first == 127
                 || first == 169 && second == 254
                 || first == 172 && second >= 16 && second <= 31
-                || first == 192 && second == 0
+                || first == 192 && second == 0 && third == 0
+                || first == 192 && second == 0 && third == 2
                 || first == 192 && second == 168
                 || first == 198 && (second == 18 || second == 19)
                 || first == 198 && second == 51 && third == 100
@@ -136,6 +141,8 @@ public class MerchantOutboundUrlValidator {
         int fourth = unsigned(address[3]);
 
         return isIpv4MappedAddress(address)
+                || isIpv4CompatibleAddress(address)
+                || isBlocked6to4Address(address)
                 || (first & 0xfe) == 0xfc
                 || first == 0xfe && (second & 0xc0) == 0x80
                 || first == 0xff
@@ -152,6 +159,29 @@ public class MerchantOutboundUrlValidator {
             return false;
         }
         return isBlockedIpv4(Arrays.copyOfRange(address, 12, 16));
+    }
+
+    private boolean isIpv4CompatibleAddress(byte[] address) {
+        for (int index = 0; index < 12; index++) {
+            if (address[index] != 0) {
+                return false;
+            }
+        }
+        byte[] embeddedIpv4 = Arrays.copyOfRange(address, 12, 16);
+        return !isUnspecifiedOrLoopback(embeddedIpv4) && isBlockedIpv4(embeddedIpv4);
+    }
+
+    private boolean isUnspecifiedOrLoopback(byte[] embeddedIpv4) {
+        return embeddedIpv4[0] == 0
+                && embeddedIpv4[1] == 0
+                && embeddedIpv4[2] == 0
+                && (embeddedIpv4[3] == 0 || embeddedIpv4[3] == 1);
+    }
+
+    private boolean isBlocked6to4Address(byte[] address) {
+        return unsigned(address[0]) == 0x20
+                && unsigned(address[1]) == 0x02
+                && isBlockedIpv4(Arrays.copyOfRange(address, 2, 6));
     }
 
     private String normalizeDomain(String merchantDomain) {

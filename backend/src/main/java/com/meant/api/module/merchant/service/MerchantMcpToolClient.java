@@ -34,9 +34,11 @@ public class MerchantMcpToolClient {
             MerchantMcpToolProperties merchantMcpToolProperties,
             MerchantOutboundUrlValidator merchantOutboundUrlValidator
     ) {
-        NoRedirectSimpleClientHttpRequestFactory requestFactory = new NoRedirectSimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofMillis(merchantMcpToolProperties.connectTimeoutMilliseconds()));
-        requestFactory.setReadTimeout(Duration.ofMillis(merchantMcpToolProperties.readTimeoutMilliseconds()));
+        MerchantClientHttpRequestFactory requestFactory = new MerchantClientHttpRequestFactory(
+                merchantOutboundUrlValidator,
+                Duration.ofMillis(merchantMcpToolProperties.connectTimeoutMilliseconds()),
+                Duration.ofMillis(merchantMcpToolProperties.readTimeoutMilliseconds())
+        );
         this.restClient = restClientBuilder.clone().requestFactory(requestFactory).build();
         this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
     }
