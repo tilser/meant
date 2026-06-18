@@ -4371,7 +4371,7 @@ function InventoryPhotoFormPanel({
       </div>
       <label className="mt-field">
         <span className="mt-field-label mt-mono">Photo</span>
-        <input className="mt-file" type="file" accept="image/*" capture="environment" onChange={onPhoto} />
+        <input className="mt-file" type="file" accept="image/*" onChange={onPhoto} />
       </label>
       {form.photoUrl ? (
         <div className="mt-inv-photo-preview">
