@@ -9,6 +9,12 @@
         <addColumn tableName="cart">
             <column name="user_id" type="uuid"/>
         </addColumn>
+        <!-- Existing carts were anonymous UUID-only objects and cannot be safely assigned an owner. -->
+        <delete tableName="cart"/>
+        <addNotNullConstraint
+                tableName="cart"
+                columnName="user_id"
+                columnDataType="uuid"/>
         <addForeignKeyConstraint
                 baseTableName="cart"
                 baseColumnNames="user_id"

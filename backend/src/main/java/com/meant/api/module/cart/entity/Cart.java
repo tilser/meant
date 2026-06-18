@@ -37,7 +37,7 @@ public class Cart {
     @Column(nullable = false, updatable = false)
     private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private UUID userId;
 
     @Column(nullable = false)
