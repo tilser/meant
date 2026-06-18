@@ -161,7 +161,7 @@ public class UserAssistantChatService {
                         .limit(PRODUCT_RESPONSE_LIMIT)
                         .toList();
             } catch (RuntimeException exception) {
-                searchError = exception.getMessage();
+                searchError = "Product search is temporarily unavailable.";
                 log.warn("Failed to run assistant product search", exception);
             }
         }
