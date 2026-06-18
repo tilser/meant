@@ -4169,8 +4169,8 @@ function InventoryView({
         photoUrl,
         name: current.name || fileName,
       }))
-    } catch {
-      setFormError('Photo is too large')
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Could not process photo')
     } finally {
       setPhotoProcessing(false)
       input.value = ''
@@ -4240,7 +4240,7 @@ function InventoryView({
       {notice ? <div className="mt-inv-notice mt-mono">{notice}</div> : null}
 
       <div className="mt-inv-list-head">
-        <div className="mt-inv-tabs" role="tablist" aria-label="Inventory category">
+        <div className="mt-inv-tabs" role="group" aria-label="Inventory category filter">
           <button
             className={`mt-inv-tab ${categoryFilter === 'ALL' ? 'on' : ''}`}
             type="button"

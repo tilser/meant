@@ -142,6 +142,64 @@ class UserInventoryServiceTest {
     }
 
     @Test
+    void updateCanClearOptionalTextFields() {
+        UserInventoryItemResult created = service.create(upsertCommand(), new CreateUserInventoryItemCommand(
+                USER_ID,
+                UserInventorySource.MANUAL,
+                null,
+                null,
+                "Countertop Coffee Brewer",
+                "Brew Works",
+                UserInventoryCategory.HOME,
+                "Daily coffee setup",
+                "https://example.test/brewer.jpg",
+                "https://example.test/brewer",
+                "https://example.test/photo.jpg",
+                1,
+                "piece",
+                "Kitchen",
+                "Filter size 02",
+                List.of("glass carafe"),
+                false,
+                false,
+                null,
+                null
+        ));
+
+        UserInventoryItemResult updated = service.update(upsertCommand(), new UpdateUserInventoryItemCommand(
+                USER_ID,
+                created.id(),
+                " ",
+                " ",
+                null,
+                " ",
+                " ",
+                " ",
+                " ",
+                null,
+                " ",
+                " ",
+                " ",
+                null,
+                null,
+                null,
+                null
+        ));
+
+        assertThat(updated.name()).isEqualTo("Countertop Coffee Brewer");
+        assertThat(updated.category()).isEqualTo(UserInventoryCategory.HOME);
+        assertThat(updated.quantity()).isEqualTo(1);
+        assertThat(updated.brand()).isNull();
+        assertThat(updated.description()).isNull();
+        assertThat(updated.imageUrl()).isNull();
+        assertThat(updated.productUrl()).isNull();
+        assertThat(updated.photoUrl()).isNull();
+        assertThat(updated.unit()).isNull();
+        assertThat(updated.location()).isNull();
+        assertThat(updated.notes()).isNull();
+    }
+
+    @Test
     void listCanFilterRestockEnabledPantryItems() {
         service.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
         service.create(upsertCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
@@ -157,7 +215,7 @@ class UserInventoryServiceTest {
     }
 
     @Test
-    void importPurchasedItemsIsIdempotentBySourceProductKey() {
+    void importPurchasedItemsDoesNotDuplicateSamePurchaseSnapshot() {
         ImportPurchasedInventoryItemsCommand.PurchasedItem item =
                 new ImportPurchasedInventoryItemsCommand.PurchasedItem(
                         "merchant.example:variant-1",
@@ -192,8 +250,73 @@ class UserInventoryServiceTest {
                     assertThat(result.source()).isEqualTo(UserInventorySource.MEANT_PURCHASE);
                     assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-1");
                     assertThat(result.category()).isEqualTo(UserInventoryCategory.PANTRY);
-                    assertThat(result.quantity()).isEqualTo(3);
+                    assertThat(result.quantity()).isEqualTo(1);
+                    assertThat(result.purchasedAt()).isEqualTo(NOW);
                 });
+    }
+
+    @Test
+    void importPurchasedItemsAccumulatesWhenPurchaseTimestampChanges() {
+        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
+                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        "merchant.example:variant-1",
+                        "hash-1",
+                        "Cold-Pressed Extra Virgin Olive Oil",
+                        "Casa Verde",
+                        null,
+                        null,
+                        1,
+                        NOW
+                ),
+                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        "merchant.example:variant-2",
+                        "hash-2",
+                        "Merino Crew Sweater",
+                        "Northbound",
+                        null,
+                        null,
+                        1,
+                        NOW
+                )
+        )));
+        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
+                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        "merchant.example:variant-1",
+                        "hash-1",
+                        "Cold-Pressed Extra Virgin Olive Oil",
+                        "Casa Verde",
+                        null,
+                        null,
+                        2,
+                        NOW.plusSeconds(60)
+                )
+        )));
+
+        List<UserInventoryItemResult> items = service.list(
+                upsertCommand(),
+                new ListUserInventoryItemsQuery(USER_ID, null, false)
+        );
+
+        assertThat(items).anySatisfy(result -> {
+            assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-1");
+            assertThat(result.quantity()).isEqualTo(3);
+            assertThat(result.purchasedAt()).isEqualTo(NOW.plusSeconds(60));
+        });
+        assertThat(items).anySatisfy(result -> {
+            assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-2");
+            assertThat(result.quantity()).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void inventoryProfileHashUsesRepositorySignature() {
+        assertThat(service.inventoryProfileHash(USER_ID)).isEqualTo("inventory:none");
+
+        service.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+
+        assertThat(service.inventoryProfileHash(USER_ID))
+                .startsWith("inventory:1:")
+                .isNotEqualTo("inventory:none");
     }
 
     @Test
@@ -365,6 +488,11 @@ class UserInventoryServiceTest {
                                         .filter(item -> item.getCategory() == args[1])
                                         .filter(UserInventoryItem::isRestockEnabled)
                                         .toList();
+                        case "countByUserId" -> (long) byUser((UUID) args[0]).size();
+                        case "findMaxUpdatedAtByUserId" ->
+                                byUser((UUID) args[0]).stream()
+                                        .map(UserInventoryItem::getUpdatedAt)
+                                        .max(Comparator.naturalOrder());
                         case "findByIdAndUserId" ->
                                 items.stream()
                                         .filter(item -> item.getId().equals(args[0]) && item.getUserId().equals(args[1]))

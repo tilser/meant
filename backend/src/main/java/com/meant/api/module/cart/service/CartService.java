@@ -20,6 +20,7 @@ import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -184,6 +185,7 @@ public class CartService {
     }
 
     private void importCartInventory(Cart cart) {
+        Instant purchasedAt = inventoryPurchasedAt(cart);
         List<ImportPurchasedInventoryItemsCommand.PurchasedItem> items = cart.getLines().stream()
                 .filter(line -> line.getProductVariantId() != null && !line.getProductVariantId().isBlank())
                 .map(line -> new ImportPurchasedInventoryItemsCommand.PurchasedItem(
@@ -194,12 +196,22 @@ public class CartService {
                         null,
                         null,
                         line.getQuantity(),
-                        cart.getRefreshedAt()
+                        purchasedAt
                 ))
                 .toList();
         if (!items.isEmpty()) {
             userInventoryService.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(cart.getUserId(), items));
         }
+    }
+
+    private Instant inventoryPurchasedAt(Cart cart) {
+        if (cart.getRemoteUpdatedAt() != null) {
+            return cart.getRemoteUpdatedAt();
+        }
+        if (cart.getUpdatedAt() != null) {
+            return cart.getUpdatedAt();
+        }
+        return cart.getRefreshedAt();
     }
 
     private String productName(String productTitle, String variantTitle, String fallback) {

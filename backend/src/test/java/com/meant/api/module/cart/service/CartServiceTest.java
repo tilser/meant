@@ -42,6 +42,8 @@ class CartServiceTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID OTHER_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    private static final Instant CART_REMOTE_CREATED_AT = Instant.parse("2026-06-16T11:05:00Z");
+    private static final Instant CART_REMOTE_UPDATED_AT = Instant.parse("2026-06-16T11:05:01Z");
 
     private FakeMerchantRepository merchantRepository;
     private FakeCartRepository cartRepository;
@@ -449,6 +451,8 @@ class CartServiceTest {
                 .rawCartResponse("{}")
                 .totalQuantity(1)
                 .active(true)
+                .remoteCreatedAt(CART_REMOTE_CREATED_AT)
+                .remoteUpdatedAt(CART_REMOTE_UPDATED_AT)
                 .createdAt(now)
                 .updatedAt(now)
                 .refreshedAt(now)
@@ -464,7 +468,7 @@ class CartServiceTest {
             assertThat(item.name()).isEqualTo("Candle");
             assertThat(item.brand()).isEqualTo("merchant.example");
             assertThat(item.quantity()).isEqualTo(1);
-            assertThat(item.purchasedAt()).isNotNull();
+            assertThat(item.purchasedAt()).isEqualTo(CART_REMOTE_UPDATED_AT);
         });
     }
 
@@ -494,8 +498,8 @@ class CartServiceTest {
                         "Checkout when ready",
                         new CartToolResponse.Cart(
                                 "gid://shopify/Cart/1",
-                                Instant.parse("2026-06-16T11:05:00Z"),
-                                Instant.parse("2026-06-16T11:05:01Z"),
+                                CART_REMOTE_CREATED_AT,
+                                CART_REMOTE_UPDATED_AT,
                                 lines,
                                 new CartToolResponse.Cost(
                                         new CartToolResponse.Money("14.95", "USD"),

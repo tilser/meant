@@ -41,7 +41,7 @@ public class UserInventoryPhotoRecognitionService {
     private final ObjectMapper objectMapper;
 
     public Optional<UserInventoryPhotoRecognitionResult> recognize(CreateUserInventoryPhotoItemCommand command) {
-        if (openRouterProperties.apiKey().isBlank()) {
+        if (openRouterProperties.apiKey() == null || openRouterProperties.apiKey().isBlank()) {
             return Optional.empty();
         }
 

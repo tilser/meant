@@ -24,18 +24,14 @@ import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.time.Instant;
-import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +40,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
@@ -113,7 +110,7 @@ public class UserInventoryService {
         return toResult(userInventoryItemRepository.save(item));
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public UserInventoryItemResult createFromPhoto(
             @NotNull @Valid UpsertUserCommand upsertCommand,
             @NotNull @Valid CreateUserInventoryPhotoItemCommand command
@@ -166,7 +163,11 @@ public class UserInventoryService {
                             purchasedItem.productKey()
                     )
                     .orElse(null);
-            UserInventoryItem.Snapshot snapshot = purchasedSnapshot(purchasedItem, existing, now);
+            Instant purchasedAt = purchasedAt(purchasedItem, now);
+            if (existing != null && Objects.equals(existing.getPurchasedAt(), purchasedAt)) {
+                continue;
+            }
+            UserInventoryItem.Snapshot snapshot = purchasedSnapshot(purchasedItem, existing, purchasedAt);
             UserInventoryItem item = existing == null
                     ? UserInventoryItem.create(command.userId(), snapshot, now)
                     : existing.replaceSnapshot(snapshot, now);
@@ -176,28 +177,12 @@ public class UserInventoryService {
 
     @Transactional(readOnly = true)
     public String inventoryProfileHash(UUID userId) {
-        List<UserInventoryItem> items = userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(userId);
-        if (items.isEmpty()) {
+        long itemCount = userInventoryItemRepository.countByUserId(userId);
+        if (itemCount == 0) {
             return "inventory:none";
         }
-        return "inventory:" + sha256(items.stream()
-                .sorted(Comparator.comparing(UserInventoryItem::getId))
-                .map(item -> Stream.of(
-                                item.getId(),
-                                item.getSource(),
-                                item.getSourceProductKey(),
-                                item.getName(),
-                                item.getBrand(),
-                                item.getCategory(),
-                                item.getQuantity(),
-                                item.isConsumable(),
-                                item.isRestockEnabled(),
-                                item.getRestockThreshold(),
-                                item.getUpdatedAt()
-                        )
-                        .map(this::value)
-                        .collect(Collectors.joining("|")))
-                .collect(Collectors.joining("\n")));
+        Instant lastUpdatedAt = userInventoryItemRepository.findMaxUpdatedAtByUserId(userId).orElse(null);
+        return "inventory:" + itemCount + ":" + value(lastUpdatedAt);
     }
 
     @Transactional(readOnly = true)
@@ -313,17 +298,17 @@ public class UserInventoryService {
                 item.getSource(),
                 item.getSourceProductKey(),
                 item.getProductHash(),
-                firstPresent(blankToNull(command.name()), item.getName()),
-                firstPresent(blankToNull(command.brand()), item.getBrand()),
+                patchRequiredText(command.name(), item.getName()),
+                patchOptionalText(command.brand(), item.getBrand()),
                 firstPresent(command.category(), item.getCategory()),
-                firstPresent(blankToNull(command.description()), item.getDescription()),
-                firstPresent(blankToNull(command.imageUrl()), item.getImageUrl()),
-                firstPresent(blankToNull(command.productUrl()), item.getProductUrl()),
-                firstPresent(blankToNull(command.photoUrl()), item.getPhotoUrl()),
+                patchOptionalText(command.description(), item.getDescription()),
+                patchOptionalText(command.imageUrl(), item.getImageUrl()),
+                patchOptionalText(command.productUrl(), item.getProductUrl()),
+                patchOptionalText(command.photoUrl(), item.getPhotoUrl()),
                 firstPresent(command.quantity(), item.getQuantity()),
-                firstPresent(blankToNull(command.unit()), item.getUnit()),
-                firstPresent(blankToNull(command.location()), item.getLocation()),
-                firstPresent(blankToNull(command.notes()), item.getNotes()),
+                patchOptionalText(command.unit(), item.getUnit()),
+                patchOptionalText(command.location(), item.getLocation()),
+                patchOptionalText(command.notes(), item.getNotes()),
                 toJson(attributes),
                 firstPresent(command.consumable(), item.isConsumable()),
                 firstPresent(command.restockEnabled(), item.isRestockEnabled()),
@@ -335,7 +320,7 @@ public class UserInventoryService {
     private UserInventoryItem.Snapshot purchasedSnapshot(
             ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem,
             UserInventoryItem existing,
-            Instant now
+            Instant purchasedAt
     ) {
         int quantity = purchasedItem.quantity() + (existing == null ? 0 : existing.getQuantity());
         UserInventoryCategory category = existing == null
@@ -363,8 +348,12 @@ public class UserInventoryService {
                 consumable,
                 existing != null && existing.isRestockEnabled(),
                 existing == null ? null : existing.getRestockThreshold(),
-                purchasedItem.purchasedAt() == null ? now : purchasedItem.purchasedAt()
+                purchasedAt
         );
+    }
+
+    private Instant purchasedAt(ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem, Instant now) {
+        return purchasedItem.purchasedAt() == null ? now : purchasedItem.purchasedAt();
     }
 
     private UserInventoryRecommendationSignal signal(
@@ -560,6 +549,20 @@ public class UserInventoryService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private String patchRequiredText(String value, String currentValue) {
+        if (value == null || value.isBlank()) {
+            return currentValue;
+        }
+        return value.trim();
+    }
+
+    private String patchOptionalText(String value, String currentValue) {
+        if (value == null) {
+            return currentValue;
+        }
+        return blankToNull(value);
+    }
+
     private <T> T firstPresent(T first, T second) {
         return first != null ? first : second;
     }
@@ -578,12 +581,4 @@ public class UserInventoryService {
         return value == null ? "" : value.toString().trim();
     }
 
-    private String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
-        }
-    }
 }
