@@ -63,6 +63,30 @@ export function listJoin(values: readonly string[]): string {
   return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`
 }
 
+const HIDDEN_PRODUCT_CATEGORY_VALUES = new Set([
+  'n/a',
+  'na',
+  'none',
+  'not available',
+  'unknown',
+])
+
+export function displayProductCategoryValue(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return null
+  }
+  const normalized = trimmed.toLowerCase()
+  if (
+    normalized.startsWith('gid://') ||
+    normalized.startsWith('urn:') ||
+    HIDDEN_PRODUCT_CATEGORY_VALUES.has(normalized)
+  ) {
+    return null
+  }
+  return trimmed
+}
+
 export function canMerchantShip(
   merchant: string,
   locations: DeliveryLocations,

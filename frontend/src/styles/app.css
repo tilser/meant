@@ -1572,11 +1572,15 @@ button:disabled {
 .mt-card-cat {
   top: 12px;
   left: 12px;
+  max-width: calc(100% - 84px);
   padding: 4px 9px;
   border-radius: 20px;
   color: var(--ink-soft);
   font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .mt-card-ring {
@@ -2810,6 +2814,7 @@ button:disabled {
 }
 
 .mt-modal-thumb {
+  appearance: none;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -2818,8 +2823,24 @@ button:disabled {
   background: var(--line-soft);
   aspect-ratio: 1 / 1;
   color: var(--muted);
+  cursor: pointer;
   font-size: 10px;
+  padding: 0;
   text-transform: uppercase;
+}
+
+.mt-modal-thumb.active {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.mt-modal-thumb:disabled {
+  cursor: default;
+}
+
+.mt-modal-thumb:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .mt-modal-thumb img {

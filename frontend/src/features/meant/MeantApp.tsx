@@ -106,6 +106,7 @@ import {
   computeSmartAlerts,
   cartDeliveryOptionAmount,
   cartDeliveryOptions,
+  displayProductCategoryValue,
   formatOrderDate,
   listJoin,
   money,
@@ -676,9 +677,9 @@ function searchProductMedia(product: UserProductSearchProductProfile): ProductMe
 
 function searchProductCatalogCategories(product: UserProductSearchProductProfile): ProductCatalogCategory[] {
   return (product.categories ?? [])
-    .filter((category) => Boolean(category.value))
+    .filter((category) => Boolean(displayProductCategoryValue(category.value)))
     .map((category) => ({
-      value: category.value ?? '',
+      value: displayProductCategoryValue(category.value) ?? '',
       taxonomy: category.taxonomy,
     }))
 }
@@ -711,7 +712,9 @@ function searchProductCategory(
   product: UserProductSearchProductProfile,
   preferences: readonly Preference[],
 ): string {
-  const catalogCategory = (product.categories ?? []).find((category) => category.value)?.value
+  const catalogCategory = (product.categories ?? [])
+    .map((category) => displayProductCategoryValue(category.value))
+    .find(Boolean)
   if (catalogCategory) {
     return catalogCategory
   }
@@ -880,7 +883,7 @@ function savedProductFromProfile(product: UserSavedProductProfile): Product {
     productHash: product.productHash,
     name: product.name,
     brand: product.brand,
-    category: product.category,
+    category: displayProductCategoryValue(product.category) ?? 'Product',
     tone: product.tone,
     imageUrl: product.imageUrl,
     productUrl: product.productUrl,
@@ -1907,15 +1910,17 @@ function Placeholder({
   )
 }
 
-function ProductArtwork({ product, label }: Readonly<{
+function ProductArtwork({ product, label, imageUrl }: Readonly<{
   product: Product
   label: string
+  imageUrl?: string | null
 }>) {
-  if (product.imageUrl) {
+  const artworkUrl = imageUrl ?? product.imageUrl
+  if (artworkUrl) {
     return (
       <img
         className="mt-product-img"
-        src={product.imageUrl}
+        src={artworkUrl}
         alt=""
         loading="lazy"
       />
@@ -3672,6 +3677,7 @@ function ProductModal({
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -3681,6 +3687,7 @@ function ProductModal({
     setAdded(false)
     setAdding(false)
     setAddError(null)
+    setSelectedMediaUrl(null)
   }, [product?.id])
 
   useEffect(() => () => {
@@ -3732,6 +3739,13 @@ function ProductModal({
   const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = offers.length > 0 ? offers : product.offers
   const modalMedia = (product.media ?? []).slice(0, 4)
+  const selectedMedia = selectedMediaUrl
+    ? modalMedia.find((item) => item.url === selectedMediaUrl)
+    : null
+  const selectedImageUrl = selectedMedia?.type.toLowerCase() === 'image'
+    ? selectedMedia.url
+    : null
+  const modalImageUrl = selectedImageUrl ?? product.imageUrl
   const catalogBadges = catalogBadgeLabels(product)
   const mediaInfo = mediaSummary(product)
   const hasCatalogDetails =
@@ -3860,22 +3874,38 @@ function ProductModal({
         <div className="mt-modal-body" key={product.id}>
           <div className="mt-modal-left">
             <div className="mt-modal-media">
-              <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
+              <ProductArtwork
+                product={product}
+                label={`${product.category.toLowerCase()} shot`}
+                imageUrl={modalImageUrl}
+              />
               <div className="mt-modal-ring">
                 <MatchRing value={product.match} size={56} stroke={4} />
               </div>
             </div>
             {modalMedia.length > 1 ? (
               <div className="mt-modal-thumbs">
-                {modalMedia.map((item) => (
-                  <div className="mt-modal-thumb" key={`${item.type}-${item.url}`}>
-                    {item.type.toLowerCase() === 'image' ? (
-                      <img src={item.url} alt={item.altText || product.name} loading="lazy" />
-                    ) : (
-                      <span className="mt-mono">{item.type}</span>
-                    )}
-                  </div>
-                ))}
+                {modalMedia.map((item, index) => {
+                  const isImage = item.type.toLowerCase() === 'image'
+                  const isSelected = isImage && item.url === modalImageUrl
+                  return (
+                    <button
+                      className={`mt-modal-thumb ${isSelected ? 'active' : ''}`}
+                      key={`${item.type}-${item.url}`}
+                      type="button"
+                      disabled={!isImage}
+                      aria-label={isImage ? `Show image ${index + 1} for ${product.name}` : `${item.type} media`}
+                      aria-pressed={isImage ? isSelected : undefined}
+                      onClick={() => setSelectedMediaUrl(item.url)}
+                    >
+                      {isImage ? (
+                        <img src={item.url} alt={item.altText || product.name} loading="lazy" />
+                      ) : (
+                        <span className="mt-mono">{item.type}</span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             ) : null}
             <div className="mt-mono mt-card-brand">{product.brand} · {product.category}</div>

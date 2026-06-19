@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { cartDeliveryOptions, cartGroups } from './utils'
+import { cartDeliveryOptions, cartGroups, displayProductCategoryValue } from './utils'
 import type { CartDeliveryGroup, CartDeliveryOption, CartLine, Product } from './types'
 
 const product: Product = {
@@ -112,5 +112,16 @@ describe('cart delivery groups', () => {
     } as unknown as CartDeliveryGroup
 
     expect(cartDeliveryOptions(deliveryGroup)).toEqual([standard])
+  })
+})
+
+describe('product category display values', () => {
+  test('hides Shopify taxonomy ids and placeholder values', () => {
+    expect(displayProductCategoryValue('gid://shopify/TaxonomyCategory/na')).toBeNull()
+    expect(displayProductCategoryValue(' na ')).toBeNull()
+  })
+
+  test('keeps readable category labels', () => {
+    expect(displayProductCategoryValue(' Groceries ')).toBe('Groceries')
   })
 })
