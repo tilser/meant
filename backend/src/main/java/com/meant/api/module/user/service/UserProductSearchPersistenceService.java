@@ -247,7 +247,7 @@ public class UserProductSearchPersistenceService {
                 ));
         UserProductSearch savedSearch = userProductSearchRepository.save(search);
         userProductSearchResultItemRepository.deleteBySearchId(savedSearch.getId());
-        List<UserProductSearchResultItem> items = products.stream()
+        List<UserProductSearchResultItem> items = uniqueProducts(products).stream()
                 .filter(product -> explanations.containsKey(product.productKey()))
                 .map(product -> UserProductSearchResultItem.from(
                         savedSearch.getId(),
@@ -269,6 +269,14 @@ public class UserProductSearchPersistenceService {
                 hasMoreProducts,
                 productResults(items, explanations)
         );
+    }
+
+    private List<UserProductSearchProductSnapshot> uniqueProducts(
+            List<UserProductSearchProductSnapshot> products
+    ) {
+        Map<String, UserProductSearchProductSnapshot> uniqueProducts = new LinkedHashMap<>();
+        products.forEach(product -> uniqueProducts.putIfAbsent(product.productKey(), product));
+        return uniqueProducts.values().stream().toList();
     }
 
     private Optional<UserProductSearchResult> resultFromSearch(

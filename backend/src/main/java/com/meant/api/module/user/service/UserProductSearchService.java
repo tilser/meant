@@ -22,6 +22,7 @@ import com.meant.api.module.user.service.dto.UserSettingsResult;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -136,7 +137,8 @@ public class UserProductSearchService {
             int limit,
             int fetchLimit
     ) {
-        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, merchantId, fetchLimit);
+        List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(catalogInput, merchantId, fetchLimit);
+        List<UserProductSearchProductSnapshot> products = uniqueProducts(fetchedProducts);
         Map<String, UserInventoryRecommendationSignal> inventorySignals =
                 userInventoryService.recommendationSignals(userId, products);
         Instant now = Instant.now();
@@ -166,7 +168,7 @@ public class UserProductSearchService {
                         .reversed()
                         .thenComparingInt(UserProductSearchProductResult::rank))
                 .toList();
-        boolean hasMore = hasMoreProducts(products.size(), fetchLimit);
+        boolean hasMore = hasMoreProducts(fetchedProducts.size(), fetchLimit);
         return new UserProductSearchResult(
                 query,
                 normalizedQuery,
@@ -192,7 +194,8 @@ public class UserProductSearchService {
             int limit,
             int fetchLimit
     ) {
-        List<UserProductSearchProductSnapshot> products = productSnapshots(catalogInput, null, fetchLimit);
+        List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(catalogInput, null, fetchLimit);
+        List<UserProductSearchProductSnapshot> products = uniqueProducts(fetchedProducts);
         Map<String, UserInventoryRecommendationSignal> inventorySignals =
                 userInventoryService.recommendationSignals(userId, products);
         Map<String, UserProductRecommendationExplanationResult> explanations =
@@ -215,7 +218,7 @@ public class UserProductSearchService {
                 now.plus(userProductSearchProperties.cacheTtl()),
                 products,
                 explanations,
-                hasMoreProducts(products.size(), fetchLimit),
+                hasMoreProducts(fetchedProducts.size(), fetchLimit),
                 offset,
                 limit
         );
@@ -245,6 +248,18 @@ public class UserProductSearchService {
                         userProductSearchHashService.productHash(product),
                         product
                 ))
+                .toList();
+    }
+
+    private List<UserProductSearchProductSnapshot> uniqueProducts(
+            List<UserProductSearchProductSnapshot> products
+    ) {
+        return products.stream()
+                .collect(LinkedHashMap<String, UserProductSearchProductSnapshot>::new,
+                        (uniqueProducts, product) -> uniqueProducts.putIfAbsent(product.productKey(), product),
+                        LinkedHashMap::putAll)
+                .values()
+                .stream()
                 .toList();
     }
 

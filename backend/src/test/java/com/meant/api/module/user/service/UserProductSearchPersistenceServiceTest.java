@@ -102,6 +102,61 @@ class UserProductSearchPersistenceServiceTest {
     }
 
     @Test
+    void saveSearchDeduplicatesProductsByProductKey() {
+        List<UserProductSearchResultItem> savedItems = new ArrayList<>();
+        UserProductSearchPersistenceService service = new UserProductSearchPersistenceService(
+                searchRepository(),
+                resultItemRepository(savedItems),
+                unusedRepository(UserProductRecommendationExplanationRepository.class),
+                unusedRepository(UserProductRecommendationFilterMatchRepository.class),
+                new ObjectMapper()
+        );
+        UserProductRecommendationExplanationResult teeExplanation = new UserProductRecommendationExplanationResult(
+                "merchant.example:tee",
+                "hash-tee",
+                "Organic cotton matches your profile.",
+                List.of("organic-cotton"),
+                List.of()
+        );
+        UserProductRecommendationExplanationResult hatExplanation = new UserProductRecommendationExplanationResult(
+                "merchant.example:hat",
+                "hash-hat",
+                "Natural fiber accessories match your profile.",
+                List.of("natural-fibers"),
+                List.of()
+        );
+
+        UserProductSearchResult result = service.saveSearch(
+                UUID.randomUUID(),
+                "cotton basics",
+                "cotton basics",
+                "profile-hash",
+                SEARCH_VERSION,
+                NOW,
+                NOW.plusSeconds(3600),
+                List.of(
+                        snapshot("merchant.example:tee", "hash-tee", "tee", "Organic Cotton Tee", 1),
+                        snapshot("merchant.example:tee", "hash-tee", "tee", "Organic Cotton Tee Duplicate", 2),
+                        snapshot("merchant.example:hat", "hash-hat", "hat", "Organic Cotton Hat", 3)
+                ),
+                Map.of(
+                        teeExplanation.productKey(), teeExplanation,
+                        hatExplanation.productKey(), hatExplanation
+                ),
+                false,
+                0,
+                20
+        );
+
+        assertThat(savedItems)
+                .extracting(UserProductSearchResultItem::getProductKey)
+                .containsExactly("merchant.example:tee", "merchant.example:hat");
+        assertThat(result.products())
+                .extracting("productKey")
+                .containsExactly("merchant.example:tee", "merchant.example:hat");
+    }
+
+    @Test
     void findCachedSearchReturnsRequestedPageWithNextOffset() {
         UUID userId = UUID.randomUUID();
         UserProductSearch search = search(userId, true);
