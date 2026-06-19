@@ -3678,6 +3678,7 @@ function ProductModal({
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -3688,6 +3689,7 @@ function ProductModal({
     setAdding(false)
     setAddError(null)
     setSelectedMediaUrl(null)
+    setZoomImageUrl(null)
   }, [product?.id])
 
   useEffect(() => () => {
@@ -3706,6 +3708,13 @@ function ProductModal({
         target?.tagName === 'INPUT' ||
         target?.tagName === 'TEXTAREA' ||
         target?.isContentEditable === true
+      if (zoomImageUrl) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setZoomImageUrl(null)
+        }
+        return
+      }
       if (event.key === 'Escape') {
         onClose()
         return
@@ -3730,7 +3739,7 @@ function ProductModal({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, product, canNext, canPrev, onNext, onPrev])
+  }, [onClose, product, canNext, canPrev, onNext, onPrev, zoomImageUrl])
 
   if (!product) {
     return null
@@ -3873,7 +3882,17 @@ function ProductModal({
         </button>
         <div className="mt-modal-body" key={product.id}>
           <div className="mt-modal-left">
-            <div className="mt-modal-media">
+            <button
+              className={`mt-modal-media ${modalImageUrl ? 'mt-modal-media-open' : ''}`}
+              type="button"
+              disabled={!modalImageUrl}
+              aria-label={modalImageUrl ? `Enlarge photo of ${product.name}` : undefined}
+              onClick={() => {
+                if (modalImageUrl) {
+                  setZoomImageUrl(modalImageUrl)
+                }
+              }}
+            >
               <ProductArtwork
                 product={product}
                 label={`${product.category.toLowerCase()} shot`}
@@ -3882,7 +3901,7 @@ function ProductModal({
               <div className="mt-modal-ring">
                 <MatchRing value={product.match} size={56} stroke={4} />
               </div>
-            </div>
+            </button>
             {modalMedia.length > 1 ? (
               <div className="mt-modal-thumbs">
                 {modalMedia.map((item, index) => {
@@ -4097,6 +4116,32 @@ function ProductModal({
           />
         </div>
       </div>
+      {zoomImageUrl ? (
+        <div
+          className="mt-image-zoom"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Larger photo of ${product.name}`}
+        >
+          <button
+            className="mt-image-zoom-scrim"
+            type="button"
+            aria-label="Close enlarged photo"
+            onClick={() => setZoomImageUrl(null)}
+          />
+          <div className="mt-image-zoom-panel">
+            <img className="mt-image-zoom-img" src={zoomImageUrl} alt={product.name} />
+            <button
+              className="mt-image-zoom-close"
+              type="button"
+              aria-label="Close enlarged photo"
+              onClick={() => setZoomImageUrl(null)}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

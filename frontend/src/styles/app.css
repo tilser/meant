@@ -2799,11 +2799,33 @@ button:disabled {
 }
 
 .mt-modal-media {
+  appearance: none;
+  display: block;
   position: relative;
   overflow: hidden;
+  width: 100%;
   margin-bottom: 18px;
+  border: 0;
   border-radius: 16px;
+  background: var(--line-soft);
+  color: inherit;
+  padding: 0;
+  text-align: left;
   aspect-ratio: 1 / 1;
+}
+
+.mt-modal-media-open {
+  cursor: zoom-in;
+}
+
+.mt-modal-media-open:hover .mt-product-img,
+.mt-modal-media-open:focus-visible .mt-product-img {
+  transform: scale(1.025);
+}
+
+.mt-modal-media:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }
 
 .mt-modal-thumbs {
@@ -2854,6 +2876,69 @@ button:disabled {
   bottom: 12px;
   border-radius: 50%;
   padding: 3px;
+  pointer-events: none;
+}
+
+.mt-image-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  animation: mt-fade-in var(--motion-medium) var(--ease-out) both;
+}
+
+.mt-image-zoom-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(13, 15, 18, 0.74);
+  backdrop-filter: blur(7px);
+}
+
+.mt-image-zoom-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  max-width: min(1080px, 94vw);
+  max-height: 90vh;
+}
+
+.mt-image-zoom-img {
+  display: block;
+  max-width: 100%;
+  max-height: 88vh;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 32px 80px -26px rgba(0, 0, 0, 0.62);
+  object-fit: contain;
+}
+
+.mt-image-zoom-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #16181c;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+
+.mt-image-zoom-close:hover {
+  background: #ffffff;
+}
+
+.mt-image-zoom-close:active {
+  transform: scale(0.92);
 }
 
 .mt-modal-name {
@@ -7038,6 +7123,20 @@ button:disabled {
 
   .mt-modal-media {
     max-height: 270px;
+  }
+
+  .mt-image-zoom {
+    padding: 12px;
+  }
+
+  .mt-image-zoom-img {
+    max-height: 86dvh;
+    border-radius: 12px;
+  }
+
+  .mt-image-zoom-close {
+    top: 8px;
+    right: 8px;
   }
 
   .mt-modal-nav {
