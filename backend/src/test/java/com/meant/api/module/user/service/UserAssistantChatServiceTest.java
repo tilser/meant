@@ -203,6 +203,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
 
         assertThat(FakeUserProductSearchService.lastCommand).isNull();
         assertThat(FakeUserSavedProductService.lastQuery.userId()).isEqualTo(userId);
+        assertThat(FakeUserSavedProductService.lastQuery.limit()).isEqualTo(20);
         assertThat(openRouterChatClient.streamMessages.get(1).content())
                 .contains("Saved products loaded from the user's account")
                 .contains("Merino Travel Hoodie");
@@ -789,7 +790,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private static ListSavedProductsQuery lastQuery;
 
         FakeUserSavedProductService() {
-            super(null, null, null);
+            super(null, null, null, null);
         }
 
         void reset() {

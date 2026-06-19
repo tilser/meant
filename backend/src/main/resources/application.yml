@@ -95,6 +95,17 @@ ai:
       chat-model: ${OPENROUTER_CHAT_MODEL:openai/gpt-oss-120b:free}
 
 user:
+  collections:
+    saved-products:
+      default-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_DEFAULT_LIMIT:50}
+      max-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_MAX_LIMIT:100}
+      quota: ${USER_COLLECTIONS_SAVED_PRODUCTS_QUOTA:500}
+      discovery-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_DISCOVERY_LIMIT:50}
+      assistant-context-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_ASSISTANT_CONTEXT_LIMIT:20}
+    inventory:
+      default-limit: ${USER_COLLECTIONS_INVENTORY_DEFAULT_LIMIT:50}
+      max-limit: ${USER_COLLECTIONS_INVENTORY_MAX_LIMIT:100}
+      quota: ${USER_COLLECTIONS_INVENTORY_QUOTA:500}
   product-search:
     search-version: v2
     query-parser-prompt-version: v2

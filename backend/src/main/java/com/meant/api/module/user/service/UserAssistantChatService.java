@@ -11,6 +11,7 @@ import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserAssistantMessage;
 import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserAssistantMessageRepository;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
@@ -86,6 +87,7 @@ public class UserAssistantChatService {
     private final UserSettingsService userSettingsService;
     private final UserProductSearchService userProductSearchService;
     private final UserSavedProductService userSavedProductService;
+    private final UserCollectionProperties userCollectionProperties;
     private final UserAssistantConversationRepository conversationRepository;
     private final UserAssistantMessageRepository messageRepository;
     private final OpenRouterChatClient openRouterChatClient;
@@ -338,7 +340,10 @@ public class UserAssistantChatService {
         try {
             return new UserAssistantToolContext(userSavedProductService.list(
                     upsertCommand,
-                    new ListSavedProductsQuery(command.userId())
+                    new ListSavedProductsQuery(
+                            command.userId(),
+                            0,
+                            userCollectionProperties.savedProducts().assistantContextLimit())
             ));
         } catch (RuntimeException exception) {
             log.warn("Failed to load assistant saved-products tool context", exception);

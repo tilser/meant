@@ -8,6 +8,7 @@ import com.meant.api.module.user.constant.UserInventoryRecommendationRelationshi
 import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.entity.UserInventoryItem;
 import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserInventoryItemRepository;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
@@ -39,6 +40,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +71,7 @@ public class UserInventoryService {
     private final UserService userService;
     private final UserInventoryItemRepository userInventoryItemRepository;
     private final UserInventoryPhotoRecognitionService userInventoryPhotoRecognitionService;
+    private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -105,6 +108,7 @@ public class UserInventoryService {
     ) {
         validateUser(upsertCommand, command.userId(), "Inventory item user does not match authenticated user");
         userService.upsert(upsertCommand);
+        validateInventoryQuota(command.userId());
         Instant now = Instant.now();
         UserInventoryItem item = UserInventoryItem.create(command.userId(), snapshot(command), now);
         return toResult(userInventoryItemRepository.save(item));
@@ -117,6 +121,7 @@ public class UserInventoryService {
     ) {
         validateUser(upsertCommand, command.userId(), "Inventory photo user does not match authenticated user");
         userService.upsert(upsertCommand);
+        validateInventoryQuota(command.userId());
         Optional<UserInventoryPhotoRecognitionResult> recognition =
                 userInventoryPhotoRecognitionService.recognize(command);
         Instant now = Instant.now();
@@ -155,6 +160,8 @@ public class UserInventoryService {
     @Transactional
     public void importPurchasedItems(@NotNull @Valid ImportPurchasedInventoryItemsCommand command) {
         Instant now = Instant.now();
+        long itemCount = userInventoryItemRepository.countByUserId(command.userId());
+        int quota = userCollectionProperties.inventory().quota();
         for (ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem : command.items()) {
             UserInventoryItem existing = userInventoryItemRepository
                     .findByUserIdAndSourceAndSourceProductKey(
@@ -168,9 +175,16 @@ public class UserInventoryService {
                 continue;
             }
             UserInventoryItem.Snapshot snapshot = purchasedSnapshot(purchasedItem, existing, purchasedAt);
-            UserInventoryItem item = existing == null
-                    ? UserInventoryItem.create(command.userId(), snapshot, now)
-                    : existing.replaceSnapshot(snapshot, now);
+            UserInventoryItem item;
+            if (existing == null) {
+                if (itemCount >= quota) {
+                    throw new UserException("Inventory item quota exceeded for user " + command.userId());
+                }
+                item = UserInventoryItem.create(command.userId(), snapshot, now);
+                itemCount++;
+            } else {
+                item = existing.replaceSnapshot(snapshot, now);
+            }
             userInventoryItemRepository.save(item);
         }
     }
@@ -213,22 +227,40 @@ public class UserInventoryService {
     }
 
     private List<UserInventoryItem> inventoryItems(ListUserInventoryItemsQuery query) {
+        PageRequest pageRequest = PageRequest.of(query.page(), boundedLimit(
+                query.limit(),
+                userCollectionProperties.inventory().maxLimit()));
         if (query.category() != null && query.restockOnlyValue()) {
             return userInventoryItemRepository.findByUserIdAndCategoryAndRestockEnabledTrueOrderByUpdatedAtDesc(
                     query.userId(),
-                    query.category()
+                    query.category(),
+                    pageRequest
             );
         }
         if (query.category() != null) {
             return userInventoryItemRepository.findByUserIdAndCategoryOrderByUpdatedAtDesc(
                     query.userId(),
-                    query.category()
+                    query.category(),
+                    pageRequest
             );
         }
         if (query.restockOnlyValue()) {
-            return userInventoryItemRepository.findByUserIdAndRestockEnabledTrueOrderByUpdatedAtDesc(query.userId());
+            return userInventoryItemRepository.findByUserIdAndRestockEnabledTrueOrderByUpdatedAtDesc(
+                    query.userId(),
+                    pageRequest);
         }
-        return userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(query.userId());
+        return userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(query.userId(), pageRequest);
+    }
+
+    private void validateInventoryQuota(UUID userId) {
+        int quota = userCollectionProperties.inventory().quota();
+        if (userInventoryItemRepository.countByUserId(userId) >= quota) {
+            throw new UserException("Inventory item quota exceeded for user " + userId);
+        }
+    }
+
+    private int boundedLimit(int limit, int maxLimit) {
+        return Math.min(limit, maxLimit);
     }
 
     private UserInventoryItem.Snapshot snapshot(CreateUserInventoryItemCommand command) {

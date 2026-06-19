@@ -59,6 +59,17 @@ ai:
       chat-model: openrouter/free
 
 user:
+  collections:
+    saved-products:
+      default-limit: 50
+      max-limit: 100
+      quota: 500
+      discovery-limit: 50
+      assistant-context-limit: 20
+    inventory:
+      default-limit: 50
+      max-limit: 100
+      quota: 500
   product-search:
     search-version: v2
     query-parser-prompt-version: v2

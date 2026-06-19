@@ -593,7 +593,7 @@ class CartServiceTest {
         private ImportPurchasedInventoryItemsCommand lastCommand;
 
         FakeUserInventoryService() {
-            super(null, null, null, null);
+            super(null, null, null, null, null);
         }
 
         @Override

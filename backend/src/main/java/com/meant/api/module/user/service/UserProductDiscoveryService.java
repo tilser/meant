@@ -2,6 +2,7 @@ package com.meant.api.module.user.service;
 
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.dto.UserProductDiscoveryResult;
@@ -31,6 +32,7 @@ public class UserProductDiscoveryService {
     private final UserProductSearchHashService userProductSearchHashService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
     private final UserProductSearchProperties userProductSearchProperties;
+    private final UserCollectionProperties userCollectionProperties;
     private final OpenRouterProperties openRouterProperties;
 
     public UserProductDiscoveryResult get(
@@ -42,7 +44,10 @@ public class UserProductDiscoveryService {
         String profileHash = userProductSearchHashService.profileHash(settings);
         List<UserSavedProductResult> savedProducts = userSavedProductService.list(
                 upsertCommand,
-                new ListSavedProductsQuery(query.userId()));
+                new ListSavedProductsQuery(
+                        query.userId(),
+                        0,
+                        userCollectionProperties.savedProducts().discoveryLimit()));
         Set<String> savedProductKeys = savedProducts.stream()
                 .map(UserSavedProductResult::id)
                 .collect(Collectors.toSet());

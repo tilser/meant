@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,13 +16,29 @@ public interface UserInventoryItemRepository extends JpaRepository<UserInventory
 
     List<UserInventoryItem> findByUserIdOrderByUpdatedAtDesc(UUID userId);
 
+    List<UserInventoryItem> findByUserIdOrderByUpdatedAtDesc(UUID userId, Pageable pageable);
+
     List<UserInventoryItem> findByUserIdAndCategoryOrderByUpdatedAtDesc(UUID userId, UserInventoryCategory category);
 
+    List<UserInventoryItem> findByUserIdAndCategoryOrderByUpdatedAtDesc(
+            UUID userId,
+            UserInventoryCategory category,
+            Pageable pageable
+    );
+
     List<UserInventoryItem> findByUserIdAndRestockEnabledTrueOrderByUpdatedAtDesc(UUID userId);
+
+    List<UserInventoryItem> findByUserIdAndRestockEnabledTrueOrderByUpdatedAtDesc(UUID userId, Pageable pageable);
 
     List<UserInventoryItem> findByUserIdAndCategoryAndRestockEnabledTrueOrderByUpdatedAtDesc(
             UUID userId,
             UserInventoryCategory category
+    );
+
+    List<UserInventoryItem> findByUserIdAndCategoryAndRestockEnabledTrueOrderByUpdatedAtDesc(
+            UUID userId,
+            UserInventoryCategory category,
+            Pageable pageable
     );
 
     long countByUserId(UUID userId);

@@ -24,6 +24,7 @@ import com.meant.api.module.user.controller.response.UserProductSearchSuggestion
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
+import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.service.UserAssistantChatService;
 import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
@@ -108,6 +109,7 @@ public class UserController {
     private final UserProductSearchSuggestionService userProductSearchSuggestionService;
     private final UserSavedProductService userSavedProductService;
     private final UserInventoryService userInventoryService;
+    private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
 
     @GetMapping("/me")
@@ -281,12 +283,22 @@ public class UserController {
     public List<UserInventoryItemResponse> inventory(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) UserInventoryCategory category,
-            @RequestParam(defaultValue = "false") boolean restockOnly
+            @RequestParam(defaultValue = "false") boolean restockOnly,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer limit
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return userInventoryService.list(
                         UserCommandMapper.toUpsertCommand(authenticatedUser),
-                        new ListUserInventoryItemsQuery(authenticatedUser.id(), category, restockOnly))
+                        new ListUserInventoryItemsQuery(
+                                authenticatedUser.id(),
+                                category,
+                                restockOnly,
+                                pageValue(page),
+                                limitValue(
+                                        limit,
+                                        userCollectionProperties.inventory().defaultLimit(),
+                                        userCollectionProperties.inventory().maxLimit())))
                 .stream()
                 .map(UserInventoryItemResponse::from)
                 .toList();
@@ -527,11 +539,21 @@ public class UserController {
             description = "Saved products for the current user",
             content = @Content(schema = @Schema(implementation = UserSavedProductResponse.class))
     )
-    public List<UserSavedProductResponse> savedProducts(@AuthenticationPrincipal Jwt jwt) {
+    public List<UserSavedProductResponse> savedProducts(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer limit
+    ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return userSavedProductService.list(
                         UserCommandMapper.toUpsertCommand(authenticatedUser),
-                        new ListSavedProductsQuery(authenticatedUser.id()))
+                        new ListSavedProductsQuery(
+                                authenticatedUser.id(),
+                                pageValue(page),
+                                limitValue(
+                                        limit,
+                                        userCollectionProperties.savedProducts().defaultLimit(),
+                                        userCollectionProperties.savedProducts().maxLimit())))
                 .stream()
                 .map(UserSavedProductResponse::from)
                 .toList();
@@ -588,6 +610,17 @@ public class UserController {
 
     private int clampConversationLimit(int limit) {
         return Math.max(1, Math.min(limit, MAX_CONVERSATION_LIMIT));
+    }
+
+    private int pageValue(Integer page) {
+        return page == null ? 0 : Math.max(0, page);
+    }
+
+    private int limitValue(Integer limit, int defaultLimit, int maxLimit) {
+        if (limit == null) {
+            return defaultLimit;
+        }
+        return Math.max(1, Math.min(limit, maxLimit));
     }
 
     /**

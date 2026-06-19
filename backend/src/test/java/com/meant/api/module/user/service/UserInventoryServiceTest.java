@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
@@ -9,6 +10,8 @@ import com.meant.api.module.user.constant.UserInventoryRecommendationRelationshi
 import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.entity.UserInventoryItem;
+import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserInventoryItemRepository;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
@@ -31,6 +34,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Pageable;
 import tools.jackson.databind.ObjectMapper;
 
 class UserInventoryServiceTest {
@@ -52,6 +56,7 @@ class UserInventoryServiceTest {
                 userService,
                 repository.proxy(),
                 photoRecognitionService,
+                collectionProperties(50),
                 new ObjectMapper()
         );
     }
@@ -87,7 +92,7 @@ class UserInventoryServiceTest {
 
         List<UserInventoryItemResult> listed = service.list(
                 upsertCommand(),
-                new ListUserInventoryItemsQuery(USER_ID, UserInventoryCategory.APPAREL, false)
+                listQuery(UserInventoryCategory.APPAREL, false)
         );
         assertThat(listed).singleElement()
                 .extracting(UserInventoryItemResult::name)
@@ -98,7 +103,7 @@ class UserInventoryServiceTest {
 
         service.delete(upsertCommand(), new DeleteUserInventoryItemCommand(USER_ID, item.id()));
 
-        assertThat(service.list(upsertCommand(), new ListUserInventoryItemsQuery(USER_ID, null, false)))
+        assertThat(service.list(upsertCommand(), listQuery(null, false)))
                 .isEmpty();
     }
 
@@ -206,7 +211,7 @@ class UserInventoryServiceTest {
 
         List<UserInventoryItemResult> restocks = service.list(
                 upsertCommand(),
-                new ListUserInventoryItemsQuery(USER_ID, null, true)
+                listQuery(null, true)
         );
 
         assertThat(restocks).singleElement()
@@ -242,7 +247,7 @@ class UserInventoryServiceTest {
 
         List<UserInventoryItemResult> items = service.list(
                 upsertCommand(),
-                new ListUserInventoryItemsQuery(USER_ID, null, false)
+                listQuery(null, false)
         );
 
         assertThat(items).singleElement()
@@ -294,7 +299,7 @@ class UserInventoryServiceTest {
 
         List<UserInventoryItemResult> items = service.list(
                 upsertCommand(),
-                new ListUserInventoryItemsQuery(USER_ID, null, false)
+                listQuery(null, false)
         );
 
         assertThat(items).anySatisfy(result -> {
@@ -317,6 +322,44 @@ class UserInventoryServiceTest {
         assertThat(service.inventoryProfileHash(USER_ID))
                 .startsWith("inventory:1:")
                 .isNotEqualTo("inventory:none");
+    }
+
+    @Test
+    void listAppliesPageAndLimitAtRepositoryBoundary() {
+        service.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(upsertCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
+        service.create(upsertCommand(), manualItem("Countertop Brewer", UserInventoryCategory.HOME, false));
+
+        List<UserInventoryItemResult> firstPage = service.list(
+                upsertCommand(),
+                new ListUserInventoryItemsQuery(USER_ID, null, false, 0, 2)
+        );
+        List<UserInventoryItemResult> secondPage = service.list(
+                upsertCommand(),
+                new ListUserInventoryItemsQuery(USER_ID, null, false, 1, 2)
+        );
+
+        assertThat(firstPage).hasSize(2);
+        assertThat(secondPage).hasSize(1);
+    }
+
+    @Test
+    void createRejectsNewItemsPastUserQuota() {
+        UserInventoryService quotaService = new UserInventoryService(
+                userService,
+                repository.proxy(),
+                photoRecognitionService,
+                collectionProperties(1),
+                new ObjectMapper()
+        );
+
+        quotaService.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+
+        assertThatThrownBy(() -> quotaService.create(
+                        upsertCommand(),
+                        manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false)))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("Inventory item quota exceeded");
     }
 
     @Test
@@ -383,6 +426,17 @@ class UserInventoryServiceTest {
 
     private UpsertUserCommand upsertCommand() {
         return new UpsertUserCommand(USER_ID, "inventory@example.com", "Inventory", "User");
+    }
+
+    private ListUserInventoryItemsQuery listQuery(UserInventoryCategory category, boolean restockOnly) {
+        return new ListUserInventoryItemsQuery(USER_ID, category, restockOnly, 0, 50);
+    }
+
+    private UserCollectionProperties collectionProperties(int inventoryQuota) {
+        return new UserCollectionProperties(
+                new UserCollectionProperties.SavedProducts(50, 100, 500, 50, 20),
+                new UserCollectionProperties.Inventory(50, 100, inventoryQuota)
+        );
     }
 
     private UserProductSearchProductSnapshot snapshot(String productKey, String title) {
@@ -485,20 +539,25 @@ class UserInventoryServiceTest {
                     new Class<?>[]{UserInventoryItemRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
                         case "save" -> save((UserInventoryItem) args[0]);
-                        case "findByUserIdOrderByUpdatedAtDesc" -> byUser((UUID) args[0]);
+                        case "findByUserIdOrderByUpdatedAtDesc" -> args.length == 1
+                                ? byUser((UUID) args[0])
+                                : page(byUser((UUID) args[0]), (Pageable) args[1]);
                         case "findByUserIdAndCategoryOrderByUpdatedAtDesc" ->
-                                byUser((UUID) args[0]).stream()
-                                        .filter(item -> item.getCategory() == args[1])
-                                        .toList();
+                                pageIfRequested(byUser((UUID) args[0]).stream()
+                                                .filter(item -> item.getCategory() == args[1])
+                                                .toList(),
+                                        args);
                         case "findByUserIdAndRestockEnabledTrueOrderByUpdatedAtDesc" ->
-                                byUser((UUID) args[0]).stream()
-                                        .filter(UserInventoryItem::isRestockEnabled)
-                                        .toList();
+                                pageIfRequested(byUser((UUID) args[0]).stream()
+                                                .filter(UserInventoryItem::isRestockEnabled)
+                                                .toList(),
+                                        args);
                         case "findByUserIdAndCategoryAndRestockEnabledTrueOrderByUpdatedAtDesc" ->
-                                byUser((UUID) args[0]).stream()
-                                        .filter(item -> item.getCategory() == args[1])
-                                        .filter(UserInventoryItem::isRestockEnabled)
-                                        .toList();
+                                pageIfRequested(byUser((UUID) args[0]).stream()
+                                                .filter(item -> item.getCategory() == args[1])
+                                                .filter(UserInventoryItem::isRestockEnabled)
+                                                .toList(),
+                                        args);
                         case "countByUserId" -> (long) byUser((UUID) args[0]).size();
                         case "findMaxUpdatedAtByUserId" ->
                                 byUser((UUID) args[0]).stream()
@@ -531,6 +590,19 @@ class UserInventoryServiceTest {
                     .filter(item -> item.getUserId().equals(userId))
                     .sorted(Comparator.comparing(UserInventoryItem::getUpdatedAt).reversed())
                     .toList();
+        }
+
+        private List<UserInventoryItem> pageIfRequested(List<UserInventoryItem> source, Object[] args) {
+            return args.length > 2 && args[2] instanceof Pageable pageable ? page(source, pageable) : source;
+        }
+
+        private List<UserInventoryItem> page(List<UserInventoryItem> source, Pageable pageable) {
+            int start = (int) pageable.getOffset();
+            if (start >= source.size()) {
+                return List.of();
+            }
+            int end = Math.min(start + pageable.getPageSize(), source.size());
+            return source.subList(start, end);
         }
 
         private long deleteByIdAndUserId(UUID id, UUID userId) {

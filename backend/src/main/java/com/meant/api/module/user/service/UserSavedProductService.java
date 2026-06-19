@@ -5,6 +5,7 @@ import static com.meant.api.common.util.CollectionUtils.safeList;
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.entity.UserSavedProduct.SavedProductSnapshot;
 import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
@@ -17,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -36,6 +38,7 @@ public class UserSavedProductService {
 
     private final UserService userService;
     private final UserSavedProductRepository userSavedProductRepository;
+    private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -45,7 +48,12 @@ public class UserSavedProductService {
     ) {
         validateUser(upsertCommand, query.userId());
         userService.upsert(upsertCommand);
-        return userSavedProductRepository.findByUserIdOrderByCreatedAtDesc(query.userId()).stream()
+        return userSavedProductRepository.findByUserIdOrderByCreatedAtDesc(
+                        query.userId(),
+                        PageRequest.of(query.page(), boundedLimit(
+                                query.limit(),
+                                userCollectionProperties.savedProducts().maxLimit())))
+                .stream()
                 .map(this::toResult)
                 .toList();
     }
@@ -62,8 +70,22 @@ public class UserSavedProductService {
         UserSavedProduct savedProduct = userSavedProductRepository
                 .findByUserIdAndProductKey(command.userId(), command.productKey())
                 .map(existing -> existing.replaceSnapshot(snapshot, now))
-                .orElseGet(() -> UserSavedProduct.create(command.userId(), snapshot, now));
+                .orElseGet(() -> {
+                    validateSavedProductQuota(command.userId());
+                    return UserSavedProduct.create(command.userId(), snapshot, now);
+                });
         return toResult(userSavedProductRepository.save(savedProduct));
+    }
+
+    private void validateSavedProductQuota(UUID userId) {
+        int quota = userCollectionProperties.savedProducts().quota();
+        if (userSavedProductRepository.countByUserId(userId) >= quota) {
+            throw new UserException("Saved product quota exceeded for user " + userId);
+        }
+    }
+
+    private int boundedLimit(int limit, int maxLimit) {
+        return Math.min(limit, maxLimit);
     }
 
     @Transactional

@@ -603,6 +603,8 @@ export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile
 export async function getUserInventoryItems(input?: {
   category?: UserInventoryCategory | null
   restockOnly?: boolean
+  page?: number
+  limit?: number
 }): Promise<UserInventoryItemProfile[]> {
   const search = new URLSearchParams()
   if (input?.category) {
@@ -610,6 +612,12 @@ export async function getUserInventoryItems(input?: {
   }
   if (input?.restockOnly) {
     search.set('restockOnly', 'true')
+  }
+  if (input?.page !== undefined) {
+    search.set('page', String(input.page))
+  }
+  if (input?.limit !== undefined) {
+    search.set('limit', String(input.limit))
   }
   const query = search.toString()
   const response = await fetch(`${API_URL}/api/users/me/inventory${query ? `?${query}` : ''}`, {
@@ -781,8 +789,19 @@ export async function streamAssistantMessage(
   }
 }
 
-export async function getSavedProducts(): Promise<UserSavedProductProfile[]> {
-  const response = await fetch(`${API_URL}/api/users/me/saved-products`, {
+export async function getSavedProducts(input?: {
+  page?: number
+  limit?: number
+}): Promise<UserSavedProductProfile[]> {
+  const search = new URLSearchParams()
+  if (input?.page !== undefined) {
+    search.set('page', String(input.page))
+  }
+  if (input?.limit !== undefined) {
+    search.set('limit', String(input.limit))
+  }
+  const query = search.toString()
+  const response = await fetch(`${API_URL}/api/users/me/saved-products${query ? `?${query}` : ''}`, {
     headers: await authHeaders(),
   })
   return parseJsonResponse<UserSavedProductProfile[]>(response, 'Failed to load saved products')
