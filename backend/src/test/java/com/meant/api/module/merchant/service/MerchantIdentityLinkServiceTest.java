@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.PostgresIntegrationTest;
@@ -19,6 +20,7 @@ import com.meant.api.module.merchant.repository.MerchantIdentityLinkRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.command.CompleteMerchantIdentityAuthorizationCommand;
+import com.meant.api.module.merchant.service.command.RevokeMerchantIdentityLinkCommand;
 import com.meant.api.module.merchant.service.command.StartMerchantIdentityAuthorizationCommand;
 import com.meant.api.module.merchant.service.dto.MerchantIdentityAccessTokenResult;
 import com.meant.api.module.merchant.service.dto.MerchantIdentityAuthorizationResult;
@@ -63,6 +65,9 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
 
     @Autowired
     private MerchantRawRepository merchantRawRepository;
+
+    @Autowired
+    private MerchantIdentityTokenCipher merchantIdentityTokenCipher;
 
     @Autowired
     private MockRestServiceServer server;
@@ -168,6 +173,44 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
         assertThat(token.accessToken()).isEqualTo("fresh-access-token");
         assertThat(token.tokenType()).isEqualTo("Bearer");
         server.verify();
+    }
+
+    @Test
+    void revokeDeletesLocalLinkEvenWhenUpstreamRevocationFails() {
+        Merchant merchant = saveMerchant(true);
+        seedConnectedLink(merchant);
+        // The merchant's authorization server is unreachable during revocation.
+        server.expect(requestTo(METADATA_URL))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withServerError());
+
+        service.revoke(new RevokeMerchantIdentityLinkCommand(USER_ID, merchant.getId()));
+
+        assertThat(merchantIdentityLinkRepository.findByUserIdAndMerchantId(USER_ID, merchant.getId()))
+                .isEmpty();
+        server.verify();
+    }
+
+    private void seedConnectedLink(Merchant merchant) {
+        Instant now = Instant.now();
+        merchantIdentityLinkRepository.save(MerchantIdentityLink.builder()
+                .userId(USER_ID)
+                .merchant(merchant)
+                .status(MerchantIdentityLinkStatus.CONNECTED)
+                .stateHash("state-hash")
+                .codeVerifierCiphertext(
+                        merchantIdentityTokenCipher.encrypt("verifier", USER_ID, merchant.getId()))
+                .accessTokenCiphertext(
+                        merchantIdentityTokenCipher.encrypt("access-token", USER_ID, merchant.getId()))
+                .refreshTokenCiphertext(
+                        merchantIdentityTokenCipher.encrypt("refresh-token", USER_ID, merchant.getId()))
+                .tokenType("Bearer")
+                .scope("dev.ucp.shopping.order:read")
+                .issuer("https://merchant.example")
+                .expiresAt(now.plusSeconds(3600))
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
     }
 
     private void expectMetadata() {

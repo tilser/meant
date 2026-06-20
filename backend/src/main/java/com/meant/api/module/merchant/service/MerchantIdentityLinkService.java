@@ -17,6 +17,8 @@ import com.meant.api.module.merchant.service.dto.MerchantIdentityLinkResult;
 import com.meant.api.module.merchant.service.dto.MerchantIdentityTokenResponse;
 import com.meant.api.module.merchant.service.query.GetMerchantIdentityAccessTokenQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIdentityLinksQuery;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.nio.charset.StandardCharsets;
@@ -44,6 +46,7 @@ public class MerchantIdentityLinkService {
     private final MerchantIdentityOAuthClient merchantIdentityOAuthClient;
     private final MerchantIdentityTokenCipher merchantIdentityTokenCipher;
     private final MerchantIdentityLinkingProperties properties;
+    private final EntityManager entityManager;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Transactional(readOnly = true)
@@ -138,18 +141,24 @@ public class MerchantIdentityLinkService {
     public void revoke(@NotNull @Valid RevokeMerchantIdentityLinkCommand command) {
         merchantIdentityLinkRepository.findByUserIdAndMerchantId(command.userId(), command.merchantId())
                 .ifPresent(link -> {
-                    MerchantIdentityAuthorizationServerMetadata metadata = merchantIdentityOAuthClient
-                            .discover(link.getMerchant().getUcpUrl());
-                    String refreshToken = merchantIdentityTokenCipher.decrypt(
-                            link.getRefreshTokenCiphertext(),
-                            command.userId(),
-                            command.merchantId());
-                    String accessToken = merchantIdentityTokenCipher.decrypt(
-                            link.getAccessTokenCiphertext(),
-                            command.userId(),
-                            command.merchantId());
-                    merchantIdentityOAuthClient.revokeToken(metadata, refreshToken);
-                    merchantIdentityOAuthClient.revokeToken(metadata, accessToken);
+                    // Best-effort upstream revocation: if the merchant server is down or misconfigured,
+                    // still delete the local link so the user is never stuck with an unremovable connection.
+                    try {
+                        MerchantIdentityAuthorizationServerMetadata metadata = merchantIdentityOAuthClient
+                                .discover(link.getMerchant().getUcpUrl());
+                        String refreshToken = merchantIdentityTokenCipher.decrypt(
+                                link.getRefreshTokenCiphertext(),
+                                command.userId(),
+                                command.merchantId());
+                        String accessToken = merchantIdentityTokenCipher.decrypt(
+                                link.getAccessTokenCiphertext(),
+                                command.userId(),
+                                command.merchantId());
+                        merchantIdentityOAuthClient.revokeToken(metadata, refreshToken);
+                        merchantIdentityOAuthClient.revokeToken(metadata, accessToken);
+                    } catch (RuntimeException exception) {
+                        // Local deletion below still removes Meant's ability to use the merchant account.
+                    }
                     merchantIdentityLinkRepository.delete(link);
                 });
     }
@@ -161,13 +170,13 @@ public class MerchantIdentityLinkService {
                 .filter(candidate -> candidate.getStatus() == MerchantIdentityLinkStatus.CONNECTED)
                 .orElseThrow(() -> MerchantIdentityLinkException.notFound("Merchant identity link not found"));
         if (shouldRefresh(link)) {
-            // Re-load under a pessimistic write lock so concurrent reads serialize their refreshes.
-            // Without this, two requests could refresh the same rotating refresh token in parallel and
-            // the authorization server would reject (and possibly revoke) the second grant.
-            link = merchantIdentityLinkRepository
-                    .findByUserIdAndMerchantIdForUpdate(query.userId(), query.merchantId())
-                    .filter(candidate -> candidate.getStatus() == MerchantIdentityLinkStatus.CONNECTED)
-                    .orElseThrow(() -> MerchantIdentityLinkException.notFound("Merchant identity link not found"));
+            // Upgrade to a pessimistic write lock and reload the row so concurrent reads serialize their
+            // refreshes. entityManager.refresh acquires the lock AND overwrites the entity's in-memory
+            // state from the database; a second findBy... would return the same stale first-level-cache
+            // instance and defeat the double-check. Without this, two requests could refresh the same
+            // rotating refresh token in parallel and the authorization server would reject (and possibly
+            // revoke) the second grant.
+            entityManager.refresh(link, LockModeType.PESSIMISTIC_WRITE);
             // Another request may have refreshed while we waited on the lock; re-check before refreshing.
             if (shouldRefresh(link)) {
                 refresh(link);

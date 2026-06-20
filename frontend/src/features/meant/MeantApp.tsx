@@ -7988,6 +7988,19 @@ export function MeantApp() {
     if (!state || !code) {
       return
     }
+    // Strip the OAuth params from the URL immediately, before the exchange. This keeps the authorization
+    // code out of the address bar and ensures a second run of this effect (e.g. React StrictMode's
+    // double-invoke, or a refresh) sees no code and bails, so the same code is never exchanged twice.
+    // Other query params are preserved.
+    params.delete('state')
+    params.delete('code')
+    params.delete('iss')
+    const remainingSearch = params.toString()
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.pathname + (remainingSearch ? `?${remainingSearch}` : ''),
+    )
     let active = true
     completeMerchantIdentityAuthorization({ state, code, issuer })
       .then((link) => {
@@ -8001,12 +8014,6 @@ export function MeantApp() {
       .catch(() => {
         if (!active) return
         setMerchantIdentityLinksError('Could not complete store connection')
-      })
-      .finally(() => {
-        if (!active) return
-        // Always strip the OAuth code/state from the URL so the authorization code is not left in the
-        // address bar and a refresh does not re-trigger the callback.
-        window.history.replaceState({}, document.title, window.location.pathname)
       })
     return () => {
       active = false
