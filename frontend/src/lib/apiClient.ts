@@ -297,6 +297,24 @@ export interface MerchantProfile {
   description: string
   advertisedMcpEndpoint: string | null
   profileMcpEndpoint: string | null
+  supportsIdentityLinking: boolean
+}
+
+export interface MerchantIdentityLinkProfile {
+  merchantId: string
+  merchantDomain: string
+  merchantName: string
+  status: 'PENDING' | 'CONNECTED'
+  scope: string | null
+  expiresAt: string | null
+  updatedAt: string
+}
+
+export interface MerchantIdentityAuthorizationProfile {
+  merchantId: string
+  authorizationUrl: string
+  state: string
+  scopes: string[]
 }
 
 export type CartProfile = components['schemas']['CartResponse']
@@ -566,6 +584,53 @@ export async function getMerchants(): Promise<MerchantProfile[]> {
     headers: await authHeaders(),
   })
   return parseJsonResponse<MerchantProfile[]>(response, 'Failed to load merchants')
+}
+
+export async function getMerchantIdentityLinks(): Promise<MerchantIdentityLinkProfile[]> {
+  const response = await fetch(`${API_URL}/api/merchants/identity-links`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<MerchantIdentityLinkProfile[]>(response, 'Failed to load merchant account connections')
+}
+
+export async function startMerchantIdentityAuthorization(
+  merchantId: string,
+): Promise<MerchantIdentityAuthorizationProfile> {
+  const response = await fetch(`${API_URL}/api/merchants/${merchantId}/identity-link/authorization`, {
+    method: 'POST',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<MerchantIdentityAuthorizationProfile>(response, 'Failed to start merchant account linking')
+}
+
+export async function completeMerchantIdentityAuthorization(input: {
+  state: string
+  code: string
+  issuer?: string | null
+}): Promise<MerchantIdentityLinkProfile> {
+  const response = await fetch(`${API_URL}/api/merchants/identity-links/oauth/callback`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      state: input.state,
+      code: input.code,
+      issuer: input.issuer ?? undefined,
+    }),
+  })
+  return parseJsonResponse<MerchantIdentityLinkProfile>(response, 'Failed to complete merchant account linking')
+}
+
+export async function revokeMerchantIdentityLink(merchantId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/merchants/identity-links/${merchantId}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to revoke merchant account connection')
+  }
 }
 
 export async function updateUserSettings(input: {

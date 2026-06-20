@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-merchant-identity-link" author="codex">
+        <createTable tableName="merchant_identity_link">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="code_verifier_ciphertext" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="issuer" type="text"/>
+            <column name="access_token_ciphertext" type="text"/>
+            <column name="refresh_token_ciphertext" type="text"/>
+            <column name="token_type" type="text"/>
+            <column name="scope" type="text"/>
+            <column name="expires_at" type="timestamp with time zone"/>
+            <column name="last_refreshed_at" type="timestamp with time zone"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_identity_link"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_identity_link_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+        <addUniqueConstraint
+                tableName="merchant_identity_link"
+                columnNames="user_id, merchant_id"
+                constraintName="uk_merchant_identity_link_user_merchant"/>
+        <addUniqueConstraint
+                tableName="merchant_identity_link"
+                columnNames="state_hash"
+                constraintName="uk_merchant_identity_link_state_hash"/>
+        <createIndex tableName="merchant_identity_link" indexName="idx_merchant_identity_link_user">
+            <column name="user_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

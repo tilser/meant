@@ -5989,6 +5989,41 @@ button:disabled {
   font-weight: 600;
 }
 
+.mt-acct-links {
+  display: grid;
+  gap: 14px;
+}
+
+.mt-acct-link-head,
+.mt-acct-store {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mt-acct-link-status,
+.mt-acct-store-meta,
+.mt-acct-empty {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.mt-acct-store-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mt-acct-store {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+}
+
+.mt-acct-store-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .mt-field-hint {
   color: var(--muted);
   font-size: 11.5px;

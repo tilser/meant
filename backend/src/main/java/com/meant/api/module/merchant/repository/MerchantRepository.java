@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -16,6 +17,7 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
 
     List<Merchant> findByDomainIn(Collection<String> domains);
 
+    @EntityGraph(attributePaths = "merchantRaw")
     List<Merchant> findByActiveTrueOrderByNameAsc();
 
     @Query(value = """

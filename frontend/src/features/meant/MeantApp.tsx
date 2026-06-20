@@ -31,6 +31,7 @@ import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
   acceptUserTasteSuggestion,
   createCart,
+  completeMerchantIdentityAuthorization,
   createUserInventoryItem,
   createUserInventoryPhotoItem,
   deleteUserInventoryItem,
@@ -40,6 +41,7 @@ import {
   getAssistantConversations,
   getCartCheckout,
   getCurrentUser,
+  getMerchantIdentityLinks,
   getMerchants,
   getProfilePictureUrl,
   getProductDiscovery,
@@ -53,12 +55,15 @@ import {
   removeUserTasteSignal,
   rejectUserTasteSuggestion,
   recordUserTasteBehavior,
+  revokeMerchantIdentityLink,
   saveUserProduct,
   searchUserProducts,
+  startMerchantIdentityAuthorization,
   streamAssistantMessage,
   type AssistantChatContextInput,
   type SaveUserProductInput,
   type CartProfile,
+  type MerchantIdentityLinkProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
   type UserInventoryCategory,
@@ -7238,16 +7243,28 @@ const PROFILE_PICTURE_MAX_BYTES = 5 * 1024 * 1024
 function AccountView({
   user,
   userId,
+  merchants,
+  merchantIdentityLinks,
+  merchantIdentityLinksLoading,
+  merchantIdentityLinksError,
   onSave,
   onSignOut,
   onEditPrefs,
+  onConnectMerchant,
+  onRevokeMerchant,
   onDone,
 }: Readonly<{
   user: UserAccount
   userId?: string
+  merchants: readonly MerchantProfile[]
+  merchantIdentityLinks: readonly MerchantIdentityLinkProfile[]
+  merchantIdentityLinksLoading: boolean
+  merchantIdentityLinksError: string | null
   onSave: (user: UserAccount) => void
   onSignOut: () => void
   onEditPrefs: () => void
+  onConnectMerchant: (merchant: MerchantProfile) => void
+  onRevokeMerchant: (merchantId: string) => void
   onDone: () => void
 }>) {
   const [name, setName] = useState(user.name)
@@ -7262,6 +7279,8 @@ function AccountView({
   const preview: UserAccount = { name, email: user.email, avatar, avatarPath }
   const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
   const hasProfilePicture = Boolean(avatar || avatarPath)
+  const identityLinksByMerchant = new Map(merchantIdentityLinks.map((link) => [link.merchantId, link]))
+  const linkableMerchants = merchants.filter((merchant) => merchant.supportsIdentityLinking)
 
   useEffect(() => {
     return () => {
@@ -7434,6 +7453,47 @@ function AccountView({
           </div>
         </div>
       </button>
+      <section className="mt-acct-card mt-acct-links">
+        <div className="mt-acct-link-head">
+          <div>
+            <div className="mt-acct-link-t">Connected stores</div>
+            <div className="mt-acct-link-s">
+              Link supported merchant accounts so Meant can use scoped order, account, and loyalty access.
+            </div>
+          </div>
+          {merchantIdentityLinksLoading ? <span className="mt-mono mt-acct-link-status">Loading</span> : null}
+        </div>
+        {merchantIdentityLinksError ? <div className="mt-acct-save-error">{merchantIdentityLinksError}</div> : null}
+        {linkableMerchants.length > 0 ? (
+          <div className="mt-acct-store-list">
+            {linkableMerchants.map((merchant) => {
+              const link = identityLinksByMerchant.get(merchant.id)
+              const connected = link?.status === 'CONNECTED'
+              return (
+                <div className="mt-acct-store" key={merchant.id}>
+                  <div>
+                    <div className="mt-acct-store-name">{merchant.name}</div>
+                    <div className="mt-mono mt-acct-store-meta">
+                      {merchant.domain} · {connected ? 'Connected' : link?.status === 'PENDING' ? 'Pending consent' : 'Not connected'}
+                    </div>
+                  </div>
+                  {connected ? (
+                    <button className="mt-acct-removebtn" type="button" onClick={() => onRevokeMerchant(merchant.id)}>
+                      Revoke
+                    </button>
+                  ) : (
+                    <button className="mt-acct-uploadbtn" type="button" onClick={() => onConnectMerchant(merchant)}>
+                      Connect
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="mt-acct-empty">No listed merchants currently advertise identity linking.</div>
+        )}
+      </section>
       <div className="mt-acct-danger">
         <div>
           <div className="mt-acct-link-t">Sign out</div>
@@ -7689,6 +7749,9 @@ export function MeantApp() {
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantsError, setMerchantsError] = useState<string | null>(null)
+  const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>([])
+  const [merchantIdentityLinksLoading, setMerchantIdentityLinksLoading] = useState(false)
+  const [merchantIdentityLinksError, setMerchantIdentityLinksError] = useState<string | null>(null)
   const [inventoryItems, setInventoryItems] = useState<UserInventoryItemProfile[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
@@ -7733,6 +7796,24 @@ export function MeantApp() {
   const closeAccountMenu = useCallback(() => {
     setAccountMenu(false)
   }, [])
+
+  const refreshMerchantIdentityLinks = useCallback(async () => {
+    if (!authed) {
+      setMerchantIdentityLinks([])
+      setMerchantIdentityLinksError(null)
+      return
+    }
+    setMerchantIdentityLinksLoading(true)
+    setMerchantIdentityLinksError(null)
+    try {
+      setMerchantIdentityLinks(await getMerchantIdentityLinks())
+    } catch {
+      setMerchantIdentityLinks([])
+      setMerchantIdentityLinksError('Could not load connected stores')
+    } finally {
+      setMerchantIdentityLinksLoading(false)
+    }
+  }, [authed])
 
   const allPreferences = availablePrefs
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
@@ -7865,6 +7946,9 @@ export function MeantApp() {
 
   useEffect(() => {
     if (!authed) {
+      setMerchants([])
+      setMerchantsError(null)
+      setMerchantsLoading(false)
       return
     }
     let active = true
@@ -7883,6 +7967,41 @@ export function MeantApp() {
       .finally(() => {
         if (!active) return
         setMerchantsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [authed])
+
+  useEffect(() => {
+    void refreshMerchantIdentityLinks()
+  }, [refreshMerchantIdentityLinks])
+
+  useEffect(() => {
+    if (!authed) {
+      return
+    }
+    const params = new URLSearchParams(window.location.search)
+    const state = params.get('state')
+    const code = params.get('code')
+    const issuer = params.get('iss')
+    if (!state || !code) {
+      return
+    }
+    let active = true
+    completeMerchantIdentityAuthorization({ state, code, issuer })
+      .then((link) => {
+        if (!active) return
+        setMerchantIdentityLinks((current) => [
+          link,
+          ...current.filter((candidate) => candidate.merchantId !== link.merchantId),
+        ])
+        setMerchantIdentityLinksError(null)
+        window.history.replaceState({}, document.title, window.location.pathname)
+      })
+      .catch(() => {
+        if (!active) return
+        setMerchantIdentityLinksError('Could not complete store connection')
       })
     return () => {
       active = false
@@ -8079,10 +8198,35 @@ export function MeantApp() {
     setPopularSearches([])
     setPopularSearchesLoading(false)
     setSelectedMerchantId(null)
+    setMerchantIdentityLinks([])
+    setMerchantIdentityLinksError(null)
+    setMerchantIdentityLinksLoading(false)
     setSavedIds([])
     setSavedProducts([])
     savePendingRef.current.clear()
     setSavePendingIds([])
+  }
+
+  const connectMerchantIdentity = (merchant: MerchantProfile) => {
+    setMerchantIdentityLinksError(null)
+    void startMerchantIdentityAuthorization(merchant.id)
+      .then((authorization) => {
+        window.location.assign(authorization.authorizationUrl)
+      })
+      .catch(() => {
+        setMerchantIdentityLinksError(`Could not start account linking for ${merchant.name}`)
+      })
+  }
+
+  const revokeMerchantIdentity = (merchantId: string) => {
+    setMerchantIdentityLinksError(null)
+    setMerchantIdentityLinks((current) => current.filter((link) => link.merchantId !== merchantId))
+    void revokeMerchantIdentityLink(merchantId)
+      .then(() => refreshMerchantIdentityLinks())
+      .catch(() => {
+        setMerchantIdentityLinksError('Could not revoke store connection')
+        void refreshMerchantIdentityLinks()
+      })
   }
 
   const nav = (next: View) => {
@@ -8976,9 +9120,15 @@ export function MeantApp() {
           <AccountView
             user={user}
             userId={userId}
+            merchants={merchants}
+            merchantIdentityLinks={merchantIdentityLinks}
+            merchantIdentityLinksLoading={merchantIdentityLinksLoading}
+            merchantIdentityLinksError={merchantIdentityLinksError}
             onSave={setUser}
             onSignOut={handleSignOut}
             onEditPrefs={() => nav('preferences')}
+            onConnectMerchant={connectMerchantIdentity}
+            onRevokeMerchant={revokeMerchantIdentity}
             onDone={() => nav('discover')}
           />
         )

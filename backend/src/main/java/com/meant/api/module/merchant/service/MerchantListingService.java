@@ -26,7 +26,8 @@ public class MerchantListingService {
                 merchant.getName(),
                 merchant.getDescription(),
                 merchant.getAdvertisedMcpEndpoint(),
-                merchant.getProfileMcpEndpoint()
+                merchant.getProfileMcpEndpoint(),
+                merchant.getMerchantRaw().isHasIdentityLinking()
         );
     }
 }

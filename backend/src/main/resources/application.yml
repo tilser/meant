@@ -140,6 +140,16 @@ merchant:
   mcp-tool:
     connect-timeout-milliseconds: ${MERCHANT_MCP_TOOL_CONNECT_TIMEOUT_MILLISECONDS:5000}
     read-timeout-milliseconds: ${MERCHANT_MCP_TOOL_READ_TIMEOUT_MILLISECONDS:5000}
+  identity-linking:
+    client-id: ${MERCHANT_IDENTITY_LINKING_CLIENT_ID:meant-local}
+    client-secret: ${MERCHANT_IDENTITY_LINKING_CLIENT_SECRET:}
+    redirect-uri: ${MERCHANT_IDENTITY_LINKING_REDIRECT_URI:http://localhost:3000/oauth/merchant-callback}
+    token-encryption-secret: ${MERCHANT_IDENTITY_LINKING_TOKEN_ENCRYPTION_SECRET:local-development-merchant-identity-token-secret}
+    default-scopes:
+      - dev.ucp.shopping.order:read
+      - dev.ucp.shopping.account:manage
+      - dev.ucp.shopping.loyalty:read
+    refresh-skew: ${MERCHANT_IDENTITY_LINKING_REFRESH_SKEW:5m}
   embedding:
     voyage-base-url: ${VOYAGE_BASE_URL:https://api.voyageai.com}
     api-key: ${VOYAGE_API_KEY:}

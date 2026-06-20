@@ -9,7 +9,8 @@ public record MerchantListItemResponse(
         String name,
         String description,
         String advertisedMcpEndpoint,
-        String profileMcpEndpoint
+        String profileMcpEndpoint,
+        boolean supportsIdentityLinking
 ) {
 
     public static MerchantListItemResponse from(MerchantListItemResult result) {
@@ -19,7 +20,8 @@ public record MerchantListItemResponse(
                 result.name(),
                 result.description(),
                 result.advertisedMcpEndpoint(),
-                result.profileMcpEndpoint()
+                result.profileMcpEndpoint(),
+                result.supportsIdentityLinking()
         );
     }
 }

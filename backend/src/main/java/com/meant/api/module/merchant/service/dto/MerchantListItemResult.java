@@ -8,6 +8,7 @@ public record MerchantListItemResult(
         String name,
         String description,
         String advertisedMcpEndpoint,
-        String profileMcpEndpoint
+        String profileMcpEndpoint,
+        boolean supportsIdentityLinking
 ) {
 }

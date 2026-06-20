@@ -103,6 +103,16 @@ merchant:
   mcp-tool:
     connect-timeout-milliseconds: 5000
     read-timeout-milliseconds: 5000
+  identity-linking:
+    client-id: meant-test
+    client-secret: test-secret
+    redirect-uri: http://localhost:3000/oauth/merchant-callback
+    token-encryption-secret: test-merchant-identity-link-token-secret
+    default-scopes:
+      - dev.ucp.shopping.order:read
+      - dev.ucp.shopping.account:manage
+      - dev.ucp.shopping.loyalty:read
+    refresh-skew: 5m
   embedding:
     voyage-base-url: https://api.voyageai.com
     api-key: ""

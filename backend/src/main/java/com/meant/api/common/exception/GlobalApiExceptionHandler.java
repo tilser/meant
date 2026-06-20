@@ -5,6 +5,7 @@ import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantEmbeddingException;
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
+import com.meant.api.module.merchant.exception.MerchantIdentityLinkException;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.user.exception.UserException;
@@ -141,7 +142,7 @@ public class GlobalApiExceptionHandler {
         );
     }
 
-    @ExceptionHandler({CartException.class, UserException.class})
+    @ExceptionHandler({CartException.class, MerchantIdentityLinkException.class, UserException.class})
     ResponseEntity<ProblemDetail> handleBusinessException(RuntimeException exception, HttpServletRequest request) {
         if (exception instanceof ApiException apiException) {
             return handleApiException(apiException, exception, request);
