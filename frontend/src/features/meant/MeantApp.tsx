@@ -7490,7 +7490,7 @@ function AccountView({
               )
             })}
           </div>
-        ) : (
+        ) : merchantIdentityLinksLoading ? null : (
           <div className="mt-acct-empty">No listed merchants currently advertise identity linking.</div>
         )}
       </section>
@@ -7997,11 +7997,16 @@ export function MeantApp() {
           ...current.filter((candidate) => candidate.merchantId !== link.merchantId),
         ])
         setMerchantIdentityLinksError(null)
-        window.history.replaceState({}, document.title, window.location.pathname)
       })
       .catch(() => {
         if (!active) return
         setMerchantIdentityLinksError('Could not complete store connection')
+      })
+      .finally(() => {
+        if (!active) return
+        // Always strip the OAuth code/state from the URL so the authorization code is not left in the
+        // address bar and a refresh does not re-trigger the callback.
+        window.history.replaceState({}, document.title, window.location.pathname)
       })
     return () => {
       active = false

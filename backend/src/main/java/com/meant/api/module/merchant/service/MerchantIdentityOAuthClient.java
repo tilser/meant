@@ -7,7 +7,6 @@ import com.meant.api.module.merchant.service.dto.MerchantIdentityTokenResponse;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -18,18 +17,25 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Service
-@RequiredArgsConstructor
 public class MerchantIdentityOAuthClient {
 
     private static final String WELL_KNOWN_AUTHORIZATION_SERVER = "/.well-known/oauth-authorization-server";
 
-    private final RestClient.Builder restClientBuilder;
+    private final RestClient restClient;
     private final MerchantIdentityLinkingProperties properties;
+
+    public MerchantIdentityOAuthClient(
+            RestClient.Builder restClientBuilder,
+            MerchantIdentityLinkingProperties properties
+    ) {
+        this.restClient = restClientBuilder.build();
+        this.properties = properties;
+    }
 
     public MerchantIdentityAuthorizationServerMetadata discover(String ucpUrl) {
         String metadataUrl = metadataUrl(ucpUrl);
         try {
-            MerchantIdentityAuthorizationServerMetadata metadata = restClientBuilder.build()
+            MerchantIdentityAuthorizationServerMetadata metadata = restClient
                     .get()
                     .uri(metadataUrl)
                     .retrieve()
@@ -78,7 +84,7 @@ public class MerchantIdentityOAuthClient {
         form.add("token", token);
         form.add("client_id", properties.clientId());
         try {
-            restClientBuilder.build()
+            restClient
                     .post()
                     .uri(metadata.revocationEndpoint())
                     .headers(headers -> clientAuthentication(headers, form))
@@ -93,7 +99,7 @@ public class MerchantIdentityOAuthClient {
 
     private MerchantIdentityTokenResponse postToken(String tokenEndpoint, MultiValueMap<String, String> form) {
         try {
-            MerchantIdentityTokenResponse response = restClientBuilder.build()
+            MerchantIdentityTokenResponse response = restClient
                     .post()
                     .uri(tokenEndpoint)
                     .headers(headers -> clientAuthentication(headers, form))

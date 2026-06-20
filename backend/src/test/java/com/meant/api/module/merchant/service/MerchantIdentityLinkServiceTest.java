@@ -33,13 +33,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.UnorderedRequestExpectationManager;
 import org.springframework.web.client.RestClient;
 
 @SpringBootTest(properties = "spring.task.scheduling.enabled=false")
+@Import(MerchantIdentityLinkServiceTest.MockRestClientConfiguration.class)
 class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000040");
@@ -59,14 +65,14 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
     private MerchantRawRepository merchantRawRepository;
 
     @Autowired
-    private RestClient.Builder restClientBuilder;
-
     private MockRestServiceServer server;
 
     @BeforeEach
     void setUp() {
         deleteTestData();
-        server = MockRestServiceServer.bindTo(restClientBuilder).ignoreExpectOrder(true).build();
+        // The OAuth client builds its RestClient once at construction, so the mock request factory is bound
+        // to the builder in MockRestClientConfiguration before the bean is created. Reset expectations here.
+        server.reset();
     }
 
     @AfterEach
@@ -216,6 +222,32 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
     private String basicAuth() {
         return "Basic " + Base64.getEncoder()
                 .encodeToString("meant-test:test-secret".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @TestConfiguration
+    static class MockRestClientConfiguration {
+
+        // Bind the mock server to the builder up front so the OAuth client's constructor-built RestClient
+        // captures the mock request factory. Unordered so the metadata/token calls can arrive in any order.
+        private final MockRestServiceServer.MockRestServiceServerBuilder serverBuilder;
+        private final RestClient.Builder restClientBuilder = RestClient.builder();
+        private final MockRestServiceServer server;
+
+        MockRestClientConfiguration() {
+            this.serverBuilder = MockRestServiceServer.bindTo(restClientBuilder);
+            this.server = serverBuilder.build(new UnorderedRequestExpectationManager());
+        }
+
+        @Bean
+        @Primary
+        RestClient.Builder mockRestClientBuilder() {
+            return restClientBuilder;
+        }
+
+        @Bean
+        MockRestServiceServer mockRestServiceServer() {
+            return server;
+        }
     }
 
     private Merchant saveMerchant(boolean hasIdentityLinking) {

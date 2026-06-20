@@ -63,26 +63,21 @@ public class MerchantIdentityLinkService {
         String codeVerifier = randomUrlToken();
         String stateHash = hash(state);
         Instant now = Instant.now();
+        String codeVerifierCiphertext = merchantIdentityTokenCipher.encrypt(
+                codeVerifier,
+                command.userId(),
+                command.merchantId());
 
         MerchantIdentityLink link = merchantIdentityLinkRepository
                 .findByUserIdAndMerchantId(command.userId(), command.merchantId())
                 .orElseGet(() -> MerchantIdentityLink.builder()
                         .userId(command.userId())
-                        .merchant(merchant)
-                        .status(MerchantIdentityLinkStatus.PENDING)
-                        .stateHash(stateHash)
-                        .codeVerifierCiphertext(merchantIdentityTokenCipher.encrypt(
-                                codeVerifier,
-                                command.userId(),
-                                command.merchantId()))
-                        .issuer(metadata.issuer())
                         .createdAt(now)
-                        .updatedAt(now)
                         .build());
         link.startAuthorization(
                 merchant,
                 stateHash,
-                merchantIdentityTokenCipher.encrypt(codeVerifier, command.userId(), command.merchantId()),
+                codeVerifierCiphertext,
                 metadata.issuer(),
                 now
         );
@@ -166,7 +161,17 @@ public class MerchantIdentityLinkService {
                 .filter(candidate -> candidate.getStatus() == MerchantIdentityLinkStatus.CONNECTED)
                 .orElseThrow(() -> MerchantIdentityLinkException.notFound("Merchant identity link not found"));
         if (shouldRefresh(link)) {
-            refresh(link);
+            // Re-load under a pessimistic write lock so concurrent reads serialize their refreshes.
+            // Without this, two requests could refresh the same rotating refresh token in parallel and
+            // the authorization server would reject (and possibly revoke) the second grant.
+            link = merchantIdentityLinkRepository
+                    .findByUserIdAndMerchantIdForUpdate(query.userId(), query.merchantId())
+                    .filter(candidate -> candidate.getStatus() == MerchantIdentityLinkStatus.CONNECTED)
+                    .orElseThrow(() -> MerchantIdentityLinkException.notFound("Merchant identity link not found"));
+            // Another request may have refreshed while we waited on the lock; re-check before refreshing.
+            if (shouldRefresh(link)) {
+                refresh(link);
+            }
         }
         return new MerchantIdentityAccessTokenResult(
                 merchantIdentityTokenCipher.decrypt(link.getAccessTokenCiphertext(), query.userId(), query.merchantId()),
