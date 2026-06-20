@@ -56,7 +56,7 @@ public class SecurityConfiguration {
         if (origins.contains("*")) {
             throw new IllegalStateException("app.cors.allowed-origins must not contain wildcard origins");
         }
-        if (isProductionProfile() && LOCAL_DEVELOPMENT_ORIGINS.containsAll(origins)) {
+        if (isProductionProfile() && origins.stream().anyMatch(LOCAL_DEVELOPMENT_ORIGINS::contains)) {
             throw new IllegalStateException(
                     "Production profile requires APP_CORS_ALLOWED_ORIGINS to be set to explicit non-localhost origins"
             );

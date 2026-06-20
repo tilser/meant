@@ -53,6 +53,18 @@ class SecurityConfigurationTest {
     }
 
     @Test
+    void productionProfileRejectsMixedOrigins() {
+        SecurityConfiguration configuration = configuration(
+                List.of("https://app.example.com", "http://localhost:3000"),
+                environment("prod")
+        );
+
+        assertThatThrownBy(configuration::validateCorsConfiguration)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_CORS_ALLOWED_ORIGINS");
+    }
+
+    @Test
     void wildcardOriginsAreRejected() {
         SecurityConfiguration configuration = configuration(List.of("*"), environment());
 
