@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +63,7 @@ public class UserProductDiscoveryService {
         List<UserSavedProductResult> filteredSavedProducts = savedProducts.stream()
                 .filter(product -> matches(product, query.search()))
                 .toList();
-        Set<String> savedProductKeys = savedProducts.stream()
+        Set<String> savedProductKeys = filteredSavedProducts.stream()
                 .map(UserSavedProductResult::id)
                 .collect(Collectors.toSet());
         List<UserProductSearchProductResult> recentProducts = userProductSearchPersistenceService.findRecentProducts(
@@ -116,18 +117,20 @@ public class UserProductDiscoveryService {
                     ? products
                     : reversed(products);
         }
-        Comparator<UserProductSearchProductResult> comparator = switch (sortBy) {
-            case MATCH -> Comparator.comparingInt(UserProductSearchProductResult::matchScore);
+        // PRICE/RATING carry nullable values; their comparators bake the sort direction into the
+        // value ordering so unknown values stay last in both ASC and DESC (reversing a nullsLast
+        // comparator would float nulls to the top, which we never want).
+        return switch (sortBy) {
+            case MATCH -> sorted(products,
+                    Comparator.comparingInt(UserProductSearchProductResult::matchScore), sortDirection);
             case RECENT -> throw new IllegalStateException("Recent products are already sorted by discovery recency");
-            case NAME -> Comparator.comparing(product -> normalized(product.title()));
-            case PRICE -> Comparator.comparing(
-                    UserProductDiscoveryService::priceAmount,
-                    Comparator.nullsLast(Comparator.naturalOrder()));
-            case RATING -> Comparator.comparing(
-                    UserProductSearchProductResult::ratingScore,
-                    Comparator.nullsLast(Comparator.naturalOrder()));
+            case NAME -> sorted(products,
+                    Comparator.comparing(product -> normalized(product.title())), sortDirection);
+            case PRICE -> sortedNullsLast(products,
+                    UserProductDiscoveryService::priceAmount, sortDirection);
+            case RATING -> sortedNullsLast(products,
+                    UserProductSearchProductResult::ratingScore, sortDirection);
         };
-        return sorted(products, comparator, sortDirection);
     }
 
     private <T> List<T> sorted(
@@ -140,6 +143,19 @@ public class UserProductDiscoveryService {
                 : comparator;
         return products.stream()
                 .sorted(stableComparator)
+                .toList();
+    }
+
+    private <T, U extends Comparable<? super U>> List<T> sortedNullsLast(
+            List<T> products,
+            Function<? super T, ? extends U> keyExtractor,
+            UserProductDiscoverySortDirection sortDirection
+    ) {
+        Comparator<U> valueOrder = sortDirection == UserProductDiscoverySortDirection.DESC
+                ? Comparator.reverseOrder()
+                : Comparator.naturalOrder();
+        return products.stream()
+                .sorted(Comparator.comparing(keyExtractor, Comparator.nullsLast(valueOrder)))
                 .toList();
     }
 

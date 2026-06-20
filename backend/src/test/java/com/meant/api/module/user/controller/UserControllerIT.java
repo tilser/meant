@@ -808,6 +808,156 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void productDiscoverySearchKeepsRecentProductWhenSavedTwinIsFilteredOut() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        String profileHash = userProductSearchHashService.profileHash(settings);
+        Instant now = Instant.now();
+        String productKey = "merchant.example:organic-tee";
+
+        // A saved product whose text does NOT contain "organic" so it is filtered out by the search.
+        client.post().uri("/api/users/me/saved-products")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, "Ada Lovelace"));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "id": "%s",
+                          "productHash": "hash-tee",
+                          "name": "Plain Tee",
+                          "brand": "Basics",
+                          "category": "Apparel",
+                          "tone": "#ffffff",
+                          "imageUrl": "https://example.com/tee.png",
+                          "productUrl": "https://merchant.example/products/tee",
+                          "remote": true,
+                          "match": 80,
+                          "priceFrom": 38.0,
+                          "merchants": 1,
+                          "satisfies": [],
+                          "misses": [],
+                          "note": "Comfortable everyday tee.",
+                          "pros": [],
+                          "cons": [],
+                          "review": { "score": 4.2, "count": 10, "insight": "Comfortable." },
+                          "offers": [
+                            {
+                              "merchant": "Basics Store",
+                              "price": 38.0,
+                              "delivery": "Tomorrow",
+                              "merchantId": "merchant-tee",
+                              "merchantDomain": "merchant.example",
+                              "productVariantId": "variant-tee",
+                              "variantTitle": "Default",
+                              "available": true
+                            }
+                          ],
+                          "needs": null,
+                          "provides": []
+                        }
+                        """.formatted(productKey))
+                .exchange()
+                .expectStatus().isOk();
+
+        // The recent twin (same productKey) DOES match "organic", so it must still surface.
+        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
+                id,
+                "organic basics",
+                "organic basics",
+                profileHash,
+                userProductSearchProperties.searchVersion(),
+                now,
+                now.plusSeconds(3600),
+                false
+        ));
+        saveRecentProduct(
+                id,
+                profileHash,
+                search,
+                productKey,
+                "hash-tee",
+                recentSearchProduct("tee", "Organic Cotton Tee", "Organic cotton tee.", 3800L, 1, 0.9d),
+                "Organic cotton matches your profile.",
+                now
+        );
+
+        UserProductDiscoveryResponse discovery = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/product-discovery")
+                        .queryParam("search", "organic")
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductDiscoveryResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(discovery).isNotNull();
+        assertThat(discovery.savedProducts()).isEmpty();
+        assertThat(discovery.recentProducts()).extracting(UserProductSearchProductResponse::title)
+                .containsExactly("Organic Cotton Tee");
+    }
+
+    @Test
+    void productDiscoverySortsRecentProductsWithMissingRatingLastInBothDirections() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        String profileHash = userProductSearchHashService.profileHash(settings);
+        Instant now = Instant.now();
+
+        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
+                id,
+                "organic basics",
+                "organic basics",
+                profileHash,
+                userProductSearchProperties.searchVersion(),
+                now,
+                now.plusSeconds(3600),
+                false
+        ));
+        saveRecentProduct(id, profileHash, search, "merchant.example:rated-high", "hash-high",
+                recentSearchProduct("high", "Rated High", "High rated.", 5000L, 1, 0.9d, 4.8d),
+                "Top rated.", now);
+        saveRecentProduct(id, profileHash, search, "merchant.example:rated-low", "hash-low",
+                recentSearchProduct("low", "Rated Low", "Low rated.", 5000L, 2, 0.9d, 3.1d),
+                "Lower rated.", now);
+        saveRecentProduct(id, profileHash, search, "merchant.example:unrated", "hash-unrated",
+                recentSearchProduct("unrated", "Unrated", "No rating.", 5000L, 3, 0.9d, null),
+                "No rating yet.", now);
+
+        UserProductDiscoveryResponse desc = sortByRating(id, email, "desc");
+        assertThat(desc).isNotNull();
+        assertThat(desc.recentProducts()).extracting(UserProductSearchProductResponse::title)
+                .containsExactly("Rated High", "Rated Low", "Unrated");
+
+        UserProductDiscoveryResponse asc = sortByRating(id, email, "asc");
+        assertThat(asc).isNotNull();
+        assertThat(asc.recentProducts()).extracting(UserProductSearchProductResponse::title)
+                .containsExactly("Rated Low", "Rated High", "Unrated");
+    }
+
+    private UserProductDiscoveryResponse sortByRating(UUID id, String email, String direction) {
+        return client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/product-discovery")
+                        .queryParam("sortBy", "rating")
+                        .queryParam("sortDirection", direction)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductDiscoveryResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    @Test
     void popularProductSearchesReturnsDistinctUserAggregates() {
         Instant now = Instant.now();
         String displayQuery = "Organic cotton T-shirt under $50";
@@ -962,6 +1112,18 @@ class UserControllerIT extends PostgresIntegrationTest {
             int rank,
             double productRerankScore
     ) {
+        return recentSearchProduct(productId, title, description, price, rank, productRerankScore, null);
+    }
+
+    private static MerchantSemanticProductResult recentSearchProduct(
+            String productId,
+            String title,
+            String description,
+            Long price,
+            int rank,
+            double productRerankScore,
+            Double ratingScore
+    ) {
         return new MerchantSemanticProductResult(
                 UUID.randomUUID(),
                 "merchant.example",
@@ -980,7 +1142,7 @@ class UserControllerIT extends PostgresIntegrationTest {
                 "USD",
                 null,
                 null,
-                null,
+                ratingScore,
                 null,
                 List.of(),
                 List.of(),
