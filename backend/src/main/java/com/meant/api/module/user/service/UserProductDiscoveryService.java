@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,8 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @RequiredArgsConstructor
 public class UserProductDiscoveryService {
+
+    private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]+>");
 
     private final UserSettingsService userSettingsService;
     private final UserSavedProductService userSavedProductService;
@@ -60,8 +63,9 @@ public class UserProductDiscoveryService {
                         query.userId(),
                         0,
                         userCollectionProperties.savedProducts().discoveryLimit()));
+        List<String> searchTokens = searchTokens(query.search());
         List<UserSavedProductResult> filteredSavedProducts = savedProducts.stream()
-                .filter(product -> matches(product, query.search()))
+                .filter(product -> matches(product, searchTokens))
                 .toList();
         Set<String> savedProductKeys = filteredSavedProducts.stream()
                 .map(UserSavedProductResult::id)
@@ -78,7 +82,7 @@ public class UserProductDiscoveryService {
                 )
                 .stream()
                 .filter(product -> !savedProductKeys.contains(product.productKey()))
-                .filter(product -> matches(product, query.search()))
+                .filter(product -> matches(product, searchTokens))
                 .toList();
 
         return new UserProductDiscoveryResult(
@@ -166,18 +170,17 @@ public class UserProductDiscoveryService {
     }
 
     private static Long priceAmount(UserProductSearchProductResult product) {
-        return firstNonNull(product.priceMinAmount(), product.listPriceAmount(), product.priceMaxAmount());
+        if (product.priceMinAmount() != null) {
+            return product.priceMinAmount();
+        }
+        if (product.listPriceAmount() != null) {
+            return product.listPriceAmount();
+        }
+        return product.priceMaxAmount();
     }
 
-    private static Long firstNonNull(Long... values) {
-        return Arrays.stream(values)
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private boolean matches(UserSavedProductResult product, String search) {
-        return matches(search, Stream.of(
+    private boolean matches(UserSavedProductResult product, List<String> searchTokens) {
+        return matches(searchTokens, Stream.of(
                 product.name(),
                 product.brand(),
                 product.category(),
@@ -195,8 +198,8 @@ public class UserProductDiscoveryService {
                         .collect(Collectors.joining(" "))));
     }
 
-    private boolean matches(UserProductSearchProductResult product, String search) {
-        return matches(search, Stream.of(
+    private boolean matches(UserProductSearchProductResult product, List<String> searchTokens) {
+        return matches(searchTokens, Stream.of(
                 product.title(),
                 product.descriptionHtml(),
                 product.merchantName(),
@@ -216,17 +219,24 @@ public class UserProductDiscoveryService {
                         .collect(Collectors.joining(" "))));
     }
 
-    private boolean matches(String search, Stream<String> fields) {
-        if (search == null || search.isBlank()) {
+    private boolean matches(List<String> searchTokens, Stream<String> fields) {
+        if (searchTokens.isEmpty()) {
             return true;
         }
         String haystack = fields
                 .filter(Objects::nonNull)
                 .map(this::normalized)
                 .collect(Collectors.joining(" "));
+        return searchTokens.stream().allMatch(haystack::contains);
+    }
+
+    private List<String> searchTokens(String search) {
+        if (search == null || search.isBlank()) {
+            return List.of();
+        }
         return Arrays.stream(normalized(search).split("\\s+"))
                 .filter(token -> !token.isBlank())
-                .allMatch(haystack::contains);
+                .toList();
     }
 
     private static String attributeText(ProductCatalogAttribute attribute) {
@@ -239,7 +249,7 @@ public class UserProductDiscoveryService {
         if (value == null) {
             return "";
         }
-        return value.replaceAll("<[^>]+>", " ")
+        return HTML_TAG_PATTERN.matcher(value).replaceAll(" ")
                 .toLowerCase(Locale.ROOT)
                 .trim();
     }
