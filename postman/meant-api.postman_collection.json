@@ -2,13 +2,18 @@
   "info": {
     "_postman_id": "9e35b34f-40a4-4d47-8f09-2e25d704c12f",
     "name": "Meant API",
-    "description": "Importable Postman collection for the Meant backend API. Set baseUrl, merchantId or merchantDomain, and productVariantId before exercising cart flows.",
+    "description": "Importable Postman collection for the Meant backend API. Set baseUrl and authToken for authenticated user/cart flows. Set merchantId or merchantDomain and productVariantId before exercising cart flows.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
       "type": "string"
     },
     {
@@ -45,6 +50,21 @@
       "key": "checkoutUrl",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "inventoryItemId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assistantConversationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "savedProductKey",
+      "value": "postman-saved-product",
+      "type": "string"
     }
   ],
   "item": [
@@ -73,6 +93,23 @@
     {
       "name": "Merchants",
       "item": [
+        {
+          "name": "List Active Merchants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/merchants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "merchants"
+              ]
+            }
+          }
+        },
         {
           "name": "Semantic Merchant Search",
           "request": {
@@ -112,7 +149,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"ginger peach candle\",\n  \"merchantCandidateLimit\": 30,\n  \"merchantLimit\": 5,\n  \"productsPerMerchant\": 10,\n  \"productLimit\": 10\n}"
+              "raw": "{\n  \"query\": \"ginger peach candle\",\n  \"merchantId\": null,\n  \"merchantCandidateLimit\": 30,\n  \"merchantLimit\": 5,\n  \"productsPerMerchant\": 10,\n  \"productLimit\": 10\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/merchants/semantic-product-search",
@@ -130,7 +167,662 @@
       ]
     },
     {
+      "name": "Users",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{authToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Current User Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Postman\",\n  \"surname\": \"Tester\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Current User Profile Picture",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profilePicturePath\": \"avatars/postman-user.png\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/profile-picture",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "profile-picture"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remove Current User Profile Picture",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/profile-picture",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "profile-picture"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Current User Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "settings"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Current User Settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"budget\": 150,\n  \"budgetUnlimited\": false,\n  \"clothingFit\": \"women\",\n  \"location\": {\n    \"country\": \"United States\",\n    \"code\": \"US\",\n    \"city\": \"New York\"\n  },\n  \"locations\": [\n    {\n      \"country\": \"United States\",\n      \"code\": \"US\",\n      \"city\": \"New York\"\n    }\n  ],\n  \"filterIds\": [],\n  \"preferenceDescription\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "settings"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Products For Current User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"linen throw pillows\",\n  \"merchantId\": null,\n  \"offset\": 0,\n  \"limit\": 20\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/product-searches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "product-searches"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Generate Product Search Suggestions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/product-search-suggestions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "product-search-suggestions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Current User Inventory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/inventory?category=APPAREL&restockOnly=false&page=0&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "inventory"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "APPAREL"
+                },
+                {
+                  "key": "restockOnly",
+                  "value": "false"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Current User Inventory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/inventory/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "inventory",
+                "export"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add Owned Inventory Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.collectionVariables.set('inventoryItemId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Linen Shirt\",\n  \"brand\": \"Everlane\",\n  \"category\": \"APPAREL\",\n  \"description\": \"White linen button-down shirt\",\n  \"imageUrl\": \"https://example.com/linen-shirt.jpg\",\n  \"productUrl\": \"https://example.com/products/linen-shirt\",\n  \"quantity\": 1,\n  \"unit\": \"item\",\n  \"location\": \"Closet\",\n  \"notes\": \"Use for summer outfit recommendations\",\n  \"attributes\": [\n    \"linen\",\n    \"white\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/inventory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "inventory"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add Inventory Item From Photo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.collectionVariables.set('inventoryItemId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"photoUrl\": \"https://example.com/inventory/photo.jpg\",\n  \"name\": \"Fallback Item Name\",\n  \"brand\": \"Unknown\",\n  \"category\": \"HOME\",\n  \"description\": \"Fallback description if recognition is unavailable\",\n  \"quantity\": 1,\n  \"unit\": \"item\",\n  \"location\": \"Kitchen\",\n  \"notes\": \"Created from Postman photo flow\",\n  \"attributes\": [\n    \"photo-import\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/inventory/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "inventory",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Owned Inventory Item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Linen Shirt\",\n  \"brand\": \"Everlane\",\n  \"category\": \"APPAREL\",\n  \"description\": \"Updated from Postman\",\n  \"imageUrl\": \"https://example.com/linen-shirt-updated.jpg\",\n  \"productUrl\": \"https://example.com/products/linen-shirt\",\n  \"photoUrl\": null,\n  \"quantity\": 2,\n  \"unit\": \"item\",\n  \"location\": \"Closet\",\n  \"notes\": \"Updated inventory notes\",\n  \"attributes\": [\n    \"linen\",\n    \"white\",\n    \"summer\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/inventory/{{inventoryItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "inventory",
+                "{{inventoryItemId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Owned Inventory Item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/inventory/{{inventoryItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "inventory",
+                "{{inventoryItemId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Product Discovery Context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/product-discovery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "product-discovery"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Popular Product Searches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/popular-product-searches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "popular-product-searches"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Ask Meant Conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/assistant/conversations?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "assistant",
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Latest Ask Meant Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.conversationId) pm.collectionVariables.set('assistantConversationId', body.conversationId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/assistant/conversations/latest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "assistant",
+                "conversations",
+                "latest"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ask Meant Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.conversationId) pm.collectionVariables.set('assistantConversationId', body.conversationId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/assistant/conversations/{{assistantConversationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "assistant",
+                "conversations",
+                "{{assistantConversationId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stream Ask Meant Response",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationId\": null,\n  \"message\": \"Help me find a practical home item under $50.\",\n  \"context\": {\n    \"view\": \"product-discovery\",\n    \"contextLabel\": \"Postman test\",\n    \"currentSearchQuery\": \"home goods under 50\",\n    \"selectedMerchantName\": null,\n    \"savedProductCount\": 0,\n    \"cartItemCount\": 0,\n    \"visibleProducts\": [\n      {\n        \"id\": \"sample-product\",\n        \"name\": \"Cotton Throw Blanket\",\n        \"brand\": \"Sample Brand\",\n        \"category\": \"Home\",\n        \"match\": 88,\n        \"priceFrom\": 42.0,\n        \"note\": \"Neutral color and washable fabric\"\n      }\n    ],\n    \"cartItems\": [],\n    \"orders\": []\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/assistant/messages:stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "assistant",
+                "messages:stream"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Saved Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/saved-products?page=0&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "saved-products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.collectionVariables.set('savedProductKey', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{savedProductKey}}\",\n  \"productHash\": \"postman-saved-product-hash\",\n  \"name\": \"Cotton Throw Blanket\",\n  \"brand\": \"Sample Brand\",\n  \"category\": \"Home\",\n  \"tone\": \"cozy\",\n  \"imageUrl\": \"https://example.com/products/cotton-throw.jpg\",\n  \"productUrl\": \"https://example.com/products/cotton-throw\",\n  \"remote\": true,\n  \"match\": 92,\n  \"priceFrom\": 42.0,\n  \"merchants\": 1,\n  \"satisfies\": [\n    \"Natural material\",\n    \"Under budget\"\n  ],\n  \"misses\": [],\n  \"note\": \"Saved from Postman\",\n  \"pros\": [\n    \"Machine washable\"\n  ],\n  \"cons\": [\n    \"Limited colors\"\n  ],\n  \"review\": {\n    \"score\": 4.6,\n    \"count\": 128,\n    \"insight\": \"Reviewed positively for softness\"\n  },\n  \"offers\": [\n    {\n      \"merchant\": \"Sample Merchant\",\n      \"price\": 42.0,\n      \"delivery\": \"Standard shipping\",\n      \"merchantId\": null,\n      \"merchantDomain\": \"{{merchantDomain}}\",\n      \"productVariantId\": \"{{productVariantId}}\",\n      \"variantTitle\": \"Ivory / One Size\",\n      \"available\": true\n    }\n  ],\n  \"needs\": \"cozy-home\",\n  \"provides\": [\n    \"warmth\",\n    \"texture\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/saved-products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "saved-products"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remove Saved Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/saved-products?productKey={{savedProductKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "saved-products"
+              ],
+              "query": [
+                {
+                  "key": "productKey",
+                  "value": "{{savedProductKey}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Carts",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{authToken}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "Create Cart",
