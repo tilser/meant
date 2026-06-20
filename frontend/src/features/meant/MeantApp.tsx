@@ -6165,7 +6165,7 @@ function tasteSignalWeightLabel(weight: number): string {
   if (weight > 0) {
     return `boost +${weight.toFixed(1)}`
   }
-  return `penalty ${weight.toFixed(1)}`
+  return `penalty ${Math.abs(weight).toFixed(1)}`
 }
 
 function LocationSection({

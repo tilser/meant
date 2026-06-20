@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 public class UserTasteRankingService {
 
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
+    private static final double SIGNAL_WEIGHT_THRESHOLD = 0.25d;
+    private static final int RANKING_SIGNAL_LIMIT = 30;
 
     public List<UserProductSearchProductResult> rank(
             List<UserProductSearchProductResult> products,
@@ -29,11 +31,22 @@ public class UserTasteRankingService {
         if (tasteProfile == null || tasteProfile.signals().isEmpty() || products.isEmpty()) {
             return products;
         }
-        Set<String> explicitFilterIds = settings == null ? Set.of() : settings.filters().stream()
-                .map(filter -> filter.id())
-                .collect(Collectors.toSet());
+        Set<String> explicitFilterIds = settings == null || settings.filters() == null ? Set.of()
+                : settings.filters().stream()
+                        .map(filter -> filter.id())
+                        .collect(Collectors.toSet());
+        // Resolve the applicable signals once instead of re-filtering them for every product.
+        List<UserTasteSignalResult> activeSignals = tasteProfile.signals().stream()
+                .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
+                .filter(signal -> Math.abs(signal.weight()) >= SIGNAL_WEIGHT_THRESHOLD)
+                .filter(signal -> !explicitFilterIds.contains(signal.signalKey()))
+                .limit(RANKING_SIGNAL_LIMIT)
+                .toList();
+        if (activeSignals.isEmpty()) {
+            return products;
+        }
         return products.stream()
-                .map(product -> product.withMatchScore(adjustedScore(product, tasteProfile.signals(), explicitFilterIds)))
+                .map(product -> product.withMatchScore(adjustedScore(product, activeSignals)))
                 .sorted(Comparator.comparingInt(UserProductSearchProductResult::matchScore)
                         .reversed()
                         .thenComparingInt(UserProductSearchProductResult::rank))
@@ -42,13 +55,10 @@ public class UserTasteRankingService {
 
     private int adjustedScore(
             UserProductSearchProductResult product,
-            List<UserTasteSignalResult> signals,
-            Set<String> explicitFilterIds
+            List<UserTasteSignalResult> signals
     ) {
         ProductText productText = ProductText.from(product);
         double adjustment = signals.stream()
-                .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
-                .filter(signal -> !explicitFilterIds.contains(signal.signalKey()))
                 .mapToDouble(signal -> contribution(product, productText, signal))
                 .sum();
         return Math.max(25, Math.min(99, product.matchScore() + (int) Math.round(adjustment)));
@@ -98,7 +108,7 @@ public class UserTasteRankingService {
 
         private static ProductText from(UserProductSearchProductResult product) {
             String brand = normalizedJoin(Stream.of(product.merchantName(), product.merchantDomain()));
-            String category = normalizedJoin(product.categories().stream()
+            String category = normalizedJoin(safeList(product.categories()).stream()
                     .map(entry -> entry.value()));
             String searchable = normalizedJoin(Stream.of(
                     product.title(),
@@ -124,17 +134,21 @@ public class UserTasteRankingService {
         }
 
         private static String rawCategory(UserProductSearchProductResult product) {
-            return product.categories().stream()
+            return safeList(product.categories()).stream()
                     .map(category -> category.value())
                     .filter(value -> value != null && !value.isBlank())
                     .collect(Collectors.joining(" "));
         }
 
         private static List<String> normalizedList(List<String> values) {
-            return values.stream()
+            return safeList(values).stream()
                     .map(UserTasteRankingService::normalized)
                     .filter(value -> value != null)
                     .toList();
+        }
+
+        private static <T> List<T> safeList(List<T> values) {
+            return values == null ? List.of() : values;
         }
 
         private static String normalizedJoin(Stream<String> values) {

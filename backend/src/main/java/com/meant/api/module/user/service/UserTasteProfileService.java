@@ -97,6 +97,9 @@ public class UserTasteProfileService {
 
     @Transactional
     public void recordSearch(UUID userId, UserProductSearchQueryIntentResult queryIntent, Instant now) {
+        if (queryIntent == null) {
+            return;
+        }
         String signal = normalized(queryIntent.searchQuery());
         if (signal == null || signal.length() < 3) {
             return;
@@ -290,9 +293,11 @@ public class UserTasteProfileService {
     }
 
     private List<UserTasteSuggestionResult> suggestions(List<UserTasteSignal> signals, UserSettingsResult settings) {
-        Set<String> explicitFilterIds = settings.filters().stream()
-                .map(ShoppingFilterResult::id)
-                .collect(Collectors.toSet());
+        Set<String> explicitFilterIds = settings == null || settings.filters() == null
+                ? Set.of()
+                : settings.filters().stream()
+                        .map(ShoppingFilterResult::id)
+                        .collect(Collectors.toSet());
         List<String> suggestedFilterIds = signals.stream()
                 .filter(signal -> signal.getSignalType() == UserTasteSignalType.FILTER)
                 .map(UserTasteSignal::getSuggestedFilterId)
