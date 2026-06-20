@@ -12,6 +12,7 @@ import com.meant.api.module.user.controller.response.UserInventoryExportResponse
 import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
+import com.meant.api.module.user.controller.response.UserProductSearchProductResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
@@ -721,6 +722,92 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void productDiscoverySearchesAndSortsRecentProducts() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        String profileHash = userProductSearchHashService.profileHash(settings);
+        Instant now = Instant.now();
+
+        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
+                id,
+                "organic basics",
+                "organic basics",
+                profileHash,
+                userProductSearchProperties.searchVersion(),
+                now,
+                now.plusSeconds(3600),
+                false
+        ));
+        saveRecentProduct(
+                id,
+                profileHash,
+                search,
+                "merchant.example:linen",
+                "hash-linen",
+                recentSearchProduct("linen", "Organic Linen Shirt", "Organic linen button-down.", 6200L, 1, 0.62d),
+                "Organic linen matches your material preferences.",
+                now
+        );
+        saveRecentProduct(
+                id,
+                profileHash,
+                search,
+                "merchant.example:cap",
+                "hash-cap",
+                recentSearchProduct("cap", "Organic Cotton Cap", "Organic cotton cap.", 2400L, 2, 0.72d),
+                "Organic cotton and no polyester match your profile.",
+                now
+        );
+        saveRecentProduct(
+                id,
+                profileHash,
+                search,
+                "merchant.example:socks",
+                "hash-socks",
+                recentSearchProduct("socks", "Merino Wool Socks", "Warm wool socks.", 1800L, 3, 0.82d),
+                "Wool socks match your profile.",
+                now
+        );
+
+        UserProductDiscoveryResponse filtered = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/product-discovery")
+                        .queryParam("search", "organic")
+                        .queryParam("sortBy", "price")
+                        .queryParam("sortDirection", "asc")
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductDiscoveryResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(filtered).isNotNull();
+        assertThat(filtered.recentProducts()).extracting(UserProductSearchProductResponse::title)
+                .containsExactly("Organic Cotton Cap", "Organic Linen Shirt");
+
+        UserProductDiscoveryResponse sortedByName = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/product-discovery")
+                        .queryParam("sortBy", "name")
+                        .queryParam("sortDirection", "asc")
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductDiscoveryResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(sortedByName).isNotNull();
+        assertThat(sortedByName.recentProducts()).extracting(UserProductSearchProductResponse::title)
+                .containsExactly("Merino Wool Socks", "Organic Cotton Cap", "Organic Linen Shirt");
+    }
+
+    @Test
     void popularProductSearchesReturnsDistinctUserAggregates() {
         Instant now = Instant.now();
         String displayQuery = "Organic cotton T-shirt under $50";
@@ -834,6 +921,47 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     private static MerchantSemanticProductResult recentSearchProduct() {
+        return recentSearchProduct("tee", "Organic Cotton Tee", "Organic cotton tee with no polyester.", 3800L, 1, 0.92d);
+    }
+
+    private void saveRecentProduct(
+            UUID userId,
+            String profileHash,
+            UserProductSearch search,
+            String productKey,
+            String productHash,
+            MerchantSemanticProductResult product,
+            String whyMeantForYou,
+            Instant now
+    ) {
+        userProductSearchResultItemRepository.save(UserProductSearchResultItem.from(
+                search.getId(),
+                productKey,
+                productHash,
+                product,
+                now
+        ));
+        userProductRecommendationExplanationRepository.save(UserProductRecommendationExplanation.create(
+                userId,
+                search.getNormalizedQuery(),
+                profileHash,
+                productKey,
+                productHash,
+                openRouterProperties.models().productRecommendationExplainer(),
+                userProductSearchProperties.explanationPromptVersion(),
+                whyMeantForYou,
+                now
+        ));
+    }
+
+    private static MerchantSemanticProductResult recentSearchProduct(
+            String productId,
+            String title,
+            String description,
+            Long price,
+            int rank,
+            double productRerankScore
+    ) {
         return new MerchantSemanticProductResult(
                 UUID.randomUUID(),
                 "merchant.example",
@@ -842,13 +970,13 @@ class UserControllerIT extends PostgresIntegrationTest {
                 1,
                 0.9d,
                 0.8d,
-                "tee",
-                "Organic Cotton Tee",
-                "<p>Organic cotton tee with no polyester.</p>",
-                "https://merchant.example/products/tee",
-                "https://merchant.example/tee.jpg",
-                3800L,
-                3800L,
+                productId,
+                title,
+                "<p>%s</p>".formatted(description),
+                "https://merchant.example/products/" + productId,
+                "https://merchant.example/" + productId + ".jpg",
+                price,
+                price,
                 "USD",
                 null,
                 null,
@@ -863,27 +991,27 @@ class UserControllerIT extends PostgresIntegrationTest {
                 List.of(),
                 true,
                 null,
-                "Organic cotton tee with no polyester.",
-                "https://merchant.example/tee.jpg",
+                description,
+                "https://merchant.example/" + productId + ".jpg",
                 List.of(),
                 List.of(),
-                "38.00",
-                "38.00",
+                "%.2f".formatted(price / 100.0d),
+                "%.2f".formatted(price / 100.0d),
                 "USD",
                 1,
                 false,
                 List.of(),
-                "variant-1",
+                "variant-" + productId,
                 "Default",
                 List.of(),
-                "38.00",
+                "%.2f".formatted(price / 100.0d),
                 "USD",
-                "https://merchant.example/tee.jpg",
-                "Tee",
+                "https://merchant.example/" + productId + ".jpg",
+                title,
                 true,
-                1,
-                0.92d,
-                1
+                rank,
+                productRerankScore,
+                rank
         );
     }
 }

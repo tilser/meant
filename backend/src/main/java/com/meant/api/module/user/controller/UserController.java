@@ -1,6 +1,8 @@
 package com.meant.api.module.user.controller;
 
 import com.meant.api.module.user.constant.UserInventoryCategory;
+import com.meant.api.module.user.constant.UserProductDiscoverySortDirection;
+import com.meant.api.module.user.constant.UserProductDiscoverySortField;
 import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
@@ -71,6 +73,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -526,11 +529,21 @@ public class UserController {
             description = "Product discovery context for the current user",
             content = @Content(schema = @Schema(implementation = UserProductDiscoveryResponse.class))
     )
-    public UserProductDiscoveryResponse productDiscovery(@AuthenticationPrincipal Jwt jwt) {
+    public UserProductDiscoveryResponse productDiscovery(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "recent") String sortBy,
+            @RequestParam(required = false) String sortDirection
+    ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        UserProductDiscoverySortField sortField = productDiscoverySortField(sortBy);
         return UserProductDiscoveryResponse.from(userProductDiscoveryService.get(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
-                new GetUserProductDiscoveryQuery(authenticatedUser.id())));
+                new GetUserProductDiscoveryQuery(
+                        authenticatedUser.id(),
+                        blankToNull(search),
+                        sortField,
+                        productDiscoverySortDirection(sortDirection, sortField))));
     }
 
     @GetMapping("/me/popular-product-searches")
@@ -736,6 +749,38 @@ public class UserController {
             return defaultLimit;
         }
         return Math.max(1, Math.min(limit, maxLimit));
+    }
+
+    private UserProductDiscoverySortField productDiscoverySortField(String value) {
+        return enumValue(UserProductDiscoverySortField.class, value, "sortBy");
+    }
+
+    private UserProductDiscoverySortDirection productDiscoverySortDirection(
+            String value,
+            UserProductDiscoverySortField sortField
+    ) {
+        if (value == null || value.isBlank()) {
+            return switch (sortField) {
+                case NAME, PRICE -> UserProductDiscoverySortDirection.ASC;
+                case MATCH, RECENT, RATING -> UserProductDiscoverySortDirection.DESC;
+            };
+        }
+        return enumValue(UserProductDiscoverySortDirection.class, value, "sortDirection");
+    }
+
+    private <T extends Enum<T>> T enumValue(Class<T> type, String value, String parameterName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Missing " + parameterName);
+        }
+        try {
+            return Enum.valueOf(type, value.trim().replace('-', '_').toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Invalid " + parameterName + ": " + value, exception);
+        }
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**
