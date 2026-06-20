@@ -8143,6 +8143,8 @@ export function MeantApp() {
   }
 
   const dismissProduct = (product: Product) => {
+    const previousSearchResults = searchResults
+    const previousRemoteProducts = remoteProducts
     setSearchResults((current) => current.filter((candidate) => candidate.id !== product.id))
     setRemoteProducts((current) => current.filter((candidate) => candidate.id !== product.id))
     void recordUserTasteBehavior({
@@ -8151,7 +8153,8 @@ export function MeantApp() {
     })
       .then((profile) => setTasteProfile(profile))
       .catch(() => {
-        setRemoteProducts((current) => upsertProductSnapshot(current, product))
+        setSearchResults(previousSearchResults)
+        setRemoteProducts(previousRemoteProducts)
       })
   }
 

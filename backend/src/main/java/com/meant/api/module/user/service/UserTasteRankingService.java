@@ -45,22 +45,27 @@ public class UserTasteRankingService {
             List<UserTasteSignalResult> signals,
             Set<String> explicitFilterIds
     ) {
+        ProductText productText = ProductText.from(product);
         double adjustment = signals.stream()
                 .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
                 .filter(signal -> !explicitFilterIds.contains(signal.signalKey()))
-                .mapToDouble(signal -> contribution(product, signal))
+                .mapToDouble(signal -> contribution(product, productText, signal))
                 .sum();
         return Math.max(25, Math.min(99, product.matchScore() + (int) Math.round(adjustment)));
     }
 
-    private double contribution(UserProductSearchProductResult product, UserTasteSignalResult signal) {
+    private double contribution(
+            UserProductSearchProductResult product,
+            ProductText productText,
+            UserTasteSignalResult signal
+    ) {
         return switch (signal.signalType()) {
             case FILTER -> filterContribution(product, signal);
-            case BRAND -> textContains(brandText(product), signal.signalKey()) ? signal.weight() * 1.5d : 0.0d;
-            case CATEGORY -> textContains(categoryText(product), signal.signalKey()) ? signal.weight() * 1.2d : 0.0d;
-            case MATERIAL -> listContains(product.materials(), signal.signalKey()) ? signal.weight() * 1.4d : 0.0d;
-            case CERTIFICATION -> listContains(product.certifications(), signal.signalKey()) ? signal.weight() * 1.4d : 0.0d;
-            case QUERY -> textContains(searchableText(product), signal.signalKey()) ? signal.weight() * 0.8d : 0.0d;
+            case BRAND -> productText.brand().contains(signal.signalKey()) ? signal.weight() * 1.5d : 0.0d;
+            case CATEGORY -> productText.category().contains(signal.signalKey()) ? signal.weight() * 1.2d : 0.0d;
+            case MATERIAL -> listContains(productText.materials(), signal.signalKey()) ? signal.weight() * 1.4d : 0.0d;
+            case CERTIFICATION -> listContains(productText.certifications(), signal.signalKey()) ? signal.weight() * 1.4d : 0.0d;
+            case QUERY -> productText.searchable().contains(signal.signalKey()) ? signal.weight() * 0.8d : 0.0d;
         };
     }
 
@@ -74,42 +79,74 @@ public class UserTasteRankingService {
         return 0.0d;
     }
 
-    private boolean listContains(List<String> values, String signal) {
-        return values.stream().anyMatch(value -> textContains(value, signal));
+    private boolean listContains(List<String> normalizedValues, String signal) {
+        return normalizedValues.stream().anyMatch(value -> value.contains(signal));
     }
 
-    private String searchableText(UserProductSearchProductResult product) {
-        return Stream.of(
-                        product.title(),
-                        product.merchantName(),
-                        product.detailDescription(),
-                        product.descriptionHtml(),
-                        categoryText(product),
-                        brandText(product)
-                )
-                .filter(value -> value != null && !value.isBlank())
-                .collect(Collectors.joining(" "));
+    /**
+     * Holds the normalized product strings used during signal evaluation. Normalization
+     * (NFKC + lowercase + whitespace collapse) is expensive, so it is computed once per
+     * product rather than for every signal.
+     */
+    private record ProductText(
+            String brand,
+            String category,
+            String searchable,
+            List<String> materials,
+            List<String> certifications
+    ) {
+
+        private static ProductText from(UserProductSearchProductResult product) {
+            String brand = normalizedJoin(Stream.of(product.merchantName(), product.merchantDomain()));
+            String category = normalizedJoin(product.categories().stream()
+                    .map(entry -> entry.value()));
+            String searchable = normalizedJoin(Stream.of(
+                    product.title(),
+                    product.merchantName(),
+                    product.detailDescription(),
+                    product.descriptionHtml(),
+                    rawCategory(product),
+                    rawBrand(product)
+            ));
+            return new ProductText(
+                    brand,
+                    category,
+                    searchable,
+                    normalizedList(product.materials()),
+                    normalizedList(product.certifications())
+            );
+        }
+
+        private static String rawBrand(UserProductSearchProductResult product) {
+            return Stream.of(product.merchantName(), product.merchantDomain())
+                    .filter(value -> value != null && !value.isBlank())
+                    .collect(Collectors.joining(" "));
+        }
+
+        private static String rawCategory(UserProductSearchProductResult product) {
+            return product.categories().stream()
+                    .map(category -> category.value())
+                    .filter(value -> value != null && !value.isBlank())
+                    .collect(Collectors.joining(" "));
+        }
+
+        private static List<String> normalizedList(List<String> values) {
+            return values.stream()
+                    .map(UserTasteRankingService::normalized)
+                    .filter(value -> value != null)
+                    .toList();
+        }
+
+        private static String normalizedJoin(Stream<String> values) {
+            String joined = values
+                    .filter(value -> value != null && !value.isBlank())
+                    .collect(Collectors.joining(" "));
+            String normalized = normalized(joined);
+            return normalized == null ? "" : normalized;
+        }
     }
 
-    private String brandText(UserProductSearchProductResult product) {
-        return Stream.of(product.merchantName(), product.merchantDomain())
-                .filter(value -> value != null && !value.isBlank())
-                .collect(Collectors.joining(" "));
-    }
-
-    private String categoryText(UserProductSearchProductResult product) {
-        return product.categories().stream()
-                .map(category -> category.value())
-                .filter(value -> value != null && !value.isBlank())
-                .collect(Collectors.joining(" "));
-    }
-
-    private boolean textContains(String value, String signal) {
-        String normalizedValue = normalized(value);
-        return normalizedValue != null && normalizedValue.contains(signal);
-    }
-
-    private String normalized(String value) {
+    private static String normalized(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }

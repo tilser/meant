@@ -112,16 +112,24 @@ class UserTasteProfileServiceTest {
     }
 
     private ShoppingFilterRepository shoppingFilters() {
+        ShoppingFilter linen = ShoppingFilter.builder()
+                .id("linen")
+                .label("Linen")
+                .description("Prefer linen.")
+                .category("materials")
+                .polarity("prefer")
+                .displayOrder(330)
+                .createdAt(NOW)
+                .build();
         return repository(ShoppingFilterRepository.class, (proxy, method, args) -> switch (method.getName()) {
-            case "findAll" -> List.of(ShoppingFilter.builder()
-                    .id("linen")
-                    .label("Linen")
-                    .description("Prefer linen.")
-                    .category("materials")
-                    .polarity("prefer")
-                    .displayOrder(330)
-                    .createdAt(NOW)
-                    .build());
+            case "findAll" -> List.of(linen);
+            case "findAllById" -> {
+                Iterable<?> ids = (Iterable<?>) args[0];
+                List<String> requested = new ArrayList<>();
+                ids.forEach(id -> requested.add((String) id));
+                yield requested.contains(linen.getId()) ? List.of(linen) : List.of();
+            }
+            case "existsById" -> linen.getId().equals(args[0]);
             default -> throw new UnsupportedOperationException(method.getName());
         });
     }

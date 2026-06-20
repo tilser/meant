@@ -31,6 +31,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -99,11 +101,15 @@ public class UserTasteProfileService {
         if (signal == null || signal.length() < 3) {
             return;
         }
+        String label = queryIntent.displayQuery();
+        if (label == null || label.isBlank()) {
+            label = queryIntent.searchQuery();
+        }
         upsertSignal(
                 userId,
                 UserTasteSignalType.QUERY,
                 signal,
-                queryIntent.displayQuery(),
+                label.trim(),
                 "SEARCH_REPEAT",
                 SEARCH_WEIGHT,
                 null,
@@ -145,6 +151,9 @@ public class UserTasteProfileService {
             @NotNull @Valid AcceptUserTasteSuggestionCommand command
     ) {
         validateUser(upsertCommand, command.userId(), "Taste suggestion user does not match authenticated user");
+        if (!shoppingFilterRepository.existsById(command.filterId())) {
+            throw new UserException("Unknown filter " + command.filterId());
+        }
         userService.upsert(upsertCommand);
         UserSettingsResult settings = userSettingsService.get(upsertCommand);
         Set<String> activeFilterIds = settings.filters().stream()
@@ -204,7 +213,11 @@ public class UserTasteProfileService {
     ) {
         double weight = behaviorWeight(behavior);
         String behaviorName = behavior.name();
-        Map<String, ShoppingFilter> filters = shoppingFilters();
+        List<String> filterIds = new ArrayList<>();
+        filterIds.addAll(safeList(product.satisfies()));
+        filterIds.addAll(safeList(product.provides()));
+        filterIds.addAll(safeList(product.misses()));
+        Map<String, ShoppingFilter> filters = shoppingFilters(filterIds);
         safeList(product.satisfies()).forEach(filterId -> filterSignal(userId, filters, filterId, behaviorName, weight, now));
         safeList(product.provides()).forEach(filterId -> filterSignal(userId, filters, filterId, behaviorName, weight * 0.8d, now));
         safeList(product.misses()).forEach(filterId -> filterSignal(userId, filters, filterId, behaviorName, -weight, now));
@@ -280,7 +293,12 @@ public class UserTasteProfileService {
         Set<String> explicitFilterIds = settings.filters().stream()
                 .map(ShoppingFilterResult::id)
                 .collect(Collectors.toSet());
-        Map<String, ShoppingFilter> filters = shoppingFilters();
+        List<String> suggestedFilterIds = signals.stream()
+                .filter(signal -> signal.getSignalType() == UserTasteSignalType.FILTER)
+                .map(UserTasteSignal::getSuggestedFilterId)
+                .filter(id -> id != null)
+                .toList();
+        Map<String, ShoppingFilter> filters = shoppingFilters(suggestedFilterIds);
         return signals.stream()
                 .filter(signal -> signal.getSignalType() == UserTasteSignalType.FILTER)
                 .filter(signal -> signal.getStatus() == UserTasteSignalStatus.ACTIVE)
@@ -308,8 +326,11 @@ public class UserTasteProfileService {
         );
     }
 
-    private Map<String, ShoppingFilter> shoppingFilters() {
-        return shoppingFilterRepository.findAll().stream()
+    private Map<String, ShoppingFilter> shoppingFilters(Collection<String> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return shoppingFilterRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(
                         ShoppingFilter::getId,
                         filter -> filter,
