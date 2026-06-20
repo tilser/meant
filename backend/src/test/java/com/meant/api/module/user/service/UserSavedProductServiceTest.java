@@ -35,6 +35,7 @@ class UserSavedProductServiceTest {
         service = new UserSavedProductService(
                 new FakeUserService(),
                 repository.proxy(),
+                new NoopUserTasteProfileService(),
                 collectionProperties(50),
                 new ObjectMapper()
         );
@@ -64,6 +65,7 @@ class UserSavedProductServiceTest {
         UserSavedProductService quotaService = new UserSavedProductService(
                 new FakeUserService(),
                 repository.proxy(),
+                new NoopUserTasteProfileService(),
                 collectionProperties(1),
                 new ObjectMapper()
         );
@@ -137,6 +139,17 @@ class UserSavedProductServiceTest {
         @Override
         public User upsert(UpsertUserCommand command) {
             return null;
+        }
+    }
+
+    static class NoopUserTasteProfileService extends UserTasteProfileService {
+
+        NoopUserTasteProfileService() {
+            super(null, null, null, null);
+        }
+
+        @Override
+        public void recordSavedProduct(UUID userId, SaveUserProductCommand command, java.time.Instant now) {
         }
     }
 

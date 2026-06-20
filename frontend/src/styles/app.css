@@ -1562,6 +1562,7 @@ button:disabled {
 .mt-card-cat,
 .mt-card-ring,
 .mt-save,
+.mt-dismiss,
 .mt-modal-ring,
 .mt-cmp-ring {
   position: absolute;
@@ -1623,6 +1624,30 @@ button:disabled {
 
 .mt-save:not(:disabled):active {
   transform: scale(0.9);
+}
+
+.mt-dismiss {
+  left: 10px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-dismiss:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  transform: translateY(-1px);
 }
 
 .mt-card-body {
@@ -4021,6 +4046,53 @@ button:disabled {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.mt-learned-grid,
+.mt-learned-suggestions {
+  display: grid;
+  gap: 10px;
+}
+
+.mt-learned-suggestions {
+  margin-bottom: 12px;
+}
+
+.mt-learned-signal,
+.mt-learned-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 14px 16px;
+}
+
+.mt-learned-signal.disabled {
+  opacity: 0.58;
+}
+
+.mt-learned-label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.mt-learned-meta {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.mt-learned-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .mt-pref-builder-head {

@@ -4,18 +4,22 @@ import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
+import com.meant.api.module.user.controller.request.RecordUserTasteBehaviorRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
+import com.meant.api.module.user.controller.request.UpdateUserTasteSignalRequest;
 import com.meant.api.module.user.controller.request.UpdateUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
+import com.meant.api.module.user.service.command.RecordUserTasteBehaviorCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
+import com.meant.api.module.user.service.command.UpdateUserTasteSignalCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
@@ -120,6 +124,30 @@ public final class UserCommandMapper {
                         .toList(),
                 request.needs(),
                 request.provides());
+    }
+
+    public static RecordUserTasteBehaviorCommand toRecordUserTasteBehaviorCommand(
+            UUID userId,
+            RecordUserTasteBehaviorRequest request
+    ) {
+        return new RecordUserTasteBehaviorCommand(
+                userId,
+                request.behavior(),
+                toSaveUserProductCommand(userId, request.product())
+        );
+    }
+
+    public static UpdateUserTasteSignalCommand toUpdateUserTasteSignalCommand(
+            UUID userId,
+            UUID signalId,
+            UpdateUserTasteSignalRequest request
+    ) {
+        return new UpdateUserTasteSignalCommand(
+                userId,
+                signalId,
+                request.weight(),
+                request.disabled()
+        );
     }
 
     public static CreateUserInventoryItemCommand toCreateInventoryItemCommand(

@@ -29,6 +29,7 @@ import {
 } from './data'
 import { type AuthActions, useSupabaseAuth } from './auth/useSupabaseAuth'
 import {
+  acceptUserTasteSuggestion,
   createCart,
   createUserInventoryItem,
   createUserInventoryPhotoItem,
@@ -46,8 +47,12 @@ import {
   getUserInventoryItems,
   getUserProductSearchSuggestions,
   getUserSettings,
+  getUserTasteProfile,
   removeProfilePicture,
   removeSavedProduct,
+  removeUserTasteSignal,
+  rejectUserTasteSuggestion,
+  recordUserTasteBehavior,
   saveUserProduct,
   searchUserProducts,
   streamAssistantMessage,
@@ -65,9 +70,11 @@ import {
   type UserAssistantConversationSummaryProfile,
   type UserPopularProductSearchProfile,
   type UserSavedProductProfile,
+  type UserTasteProfile,
   updateCart,
   updateUserInventoryItem,
   type UserProductSearchProductProfile,
+  updateUserTasteSignal,
   updateProfile,
   updateProfilePicture,
   updateUserSettings,
@@ -214,6 +221,13 @@ interface ProductSaveProps {
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   onToggleSave: (product: Product) => void
+  onDismiss?: (product: Product) => void
+}
+
+const EMPTY_TASTE_PROFILE: UserTasteProfile = {
+  profileHash: '',
+  signals: [],
+  suggestions: [],
 }
 
 const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> =
@@ -2931,6 +2945,7 @@ function ProductCard({
   savedSet,
   savePendingSet,
   onToggleSave,
+  onDismiss,
 }: Readonly<{
   product: Product
   index: number
@@ -2977,6 +2992,19 @@ function ProductCard({
         >
           <HeartIcon filled={savedSet.has(product.id)} />
         </button>
+        {onDismiss ? (
+          <button
+            className="mt-dismiss"
+            type="button"
+            aria-label="Dismiss from recommendations"
+            onClick={(event) => {
+              event.stopPropagation()
+              onDismiss(product)
+            }}
+          >
+            <CloseIcon size={14} />
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-card-body">
@@ -3438,6 +3466,7 @@ function FeedView({
   savedSet,
   savePendingSet,
   onToggleSave,
+  onDismiss,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
@@ -3586,6 +3615,7 @@ function FeedView({
                 savedSet={savedSet}
                 savePendingSet={savePendingSet}
                 onToggleSave={onToggleSave}
+                onDismiss={onDismiss}
               />
             ))}
           </div>
@@ -5652,6 +5682,11 @@ function PreferencesView({
   onDeliveryLocations,
   clothingFit,
   onClothingFit,
+  tasteProfile,
+  onAcceptTasteSuggestion,
+  onRejectTasteSuggestion,
+  onDisableTasteSignal,
+  onRemoveTasteSignal,
   profile,
   onDone,
 }: Readonly<{
@@ -5665,6 +5700,11 @@ function PreferencesView({
   onDeliveryLocations: (locations: UserLocation[]) => void
   clothingFit: ClothingFit
   onClothingFit: (value: ClothingFit) => void
+  tasteProfile: UserTasteProfile
+  onAcceptTasteSuggestion: (filterId: string) => void
+  onRejectTasteSuggestion: (filterId: string) => void
+  onDisableTasteSignal: (signalId: string, disabled: boolean) => void
+  onRemoveTasteSignal: (signalId: string) => void
   profile: typeof PROFILE
   onDone: () => void
 }>) {
@@ -5740,6 +5780,14 @@ function PreferencesView({
         </div>
         <LocationSection locations={deliveryLocations} onSet={onDeliveryLocations} />
       </section>
+
+      <LearnedTasteSection
+        profile={tasteProfile}
+        onAcceptSuggestion={onAcceptTasteSuggestion}
+        onRejectSuggestion={onRejectTasteSuggestion}
+        onDisableSignal={onDisableTasteSignal}
+        onRemoveSignal={onRemoveTasteSignal}
+      />
 
       <section className="mt-prefs-section">
         <div className="mt-sechead">
@@ -6009,6 +6057,115 @@ function PreferencesView({
       </section>
     </main>
   )
+}
+
+function LearnedTasteSection({
+  profile,
+  onAcceptSuggestion,
+  onRejectSuggestion,
+  onDisableSignal,
+  onRemoveSignal,
+}: Readonly<{
+  profile: UserTasteProfile
+  onAcceptSuggestion: (filterId: string) => void
+  onRejectSuggestion: (filterId: string) => void
+  onDisableSignal: (signalId: string, disabled: boolean) => void
+  onRemoveSignal: (signalId: string) => void
+}>) {
+  const visibleSignals = profile.signals
+    .filter((signal) => Math.abs(signal.weight) >= 0.25)
+    .slice(0, 12)
+  return (
+    <section className="mt-prefs-section mt-learned">
+      <div className="mt-sechead">
+        <div>
+          <h3 className="mt-sectitle">Learned from behavior</h3>
+          <p className="mt-secsub">
+            Saves, purchases, dismissals, and repeat searches tune ranking without changing explicit filters.
+          </p>
+        </div>
+        <span className="mt-mono mt-sec-count">{visibleSignals.length} signals</span>
+      </div>
+
+      {profile.suggestions.length > 0 ? (
+        <div className="mt-learned-suggestions">
+          {profile.suggestions.map((suggestion) => (
+            <div className="mt-learned-suggestion" key={suggestion.filterId}>
+              <div>
+                <div className="mt-pref-name">Add {suggestion.label}</div>
+                <div className="mt-pref-desc">{suggestion.reason}</div>
+              </div>
+              <div className="mt-learned-actions">
+                <button
+                  className="mt-act mt-act-primary"
+                  type="button"
+                  onClick={() => onAcceptSuggestion(suggestion.filterId)}
+                >
+                  Add filter
+                </button>
+                <button
+                  className="mt-act mt-act-ghost"
+                  type="button"
+                  onClick={() => onRejectSuggestion(suggestion.filterId)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {visibleSignals.length > 0 ? (
+        <div className="mt-learned-grid">
+          {visibleSignals.map((signal) => {
+            const disabled = signal.status === 'DISABLED'
+            return (
+              <div className={`mt-learned-signal ${disabled ? 'disabled' : ''}`} key={signal.id}>
+                <div>
+                  <div className="mt-learned-label">{signal.label}</div>
+                  <div className="mt-learned-meta">
+                    {tasteSignalTypeLabel(signal.signalType)} · {tasteSignalWeightLabel(signal.weight)}
+                  </div>
+                </div>
+                <div className="mt-learned-actions">
+                  <button
+                    className="mt-act mt-act-ghost"
+                    type="button"
+                    onClick={() => onDisableSignal(signal.id, !disabled)}
+                  >
+                    {disabled ? 'Enable' : 'Disable'}
+                  </button>
+                  <button
+                    className="mt-act mt-act-ghost"
+                    type="button"
+                    onClick={() => onRemoveSignal(signal.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="mt-pref-empty">
+          Meant has not learned enough from your behavior yet.
+        </div>
+      )}
+    </section>
+  )
+}
+
+function tasteSignalTypeLabel(type: UserTasteProfile['signals'][number]['signalType']): string {
+  return type.toLowerCase().replaceAll('_', ' ')
+}
+
+function tasteSignalWeightLabel(weight: number): string {
+  if (weight > 0) {
+    return `boost +${weight.toFixed(1)}`
+  }
+  return `penalty ${weight.toFixed(1)}`
 }
 
 function LocationSection({
@@ -7545,6 +7702,7 @@ export function MeantApp() {
   const [compareProducts, setCompareProducts] = useStoredState<Product[]>('meant.compareProducts', [])
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
   const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
+  const [tasteProfile, setTasteProfile] = useState<UserTasteProfile>(EMPTY_TASTE_PROFILE)
   const [budget, setBudget] = useStoredState<number | null>('meant.budget', DEFAULT_BUDGET)
   const [deliveryLocations, setDeliveryLocations] = useStoredState<UserLocation[]>(
     'meant.locations',
@@ -7843,6 +8001,15 @@ export function MeantApp() {
         if (!active) return
         setAvailablePrefs([...PREFERENCES])
       })
+    getUserTasteProfile()
+      .then((profile) => {
+        if (!active) return
+        setTasteProfile(profile)
+      })
+      .catch(() => {
+        if (!active) return
+        setTasteProfile(EMPTY_TASTE_PROFILE)
+      })
     setDiscoveryLoading(true)
     setDiscoveryError(null)
     getProductDiscovery()
@@ -7903,6 +8070,7 @@ export function MeantApp() {
     setSearchHasMore(false)
     setSearchNextOffset(null)
     setSearchMerchantId(null)
+    setTasteProfile(EMPTY_TASTE_PROFILE)
     searchRequestRef.current += 1
     searchSuggestionsRequestRef.current += 1
     setSearchSuggestions([])
@@ -7965,12 +8133,26 @@ export function MeantApp() {
         const snapshot = savedProductFromProfile(savedProduct)
         setSavedProducts((current) => upsertProductSnapshot(current, snapshot))
         setSavedIds((current) => current.includes(snapshot.id) ? current : [snapshot.id, ...current])
+        void refreshTasteProfile()
       })
       .catch(() => {
         setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
         setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       })
       .finally(() => endSaveOperation(product.id))
+  }
+
+  const dismissProduct = (product: Product) => {
+    setSearchResults((current) => current.filter((candidate) => candidate.id !== product.id))
+    setRemoteProducts((current) => current.filter((candidate) => candidate.id !== product.id))
+    void recordUserTasteBehavior({
+      behavior: 'DISMISS',
+      product: savedProductInput(product),
+    })
+      .then((profile) => setTasteProfile(profile))
+      .catch(() => {
+        setRemoteProducts((current) => upsertProductSnapshot(current, product))
+      })
   }
 
   const commitCompareProducts = (nextIds: ProductId[], product?: Product) => {
@@ -8369,6 +8551,18 @@ export function MeantApp() {
     applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit)
   }
 
+  const refreshTasteProfile = useCallback(async () => {
+    if (!userId) {
+      setTasteProfile(EMPTY_TASTE_PROFILE)
+      return
+    }
+    try {
+      setTasteProfile(await getUserTasteProfile())
+    } catch {
+      setTasteProfile(EMPTY_TASTE_PROFILE)
+    }
+  }, [userId])
+
   const saveSettings = async (input: {
     budget?: number | null
     clothingFit?: ClothingFit
@@ -8379,6 +8573,7 @@ export function MeantApp() {
     try {
       applySavedSettings(await updateUserSettings(input))
       void refreshSearchSuggestions()
+      void refreshTasteProfile()
       return true
     } catch {
       return false
@@ -8390,6 +8585,52 @@ export function MeantApp() {
       filterIds: prefsOn,
       preferenceDescription: text,
     })
+  }
+
+  const acceptTasteSuggestion = (filterId: string) => {
+    void acceptUserTasteSuggestion(filterId)
+      .then((settings) => {
+        applySavedSettings(settings)
+        void refreshTasteProfile()
+      })
+  }
+
+  const rejectTasteSuggestion = (filterId: string) => {
+    setTasteProfile((current) => ({
+      ...current,
+      suggestions: current.suggestions.filter((suggestion) => suggestion.filterId !== filterId),
+    }))
+    void rejectUserTasteSuggestion(filterId)
+      .then(() => refreshTasteProfile())
+      .catch(() => refreshTasteProfile())
+  }
+
+  const disableTasteSignal = (signalId: string, disabled: boolean) => {
+    setTasteProfile((current) => ({
+      ...current,
+      signals: current.signals.map((signal) =>
+        signal.id === signalId
+          ? { ...signal, status: disabled ? 'DISABLED' : 'ACTIVE' }
+          : signal,
+      ),
+    }))
+    void updateUserTasteSignal({ signalId, disabled })
+      .then((updated) => {
+        setTasteProfile((current) => ({
+          ...current,
+          signals: current.signals.map((signal) => signal.id === updated.id ? updated : signal),
+        }))
+      })
+      .catch(() => refreshTasteProfile())
+  }
+
+  const removeTasteSignal = (signalId: string) => {
+    setTasteProfile((current) => ({
+      ...current,
+      signals: current.signals.filter((signal) => signal.id !== signalId),
+    }))
+    void removeUserTasteSignal(signalId)
+      .catch(() => refreshTasteProfile())
   }
 
   const addInventoryItem = async (input: UserInventoryItemInput) => {
@@ -8685,6 +8926,11 @@ export function MeantApp() {
               setClothingFit(nextClothingFit)
               void saveSettings({ clothingFit: nextClothingFit })
             }}
+            tasteProfile={tasteProfile}
+            onAcceptTasteSuggestion={acceptTasteSuggestion}
+            onRejectTasteSuggestion={rejectTasteSuggestion}
+            onDisableTasteSignal={disableTasteSignal}
+            onRemoveTasteSignal={removeTasteSignal}
             profile={liveProfile}
             onDone={() => nav('discover')}
           />
@@ -8784,6 +9030,7 @@ export function MeantApp() {
             savedSet={savedSet}
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
+            onDismiss={dismissProduct}
           />
         )
     }

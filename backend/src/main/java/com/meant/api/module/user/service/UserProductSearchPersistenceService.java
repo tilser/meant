@@ -20,6 +20,8 @@ import com.meant.api.module.user.service.dto.UserProductRecommendationExplanatio
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.dto.UserTasteProfileResult;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -48,6 +50,7 @@ public class UserProductSearchPersistenceService {
     private final UserProductSearchResultItemRepository userProductSearchResultItemRepository;
     private final UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
     private final UserProductRecommendationFilterMatchRepository userProductRecommendationFilterMatchRepository;
+    private final UserTasteRankingService userTasteRankingService;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -59,6 +62,8 @@ public class UserProductSearchPersistenceService {
             String searchVersion,
             String model,
             String promptVersion,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
             Instant now,
             int offset,
             int limit
@@ -84,6 +89,8 @@ public class UserProductSearchPersistenceService {
                             profileHash,
                             model,
                             promptVersion,
+                            tasteProfile,
+                            settings,
                             true,
                             offset,
                             limit,
@@ -145,6 +152,8 @@ public class UserProductSearchPersistenceService {
                             profileHash,
                             model,
                             promptVersion,
+                            null,
+                            null,
                             true,
                             UserProductSearchPagination.DEFAULT_OFFSET,
                             UserProductSearchPagination.MAX_RESULT_WINDOW
@@ -220,6 +229,8 @@ public class UserProductSearchPersistenceService {
             Instant expiresAt,
             List<UserProductSearchProductSnapshot> products,
             Map<String, UserProductRecommendationExplanationResult> explanations,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
             boolean hasMoreProducts,
             int offset,
             int limit
@@ -267,6 +278,8 @@ public class UserProductSearchPersistenceService {
                 offset,
                 limit,
                 hasMoreProducts,
+                tasteProfile,
+                settings,
                 productResults(items, explanations)
         );
     }
@@ -286,6 +299,8 @@ public class UserProductSearchPersistenceService {
             String profileHash,
             String model,
             String promptVersion,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
             boolean cached,
             int offset,
             int limit
@@ -299,6 +314,8 @@ public class UserProductSearchPersistenceService {
                 profileHash,
                 model,
                 promptVersion,
+                tasteProfile,
+                settings,
                 cached,
                 offset,
                 limit,
@@ -313,6 +330,8 @@ public class UserProductSearchPersistenceService {
             String profileHash,
             String model,
             String promptVersion,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
             boolean cached,
             int offset,
             int limit,
@@ -344,6 +363,8 @@ public class UserProductSearchPersistenceService {
                 offset,
                 limit,
                 search.isHasMoreProducts(),
+                tasteProfile,
+                settings,
                 products
         ));
     }
@@ -360,15 +381,18 @@ public class UserProductSearchPersistenceService {
             int offset,
             int limit,
             boolean hasMoreProducts,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
             List<UserProductSearchProductResult> products
     ) {
+        List<UserProductSearchProductResult> rankedProducts = userTasteRankingService.rank(products, tasteProfile, settings);
         int pageEnd = pageEnd(offset, limit);
-        int toIndex = Math.min(pageEnd, products.size());
-        List<UserProductSearchProductResult> page = offset >= products.size()
+        int toIndex = Math.min(pageEnd, rankedProducts.size());
+        List<UserProductSearchProductResult> page = offset >= rankedProducts.size()
                 ? List.of()
-                : products.subList(offset, toIndex);
+                : rankedProducts.subList(offset, toIndex);
         boolean hasMore = pageEnd < UserProductSearchPagination.MAX_RESULT_WINDOW
-                && (products.size() > pageEnd || hasMoreProducts);
+                && (rankedProducts.size() > pageEnd || hasMoreProducts);
         Integer nextOffset = hasMore ? pageEnd : null;
         return new UserProductSearchResult(
                 query,

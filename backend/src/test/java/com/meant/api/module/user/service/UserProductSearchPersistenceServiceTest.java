@@ -52,6 +52,7 @@ class UserProductSearchPersistenceServiceTest {
                 resultItemRepository(savedItems),
                 unusedRepository(UserProductRecommendationExplanationRepository.class),
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
+                new UserTasteRankingService(),
                 new ObjectMapper()
         );
         UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
@@ -75,6 +76,8 @@ class UserProductSearchPersistenceServiceTest {
                         snapshot("merchant.example:socks", "hash-socks", "socks", "Organic Cotton Socks", 2)
                 ),
                 Map.of(explanation.productKey(), explanation),
+                null,
+                null,
                 false,
                 0,
                 20
@@ -109,6 +112,7 @@ class UserProductSearchPersistenceServiceTest {
                 resultItemRepository(savedItems),
                 unusedRepository(UserProductRecommendationExplanationRepository.class),
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
+                new UserTasteRankingService(),
                 new ObjectMapper()
         );
         UserProductRecommendationExplanationResult teeExplanation = new UserProductRecommendationExplanationResult(
@@ -143,6 +147,8 @@ class UserProductSearchPersistenceServiceTest {
                         teeExplanation.productKey(), teeExplanation,
                         hatExplanation.productKey(), hatExplanation
                 ),
+                null,
+                null,
                 false,
                 0,
                 20
@@ -171,6 +177,8 @@ class UserProductSearchPersistenceServiceTest {
                 SEARCH_VERSION,
                 MODEL,
                 PROMPT_VERSION,
+                null,
+                null,
                 NOW,
                 0,
                 20
@@ -217,6 +225,8 @@ class UserProductSearchPersistenceServiceTest {
                 SEARCH_VERSION,
                 MODEL,
                 PROMPT_VERSION,
+                null,
+                null,
                 NOW,
                 0,
                 20
@@ -250,6 +260,8 @@ class UserProductSearchPersistenceServiceTest {
                 SEARCH_VERSION,
                 MODEL,
                 PROMPT_VERSION,
+                null,
+                null,
                 NOW,
                 20,
                 20
@@ -275,6 +287,8 @@ class UserProductSearchPersistenceServiceTest {
                 SEARCH_VERSION,
                 MODEL,
                 PROMPT_VERSION,
+                null,
+                null,
                 NOW,
                 20,
                 20
@@ -299,6 +313,7 @@ class UserProductSearchPersistenceServiceTest {
                 cachedResultItemRepository(search.getId(), items),
                 explanationRepository(userId, items),
                 filterMatchRepository(),
+                new UserTasteRankingService(),
                 new ObjectMapper()
         );
     }

@@ -131,6 +131,63 @@ public record UserProductSearchProductResult(
         );
     }
 
+    public UserProductSearchProductResult withMatchScore(int nextMatchScore) {
+        return new UserProductSearchProductResult(
+                productKey,
+                productHash,
+                merchantId,
+                merchantDomain,
+                merchantName,
+                endpoint,
+                merchantRank,
+                merchantSemanticScore,
+                merchantRerankScore,
+                productId,
+                title,
+                descriptionHtml,
+                url,
+                imageUrl,
+                priceMinAmount,
+                priceMaxAmount,
+                priceCurrency,
+                listPriceAmount,
+                listPriceCurrency,
+                ratingScore,
+                reviewCount,
+                media,
+                categories,
+                certifications,
+                materials,
+                skus,
+                collections,
+                attributes,
+                available,
+                detailError,
+                detailDescription,
+                detailImageUrl,
+                detailPriceMin,
+                detailPriceMax,
+                detailPriceCurrency,
+                selectedVariantId,
+                selectedVariantTitle,
+                selectedVariantPriceAmount,
+                selectedVariantPriceCurrency,
+                selectedVariantImageUrl,
+                selectedVariantImageAltText,
+                selectedVariantAvailable,
+                catalogRank,
+                productRerankScore,
+                rank,
+                nextMatchScore,
+                whyMeantForYou,
+                matchedFilterIds,
+                missedFilterIds,
+                inventoryRelationship,
+                inventoryItemId,
+                inventoryItemName
+        );
+    }
+
     private static int matchScore(
             UserProductSearchResultItem item,
             UserProductRecommendationExplanationResult explanation

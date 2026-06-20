@@ -38,6 +38,7 @@ public class UserSavedProductService {
 
     private final UserService userService;
     private final UserSavedProductRepository userSavedProductRepository;
+    private final UserTasteProfileService userTasteProfileService;
     private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
 
@@ -74,7 +75,9 @@ public class UserSavedProductService {
                     validateSavedProductQuota(command.userId());
                     return UserSavedProduct.create(command.userId(), snapshot, now);
                 });
-        return toResult(userSavedProductRepository.save(savedProduct));
+        UserSavedProductResult result = toResult(userSavedProductRepository.save(savedProduct));
+        userTasteProfileService.recordSavedProduct(command.userId(), command, now);
+        return result;
     }
 
     private void validateSavedProductQuota(UUID userId) {

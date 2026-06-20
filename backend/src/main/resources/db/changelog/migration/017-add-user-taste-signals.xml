@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-user-taste-signals" author="meant">
+        <createTable tableName="user_taste_signals">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="signal_type" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="signal_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="label" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="weight" type="double precision">
+                <constraints nullable="false"/>
+            </column>
+            <column name="positive_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="negative_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_behavior" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="suggested_filter_id" type="text"/>
+            <column name="suggestion_status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+                tableName="user_taste_signals"
+                columnNames="user_id, signal_type, signal_key"
+                constraintName="uk_user_taste_signals_user_signal"/>
+        <addForeignKeyConstraint
+                baseTableName="user_taste_signals"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                constraintName="fk_user_taste_signals_user"/>
+        <addForeignKeyConstraint
+                baseTableName="user_taste_signals"
+                baseColumnNames="suggested_filter_id"
+                referencedTableName="shopping_filters"
+                referencedColumnNames="id"
+                constraintName="fk_user_taste_signals_suggested_filter"/>
+        <createIndex
+                tableName="user_taste_signals"
+                indexName="idx_user_taste_signals_user_updated">
+            <column name="user_id"/>
+            <column name="updated_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

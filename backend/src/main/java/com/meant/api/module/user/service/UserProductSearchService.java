@@ -19,6 +19,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.dto.UserTasteProfileResult;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -44,6 +45,8 @@ public class UserProductSearchService {
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
     private final UserProductSearchEventService userProductSearchEventService;
     private final UserInventoryService userInventoryService;
+    private final UserTasteProfileService userTasteProfileService;
+    private final UserTasteRankingService userTasteRankingService;
     private final UserProductSearchProperties userProductSearchProperties;
     private final OpenRouterProperties openRouterProperties;
 
@@ -58,6 +61,7 @@ public class UserProductSearchService {
         String query = command.query().trim();
         UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
         UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         UserProductSearchCatalogInput catalogInput =
                 userProductSearchCatalogInputBuilder.build(
                         query,
@@ -68,7 +72,8 @@ public class UserProductSearchService {
                 );
         String normalizedQuery = catalogInput.cacheKey();
         String profileHash = userProductSearchHashService.profileHash(settings)
-                + ":" + userInventoryService.inventoryProfileHash(command.userId());
+                + ":" + userInventoryService.inventoryProfileHash(command.userId())
+                + ":" + tasteProfile.profileHash();
         Instant now = Instant.now();
         int offset = command.offset();
         int limit = command.limit();
@@ -83,6 +88,7 @@ public class UserProductSearchService {
                     normalizedQuery,
                     profileHash,
                     settings,
+                    tasteProfile,
                     command.merchantId(),
                     offset,
                     limit,
@@ -97,6 +103,8 @@ public class UserProductSearchService {
                             userProductSearchProperties.searchVersion(),
                             openRouterProperties.models().productRecommendationExplainer(),
                             userProductSearchProperties.explanationPromptVersion(),
+                            tasteProfile,
+                            settings,
                             now,
                             offset,
                             limit
@@ -108,6 +116,7 @@ public class UserProductSearchService {
                             normalizedQuery,
                             profileHash,
                             settings,
+                            tasteProfile,
                             now,
                             offset,
                             limit,
@@ -122,6 +131,7 @@ public class UserProductSearchService {
                 result.products().size(),
                 now
         );
+        userTasteProfileService.recordSearch(command.userId(), queryIntent, now);
         return result;
     }
 
@@ -132,6 +142,7 @@ public class UserProductSearchService {
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
+            UserTasteProfileResult tasteProfile,
             UUID merchantId,
             int offset,
             int limit,
@@ -164,10 +175,8 @@ public class UserProductSearchService {
                         ),
                         explanations.get(product.productKey())
                 ))
-                .sorted(java.util.Comparator.comparingInt(UserProductSearchProductResult::matchScore)
-                        .reversed()
-                        .thenComparingInt(UserProductSearchProductResult::rank))
                 .toList();
+        productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
         boolean hasMore = hasMoreProducts(fetchedProducts.size(), fetchLimit);
         return new UserProductSearchResult(
                 query,
@@ -189,6 +198,7 @@ public class UserProductSearchService {
             String normalizedQuery,
             String profileHash,
             UserSettingsResult settings,
+            UserTasteProfileResult tasteProfile,
             Instant now,
             int offset,
             int limit,
@@ -218,6 +228,8 @@ public class UserProductSearchService {
                 now.plus(userProductSearchProperties.cacheTtl()),
                 products,
                 explanations,
+                tasteProfile,
+                settings,
                 hasMoreProducts(fetchedProducts.size(), fetchLimit),
                 offset,
                 limit

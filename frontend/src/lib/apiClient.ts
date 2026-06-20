@@ -125,6 +125,41 @@ export interface UserProductSearchSuggestionsProfile {
   suggestions: string[]
 }
 
+export type UserTasteBehaviorType = 'SAVE' | 'PURCHASE' | 'DISMISS'
+export type UserTasteSignalStatus = 'ACTIVE' | 'DISABLED'
+export type UserTasteSignalType = 'FILTER' | 'BRAND' | 'CATEGORY' | 'MATERIAL' | 'CERTIFICATION' | 'QUERY'
+export type UserTasteSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
+
+export interface UserTasteSignalProfile {
+  id: string
+  signalType: UserTasteSignalType
+  signalKey: string
+  label: string
+  weight: number
+  positiveCount: number
+  negativeCount: number
+  lastBehavior: string
+  suggestedFilterId: string | null
+  suggestionStatus: UserTasteSuggestionStatus
+  status: UserTasteSignalStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserTasteSuggestionProfile {
+  filterId: string
+  label: string
+  description: string
+  reason: string
+  score: number
+}
+
+export interface UserTasteProfile {
+  profileHash: string
+  signals: UserTasteSignalProfile[]
+  suggestions: UserTasteSuggestionProfile[]
+}
+
 export interface UserProductDiscoveryProfile {
   savedProducts: UserSavedProductProfile[]
   recentProducts: UserProductSearchProductProfile[]
@@ -827,6 +862,75 @@ export async function removeSavedProduct(productKey: string): Promise<void> {
   })
   if (!response.ok) {
     throw new Error('Failed to remove saved product')
+  }
+}
+
+export async function getUserTasteProfile(): Promise<UserTasteProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/taste-profile`, {
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserTasteProfile>(response, 'Failed to load learned taste profile')
+}
+
+export async function recordUserTasteBehavior(input: {
+  behavior: UserTasteBehaviorType
+  product: SaveUserProductInput
+}): Promise<UserTasteProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/taste-profile/behaviors`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+  return parseJsonResponse<UserTasteProfile>(response, 'Failed to record taste behavior')
+}
+
+export async function updateUserTasteSignal(input: {
+  signalId: string
+  weight?: number
+  disabled?: boolean
+}): Promise<UserTasteSignalProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(input.signalId)}`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      weight: input.weight,
+      disabled: input.disabled,
+    }),
+  })
+  return parseJsonResponse<UserTasteSignalProfile>(response, 'Failed to update taste signal')
+}
+
+export async function removeUserTasteSignal(signalId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(signalId)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to remove taste signal')
+  }
+}
+
+export async function acceptUserTasteSuggestion(filterId: string): Promise<UserSettingsProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:accept`, {
+    method: 'POST',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<UserSettingsProfile>(response, 'Failed to accept taste suggestion')
+}
+
+export async function rejectUserTasteSuggestion(filterId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:reject`, {
+    method: 'POST',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to reject taste suggestion')
   }
 }
 

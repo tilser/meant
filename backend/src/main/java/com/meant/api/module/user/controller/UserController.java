@@ -4,11 +4,13 @@ import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
+import com.meant.api.module.user.controller.request.RecordUserTasteBehaviorRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.controller.request.UpdateUserInventoryItemRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
+import com.meant.api.module.user.controller.request.UpdateUserTasteSignalRequest;
 import com.meant.api.module.user.controller.request.UserAssistantChatContextRequest;
 import com.meant.api.module.user.controller.request.UserAssistantChatRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
@@ -24,6 +26,8 @@ import com.meant.api.module.user.controller.response.UserProductSearchSuggestion
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
+import com.meant.api.module.user.controller.response.UserTasteProfileResponse;
+import com.meant.api.module.user.controller.response.UserTasteSignalResponse;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.service.UserAssistantChatService;
 import com.meant.api.module.user.service.UserInventoryService;
@@ -35,7 +39,9 @@ import com.meant.api.module.user.service.UserProductSearchSuggestionService;
 import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.UserService;
 import com.meant.api.module.user.service.UserSettingsService;
+import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
+import com.meant.api.module.user.service.command.AcceptUserTasteSuggestionCommand;
 import com.meant.api.module.user.service.command.DeleteUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.ParseUserPreferenceFiltersCommand;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
@@ -47,6 +53,7 @@ import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.GetLatestUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.GetUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.GetUserProductDiscoveryQuery;
+import com.meant.api.module.user.service.query.GetUserTasteProfileQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import com.meant.api.module.user.service.query.ListUserAssistantConversationsQuery;
@@ -109,6 +116,7 @@ public class UserController {
     private final UserProductSearchSuggestionService userProductSearchSuggestionService;
     private final UserSavedProductService userSavedProductService;
     private final UserInventoryService userInventoryService;
+    private final UserTasteProfileService userTasteProfileService;
     private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
 
@@ -222,6 +230,113 @@ public class UserController {
         return UserSettingsResponse.from(userSettingsService.update(
                 UserCommandMapper.toUpsertCommand(authenticatedUser),
                 UserCommandMapper.toUpdateSettingsCommand(authenticatedUser.id(), request, parsedFilters)));
+    }
+
+    @GetMapping("/me/taste-profile")
+    @Operation(
+            summary = "Get learned taste profile",
+            description = "Returns behavioral taste signals learned from saves, purchases, dismissals, and repeat searches."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Learned taste profile for the current user",
+            content = @Content(schema = @Schema(implementation = UserTasteProfileResponse.class))
+    )
+    public UserTasteProfileResponse tasteProfile(@AuthenticationPrincipal Jwt jwt) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserTasteProfileResponse.from(userTasteProfileService.get(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new GetUserTasteProfileQuery(authenticatedUser.id())));
+    }
+
+    @PostMapping("/me/taste-profile/behaviors")
+    @Operation(
+            summary = "Record product taste behavior",
+            description = "Records a purchase or dismissal product snapshot so it can influence future ranking."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated learned taste profile",
+            content = @Content(schema = @Schema(implementation = UserTasteProfileResponse.class))
+    )
+    public UserTasteProfileResponse recordTasteBehavior(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody RecordUserTasteBehaviorRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserTasteProfileResponse.from(userTasteProfileService.recordBehavior(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toRecordUserTasteBehaviorCommand(authenticatedUser.id(), request)));
+    }
+
+    @PatchMapping("/me/taste-profile/signals/{signalId}")
+    @Operation(
+            summary = "Edit a learned taste signal",
+            description = "Updates the learned signal weight or disables/enables the signal for future ranking."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated learned taste signal",
+            content = @Content(schema = @Schema(implementation = UserTasteSignalResponse.class))
+    )
+    public UserTasteSignalResponse updateTasteSignal(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID signalId,
+            @Valid @RequestBody UpdateUserTasteSignalRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserTasteSignalResponse.from(userTasteProfileService.updateSignal(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toUpdateUserTasteSignalCommand(authenticatedUser.id(), signalId, request)));
+    }
+
+    @DeleteMapping("/me/taste-profile/signals/{signalId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Remove a learned taste signal")
+    @ApiResponse(responseCode = "204", description = "Learned taste signal removed")
+    public void removeTasteSignal(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID signalId
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        userTasteProfileService.removeSignal(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                authenticatedUser.id(),
+                signalId);
+    }
+
+    @PostMapping("/me/taste-profile/suggestions/{filterId}:accept")
+    @Operation(
+            summary = "Accept a learned filter suggestion",
+            description = "Adds the suggested explicit filter to current settings in one tap."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated user settings",
+            content = @Content(schema = @Schema(implementation = UserSettingsResponse.class))
+    )
+    public UserSettingsResponse acceptTasteSuggestion(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String filterId
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserSettingsResponse.from(userTasteProfileService.acceptSuggestion(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new AcceptUserTasteSuggestionCommand(authenticatedUser.id(), filterId)));
+    }
+
+    @PostMapping("/me/taste-profile/suggestions/{filterId}:reject")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Reject a learned filter suggestion")
+    @ApiResponse(responseCode = "204", description = "Learned filter suggestion rejected")
+    public void rejectTasteSuggestion(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String filterId
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        userTasteProfileService.rejectSuggestion(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                new AcceptUserTasteSuggestionCommand(authenticatedUser.id(), filterId));
     }
 
     @PostMapping("/me/product-searches")
