@@ -134,7 +134,7 @@ public class UserProductSearchService {
     public void stream(
             @NotNull @Valid UpsertUserCommand upsertCommand,
             @NotNull @Valid SearchUserProductsCommand command,
-            Consumer<UserProductSearchStreamEvent> eventConsumer
+            @NotNull Consumer<UserProductSearchStreamEvent> eventConsumer
     ) {
         if (!upsertCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product search user does not match authenticated user");
@@ -388,8 +388,7 @@ public class UserProductSearchService {
             UUID merchantId,
             int productLimit
     ) {
-        return productSnapshots(catalogInput, merchantId, productLimit, product -> {
-        });
+        return productSnapshots(catalogInput, merchantId, productLimit, null);
     }
 
     private List<UserProductSearchProductSnapshot> productSnapshots(
@@ -398,6 +397,9 @@ public class UserProductSearchService {
             int productLimit,
             Consumer<UserProductSearchProductSnapshot> candidateConsumer
     ) {
+        Consumer<MerchantSemanticProductResult> merchantCandidateConsumer = candidateConsumer == null
+                ? null
+                : candidate -> candidateConsumer.accept(productSnapshot(candidate));
         MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery(
                         catalogInput.searchQuery(),
@@ -410,7 +412,7 @@ public class UserProductSearchService {
                         catalogInput.signals(),
                         catalogInput.filters()
                 ),
-                candidate -> candidateConsumer.accept(productSnapshot(candidate))
+                merchantCandidateConsumer
         );
         return safeProducts(searchResult).stream()
                 .map(this::productSnapshot)

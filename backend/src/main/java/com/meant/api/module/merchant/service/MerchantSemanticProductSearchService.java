@@ -67,8 +67,7 @@ public class MerchantSemanticProductSearchService {
     private final MerchantCatalogSearchProperties merchantCatalogSearchProperties;
 
     public MerchantSemanticProductSearchResult search(@NotNull @Valid SemanticProductSearchQuery query) {
-        return search(query, product -> {
-        });
+        return search(query, null);
     }
 
     public MerchantSemanticProductSearchResult search(

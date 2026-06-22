@@ -751,20 +751,24 @@ export async function streamUserProductSearch(
   const decoder = new TextDecoder()
   let buffer = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) {
-      break
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split(/\r?\n\r?\n/)
+      buffer = events.pop() ?? ''
+      events.forEach((rawEvent) => handleProductSearchStreamEvent(rawEvent, handlers))
     }
-    buffer += decoder.decode(value, { stream: true })
-    const events = buffer.split(/\r?\n\r?\n/)
-    buffer = events.pop() ?? ''
-    events.forEach((rawEvent) => handleProductSearchStreamEvent(rawEvent, handlers))
-  }
 
-  buffer += decoder.decode()
-  if (buffer.trim()) {
-    handleProductSearchStreamEvent(buffer, handlers)
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      handleProductSearchStreamEvent(buffer, handlers)
+    }
+  } finally {
+    reader.releaseLock()
   }
 }
 
@@ -958,20 +962,24 @@ export async function streamAssistantMessage(
   const decoder = new TextDecoder()
   let buffer = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) {
-      break
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split(/\r?\n\r?\n/)
+      buffer = events.pop() ?? ''
+      events.forEach((rawEvent) => handleAssistantStreamEvent(rawEvent, handlers))
     }
-    buffer += decoder.decode(value, { stream: true })
-    const events = buffer.split(/\r?\n\r?\n/)
-    buffer = events.pop() ?? ''
-    events.forEach((rawEvent) => handleAssistantStreamEvent(rawEvent, handlers))
-  }
 
-  buffer += decoder.decode()
-  if (buffer.trim()) {
-    handleAssistantStreamEvent(buffer, handlers)
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      handleAssistantStreamEvent(buffer, handlers)
+    }
+  } finally {
+    reader.releaseLock()
   }
 }
 
