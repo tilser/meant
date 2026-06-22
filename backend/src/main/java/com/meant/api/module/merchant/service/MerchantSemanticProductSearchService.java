@@ -44,6 +44,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +60,18 @@ import org.springframework.validation.annotation.Validated;
 public class MerchantSemanticProductSearchService {
 
     private static final int MAX_METADATA_DEPTH = 64;
+    private static final Pattern AUDIENCE_WORD_SEPARATOR_PATTERN = Pattern.compile("[^a-z0-9]+");
+    private static final Pattern AUDIENCE_SPACE_PATTERN = Pattern.compile("\\s+");
+    private static final Pattern MEN_AUDIENCE_PATTERN =
+            Pattern.compile("\\b(?:men|men s|mens|man|man s|male|males)\\b");
+    private static final Pattern WOMEN_AUDIENCE_PATTERN =
+            Pattern.compile("\\b(?:women|women s|womens|woman|woman s|ladies|lady|female|females)\\b");
+    private static final Pattern CHILDREN_AUDIENCE_PATTERN =
+            Pattern.compile(
+                    "\\b(?:kids|kid|children|children s|child|child s|boys|boy|boy s|girls|girl|girl s|youth"
+                            + "|toddler|toddlers|baby|babies)\\b");
+    private static final Pattern UNISEX_AUDIENCE_PATTERN =
+            Pattern.compile("\\b(?:unisex|gender neutral|all gender|all genders|everyone)\\b");
 
     private final MerchantSemanticSearchService merchantSemanticSearchService;
     private final MerchantCatalogSearchClient merchantCatalogSearchClient;
@@ -231,9 +245,10 @@ public class MerchantSemanticProductSearchService {
             CatalogSearchFilters filters,
             Consumer<MerchantSemanticProductResult> candidateConsumer
     ) {
+        ProductAudience requiredAudience = requiredAudience(query, context);
         List<MerchantCatalogProductCandidate> distinctProductCandidates = distinctProductCandidates(productCandidates);
         List<MerchantCatalogProductCandidate> filteredProductCandidates = distinctProductCandidates.stream()
-                .filter(productCandidate -> matchesCatalogFilters(productCandidate, context, filters))
+                .filter(productCandidate -> matchesCatalogFilters(productCandidate, requiredAudience, context, filters))
                 .toList();
         if (filteredProductCandidates.isEmpty()) {
             return List.of();
@@ -251,7 +266,7 @@ public class MerchantSemanticProductSearchService {
         emitCatalogCandidates(filteredProductCandidates, rerankedProducts, candidateConsumer);
 
         return productResults(query, filteredProductCandidates, rerankedProducts, context).stream()
-                .filter(product -> matchesProductFilters(product, context, filters))
+                .filter(product -> matchesProductFilters(product, requiredAudience, context, filters))
                 .toList();
     }
 
@@ -974,10 +989,12 @@ public class MerchantSemanticProductSearchService {
 
     private boolean matchesCatalogFilters(
             MerchantCatalogProductCandidate productCandidate,
+            ProductAudience requiredAudience,
             CatalogSearchContext context,
             CatalogSearchFilters filters
     ) {
         return matchesCategories(productCandidate, filters)
+                && matchesAudience(catalogAudienceText(productCandidate), requiredAudience)
                 && matchesPrice(
                 productCandidate.priceMinAmount(),
                 productCandidate.priceMaxAmount(),
@@ -989,6 +1006,7 @@ public class MerchantSemanticProductSearchService {
 
     private boolean matchesProductFilters(
             MerchantSemanticProductResult product,
+            ProductAudience requiredAudience,
             CatalogSearchContext context,
             CatalogSearchFilters filters
     ) {
@@ -1002,7 +1020,118 @@ public class MerchantSemanticProductSearchService {
         Long detailMax = decimalAmountToMinor(product.detailPriceMax(), currency);
         Long minAmount = firstPresent(selectedVariantPrice, detailMin, product.priceMinAmount());
         Long maxAmount = firstPresent(selectedVariantPrice, detailMax, product.priceMaxAmount(), minAmount);
-        return matchesPrice(minAmount, maxAmount, currency, context, filters);
+        return matchesPrice(minAmount, maxAmount, currency, context, filters)
+                && matchesAudience(productAudienceText(product), requiredAudience);
+    }
+
+    private ProductAudience requiredAudience(String query, CatalogSearchContext context) {
+        String normalizedIntent = normalizedAudienceText(context == null ? null : context.intent());
+        if (normalizedIntent.contains("hard apparel audience filter men s sizing")
+                || normalizedIntent.contains("clothing fit signal prefer men s sizing")) {
+            return ProductAudience.MEN;
+        }
+        if (normalizedIntent.contains("hard apparel audience filter women s sizing")
+                || normalizedIntent.contains("clothing fit signal prefer women s sizing")) {
+            return ProductAudience.WOMEN;
+        }
+
+        AudienceEvidence queryEvidence = audienceEvidence(query);
+        if (queryEvidence.men() && !queryEvidence.women() && !queryEvidence.children()) {
+            return ProductAudience.MEN;
+        }
+        if (queryEvidence.women() && !queryEvidence.men() && !queryEvidence.children()) {
+            return ProductAudience.WOMEN;
+        }
+        return null;
+    }
+
+    private boolean matchesAudience(String audienceText, ProductAudience requiredAudience) {
+        if (requiredAudience == null) {
+            return true;
+        }
+        AudienceEvidence evidence = audienceEvidence(audienceText);
+        if (!evidence.hasExplicitAudience() || evidence.unisex()) {
+            return true;
+        }
+        return switch (requiredAudience) {
+            case MEN -> evidence.men() || (!evidence.women() && !evidence.children());
+            case WOMEN -> evidence.women() || (!evidence.men() && !evidence.children());
+        };
+    }
+
+    private AudienceEvidence audienceEvidence(String value) {
+        String normalized = normalizedAudienceText(value);
+        if (normalized.isBlank()) {
+            return new AudienceEvidence(false, false, false, false);
+        }
+        return new AudienceEvidence(
+                MEN_AUDIENCE_PATTERN.matcher(normalized).find(),
+                WOMEN_AUDIENCE_PATTERN.matcher(normalized).find(),
+                CHILDREN_AUDIENCE_PATTERN.matcher(normalized).find(),
+                UNISEX_AUDIENCE_PATTERN.matcher(normalized).find()
+        );
+    }
+
+    private String catalogAudienceText(MerchantCatalogProductCandidate productCandidate) {
+        CatalogSearchResponse.Product product = productCandidate.product();
+        return joinedAudienceText(Stream.of(
+                        Stream.of(product.title(), productCandidate.descriptionHtml()),
+                        productCandidate.categoryValues().stream(),
+                        productCandidate.tagValues().stream(),
+                        stringValues(product.materials()).stream(),
+                        stringValues(product.collections()).stream(),
+                        stringValues(product.metadata()).stream(),
+                        stringValues(product.metafields()).stream(),
+                        stringValues(product.techSpecs()).stream(),
+                        safeNonNullList(product.variants()).stream()
+                                .flatMap(variant -> Stream.of(
+                                        variant.title(),
+                                        variant.description() == null ? null : variant.description().html()
+                                ))
+                )
+                .flatMap(stream -> stream));
+    }
+
+    private String productAudienceText(MerchantSemanticProductResult product) {
+        return joinedAudienceText(Stream.of(
+                        Stream.of(
+                                product.title(),
+                                product.detailDescription(),
+                                product.descriptionHtml(),
+                                product.selectedVariantTitle(),
+                                product.selectedVariantImageAltText()
+                        ),
+                        safeList(product.categories()).stream()
+                                .flatMap(category -> Stream.of(category.value(), category.taxonomy())),
+                        safeList(product.media()).stream().map(ProductCatalogMedia::altText),
+                        safeList(product.detailImages()).stream().map(ProductDetailsResponse.Image::altText),
+                        safeList(product.detailOptions()).stream()
+                                .flatMap(option -> Stream.concat(
+                                        Stream.of(option.name()),
+                                        safeList(option.values()).stream()
+                                )),
+                        safeList(product.selectedOptions()).stream()
+                                .flatMap(option -> Stream.of(option.name(), option.value())),
+                        safeList(product.materials()).stream(),
+                        safeList(product.collections()).stream(),
+                        safeList(product.attributes()).stream()
+                                .flatMap(attribute -> Stream.of(attribute.name(), attribute.value()))
+                )
+                .flatMap(stream -> stream));
+    }
+
+    private String joinedAudienceText(Stream<String> values) {
+        return values
+                .filter(value -> value != null && !value.isBlank())
+                .collect(Collectors.joining(" "));
+    }
+
+    private String normalizedAudienceText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String normalized = AUDIENCE_WORD_SEPARATOR_PATTERN.matcher(value.toLowerCase(Locale.ROOT)).replaceAll(" ");
+        return AUDIENCE_SPACE_PATTERN.matcher(normalized).replaceAll(" ").trim();
     }
 
     private boolean matchesCategories(
@@ -1204,6 +1333,23 @@ public class MerchantSemanticProductSearchService {
     }
 
     private record ValueNode(Object value, int depth) {
+    }
+
+    private enum ProductAudience {
+        MEN,
+        WOMEN
+    }
+
+    private record AudienceEvidence(
+            boolean men,
+            boolean women,
+            boolean children,
+            boolean unisex
+    ) {
+
+        boolean hasExplicitAudience() {
+            return men || women || children || unisex;
+        }
     }
 
 }

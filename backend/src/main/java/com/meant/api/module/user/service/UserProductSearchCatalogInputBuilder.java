@@ -291,8 +291,15 @@ public class UserProductSearchCatalogInputBuilder {
     }
 
     private String clothingFitIntent(String clothingFit) {
-        String label = UserClothingFit.labelFor(clothingFit);
-        return label == null ? null : "Clothing fit signal: prefer " + label + " for apparel and footwear";
+        return UserClothingFit.fromValue(clothingFit)
+                .map(fit -> switch (fit) {
+                    case MEN -> "Hard apparel audience filter: men's sizing; "
+                            + "exclude women's and children's apparel when audience is known";
+                    case WOMEN -> "Hard apparel audience filter: women's sizing; "
+                            + "exclude men's and children's apparel when audience is known";
+                    case OTHER -> "Clothing fit signal: prefer " + fit.label() + " for apparel and footwear";
+                })
+                .orElse(null);
     }
 
     private String activeFiltersIntent(List<ShoppingFilterResult> filters) {

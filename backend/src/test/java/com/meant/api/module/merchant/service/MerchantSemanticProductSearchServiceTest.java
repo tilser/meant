@@ -505,6 +505,100 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.products()).extracting("productId").containsExactly("decimal-candle");
     }
 
+    @Test
+    void appliesMensFitAudienceFilterBeforeRerankingWhenCatalogAudienceIsExplicit() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("women-swimsuit", "Women's Swimsuit", "One-piece swimwear", "Women's Swimwear"),
+                product("men-swim-shorts", "Men's Swim Shorts", "Quick-dry swim shorts", "Men's Swimwear")
+        )));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "swimming shorts",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        mensFitContext("swimming shorts"),
+                        null,
+                        null
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("men-swim-shorts");
+        assertThat(voyageRerankClient.documents).hasSize(1);
+        assertThat(merchantProductDetailsClient.calls).containsExactly("apparel.example:men-swim-shorts");
+    }
+
+    @Test
+    void appliesMensFitAudienceFilterAfterDetailsRevealWomenProductType() {
+        MerchantSemanticSearchResult merchant = merchant("billabong.com", "Billabong", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("palm-viva", "Palm Viva Woven Shorts - Sweet Lilac", "Open-weave cotton shorts", "Clothing"),
+                product("mens-boardshort", "Sundown Boardshorts", "Swim shorts with a drawcord", "Clothing")
+        )));
+        merchantProductDetailsClient.products.put("palm-viva", detailProduct(
+                "palm-viva",
+                "Palm Viva Woven Shorts - Sweet Lilac",
+                "Product Type: Women's casual woven shorts for everyday wear and swim cover-up"
+        ));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "swimming shorts",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        mensFitContext("swimming shorts"),
+                        null,
+                        null
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("mens-boardshort");
+        assertThat(merchantProductDetailsClient.calls).containsExactlyInAnyOrder(
+                "billabong.com:palm-viva",
+                "billabong.com:mens-boardshort"
+        );
+    }
+
+    @Test
+    void appliesWomensFitAudienceFilterAfterDetailsRevealMenProductType() {
+        MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("mens-boardshort", "Sundown Boardshorts", "Swim shorts with a drawcord", "Clothing"),
+                product("women-swim-short", "High-Rise Swim Short", "Swim shorts with a relaxed fit", "Clothing")
+        )));
+        merchantProductDetailsClient.products.put("mens-boardshort", detailProduct(
+                "mens-boardshort",
+                "Sundown Boardshorts",
+                "Product Type: Men's swim trunks"
+        ));
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery(
+                        "swimming shorts",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        womensFitContext("swimming shorts"),
+                        null,
+                        null
+                )
+        );
+
+        assertThat(result.products()).extracting("productId").containsExactly("women-swim-short");
+    }
+
     private MerchantSemanticSearchResult merchant(String domain, String name, int rank) {
         return new MerchantSemanticSearchResult(
                 UUID.randomUUID(),
@@ -516,6 +610,30 @@ class MerchantSemanticProductSearchServiceTest {
                 0.8d - rank * 0.01d,
                 0.9d - rank * 0.01d,
                 rank
+        );
+    }
+
+    private CatalogSearchContext mensFitContext(String query) {
+        return new CatalogSearchContext(
+                "US",
+                null,
+                null,
+                "en",
+                "USD",
+                "Original request: %s; Catalog query: %s; Hard apparel audience filter: men's sizing"
+                        .formatted(query, query)
+        );
+    }
+
+    private CatalogSearchContext womensFitContext(String query) {
+        return new CatalogSearchContext(
+                "US",
+                null,
+                null,
+                "en",
+                "USD",
+                "Original request: %s; Catalog query: %s; Hard apparel audience filter: women's sizing"
+                        .formatted(query, query)
         );
     }
 
@@ -688,6 +806,35 @@ class MerchantSemanticProductSearchServiceTest {
                 Map.of("fabric", "100% organic cotton"),
                 null,
                 Map.of("fit", "relaxed")
+        );
+    }
+
+    private ProductDetailsResponse.Product detailProduct(String productId, String title, String description) {
+        return new ProductDetailsResponse.Product(
+                productId,
+                title,
+                description,
+                "https://example.com/products/" + productId,
+                "https://example.com/" + productId + "-detail.jpg",
+                List.of(new ProductDetailsResponse.Image(
+                        "https://example.com/" + productId + "-detail.jpg",
+                        title
+                )),
+                List.of(new ProductDetailsResponse.Option("Size", List.of("Default"))),
+                1,
+                new ProductDetailsResponse.PriceRange("12.95", "12.95", "USD"),
+                false,
+                List.of(),
+                new ProductDetailsResponse.SelectedVariant(
+                        productId + "-selected",
+                        "Default",
+                        "12.95",
+                        "USD",
+                        "https://example.com/" + productId + "-variant.jpg",
+                        title,
+                        true,
+                        List.of(new ProductDetailsResponse.SelectedOption("Size", "Default"))
+                )
         );
     }
 

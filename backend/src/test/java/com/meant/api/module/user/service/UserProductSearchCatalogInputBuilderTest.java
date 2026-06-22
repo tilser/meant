@@ -81,7 +81,7 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().intent())
                 .contains("Hard budget price filter: at most 120 CZK")
                 .contains("User delivery location signals: Prague, Czechia (CZ)")
-                .contains("Clothing fit signal: prefer men's sizing")
+                .contains("Hard apparel audience filter: men's sizing")
                 .contains("Organic - Prefer organic materials.");
         assertThat(input.signals().buyerIp()).isEqualTo("203.0.113.4");
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");

@@ -112,7 +112,7 @@ user:
       max-limit: ${USER_COLLECTIONS_INVENTORY_MAX_LIMIT:100}
       quota: ${USER_COLLECTIONS_INVENTORY_QUOTA:500}
   product-search:
-    search-version: v2
+    search-version: v3
     query-parser-prompt-version: v2
     explanation-prompt-version: v1
     cache-ttl: 24h
