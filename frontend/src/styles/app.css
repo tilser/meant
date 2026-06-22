@@ -2853,11 +2853,51 @@ button:disabled {
   outline-offset: 3px;
 }
 
+.mt-modal-thumbs-wrap {
+  margin: -6px 0 16px;
+}
+
+.mt-modal-thumbs-wrap.paged {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .mt-modal-thumbs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin: -6px 0 16px;
+}
+
+.mt-modal-thumb-page {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--motion-quick) var(--ease-out), color var(--motion-quick) var(--ease-out), opacity var(--motion-quick) var(--ease-out);
+}
+
+.mt-modal-thumb-page:hover:not(:disabled),
+.mt-modal-thumb-page:focus-visible {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.mt-modal-thumb-page:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.mt-modal-thumb-page:disabled {
+  opacity: 0.28;
+  cursor: default;
 }
 
 .mt-modal-thumb {

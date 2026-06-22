@@ -235,6 +235,8 @@ const EMPTY_TASTE_PROFILE: UserTasteProfile = {
   suggestions: [],
 }
 
+const MODAL_THUMBNAIL_PAGE_SIZE = 8
+
 const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> =
   {
     discover: {
@@ -3713,6 +3715,7 @@ function ProductModal({
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
+  const [thumbnailPage, setThumbnailPage] = useState(0)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
@@ -3724,6 +3727,7 @@ function ProductModal({
     setAdding(false)
     setAddError(null)
     setSelectedMediaUrl(null)
+    setThumbnailPage(0)
     setZoomImageUrl(null)
   }, [product?.id])
 
@@ -3782,7 +3786,15 @@ function ProductModal({
 
   const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = offers.length > 0 ? offers : product.offers
-  const modalMedia = (product.media ?? []).slice(0, 4)
+  const modalMedia = product.media ?? []
+  const thumbnailPageCount = Math.ceil(modalMedia.length / MODAL_THUMBNAIL_PAGE_SIZE)
+  const boundedThumbnailPage = Math.min(thumbnailPage, Math.max(thumbnailPageCount - 1, 0))
+  const thumbnailStart = boundedThumbnailPage * MODAL_THUMBNAIL_PAGE_SIZE
+  const visibleModalMedia = modalMedia.slice(
+    thumbnailStart,
+    thumbnailStart + MODAL_THUMBNAIL_PAGE_SIZE,
+  )
+  const hasMediaPages = thumbnailPageCount > 1
   const selectedMedia = selectedMediaUrl
     ? modalMedia.find((item) => item.url === selectedMediaUrl)
     : null
@@ -3797,6 +3809,18 @@ function ProductModal({
     (product.skus?.length ?? 0) > 0 ||
     (product.catalogAttributes?.length ?? 0) > 0 ||
     Boolean(mediaInfo)
+  const showThumbnailPage = (nextPage: number) => {
+    const page = Math.max(0, Math.min(nextPage, thumbnailPageCount - 1))
+    const pageMedia = modalMedia.slice(
+      page * MODAL_THUMBNAIL_PAGE_SIZE,
+      page * MODAL_THUMBNAIL_PAGE_SIZE + MODAL_THUMBNAIL_PAGE_SIZE,
+    )
+    const firstImage = pageMedia.find((item) => item.type.toLowerCase() === 'image')
+    setThumbnailPage(page)
+    if (firstImage) {
+      setSelectedMediaUrl(firstImage.url)
+    }
+  }
   const ask = (question: string) => {
     setMessages((current) => [
       ...current,
@@ -3938,28 +3962,53 @@ function ProductModal({
               </div>
             </button>
             {modalMedia.length > 1 ? (
-              <div className="mt-modal-thumbs">
-                {modalMedia.map((item, index) => {
-                  const isImage = item.type.toLowerCase() === 'image'
-                  const isSelected = isImage && item.url === modalImageUrl
-                  return (
-                    <button
-                      className={`mt-modal-thumb ${isSelected ? 'active' : ''}`}
-                      key={`${item.type}-${item.url}`}
-                      type="button"
-                      disabled={!isImage}
-                      aria-label={isImage ? `Show image ${index + 1} for ${product.name}` : `${item.type} media`}
-                      aria-pressed={isImage ? isSelected : undefined}
-                      onClick={() => setSelectedMediaUrl(item.url)}
-                    >
-                      {isImage ? (
-                        <img src={item.url} alt={item.altText || product.name} loading="lazy" />
-                      ) : (
-                        <span className="mt-mono">{item.type}</span>
-                      )}
-                    </button>
-                  )
-                })}
+              <div className={`mt-modal-thumbs-wrap ${hasMediaPages ? 'paged' : ''}`}>
+                {hasMediaPages ? (
+                  <button
+                    className="mt-modal-thumb-page"
+                    type="button"
+                    disabled={boundedThumbnailPage === 0}
+                    aria-label={`Previous images for ${product.name}`}
+                    onClick={() => showThumbnailPage(boundedThumbnailPage - 1)}
+                  >
+                    <ChevronIcon direction="left" size={16} />
+                  </button>
+                ) : null}
+                <div className="mt-modal-thumbs">
+                  {visibleModalMedia.map((item, index) => {
+                    const isImage = item.type.toLowerCase() === 'image'
+                    const isSelected = isImage && item.url === modalImageUrl
+                    const imageIndex = thumbnailStart + index + 1
+                    return (
+                      <button
+                        className={`mt-modal-thumb ${isSelected ? 'active' : ''}`}
+                        key={`${item.type}-${item.url}`}
+                        type="button"
+                        disabled={!isImage}
+                        aria-label={isImage ? `Show image ${imageIndex} for ${product.name}` : `${item.type} media`}
+                        aria-pressed={isImage ? isSelected : undefined}
+                        onClick={() => setSelectedMediaUrl(item.url)}
+                      >
+                        {isImage ? (
+                          <img src={item.url} alt={item.altText || product.name} loading="lazy" />
+                        ) : (
+                          <span className="mt-mono">{item.type}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                {hasMediaPages ? (
+                  <button
+                    className="mt-modal-thumb-page"
+                    type="button"
+                    disabled={boundedThumbnailPage >= thumbnailPageCount - 1}
+                    aria-label={`Next images for ${product.name}`}
+                    onClick={() => showThumbnailPage(boundedThumbnailPage + 1)}
+                  >
+                    <ChevronIcon direction="right" size={16} />
+                  </button>
+                ) : null}
               </div>
             ) : null}
             <div className="mt-mono mt-card-brand">{product.brand} · {product.category}</div>
