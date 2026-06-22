@@ -6,7 +6,11 @@ import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
+import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
+import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
 import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
 import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
 import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
@@ -28,32 +32,18 @@ import com.meant.api.module.user.repository.UserProductSearchRepository;
 import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserRepository;
-import com.meant.api.module.user.service.UserInventoryService;
-import com.meant.api.module.user.service.UserProductSearchCatalogInputBuilder;
 import com.meant.api.module.user.service.UserProductSearchHashService;
-import com.meant.api.module.user.service.UserProductSearchPersistenceService;
-import com.meant.api.module.user.service.UserProductSearchQueryUnderstandingService;
 import com.meant.api.module.user.service.UserSettingsService;
-import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
-import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
-import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
-import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
-import com.meant.api.module.user.service.dto.UserTasteProfileResult;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,7 +59,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Boots the full app on a random port and drives it over HTTP. A test {@link JwtDecoder} turns
@@ -81,7 +70,6 @@ class UserControllerIT extends PostgresIntegrationTest {
 
     /** Mirrors {@code UserController.MAX_CONVERSATION_LIMIT}; kept local to avoid exposing the constant. */
     private static final int MAX_CONVERSATION_LIMIT_FIXTURE = 50;
-    private static final AtomicReference<CapturedRequest> CAPTURED_REQUEST = new AtomicReference<>();
 
     @LocalServerPort
     private int port;
@@ -93,22 +81,7 @@ class UserControllerIT extends PostgresIntegrationTest {
     private UserSettingsService userSettingsService;
 
     @Autowired
-    private UserInventoryService userInventoryService;
-
-    @Autowired
     private UserProductSearchHashService userProductSearchHashService;
-
-    @Autowired
-    private UserProductSearchCatalogInputBuilder userProductSearchCatalogInputBuilder;
-
-    @Autowired
-    private UserProductSearchQueryUnderstandingService userProductSearchQueryUnderstandingService;
-
-    @Autowired
-    private UserProductSearchPersistenceService userProductSearchPersistenceService;
-
-    @Autowired
-    private UserTasteProfileService userTasteProfileService;
 
     @Autowired
     private UserProductSearchRepository userProductSearchRepository;
@@ -132,9 +105,6 @@ class UserControllerIT extends PostgresIntegrationTest {
     private OpenRouterProperties openRouterProperties;
 
     private RestTestClient client;
-
-    private record CapturedRequest(String buyerIp, String userAgent) {
-    }
 
     @BeforeEach
     void setUp() {
@@ -204,6 +174,20 @@ class UserControllerIT extends PostgresIntegrationTest {
                         String schemaName,
                         OpenRouterJsonSchemaDefinition schema
                 ) {
+                    if ("product_recommendation_explanations".equals(schemaName)) {
+                        return """
+                                {
+                                  "products": [
+                                    {
+                                      "productKey": "merchant.example:tee",
+                                      "whyMeantForYou": "Organic cotton and no polyester match your profile.",
+                                      "matchedFilterIds": ["organic"],
+                                      "missedFilterIds": []
+                                    }
+                                  ]
+                                }
+                                """;
+                    }
                     return """
                             {
                               "searches": [
@@ -219,19 +203,27 @@ class UserControllerIT extends PostgresIntegrationTest {
         }
 
         @Bean
-        OncePerRequestFilter testRequestCaptureFilter() {
-            return new OncePerRequestFilter() {
+        @Primary
+        MerchantSemanticProductSearchService testMerchantSemanticProductSearchService() {
+            return new MerchantSemanticProductSearchService(null, null, null, null, null, null) {
                 @Override
-                protected void doFilterInternal(
-                        HttpServletRequest request,
-                        HttpServletResponse response,
-                        FilterChain filterChain
-                ) throws ServletException, IOException {
-                    CAPTURED_REQUEST.set(new CapturedRequest(
-                            request.getRemoteAddr(),
-                            request.getHeader("User-Agent")
-                    ));
-                    filterChain.doFilter(request, response);
+                public MerchantSemanticProductSearchResult search(SemanticProductSearchQuery query) {
+                    return search(query, null);
+                }
+
+                @Override
+                public MerchantSemanticProductSearchResult search(
+                        SemanticProductSearchQuery query,
+                        Consumer<MerchantSemanticProductResult> candidateConsumer
+                ) {
+                    if (query.merchantId() != null) {
+                        throw MerchantCatalogSearchException.notFound("Active merchant not found: " + query.merchantId());
+                    }
+                    MerchantSemanticProductResult product = recentSearchProduct();
+                    if (candidateConsumer != null) {
+                        candidateConsumer.accept(product);
+                    }
+                    return new MerchantSemanticProductSearchResult(List.of(), List.of(product));
                 }
             };
         }
@@ -484,8 +476,6 @@ class UserControllerIT extends PostgresIntegrationTest {
         String email = id + "@example.com";
         String query = "organic cotton tee";
         String userAgent = "meant-stream-test";
-        CapturedRequest requestContext = captureRequestContext(id, email, userAgent);
-        seedCachedProductSearch(id, email, query, requestContext.buyerIp(), requestContext.userAgent());
 
         String body = client.post().uri("/api/users/me/product-searches:stream")
                 .headers(headers -> {
@@ -512,18 +502,25 @@ class UserControllerIT extends PostgresIntegrationTest {
                 "event: phase",
                 "\"agent\":\"query\"",
                 "\"agent\":\"profile\"",
-                "\"agent\":\"cache\"",
+                "\"agent\":\"catalog\"",
+                "event: product",
+                "\"label\":\"Product candidate found\"",
+                "\"agent\":\"taste\"",
+                "\"agent\":\"reasoning\"",
                 "event: product_update",
                 "\"agent\":\"ranking\"",
                 "event: rank_update",
                 "event: done",
                 "\"title\":\"Organic Cotton Tee\"",
-                "\"cached\":true",
+                "\"cached\":false",
                 "\"hasMore\":false"
         );
         assertBefore(body, "\"agent\":\"query\"", "\"agent\":\"profile\"");
-        assertBefore(body, "\"agent\":\"profile\"", "\"agent\":\"cache\"");
-        assertBefore(body, "\"agent\":\"cache\"", "event: product_update");
+        assertBefore(body, "\"agent\":\"profile\"", "\"agent\":\"catalog\"");
+        assertBefore(body, "\"agent\":\"catalog\"", "event: product");
+        assertBefore(body, "event: product", "\"agent\":\"taste\"");
+        assertBefore(body, "\"agent\":\"taste\"", "\"agent\":\"reasoning\"");
+        assertBefore(body, "\"agent\":\"reasoning\"", "event: product_update");
         assertBefore(body, "event: product_update", "event: rank_update");
         assertBefore(body, "event: rank_update", "event: done");
     }
@@ -1191,80 +1188,6 @@ class UserControllerIT extends PostgresIntegrationTest {
         client.get().uri("/actuator/health")
                 .exchange()
                 .expectStatus().isOk();
-    }
-
-    private CapturedRequest captureRequestContext(UUID userId, String email, String userAgent) {
-        CAPTURED_REQUEST.set(null);
-        client.get().uri("/api/users/me")
-                .headers(headers -> {
-                    headers.setBearerAuth(token(userId, email, "Ada Lovelace"));
-                    headers.set("User-Agent", userAgent);
-                })
-                .exchange()
-                .expectStatus().isOk();
-        CapturedRequest capturedRequest = CAPTURED_REQUEST.get();
-        assertThat(capturedRequest).isNotNull();
-        return capturedRequest;
-    }
-
-    private void seedCachedProductSearch(UUID userId, String email, String query, String buyerIp, String userAgent) {
-        UpsertUserCommand upsertCommand = new UpsertUserCommand(userId, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
-        UserTasteProfileResult tasteProfile = userTasteProfileService.profile(userId, settings);
-        String profileHash = userProductSearchHashService.profileHash(settings)
-                + ":" + userInventoryService.inventoryProfileHash(userId)
-                + ":" + tasteProfile.profileHash();
-        UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
-        Instant now = Instant.now();
-        MerchantSemanticProductResult product = recentSearchProduct();
-        String productKey = userProductSearchHashService.productKey(product);
-        String productHash = userProductSearchHashService.productHash(product);
-        UserProductSearchProductSnapshot productSnapshot = new UserProductSearchProductSnapshot(
-                productKey,
-                productHash,
-                product
-        );
-        UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
-                productKey,
-                productHash,
-                "Organic cotton and no polyester match your profile.",
-                List.of("organic"),
-                List.of()
-        );
-
-        UserProductSearchCatalogInput catalogInput = userProductSearchCatalogInputBuilder.build(
-                query,
-                queryIntent,
-                settings,
-                buyerIp,
-                userAgent
-        );
-        Map<String, UserProductRecommendationExplanationResult> savedExplanations =
-                userProductSearchPersistenceService.saveExplanations(
-                        userId,
-                        catalogInput.cacheKey(),
-                        profileHash,
-                        openRouterProperties.models().productRecommendationExplainer(),
-                        userProductSearchProperties.explanationPromptVersion(),
-                        List.of(explanation),
-                        now
-                );
-        userProductSearchPersistenceService.saveSearch(
-                userId,
-                query,
-                catalogInput.cacheKey(),
-                profileHash,
-                userProductSearchProperties.searchVersion(),
-                now,
-                now.plus(userProductSearchProperties.cacheTtl()),
-                List.of(productSnapshot),
-                savedExplanations,
-                tasteProfile,
-                settings,
-                false,
-                0,
-                3
-        );
     }
 
     private static void assertBefore(String value, String first, String second) {
