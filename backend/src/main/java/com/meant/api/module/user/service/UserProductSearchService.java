@@ -15,9 +15,11 @@ import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
+import com.meant.api.module.user.service.dto.UserProductSearchProductResult.RichCatalogData;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
+import com.meant.api.module.user.service.dto.UserProductSearchStreamEvent;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
 import jakarta.validation.Valid;
@@ -27,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -124,6 +127,163 @@ public class UserProductSearchService {
                     ));
         }
 
+        recordSearch(command, queryIntent, result, now);
+        return result;
+    }
+
+    public void stream(
+            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            Consumer<UserProductSearchStreamEvent> eventConsumer
+    ) {
+        if (!upsertCommand.id().equals(command.userId())) {
+            throw UserException.forbidden("Product search user does not match authenticated user");
+        }
+
+        eventConsumer.accept(UserProductSearchStreamEvent.phase("query", "Understanding your request"));
+        String query = command.query().trim();
+        UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
+
+        eventConsumer.accept(UserProductSearchStreamEvent.phase("profile", "Loading your shopping context"));
+        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
+        UserProductSearchCatalogInput catalogInput =
+                userProductSearchCatalogInputBuilder.build(
+                        query,
+                        queryIntent,
+                        settings,
+                        command.buyerIp(),
+                        command.userAgent()
+                );
+        String normalizedQuery = catalogInput.cacheKey();
+        String profileHash = userProductSearchHashService.profileHash(settings)
+                + ":" + userInventoryService.inventoryProfileHash(command.userId())
+                + ":" + tasteProfile.profileHash();
+        Instant now = Instant.now();
+        int offset = command.offset();
+        int limit = command.limit();
+        int fetchLimit = fetchLimit(offset, limit);
+
+        if (command.merchantId() == null) {
+            UserProductSearchResult cached = userProductSearchPersistenceService.findCachedSearch(
+                            command.userId(),
+                            query,
+                            normalizedQuery,
+                            profileHash,
+                            userProductSearchProperties.searchVersion(),
+                            openRouterProperties.models().productRecommendationExplainer(),
+                            userProductSearchProperties.explanationPromptVersion(),
+                            tasteProfile,
+                            settings,
+                            now,
+                            offset,
+                            limit
+                    )
+                    .orElse(null);
+            if (cached != null) {
+                eventConsumer.accept(UserProductSearchStreamEvent.phase("cache", "Restoring cached matches"));
+                cached.products().forEach(product -> eventConsumer.accept(
+                        UserProductSearchStreamEvent.productUpdate("cache", "Cached match ready", product)
+                ));
+                eventConsumer.accept(UserProductSearchStreamEvent.rankUpdate(
+                        "ranking",
+                        "Ordering cached matches",
+                        cached.products()
+                ));
+                eventConsumer.accept(UserProductSearchStreamEvent.done(cached));
+                recordSearch(command, queryIntent, cached, now);
+                return;
+            }
+        }
+
+        eventConsumer.accept(UserProductSearchStreamEvent.phase("catalog", "Searching merchant catalogs"));
+        Map<String, UserProductSearchProductSnapshot> emittedCandidates = new LinkedHashMap<>();
+        List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(
+                catalogInput,
+                command.merchantId(),
+                fetchLimit,
+                candidate -> {
+                    int rank = candidate.product().rank();
+                    if (rank <= offset || rank > pageEnd(offset, limit)) {
+                        return;
+                    }
+                    if (emittedCandidates.putIfAbsent(candidate.productKey(), candidate) == null) {
+                        eventConsumer.accept(UserProductSearchStreamEvent.product(
+                                "catalog",
+                                "Product candidate found",
+                                previewProductResult(candidate, now)
+                        ));
+                    }
+                }
+        );
+        List<UserProductSearchProductSnapshot> products = uniqueProducts(fetchedProducts);
+
+        eventConsumer.accept(UserProductSearchStreamEvent.phase("taste", "Checking inventory and taste signals"));
+        Map<String, UserInventoryRecommendationSignal> inventorySignals =
+                userInventoryService.recommendationSignals(command.userId(), products);
+
+        eventConsumer.accept(UserProductSearchStreamEvent.phase("reasoning", "Writing fit explanations"));
+        Map<String, UserProductRecommendationExplanationResult> explanations =
+                userProductRecommendationExplanationService.explain(
+                        command.userId(),
+                        query,
+                        normalizedQuery,
+                        profileHash,
+                        settings,
+                        products,
+                        inventorySignals
+                );
+        List<UserProductSearchProductResult> productResults = explainedProductResults(products, explanations, now);
+        productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
+        List<UserProductSearchProductResult> pageResults = page(productResults, offset, limit);
+        pageResults.forEach(product -> eventConsumer.accept(UserProductSearchStreamEvent.productUpdate(
+                "reasoning",
+                "Product fit updated",
+                product
+        )));
+
+        eventConsumer.accept(UserProductSearchStreamEvent.phase("ranking", "Ordering by relevance"));
+        eventConsumer.accept(UserProductSearchStreamEvent.rankUpdate("ranking", "Relevance order updated", pageResults));
+
+        boolean hasMoreProducts = hasMoreProducts(fetchedProducts.size(), fetchLimit);
+        UserProductSearchResult result = command.merchantId() == null
+                ? userProductSearchPersistenceService.saveSearch(
+                        command.userId(),
+                        query,
+                        normalizedQuery,
+                        profileHash,
+                        userProductSearchProperties.searchVersion(),
+                        now,
+                        now.plus(userProductSearchProperties.cacheTtl()),
+                        products,
+                        explanations,
+                        tasteProfile,
+                        settings,
+                        hasMoreProducts,
+                        offset,
+                        limit
+                )
+                : new UserProductSearchResult(
+                        query,
+                        normalizedQuery,
+                        profileHash,
+                        false,
+                        offset,
+                        limit,
+                        hasMoreProducts ? pageEnd(offset, limit) : null,
+                        hasMoreProducts,
+                        pageResults
+                );
+        eventConsumer.accept(UserProductSearchStreamEvent.done(result));
+        recordSearch(command, queryIntent, result, now);
+    }
+
+    private void recordSearch(
+            SearchUserProductsCommand command,
+            UserProductSearchQueryIntentResult queryIntent,
+            UserProductSearchResult result,
+            Instant now
+    ) {
         userProductSearchEventService.record(
                 command.userId(),
                 command.merchantId(),
@@ -132,7 +292,6 @@ public class UserProductSearchService {
                 now
         );
         userTasteProfileService.recordSearch(command.userId(), queryIntent, now);
-        return result;
     }
 
     private UserProductSearchResult searchWithoutPersisting(
@@ -163,19 +322,7 @@ public class UserProductSearchService {
                         products,
                         inventorySignals
                 );
-        List<UserProductSearchProductResult> productResults = products.stream()
-                .filter(product -> explanations.containsKey(product.productKey()))
-                .map(product -> UserProductSearchProductResult.from(
-                        UserProductSearchResultItem.from(
-                                UUID.randomUUID(),
-                                product.productKey(),
-                                product.productHash(),
-                                product.product(),
-                                now
-                        ),
-                        explanations.get(product.productKey())
-                ))
-                .toList();
+        List<UserProductSearchProductResult> productResults = explainedProductResults(products, explanations, now);
         productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
         boolean hasMore = hasMoreProducts(fetchedProducts.size(), fetchLimit);
         return new UserProductSearchResult(
@@ -241,6 +388,16 @@ public class UserProductSearchService {
             UUID merchantId,
             int productLimit
     ) {
+        return productSnapshots(catalogInput, merchantId, productLimit, product -> {
+        });
+    }
+
+    private List<UserProductSearchProductSnapshot> productSnapshots(
+            UserProductSearchCatalogInput catalogInput,
+            UUID merchantId,
+            int productLimit,
+            Consumer<UserProductSearchProductSnapshot> candidateConsumer
+    ) {
         MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery(
                         catalogInput.searchQuery(),
@@ -252,15 +409,82 @@ public class UserProductSearchService {
                         catalogInput.context(),
                         catalogInput.signals(),
                         catalogInput.filters()
-                )
+                ),
+                candidate -> candidateConsumer.accept(productSnapshot(candidate))
         );
         return safeProducts(searchResult).stream()
-                .map(product -> new UserProductSearchProductSnapshot(
-                        userProductSearchHashService.productKey(product),
-                        userProductSearchHashService.productHash(product),
-                        product
-                ))
+                .map(this::productSnapshot)
                 .toList();
+    }
+
+    private UserProductSearchProductSnapshot productSnapshot(MerchantSemanticProductResult product) {
+        return new UserProductSearchProductSnapshot(
+                userProductSearchHashService.productKey(product),
+                userProductSearchHashService.productHash(product),
+                product
+        );
+    }
+
+    private List<UserProductSearchProductResult> explainedProductResults(
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserProductRecommendationExplanationResult> explanations,
+            Instant now
+    ) {
+        return products.stream()
+                .filter(product -> explanations.containsKey(product.productKey()))
+                .map(product -> productResult(product, explanations.get(product.productKey()), now))
+                .toList();
+    }
+
+    private UserProductSearchProductResult previewProductResult(
+            UserProductSearchProductSnapshot product,
+            Instant now
+    ) {
+        return productResult(
+                product,
+                new UserProductRecommendationExplanationResult(
+                        product.productKey(),
+                        product.productHash(),
+                        "Assessing fit for your request.",
+                        List.of(),
+                        List.of()
+                ),
+                now
+        );
+    }
+
+    private UserProductSearchProductResult productResult(
+            UserProductSearchProductSnapshot product,
+            UserProductRecommendationExplanationResult explanation,
+            Instant now
+    ) {
+        return UserProductSearchProductResult.from(
+                UserProductSearchResultItem.from(
+                        UUID.randomUUID(),
+                        product.productKey(),
+                        product.productHash(),
+                        product.product(),
+                        now
+                ),
+                explanation,
+                richCatalogData(product.product())
+        );
+    }
+
+    private RichCatalogData richCatalogData(MerchantSemanticProductResult product) {
+        return new RichCatalogData(
+                safeList(product.media()),
+                safeList(product.categories()),
+                safeList(product.certifications()),
+                safeList(product.materials()),
+                safeList(product.skus()),
+                safeList(product.collections()),
+                safeList(product.attributes())
+        );
+    }
+
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
     }
 
     private List<UserProductSearchProductSnapshot> uniqueProducts(

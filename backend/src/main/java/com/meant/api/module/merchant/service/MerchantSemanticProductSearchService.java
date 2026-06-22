@@ -43,6 +43,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -66,6 +67,14 @@ public class MerchantSemanticProductSearchService {
     private final MerchantCatalogSearchProperties merchantCatalogSearchProperties;
 
     public MerchantSemanticProductSearchResult search(@NotNull @Valid SemanticProductSearchQuery query) {
+        return search(query, product -> {
+        });
+    }
+
+    public MerchantSemanticProductSearchResult search(
+            @NotNull @Valid SemanticProductSearchQuery query,
+            Consumer<MerchantSemanticProductResult> candidateConsumer
+    ) {
         int merchantLimit = valueOrDefault(query.merchantLimit(), merchantCatalogSearchProperties.merchantLimit());
         int merchantCandidateLimit = Math.max(
                 valueOrDefault(
@@ -102,7 +111,13 @@ public class MerchantSemanticProductSearchService {
 
         return new MerchantSemanticProductSearchResult(
                 merchantAttempts,
-                rerankProducts(query.query(), productCandidates, productLimit, query.context(), query.filters())
+                rerankProducts(
+                        query.query(),
+                        productCandidates,
+                        productLimit,
+                        query.context(),
+                        query.filters(),
+                        candidateConsumer)
         );
     }
 
@@ -214,7 +229,8 @@ public class MerchantSemanticProductSearchService {
             List<MerchantCatalogProductCandidate> productCandidates,
             int productLimit,
             CatalogSearchContext context,
-            CatalogSearchFilters filters
+            CatalogSearchFilters filters,
+            Consumer<MerchantSemanticProductResult> candidateConsumer
     ) {
         List<MerchantCatalogProductCandidate> distinctProductCandidates = distinctProductCandidates(productCandidates);
         List<MerchantCatalogProductCandidate> filteredProductCandidates = distinctProductCandidates.stream()
@@ -233,10 +249,30 @@ public class MerchantSemanticProductSearchService {
                         .thenComparingInt(VoyageRerankResult::index))
                 .limit(productLimit)
                 .toList();
+        emitCatalogCandidates(filteredProductCandidates, rerankedProducts, candidateConsumer);
 
         return productResults(query, filteredProductCandidates, rerankedProducts, context).stream()
                 .filter(product -> matchesProductFilters(product, context, filters))
                 .toList();
+    }
+
+    private void emitCatalogCandidates(
+            List<MerchantCatalogProductCandidate> filteredProductCandidates,
+            List<VoyageRerankResult> rerankedProducts,
+            Consumer<MerchantSemanticProductResult> candidateConsumer
+    ) {
+        if (candidateConsumer == null) {
+            return;
+        }
+        IntStream.range(0, rerankedProducts.size())
+                .mapToObj(index -> toProductResult(
+                        filteredProductCandidates.get(rerankedProducts.get(index).index()),
+                        rerankedProducts.get(index),
+                        index + 1,
+                        null,
+                        (ProductDetailsResult) null
+                ))
+                .forEach(candidateConsumer);
     }
 
     private List<MerchantCatalogProductCandidate> distinctProductCandidates(

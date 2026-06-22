@@ -57,9 +57,9 @@ import {
   recordUserTasteBehavior,
   revokeMerchantIdentityLink,
   saveUserProduct,
-  searchUserProducts,
   startMerchantIdentityAuthorization,
   streamAssistantMessage,
+  streamUserProductSearch,
   type AssistantChatContextInput,
   type SaveUserProductInput,
   type CartProfile,
@@ -74,6 +74,7 @@ import {
   type UserAssistantConversationProfile,
   type UserAssistantConversationSummaryProfile,
   type UserPopularProductSearchProfile,
+  type UserProductSearchStreamEventProfile,
   type UserSavedProductProfile,
   type UserTasteProfile,
   updateCart,
@@ -99,6 +100,7 @@ import type {
   Preference,
   PreferenceId,
   Product,
+  ProductAgentStage,
   ProductCatalogAttribute,
   ProductCatalogCategory,
   ProductId,
@@ -144,6 +146,13 @@ interface AssistantProductAction {
   product: Product
   shouldAddToCart: boolean
   shouldOpen: boolean
+}
+
+interface AgentActivity {
+  agent: string
+  label: string
+  state: 'active' | 'done' | 'error'
+  updatedAt: number
 }
 
 interface AskPanelSize {
@@ -772,6 +781,7 @@ function toneForSearchProduct(product: UserProductSearchProductProfile): string 
 function productFromSearchResult(
   product: UserProductSearchProductProfile,
   preferences: readonly Preference[],
+  agentStage?: ProductAgentStage,
 ): Product {
   const price = searchProductPrice(product)
   const media = searchProductMedia(product)
@@ -786,6 +796,8 @@ function productFromSearchResult(
   const detail = stripHtml(product.detailDescription || product.descriptionHtml)
   const ratingScore = normalizeRatingScore(product.ratingScore)
   const reviewCount = Math.max(0, product.reviewCount ?? 0)
+  const candidate = agentStage === 'candidate'
+  const note = candidate ? 'Assessing fit for your request.' : product.whyMeantForYou
   return {
     id: product.productKey,
     productHash: product.productHash,
@@ -805,15 +817,15 @@ function productFromSearchResult(
     merchants: 1,
     satisfies: product.matchedFilterIds,
     misses: product.missedFilterIds,
-    note: product.whyMeantForYou,
+    note,
     pros: product.matchedFilterIds.length > 0
       ? product.matchedFilterIds.map((id) => `Matches ${prefLabel(preferences, id).toLowerCase()}`)
-      : [detail || 'Ranked highly for your search'],
+      : [candidate ? 'Catalog candidate' : detail || 'Ranked highly for your search'],
     cons: product.missedFilterIds.map((id) => `May miss ${prefLabel(preferences, id).toLowerCase()}`),
     review: {
       score: ratingScore,
       count: reviewCount,
-      insight: detail || product.whyMeantForYou,
+      insight: candidate ? 'Review signals pending.' : detail || product.whyMeantForYou,
     },
     media,
     catalogCategories,
@@ -841,6 +853,8 @@ function productFromSearchResult(
     inventoryRelationship: product.inventoryRelationship,
     inventoryItemId: product.inventoryItemId,
     inventoryItemName: product.inventoryItemName,
+    agentStage,
+    agentUpdatedAt: agentStage ? Date.now() : undefined,
   }
 }
 
@@ -1259,6 +1273,52 @@ function appendProductSnapshots(products: Product[], nextProducts: readonly Prod
     merged[index] = product
   })
   return merged
+}
+
+function orderProductSnapshots(products: Product[], orderedProducts: readonly Product[]): Product[] {
+  const orderedIds = new Set(orderedProducts.map((product) => product.id))
+  return [
+    ...orderedProducts,
+    ...products.filter((product) => !orderedIds.has(product.id)),
+  ]
+}
+
+const PRODUCT_SEARCH_AGENT_NAMES: Record<string, string> = {
+  query: 'Query agent',
+  profile: 'Profile agent',
+  catalog: 'Catalog agent',
+  taste: 'Taste agent',
+  reasoning: 'Reasoning agent',
+  ranking: 'Ranking agent',
+  cache: 'Cache agent',
+  search: 'Search agent',
+}
+
+function productSearchAgentName(agent: string | null | undefined): string {
+  if (!agent) {
+    return 'Search agent'
+  }
+  return PRODUCT_SEARCH_AGENT_NAMES[agent] ?? `${agent.charAt(0).toUpperCase()}${agent.slice(1)} agent`
+}
+
+function upsertAgentActivity(
+  activities: readonly AgentActivity[],
+  event: Pick<UserProductSearchStreamEventProfile, 'agent' | 'label'>,
+  state: AgentActivity['state'] = 'active',
+): AgentActivity[] {
+  const agent = event.agent ?? 'search'
+  const label = event.label ?? 'Working'
+  const next = {
+    agent,
+    label,
+    state,
+    updatedAt: Date.now(),
+  }
+  const existing = activities.findIndex((activity) => activity.agent === agent)
+  if (existing < 0) {
+    return [...activities, next]
+  }
+  return activities.map((activity, index) => index === existing ? next : activity)
 }
 
 function normalizedMerchantName(value: string | null | undefined): string {
@@ -1734,6 +1794,32 @@ function ProductSearchLoading({
           <span>.</span><span>.</span><span>.</span>
         </span>
       </span>
+    </div>
+  )
+}
+
+function AgentActivityPanel({ activities }: Readonly<{
+  activities: readonly AgentActivity[]
+}>) {
+  if (activities.length === 0) {
+    return null
+  }
+  return (
+    <div className="mt-agent-rail" aria-live="polite">
+      {activities.slice(-5).map((activity) => (
+        <div
+          className={`mt-agent-step ${activity.state}`}
+          key={activity.agent}
+        >
+          <span className="mt-agent-orb" aria-hidden>
+            <SparkMark size={11} />
+          </span>
+          <span className="mt-agent-copy">
+            <span className="mt-agent-name mt-mono">{productSearchAgentName(activity.agent)}</span>
+            <span className="mt-agent-label">{activity.label}</span>
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -2891,6 +2977,9 @@ function ProductPriceLine({
 }
 
 function ProductReviewSummary({ product }: Readonly<{ product: Product }>) {
+  if (product.agentStage === 'candidate' && product.review.count <= 0) {
+    return <span className="mt-mono mt-card-rating mt-card-rating-live">Checking reviews</span>
+  }
   if (product.review.count <= 0) {
     return <span className="mt-mono mt-card-rating muted">No review data</span>
   }
@@ -2962,6 +3051,7 @@ function ProductCard({
   const open = () => onOpen(product)
   const savePending = savePendingSet.has(product.id)
   const catalogBadges = catalogBadgeLabels(product).slice(0, 3)
+  const liveStage = product.agentStage ?? 'ranked'
   const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -2971,7 +3061,7 @@ function ProductCard({
 
   return (
     <div
-      className="mt-card mt-card-in"
+      className={`mt-card mt-card-in mt-card-live-${liveStage}`}
       role="button"
       tabIndex={0}
       onClick={open}
@@ -3054,7 +3144,7 @@ function ProductCard({
           </span>
         </div>
         <ProductReviewSummary product={product} />
-        <div className="mt-card-note">
+        <div className={`mt-card-note ${product.agentStage === 'candidate' ? 'mt-card-note-live' : ''}`}>
           <span className="mt-note-key">Why it is meant for you</span>
           {product.note}
         </div>
@@ -3450,6 +3540,7 @@ function FeedView({
   discoveryError,
   popularSearches,
   popularSearchesLoading,
+  agentActivities,
   deliveryLocations,
   prompts,
   reply,
@@ -3484,6 +3575,7 @@ function FeedView({
   discoveryError: string | null
   popularSearches: readonly SearchSuggestion[]
   popularSearchesLoading: boolean
+  agentActivities: readonly AgentActivity[]
   deliveryLocations: readonly UserLocation[]
   prompts: readonly string[]
   reply: string | null
@@ -3511,7 +3603,7 @@ function FeedView({
     ? merchantName ? `Your matches on ${merchantName}` : 'Your matches'
     : merchantName ? `Your context on ${merchantName}` : 'Your saved and recent products'
   const count = loading
-    ? 'Searching stores'
+    ? products.length > 0 ? `${products.length} found · agents working` : 'Searching stores'
     : preSearch
       ? discoveryLoading
         ? 'Loading your context'
@@ -3533,6 +3625,7 @@ function FeedView({
     : waitingForPopularSearches
       ? 'Loading popular searches'
       : 'Searches run across supported merchants'
+  const showAgentActivity = agentActivities.length > 0 && (loading || products.some((product) => product.agentStage === 'candidate' || product.agentStage === 'enriched'))
 
   return (
     <main className="mt-feed">
@@ -3604,7 +3697,8 @@ function FeedView({
           ) : null}
         </div>
       ) : null}
-      {loading || (preSearch && discoveryLoading && products.length === 0) ? (
+      {showAgentActivity ? <AgentActivityPanel activities={agentActivities} /> : null}
+      {(loading && products.length === 0) || (preSearch && discoveryLoading && products.length === 0) ? (
         <ProductSearchLoading
           label={loading ? undefined : 'Loading your saved and recent products'}
         />
@@ -7790,6 +7884,7 @@ export function MeantApp() {
   const [searchNextOffset, setSearchNextOffset] = useState<number | null>(null)
   const [searchMerchantId, setSearchMerchantId] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [productSearchActivities, setProductSearchActivities] = useState<AgentActivity[]>([])
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
@@ -7834,6 +7929,7 @@ export function MeantApp() {
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
+  const searchAbortRef = useRef<AbortController | null>(null)
   const searchSuggestionsRequestRef = useRef(0)
   const inventoryRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
@@ -8250,8 +8346,11 @@ export function MeantApp() {
     setSearchHasMore(false)
     setSearchNextOffset(null)
     setSearchMerchantId(null)
+    setProductSearchActivities([])
     setTasteProfile(EMPTY_TASTE_PROFILE)
     searchRequestRef.current += 1
+    searchAbortRef.current?.abort()
+    searchAbortRef.current = null
     searchSuggestionsRequestRef.current += 1
     setSearchSuggestions([])
     setDiscoveryError(null)
@@ -8893,9 +8992,13 @@ export function MeantApp() {
     const merchantAtSubmit = merchants.find((merchant) => merchant.id === merchantId) ?? null
     const requestId = searchRequestRef.current + 1
     searchRequestRef.current = requestId
+    searchAbortRef.current?.abort()
+    const controller = new AbortController()
+    searchAbortRef.current = controller
     setQuery(submittedQuery)
     setSearchError(null)
     if (append) {
+      setProductSearchActivities([])
       setSearchLoadingMore(true)
     } else {
       setReply(null)
@@ -8905,44 +9008,100 @@ export function MeantApp() {
       setSearchHasMore(false)
       setSearchNextOffset(null)
       setSearchMerchantId(merchantId)
+      setProductSearchActivities([])
     }
+    const upsertStreamProduct = (
+      event: UserProductSearchStreamEventProfile,
+      stage: ProductAgentStage,
+    ) => {
+      if (searchRequestRef.current !== requestId || !event.product) {
+        return
+      }
+      const product = productFromSearchResult(event.product, allPreferences, stage)
+      setSearchResults((current) => appendProductSnapshots(current, [product]))
+      setRemoteProducts((current) => appendProductSnapshots(current, [product]))
+      setProductSearchActivities((current) => upsertAgentActivity(current, event))
+    }
+    const orderedStreamProducts = (
+      event: UserProductSearchStreamEventProfile,
+      stage: ProductAgentStage,
+    ) => event.products.map((product) => productFromSearchResult(product, allPreferences, stage))
     try {
-      const result = await searchUserProducts({
+      await streamUserProductSearch({
         query: submittedQuery,
         merchantId,
         offset,
         limit: PRODUCT_SEARCH_PAGE_SIZE,
+        signal: controller.signal,
+      }, {
+        onPhase: (event) => {
+          if (searchRequestRef.current !== requestId) {
+            return
+          }
+          setProductSearchActivities((current) => upsertAgentActivity(current, event))
+        },
+        onProduct: (event) => {
+          upsertStreamProduct(event, 'candidate')
+        },
+        onProductUpdate: (event) => {
+          upsertStreamProduct(event, 'enriched')
+        },
+        onRankUpdate: (event) => {
+          if (searchRequestRef.current !== requestId) {
+            return
+          }
+          const products = orderedStreamProducts(event, 'ranked')
+          setSearchResults((current) => orderProductSnapshots(current, products))
+          setRemoteProducts((current) => appendProductSnapshots(current, products))
+          setProductSearchActivities((current) => upsertAgentActivity(current, event))
+        },
+        onDone: (event) => {
+          if (searchRequestRef.current !== requestId) {
+            return
+          }
+          const products = orderedStreamProducts(event, 'ranked')
+          setSearchResults((current) => append ? appendProductSnapshots(current, products) : products)
+          setRemoteProducts((current) => appendProductSnapshots(current, products))
+          setSearchHasMore(Boolean(event.hasMore))
+          setSearchNextOffset(event.nextOffset)
+          setSearchMerchantId(merchantId)
+          setProductSearchActivities((current) =>
+            upsertAgentActivity(
+              current.map((activity) => ({ ...activity, state: 'done' })),
+              event,
+              'done',
+            ),
+          )
+          if (append) {
+            setReply(
+              products.length > 0
+                ? `Loaded ${products.length} more match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
+                : `No more matches found for "${submittedQuery}".`,
+            )
+          } else {
+            setReply(
+              event.cached
+                ? `Showing ${products.length} cached match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
+                : `Found ${products.length} match${products.length === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
+            )
+          }
+        },
+        onError: (message) => {
+          if (searchRequestRef.current !== requestId) {
+            return
+          }
+          setSearchError(message)
+          setProductSearchActivities((current) => upsertAgentActivity(current, {
+            agent: 'search',
+            label: message,
+          }, 'error'))
+        },
       })
+    } catch {
       if (searchRequestRef.current !== requestId) {
         return
       }
-      const products = result.products.map((product) =>
-        productFromSearchResult(product, allPreferences),
-      )
-      setSearchResults((current) => append ? appendProductSnapshots(current, products) : products)
-      setRemoteProducts((current) => {
-        const byId = new Map(current.map((product) => [product.id, product]))
-        products.forEach((product) => byId.set(product.id, product))
-        return Array.from(byId.values())
-      })
-      setSearchHasMore(result.hasMore)
-      setSearchNextOffset(result.nextOffset)
-      setSearchMerchantId(merchantId)
-      if (append) {
-        setReply(
-          products.length > 0
-            ? `Loaded ${products.length} more match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
-            : `No more matches found for "${submittedQuery}".`,
-        )
-      } else {
-        setReply(
-          result.cached
-            ? `Showing ${products.length} cached match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
-            : `Found ${products.length} match${products.length === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
-        )
-      }
-    } catch {
-      if (searchRequestRef.current !== requestId) {
+      if (controller.signal.aborted) {
         return
       }
       if (!append) {
@@ -8957,6 +9116,9 @@ export function MeantApp() {
       )
     } finally {
       if (searchRequestRef.current === requestId) {
+        if (searchAbortRef.current === controller) {
+          searchAbortRef.current = null
+        }
         if (append) {
           setSearchLoadingMore(false)
         } else {
@@ -8978,12 +9140,15 @@ export function MeantApp() {
   }
 
   const applyAssistantProducts = (products: readonly Product[], sourceQuery: string) => {
+    searchAbortRef.current?.abort()
+    searchAbortRef.current = null
     setView('discover')
     setQuery(sourceQuery)
     setReply(`Ask Meant found ${products.length} match${products.length === 1 ? '' : 'es'} for "${sourceQuery}".`)
     setSearchError(null)
     setSearchLoading(false)
     setSearchLoadingMore(false)
+    setProductSearchActivities([])
     setSearchHasMore(false)
     setSearchNextOffset(null)
     setSearchMerchantId(null)
@@ -9206,6 +9371,7 @@ export function MeantApp() {
             discoveryError={discoveryError}
             popularSearches={popularSearches}
             popularSearchesLoading={popularSearchesLoading}
+            agentActivities={productSearchActivities}
             deliveryLocations={deliveryLocations}
             prompts={searchSuggestions}
             reply={reply}
@@ -9227,6 +9393,8 @@ export function MeantApp() {
             onLoadMore={loadMoreSearchResults}
             onClear={() => {
               searchRequestRef.current += 1
+              searchAbortRef.current?.abort()
+              searchAbortRef.current = null
               setReply(null)
               setQuery('')
               setSearchResults([])
@@ -9236,6 +9404,7 @@ export function MeantApp() {
               setSearchHasMore(false)
               setSearchNextOffset(null)
               setSearchMerchantId(null)
+              setProductSearchActivities([])
             }}
             onMerchant={(merchant) => {
               setSelectedMerchantId(merchant?.id ?? null)

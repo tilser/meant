@@ -1401,6 +1401,84 @@ button:disabled {
   animation-delay: 0.32s;
 }
 
+.mt-agent-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin: -2px 0 20px;
+  color: var(--ink-soft);
+  animation: mt-soft-rise var(--motion-medium) var(--ease-out) both;
+}
+
+.mt-agent-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 11px 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent-tint));
+  color: var(--muted);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out);
+}
+
+.mt-agent-step.active {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--ink-soft);
+}
+
+.mt-agent-step.done {
+  color: var(--faint);
+}
+
+.mt-agent-step.error {
+  border-color: color-mix(in srgb, var(--cart-warn) 45%, var(--line));
+  color: var(--cart-warn);
+}
+
+.mt-agent-orb {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--accent-line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.mt-agent-step.active .mt-agent-orb {
+  animation: mt-agent-orb 1.4s ease-in-out infinite;
+}
+
+.mt-agent-copy {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.mt-agent-name {
+  color: var(--ink);
+  font-size: 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mt-agent-label {
+  max-width: 220px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mt-search-state-error {
   min-height: auto;
   justify-content: flex-start;
@@ -1489,6 +1567,7 @@ button:disabled {
 }
 
 .mt-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1505,6 +1584,32 @@ button:disabled {
 
 .mt-card-in {
   animation: mt-card-in var(--motion-slow) var(--ease-out) both;
+}
+
+.mt-card-live-candidate {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+
+.mt-card-live-candidate::after,
+.mt-card-live-enriched::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    transparent 34%,
+    color-mix(in srgb, var(--accent) 10%, transparent) 48%,
+    transparent 62%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  animation: mt-agent-card-scan 1.35s var(--ease-out) both;
+}
+
+.mt-card-live-enriched {
+  animation: mt-card-in var(--motion-slow) var(--ease-out) both, mt-soft-glow 760ms var(--ease-out) both;
 }
 
 .mt-card:hover {
@@ -1841,6 +1946,11 @@ button:disabled {
   font-size: 10.5px;
 }
 
+.mt-card-rating-live {
+  color: var(--accent);
+  animation: mt-agent-text-pulse 1.2s ease-in-out infinite;
+}
+
 .mt-card-rating.muted {
   color: var(--faint);
 }
@@ -1862,6 +1972,10 @@ button:disabled {
   line-height: 1.5;
   opacity: 0;
   transition: max-height 0.35s ease, opacity 0.3s ease, padding-top 0.35s ease;
+}
+
+.mt-card-note-live {
+  color: var(--ink-soft);
 }
 
 .mt-card:hover .mt-card-note {
@@ -6602,6 +6716,40 @@ button:disabled {
 
   100% {
     box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes mt-agent-orb {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  46% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 9%, transparent);
+  }
+}
+
+@keyframes mt-agent-card-scan {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes mt-agent-text-pulse {
+  0%,
+  100% {
+    opacity: 0.54;
+  }
+
+  48% {
+    opacity: 1;
   }
 }
 

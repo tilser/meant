@@ -121,6 +121,41 @@ export interface UserProductSearchProfile {
   products: UserProductSearchProductProfile[]
 }
 
+export type UserProductSearchStreamEventType =
+  | 'phase'
+  | 'product'
+  | 'product_update'
+  | 'rank_update'
+  | 'done'
+  | 'error'
+
+export interface UserProductSearchStreamEventProfile {
+  type: UserProductSearchStreamEventType
+  agent: string | null
+  label: string | null
+  productKey: string | null
+  product: UserProductSearchProductProfile | null
+  products: UserProductSearchProductProfile[]
+  query: string | null
+  normalizedQuery: string | null
+  profileHash: string | null
+  cached: boolean | null
+  offset: number | null
+  limit: number | null
+  nextOffset: number | null
+  hasMore: boolean | null
+  message: string | null
+}
+
+export interface UserProductSearchStreamHandlers {
+  onPhase?: (event: UserProductSearchStreamEventProfile) => void
+  onProduct?: (event: UserProductSearchStreamEventProfile) => void
+  onProductUpdate?: (event: UserProductSearchStreamEventProfile) => void
+  onRankUpdate?: (event: UserProductSearchStreamEventProfile) => void
+  onDone?: (event: UserProductSearchStreamEventProfile) => void
+  onError?: (message: string) => void
+}
+
 export interface UserProductSearchSuggestionsProfile {
   suggestions: string[]
 }
@@ -682,6 +717,57 @@ export async function searchUserProducts(input: {
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
 }
 
+export async function streamUserProductSearch(
+  input: {
+    query: string
+    merchantId?: string | null
+    offset?: number
+    limit?: number
+    signal?: AbortSignal
+  },
+  handlers: UserProductSearchStreamHandlers,
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/users/me/product-searches:stream`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: input.query,
+      merchantId: input.merchantId ?? undefined,
+      offset: input.offset ?? undefined,
+      limit: input.limit ?? undefined,
+    }),
+    signal: input.signal,
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error('Failed to stream product search')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) {
+      break
+    }
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split(/\r?\n\r?\n/)
+    buffer = events.pop() ?? ''
+    events.forEach((rawEvent) => handleProductSearchStreamEvent(rawEvent, handlers))
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    handleProductSearchStreamEvent(buffer, handlers)
+  }
+}
+
 export async function getUserProductSearchSuggestions(): Promise<UserProductSearchSuggestionsProfile> {
   const response = await fetch(`${API_URL}/api/users/me/product-search-suggestions`, {
     cache: 'no-store',
@@ -1086,11 +1172,7 @@ function handleAssistantStreamEvent(
   rawEvent: string,
   handlers: UserAssistantStreamHandlers,
 ) {
-  const data = rawEvent
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice('data:'.length).trimStart())
-    .join('\n')
+  const data = streamEventData(rawEvent)
 
   if (!data) {
     return
@@ -1115,4 +1197,47 @@ function handleAssistantStreamEvent(
     default:
       break
   }
+}
+
+function handleProductSearchStreamEvent(
+  rawEvent: string,
+  handlers: UserProductSearchStreamHandlers,
+) {
+  const data = streamEventData(rawEvent)
+
+  if (!data) {
+    return
+  }
+
+  const event = JSON.parse(data) as UserProductSearchStreamEventProfile
+  switch (event.type) {
+    case 'phase':
+      handlers.onPhase?.(event)
+      break
+    case 'product':
+      handlers.onProduct?.(event)
+      break
+    case 'product_update':
+      handlers.onProductUpdate?.(event)
+      break
+    case 'rank_update':
+      handlers.onRankUpdate?.(event)
+      break
+    case 'done':
+      handlers.onDone?.(event)
+      break
+    case 'error':
+      handlers.onError?.(event.message ?? 'Product search failed. Please try again.')
+      break
+    default:
+      break
+  }
+}
+
+function streamEventData(rawEvent: string): string {
+  return rawEvent
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trimStart())
+    .join('\n')
 }

@@ -22,6 +22,7 @@ export type DiscountType = 'percent' | 'fixed' | 'shipping'
 export type ClothingFit = 'none' | 'men' | 'women' | 'other'
 export type ProductAudience = 'men' | 'women' | 'other' | 'unisex'
 export type InventoryRelationship = 'NONE' | 'DUPLICATE' | 'COMPLEMENT' | 'RESTOCK'
+export type ProductAgentStage = 'candidate' | 'enriched' | 'ranked'
 
 export interface Preference {
   id: PreferenceId
@@ -104,6 +105,8 @@ export interface Product {
   inventoryRelationship?: InventoryRelationship
   inventoryItemId?: string | null
   inventoryItemName?: string | null
+  agentStage?: ProductAgentStage
+  agentUpdatedAt?: number
 }
 
 export interface Reply {

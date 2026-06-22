@@ -25,6 +25,7 @@ import com.meant.api.module.user.controller.response.UserPopularProductSearchRes
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchSuggestionsResponse;
+import com.meant.api.module.user.controller.response.UserProductSearchStreamEventResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
@@ -369,6 +370,44 @@ public class UserController {
                         userAgent(httpRequest),
                         request.offset(),
                         request.limit())));
+    }
+
+    @PostMapping(value = "/me/product-searches:stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+            summary = "Stream product search results for the current user",
+            description = "Streams product-search phases, catalog candidates, product enrichments, ranking updates, "
+                    + "and final pagination metadata as soon as each piece is available."
+    )
+    public StreamingResponseBody streamSearchProducts(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UserProductSearchRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        SearchUserProductsCommand command = new SearchUserProductsCommand(
+                authenticatedUser.id(),
+                request.query(),
+                request.merchantId(),
+                buyerIp(httpRequest),
+                userAgent(httpRequest),
+                request.offset(),
+                request.limit()
+        );
+        return outputStream -> {
+            try {
+                userProductSearchService.stream(
+                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        command,
+                        event -> writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.from(event))
+                );
+            } catch (UncheckedIOException exception) {
+                throw exception.getCause();
+            } catch (RuntimeException exception) {
+                writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.error(
+                        "Product search failed. Please try again."
+                ));
+            }
+        };
     }
 
     @GetMapping("/me/product-search-suggestions")
@@ -847,6 +886,20 @@ public class UserController {
     private void writeAssistantEvent(
             OutputStream outputStream,
             UserAssistantStreamEventResponse event
+    ) {
+        try {
+            String payload = objectMapper.writeValueAsString(event);
+            outputStream.write(("event: " + event.type() + "\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(("data: " + payload + "\n\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.flush();
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    private void writeProductSearchEvent(
+            OutputStream outputStream,
+            UserProductSearchStreamEventResponse event
     ) {
         try {
             String payload = objectMapper.writeValueAsString(event);
