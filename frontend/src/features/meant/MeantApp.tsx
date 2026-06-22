@@ -9051,7 +9051,9 @@ export function MeantApp() {
             return
           }
           const products = orderedStreamProducts(event, 'ranked')
-          setSearchResults((current) => orderProductSnapshots(current, products))
+          setSearchResults((current) =>
+            append ? appendProductSnapshots(current, products) : orderProductSnapshots(current, products)
+          )
           setRemoteProducts((current) => appendProductSnapshots(current, products))
           setProductSearchActivities((current) => upsertAgentActivity(current, event))
         },

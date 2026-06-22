@@ -397,23 +397,27 @@ public class UserController {
         );
         return outputStream -> {
             try {
-                userProductSearchService.stream(
-                        UserCommandMapper.toUpsertCommand(authenticatedUser),
-                        command,
-                        event -> writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.from(event))
-                );
+                try {
+                    userProductSearchService.stream(
+                            UserCommandMapper.toUpsertCommand(authenticatedUser),
+                            command,
+                            event -> writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.from(event))
+                    );
+                } catch (UncheckedIOException exception) {
+                    throw exception;
+                } catch (RuntimeException exception) {
+                    log.warn(
+                            "Product search stream failed. userId={}, merchantId={}",
+                            authenticatedUser.id(),
+                            command.merchantId(),
+                            exception
+                    );
+                    writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.error(
+                            "Product search failed. Please try again."
+                    ));
+                }
             } catch (UncheckedIOException exception) {
                 throw exception.getCause();
-            } catch (RuntimeException exception) {
-                log.warn(
-                        "Product search stream failed. userId={}, merchantId={}",
-                        authenticatedUser.id(),
-                        command.merchantId(),
-                        exception
-                );
-                writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.error(
-                        "Product search failed. Please try again."
-                ));
             }
         };
     }
