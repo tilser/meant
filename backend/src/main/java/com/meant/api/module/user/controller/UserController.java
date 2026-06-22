@@ -78,6 +78,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -98,6 +99,7 @@ import tools.jackson.databind.ObjectMapper;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@Slf4j
 @SecurityRequirement(name = "bearer-jwt")
 @Tag(name = "Users", description = "Profile endpoints for the authenticated Supabase user")
 public class UserController {
@@ -403,6 +405,12 @@ public class UserController {
             } catch (UncheckedIOException exception) {
                 throw exception.getCause();
             } catch (RuntimeException exception) {
+                log.warn(
+                        "Product search stream failed. userId={}, merchantId={}",
+                        authenticatedUser.id(),
+                        command.merchantId(),
+                        exception
+                );
                 writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.error(
                         "Product search failed. Please try again."
                 ));
