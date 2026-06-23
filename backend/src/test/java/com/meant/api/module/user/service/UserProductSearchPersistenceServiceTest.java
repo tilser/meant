@@ -45,7 +45,7 @@ class UserProductSearchPersistenceServiceTest {
     private boolean matchesLoaded;
 
     @Test
-    void saveSearchSkipsProductsWithoutExplanations() {
+    void saveSearchKeepsProductsWithoutExplanations() {
         List<UserProductSearchResultItem> savedItems = new ArrayList<>();
         UserProductSearchPersistenceService service = new UserProductSearchPersistenceService(
                 searchRepository(),
@@ -83,7 +83,8 @@ class UserProductSearchPersistenceServiceTest {
                 20
         );
 
-        assertThat(result.products()).singleElement()
+        assertThat(result.products()).hasSize(2);
+        assertThat(result.products().getFirst())
                 .satisfies(product -> {
                     assertThat(product.productKey()).isEqualTo("merchant.example:tee");
                     assertThat(product.whyMeantForYou()).isEqualTo("Organic cotton matches your profile.");
@@ -94,7 +95,17 @@ class UserProductSearchPersistenceServiceTest {
                     assertThat(product.certifications()).containsExactly("GOTS");
                     assertThat(product.materials()).containsExactly("Organic cotton");
                 });
-        assertThat(savedItems).singleElement()
+        assertThat(result.products().get(1))
+                .satisfies(product -> {
+                    assertThat(product.productKey()).isEqualTo("merchant.example:socks");
+                    assertThat(product.whyMeantForYou()).isEqualTo("Matched your search from merchant catalog data.");
+                    assertThat(product.matchedFilterIds()).isEmpty();
+                    assertThat(product.missedFilterIds()).isEmpty();
+                });
+        assertThat(savedItems)
+                .extracting(UserProductSearchResultItem::getProductKey)
+                .containsExactly("merchant.example:tee", "merchant.example:socks");
+        assertThat(savedItems.getFirst())
                 .satisfies(item -> {
                     assertThat(item.getProductKey()).isEqualTo("merchant.example:tee");
                     assertThat(item.getListPriceAmount()).isEqualTo(4800L);
@@ -246,6 +257,53 @@ class UserProductSearchPersistenceServiceTest {
     }
 
     @Test
+    void findCachedSearchKeepsItemsWithoutStoredExplanations() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, false);
+        List<UserProductSearchResultItem> items = List.of(UserProductSearchResultItem.from(
+                search.getId(),
+                "merchant.example:item-1",
+                "hash-1",
+                product(1),
+                NOW
+        ));
+        explanationsLoaded = false;
+        matchesLoaded = false;
+        UserProductSearchPersistenceService service = new UserProductSearchPersistenceService(
+                cachedSearchRepository(search),
+                cachedResultItemRepository(search.getId(), items),
+                emptyExplanationRepository(),
+                unusedRepository(UserProductRecommendationFilterMatchRepository.class),
+                new UserTasteRankingService(),
+                new ObjectMapper()
+        );
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                null,
+                null,
+                NOW,
+                0,
+                20
+        );
+
+        assertThat(result).isPresent();
+        assertThat(result.get().products()).singleElement()
+                .satisfies(product -> {
+                    assertThat(product.productKey()).isEqualTo("merchant.example:item-1");
+                    assertThat(product.whyMeantForYou()).isEqualTo("Matched your search from merchant catalog data.");
+                });
+        assertThat(explanationsLoaded).isTrue();
+        assertThat(matchesLoaded).isFalse();
+    }
+
+    @Test
     void findCachedSearchReturnsEmptyWhenWindowIsTooSmallAndMoreMayExist() {
         UUID userId = UUID.randomUUID();
         UserProductSearch search = search(userId, true);
@@ -387,6 +445,17 @@ class UserProductSearchPersistenceServiceTest {
                                 NOW
                         ))
                         .toList();
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductRecommendationExplanationRepository emptyExplanationRepository() {
+        return repository(UserProductRecommendationExplanationRepository.class, (proxy, method, args) -> {
+            if ("findByUserIdAndNormalizedQueryAndProfileHashAndModelAndPromptVersionAndProductKeyIn"
+                    .equals(method.getName())) {
+                explanationsLoaded = true;
+                return List.<UserProductRecommendationExplanation>of();
             }
             throw new UnsupportedOperationException(method.getName());
         });

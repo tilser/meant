@@ -233,7 +233,8 @@ public class UserProductSearchService {
                         products,
                         inventorySignals
                 );
-        List<UserProductSearchProductResult> productResults = explainedProductResults(products, explanations, now);
+        List<UserProductSearchProductResult> productResults =
+                explainedProductResults(products, explanations, inventorySignals, now);
         productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
         List<UserProductSearchProductResult> pageResults = page(productResults, offset, limit);
         pageResults.forEach(product -> eventConsumer.accept(UserProductSearchStreamEvent.productUpdate(
@@ -322,7 +323,8 @@ public class UserProductSearchService {
                         products,
                         inventorySignals
                 );
-        List<UserProductSearchProductResult> productResults = explainedProductResults(products, explanations, now);
+        List<UserProductSearchProductResult> productResults =
+                explainedProductResults(products, explanations, inventorySignals, now);
         productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
         boolean hasMore = hasMoreProducts(fetchedProducts.size(), fetchLimit);
         return new UserProductSearchResult(
@@ -430,12 +432,35 @@ public class UserProductSearchService {
     private List<UserProductSearchProductResult> explainedProductResults(
             List<UserProductSearchProductSnapshot> products,
             Map<String, UserProductRecommendationExplanationResult> explanations,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals,
             Instant now
     ) {
+        Map<String, UserInventoryRecommendationSignal> safeInventorySignals =
+                inventorySignals == null ? Map.of() : inventorySignals;
+        Map<String, UserProductRecommendationExplanationResult> safeExplanations =
+                explanations == null ? Map.of() : explanations;
         return products.stream()
-                .filter(product -> explanations.containsKey(product.productKey()))
-                .map(product -> productResult(product, explanations.get(product.productKey()), now))
+                .map(product -> productResult(
+                        product,
+                        explanationFor(product, safeExplanations, safeInventorySignals),
+                        now
+                ))
                 .toList();
+    }
+
+    private UserProductRecommendationExplanationResult explanationFor(
+            UserProductSearchProductSnapshot product,
+            Map<String, UserProductRecommendationExplanationResult> explanations,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
+    ) {
+        UserProductRecommendationExplanationResult explanation = explanations.get(product.productKey());
+        return explanation == null
+                ? UserProductRecommendationExplanationResult.fallback(
+                        product.productKey(),
+                        product.productHash(),
+                        inventorySignals.get(product.productKey())
+                )
+                : explanation;
     }
 
     private UserProductSearchProductResult previewProductResult(

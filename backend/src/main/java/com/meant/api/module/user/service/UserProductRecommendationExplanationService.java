@@ -3,6 +3,7 @@ package com.meant.api.module.user.service;
 import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
+import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.user.constant.UserClothingFit;
@@ -48,6 +49,7 @@ public class UserProductRecommendationExplanationService {
             Filters in category interests are soft taste signals. Match them when the product clearly reflects the interest, but do not mark them missed just because the theme is absent.
             matchedFilterIds and missedFilterIds must contain only filter IDs from the active user filters.
             Keep whyMeantForYou one concise sentence, under 220 characters.
+            Return only the JSON object matching the requested schema.
             """;
 
     private final OpenRouterChatClient openRouterChatClient;
@@ -103,9 +105,9 @@ public class UserProductRecommendationExplanationService {
                     inventorySignals
             );
         } catch (OpenRouterException exception) {
-            log.warn("Could not generate product explanations; returning explainable products only: {}",
+            log.warn("Could not generate product explanations; returning fallback explanations for missing products: {}",
                     exception.getMessage());
-            return cached;
+            return withFallbacks(cached, products, inventorySignals);
         }
         Map<String, UserProductRecommendationExplanationResult> saved =
                 userProductSearchPersistenceService.saveExplanations(
@@ -118,7 +120,31 @@ public class UserProductRecommendationExplanationService {
                         Instant.now()
                 );
         cached.putAll(saved);
-        return cached;
+        return withFallbacks(cached, products, inventorySignals);
+    }
+
+    private Map<String, UserProductRecommendationExplanationResult> withFallbacks(
+            Map<String, UserProductRecommendationExplanationResult> explanations,
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserInventoryRecommendationSignal> inventorySignals
+    ) {
+        Map<String, UserInventoryRecommendationSignal> safeInventorySignals =
+                inventorySignals == null ? Map.of() : inventorySignals;
+        Map<String, UserProductRecommendationExplanationResult> result = new LinkedHashMap<>();
+        products.forEach(product -> {
+            UserProductRecommendationExplanationResult explanation = explanations.get(product.productKey());
+            result.putIfAbsent(
+                    product.productKey(),
+                    explanation == null
+                            ? UserProductRecommendationExplanationResult.fallback(
+                                    product.productKey(),
+                                    product.productHash(),
+                                    safeInventorySignals.get(product.productKey())
+                            )
+                            : explanation
+            );
+        });
+        return result;
     }
 
     private List<UserProductRecommendationExplanationResult> generate(
@@ -130,15 +156,17 @@ public class UserProductRecommendationExplanationService {
         if (products.isEmpty()) {
             return List.of();
         }
+        Map<String, UserInventoryRecommendationSignal> safeInventorySignals =
+                inventorySignals == null ? Map.of() : inventorySignals;
 
         String response = openRouterChatClient.completeJson(
                 openRouterProperties.models().productRecommendationExplainer(),
                 SYSTEM_PROMPT,
-                userPrompt(query, settings, products, inventorySignals),
+                userPrompt(query, settings, products, safeInventorySignals),
                 "product_recommendation_explanations",
                 responseSchema(products, settings.filters())
         );
-        return sanitize(response, products, settings.filters(), inventorySignals);
+        return sanitize(response, products, settings.filters(), safeInventorySignals);
     }
 
     private String userPrompt(
@@ -243,7 +271,10 @@ public class UserProductRecommendationExplanationService {
         );
         return OpenRouterJsonSchemaDefinition.object(
                 List.of("products"),
-                Map.of("products", OpenRouterJsonSchemaDefinition.array(productSchema))
+                Map.of("products", OpenRouterJsonSchemaDefinition.array(
+                        productSchema,
+                        products.size(),
+                        products.size()))
         );
     }
 
@@ -326,8 +357,13 @@ public class UserProductRecommendationExplanationService {
     }
 
     private ExplanationBatchResponse parseResponse(String response) {
+        if (response == null || response.isBlank()) {
+            return new ExplanationBatchResponse(List.of());
+        }
         try {
-            ExplanationBatchResponse parsed = objectMapper.readValue(response, ExplanationBatchResponse.class);
+            ExplanationBatchResponse parsed = objectMapper.readValue(
+                    OpenRouterJsonExtractor.objectCandidate(response),
+                    ExplanationBatchResponse.class);
             return parsed == null ? new ExplanationBatchResponse(List.of()) : parsed;
         } catch (JacksonException exception) {
             throw new OpenRouterException("OpenRouter returned invalid product explanation JSON", exception);

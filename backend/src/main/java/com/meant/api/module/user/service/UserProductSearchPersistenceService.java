@@ -259,7 +259,6 @@ public class UserProductSearchPersistenceService {
         UserProductSearch savedSearch = userProductSearchRepository.save(search);
         userProductSearchResultItemRepository.deleteBySearchId(savedSearch.getId());
         List<UserProductSearchResultItem> items = uniqueProducts(products).stream()
-                .filter(product -> explanations.containsKey(product.productKey()))
                 .map(product -> UserProductSearchResultItem.from(
                         savedSearch.getId(),
                         product.productKey(),
@@ -415,18 +414,29 @@ public class UserProductSearchPersistenceService {
             List<UserProductSearchResultItem> items,
             Map<String, UserProductRecommendationExplanationResult> explanations
     ) {
+        Map<String, UserProductRecommendationExplanationResult> safeExplanations =
+                explanations == null ? Map.of() : explanations;
         return items.stream()
-                .filter(item -> explanations.containsKey(item.getProductKey()))
                 .sorted(Comparator.comparingInt(UserProductSearchResultItem::getRank))
                 .map(item -> UserProductSearchProductResult.from(
                         item,
-                        explanations.get(item.getProductKey()),
+                        explanationFor(item, safeExplanations),
                         richCatalogData(item)
                 ))
                 .sorted(Comparator.comparingInt(UserProductSearchProductResult::matchScore)
                         .reversed()
                         .thenComparingInt(UserProductSearchProductResult::rank))
                 .toList();
+    }
+
+    private UserProductRecommendationExplanationResult explanationFor(
+            UserProductSearchResultItem item,
+            Map<String, UserProductRecommendationExplanationResult> explanations
+    ) {
+        UserProductRecommendationExplanationResult explanation = explanations.get(item.getProductKey());
+        return explanation == null
+                ? UserProductRecommendationExplanationResult.fallback(item.getProductKey(), item.getProductHash())
+                : explanation;
     }
 
     private RichCatalogSnapshot richCatalogSnapshot(MerchantSemanticProductResult product) {

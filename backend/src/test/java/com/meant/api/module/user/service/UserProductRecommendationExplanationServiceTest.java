@@ -64,6 +64,42 @@ class UserProductRecommendationExplanationServiceTest {
     }
 
     @Test
+    void explainParsesFencedOpenRouterJson() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
+        UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
+        openRouterChatClient.response = """
+                ```json
+                {
+                  "products": [
+                    {
+                      "productKey": "merchant.example:tee",
+                      "whyMeantForYou": "Organic cotton matches your profile.",
+                      "matchedFilterIds": ["organic-cotton"],
+                      "missedFilterIds": []
+                    }
+                  ]
+                }
+                ```
+                """;
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.explain(
+                UUID.randomUUID(),
+                "cotton tee",
+                "cotton tee",
+                "profile-hash",
+                settings(),
+                List.of(snapshot())
+        );
+
+        assertThat(result.get("merchant.example:tee").whyMeantForYou())
+                .isEqualTo("Organic cotton matches your profile.");
+        assertThat(persistenceService.saved).singleElement()
+                .extracting(UserProductRecommendationExplanationResult::productKey)
+                .isEqualTo("merchant.example:tee");
+    }
+
+    @Test
     void explainUsesCachedExplanationWithoutCallingOpenRouter() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
@@ -164,7 +200,7 @@ class UserProductRecommendationExplanationServiceTest {
     }
 
     @Test
-    void explainSkipsProductsMissingFromGeneratedExplanations() {
+    void explainKeepsProductsMissingFromGeneratedExplanationsWithFallback() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
         UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
@@ -193,7 +229,14 @@ class UserProductRecommendationExplanationServiceTest {
                 )
         );
 
-        assertThat(result).containsOnlyKeys("merchant.example:tee");
+        assertThat(result).containsOnlyKeys("merchant.example:tee", "merchant.example:socks");
+        assertThat(result.get("merchant.example:socks"))
+                .satisfies(explanation -> {
+                    assertThat(explanation.productHash()).isEqualTo("product-hash-socks");
+                    assertThat(explanation.whyMeantForYou()).isEqualTo("Matched your search from merchant catalog data.");
+                    assertThat(explanation.matchedFilterIds()).isEmpty();
+                    assertThat(explanation.missedFilterIds()).isEmpty();
+                });
         assertThat(persistenceService.saved).singleElement()
                 .extracting(UserProductRecommendationExplanationResult::productKey)
                 .isEqualTo("merchant.example:tee");
@@ -227,7 +270,10 @@ class UserProductRecommendationExplanationServiceTest {
         );
 
         assertThat(openRouterChatClient.called).isTrue();
-        assertThat(result).containsOnly(Map.entry("merchant.example:tee", cached));
+        assertThat(result).containsOnlyKeys("merchant.example:tee", "merchant.example:socks");
+        assertThat(result.get("merchant.example:tee")).isEqualTo(cached);
+        assertThat(result.get("merchant.example:socks").whyMeantForYou())
+                .isEqualTo("Matched your search from merchant catalog data.");
         assertThat(persistenceService.saved).isEmpty();
     }
 
