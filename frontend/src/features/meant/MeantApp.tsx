@@ -3886,7 +3886,7 @@ function FeedView({
     : waitingForPopularSearches
       ? 'Loading popular searches'
       : 'Searches run across supported merchants'
-  const showAgentActivity = agentActivities.length > 0 && (loading || products.some((product) => product.agentStage === 'candidate' || product.agentStage === 'curating'))
+  const showAgentActivity = !preSearch && agentActivities.length > 0
 
   return (
     <main className="mt-feed">
