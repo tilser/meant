@@ -107,8 +107,14 @@ public class UserProductRecommendationExplanationService {
                     inventorySignals
             );
         } catch (OpenRouterException exception) {
-            log.warn("Could not generate product explanations; returning fallback explanations for missing products: {}",
-                    exception.getMessage());
+            log.warn(
+                    "Could not generate product explanations; returning fallback explanations userId={} missingProductCount={} model={} promptVersion={} reason={}",
+                    userId,
+                    missing.size(),
+                    model,
+                    promptVersion,
+                    exception.getMessage()
+            );
             return withFallbacks(cached, products, inventorySignals);
         }
         Map<String, UserProductRecommendationExplanationResult> saved =
