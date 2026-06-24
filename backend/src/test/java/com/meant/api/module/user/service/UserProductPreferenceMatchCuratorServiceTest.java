@@ -123,6 +123,36 @@ class UserProductPreferenceMatchCuratorServiceTest {
     }
 
     @Test
+    void preservesNonAsciiPreferenceTokens() {
+        UserProductSearchProductSnapshot notTokyo = snapshot(
+                "kyoto-cotton",
+                "Organic Cotton Tee",
+                "Made in Kyoto from organic cotton.",
+                List.of("cotton"),
+                null,
+                0
+        );
+        UserProductSearchProductSnapshot tokyo = snapshot(
+                "tokyo-cotton",
+                "Organic Cotton Tee",
+                "Made in 東京 from organic cotton.",
+                List.of("cotton"),
+                null,
+                0
+        );
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.curate(
+                List.of(notTokyo, tokyo),
+                settingsWithTokyoCotton(),
+                Map.of(),
+                Map.of()
+        );
+
+        assertThat(result.get(notTokyo.productKey()).matchedFilterIds()).isEmpty();
+        assertThat(result.get(tokyo.productKey()).matchedFilterIds()).containsExactly("tokyo-cotton");
+    }
+
+    @Test
     void ignoresNullFilterLabelsAndCatalogElements() {
         UserProductSearchProductSnapshot product = snapshotWithNullableCatalog();
         UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
@@ -185,6 +215,21 @@ class UserProductPreferenceMatchCuratorServiceTest {
                 null,
                 List.of(),
                 List.of(filter("organic", "Organic", "Prefer organic certifications.", "materials", "prefer", 10)),
+                List.of(),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-20T10:00:00Z"),
+                Instant.parse("2026-06-20T10:00:00Z")
+        );
+    }
+
+    private UserSettingsResult settingsWithTokyoCotton() {
+        return new UserSettingsResult(
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(filter("tokyo-cotton", "東京 cotton", "Prefer cotton from 東京.", "materials", "prefer", 10)),
                 List.of(),
                 List.of(),
                 List.of(),

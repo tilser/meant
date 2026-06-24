@@ -26,7 +26,7 @@ public class UserProductPreferenceMatchCuratorService {
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
     private static final Pattern PUNCTUATION_PATTERN = Pattern.compile("[^\\p{L}\\p{N}\\s-]+");
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
-    private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("[^a-z0-9]+");
+    private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("[^\\p{L}\\p{N}]+");
     private static final int TAKE_LIMIT = 220;
     private static final Set<String> STOP_WORDS = Set.of(
             "a", "an", "and", "are", "as", "avoid", "be", "by", "can", "for", "from", "goods", "in",
@@ -171,8 +171,9 @@ public class UserProductPreferenceMatchCuratorService {
         if (phrases.stream().anyMatch(evidence::contains)) {
             return true;
         }
-        List<String> tokens = evidenceTokens(filter);
-        return !tokens.isEmpty() && tokens.stream().allMatch(evidence::containsToken);
+        return Stream.of(filter.id(), filter.label())
+                .map(this::evidenceTokens)
+                .anyMatch(tokens -> !tokens.isEmpty() && tokens.stream().allMatch(evidence::containsToken));
     }
 
     private boolean hasFreeEvidence(ShoppingFilterResult filter, ProductEvidence evidence) {
@@ -190,11 +191,22 @@ public class UserProductPreferenceMatchCuratorService {
 
     private List<String> evidenceTokens(ShoppingFilterResult filter) {
         return Stream.of(filter.id(), filter.label())
-                .flatMap(value -> tokens(value).stream())
-                .filter(token -> token.length() > 2)
+                .flatMap(value -> evidenceTokens(value).stream())
+                .distinct()
+                .toList();
+    }
+
+    private List<String> evidenceTokens(String value) {
+        return tokens(value).stream()
+                .filter(UserProductPreferenceMatchCuratorService::isMeaningfulEvidenceToken)
                 .filter(token -> !STOP_WORDS.contains(token))
                 .distinct()
                 .toList();
+    }
+
+    private static boolean isMeaningfulEvidenceToken(String token) {
+        int length = token.codePointCount(0, token.length());
+        return length > 2 || (length > 1 && token.codePoints().anyMatch(codePoint -> codePoint > 0x7f));
     }
 
     private List<String> avoidedTerms(ShoppingFilterResult filter) {

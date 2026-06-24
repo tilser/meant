@@ -854,12 +854,7 @@ function productFromSearchResult(
     agentStage,
     agentUpdatedAt: agentStage ? Date.now() : undefined,
   }
-  return {
-    ...baseProduct,
-    note: productCuratedTake(baseProduct, preferences),
-    pros: productCuratedAdvantages(baseProduct, preferences),
-    cons: productCuratedTradeoffs(baseProduct, preferences),
-  }
+  return productWithCuratedFields(baseProduct, preferences)
 }
 
 function preferenceLabels(ids: readonly PreferenceId[], preferences: readonly Preference[]): string[] {
@@ -930,6 +925,31 @@ function productCuratedTradeoffs(product: Product, preferences: readonly Prefere
     tradeoffs.push('No curator trade-offs found in the available data')
   }
   return Array.from(new Set(tradeoffs))
+}
+
+function productCuratedFields(
+  product: Product,
+  preferences: readonly Preference[],
+): Pick<Product, 'note' | 'pros' | 'cons'> {
+  if (preferences.length === 0) {
+    return {
+      note: product.note,
+      pros: product.pros,
+      cons: product.cons,
+    }
+  }
+  return {
+    note: productCuratedTake(product, preferences),
+    pros: productCuratedAdvantages(product, preferences),
+    cons: productCuratedTradeoffs(product, preferences),
+  }
+}
+
+function productWithCuratedFields(product: Product, preferences: readonly Preference[]): Product {
+  return {
+    ...product,
+    ...productCuratedFields(product, preferences),
+  }
 }
 
 function searchProductReviewInsight(
@@ -1030,14 +1050,7 @@ function savedProductFromProfile(
     needs: product.needs ? product.needs as Product['needs'] : undefined,
     provides: (product.provides?.length ?? 0) > 0 ? product.provides as Product['provides'] : undefined,
   }
-  return preferences.length === 0
-    ? snapshot
-    : {
-        ...snapshot,
-        note: productCuratedTake(snapshot, preferences),
-        pros: productCuratedAdvantages(snapshot, preferences),
-        cons: productCuratedTradeoffs(snapshot, preferences),
-      }
+  return productWithCuratedFields(snapshot, preferences)
 }
 
 function searchSuggestionFromPopular(search: UserPopularProductSearchProfile): SearchSuggestion {
@@ -1056,7 +1069,11 @@ function findLastAssistantMessageIndex(messages: readonly Message[]): number {
   return -1
 }
 
-function savedProductInput(product: Product): SaveUserProductInput {
+function savedProductInput(
+  product: Product,
+  preferences: readonly Preference[] = [],
+): SaveUserProductInput {
+  const curatedFields = productCuratedFields(product, preferences)
   return {
     id: product.id,
     productHash: product.productHash ?? null,
@@ -1072,9 +1089,9 @@ function savedProductInput(product: Product): SaveUserProductInput {
     merchants: product.merchants,
     satisfies: [...product.satisfies],
     misses: [...product.misses],
-    note: product.note,
-    pros: [...product.pros],
-    cons: [...product.cons],
+    note: curatedFields.note,
+    pros: [...curatedFields.pros],
+    cons: [...curatedFields.cons],
     review: {
       score: product.review.score ?? 0,
       count: product.review.count,
@@ -1098,7 +1115,9 @@ function savedProductInput(product: Product): SaveUserProductInput {
 function assistantProductContext(
   product: Product,
   deliveryLocations: readonly UserLocation[],
+  preferences: readonly Preference[] = [],
 ) {
+  const curatedFields = productCuratedFields(product, preferences)
   return {
     id: product.id,
     name: product.name,
@@ -1106,7 +1125,7 @@ function assistantProductContext(
     category: product.category,
     match: product.match,
     priceFrom: productPriceFrom(product, deliveryLocations),
-    note: product.note,
+    note: curatedFields.note,
   }
 }
 
@@ -3184,8 +3203,8 @@ function ProductGrid({
     const previousPositions = positionsRef.current
     const nextPositions = new Map<ProductId, DOMRect>()
     const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
+    cards.forEach(resetProductCardAnimation)
     cards.forEach((card) => {
-      card.removeAttribute('data-reordering')
       const productId = card.dataset.productId
       if (!productId) {
         return
@@ -3203,12 +3222,12 @@ function ProductGrid({
       }
 
       card.dataset.reordering = 'true'
-      card.style.transition = 'none'
+      card.style.transitionProperty = 'none'
       card.style.transform = `translate(${deltaX}px, ${deltaY}px)`
       card.style.zIndex = '2'
       const firstFrame = window.requestAnimationFrame(() => {
         const secondFrame = window.requestAnimationFrame(() => {
-          card.style.transition = ''
+          card.style.transitionProperty = ''
           card.style.transform = ''
           const timeout = window.setTimeout(() => {
             card.removeAttribute('data-reordering')
@@ -3226,6 +3245,11 @@ function ProductGrid({
   useEffect(() => () => {
     timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
     rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
+    const grid = gridRef.current
+    if (grid) {
+      Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
+        .forEach(resetProductCardAnimation)
+    }
   }, [])
 
   return (
@@ -3248,6 +3272,16 @@ function ProductGrid({
   )
 }
 
+function resetProductCardAnimation(card: HTMLElement) {
+  const transitionDelay = card.style.transitionDelay
+  card.removeAttribute('data-reordering')
+  card.style.transition = ''
+  card.style.transitionProperty = ''
+  card.style.transform = ''
+  card.style.zIndex = ''
+  card.style.transitionDelay = transitionDelay
+}
+
 function ProductCard({
   product,
   index,
@@ -3268,6 +3302,7 @@ function ProductCard({
   const savePending = savePendingSet.has(product.id)
   const catalogBadges = catalogBadgeLabels(product).slice(0, 3)
   const liveStage = product.agentStage ?? 'ranked'
+  const curatedFields = productCuratedFields(product, preferences)
   const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -3364,7 +3399,7 @@ function ProductCard({
         <ProductReviewSummary product={product} />
         <div className={`mt-card-note ${product.agentStage === 'candidate' ? 'mt-card-note-live' : ''}`}>
           <span className="mt-note-key">Why it is meant for you</span>
-          {product.note}
+          {curatedFields.note}
         </div>
       </div>
     </div>
@@ -5643,6 +5678,7 @@ function CompareView({
     .filter((id) =>
       items.some((product) => product.satisfies.includes(id) || product.misses.includes(id)),
     )
+  const meantTake = (product: Product) => productCuratedFields(product, preferences).note
 
   return (
     <main className="mt-feed mt-view">
@@ -5657,7 +5693,7 @@ function CompareView({
             <div className="mt-mono mt-cmp-verdict-key">Meant pick</div>
             <div className="mt-cmp-verdict-title">{winner.name}</div>
           </div>
-          <p>{winner.note}</p>
+          <p>{meantTake(winner)}</p>
         </div>
       ) : null}
       <div className="mt-cmp">
@@ -5739,7 +5775,7 @@ function CompareView({
               <div className="mt-cmp-rowlabel">Meant take</div>
               {items.map((product) => (
                 <div key={product.id} className="mt-cmp-cell">
-                  <span className="mt-cmp-text">{product.note}</span>
+                  <span className="mt-cmp-text">{meantTake(product)}</span>
                 </div>
               ))}
               {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
@@ -8642,22 +8678,23 @@ export function MeantApp() {
     if (!beginSaveOperation(product.id)) {
       return
     }
+    const productSnapshot = productWithCuratedFields(product, allPreferencesRef.current)
     const wasSaved = savedSet.has(product.id)
     if (wasSaved) {
       setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
       void removeSavedProduct(product.id)
         .catch(() => {
-          setSavedProducts((current) => upsertProductSnapshot(current, product))
+          setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
           setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
         })
         .finally(() => endSaveOperation(product.id))
       return
     }
 
-    setSavedProducts((current) => upsertProductSnapshot(current, product))
+    setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
     setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
-    void saveUserProduct(savedProductInput(product))
+    void saveUserProduct(savedProductInput(product, allPreferencesRef.current))
       .then((savedProduct) => {
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         setSavedProducts((current) => upsertProductSnapshot(current, snapshot))
@@ -8678,7 +8715,7 @@ export function MeantApp() {
     setRemoteProducts((current) => current.filter((candidate) => candidate.id !== product.id))
     void recordUserTasteBehavior({
       behavior: 'DISMISS',
-      product: savedProductInput(product),
+      product: savedProductInput(product, allPreferencesRef.current),
     })
       .then((profile) => setTasteProfile(profile))
       .catch(() => {
@@ -9696,7 +9733,7 @@ export function MeantApp() {
     cartItemCount: cartCount,
     visibleProducts: assistantVisibleProducts
       .slice(0, 8)
-      .map((product) => assistantProductContext(product, deliveryLocations)),
+      .map((product) => assistantProductContext(product, deliveryLocations, allPreferences)),
     cartItems: assistantCartLines.slice(0, 8).map((line) => ({
       name: line.product.name,
       merchant: line.merchant,
