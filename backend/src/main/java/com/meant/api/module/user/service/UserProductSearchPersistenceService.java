@@ -354,7 +354,7 @@ public class UserProductSearchPersistenceService {
             return Optional.empty();
         }
         List<UserProductSearchProductResult> visibleProducts = visibleRankedProducts(products, tasteProfile, settings);
-        if (!canServePage(visibleProducts.size(), search.isHasMoreProducts(), offset, limit)) {
+        if (!canServeVisiblePage(visibleProducts.size(), search.isHasMoreProducts(), offset, limit)) {
             return Optional.empty();
         }
         return Optional.of(result(
@@ -371,6 +371,10 @@ public class UserProductSearchPersistenceService {
 
     private boolean canServePage(int itemCount, boolean hasMoreProducts, int offset, int limit) {
         return itemCount >= pageEnd(offset, limit) || !hasMoreProducts;
+    }
+
+    private boolean canServeVisiblePage(int visibleCount, boolean hasMoreProducts, int offset, int limit) {
+        return offset == 0 || canServePage(visibleCount, hasMoreProducts, offset, limit);
     }
 
     private UserProductSearchResult result(

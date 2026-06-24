@@ -362,6 +362,72 @@ class UserProductSearchPersistenceServiceTest {
     }
 
     @Test
+    void findCachedSearchReturnsEmptyWhenLaterVisiblePageIsPartialAndMoreMayExist() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, true);
+        List<UserProductSearchResultItem> items = new ArrayList<>(items(search.getId(), 21));
+        items.addAll(items(search.getId(), 80, 100));
+        UserProductSearchPersistenceService service = service(userId, search, items);
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                null,
+                null,
+                NOW,
+                20,
+                20
+        );
+
+        assertThat(result).isEmpty();
+        assertThat(explanationsLoaded).isTrue();
+        assertThat(matchesLoaded).isTrue();
+    }
+
+    @Test
+    void findCachedSearchServesLowYieldFirstPage() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, true);
+        List<UserProductSearchResultItem> items = new ArrayList<>(items(search.getId(), 5));
+        items.addAll(items(search.getId(), 80, 95));
+        UserProductSearchPersistenceService service = service(userId, search, items);
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                null,
+                null,
+                NOW,
+                0,
+                20
+        );
+
+        assertThat(result).isPresent();
+        assertThat(result.get().cached()).isTrue();
+        assertThat(result.get().products())
+                .extracting("productKey")
+                .containsExactly(
+                        "merchant.example:item-1",
+                        "merchant.example:item-2",
+                        "merchant.example:item-3",
+                        "merchant.example:item-4",
+                        "merchant.example:item-5"
+                );
+        assertThat(result.get().nextOffset()).isEqualTo(20);
+        assertThat(result.get().hasMore()).isTrue();
+    }
+
+    @Test
     void findCachedSearchServesPartialFinalPageWhenSearchIsExhausted() {
         UUID userId = UUID.randomUUID();
         UserProductSearch search = search(userId, false);
