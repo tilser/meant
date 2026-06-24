@@ -58,7 +58,7 @@ public class UserProductSearchCuratorService {
                 command.settings()
         );
         List<UserProductSearchProductResult> visibleProducts =
-                userProductSearchCurationPolicy.visibleProducts(rankedProducts);
+                userProductSearchCurationPolicy.visibleProducts(rankedProducts, command.settings());
         return new UserProductSearchCuratorResult(
                 visibleProducts,
                 page(visibleProducts, command.offset(), command.limit()),

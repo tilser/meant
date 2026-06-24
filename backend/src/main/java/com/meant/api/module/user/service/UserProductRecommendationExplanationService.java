@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,7 @@ public class UserProductRecommendationExplanationService {
             Do not invent certifications, materials, review claims, discounts, or shipping promises.
             Owned inventory signals are server-generated facts. Prefer complements and restocks; be explicit when a product looks duplicative.
             Filters in category interests are soft taste signals. Match them when the product clearly reflects the interest, but do not mark them missed just because the theme is absent.
+            Clothing fit is a hard apparel and footwear audience constraint. Do not present opposite-audience or child-audience apparel as meant for the user.
             matchedFilterIds and missedFilterIds must contain only filter IDs from the active user filters.
             Keep whyMeantForYou one concise sentence, under 220 characters.
             Return only the JSON object matching the requested schema.
@@ -231,6 +233,13 @@ public class UserProductRecommendationExplanationService {
                 Merchant: %s (%s)
                 Title: %s
                 Description: %s
+                Categories: %s
+                Materials: %s
+                Certifications: %s
+                Collections: %s
+                Attributes: %s
+                Image alt text: %s
+                Variant details: %s
                 Price: %s
                 URL: %s
                 Available: %s
@@ -241,6 +250,13 @@ public class UserProductRecommendationExplanationService {
                 value(product.merchantDomain()),
                 value(product.title()),
                 plainText(product.detailDescription(), product.descriptionHtml()),
+                categories(product),
+                listValue(product.materials()),
+                listValue(product.certifications()),
+                listValue(product.collections()),
+                attributes(product),
+                imageAltText(product),
+                variantDetails(product),
                 price(product),
                 value(product.url()),
                 value(product.selectedVariantAvailable() == null ? product.available() : product.selectedVariantAvailable()),
@@ -408,6 +424,87 @@ public class UserProductRecommendationExplanationService {
     private String clothingFit(String clothingFit) {
         String label = UserClothingFit.labelFor(clothingFit);
         return label == null ? "not set" : label;
+    }
+
+    private String categories(MerchantSemanticProductResult product) {
+        String categories = safeList(product.categories()).stream()
+                .filter(category -> category != null)
+                .map(category -> compactJoin(category.value(), category.taxonomy()))
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.joining("; "));
+        return categories.isBlank() ? "not available" : categories;
+    }
+
+    private String attributes(MerchantSemanticProductResult product) {
+        String attributes = safeList(product.attributes()).stream()
+                .filter(attribute -> attribute != null)
+                .map(attribute -> compactJoin(attribute.name(), attribute.value()))
+                .filter(value -> !value.isBlank())
+                .limit(24)
+                .collect(Collectors.joining("; "));
+        return attributes.isBlank() ? "not available" : attributes;
+    }
+
+    private String imageAltText(MerchantSemanticProductResult product) {
+        String altText = Stream.concat(
+                        Stream.of(product.selectedVariantImageAltText()),
+                        Stream.concat(
+                                safeList(product.media()).stream()
+                                        .filter(media -> media != null)
+                                        .map(media -> media.altText()),
+                                safeList(product.detailImages()).stream()
+                                        .filter(image -> image != null)
+                                        .map(image -> image.altText())
+                        )
+                )
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .collect(Collectors.joining("; "));
+        return altText.isBlank() ? "not available" : altText;
+    }
+
+    private String variantDetails(MerchantSemanticProductResult product) {
+        String variantDetails = Stream.of(
+                        product.selectedVariantTitle(),
+                        safeList(product.selectedOptions()).stream()
+                                .filter(option -> option != null)
+                                .map(option -> compactJoin(option.name(), option.value()))
+                                .filter(value -> !value.isBlank())
+                                .collect(Collectors.joining("; ")),
+                        safeList(product.detailOptions()).stream()
+                                .filter(option -> option != null)
+                                .map(option -> optionDetails(option.name(), option.values()))
+                                .filter(value -> !value.isBlank())
+                                .collect(Collectors.joining("; "))
+                )
+                .filter(value -> value != null && !value.isBlank())
+                .collect(Collectors.joining("; "));
+        return variantDetails.isBlank() ? "not available" : variantDetails;
+    }
+
+    private String optionDetails(String name, List<String> values) {
+        String optionValues = safeList(values).stream()
+                .filter(value -> value != null && !value.isBlank())
+                .collect(Collectors.joining(", "));
+        if (optionValues.isBlank()) {
+            return "";
+        }
+        String optionName = value(name);
+        return optionName.isBlank() ? optionValues : "%s: %s".formatted(optionName, optionValues);
+    }
+
+    private String compactJoin(String first, String second) {
+        return Stream.of(first, second)
+                .map(this::value)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.joining(": "));
+    }
+
+    private String listValue(List<String> values) {
+        String value = safeList(values).stream()
+                .filter(item -> item != null && !item.isBlank())
+                .collect(Collectors.joining(", "));
+        return value.isBlank() ? "not available" : value;
     }
 
     private String price(MerchantSemanticProductResult product) {

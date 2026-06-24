@@ -114,7 +114,7 @@ user:
   product-search:
     search-version: v3
     query-parser-prompt-version: v2
-    explanation-prompt-version: v1
+    explanation-prompt-version: v2
     cache-ttl: 24h
     discovery-recent-search-limit: 5
     discovery-recent-product-limit: 12

@@ -414,7 +414,8 @@ public class UserProductSearchPersistenceService {
             UserSettingsResult settings
     ) {
         return userProductSearchCurationPolicy.visibleProducts(
-                userTasteRankingService.rank(products, tasteProfile, settings)
+                userTasteRankingService.rank(products, tasteProfile, settings),
+                settings
         );
     }
 
