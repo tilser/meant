@@ -15,7 +15,7 @@ public record UserProductRecommendationExplanationResult(
         String inventoryItemName
 ) {
 
-    private static final String FALLBACK_EXPLANATION = "Matched your search from merchant catalog data.";
+    private static final String FALLBACK_EXPLANATION = "This matches your search based on available product details.";
 
     public UserProductRecommendationExplanationResult(
             String productKey,

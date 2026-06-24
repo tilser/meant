@@ -39,6 +39,9 @@ import tools.jackson.databind.ObjectMapper;
 public class UserProductRecommendationExplanationService {
 
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
+    private static final Pattern INTERNAL_EXPLANATION_PATTERN =
+            Pattern.compile("\\b(?:agents?|curator|catalog[-\\s]+data|validation|verification)\\b",
+                    Pattern.CASE_INSENSITIVE);
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
     private static final String INTERESTS_CATEGORY = "interests";
     private static final String SYSTEM_PROMPT = """
@@ -46,6 +49,7 @@ public class UserProductRecommendationExplanationService {
             Explain why each product is meant for this specific user and query.
             Use only facts present in the product data, merchant data, query, and user filters.
             Do not invent certifications, materials, review claims, discounts, or shipping promises.
+            Write directly to the user. Do not mention internal agents, curator, catalog data, validation, or verification steps.
             Owned inventory signals are server-generated facts. Prefer complements and restocks; be explicit when a product looks duplicative.
             Filters in category interests are soft taste signals. Match them when the product clearly reflects the interest, but do not mark them missed just because the theme is absent.
             Clothing fit is a hard apparel and footwear audience constraint. Do not present opposite-audience or child-audience apparel as meant for the user.
@@ -408,6 +412,9 @@ public class UserProductRecommendationExplanationService {
             return "";
         }
         String trimmed = SPACE_PATTERN.matcher(value.trim()).replaceAll(" ");
+        if (INTERNAL_EXPLANATION_PATTERN.matcher(trimmed).find()) {
+            return "";
+        }
         return trimmed.length() <= 260 ? trimmed : trimmed.substring(0, 260).trim();
     }
 

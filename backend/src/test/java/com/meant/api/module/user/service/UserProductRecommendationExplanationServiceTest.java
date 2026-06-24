@@ -53,6 +53,9 @@ class UserProductRecommendationExplanationServiceTest {
         );
 
         assertThat(openRouterChatClient.model).isEqualTo("google/gemini-2.5-flash-lite");
+        assertThat(openRouterChatClient.systemPrompt)
+                .contains("Write directly to the user")
+                .contains("Do not mention internal agents, curator, catalog data, validation, or verification steps");
         assertThat(openRouterChatClient.schema.properties()).containsKey("products");
         assertThat(persistenceService.saved).hasSize(1);
         assertThat(result.get("merchant.example:tee").whyMeantForYou())
@@ -169,6 +172,38 @@ class UserProductRecommendationExplanationServiceTest {
     }
 
     @Test
+    void explainDropsGeneratedExplanationsWithInternalProcessLanguage() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
+        UserProductRecommendationExplanationService service = service(openRouterChatClient, persistenceService);
+        openRouterChatClient.response = """
+                {
+                  "products": [
+                    {
+                      "productKey": "merchant.example:tee",
+                      "whyMeantForYou": "Curator confirmed organic cotton from catalog data.",
+                      "matchedFilterIds": ["organic-cotton"],
+                      "missedFilterIds": []
+                    }
+                  ]
+                }
+                """;
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.explain(
+                UUID.randomUUID(),
+                "cotton tee",
+                "cotton tee",
+                "profile-hash",
+                settings(),
+                List.of(snapshot())
+        );
+
+        assertThat(persistenceService.saved).isEmpty();
+        assertThat(result.get("merchant.example:tee").whyMeantForYou())
+                .isEqualTo("This matches your search based on available product details.");
+    }
+
+    @Test
     void explainUsesCachedInventoryRelationshipWithoutCallingOpenRouter() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         FakeUserProductSearchPersistenceService persistenceService = new FakeUserProductSearchPersistenceService();
@@ -233,7 +268,8 @@ class UserProductRecommendationExplanationServiceTest {
         assertThat(result.get("merchant.example:socks"))
                 .satisfies(explanation -> {
                     assertThat(explanation.productHash()).isEqualTo("product-hash-socks");
-                    assertThat(explanation.whyMeantForYou()).isEqualTo("Matched your search from merchant catalog data.");
+                    assertThat(explanation.whyMeantForYou())
+                            .isEqualTo("This matches your search based on available product details.");
                     assertThat(explanation.matchedFilterIds()).isEmpty();
                     assertThat(explanation.missedFilterIds()).isEmpty();
                 });
@@ -273,7 +309,7 @@ class UserProductRecommendationExplanationServiceTest {
         assertThat(result).containsOnlyKeys("merchant.example:tee", "merchant.example:socks");
         assertThat(result.get("merchant.example:tee")).isEqualTo(cached);
         assertThat(result.get("merchant.example:socks").whyMeantForYou())
-                .isEqualTo("Matched your search from merchant catalog data.");
+                .isEqualTo("This matches your search based on available product details.");
         assertThat(persistenceService.saved).isEmpty();
     }
 
@@ -428,6 +464,7 @@ class UserProductRecommendationExplanationServiceTest {
         private boolean fail;
         private boolean called;
         private String model;
+        private String systemPrompt;
         private String userPrompt;
         private OpenRouterJsonSchemaDefinition schema;
 
@@ -449,6 +486,7 @@ class UserProductRecommendationExplanationServiceTest {
         ) {
             called = true;
             this.model = model;
+            this.systemPrompt = systemPrompt;
             this.userPrompt = userPrompt;
             this.schema = schema;
             if (fail) {

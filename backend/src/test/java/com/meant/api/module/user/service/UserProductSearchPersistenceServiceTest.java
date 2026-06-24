@@ -99,7 +99,8 @@ class UserProductSearchPersistenceServiceTest {
         assertThat(result.products().get(1))
                 .satisfies(product -> {
                     assertThat(product.productKey()).isEqualTo("merchant.example:socks");
-                    assertThat(product.whyMeantForYou()).isEqualTo("Matched your search from merchant catalog data.");
+                    assertThat(product.whyMeantForYou())
+                            .isEqualTo("This matches your search based on available product details.");
                     assertThat(product.matchedFilterIds()).isEmpty();
                     assertThat(product.missedFilterIds()).isEmpty();
                 });
@@ -300,7 +301,8 @@ class UserProductSearchPersistenceServiceTest {
         assertThat(result.get().products()).singleElement()
                 .satisfies(product -> {
                     assertThat(product.productKey()).isEqualTo("merchant.example:item-1");
-                    assertThat(product.whyMeantForYou()).isEqualTo("Matched your search from merchant catalog data.");
+                    assertThat(product.whyMeantForYou())
+                            .isEqualTo("This matches your search based on available product details.");
                 });
         assertThat(explanationsLoaded).isTrue();
         assertThat(matchesLoaded).isFalse();

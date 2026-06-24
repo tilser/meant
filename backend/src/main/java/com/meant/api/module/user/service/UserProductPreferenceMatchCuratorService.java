@@ -201,35 +201,90 @@ public class UserProductPreferenceMatchCuratorService {
             UserInventoryRecommendationSignal inventorySignal
     ) {
         if (inventorySignal != null && inventorySignal.relationship() == UserInventoryRecommendationRelationship.DUPLICATE) {
-            return limit("Curator flags this as close to %s, so compare before buying."
-                    .formatted(inventorySignal.inventoryItemName() == null ? "something you own" : inventorySignal.inventoryItemName()));
+            return limit("This looks close to %s, so compare before buying."
+                    .formatted(inventorySignal.inventoryItemName() == null
+                            ? "something you already own"
+                            : inventorySignal.inventoryItemName() + " you already own"));
         }
-        String matched = filterLabelList(matchedFilterIds, filtersById);
-        String missed = filterLabelList(missedFilterIds, filtersById);
+        String matched = preferenceSummary(matchedFilterIds, filtersById);
+        String missed = preferenceSummary(missedFilterIds, filtersById);
         if (!matched.isBlank() && !missed.isBlank()) {
-            return limit("Curator confirmed %s from catalog data; check %s before deciding."
+            return limit("This matches %s, but check whether it fits %s before deciding."
                     .formatted(matched, missed));
         }
         if (!matched.isBlank()) {
-            return limit("Curator confirmed %s from catalog data.".formatted(matched));
+            return limit("This matches %s.".formatted(matched));
         }
         if (!missed.isBlank()) {
-            return limit("Curator found a trade-off around %s in the catalog data.".formatted(missed));
+            return limit("Check whether this fits %s before deciding.".formatted(missed));
         }
-        return "Curator found no confirmed preference matches yet; review the catalog details and offers.";
+        return "No preference matches are confirmed yet; review the details and offers.";
     }
 
-    private String filterLabelList(
+    private String preferenceSummary(
             List<String> filterIds,
             Map<String, CuratorFilter> filtersById
     ) {
-        return filterIds.stream()
+        List<PreferenceTarget> targets = filterIds.stream()
                 .map(filtersById::get)
                 .filter(filter -> filter != null)
                 .map(CuratorFilter::label)
                 .filter(label -> label != null && !label.isBlank())
+                .map(UserProductPreferenceMatchCuratorService::preferenceTarget)
+                .filter(target -> !target.text().isBlank())
                 .limit(3)
-                .collect(Collectors.joining(", "));
+                .toList();
+        if (targets.isEmpty()) {
+            return "";
+        }
+        List<String> preferred = targets.stream()
+                .filter(target -> target.kind() == PreferenceTargetKind.PREFER)
+                .map(PreferenceTarget::text)
+                .toList();
+        List<String> avoided = targets.stream()
+                .filter(target -> target.kind() == PreferenceTargetKind.AVOID)
+                .map(PreferenceTarget::text)
+                .toList();
+        List<String> parts = Stream.of(
+                        preferred.isEmpty() ? "" : "for " + humanList(preferred),
+                        avoided.isEmpty() ? "" : "to avoid " + humanList(avoided)
+                )
+                .filter(part -> !part.isBlank())
+                .toList();
+        String preferenceWord = targets.size() == 1 ? "preference" : "preferences";
+        return "your " + preferenceWord + " " + humanList(parts);
+    }
+
+    private static PreferenceTarget preferenceTarget(String label) {
+        String normalized = SPACE_PATTERN.matcher(label.trim().toLowerCase(Locale.ROOT)).replaceAll(" ");
+        if (normalized.startsWith("no ")) {
+            return new PreferenceTarget(PreferenceTargetKind.AVOID, normalized.substring(3).trim());
+        }
+        if (normalized.startsWith("avoid ")) {
+            return new PreferenceTarget(PreferenceTargetKind.AVOID, normalized.substring(6).trim());
+        }
+        if (normalized.startsWith("without ")) {
+            return new PreferenceTarget(PreferenceTargetKind.AVOID, normalized.substring(8).trim());
+        }
+        if (normalized.startsWith("prefer ")) {
+            return new PreferenceTarget(PreferenceTargetKind.PREFER, normalized.substring(7).trim());
+        }
+        return new PreferenceTarget(PreferenceTargetKind.PREFER, normalized);
+    }
+
+    private static String humanList(List<String> items) {
+        if (items.isEmpty()) {
+            return "";
+        }
+        if (items.size() == 1) {
+            return items.getFirst();
+        }
+        if (items.size() == 2) {
+            return items.get(0) + " and " + items.get(1);
+        }
+        return String.join(", ", items.subList(0, items.size() - 1))
+                + ", and "
+                + items.getLast();
     }
 
     private String limit(String value) {
@@ -313,6 +368,17 @@ public class UserProductPreferenceMatchCuratorService {
         private String label() {
             return source.label();
         }
+    }
+
+    private enum PreferenceTargetKind {
+        PREFER,
+        AVOID
+    }
+
+    private record PreferenceTarget(
+            PreferenceTargetKind kind,
+            String text
+    ) {
     }
 
     private record ProductEvidence(

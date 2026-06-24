@@ -53,8 +53,8 @@ class UserProductPreferenceMatchCuratorServiceTest {
                 .containsExactly("organic-cotton", "highly-rated");
         assertThat(result.get(product.productKey()).missedFilterIds()).isEmpty();
         assertThat(result.get(product.productKey()).whyMeantForYou())
-                .contains("Organic cotton", "Strong reviews")
-                .doesNotContain("Crypto");
+                .isEqualTo("This matches your preferences for organic cotton and strong reviews.")
+                .doesNotContain("Crypto", "Curator", "catalog data");
     }
 
     @Test
@@ -87,7 +87,8 @@ class UserProductPreferenceMatchCuratorServiceTest {
 
         assertThat(result.get(product.productKey()).matchedFilterIds()).isEmpty();
         assertThat(result.get(product.productKey()).missedFilterIds()).containsExactly("no-polyester");
-        assertThat(result.get(product.productKey()).whyMeantForYou()).contains("No polyester");
+        assertThat(result.get(product.productKey()).whyMeantForYou())
+                .isEqualTo("Check whether this fits your preference to avoid polyester before deciding.");
     }
 
     @Test
@@ -119,7 +120,8 @@ class UserProductPreferenceMatchCuratorServiceTest {
         );
 
         assertThat(result.get(product.productKey()).matchedFilterIds()).containsExactly("organic");
-        assertThat(result.get(product.productKey()).whyMeantForYou()).contains("Organic");
+        assertThat(result.get(product.productKey()).whyMeantForYou())
+                .isEqualTo("This matches your preference for organic.");
     }
 
     @Test
