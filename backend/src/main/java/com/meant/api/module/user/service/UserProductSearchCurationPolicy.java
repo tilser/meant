@@ -19,6 +19,6 @@ public class UserProductSearchCurationPolicy {
     }
 
     private boolean isVisible(UserProductSearchProductResult product) {
-        return product.matchScore() >= MIN_VISIBLE_CURATOR_SCORE;
+        return product != null && product.matchScore() >= MIN_VISIBLE_CURATOR_SCORE;
     }
 }

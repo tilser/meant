@@ -38,7 +38,7 @@ public record CurateUserProductSearchCommand(
         UserTasteProfileResult tasteProfile,
 
         @NotNull
-        List<@NotNull UserProductSearchProductSnapshot> products,
+        List<@NotNull @Valid UserProductSearchProductSnapshot> products,
 
         @NotNull
         Instant now,

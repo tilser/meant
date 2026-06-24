@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 public class UserProductPreferenceMatchCuratorService {
 
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
+    private static final Pattern PUNCTUATION_PATTERN = Pattern.compile("[^\\p{L}\\p{N}\\s-]+");
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("[^a-z0-9]+");
     private static final int TAKE_LIMIT = 220;
@@ -266,11 +267,13 @@ public class UserProductPreferenceMatchCuratorService {
         if (value == null || value.isBlank()) {
             return "";
         }
-        return SPACE_PATTERN.matcher(Normalizer.normalize(value, Normalizer.Form.NFKC)
-                        .trim()
-                        .toLowerCase(Locale.ROOT)
-                        .replace('-', ' '))
-                .replaceAll(" ");
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFKC)
+                .trim()
+                .toLowerCase(Locale.ROOT);
+        String cleaned = PUNCTUATION_PATTERN.matcher(normalized)
+                .replaceAll(" ")
+                .replace('-', ' ');
+        return SPACE_PATTERN.matcher(cleaned).replaceAll(" ").trim();
     }
 
     private static List<String> tokens(String value) {

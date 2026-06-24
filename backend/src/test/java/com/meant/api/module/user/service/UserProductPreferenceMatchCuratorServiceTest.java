@@ -91,6 +91,38 @@ class UserProductPreferenceMatchCuratorServiceTest {
     }
 
     @Test
+    void matchesPreferenceEvidenceNextToPunctuation() {
+        UserProductSearchProductSnapshot product = snapshot(
+                "gots-socks",
+                "Crew Socks",
+                "Certified GOTS.",
+                List.of(),
+                null,
+                0
+        );
+        UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
+                product.productKey(),
+                product.productHash(),
+                "Organic certification.",
+                List.of(),
+                List.of(),
+                UserInventoryRecommendationRelationship.NONE,
+                null,
+                null
+        );
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.curate(
+                List.of(product),
+                settingsWithOrganic(),
+                Map.of(product.productKey(), explanation),
+                Map.of()
+        );
+
+        assertThat(result.get(product.productKey()).matchedFilterIds()).containsExactly("organic");
+        assertThat(result.get(product.productKey()).whyMeantForYou()).contains("Organic");
+    }
+
+    @Test
     void ignoresNullFilterLabelsAndCatalogElements() {
         UserProductSearchProductSnapshot product = snapshotWithNullableCatalog();
         UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
@@ -144,6 +176,21 @@ class UserProductPreferenceMatchCuratorServiceTest {
             int displayOrder
     ) {
         return new ShoppingFilterResult(id, label, description, category, polarity, displayOrder);
+    }
+
+    private UserSettingsResult settingsWithOrganic() {
+        return new UserSettingsResult(
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(filter("organic", "Organic", "Prefer organic certifications.", "materials", "prefer", 10)),
+                List.of(),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-20T10:00:00Z"),
+                Instant.parse("2026-06-20T10:00:00Z")
+        );
     }
 
     private UserSettingsResult settingsWithNullableLabel() {
