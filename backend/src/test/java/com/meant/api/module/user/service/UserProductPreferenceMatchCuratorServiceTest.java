@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
+import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -88,6 +90,31 @@ class UserProductPreferenceMatchCuratorServiceTest {
         assertThat(result.get(product.productKey()).whyMeantForYou()).contains("No polyester");
     }
 
+    @Test
+    void ignoresNullFilterLabelsAndCatalogElements() {
+        UserProductSearchProductSnapshot product = snapshotWithNullableCatalog();
+        UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
+                product.productKey(),
+                product.productHash(),
+                "Organic cotton match.",
+                List.of("organic-cotton"),
+                List.of(),
+                UserInventoryRecommendationRelationship.NONE,
+                null,
+                null
+        );
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.curate(
+                List.of(product),
+                settingsWithNullableLabel(),
+                Map.of(product.productKey(), explanation),
+                Map.of()
+        );
+
+        assertThat(result.get(product.productKey()).matchedFilterIds()).containsExactly("organic-cotton");
+        assertThat(result.get(product.productKey()).whyMeantForYou()).doesNotContain("null");
+    }
+
     private UserSettingsResult settings() {
         return new UserSettingsResult(
                 null,
@@ -117,6 +144,21 @@ class UserProductPreferenceMatchCuratorServiceTest {
             int displayOrder
     ) {
         return new ShoppingFilterResult(id, label, description, category, polarity, displayOrder);
+    }
+
+    private UserSettingsResult settingsWithNullableLabel() {
+        return new UserSettingsResult(
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(filter("organic-cotton", null, "Prefer certified organic cotton.", "materials", "prefer", 10)),
+                List.of(),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-20T10:00:00Z"),
+                Instant.parse("2026-06-20T10:00:00Z")
+        );
     }
 
     private UserProductSearchProductSnapshot snapshot(
@@ -181,6 +223,65 @@ class UserProductPreferenceMatchCuratorServiceTest {
         return new UserProductSearchProductSnapshot(
                 "merchant.example:" + productId,
                 "hash-" + productId,
+                product
+        );
+    }
+
+    private UserProductSearchProductSnapshot snapshotWithNullableCatalog() {
+        MerchantSemanticProductResult product = new MerchantSemanticProductResult(
+                UUID.randomUUID(),
+                "merchant.example",
+                "Merchant",
+                null,
+                1,
+                0.9d,
+                0.8d,
+                "nullable-catalog",
+                "Organic Cotton Socks",
+                null,
+                "https://merchant.example/nullable-catalog",
+                null,
+                1800L,
+                1800L,
+                "USD",
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                Arrays.asList(null, new ProductCatalogCategory("Socks", null)),
+                List.of(),
+                List.of("Organic cotton"),
+                List.of(),
+                List.of(),
+                Arrays.asList(null, new ProductCatalogAttribute("fabric", "Organic cotton")),
+                true,
+                null,
+                "Made with organic cotton.",
+                null,
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                false,
+                List.of(),
+                null,
+                null,
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                true,
+                1,
+                0.8d,
+                1
+        );
+        return new UserProductSearchProductSnapshot(
+                "merchant.example:nullable-catalog",
+                "hash-nullable-catalog",
                 product
         );
     }

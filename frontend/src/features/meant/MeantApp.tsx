@@ -3168,6 +3168,7 @@ function ProductGrid({
   const gridRef = useRef<HTMLDivElement | null>(null)
   const positionsRef = useRef<Map<ProductId, DOMRect>>(new Map())
   const timeoutsRef = useRef<number[]>([])
+  const rafsRef = useRef<number[]>([])
   const orderKey = products.map((product) => product.id).join('|')
 
   useLayoutEffect(() => {
@@ -3177,6 +3178,8 @@ function ProductGrid({
     }
     timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
     timeoutsRef.current = []
+    rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
+    rafsRef.current = []
 
     const previousPositions = positionsRef.current
     const nextPositions = new Map<ProductId, DOMRect>()
@@ -3203,8 +3206,8 @@ function ProductGrid({
       card.style.transition = 'none'
       card.style.transform = `translate(${deltaX}px, ${deltaY}px)`
       card.style.zIndex = '2'
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
+      const firstFrame = window.requestAnimationFrame(() => {
+        const secondFrame = window.requestAnimationFrame(() => {
           card.style.transition = ''
           card.style.transform = ''
           const timeout = window.setTimeout(() => {
@@ -3213,13 +3216,16 @@ function ProductGrid({
           }, 460)
           timeoutsRef.current.push(timeout)
         })
+        rafsRef.current.push(secondFrame)
       })
+      rafsRef.current.push(firstFrame)
     })
     positionsRef.current = nextPositions
   }, [orderKey])
 
   useEffect(() => () => {
     timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
+    rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
   }, [])
 
   return (

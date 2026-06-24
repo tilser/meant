@@ -113,8 +113,7 @@ public class UserProductPreferenceMatchCuratorService {
                 .filter(filtersById::containsKey)
                 .filter(filterId -> !matched.contains(filterId))
                 .filter(filterId -> supportsMiss(filtersById.get(filterId), evidence))
-                .collect(Collectors.toCollection(LinkedHashSet::new))
-                .stream()
+                .distinct()
                 .toList();
     }
 
@@ -246,6 +245,7 @@ public class UserProductPreferenceMatchCuratorService {
                 .map(filtersById::get)
                 .filter(filter -> filter != null)
                 .map(ShoppingFilterResult::label)
+                .filter(label -> label != null && !label.isBlank())
                 .limit(3)
                 .collect(Collectors.joining(", "));
     }
@@ -299,14 +299,18 @@ public class UserProductPreferenceMatchCuratorService {
                             plainText(product.detailDescription()),
                             product.merchantName(),
                             product.merchantDomain(),
-                            join(stream(product.categories()).map(ProductCatalogCategory::value)),
+                            join(stream(product.categories())
+                                    .filter(category -> category != null)
+                                    .map(ProductCatalogCategory::value)),
                             join(stream(product.certifications())),
                             join(stream(product.materials())),
                             join(stream(product.collections())),
-                            join(stream(product.attributes()).flatMap(attribute -> Stream.of(
-                                    attribute.name(),
-                                    attribute.value()
-                            )))
+                            join(stream(product.attributes())
+                                    .filter(attribute -> attribute != null)
+                                    .flatMap(attribute -> Stream.of(
+                                            attribute.name(),
+                                            attribute.value()
+                                    )))
                     )
                     .filter(value -> value != null && !value.isBlank())
                     .collect(Collectors.joining(" ")));
