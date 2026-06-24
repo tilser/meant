@@ -51,6 +51,7 @@ public class UserProductSearchPersistenceService {
     private final UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
     private final UserProductRecommendationFilterMatchRepository userProductRecommendationFilterMatchRepository;
     private final UserTasteRankingService userTasteRankingService;
+    private final UserProductSearchCurationPolicy userProductSearchCurationPolicy;
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
@@ -384,7 +385,9 @@ public class UserProductSearchPersistenceService {
             UserSettingsResult settings,
             List<UserProductSearchProductResult> products
     ) {
-        List<UserProductSearchProductResult> rankedProducts = userTasteRankingService.rank(products, tasteProfile, settings);
+        List<UserProductSearchProductResult> rankedProducts = userProductSearchCurationPolicy.visibleProducts(
+                userTasteRankingService.rank(products, tasteProfile, settings)
+        );
         int pageEnd = pageEnd(offset, limit);
         int toIndex = Math.min(pageEnd, rankedProducts.size());
         List<UserProductSearchProductResult> page = offset >= rankedProducts.size()

@@ -377,7 +377,7 @@ public class UserController {
     @PostMapping(value = "/me/product-searches:stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(
             summary = "Stream product search results for the current user",
-            description = "Streams product-search phases, catalog candidates, product enrichments, ranking updates, "
+            description = "Streams Discovery Agent catalog candidates, Meant Curator score and order updates, "
                     + "and final pagination metadata as soon as each piece is available."
     )
     public StreamingResponseBody streamSearchProducts(

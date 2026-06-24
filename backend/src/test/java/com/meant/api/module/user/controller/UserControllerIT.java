@@ -471,7 +471,7 @@ class UserControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void streamProductSearchesReturnsAgentProgressionAndDoneEvent() {
+    void streamProductSearchesReturnsDiscoveryThenCuratorProgressionAndDoneEvent() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         String query = "organic cotton tee";
@@ -500,27 +500,31 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body).isNotNull();
         assertThat(body).contains(
                 "event: phase",
-                "\"agent\":\"query\"",
-                "\"agent\":\"profile\"",
-                "\"agent\":\"catalog\"",
+                "\"agent\":\"discovery\"",
                 "event: product",
                 "\"label\":\"Product candidate found\"",
-                "\"agent\":\"taste\"",
-                "\"agent\":\"reasoning\"",
+                "\"agent\":\"curator\"",
                 "event: product_update",
-                "\"agent\":\"ranking\"",
+                "\"label\":\"Curator score updated\"",
                 "event: rank_update",
+                "\"label\":\"Curator order updated\"",
                 "event: done",
+                "\"label\":\"Curated results ready\"",
                 "\"title\":\"Organic Cotton Tee\"",
                 "\"cached\":false",
                 "\"hasMore\":false"
         );
-        assertBefore(body, "\"agent\":\"query\"", "\"agent\":\"profile\"");
-        assertBefore(body, "\"agent\":\"profile\"", "\"agent\":\"catalog\"");
-        assertBefore(body, "\"agent\":\"catalog\"", "event: product");
-        assertBefore(body, "event: product", "\"agent\":\"taste\"");
-        assertBefore(body, "\"agent\":\"taste\"", "\"agent\":\"reasoning\"");
-        assertBefore(body, "\"agent\":\"reasoning\"", "event: product_update");
+        assertThat(body).doesNotContain(
+                "\"agent\":\"query\"",
+                "\"agent\":\"profile\"",
+                "\"agent\":\"catalog\"",
+                "\"agent\":\"taste\"",
+                "\"agent\":\"reasoning\"",
+                "\"agent\":\"ranking\""
+        );
+        assertBefore(body, "\"agent\":\"discovery\"", "event: product");
+        assertBefore(body, "event: product", "\"agent\":\"curator\"");
+        assertBefore(body, "\"agent\":\"curator\"", "event: product_update");
         assertBefore(body, "event: product_update", "event: rank_update");
         assertBefore(body, "event: rank_update", "event: done");
     }
@@ -553,12 +557,12 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body).isNotNull();
         assertThat(body).contains(
                 "event: phase",
-                "\"agent\":\"catalog\"",
+                "\"agent\":\"discovery\"",
                 "event: error",
                 "\"agent\":\"search\"",
                 "\"message\":\"Product search failed. Please try again.\""
         );
-        assertBefore(body, "\"agent\":\"catalog\"", "event: error");
+        assertBefore(body, "\"agent\":\"discovery\"", "event: error");
     }
 
     @Test

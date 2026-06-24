@@ -53,6 +53,7 @@ class UserProductSearchPersistenceServiceTest {
                 unusedRepository(UserProductRecommendationExplanationRepository.class),
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
                 new UserTasteRankingService(),
+                new UserProductSearchCurationPolicy(),
                 new ObjectMapper()
         );
         UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
@@ -124,6 +125,7 @@ class UserProductSearchPersistenceServiceTest {
                 unusedRepository(UserProductRecommendationExplanationRepository.class),
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
                 new UserTasteRankingService(),
+                new UserProductSearchCurationPolicy(),
                 new ObjectMapper()
         );
         UserProductRecommendationExplanationResult teeExplanation = new UserProductRecommendationExplanationResult(
@@ -275,6 +277,7 @@ class UserProductSearchPersistenceServiceTest {
                 emptyExplanationRepository(),
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
                 new UserTasteRankingService(),
+                new UserProductSearchCurationPolicy(),
                 new ObjectMapper()
         );
 
@@ -372,6 +375,7 @@ class UserProductSearchPersistenceServiceTest {
                 explanationRepository(userId, items),
                 filterMatchRepository(),
                 new UserTasteRankingService(),
+                new UserProductSearchCurationPolicy(),
                 new ObjectMapper()
         );
     }

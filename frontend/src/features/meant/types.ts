@@ -22,7 +22,7 @@ export type DiscountType = 'percent' | 'fixed' | 'shipping'
 export type ClothingFit = 'none' | 'men' | 'women' | 'other'
 export type ProductAudience = 'men' | 'women' | 'other' | 'unisex'
 export type InventoryRelationship = 'NONE' | 'DUPLICATE' | 'COMPLEMENT' | 'RESTOCK'
-export type ProductAgentStage = 'candidate' | 'enriched' | 'ranked'
+export type ProductAgentStage = 'candidate' | 'curating' | 'curated' | 'enriched' | 'ranked'
 
 export interface Preference {
   id: PreferenceId

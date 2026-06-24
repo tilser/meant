@@ -5,17 +5,17 @@ import com.meant.api.module.merchant.service.MerchantSemanticProductSearchServic
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
+import com.meant.api.module.user.constant.UserProductSearchAgent;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
-import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
+import com.meant.api.module.user.service.command.CurateUserProductSearchCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.UpsertUserCommand;
-import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
+import com.meant.api.module.user.service.dto.UserProductSearchCuratorResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
-import com.meant.api.module.user.service.dto.UserProductSearchProductResult.RichCatalogData;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
@@ -44,12 +44,12 @@ public class UserProductSearchService {
     private final UserProductSearchQueryUnderstandingService userProductSearchQueryUnderstandingService;
     private final UserProductSearchCatalogInputBuilder userProductSearchCatalogInputBuilder;
     private final UserProductSearchHashService userProductSearchHashService;
-    private final UserProductRecommendationExplanationService userProductRecommendationExplanationService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
     private final UserProductSearchEventService userProductSearchEventService;
     private final UserInventoryService userInventoryService;
     private final UserTasteProfileService userTasteProfileService;
-    private final UserTasteRankingService userTasteRankingService;
+    private final UserProductSearchCuratorService userProductSearchCuratorService;
+    private final UserProductSearchProductResultMapper userProductSearchProductResultMapper;
     private final UserProductSearchProperties userProductSearchProperties;
     private final OpenRouterProperties openRouterProperties;
 
@@ -140,11 +140,17 @@ public class UserProductSearchService {
             throw UserException.forbidden("Product search user does not match authenticated user");
         }
 
-        eventConsumer.accept(UserProductSearchStreamEvent.phase("query", "Understanding your request"));
+        eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                UserProductSearchAgent.DISCOVERY.getValue(),
+                "Understanding your request"
+        ));
         String query = command.query().trim();
         UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
 
-        eventConsumer.accept(UserProductSearchStreamEvent.phase("profile", "Loading your shopping context"));
+        eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                UserProductSearchAgent.DISCOVERY.getValue(),
+                "Loading your shopping context"
+        ));
         UserSettingsResult settings = userSettingsService.get(upsertCommand);
         UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         UserProductSearchCatalogInput catalogInput =
@@ -181,13 +187,24 @@ public class UserProductSearchService {
                     )
                     .orElse(null);
             if (cached != null) {
-                eventConsumer.accept(UserProductSearchStreamEvent.phase("cache", "Restoring cached matches"));
+                eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                        UserProductSearchAgent.DISCOVERY.getValue(),
+                        "Restoring cached matches"
+                ));
+                eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                        UserProductSearchAgent.CURATOR.getValue(),
+                        "Restoring curator scores"
+                ));
                 cached.products().forEach(product -> eventConsumer.accept(
-                        UserProductSearchStreamEvent.productUpdate("cache", "Cached match ready", product)
+                        UserProductSearchStreamEvent.productUpdate(
+                                UserProductSearchAgent.CURATOR.getValue(),
+                                "Curator score restored",
+                                product
+                        )
                 ));
                 eventConsumer.accept(UserProductSearchStreamEvent.rankUpdate(
-                        "ranking",
-                        "Ordering cached matches",
+                        UserProductSearchAgent.CURATOR.getValue(),
+                        "Curator order restored",
                         cached.products()
                 ));
                 eventConsumer.accept(UserProductSearchStreamEvent.done(cached));
@@ -196,7 +213,10 @@ public class UserProductSearchService {
             }
         }
 
-        eventConsumer.accept(UserProductSearchStreamEvent.phase("catalog", "Searching merchant catalogs"));
+        eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                UserProductSearchAgent.DISCOVERY.getValue(),
+                "Searching merchant catalogs"
+        ));
         Map<String, UserProductSearchProductSnapshot> emittedCandidates = new LinkedHashMap<>();
         List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(
                 catalogInput,
@@ -209,7 +229,7 @@ public class UserProductSearchService {
                     }
                     if (emittedCandidates.putIfAbsent(candidate.productKey(), candidate) == null) {
                         eventConsumer.accept(UserProductSearchStreamEvent.product(
-                                "catalog",
+                                UserProductSearchAgent.DISCOVERY.getValue(),
                                 "Product candidate found",
                                 previewProductResult(candidate, now)
                         ));
@@ -218,33 +238,33 @@ public class UserProductSearchService {
         );
         List<UserProductSearchProductSnapshot> products = uniqueProducts(fetchedProducts);
 
-        eventConsumer.accept(UserProductSearchStreamEvent.phase("taste", "Checking inventory and taste signals"));
-        Map<String, UserInventoryRecommendationSignal> inventorySignals =
-                userInventoryService.recommendationSignals(command.userId(), products);
-
-        eventConsumer.accept(UserProductSearchStreamEvent.phase("reasoning", "Writing fit explanations"));
-        Map<String, UserProductRecommendationExplanationResult> explanations =
-                userProductRecommendationExplanationService.explain(
-                        command.userId(),
-                        query,
-                        normalizedQuery,
-                        profileHash,
-                        settings,
-                        products,
-                        inventorySignals
-                );
-        List<UserProductSearchProductResult> productResults =
-                explainedProductResults(products, explanations, inventorySignals, now);
-        productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
-        List<UserProductSearchProductResult> pageResults = page(productResults, offset, limit);
-        pageResults.forEach(product -> eventConsumer.accept(UserProductSearchStreamEvent.productUpdate(
-                "reasoning",
-                "Product fit updated",
+        eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                UserProductSearchAgent.CURATOR.getValue(),
+                "Checking what is meant for you"
+        ));
+        UserProductSearchCuratorResult curated = userProductSearchCuratorService.curate(new CurateUserProductSearchCommand(
+                command.userId(),
+                query,
+                normalizedQuery,
+                profileHash,
+                settings,
+                tasteProfile,
+                products,
+                now,
+                offset,
+                limit
+        ));
+        curated.pageProducts().forEach(product -> eventConsumer.accept(UserProductSearchStreamEvent.productUpdate(
+                UserProductSearchAgent.CURATOR.getValue(),
+                "Curator score updated",
                 product
         )));
 
-        eventConsumer.accept(UserProductSearchStreamEvent.phase("ranking", "Ordering by relevance"));
-        eventConsumer.accept(UserProductSearchStreamEvent.rankUpdate("ranking", "Relevance order updated", pageResults));
+        eventConsumer.accept(UserProductSearchStreamEvent.rankUpdate(
+                UserProductSearchAgent.CURATOR.getValue(),
+                "Curator order updated",
+                curated.pageProducts()
+        ));
 
         boolean hasMoreProducts = hasMoreProducts(fetchedProducts.size(), fetchLimit);
         UserProductSearchResult result = command.merchantId() == null
@@ -257,7 +277,7 @@ public class UserProductSearchService {
                         now,
                         now.plus(userProductSearchProperties.cacheTtl()),
                         products,
-                        explanations,
+                        curated.explanations(),
                         tasteProfile,
                         settings,
                         hasMoreProducts,
@@ -273,7 +293,7 @@ public class UserProductSearchService {
                         limit,
                         hasMoreProducts ? pageEnd(offset, limit) : null,
                         hasMoreProducts,
-                        pageResults
+                        curated.pageProducts()
                 );
         eventConsumer.accept(UserProductSearchStreamEvent.done(result));
         recordSearch(command, queryIntent, result, now);
@@ -310,22 +330,19 @@ public class UserProductSearchService {
     ) {
         List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(catalogInput, merchantId, fetchLimit);
         List<UserProductSearchProductSnapshot> products = uniqueProducts(fetchedProducts);
-        Map<String, UserInventoryRecommendationSignal> inventorySignals =
-                userInventoryService.recommendationSignals(userId, products);
         Instant now = Instant.now();
-        Map<String, UserProductRecommendationExplanationResult> explanations =
-                userProductRecommendationExplanationService.explain(
-                        userId,
-                        query,
-                        normalizedQuery,
-                        profileHash,
-                        settings,
-                        products,
-                        inventorySignals
-                );
-        List<UserProductSearchProductResult> productResults =
-                explainedProductResults(products, explanations, inventorySignals, now);
-        productResults = userTasteRankingService.rank(productResults, tasteProfile, settings);
+        UserProductSearchCuratorResult curated = userProductSearchCuratorService.curate(new CurateUserProductSearchCommand(
+                userId,
+                query,
+                normalizedQuery,
+                profileHash,
+                settings,
+                tasteProfile,
+                products,
+                now,
+                offset,
+                limit
+        ));
         boolean hasMore = hasMoreProducts(fetchedProducts.size(), fetchLimit);
         return new UserProductSearchResult(
                 query,
@@ -336,7 +353,7 @@ public class UserProductSearchService {
                 limit,
                 hasMore ? pageEnd(offset, limit) : null,
                 hasMore,
-                page(productResults, offset, limit)
+                curated.pageProducts()
         );
     }
 
@@ -355,18 +372,18 @@ public class UserProductSearchService {
     ) {
         List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(catalogInput, null, fetchLimit);
         List<UserProductSearchProductSnapshot> products = uniqueProducts(fetchedProducts);
-        Map<String, UserInventoryRecommendationSignal> inventorySignals =
-                userInventoryService.recommendationSignals(userId, products);
-        Map<String, UserProductRecommendationExplanationResult> explanations =
-                userProductRecommendationExplanationService.explain(
-                        userId,
-                        query,
-                        normalizedQuery,
-                        profileHash,
-                        settings,
-                        products,
-                        inventorySignals
-                );
+        UserProductSearchCuratorResult curated = userProductSearchCuratorService.curate(new CurateUserProductSearchCommand(
+                userId,
+                query,
+                normalizedQuery,
+                profileHash,
+                settings,
+                tasteProfile,
+                products,
+                now,
+                offset,
+                limit
+        ));
         return userProductSearchPersistenceService.saveSearch(
                 userId,
                 query,
@@ -376,7 +393,7 @@ public class UserProductSearchService {
                 now,
                 now.plus(userProductSearchProperties.cacheTtl()),
                 products,
-                explanations,
+                curated.explanations(),
                 tasteProfile,
                 settings,
                 hasMoreProducts(fetchedProducts.size(), fetchLimit),
@@ -429,45 +446,11 @@ public class UserProductSearchService {
         );
     }
 
-    private List<UserProductSearchProductResult> explainedProductResults(
-            List<UserProductSearchProductSnapshot> products,
-            Map<String, UserProductRecommendationExplanationResult> explanations,
-            Map<String, UserInventoryRecommendationSignal> inventorySignals,
-            Instant now
-    ) {
-        Map<String, UserInventoryRecommendationSignal> safeInventorySignals =
-                inventorySignals == null ? Map.of() : inventorySignals;
-        Map<String, UserProductRecommendationExplanationResult> safeExplanations =
-                explanations == null ? Map.of() : explanations;
-        return products.stream()
-                .map(product -> productResult(
-                        product,
-                        explanationFor(product, safeExplanations, safeInventorySignals),
-                        now
-                ))
-                .toList();
-    }
-
-    private UserProductRecommendationExplanationResult explanationFor(
-            UserProductSearchProductSnapshot product,
-            Map<String, UserProductRecommendationExplanationResult> explanations,
-            Map<String, UserInventoryRecommendationSignal> inventorySignals
-    ) {
-        UserProductRecommendationExplanationResult explanation = explanations.get(product.productKey());
-        return explanation == null
-                ? UserProductRecommendationExplanationResult.fallback(
-                        product.productKey(),
-                        product.productHash(),
-                        inventorySignals.get(product.productKey())
-                )
-                : explanation;
-    }
-
     private UserProductSearchProductResult previewProductResult(
             UserProductSearchProductSnapshot product,
             Instant now
     ) {
-        return productResult(
+        return userProductSearchProductResultMapper.from(
                 product,
                 new UserProductRecommendationExplanationResult(
                         product.productKey(),
@@ -478,40 +461,6 @@ public class UserProductSearchService {
                 ),
                 now
         );
-    }
-
-    private UserProductSearchProductResult productResult(
-            UserProductSearchProductSnapshot product,
-            UserProductRecommendationExplanationResult explanation,
-            Instant now
-    ) {
-        return UserProductSearchProductResult.from(
-                UserProductSearchResultItem.from(
-                        UUID.randomUUID(),
-                        product.productKey(),
-                        product.productHash(),
-                        product.product(),
-                        now
-                ),
-                explanation,
-                richCatalogData(product.product())
-        );
-    }
-
-    private RichCatalogData richCatalogData(MerchantSemanticProductResult product) {
-        return new RichCatalogData(
-                safeList(product.media()),
-                safeList(product.categories()),
-                safeList(product.certifications()),
-                safeList(product.materials()),
-                safeList(product.skus()),
-                safeList(product.collections()),
-                safeList(product.attributes())
-        );
-    }
-
-    private <T> List<T> safeList(List<T> values) {
-        return values == null ? List.of() : values;
     }
 
     private List<UserProductSearchProductSnapshot> uniqueProducts(
@@ -542,15 +491,6 @@ public class UserProductSearchService {
 
     private boolean hasMoreProducts(int productCount, int fetchLimit) {
         return fetchLimit < UserProductSearchPagination.MAX_RESULT_WINDOW && productCount >= fetchLimit;
-    }
-
-    private List<UserProductSearchProductResult> page(
-            List<UserProductSearchProductResult> products,
-            int offset,
-            int limit
-    ) {
-        int toIndex = Math.min(pageEnd(offset, limit), products.size());
-        return offset >= products.size() ? List.of() : products.subList(offset, toIndex);
     }
 
     private int pageEnd(int offset, int limit) {

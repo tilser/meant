@@ -464,7 +464,15 @@ class UserProductRecommendationExplanationServiceTest {
         private List<UserProductRecommendationExplanationResult> saved = List.of();
 
         FakeUserProductSearchPersistenceService() {
-            super(null, null, null, null, new UserTasteRankingService(), new ObjectMapper());
+            super(
+                    null,
+                    null,
+                    null,
+                    null,
+                    new UserTasteRankingService(),
+                    new UserProductSearchCurationPolicy(),
+                    new ObjectMapper()
+            );
         }
 
         @Override

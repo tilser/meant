@@ -10,6 +10,7 @@ import {
   type TouchEvent as ReactTouchEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -797,8 +798,7 @@ function productFromSearchResult(
   const ratingScore = normalizeRatingScore(product.ratingScore)
   const reviewCount = Math.max(0, product.reviewCount ?? 0)
   const candidate = agentStage === 'candidate'
-  const note = candidate ? 'Assessing fit for your request.' : product.whyMeantForYou
-  return {
+  const baseProduct: Product = {
     id: product.productKey,
     productHash: product.productHash,
     name: product.title,
@@ -817,15 +817,13 @@ function productFromSearchResult(
     merchants: 1,
     satisfies: product.matchedFilterIds,
     misses: product.missedFilterIds,
-    note,
-    pros: product.matchedFilterIds.length > 0
-      ? product.matchedFilterIds.map((id) => `Matches ${prefLabel(preferences, id).toLowerCase()}`)
-      : [candidate ? 'Catalog candidate' : detail || 'Ranked highly for your search'],
-    cons: product.missedFilterIds.map((id) => `May miss ${prefLabel(preferences, id).toLowerCase()}`),
+    note: product.whyMeantForYou || detail,
+    pros: [],
+    cons: [],
     review: {
       score: ratingScore,
       count: reviewCount,
-      insight: candidate ? 'Review signals pending.' : detail || product.whyMeantForYou,
+      insight: searchProductReviewInsight(candidate, ratingScore, reviewCount),
     },
     media,
     catalogCategories,
@@ -856,6 +854,99 @@ function productFromSearchResult(
     agentStage,
     agentUpdatedAt: agentStage ? Date.now() : undefined,
   }
+  return {
+    ...baseProduct,
+    note: productCuratedTake(baseProduct, preferences),
+    pros: productCuratedAdvantages(baseProduct, preferences),
+    cons: productCuratedTradeoffs(baseProduct, preferences),
+  }
+}
+
+function preferenceLabels(ids: readonly PreferenceId[], preferences: readonly Preference[]): string[] {
+  return ids
+    .map((id) => prefLabel(preferences, id))
+    .filter(Boolean)
+}
+
+function compactLabelList(labels: readonly string[], limit = 3): string {
+  return labels.slice(0, limit).join(', ')
+}
+
+function lowerLabel(label: string): string {
+  return label.trim().toLowerCase()
+}
+
+function productCuratedTake(product: Product, preferences: readonly Preference[]): string {
+  if (product.agentStage === 'candidate') {
+    return 'Meant Curator is checking catalog facts and your preferences.'
+  }
+  if (product.inventoryRelationship === 'DUPLICATE') {
+    return `Curator flags this as close to ${product.inventoryItemName ?? 'something you own'}, so compare before buying.`
+  }
+  const matched = preferenceLabels(product.satisfies, preferences)
+  const missed = preferenceLabels(product.misses, preferences)
+  if (matched.length > 0 && missed.length > 0) {
+    return `Curator confirmed ${compactLabelList(matched)} from catalog data; check ${compactLabelList(missed)} before deciding.`
+  }
+  if (matched.length > 0) {
+    return `Curator confirmed ${compactLabelList(matched)} from catalog data.`
+  }
+  if (missed.length > 0) {
+    return `Curator found a trade-off around ${compactLabelList(missed)} in the catalog data.`
+  }
+  return 'Curator found no confirmed preference matches yet; review the catalog details and offers.'
+}
+
+function productCuratedAdvantages(product: Product, preferences: readonly Preference[]): string[] {
+  const advantages = preferenceLabels(product.satisfies, preferences)
+    .map((label) => `Confirmed ${lowerLabel(label)} from catalog data`)
+  if (product.review.score !== null && product.review.count > 0) {
+    advantages.push(`Rated ${product.review.score.toFixed(1)} out of 5 from ${product.review.count.toLocaleString()} reviews`)
+  }
+  product.certifications?.slice(0, 2).forEach((certification) => {
+    advantages.push(`Catalog lists ${certification}`)
+  })
+  if (advantages.length === 0 && product.materials && product.materials.length > 0) {
+    advantages.push(`Catalog lists ${product.materials[0]}`)
+  }
+  if (advantages.length === 0) {
+    advantages.push(product.agentStage === 'candidate'
+      ? 'Curator is checking this catalog candidate'
+      : 'No confirmed preference advantages yet')
+  }
+  return Array.from(new Set(advantages))
+}
+
+function productCuratedTradeoffs(product: Product, preferences: readonly Preference[]): string[] {
+  const tradeoffs = preferenceLabels(product.misses, preferences)
+    .map((label) => `Check ${lowerLabel(label)} before deciding`)
+  if (product.inventoryRelationship === 'DUPLICATE') {
+    tradeoffs.push(`Similar to ${product.inventoryItemName ?? 'something you already own'}`)
+  }
+  if (product.offers.every((offer) => offer.available === false)) {
+    tradeoffs.push('Current offers are marked unavailable')
+  }
+  if (tradeoffs.length === 0) {
+    tradeoffs.push('No curator trade-offs found in the available data')
+  }
+  return Array.from(new Set(tradeoffs))
+}
+
+function searchProductReviewInsight(
+  candidate: boolean,
+  ratingScore: number | null,
+  reviewCount: number,
+): string {
+  if (candidate) {
+    return 'Review signals pending.'
+  }
+  if (reviewCount <= 0) {
+    return 'No review data available from this catalog result.'
+  }
+  if (ratingScore === null) {
+    return 'Review count is available, but no rating summary has been fetched yet.'
+  }
+  return 'Rating data is available; no review-summary agent has run yet.'
 }
 
 function assistantMessageFromProfile(
@@ -912,8 +1003,11 @@ function askConversationDateLabel(updatedAt: string): string {
   }).format(date)
 }
 
-function savedProductFromProfile(product: UserSavedProductProfile): Product {
-  return {
+function savedProductFromProfile(
+  product: UserSavedProductProfile,
+  preferences: readonly Preference[] = [],
+): Product {
+  const snapshot: Product = {
     id: product.id,
     productHash: product.productHash,
     name: product.name,
@@ -936,6 +1030,14 @@ function savedProductFromProfile(product: UserSavedProductProfile): Product {
     needs: product.needs ? product.needs as Product['needs'] : undefined,
     provides: (product.provides?.length ?? 0) > 0 ? product.provides as Product['provides'] : undefined,
   }
+  return preferences.length === 0
+    ? snapshot
+    : {
+        ...snapshot,
+        note: productCuratedTake(snapshot, preferences),
+        pros: productCuratedAdvantages(snapshot, preferences),
+        cons: productCuratedTradeoffs(snapshot, preferences),
+      }
 }
 
 function searchSuggestionFromPopular(search: UserPopularProductSearchProfile): SearchSuggestion {
@@ -1275,22 +1377,9 @@ function appendProductSnapshots(products: Product[], nextProducts: readonly Prod
   return merged
 }
 
-function orderProductSnapshots(products: Product[], orderedProducts: readonly Product[]): Product[] {
-  const orderedIds = new Set(orderedProducts.map((product) => product.id))
-  return [
-    ...orderedProducts,
-    ...products.filter((product) => !orderedIds.has(product.id)),
-  ]
-}
-
 const PRODUCT_SEARCH_AGENT_NAMES: Record<string, string> = {
-  query: 'Query agent',
-  profile: 'Profile agent',
-  catalog: 'Catalog agent',
-  taste: 'Taste agent',
-  reasoning: 'Reasoning agent',
-  ranking: 'Ranking agent',
-  cache: 'Cache agent',
+  discovery: 'Discovery agent',
+  curator: 'Meant Curator agent',
   search: 'Search agent',
 }
 
@@ -1319,6 +1408,21 @@ function upsertAgentActivity(
     return [...activities, next]
   }
   return activities.map((activity, index) => index === existing ? next : activity)
+}
+
+function advanceAgentActivity(
+  activities: readonly AgentActivity[],
+  event: Pick<UserProductSearchStreamEventProfile, 'agent' | 'label'>,
+): AgentActivity[] {
+  const agent = event.agent ?? 'search'
+  return upsertAgentActivity(
+    activities.map((activity) =>
+      activity.agent !== agent && activity.state === 'active'
+        ? { ...activity, state: 'done' }
+        : activity
+    ),
+    event,
+  )
 }
 
 function normalizedMerchantName(value: string | null | undefined): string {
@@ -2997,6 +3101,21 @@ function ProductReviewSummary({ product }: Readonly<{ product: Product }>) {
   )
 }
 
+function ProductCuratorScore({ product }: Readonly<{ product: Product }>) {
+  const pending = product.agentStage === 'candidate'
+  return (
+    <div className={`mt-curator-score ${pending ? 'pending' : 'ready'}`}>
+      <SparkMark size={11} />
+      <span>{pending ? 'Curator reviewing' : 'Curator score'}</span>
+      {pending ? null : (
+        <strong className="mt-mono" key={product.match}>
+          {product.match}
+        </strong>
+      )}
+    </div>
+  )
+}
+
 function catalogBadgeLabels(product: Product): string[] {
   const values = [
     ...(product.certifications ?? []),
@@ -3032,6 +3151,97 @@ function mediaSummary(product: Product): string | null {
   ].filter(Boolean).join(' · ') || `${media.length} media`
 }
 
+function ProductGrid({
+  products,
+  deliveryLocations,
+  preferences,
+  onOpen,
+  savedSet,
+  savePendingSet,
+  onToggleSave,
+  onDismiss,
+}: Readonly<{
+  products: readonly Product[]
+  deliveryLocations: readonly UserLocation[]
+  preferences: readonly Preference[]
+} & ProductOpenProps & ProductSaveProps>) {
+  const gridRef = useRef<HTMLDivElement | null>(null)
+  const positionsRef = useRef<Map<ProductId, DOMRect>>(new Map())
+  const timeoutsRef = useRef<number[]>([])
+  const orderKey = products.map((product) => product.id).join('|')
+
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid) {
+      return
+    }
+    timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
+    timeoutsRef.current = []
+
+    const previousPositions = positionsRef.current
+    const nextPositions = new Map<ProductId, DOMRect>()
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
+    cards.forEach((card) => {
+      card.removeAttribute('data-reordering')
+      const productId = card.dataset.productId
+      if (!productId) {
+        return
+      }
+      const nextRect = card.getBoundingClientRect()
+      nextPositions.set(productId, nextRect)
+      const previousRect = previousPositions.get(productId)
+      if (!previousRect) {
+        return
+      }
+      const deltaX = previousRect.left - nextRect.left
+      const deltaY = previousRect.top - nextRect.top
+      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+        return
+      }
+
+      card.dataset.reordering = 'true'
+      card.style.transition = 'none'
+      card.style.transform = `translate(${deltaX}px, ${deltaY}px)`
+      card.style.zIndex = '2'
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          card.style.transition = ''
+          card.style.transform = ''
+          const timeout = window.setTimeout(() => {
+            card.removeAttribute('data-reordering')
+            card.style.zIndex = ''
+          }, 460)
+          timeoutsRef.current.push(timeout)
+        })
+      })
+    })
+    positionsRef.current = nextPositions
+  }, [orderKey])
+
+  useEffect(() => () => {
+    timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
+  }, [])
+
+  return (
+    <div className="mt-grid" ref={gridRef}>
+      {products.map((product, index) => (
+        <ProductCard
+          key={product.id}
+          product={product}
+          index={index}
+          deliveryLocations={deliveryLocations}
+          preferences={preferences}
+          onOpen={onOpen}
+          savedSet={savedSet}
+          savePendingSet={savePendingSet}
+          onToggleSave={onToggleSave}
+          onDismiss={onDismiss}
+        />
+      ))}
+    </div>
+  )
+}
+
 function ProductCard({
   product,
   index,
@@ -3062,6 +3272,7 @@ function ProductCard({
   return (
     <div
       className={`mt-card mt-card-in mt-card-live-${liveStage}`}
+      data-product-id={product.id}
       role="button"
       tabIndex={0}
       onClick={open}
@@ -3107,6 +3318,7 @@ function ProductCard({
       <div className="mt-card-body">
         <div className="mt-mono mt-card-brand">{product.brand}</div>
         <InventorySignalBadge product={product} compact />
+        <ProductCuratorScore product={product} />
         <div className="mt-card-name">{product.name}</div>
         <div className="mt-chips">
           {product.satisfies.slice(0, 3).map((id) => (
@@ -3625,7 +3837,7 @@ function FeedView({
     : waitingForPopularSearches
       ? 'Loading popular searches'
       : 'Searches run across supported merchants'
-  const showAgentActivity = agentActivities.length > 0 && (loading || products.some((product) => product.agentStage === 'candidate' || product.agentStage === 'enriched'))
+  const showAgentActivity = agentActivities.length > 0 && (loading || products.some((product) => product.agentStage === 'candidate' || product.agentStage === 'curating'))
 
   return (
     <main className="mt-feed">
@@ -3704,22 +3916,16 @@ function FeedView({
         />
       ) : products.length > 0 ? (
         <>
-          <div className="mt-grid">
-            {products.map((product, index) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                index={index}
-                deliveryLocations={deliveryLocations}
-                preferences={preferences}
-                onOpen={onOpen}
-                savedSet={savedSet}
-                savePendingSet={savePendingSet}
-                onToggleSave={onToggleSave}
-                onDismiss={onDismiss}
-              />
-            ))}
-          </div>
+          <ProductGrid
+            products={products}
+            deliveryLocations={deliveryLocations}
+            preferences={preferences}
+            onOpen={onOpen}
+            savedSet={savedSet}
+            savePendingSet={savePendingSet}
+            onToggleSave={onToggleSave}
+            onDismiss={onDismiss}
+          />
           {!preSearch && hasMore ? (
             <div className="mt-load-more">
               <button
@@ -3903,6 +4109,13 @@ function ProductModal({
     (product.skus?.length ?? 0) > 0 ||
     (product.catalogAttributes?.length ?? 0) > 0 ||
     Boolean(mediaInfo)
+  const curatorTake = productCuratedTake(product, preferences)
+  const curatorAdvantages = productCuratedAdvantages(product, preferences)
+  const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
+  const hasPreferenceMatches = product.satisfies.length > 0 || product.misses.length > 0
+  const reviewInsight = product.review.count > 0
+    ? product.review.insight || 'Rating data is available; no review-summary agent has run yet.'
+    : 'No review data available from this catalog result.'
   const showThumbnailPage = (nextPage: number) => {
     const page = Math.max(0, Math.min(nextPage, thumbnailPageCount - 1))
     const pageMedia = modalMedia.slice(
@@ -4160,19 +4373,23 @@ function ProductModal({
           <div className="mt-modal-right">
             <div className="mt-drawer-note">
               <span className="mt-note-key">Meant's take</span>
-              {product.note}
+              {curatorTake}
             </div>
 
             <section className="mt-block">
               <div className="mt-block-label mt-mono">Preference match</div>
-              <div className="mt-chips">
-                {product.satisfies.map((id) => (
-                  <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" />
-                ))}
-                {product.misses.map((id) => (
-                  <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" />
-                ))}
-              </div>
+              {hasPreferenceMatches ? (
+                <div className="mt-chips">
+                  {product.satisfies.map((id) => (
+                    <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" />
+                  ))}
+                  {product.misses.map((id) => (
+                    <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" />
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-mono mt-pref-empty-inline">No confirmed preference matches yet</div>
+              )}
             </section>
 
             <section className="mt-block">
@@ -4180,7 +4397,7 @@ function ProductModal({
                 <div>
                   <div className="mt-block-label mt-mono">Advantages</div>
                   <ul className="mt-list mt-list-pro">
-                    {product.pros.map((pro) => (
+                    {curatorAdvantages.map((pro) => (
                       <li key={pro}>{pro}</li>
                     ))}
                   </ul>
@@ -4188,7 +4405,7 @@ function ProductModal({
                 <div>
                   <div className="mt-block-label mt-mono">Trade-offs</div>
                   <ul className="mt-list mt-list-con">
-                    {product.cons.map((con) => (
+                    {curatorTradeoffs.map((con) => (
                       <li key={con}>{con}</li>
                     ))}
                   </ul>
@@ -4216,7 +4433,7 @@ function ProductModal({
                   <span className="mt-mono mt-reviews-empty">No review data</span>
                 )}
               </div>
-              <p className="mt-reviews-insight">{product.review.insight}</p>
+              <p className="mt-reviews-insight">{reviewInsight}</p>
             </section>
 
             {hasCatalogDetails ? (
@@ -8291,7 +8508,9 @@ export function MeantApp() {
     getProductDiscovery()
       .then((discovery) => {
         if (!active) return
-        const snapshots = discovery.savedProducts.map(savedProductFromProfile)
+        const snapshots = discovery.savedProducts.map((product) =>
+          savedProductFromProfile(product, allPreferencesRef.current),
+        )
         const recentSnapshots = discovery.recentProducts.map((product) =>
           productFromSearchResult(product, allPreferencesRef.current),
         )
@@ -8434,7 +8653,7 @@ export function MeantApp() {
     setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
     void saveUserProduct(savedProductInput(product))
       .then((savedProduct) => {
-        const snapshot = savedProductFromProfile(savedProduct)
+        const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         setSavedProducts((current) => upsertProductSnapshot(current, snapshot))
         setSavedIds((current) => current.includes(snapshot.id) ? current : [snapshot.id, ...current])
         void refreshTasteProfile()
@@ -9038,21 +9257,26 @@ export function MeantApp() {
           if (searchRequestRef.current !== requestId) {
             return
           }
-          setProductSearchActivities((current) => upsertAgentActivity(current, event))
+          setProductSearchActivities((current) => advanceAgentActivity(current, event))
         },
         onProduct: (event) => {
           upsertStreamProduct(event, 'candidate')
         },
         onProductUpdate: (event) => {
-          upsertStreamProduct(event, 'enriched')
+          upsertStreamProduct(event, 'curating')
         },
         onRankUpdate: (event) => {
           if (searchRequestRef.current !== requestId) {
             return
           }
-          const products = orderedStreamProducts(event, 'ranked')
+          const products = orderedStreamProducts(event, 'curated')
           setSearchResults((current) =>
-            append ? appendProductSnapshots(current, products) : orderProductSnapshots(current, products)
+            append
+              ? appendProductSnapshots(
+                  current.filter((product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating'),
+                  products,
+                )
+              : products
           )
           setRemoteProducts((current) => appendProductSnapshots(current, products))
           setProductSearchActivities((current) => upsertAgentActivity(current, event))
@@ -9061,8 +9285,15 @@ export function MeantApp() {
           if (searchRequestRef.current !== requestId) {
             return
           }
-          const products = orderedStreamProducts(event, 'ranked')
-          setSearchResults((current) => append ? appendProductSnapshots(current, products) : products)
+          const products = orderedStreamProducts(event, 'curated')
+          setSearchResults((current) =>
+            append
+              ? appendProductSnapshots(
+                  current.filter((product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating'),
+                  products,
+                )
+              : products
+          )
           setRemoteProducts((current) => appendProductSnapshots(current, products))
           setSearchHasMore(Boolean(event.hasMore))
           setSearchNextOffset(event.nextOffset)

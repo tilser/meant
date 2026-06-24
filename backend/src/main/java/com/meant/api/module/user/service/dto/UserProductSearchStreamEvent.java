@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.dto;
 
+import com.meant.api.module.user.constant.UserProductSearchAgent;
 import java.util.List;
 
 public record UserProductSearchStreamEvent(
@@ -119,8 +120,8 @@ public record UserProductSearchStreamEvent(
     public static UserProductSearchStreamEvent done(UserProductSearchResult result) {
         return new UserProductSearchStreamEvent(
                 "done",
-                "ranking",
-                "Results ready",
+                UserProductSearchAgent.CURATOR.getValue(),
+                "Curated results ready",
                 null,
                 null,
                 result.products(),
@@ -139,7 +140,7 @@ public record UserProductSearchStreamEvent(
     public static UserProductSearchStreamEvent error(String message) {
         return new UserProductSearchStreamEvent(
                 "error",
-                "search",
+                UserProductSearchAgent.SEARCH.getValue(),
                 "Search failed",
                 null,
                 null,
