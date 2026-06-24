@@ -12,6 +12,7 @@ import java.text.Normalizer;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -267,7 +268,7 @@ public class UserProductPreferenceMatchCuratorService {
         }
         return SPACE_PATTERN.matcher(Normalizer.normalize(value, Normalizer.Form.NFKC)
                         .trim()
-                        .toLowerCase()
+                        .toLowerCase(Locale.ROOT)
                         .replace('-', ' '))
                 .replaceAll(" ");
     }

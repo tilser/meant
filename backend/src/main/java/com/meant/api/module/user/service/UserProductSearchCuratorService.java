@@ -89,7 +89,7 @@ public class UserProductSearchCuratorService {
                 ? UserProductRecommendationExplanationResult.fallback(
                         product.productKey(),
                         product.productHash(),
-                        inventorySignals.get(product.productKey())
+                        inventorySignals == null ? null : inventorySignals.get(product.productKey())
                 )
                 : explanation;
     }
@@ -99,8 +99,11 @@ public class UserProductSearchCuratorService {
             int offset,
             int limit
     ) {
+        if (offset < 0 || offset >= products.size() || limit <= 0) {
+            return List.of();
+        }
         int toIndex = Math.min(pageEnd(offset, limit), products.size());
-        return offset >= products.size() ? List.of() : products.subList(offset, toIndex);
+        return offset >= toIndex ? List.of() : products.subList(offset, toIndex);
     }
 
     private int pageEnd(int offset, int limit) {

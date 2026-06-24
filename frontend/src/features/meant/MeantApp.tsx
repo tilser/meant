@@ -923,7 +923,7 @@ function productCuratedTradeoffs(product: Product, preferences: readonly Prefere
   if (product.inventoryRelationship === 'DUPLICATE') {
     tradeoffs.push(`Similar to ${product.inventoryItemName ?? 'something you already own'}`)
   }
-  if (product.offers.every((offer) => offer.available === false)) {
+  if (product.offers?.every((offer) => offer.available === false)) {
     tradeoffs.push('Current offers are marked unavailable')
   }
   if (tradeoffs.length === 0) {
