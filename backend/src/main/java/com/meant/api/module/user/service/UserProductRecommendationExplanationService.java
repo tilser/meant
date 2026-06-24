@@ -53,6 +53,7 @@ public class UserProductRecommendationExplanationService {
             Owned inventory signals are server-generated facts. Prefer complements and restocks; be explicit when a product looks duplicative.
             Filters in category interests are soft taste signals. Match them when the product clearly reflects the interest, but do not mark them missed just because the theme is absent.
             Clothing fit is a hard apparel and footwear audience constraint. Do not present opposite-audience or child-audience apparel as meant for the user.
+            Use exact productKey values from the product list.
             matchedFilterIds and missedFilterIds must contain only filter IDs from the active user filters.
             Keep whyMeantForYou one concise sentence, under 220 characters.
             Return only the JSON object matching the requested schema.
@@ -176,7 +177,7 @@ public class UserProductRecommendationExplanationService {
                 SYSTEM_PROMPT,
                 userPrompt(query, settings, products, safeInventorySignals),
                 "product_recommendation_explanations",
-                responseSchema(products, settings.filters())
+                responseSchema()
         );
         return sanitize(response, products, settings.filters(), safeInventorySignals);
     }
@@ -274,33 +275,19 @@ public class UserProductRecommendationExplanationService {
         );
     }
 
-    private OpenRouterJsonSchemaDefinition responseSchema(
-            List<UserProductSearchProductSnapshot> products,
-            List<ShoppingFilterResult> activeFilters
-    ) {
-        List<String> productKeys = products.stream()
-                .map(UserProductSearchProductSnapshot::productKey)
-                .toList();
-        OpenRouterJsonSchemaDefinition filterIdSchema = activeFilters.isEmpty()
-                ? OpenRouterJsonSchemaDefinition.string()
-                : OpenRouterJsonSchemaDefinition.stringEnum(activeFilters.stream()
-                        .map(ShoppingFilterResult::id)
-                        .toList());
+    private OpenRouterJsonSchemaDefinition responseSchema() {
         OpenRouterJsonSchemaDefinition productSchema = OpenRouterJsonSchemaDefinition.object(
                 List.of("productKey", "whyMeantForYou", "matchedFilterIds", "missedFilterIds"),
                 Map.of(
-                        "productKey", OpenRouterJsonSchemaDefinition.stringEnum(productKeys),
+                        "productKey", OpenRouterJsonSchemaDefinition.string(),
                         "whyMeantForYou", OpenRouterJsonSchemaDefinition.string(),
-                        "matchedFilterIds", OpenRouterJsonSchemaDefinition.array(filterIdSchema),
-                        "missedFilterIds", OpenRouterJsonSchemaDefinition.array(filterIdSchema)
+                        "matchedFilterIds", OpenRouterJsonSchemaDefinition.array(OpenRouterJsonSchemaDefinition.string()),
+                        "missedFilterIds", OpenRouterJsonSchemaDefinition.array(OpenRouterJsonSchemaDefinition.string())
                 )
         );
         return OpenRouterJsonSchemaDefinition.object(
                 List.of("products"),
-                Map.of("products", OpenRouterJsonSchemaDefinition.array(
-                        productSchema,
-                        products.size(),
-                        products.size()))
+                Map.of("products", OpenRouterJsonSchemaDefinition.array(productSchema))
         );
     }
 

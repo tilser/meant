@@ -55,8 +55,10 @@ class UserProductRecommendationExplanationServiceTest {
         assertThat(openRouterChatClient.model).isEqualTo("google/gemini-2.5-flash-lite");
         assertThat(openRouterChatClient.systemPrompt)
                 .contains("Write directly to the user")
+                .contains("Use exact productKey values from the product list")
                 .contains("Do not mention internal agents, curator, catalog data, validation, or verification steps");
         assertThat(openRouterChatClient.schema.properties()).containsKey("products");
+        assertProviderSafeSchema(openRouterChatClient.schema);
         assertThat(persistenceService.saved).hasSize(1);
         assertThat(result.get("merchant.example:tee").whyMeantForYou())
                 .isEqualTo("Organic cotton and no polyester match your profile.");
@@ -311,6 +313,17 @@ class UserProductRecommendationExplanationServiceTest {
         assertThat(result.get("merchant.example:socks").whyMeantForYou())
                 .isEqualTo("This matches your search based on available product details.");
         assertThat(persistenceService.saved).isEmpty();
+    }
+
+    private void assertProviderSafeSchema(OpenRouterJsonSchemaDefinition schema) {
+        OpenRouterJsonSchemaDefinition products = schema.properties().get("products");
+        assertThat(products.minItems()).isNull();
+        assertThat(products.maxItems()).isNull();
+
+        OpenRouterJsonSchemaDefinition product = products.items();
+        assertThat(product.properties().get("productKey").enumValues()).isNull();
+        assertThat(product.properties().get("matchedFilterIds").items().enumValues()).isNull();
+        assertThat(product.properties().get("missedFilterIds").items().enumValues()).isNull();
     }
 
     private UserProductRecommendationExplanationService service(
