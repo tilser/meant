@@ -41,7 +41,7 @@ public class UserProductPreferenceMatchCuratorService {
             Map<String, UserProductRecommendationExplanationResult> explanations,
             Map<String, UserInventoryRecommendationSignal> inventorySignals
     ) {
-        Map<String, ShoppingFilterResult> filtersById = filtersById(settings);
+        Map<String, CuratorFilter> filtersById = curatorFiltersById(settings);
         Map<String, UserProductRecommendationExplanationResult> safeExplanations =
                 explanations == null ? Map.of() : explanations;
         Map<String, UserInventoryRecommendationSignal> safeInventorySignals =
@@ -74,7 +74,7 @@ public class UserProductPreferenceMatchCuratorService {
         return curated;
     }
 
-    private Map<String, ShoppingFilterResult> filtersById(UserSettingsResult settings) {
+    private Map<String, CuratorFilter> curatorFiltersById(UserSettingsResult settings) {
         if (settings == null || settings.filters() == null) {
             return Map.of();
         }
@@ -82,7 +82,7 @@ public class UserProductPreferenceMatchCuratorService {
                 .filter(filter -> filter != null && filter.id() != null)
                 .collect(Collectors.toMap(
                         ShoppingFilterResult::id,
-                        filter -> filter,
+                        CuratorFilter::from,
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
@@ -90,7 +90,7 @@ public class UserProductPreferenceMatchCuratorService {
 
     private List<String> curatedMatches(
             UserProductRecommendationExplanationResult explanation,
-            Map<String, ShoppingFilterResult> filtersById,
+            Map<String, CuratorFilter> filtersById,
             ProductEvidence evidence
     ) {
         LinkedHashSet<String> matches = safeList(explanation.matchedFilterIds()).stream()
@@ -107,7 +107,7 @@ public class UserProductPreferenceMatchCuratorService {
 
     private List<String> curatedMisses(
             UserProductRecommendationExplanationResult explanation,
-            Map<String, ShoppingFilterResult> filtersById,
+            Map<String, CuratorFilter> filtersById,
             ProductEvidence evidence,
             List<String> matchedFilterIds
     ) {
@@ -120,7 +120,7 @@ public class UserProductPreferenceMatchCuratorService {
                 .toList();
     }
 
-    private boolean supportsMatch(ShoppingFilterResult filter, ProductEvidence evidence) {
+    private boolean supportsMatch(CuratorFilter filter, ProductEvidence evidence) {
         String id = filter.id();
         if ("highly-rated".equals(id)) {
             return evidence.ratingScore() != null && evidence.ratingScore() >= 4.2d
@@ -144,59 +144,40 @@ public class UserProductPreferenceMatchCuratorService {
                     "recycled", "carbon neutral", "gots"
             ));
         }
-        if (isAvoidFilter(filter)) {
+        if (filter.avoid()) {
             return hasFreeEvidence(filter, evidence);
         }
         return hasDirectEvidence(filter, evidence);
     }
 
-    private boolean supportsMiss(ShoppingFilterResult filter, ProductEvidence evidence) {
-        if (isAvoidFilter(filter)) {
+    private boolean supportsMiss(CuratorFilter filter, ProductEvidence evidence) {
+        if (filter.avoid()) {
             return containsAvoidedTerm(filter, evidence) && !hasFreeEvidence(filter, evidence);
         }
         return false;
     }
 
-    private boolean isAvoidFilter(ShoppingFilterResult filter) {
-        return "avoid".equals(filter.polarity()) || AVOID_PREFIXES.contains(firstToken(filter.label()));
-    }
-
-    private boolean hasDirectEvidence(ShoppingFilterResult filter, ProductEvidence evidence) {
-        List<String> phrases = Stream.of(filter.id(), filter.label())
-                .map(UserProductPreferenceMatchCuratorService::normalized)
-                .filter(value -> value != null && !value.isBlank())
-                .map(value -> value.replace('-', ' '))
-                .distinct()
-                .toList();
-        if (phrases.stream().anyMatch(evidence::contains)) {
+    private boolean hasDirectEvidence(CuratorFilter filter, ProductEvidence evidence) {
+        if (filter.phrases().stream().anyMatch(evidence::contains)) {
             return true;
         }
-        return Stream.of(filter.id(), filter.label())
-                .map(this::evidenceTokens)
-                .anyMatch(tokens -> !tokens.isEmpty() && tokens.stream().allMatch(evidence::containsToken));
+        return filter.evidenceTokenGroups().stream()
+                .anyMatch(tokens -> tokens.stream().allMatch(evidence::containsToken));
     }
 
-    private boolean hasFreeEvidence(ShoppingFilterResult filter, ProductEvidence evidence) {
-        List<String> terms = avoidedTerms(filter);
-        return terms.stream().anyMatch(term -> evidence.contains("no " + term)
+    private boolean hasFreeEvidence(CuratorFilter filter, ProductEvidence evidence) {
+        return filter.avoidedTerms().stream().anyMatch(term -> evidence.contains("no " + term)
                 || evidence.contains("without " + term)
                 || evidence.contains(term + " free")
                 || evidence.contains(term + "-free")
                 || evidence.contains("free of " + term));
     }
 
-    private boolean containsAvoidedTerm(ShoppingFilterResult filter, ProductEvidence evidence) {
-        return avoidedTerms(filter).stream().anyMatch(evidence::contains);
+    private boolean containsAvoidedTerm(CuratorFilter filter, ProductEvidence evidence) {
+        return filter.avoidedTerms().stream().anyMatch(evidence::contains);
     }
 
-    private List<String> evidenceTokens(ShoppingFilterResult filter) {
-        return Stream.of(filter.id(), filter.label())
-                .flatMap(value -> evidenceTokens(value).stream())
-                .distinct()
-                .toList();
-    }
-
-    private List<String> evidenceTokens(String value) {
+    private static List<String> evidenceTokens(String value) {
         return tokens(value).stream()
                 .filter(UserProductPreferenceMatchCuratorService::isMeaningfulEvidenceToken)
                 .filter(token -> !STOP_WORDS.contains(token))
@@ -209,28 +190,14 @@ public class UserProductPreferenceMatchCuratorService {
         return length > 2 || (length > 1 && token.codePoints().anyMatch(codePoint -> codePoint > 0x7f));
     }
 
-    private List<String> avoidedTerms(ShoppingFilterResult filter) {
-        List<String> terms = evidenceTokens(filter).stream()
-                .filter(token -> !AVOID_PREFIXES.contains(token))
-                .toList();
-        if (!terms.isEmpty()) {
-            return terms;
-        }
-        return tokens(filter.description()).stream()
-                .filter(token -> token.length() > 3)
-                .filter(token -> !STOP_WORDS.contains(token))
-                .distinct()
-                .toList();
-    }
-
-    private String firstToken(String value) {
+    private static String firstToken(String value) {
         return tokens(value).stream().findFirst().orElse("");
     }
 
     private String curatorTake(
             List<String> matchedFilterIds,
             List<String> missedFilterIds,
-            Map<String, ShoppingFilterResult> filtersById,
+            Map<String, CuratorFilter> filtersById,
             UserInventoryRecommendationSignal inventorySignal
     ) {
         if (inventorySignal != null && inventorySignal.relationship() == UserInventoryRecommendationRelationship.DUPLICATE) {
@@ -254,12 +221,12 @@ public class UserProductPreferenceMatchCuratorService {
 
     private String filterLabelList(
             List<String> filterIds,
-            Map<String, ShoppingFilterResult> filtersById
+            Map<String, CuratorFilter> filtersById
     ) {
         return filterIds.stream()
                 .map(filtersById::get)
                 .filter(filter -> filter != null)
-                .map(ShoppingFilterResult::label)
+                .map(CuratorFilter::label)
                 .filter(label -> label != null && !label.isBlank())
                 .limit(3)
                 .collect(Collectors.joining(", "));
@@ -300,6 +267,52 @@ public class UserProductPreferenceMatchCuratorService {
 
     private <T> List<T> safeList(List<T> values) {
         return values == null ? List.of() : values;
+    }
+
+    private record CuratorFilter(
+            ShoppingFilterResult source,
+            List<String> phrases,
+            List<List<String>> evidenceTokenGroups,
+            List<String> avoidedTerms,
+            boolean avoid
+    ) {
+
+        static CuratorFilter from(ShoppingFilterResult filter) {
+            List<String> phrases = Stream.of(filter.id(), filter.label())
+                    .map(UserProductPreferenceMatchCuratorService::normalized)
+                    .filter(value -> value != null && !value.isBlank())
+                    .distinct()
+                    .toList();
+            List<List<String>> evidenceTokenGroups = Stream.of(filter.id(), filter.label())
+                    .map(UserProductPreferenceMatchCuratorService::evidenceTokens)
+                    .filter(tokens -> !tokens.isEmpty())
+                    .distinct()
+                    .toList();
+            List<String> evidenceTokens = evidenceTokenGroups.stream()
+                    .flatMap(List::stream)
+                    .distinct()
+                    .toList();
+            List<String> avoidedTerms = evidenceTokens.stream()
+                    .filter(token -> !AVOID_PREFIXES.contains(token))
+                    .toList();
+            if (avoidedTerms.isEmpty()) {
+                avoidedTerms = tokens(filter.description()).stream()
+                        .filter(token -> token.length() > 3)
+                        .filter(token -> !STOP_WORDS.contains(token))
+                        .distinct()
+                        .toList();
+            }
+            boolean avoid = "avoid".equals(filter.polarity()) || AVOID_PREFIXES.contains(firstToken(filter.label()));
+            return new CuratorFilter(filter, phrases, evidenceTokenGroups, avoidedTerms, avoid);
+        }
+
+        private String id() {
+            return source.id();
+        }
+
+        private String label() {
+            return source.label();
+        }
     }
 
     private record ProductEvidence(

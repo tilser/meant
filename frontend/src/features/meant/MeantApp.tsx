@@ -3195,10 +3195,18 @@ function ProductGrid({
     if (!grid) {
       return
     }
-    timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
-    timeoutsRef.current = []
-    rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
-    rafsRef.current = []
+    const clearAnimationWork = () => {
+      timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
+      timeoutsRef.current = []
+      rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
+      rafsRef.current = []
+    }
+    const resetCards = () => {
+      Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
+        .forEach(resetProductCardAnimation)
+    }
+
+    clearAnimationWork()
 
     const previousPositions = positionsRef.current
     const nextPositions = new Map<ProductId, DOMRect>()
@@ -3240,17 +3248,12 @@ function ProductGrid({
       rafsRef.current.push(firstFrame)
     })
     positionsRef.current = nextPositions
-  }, [orderKey])
 
-  useEffect(() => () => {
-    timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
-    rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
-    const grid = gridRef.current
-    if (grid) {
-      Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
-        .forEach(resetProductCardAnimation)
+    return () => {
+      clearAnimationWork()
+      resetCards()
     }
-  }, [])
+  }, [orderKey])
 
   return (
     <div className="mt-grid" ref={gridRef}>
