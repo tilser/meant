@@ -3211,6 +3211,7 @@ function ProductGrid({
     const previousPositions = positionsRef.current
     const nextPositions = new Map<ProductId, DOMRect>()
     const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
+    const cardAnimations: Array<{ card: HTMLElement; deltaX: number; deltaY: number }> = []
     cards.forEach(resetProductCardAnimation)
     cards.forEach((card) => {
       const productId = card.dataset.productId
@@ -3229,6 +3230,11 @@ function ProductGrid({
         return
       }
 
+      cardAnimations.push({ card, deltaX, deltaY })
+    })
+    positionsRef.current = nextPositions
+
+    cardAnimations.forEach(({ card, deltaX, deltaY }) => {
       card.dataset.reordering = 'true'
       card.style.transitionProperty = 'none'
       card.style.transform = `translate(${deltaX}px, ${deltaY}px)`
@@ -3247,7 +3253,6 @@ function ProductGrid({
       })
       rafsRef.current.push(firstFrame)
     })
-    positionsRef.current = nextPositions
 
     return () => {
       clearAnimationWork()
