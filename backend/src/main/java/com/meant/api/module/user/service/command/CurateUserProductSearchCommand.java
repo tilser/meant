@@ -12,6 +12,8 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,6 +57,6 @@ public record CurateUserProductSearchCommand(
 ) {
 
     public CurateUserProductSearchCommand {
-        products = products == null ? List.of() : List.copyOf(products);
+        products = products == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(products));
     }
 }

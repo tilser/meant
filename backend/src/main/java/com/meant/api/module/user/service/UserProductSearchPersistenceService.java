@@ -278,9 +278,7 @@ public class UserProductSearchPersistenceService {
                 offset,
                 limit,
                 hasMoreProducts,
-                tasteProfile,
-                settings,
-                productResults(items, explanations)
+                visibleRankedProducts(productResults(items, explanations), tasteProfile, settings)
         );
     }
 
@@ -355,6 +353,10 @@ public class UserProductSearchPersistenceService {
         if (!items.isEmpty() && products.isEmpty()) {
             return Optional.empty();
         }
+        List<UserProductSearchProductResult> visibleProducts = visibleRankedProducts(products, tasteProfile, settings);
+        if (!canServePage(visibleProducts.size(), search.isHasMoreProducts(), offset, limit)) {
+            return Optional.empty();
+        }
         return Optional.of(result(
                 query,
                 normalizedQuery,
@@ -363,9 +365,7 @@ public class UserProductSearchPersistenceService {
                 offset,
                 limit,
                 search.isHasMoreProducts(),
-                tasteProfile,
-                settings,
-                products
+                visibleProducts
         ));
     }
 
@@ -381,13 +381,8 @@ public class UserProductSearchPersistenceService {
             int offset,
             int limit,
             boolean hasMoreProducts,
-            UserTasteProfileResult tasteProfile,
-            UserSettingsResult settings,
-            List<UserProductSearchProductResult> products
+            List<UserProductSearchProductResult> rankedProducts
     ) {
-        List<UserProductSearchProductResult> rankedProducts = userProductSearchCurationPolicy.visibleProducts(
-                userTasteRankingService.rank(products, tasteProfile, settings)
-        );
         int pageEnd = pageEnd(offset, limit);
         int toIndex = Math.min(pageEnd, rankedProducts.size());
         List<UserProductSearchProductResult> page = offset >= rankedProducts.size()
@@ -406,6 +401,16 @@ public class UserProductSearchPersistenceService {
                 nextOffset,
                 hasMore,
                 page
+        );
+    }
+
+    private List<UserProductSearchProductResult> visibleRankedProducts(
+            List<UserProductSearchProductResult> products,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings
+    ) {
+        return userProductSearchCurationPolicy.visibleProducts(
+                userTasteRankingService.rank(products, tasteProfile, settings)
         );
     }
 

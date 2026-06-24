@@ -334,6 +334,34 @@ class UserProductSearchPersistenceServiceTest {
     }
 
     @Test
+    void findCachedSearchReturnsEmptyWhenVisibleWindowIsTooSmallAndMoreMayExist() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch search = search(userId, true);
+        List<UserProductSearchResultItem> items = new ArrayList<>(items(search.getId(), 19));
+        items.addAll(items(search.getId(), 80, 100));
+        UserProductSearchPersistenceService service = service(userId, search, items);
+
+        Optional<UserProductSearchResult> result = service.findCachedSearch(
+                userId,
+                QUERY,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                null,
+                null,
+                NOW,
+                20,
+                20
+        );
+
+        assertThat(result).isEmpty();
+        assertThat(explanationsLoaded).isTrue();
+        assertThat(matchesLoaded).isTrue();
+    }
+
+    @Test
     void findCachedSearchServesPartialFinalPageWhenSearchIsExhausted() {
         UUID userId = UUID.randomUUID();
         UserProductSearch search = search(userId, false);
@@ -527,14 +555,24 @@ class UserProductSearchPersistenceServiceTest {
 
     private List<UserProductSearchResultItem> items(UUID searchId, int count) {
         return java.util.stream.IntStream.rangeClosed(1, count)
-                .mapToObj(index -> UserProductSearchResultItem.from(
-                        searchId,
-                        "merchant.example:item-" + index,
-                        "hash-" + index,
-                        product(index),
-                        NOW
-                ))
+                .mapToObj(index -> item(searchId, index))
                 .toList();
+    }
+
+    private List<UserProductSearchResultItem> items(UUID searchId, int start, int end) {
+        return java.util.stream.IntStream.rangeClosed(start, end)
+                .mapToObj(index -> item(searchId, index))
+                .toList();
+    }
+
+    private UserProductSearchResultItem item(UUID searchId, int index) {
+        return UserProductSearchResultItem.from(
+                searchId,
+                "merchant.example:item-" + index,
+                "hash-" + index,
+                product(index),
+                NOW
+        );
     }
 
     private UserProductSearchProductSnapshot snapshot(
