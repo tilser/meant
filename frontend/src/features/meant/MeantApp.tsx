@@ -3120,21 +3120,6 @@ function ProductReviewSummary({ product }: Readonly<{ product: Product }>) {
   )
 }
 
-function ProductCuratorScore({ product }: Readonly<{ product: Product }>) {
-  const pending = product.agentStage === 'candidate'
-  return (
-    <div className={`mt-curator-score ${pending ? 'pending' : 'ready'}`}>
-      <SparkMark size={11} />
-      <span>{pending ? 'Curator reviewing' : 'Curator score'}</span>
-      {pending ? null : (
-        <strong className="mt-mono" key={product.match}>
-          {product.match}
-        </strong>
-      )}
-    </div>
-  )
-}
-
 function catalogBadgeLabels(product: Product): string[] {
   const values = [
     ...(product.certifications ?? []),
@@ -3367,7 +3352,6 @@ function ProductCard({
       <div className="mt-card-body">
         <div className="mt-mono mt-card-brand">{product.brand}</div>
         <InventorySignalBadge product={product} compact />
-        <ProductCuratorScore product={product} />
         <div className="mt-card-name">{product.name}</div>
         <div className="mt-chips">
           {product.satisfies.slice(0, 3).map((id) => (
