@@ -77,6 +77,7 @@ public class UserProductPreferenceMatchCuratorService {
             return Map.of();
         }
         return settings.filters().stream()
+                .filter(filter -> filter != null && filter.id() != null)
                 .collect(Collectors.toMap(
                         ShoppingFilterResult::id,
                         filter -> filter,
@@ -95,7 +96,7 @@ public class UserProductPreferenceMatchCuratorService {
                 .filter(filterId -> supportsMatch(filtersById.get(filterId), evidence))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         filtersById.forEach((filterId, filter) -> {
-            if (supportsMatch(filter, evidence)) {
+            if (!matches.contains(filterId) && supportsMatch(filter, evidence)) {
                 matches.add(filterId);
             }
         });

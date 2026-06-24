@@ -152,7 +152,10 @@ class UserProductPreferenceMatchCuratorServiceTest {
                 null,
                 null,
                 List.of(),
-                List.of(filter("organic-cotton", null, "Prefer certified organic cotton.", "materials", "prefer", 10)),
+                Arrays.asList(
+                        filter(null, "Ignored filter", "Missing filter id.", "materials", "prefer", 5),
+                        filter("organic-cotton", null, "Prefer certified organic cotton.", "materials", "prefer", 10)
+                ),
                 List.of(),
                 List.of(),
                 List.of(),
