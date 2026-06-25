@@ -179,6 +179,72 @@ class UserProductPreferenceMatchCuratorServiceTest {
         assertThat(result.get(product.productKey()).whyMeantForYou()).doesNotContain("null");
     }
 
+    @Test
+    void keepsExplanationTakeWhenNoDeterministicPreferenceMatchesAreFound() {
+        UserProductSearchProductSnapshot product = snapshot(
+                "desk-lamp",
+                "Adjustable Desk Lamp",
+                "Dimmable LED lamp for a focused desk setup.",
+                List.of(),
+                null,
+                0
+        );
+        UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
+                product.productKey(),
+                product.productHash(),
+                "This lamp fits your desk-light search and has a focused adjustable design.",
+                List.of(),
+                List.of(),
+                UserInventoryRecommendationRelationship.NONE,
+                null,
+                null
+        );
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.curate(
+                List.of(product),
+                settings(),
+                Map.of(product.productKey(), explanation),
+                Map.of()
+        );
+
+        assertThat(result.get(product.productKey()).matchedFilterIds()).isEmpty();
+        assertThat(result.get(product.productKey()).missedFilterIds()).isEmpty();
+        assertThat(result.get(product.productKey()).whyMeantForYou())
+                .isEqualTo("This lamp fits your desk-light search and has a focused adjustable design.");
+    }
+
+    @Test
+    void replacesOldNoPreferenceFallbackWhenNoEvidenceIsFound() {
+        UserProductSearchProductSnapshot product = snapshot(
+                "desk-lamp",
+                "Adjustable Desk Lamp",
+                "Dimmable LED lamp for a focused desk setup.",
+                List.of(),
+                null,
+                0
+        );
+        UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
+                product.productKey(),
+                product.productHash(),
+                "No preference matches are confirmed yet; review the details and offers.",
+                List.of(),
+                List.of(),
+                UserInventoryRecommendationRelationship.NONE,
+                null,
+                null
+        );
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.curate(
+                List.of(product),
+                settings(),
+                Map.of(product.productKey(), explanation),
+                Map.of()
+        );
+
+        assertThat(result.get(product.productKey()).whyMeantForYou())
+                .isEqualTo("This looks relevant to your search based on the available product details.");
+    }
+
     private UserSettingsResult settings() {
         return new UserSettingsResult(
                 null,

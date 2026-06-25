@@ -42,6 +42,7 @@ import {
   getAssistantConversations,
   getCartCheckout,
   getCurrentUser,
+  getMerchantProductDetails,
   getMerchantIdentityLinks,
   getMerchants,
   getProfilePictureUrl,
@@ -65,7 +66,10 @@ import {
   type SaveUserProductInput,
   type CartProfile,
   type MerchantIdentityLinkProfile,
+  type MerchantProductDetailsProfile,
   type MerchantProfile,
+  type ProductOptionProfile,
+  type ProductSelectedOptionProfile,
   type ShoppingFilterProfile,
   type UserInventoryCategory,
   type UserInventoryItemInput,
@@ -106,6 +110,8 @@ import type {
   ProductCatalogCategory,
   ProductId,
   ProductMedia,
+  ProductOption,
+  ProductSelectedOption,
   Theme,
   UserAccount,
   UserLocation,
@@ -200,6 +206,9 @@ interface RemoveCartCodeInput {
   code: AppliedCartCode
 }
 
+type ProductDetailLoadState = 'idle' | 'loading' | 'loaded' | 'error'
+type ProductResultSortMode = 'match' | 'price-asc' | 'price-desc'
+
 interface DeliveryAddressDraft {
   countryCode: string
   city: string
@@ -229,7 +238,7 @@ interface ViewHeadProps {
 }
 
 interface ProductOpenProps {
-  onOpen: (product: Product) => void
+  onOpen: (product: Product, products?: readonly Product[]) => void
 }
 
 interface ProductSaveProps {
@@ -377,6 +386,13 @@ const DEFAULT_GREETING = 'Good afternoon'
 const DEFAULT_BUDGET = 120
 const SEARCH_SUGGESTION_COUNT = 4
 const PRODUCT_SEARCH_PAGE_SIZE = 20
+const NO_CONFIRMED_PREFERENCE_TAKE = 'No preference matches are confirmed yet; review the details and offers.'
+const SEARCH_RELEVANCE_TAKE = 'This looks relevant to your search based on the available product details.'
+const PRODUCT_RESULT_SORT_LABELS: Readonly<Record<ProductResultSortMode, string>> = {
+  match: 'Best match',
+  'price-asc': 'Price: low to high',
+  'price-desc': 'Price: high to low',
+}
 
 const CLOTHING_FIT_OPTIONS: readonly { value: ClothingFit; label: string }[] = [
   { value: 'none', label: 'No preference' },
@@ -739,6 +755,86 @@ function searchProductAttributes(product: UserProductSearchProductProfile): Prod
     }))
 }
 
+function productOptionsFromProfiles(options: readonly ProductOptionProfile[] | null | undefined): ProductOption[] {
+  return (options ?? [])
+    .map((option): ProductOption | null => {
+      const name = option.name?.trim()
+      const values = (option.values ?? [])
+        .map((value) => value.trim())
+        .filter(Boolean)
+      if (!name || values.length === 0) {
+        return null
+      }
+      return { name, values }
+    })
+    .filter((option): option is ProductOption => option !== null)
+}
+
+function productSelectedOptionsFromProfiles(
+  options: readonly ProductSelectedOptionProfile[] | null | undefined,
+): ProductSelectedOption[] {
+  return (options ?? [])
+    .map((option): ProductSelectedOption | null => {
+      const name = option.name?.trim()
+      const value = option.value?.trim()
+      if (!name || !value) {
+        return null
+      }
+      return { name, value }
+    })
+    .filter((option): option is ProductSelectedOption => option !== null)
+}
+
+function mediaFromMerchantDetails(details: MerchantProductDetailsProfile | null): ProductMedia[] {
+  if (!details) {
+    return []
+  }
+  const media = (details.media ?? [])
+    .map((item): ProductMedia | null => {
+      const url = item.url || item.previewImageUrl
+      if (!url) {
+        return null
+      }
+      return {
+        type: item.type || 'image',
+        url,
+        altText: item.altText,
+      }
+    })
+    .filter((item): item is ProductMedia => item !== null)
+  const images = (details.images ?? [])
+    .map((image): ProductMedia | null => {
+      if (!image.url) {
+        return null
+      }
+      return { type: 'image', url: image.url, altText: image.altText }
+    })
+    .filter((item): item is ProductMedia => item !== null)
+  const fallbacks = [
+    details.selectedVariantImageUrl,
+    details.imageUrl,
+  ]
+    .filter((url): url is string => Boolean(url))
+    .map((url) => ({ type: 'image', url, altText: details.selectedVariantImageAltText }))
+
+  return [...media, ...images, ...fallbacks]
+}
+
+function mergeProductMedia(
+  product: Product,
+  details: MerchantProductDetailsProfile | null,
+): ProductMedia[] {
+  const seen = new Set<string>()
+  return [...mediaFromMerchantDetails(details), ...(product.media ?? [])].filter((item) => {
+    const key = `${item.type.toLowerCase()}|${item.url}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
 function searchProductCategory(
   product: UserProductSearchProductProfile,
   preferences: readonly Preference[],
@@ -801,6 +897,9 @@ function productFromSearchResult(
   const baseProduct: Product = {
     id: product.productKey,
     productHash: product.productHash,
+    merchantId: product.merchantId,
+    merchantDomain: product.merchantDomain,
+    merchantProductId: product.productId,
     name: product.title,
     brand,
     category: searchProductCategory(product, preferences),
@@ -832,6 +931,7 @@ function productFromSearchResult(
     skus,
     collections,
     catalogAttributes,
+    detailDescription: detail || null,
     offers: [
       {
         merchant: brand,
@@ -947,6 +1047,14 @@ function productPreferenceMatchPhrase(product: Product, labels: readonly string[
   return null
 }
 
+function productFallbackTake(product: Product): string {
+  const note = product.note.trim()
+  if (note && note !== NO_CONFIRMED_PREFERENCE_TAKE) {
+    return note
+  }
+  return SEARCH_RELEVANCE_TAKE
+}
+
 function productCuratedTake(product: Product, preferences: readonly Preference[]): string {
   if (product.agentStage === 'candidate') {
     return 'This is being checked against your preferences.'
@@ -966,7 +1074,7 @@ function productCuratedTake(product: Product, preferences: readonly Preference[]
   if (missed.length > 0) {
     return `Check whether this fits ${preferenceSummary(missed)} before deciding.`
   }
-  return 'No preference matches are confirmed yet; review the details and offers.'
+  return productFallbackTake(product)
 }
 
 function productCuratedAdvantages(product: Product, preferences: readonly Preference[]): string[] {
@@ -1611,6 +1719,119 @@ function productForMerchant(product: Product, merchant: MerchantProfile): Produc
     return product
   }
   return null
+}
+
+function normalizedProductSearchText(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+function productSearchFields(
+  product: Product,
+  preferences: readonly Preference[],
+  deliveryLocations: readonly UserLocation[],
+): string[] {
+  const preferenceMatches = [...product.satisfies, ...product.misses]
+    .map((id) => prefLabel(preferences, id))
+  const catalogAttributes = (product.catalogAttributes ?? [])
+    .flatMap((attribute) => [attribute.name, attribute.value])
+  const selectedOptions = (product.selectedOptions ?? [])
+    .flatMap((option) => [option.name, option.value])
+  const detailOptions = (product.detailOptions ?? [])
+    .flatMap((option) => [option.name, ...option.values])
+  const offers = product.offers.flatMap((offer) => [
+    offer.merchant,
+    offer.merchantDomain ?? '',
+    offer.variantTitle ?? '',
+    offer.available === false ? 'unavailable' : 'available',
+    String(offer.price),
+    money(offer.price),
+  ])
+  const price = productPriceFrom(product, deliveryLocations)
+  return [
+    product.name,
+    product.brand,
+    product.category,
+    product.productUrl ?? '',
+    product.note,
+    product.detailDescription ?? '',
+    money(price),
+    String(price),
+    ...product.pros,
+    ...product.cons,
+    ...preferenceMatches,
+    ...(product.materials ?? []),
+    ...(product.certifications ?? []),
+    ...(product.collections ?? []),
+    ...(product.skus ?? []),
+    ...catalogAttributes,
+    ...selectedOptions,
+    ...detailOptions,
+    ...offers,
+  ].filter(Boolean)
+}
+
+function productMatchesTextSearch(
+  product: Product,
+  searchText: string,
+  preferences: readonly Preference[],
+  deliveryLocations: readonly UserLocation[],
+): boolean {
+  const tokens = normalizedProductSearchText(searchText).split(' ').filter(Boolean)
+  if (tokens.length === 0) {
+    return true
+  }
+  const haystack = normalizedProductSearchText(productSearchFields(
+    product,
+    preferences,
+    deliveryLocations,
+  ).join(' '))
+  return tokens.every((token) => haystack.includes(token))
+}
+
+function compareProductsByPrice(
+  left: Product,
+  right: Product,
+  deliveryLocations: readonly UserLocation[],
+  direction: 'asc' | 'desc',
+): number {
+  const leftPrice = productPriceFrom(left, deliveryLocations)
+  const rightPrice = productPriceFrom(right, deliveryLocations)
+  const leftHasPrice = leftPrice > 0
+  const rightHasPrice = rightPrice > 0
+  if (leftHasPrice !== rightHasPrice) {
+    return leftHasPrice ? -1 : 1
+  }
+  if (!leftHasPrice || leftPrice === rightPrice) {
+    return 0
+  }
+  return direction === 'asc' ? leftPrice - rightPrice : rightPrice - leftPrice
+}
+
+function visibleProductResults(
+  products: readonly Product[],
+  preferences: readonly Preference[],
+  deliveryLocations: readonly UserLocation[],
+  searchText: string,
+  sortMode: ProductResultSortMode,
+): Product[] {
+  return products
+    .map((product, index) => ({ product, index }))
+    .filter(({ product }) => productMatchesTextSearch(product, searchText, preferences, deliveryLocations))
+    .sort((left, right) => {
+      const sortResult = (() => {
+        switch (sortMode) {
+          case 'price-asc':
+            return compareProductsByPrice(left.product, right.product, deliveryLocations, 'asc')
+          case 'price-desc':
+            return compareProductsByPrice(left.product, right.product, deliveryLocations, 'desc')
+          case 'match':
+          default:
+            return right.product.match - left.product.match
+        }
+      })()
+      return sortResult || left.index - right.index
+    })
+    .map(({ product }) => product)
 }
 
 function cartMerchantKey(input: {
@@ -3217,19 +3438,67 @@ function catalogBadgeLabels(product: Product): string[] {
     })
 }
 
-function mediaSummary(product: Product): string | null {
-  const media = product.media ?? []
-  if (media.length <= 1) {
-    return null
+function ProductResultTools({
+  searchText,
+  sortMode,
+  resultCount,
+  totalCount,
+  onSearchText,
+  onSortMode,
+  onReset,
+}: Readonly<{
+  searchText: string
+  sortMode: ProductResultSortMode
+  resultCount: number
+  totalCount: number
+  onSearchText: (value: string) => void
+  onSortMode: (value: ProductResultSortMode) => void
+  onReset: () => void
+}>) {
+  const active = searchText.trim().length > 0 || sortMode !== 'match'
+  const onSortChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    onSortMode(event.target.value as ProductResultSortMode)
   }
-  const imageCount = media.filter((item) => item.type.toLowerCase() === 'image').length
-  const videoCount = media.filter((item) => item.type.toLowerCase() === 'video').length
-  const modelCount = media.filter((item) => item.type.toLowerCase().includes('3d') || item.type.toLowerCase() === 'model').length
-  return [
-    imageCount > 1 ? `${imageCount} images` : null,
-    videoCount > 0 ? `${videoCount} video${videoCount === 1 ? '' : 's'}` : null,
-    modelCount > 0 ? `${modelCount} 3D` : null,
-  ].filter(Boolean).join(' · ') || `${media.length} media`
+
+  return (
+    <div className="mt-result-tools">
+      <label className="mt-result-search">
+        <SearchIcon size={15} />
+        <input
+          value={searchText}
+          onChange={(event) => onSearchText(event.target.value)}
+          placeholder="Search found products"
+          aria-label="Search found products"
+        />
+        {searchText ? (
+          <button
+            className="mt-result-search-clear"
+            type="button"
+            onClick={() => onSearchText('')}
+            aria-label="Clear product search"
+          >
+            <CloseIcon size={12} />
+          </button>
+        ) : null}
+      </label>
+      <label className="mt-result-sort">
+        <span className="mt-mono">Sort</span>
+        <select value={sortMode} onChange={onSortChange} aria-label="Sort found products">
+          <option value="match">{PRODUCT_RESULT_SORT_LABELS.match}</option>
+          <option value="price-asc">{PRODUCT_RESULT_SORT_LABELS['price-asc']}</option>
+          <option value="price-desc">{PRODUCT_RESULT_SORT_LABELS['price-desc']}</option>
+        </select>
+      </label>
+      <span className="mt-result-tool-count mt-mono">
+        {resultCount === totalCount ? `${totalCount} products` : `${resultCount} of ${totalCount}`}
+      </span>
+      {active ? (
+        <button className="mt-result-reset mt-mono" type="button" onClick={onReset}>
+          Reset
+        </button>
+      ) : null}
+    </div>
+  )
 }
 
 function ProductGrid({
@@ -3921,20 +4190,35 @@ function FeedView({
   const merchantName = selectedMerchant?.name
   const searchActive = Boolean(query || loading || error)
   const preSearch = !searchActive
+  const [productFilterText, setProductFilterText] = useState('')
+  const [productSortMode, setProductSortMode] = useState<ProductResultSortMode>('match')
+  const resultToolsVisible = !preSearch && products.length > 0
+  const visibleProducts = useMemo(
+    () => resultToolsVisible
+      ? visibleProductResults(products, preferences, deliveryLocations, productFilterText, productSortMode)
+      : [...products],
+    [deliveryLocations, preferences, productFilterText, productSortMode, products, resultToolsVisible],
+  )
+  const filterActive = productFilterText.trim().length > 0
+  const shownProductCount = resultToolsVisible ? visibleProducts.length : products.length
+  const countPrefix = filterActive
+    ? `${shownProductCount} of ${products.length}`
+    : `${shownProductCount}`
+  const sortLabel = PRODUCT_RESULT_SORT_LABELS[productSortMode].toLowerCase()
   const title = query
     ? merchantName ? `Your matches on ${merchantName}` : 'Your matches'
     : merchantName ? `Your context on ${merchantName}` : 'Your saved and recent products'
   const count = loading
-    ? products.length > 0 ? `${products.length} found · agents working` : 'Searching stores'
+    ? products.length > 0 ? `${countPrefix} found · agents working` : 'Searching stores'
     : preSearch
       ? discoveryLoading
         ? 'Loading your context'
         : `${products.length} from your context`
       : loadingMore
-        ? `${products.length} shown · loading more`
+        ? `${countPrefix} shown · loading more`
       : merchantName
-        ? `${products.length} on ${merchantName}`
-        : `${products.length} shown · sorted by match`
+        ? `${countPrefix} on ${merchantName} · sorted by ${sortLabel}`
+        : `${countPrefix} shown · sorted by ${sortLabel}`
   const waitingForPopularSearches = popularSearchesLoading && popularSearches.length === 0
   const suggestionSearches = waitingForPopularSearches
     ? []
@@ -3948,6 +4232,17 @@ function FeedView({
       ? 'Loading popular searches'
       : 'Searches run across supported merchants'
   const showAgentActivity = !preSearch && agentActivities.length > 0
+
+  useEffect(() => {
+    setProductFilterText('')
+    setProductSortMode('match')
+  }, [query, selectedMerchant?.id])
+
+  const openVisibleProduct = (product: Product) => onOpen(product, visibleProducts)
+  const resetResultTools = () => {
+    setProductFilterText('')
+    setProductSortMode('match')
+  }
 
   return (
     <main className="mt-feed">
@@ -4026,16 +4321,38 @@ function FeedView({
         />
       ) : products.length > 0 ? (
         <>
-          <ProductGrid
-            products={products}
-            deliveryLocations={deliveryLocations}
-            preferences={preferences}
-            onOpen={onOpen}
-            savedSet={savedSet}
-            savePendingSet={savePendingSet}
-            onToggleSave={onToggleSave}
-            onDismiss={onDismiss}
-          />
+          {resultToolsVisible ? (
+            <ProductResultTools
+              searchText={productFilterText}
+              sortMode={productSortMode}
+              resultCount={visibleProducts.length}
+              totalCount={products.length}
+              onSearchText={setProductFilterText}
+              onSortMode={setProductSortMode}
+              onReset={resetResultTools}
+            />
+          ) : null}
+          {visibleProducts.length > 0 ? (
+            <ProductGrid
+              products={visibleProducts}
+              deliveryLocations={deliveryLocations}
+              preferences={preferences}
+              onOpen={openVisibleProduct}
+              savedSet={savedSet}
+              savePendingSet={savePendingSet}
+              onToggleSave={onToggleSave}
+              onDismiss={onDismiss}
+            />
+          ) : (
+            <div className="mt-empty mt-empty-inline">
+              <div className="mt-empty-mark"><SearchIcon /></div>
+              <h3 className="mt-empty-title">No products match these filters</h3>
+              <p className="mt-empty-sub">Change the text search or sort mode to see the found products again.</p>
+              <button className="mt-empty-btn ghost" type="button" onClick={resetResultTools}>
+                Reset filters
+              </button>
+            </div>
+          )}
           {!preSearch && hasMore ? (
             <div className="mt-load-more">
               <button
@@ -4127,9 +4444,13 @@ function ProductModal({
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
   const [thumbnailPage, setThumbnailPage] = useState(0)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
+  const [merchantDetails, setMerchantDetails] = useState<MerchantProductDetailsProfile | null>(null)
+  const [detailLoadState, setDetailLoadState] = useState<ProductDetailLoadState>('idle')
+  const [detailLoadError, setDetailLoadError] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const deliveryCountryCode = deliveryLocations[0]?.code ?? null
 
   useEffect(() => {
     setMessages([])
@@ -4139,7 +4460,40 @@ function ProductModal({
     setSelectedMediaUrl(null)
     setThumbnailPage(0)
     setZoomImageUrl(null)
+    setMerchantDetails(null)
+    setDetailLoadState('idle')
+    setDetailLoadError(null)
   }, [product?.id])
+
+  useEffect(() => {
+    if (!product?.remote || !product.merchantId || !product.merchantProductId) {
+      return
+    }
+    const controller = new AbortController()
+    setDetailLoadState('loading')
+    setDetailLoadError(null)
+    const language = typeof window === 'undefined'
+      ? null
+      : window.navigator.language.split('-')[0] || null
+    getMerchantProductDetails({
+      merchantId: product.merchantId,
+      productId: product.merchantProductId,
+      addressCountry: deliveryCountryCode,
+      language,
+      signal: controller.signal,
+    }).then((details) => {
+      setMerchantDetails(details)
+      setDetailLoadState('loaded')
+    }).catch(() => {
+      if (controller.signal.aborted) {
+        return
+      }
+      setMerchantDetails(null)
+      setDetailLoadState('error')
+      setDetailLoadError('Latest product details are unavailable right now.')
+    })
+    return () => controller.abort()
+  }, [deliveryCountryCode, product?.id, product?.merchantId, product?.merchantProductId, product?.remote])
 
   useEffect(() => () => {
     if (addedTimeoutRef.current !== null) {
@@ -4196,7 +4550,7 @@ function ProductModal({
 
   const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = offers.length > 0 ? offers : product.offers
-  const modalMedia = product.media ?? []
+  const modalMedia = mergeProductMedia(product, merchantDetails)
   const thumbnailPageCount = Math.ceil(modalMedia.length / MODAL_THUMBNAIL_PAGE_SIZE)
   const boundedThumbnailPage = Math.min(thumbnailPage, Math.max(thumbnailPageCount - 1, 0))
   const thumbnailStart = boundedThumbnailPage * MODAL_THUMBNAIL_PAGE_SIZE
@@ -4211,18 +4565,33 @@ function ProductModal({
   const selectedImageUrl = selectedMedia?.type.toLowerCase() === 'image'
     ? selectedMedia.url
     : null
-  const modalImageUrl = selectedImageUrl ?? product.imageUrl
-  const catalogBadges = catalogBadgeLabels(product)
-  const mediaInfo = mediaSummary(product)
-  const hasCatalogDetails =
-    catalogBadges.length > 0 ||
-    (product.skus?.length ?? 0) > 0 ||
-    (product.catalogAttributes?.length ?? 0) > 0 ||
-    Boolean(mediaInfo)
+  const modalImageUrl = selectedImageUrl
+    ?? merchantDetails?.selectedVariantImageUrl
+    ?? merchantDetails?.imageUrl
+    ?? product.imageUrl
   const curatorTake = productCuratedTake(product, preferences)
   const curatorAdvantages = productCuratedAdvantages(product, preferences)
   const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
   const hasPreferenceMatches = product.satisfies.length > 0 || product.misses.length > 0
+  const detailDescription = stripHtml(merchantDetails?.description || product.detailDescription || '')
+  const detailOptions = merchantDetails
+    ? productOptionsFromProfiles(merchantDetails.options)
+    : [...(product.detailOptions ?? [])]
+  const selectedOptions = merchantDetails
+    ? productSelectedOptionsFromProfiles(merchantDetails.selectedOptions)
+    : [...(product.selectedOptions ?? [])]
+  const hasProductDetails =
+    detailLoadState === 'loading' ||
+    Boolean(detailDescription) ||
+    detailOptions.length > 0 ||
+    selectedOptions.length > 0 ||
+    Boolean(merchantDetails?.totalVariants) ||
+    detailLoadState === 'error'
+  const showProductDetailLoading =
+    detailLoadState === 'loading' &&
+    !detailDescription &&
+    detailOptions.length === 0 &&
+    selectedOptions.length === 0
   const reviewInsight = product.review.count > 0
     ? product.review.insight || 'Rating data is available; no review-summary agent has run yet.'
     : 'No review data available from this catalog result.'
@@ -4486,6 +4855,48 @@ function ProductModal({
               {curatorTake}
             </div>
 
+            {hasProductDetails ? (
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">About this product</div>
+                {showProductDetailLoading ? (
+                  <p className="mt-product-detail-muted mt-mono">Loading latest product details...</p>
+                ) : null}
+                {detailDescription ? (
+                  <p className="mt-product-detail-description">{detailDescription}</p>
+                ) : null}
+                {selectedOptions.length > 0 ? (
+                  <div className="mt-product-detail-facts">
+                    {selectedOptions.map((option) => (
+                      <span className="mt-product-detail-fact" key={`${option.name}-${option.value}`}>
+                        <span className="mt-mono">{option.name}</span>
+                        {option.value}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {detailOptions.length > 0 ? (
+                  <div className="mt-product-options">
+                    {detailOptions.slice(0, 4).map((option) => (
+                      <div className="mt-product-option" key={option.name}>
+                        <span className="mt-mono">{option.name}</span>
+                        <span>{option.values.slice(0, 8).join(', ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {merchantDetails?.totalVariants ? (
+                  <p className="mt-product-detail-muted mt-mono">
+                    {merchantDetails.totalVariants.toLocaleString()} variants available
+                  </p>
+                ) : null}
+                {detailLoadState === 'error' && !detailDescription ? (
+                  <p className="mt-product-detail-muted mt-product-detail-error">
+                    {detailLoadError || 'Latest product details are unavailable right now.'}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
             <section className="mt-block">
               <div className="mt-block-label mt-mono">Preference match</div>
               {hasPreferenceMatches ? (
@@ -4545,47 +4956,6 @@ function ProductModal({
               </div>
               <p className="mt-reviews-insight">{reviewInsight}</p>
             </section>
-
-            {hasCatalogDetails ? (
-              <section className="mt-block">
-                <div className="mt-block-label mt-mono">Catalog details</div>
-                <div className="mt-catalog-details">
-                  {catalogBadges.length > 0 ? (
-                    <div className="mt-catalog-detail-row">
-                      <span className="mt-mono">Signals</span>
-                      <div className="mt-catalog-pills">
-                        {catalogBadges.slice(0, 6).map((label) => (
-                          <span className="mt-catalog-pill" key={label}>{label}</span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {(product.skus?.length ?? 0) > 0 ? (
-                    <div className="mt-catalog-detail-row">
-                      <span className="mt-mono">SKU</span>
-                      <span>{product.skus?.slice(0, 3).join(', ')}</span>
-                    </div>
-                  ) : null}
-                  {mediaInfo ? (
-                    <div className="mt-catalog-detail-row">
-                      <span className="mt-mono">Media</span>
-                      <span>{mediaInfo}</span>
-                    </div>
-                  ) : null}
-                  {(product.catalogAttributes?.length ?? 0) > 0 ? (
-                    <div className="mt-catalog-detail-row">
-                      <span className="mt-mono">Specs</span>
-                      <span>
-                        {product.catalogAttributes
-                          ?.slice(0, 3)
-                          .map((attribute) => `${attribute.name}: ${attribute.value}`)
-                          .join(' · ')}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
 
             <section className="mt-block">
               <div className="mt-block-label mt-mono">Available offers</div>
@@ -9754,7 +10124,7 @@ export function MeantApp() {
             onMerchant={(merchant) => {
               setSelectedMerchantId(merchant?.id ?? null)
             }}
-            onOpen={(product) => openProduct(product, feedProducts)}
+            onOpen={(product, products) => openProduct(product, products ?? feedProducts)}
             savedSet={savedSet}
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}

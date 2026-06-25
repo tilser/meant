@@ -71,9 +71,22 @@ export interface ProductCatalogAttribute {
   value: string
 }
 
+export interface ProductOption {
+  name: string
+  values: readonly string[]
+}
+
+export interface ProductSelectedOption {
+  name: string
+  value: string
+}
+
 export interface Product {
   id: ProductId
   productHash?: string | null
+  merchantId?: string | null
+  merchantDomain?: string | null
+  merchantProductId?: string | null
   name: string
   brand: string
   category: string
@@ -98,6 +111,11 @@ export interface Product {
   skus?: readonly string[]
   collections?: readonly string[]
   catalogAttributes?: readonly ProductCatalogAttribute[]
+  detailDescription?: string | null
+  detailOptions?: readonly ProductOption[]
+  selectedOptions?: readonly ProductSelectedOption[]
+  totalVariants?: number | null
+  selectedVariantAvailable?: boolean | null
   offers: readonly Offer[]
   needs?: PortType
   provides?: readonly PortType[]

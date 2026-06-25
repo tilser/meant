@@ -28,6 +28,10 @@ public class UserProductPreferenceMatchCuratorService {
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("[^\\p{L}\\p{N}]+");
     private static final int TAKE_LIMIT = 220;
+    private static final String NO_CONFIRMED_PREFERENCE_TAKE =
+            "No preference matches are confirmed yet; review the details and offers.";
+    private static final String SEARCH_RELEVANCE_TAKE =
+            "This looks relevant to your search based on the available product details.";
     private static final Set<String> STOP_WORDS = Set.of(
             "a", "an", "and", "are", "as", "avoid", "be", "by", "can", "for", "from", "goods", "in",
             "is", "labeled", "made", "no", "not", "of", "or", "other", "prefer", "products", "require",
@@ -63,7 +67,13 @@ public class UserProductPreferenceMatchCuratorService {
             curated.put(product.productKey(), new UserProductRecommendationExplanationResult(
                     product.productKey(),
                     product.productHash(),
-                    curatorTake(matchedFilterIds, missedFilterIds, filtersById, inventorySignal),
+                    curatorTake(
+                            matchedFilterIds,
+                            missedFilterIds,
+                            filtersById,
+                            inventorySignal,
+                            explanation.whyMeantForYou()
+                    ),
                     matchedFilterIds,
                     missedFilterIds,
                     relationship(inventorySignal),
@@ -198,7 +208,8 @@ public class UserProductPreferenceMatchCuratorService {
             List<String> matchedFilterIds,
             List<String> missedFilterIds,
             Map<String, CuratorFilter> filtersById,
-            UserInventoryRecommendationSignal inventorySignal
+            UserInventoryRecommendationSignal inventorySignal,
+            String explanationTake
     ) {
         if (inventorySignal != null && inventorySignal.relationship() == UserInventoryRecommendationRelationship.DUPLICATE) {
             return limit("This looks close to %s, so compare before buying."
@@ -218,7 +229,17 @@ public class UserProductPreferenceMatchCuratorService {
         if (!missed.isBlank()) {
             return limit("Check whether this fits %s before deciding.".formatted(missed));
         }
-        return "No preference matches are confirmed yet; review the details and offers.";
+        return fallbackTake(explanationTake);
+    }
+
+    private String fallbackTake(String explanationTake) {
+        if (explanationTake != null) {
+            String trimmed = SPACE_PATTERN.matcher(explanationTake.trim()).replaceAll(" ");
+            if (!trimmed.isBlank() && !NO_CONFIRMED_PREFERENCE_TAKE.equals(trimmed)) {
+                return limit(trimmed);
+            }
+        }
+        return SEARCH_RELEVANCE_TAKE;
     }
 
     private String preferenceSummary(

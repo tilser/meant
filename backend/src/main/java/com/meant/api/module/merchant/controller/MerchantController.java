@@ -6,15 +6,18 @@ import com.meant.api.module.merchant.controller.request.MerchantIdentityCallback
 import com.meant.api.module.merchant.controller.response.MerchantIdentityAuthorizationResponse;
 import com.meant.api.module.merchant.controller.response.MerchantIdentityLinkResponse;
 import com.meant.api.module.merchant.controller.response.MerchantListItemResponse;
+import com.meant.api.module.merchant.controller.response.MerchantProductDetailsResponse;
 import com.meant.api.module.merchant.controller.response.MerchantSemanticProductSearchResponse;
 import com.meant.api.module.merchant.controller.response.MerchantSemanticSearchResponse;
 import com.meant.api.module.merchant.service.MerchantIdentityLinkService;
 import com.meant.api.module.merchant.service.MerchantListingService;
+import com.meant.api.module.merchant.service.MerchantProductDetailsService;
 import com.meant.api.module.merchant.service.MerchantSemanticSearchService;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
 import com.meant.api.module.merchant.service.command.CompleteMerchantIdentityAuthorizationCommand;
 import com.meant.api.module.merchant.service.command.RevokeMerchantIdentityLinkCommand;
 import com.meant.api.module.merchant.service.command.StartMerchantIdentityAuthorizationCommand;
+import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIdentityLinksQuery;
@@ -38,6 +41,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,6 +55,7 @@ public class MerchantController {
     private final MerchantIdentityLinkService merchantIdentityLinkService;
     private final MerchantSemanticSearchService merchantSemanticSearchService;
     private final MerchantSemanticProductSearchService merchantSemanticProductSearchService;
+    private final MerchantProductDetailsService merchantProductDetailsService;
 
     @GetMapping
     @Operation(
@@ -192,5 +197,26 @@ public class MerchantController {
                         )
                 )
         );
+    }
+
+    @GetMapping("/{merchantId}/product-details")
+    @Operation(
+            summary = "Get merchant product details",
+            description = "Fetches the current product details from the merchant MCP product detail tool."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Merchant MCP product details",
+            content = @Content(schema = @Schema(implementation = MerchantProductDetailsResponse.class))
+    )
+    public MerchantProductDetailsResponse productDetails(
+            @PathVariable UUID merchantId,
+            @RequestParam String productId,
+            @RequestParam(required = false) String addressCountry,
+            @RequestParam(required = false) String language
+    ) {
+        return MerchantProductDetailsResponse.from(merchantProductDetailsService.get(
+                new GetMerchantProductDetailsQuery(merchantId, productId, addressCountry, language)
+        ));
     }
 }

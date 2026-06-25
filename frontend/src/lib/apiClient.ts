@@ -109,6 +109,53 @@ export interface ProductAttributeProfile {
   value: string | null
 }
 
+export interface MerchantProductImageProfile {
+  url: string | null
+  altText: string | null
+}
+
+export interface MerchantProductDetailMediaProfile {
+  type: string | null
+  url: string | null
+  altText: string | null
+  previewImageUrl: string | null
+}
+
+export interface ProductOptionProfile {
+  name: string | null
+  values: string[] | null
+}
+
+export interface ProductSelectedOptionProfile {
+  name: string | null
+  value: string | null
+}
+
+export interface MerchantProductDetailsProfile {
+  endpoint: string | null
+  productId: string | null
+  title: string | null
+  description: string | null
+  url: string | null
+  imageUrl: string | null
+  images: MerchantProductImageProfile[]
+  media: MerchantProductDetailMediaProfile[]
+  options: ProductOptionProfile[]
+  totalVariants: number | null
+  priceMin: string | null
+  priceMax: string | null
+  priceCurrency: string | null
+  requiresSellingPlan: boolean | null
+  selectedVariantId: string | null
+  selectedVariantTitle: string | null
+  selectedVariantPriceAmount: string | null
+  selectedVariantPriceCurrency: string | null
+  selectedVariantImageUrl: string | null
+  selectedVariantImageAltText: string | null
+  selectedVariantAvailable: boolean | null
+  selectedOptions: ProductSelectedOptionProfile[]
+}
+
 export interface UserProductSearchProfile {
   query: string
   normalizedQuery: string
@@ -788,6 +835,31 @@ export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile
     headers: await authHeaders(),
   })
   return parseJsonResponse<UserProductDiscoveryProfile>(response, 'Failed to load product discovery')
+}
+
+export async function getMerchantProductDetails(input: {
+  merchantId: string
+  productId: string
+  addressCountry?: string | null
+  language?: string | null
+  signal?: AbortSignal
+}): Promise<MerchantProductDetailsProfile> {
+  const search = new URLSearchParams({ productId: input.productId })
+  if (input.addressCountry) {
+    search.set('addressCountry', input.addressCountry)
+  }
+  if (input.language) {
+    search.set('language', input.language)
+  }
+  const response = await fetch(
+    `${API_URL}/api/merchants/${encodeURIComponent(input.merchantId)}/product-details?${search.toString()}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(),
+      signal: input.signal,
+    },
+  )
+  return parseJsonResponse<MerchantProductDetailsProfile>(response, 'Failed to load product details')
 }
 
 export async function getUserInventoryItems(input?: {
