@@ -9,12 +9,7 @@ import com.meant.api.module.user.service.dto.UserProductRecommendationExplanatio
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.text.Normalizer;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -248,7 +243,7 @@ public class UserProductPreferenceMatchCuratorService {
     ) {
         List<PreferenceTarget> targets = filterIds.stream()
                 .map(filtersById::get)
-                .filter(filter -> filter != null)
+                .filter(Objects::nonNull)
                 .map(CuratorFilter::label)
                 .filter(label -> label != null && !label.isBlank())
                 .map(UserProductPreferenceMatchCuratorService::preferenceTarget)
@@ -356,7 +351,7 @@ public class UserProductPreferenceMatchCuratorService {
         static CuratorFilter from(ShoppingFilterResult filter) {
             List<String> phrases = Stream.of(filter.id(), filter.label())
                     .map(UserProductPreferenceMatchCuratorService::normalized)
-                    .filter(value -> value != null && !value.isBlank())
+                    .filter(value -> !value.isBlank())
                     .distinct()
                     .toList();
             List<List<String>> evidenceTokenGroups = Stream.of(filter.id(), filter.label())
@@ -417,13 +412,13 @@ public class UserProductPreferenceMatchCuratorService {
                             product.merchantName(),
                             product.merchantDomain(),
                             join(stream(product.categories())
-                                    .filter(category -> category != null)
+                                    .filter(Objects::nonNull)
                                     .map(ProductCatalogCategory::value)),
                             join(stream(product.certifications())),
                             join(stream(product.materials())),
                             join(stream(product.collections())),
                             join(stream(product.attributes())
-                                    .filter(attribute -> attribute != null)
+                                    .filter(Objects::nonNull)
                                     .flatMap(attribute -> Stream.of(
                                             attribute.name(),
                                             attribute.value()
@@ -463,7 +458,7 @@ public class UserProductPreferenceMatchCuratorService {
 
         private static <T> String join(Stream<T> values) {
             return values
-                    .filter(value -> value != null)
+                    .filter(Objects::nonNull)
                     .map(Object::toString)
                     .filter(value -> !value.isBlank())
                     .collect(Collectors.joining(" "));
