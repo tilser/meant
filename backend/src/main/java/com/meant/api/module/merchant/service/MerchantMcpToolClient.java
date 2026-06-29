@@ -134,14 +134,13 @@ public class MerchantMcpToolClient {
                 "MCP tool " + toolName,
                 endpoint -> {
                     UcpToolResponse response = ucpMcpClient.callTool(restClient, endpoint, toolName, arguments);
-                    requireContentText(response);
                     return response;
                 }
         );
         UcpToolResponse response = result.value();
         return new MerchantMcpToolCallResult(
                 result.endpoint(),
-                requireContentText(response),
+                response.textContent(),
                 response.structuredContent(),
                 response.negotiatedCapabilities()
         );
@@ -205,13 +204,6 @@ public class MerchantMcpToolClient {
                 .limit(failures.size() - 1L)
                 .forEach(exception::addSuppressed);
         return exception;
-    }
-
-    private String requireContentText(UcpToolResponse response) {
-        if (response.textContent() == null || response.textContent().isBlank()) {
-            throw new MerchantMcpToolException("MCP result did not contain text content");
-        }
-        return response.textContent();
     }
 
     private List<String> endpointCandidates(

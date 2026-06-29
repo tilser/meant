@@ -6,6 +6,7 @@ import com.meant.api.module.cart.controller.request.CartUpdateRequest;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
 import com.meant.api.module.cart.service.CartService;
+import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.user.service.UserService;
@@ -21,8 +22,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +33,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -102,6 +106,22 @@ public class CartController {
         return CartResponse.from(
                 cartService.update(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
         );
+    }
+
+    @DeleteMapping("/{cartId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(
+            summary = "Cancel cart",
+            description = "Cancels the remote UCP cart and deactivates the local cart snapshot."
+    )
+    @ApiResponse(responseCode = "204", description = "Cart canceled")
+    public void cancel(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Local cart UUID.", required = true)
+            @PathVariable UUID cartId
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        cartService.cancel(new CancelCartCommand(cartId, authenticatedUser.id()));
     }
 
     @GetMapping("/{cartId}/checkout")

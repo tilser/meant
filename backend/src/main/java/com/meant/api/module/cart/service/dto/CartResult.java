@@ -15,6 +15,7 @@ public record CartResult(
         String endpoint,
         String remoteCartId,
         String checkoutUrl,
+        String continueUrl,
         String instructions,
         Integer totalQuantity,
         String totalAmount,
@@ -23,15 +24,21 @@ public record CartResult(
         boolean active,
         Instant remoteCreatedAt,
         Instant remoteUpdatedAt,
+        Instant expiresAt,
         Instant createdAt,
         Instant updatedAt,
         Instant refreshedAt,
         List<CartAppliedCodeResult> appliedCodes,
         List<CartLineResult> lines,
-        List<CartDeliveryGroupResult> deliveryGroups
+        List<CartDeliveryGroupResult> deliveryGroups,
+        List<CartMessageResult> messages
 ) {
 
-    public static CartResult from(Cart cart, List<CartDeliveryGroupResult> deliveryGroups) {
+    public static CartResult from(
+            Cart cart,
+            List<CartDeliveryGroupResult> deliveryGroups,
+            List<CartMessageResult> messages
+    ) {
         return new CartResult(
                 cart.getId(),
                 cart.getMerchantId(),
@@ -39,6 +46,7 @@ public record CartResult(
                 cart.getEndpoint(),
                 cart.getRemoteCartId(),
                 cart.getCheckoutUrl(),
+                cart.getContinueUrl(),
                 cart.getInstructions(),
                 cart.getTotalQuantity(),
                 cart.getTotalAmount(),
@@ -47,6 +55,7 @@ public record CartResult(
                 cart.isActive(),
                 cart.getRemoteCreatedAt(),
                 cart.getRemoteUpdatedAt(),
+                cart.getExpiresAt(),
                 cart.getCreatedAt(),
                 cart.getUpdatedAt(),
                 cart.getRefreshedAt(),
@@ -59,7 +68,8 @@ public record CartResult(
                         .map(CartLineResult::from)
                         .sorted(Comparator.comparing(CartLineResult::createdAt))
                         .toList(),
-                safeNonNullList(deliveryGroups)
+                safeNonNullList(deliveryGroups),
+                safeNonNullList(messages)
         );
     }
 }

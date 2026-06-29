@@ -57,6 +57,8 @@ public class Cart {
 
     private String checkoutUrl;
 
+    private String continueUrl;
+
     private String instructions;
 
     @Column(nullable = false)
@@ -77,6 +79,8 @@ public class Cart {
     private Instant remoteCreatedAt;
 
     private Instant remoteUpdatedAt;
+
+    private Instant expiresAt;
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -105,6 +109,7 @@ public class Cart {
             String remoteCartId,
             String remoteCartIdHash,
             String checkoutUrl,
+            String continueUrl,
             String instructions,
             String rawCartResponse,
             Integer totalQuantity,
@@ -113,12 +118,14 @@ public class Cart {
             String currency,
             Instant remoteCreatedAt,
             Instant remoteUpdatedAt,
+            Instant expiresAt,
             Instant refreshedAt
     ) {
         this.endpoint = endpoint;
         this.remoteCartId = remoteCartId;
         this.remoteCartIdHash = remoteCartIdHash;
         this.checkoutUrl = checkoutUrl;
+        this.continueUrl = continueUrl;
         this.instructions = instructions;
         this.rawCartResponse = rawCartResponse;
         this.totalQuantity = totalQuantity;
@@ -127,9 +134,16 @@ public class Cart {
         this.currency = currency;
         this.remoteCreatedAt = remoteCreatedAt;
         this.remoteUpdatedAt = remoteUpdatedAt;
+        this.expiresAt = expiresAt;
         this.active = true;
         this.updatedAt = refreshedAt;
         this.refreshedAt = refreshedAt;
+    }
+
+    public void deactivate(Instant updatedAt) {
+        this.active = false;
+        this.updatedAt = updatedAt;
+        this.refreshedAt = updatedAt;
     }
 
     public void replaceLines(List<CartLine> replacementLines) {

@@ -7,15 +7,20 @@ import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.repository.CartRepository;
-import com.meant.api.module.cart.service.CartClient;
-import com.meant.api.module.cart.service.dto.CartToolResponse;
-import com.meant.api.module.cart.service.dto.CartToolResult;
-import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
+import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.cart.common.service.MerchantCartPluginDispatchService;
+import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
+import com.meant.api.plugin.cart.get.dto.GetCartRequest;
+import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.support.UcpSession;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -56,13 +61,13 @@ class CartControllerIT extends PostgresIntegrationTest {
     private CartRepository cartRepository;
 
     @Autowired
-    private FakeCartClient cartClient;
+    private FakeCartDispatchService cartDispatchService;
 
     private RestTestClient client;
 
     @BeforeEach
     void setUp() {
-        cartClient.reset();
+        cartDispatchService.reset();
         client = RestTestClient.bindToServer(new JdkClientHttpRequestFactory())
                 .baseUrl("http://localhost:" + port)
                 .build();
@@ -78,7 +83,7 @@ class CartControllerIT extends PostgresIntegrationTest {
                 .exchange()
                 .expectStatus().isUnauthorized();
 
-        assertThat(cartClient.updateCount()).isZero();
+        assertThat(cartDispatchService.createCount()).isZero();
     }
 
     @Test
@@ -137,6 +142,17 @@ class CartControllerIT extends PostgresIntegrationTest {
 
         Cart persisted = cartRepository.findById(created.cartId()).orElseThrow();
         assertThat(persisted.getUserId()).isEqualTo(userId);
+
+        client.delete().uri("/api/carts/{cartId}", created.cartId())
+                .headers(headers -> headers.setBearerAuth(token(userId)))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        client.get().uri("/api/carts/{cartId}", created.cartId())
+                .headers(headers -> headers.setBearerAuth(token(userId)))
+                .exchange()
+                .expectStatus().isNotFound();
+        assertThat(cartDispatchService.cancelCount()).isEqualTo(1);
     }
 
     @Test
@@ -174,8 +190,9 @@ class CartControllerIT extends PostgresIntegrationTest {
                 .exchange()
                 .expectStatus().isNotFound();
 
-        assertThat(cartClient.updateCount()).isEqualTo(1);
-        assertThat(cartClient.getCount()).isZero();
+        assertThat(cartDispatchService.createCount()).isEqualTo(1);
+        assertThat(cartDispatchService.updateCount()).isZero();
+        assertThat(cartDispatchService.getCount()).isZero();
     }
 
     private CartResponse createCart(UUID userId, UUID merchantId) {
@@ -289,24 +306,32 @@ class CartControllerIT extends PostgresIntegrationTest {
 
         @Bean
         @Primary
-        FakeCartClient testCartClient() {
-            return new FakeCartClient();
+        FakeCartDispatchService testCartDispatchService() {
+            return new FakeCartDispatchService();
         }
     }
 
-    static class FakeCartClient extends CartClient {
+    static class FakeCartDispatchService extends MerchantCartPluginDispatchService {
 
+        private final AtomicInteger createCount = new AtomicInteger();
         private final AtomicInteger updateCount = new AtomicInteger();
         private final AtomicInteger getCount = new AtomicInteger();
+        private final AtomicInteger cancelCount = new AtomicInteger();
         private final AtomicInteger cartSequence = new AtomicInteger();
 
-        FakeCartClient() {
-            super(null, null);
+        FakeCartDispatchService() {
+            super(null, null, null);
         }
 
         void reset() {
+            createCount.set(0);
             updateCount.set(0);
             getCount.set(0);
+            cancelCount.set(0);
+        }
+
+        int createCount() {
+            return createCount.get();
         }
 
         int updateCount() {
@@ -317,72 +342,108 @@ class CartControllerIT extends PostgresIntegrationTest {
             return getCount.get();
         }
 
+        int cancelCount() {
+            return cancelCount.get();
+        }
+
         @Override
-        public CartToolResult updateCart(MerchantCartProvider provider, UpdateCartArguments arguments) {
+        public UcpCartToolResult createCart(
+                MerchantCartProvider provider,
+                CreateCartRequest request,
+                UcpSession session
+        ) {
+            createCount.incrementAndGet();
+            return cartToolResult();
+        }
+
+        @Override
+        public UcpCartToolResult updateCart(
+                MerchantCartProvider provider,
+                UpdateCartRequest request,
+                UcpSession session
+        ) {
             updateCount.incrementAndGet();
             return cartToolResult();
         }
 
         @Override
-        public CartToolResult getCart(MerchantCartProvider provider, String remoteCartId) {
+        public UcpCartToolResult getCart(
+                MerchantCartProvider provider,
+                GetCartRequest request,
+                UcpSession session
+        ) {
             getCount.incrementAndGet();
             return cartToolResult();
         }
 
-        private CartToolResult cartToolResult() {
+        @Override
+        public CancelCartResponse cancelCart(
+                MerchantCartProvider provider,
+                CancelCartRequest request,
+                UcpSession session
+        ) {
+            cancelCount.incrementAndGet();
+            return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
+        }
+
+        private UcpCartToolResult cartToolResult() {
             int sequence = cartSequence.incrementAndGet();
-            CartToolResponse response = new CartToolResponse(
+            UcpCartResponse response = new UcpCartResponse(
                     "Checkout when ready",
-                    new CartToolResponse.Cart(
+                    new UcpCartResponse.Cart(
                             "gid://shopify/Cart/" + sequence,
                             Instant.parse("2026-06-16T11:05:00Z"),
                             Instant.parse("2026-06-16T11:05:01Z"),
+                            null,
                             List.of(cartLine(sequence)),
-                            new CartToolResponse.Cost(
-                                    new CartToolResponse.Money("14.95", "USD"),
-                                    new CartToolResponse.Money("14.95", "USD")
+                            new UcpCartResponse.Cost(
+                                    new UcpCartResponse.Money("14.95", "USD"),
+                                    new UcpCartResponse.Money("14.95", "USD")
                             ),
                             1,
                             "https://merchant.example/checkout/" + sequence,
+                            null,
                             List.of(),
                             List.of(),
                             List.of(),
                             List.of(),
                             List.of(),
-                            List.of(deliveryGroup())
+                            List.of(deliveryGroup()),
+                            List.of()
                     ),
+                    List.of(),
                     List.of()
             );
-            return new CartToolResult(
+            return new UcpCartToolResult(
                     "https://merchant.example/api/mcp",
                     raw(response),
                     response
             );
         }
 
-        private CartToolResponse.Line cartLine(int sequence) {
-            return new CartToolResponse.Line(
+        private UcpCartResponse.Line cartLine(int sequence) {
+            return new UcpCartResponse.Line(
                     "gid://shopify/CartLine/" + sequence,
                     1,
-                    new CartToolResponse.Cost(
-                            new CartToolResponse.Money("14.95", "USD"),
-                            new CartToolResponse.Money("14.95", "USD")
+                    new UcpCartResponse.Cost(
+                            new UcpCartResponse.Money("14.95", "USD"),
+                            new UcpCartResponse.Money("14.95", "USD")
                     ),
-                    new CartToolResponse.Merchandise(
+                    new UcpCartResponse.Merchandise(
                             "gid://shopify/ProductVariant/" + sequence,
                             "3x6",
-                            new CartToolResponse.Product("gid://shopify/Product/" + sequence, "Candle")
+                            new UcpCartResponse.Product("gid://shopify/Product/" + sequence, "Candle")
                     )
             );
         }
 
-        private CartToolResponse.DeliveryGroup deliveryGroup() {
-            CartToolResponse.DeliveryOption standard = new CartToolResponse.DeliveryOption(
+        private UcpCartResponse.DeliveryGroup deliveryGroup() {
+            UcpCartResponse.DeliveryOption standard = new UcpCartResponse.DeliveryOption(
                     "standard",
                     "Standard",
                     "Arrives in 3 to 5 business days",
                     null,
-                    new CartToolResponse.Money("5.00", "USD"),
+                    new UcpCartResponse.Money("5.00", "USD"),
                     null,
                     "shipping",
                     "3 to 5 business days",
@@ -390,12 +451,12 @@ class CartControllerIT extends PostgresIntegrationTest {
                     null,
                     true
             );
-            CartToolResponse.DeliveryOption express = new CartToolResponse.DeliveryOption(
+            UcpCartResponse.DeliveryOption express = new UcpCartResponse.DeliveryOption(
                     "express",
                     "Express",
                     "Arrives in 1 to 2 business days",
                     null,
-                    new CartToolResponse.Money("12.00", "USD"),
+                    new UcpCartResponse.Money("12.00", "USD"),
                     null,
                     "shipping",
                     "1 to 2 business days",
@@ -403,7 +464,7 @@ class CartControllerIT extends PostgresIntegrationTest {
                     null,
                     false
             );
-            return new CartToolResponse.DeliveryGroup(
+            return new UcpCartResponse.DeliveryGroup(
                     "delivery-group-1",
                     "delivery-group-handle-1",
                     List.of(standard, express),
@@ -411,7 +472,7 @@ class CartControllerIT extends PostgresIntegrationTest {
             );
         }
 
-        private String raw(CartToolResponse response) {
+        private String raw(UcpCartResponse response) {
             try {
                 return new ObjectMapper().writeValueAsString(response);
             } catch (JacksonException exception) {

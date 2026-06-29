@@ -1,4 +1,4 @@
-package com.meant.api.module.cart.service.dto;
+package com.meant.api.plugin.cart.common.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

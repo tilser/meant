@@ -4,20 +4,26 @@ import static com.meant.api.common.util.CollectionUtils.safeList;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
-import com.meant.api.module.cart.service.dto.CartAddItem;
-import com.meant.api.module.cart.service.dto.CartToolResult;
-import com.meant.api.module.cart.service.dto.CartUpdateItem;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
-import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
+import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
+import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.cart.common.service.MerchantCartPluginDispatchService;
+import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
+import com.meant.api.plugin.cart.get.dto.GetCartRequest;
+import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
+import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -36,15 +42,22 @@ public class CartService {
 
     private final MerchantCartProviderLookupService merchantCartProviderLookupService;
     private final CartPersistenceService cartPersistenceService;
-    private final CartClient cartClient;
+    private final MerchantCartPluginDispatchService merchantCartPluginDispatchService;
     private final UserInventoryService userInventoryService;
     private final CartResultMapper cartResultMapper;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
-        UpdateCartArguments arguments = createArguments(command);
-        CartToolResult result = cartClient.updateCart(provider, arguments);
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(null, command.userId(), provider, result, arguments));
+        CreateCartRequest request = createCartRequest(command);
+        UcpSession session = UcpSession.start();
+        UcpCartToolResult result = merchantCartPluginDispatchService.createCart(provider, request, session);
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(
+                null,
+                command.userId(),
+                provider,
+                result,
+                request.giftCardCodes()
+        ));
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
@@ -53,33 +66,62 @@ public class CartService {
             return cartResultMapper.from(cart);
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        CartToolResult result = cartClient.getCart(provider, cart.getRemoteCartId());
+        UcpSession session = session(cart);
+        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
+                provider,
+                new GetCartRequest(cart.getRemoteCartId()),
+                session
+        );
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result));
     }
 
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        UpdateCartArguments arguments = updateArguments(cart, command);
-        CartToolResult result = cartClient.updateCart(provider, arguments);
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart.getId(), command.userId(), provider, result, arguments));
+        UpdateCartRequest request = updateCartRequest(cart, command);
+        UcpSession session = session(cart);
+        UcpCartToolResult result = merchantCartPluginDispatchService.updateCart(provider, request, session);
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(
+                cart.getId(),
+                command.userId(),
+                provider,
+                result,
+                request.giftCardCodes()
+        ));
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
-        if (!query.refresh() && cart.getCheckoutUrl() != null && !cart.getCheckoutUrl().isBlank()) {
+        if (!query.refresh() && hasText(handoffUrl(cart))) {
             importCartInventory(cart);
-            return new CheckoutResult(cart.getId(), cart.getRemoteCartId(), cart.getCheckoutUrl());
+            return new CheckoutResult(cart.getId(), cart.getRemoteCartId(), cart.getCheckoutUrl(), cart.getContinueUrl());
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        CartToolResult result = cartClient.getCart(provider, cart.getRemoteCartId());
+        UcpSession session = session(cart);
+        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
+                provider,
+                new GetCartRequest(cart.getRemoteCartId()),
+                session
+        );
         Cart refreshedCart = cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result);
         importCartInventory(refreshedCart);
         return new CheckoutResult(
                 refreshedCart.getId(),
                 refreshedCart.getRemoteCartId(),
-                refreshedCart.getCheckoutUrl()
+                refreshedCart.getCheckoutUrl(),
+                refreshedCart.getContinueUrl()
         );
+    }
+
+    public void cancel(@NotNull @Valid CancelCartCommand command) {
+        Cart cart = findCart(command.cartId(), command.userId());
+        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
+        merchantCartPluginDispatchService.cancelCart(
+                provider,
+                new CancelCartRequest(cart.getRemoteCartId()),
+                session(cart)
+        );
+        cartPersistenceService.deactivate(cart.getId(), command.userId());
     }
 
     private MerchantCartProvider findProvider(UUID merchantId, String merchantDomain) {
@@ -98,14 +140,11 @@ public class CartService {
         return cartPersistenceService.findCart(cartId, userId);
     }
 
-    private UpdateCartArguments createArguments(CreateCartCommand command) {
-        return new UpdateCartArguments(
-                null,
+    private CreateCartRequest createCartRequest(CreateCartCommand command) {
+        return new CreateCartRequest(
                 safeList(command.addItems()).stream()
                         .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
                         .toList(),
-                List.of(),
-                List.of(),
                 command.buyerIdentity(),
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
@@ -116,10 +155,10 @@ public class CartService {
         );
     }
 
-    private UpdateCartArguments updateArguments(Cart cart, UpdateCartCommand command) {
+    private UpdateCartRequest updateCartRequest(Cart cart, UpdateCartCommand command) {
         Map<UUID, String> remoteLineIdsByLocalId = new HashMap<>();
         cart.getLines().forEach(line -> remoteLineIdsByLocalId.put(line.getId(), line.getRemoteCartLineId()));
-        return new UpdateCartArguments(
+        return new UpdateCartRequest(
                 cart.getRemoteCartId(),
                 safeList(command.addItems()).stream()
                         .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
@@ -136,6 +175,21 @@ public class CartService {
                 normalizeCodes(command.giftCardCodes()),
                 command.note()
         );
+    }
+
+    private UcpSession session(Cart cart) {
+        return UcpSession.cart(cart.getRemoteCartId(), cart.getExpiresAt(), handoffUrl(cart));
+    }
+
+    private String handoffUrl(Cart cart) {
+        if (hasText(cart.getContinueUrl())) {
+            return cart.getContinueUrl();
+        }
+        return cart.getCheckoutUrl();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String remoteCartLineId(

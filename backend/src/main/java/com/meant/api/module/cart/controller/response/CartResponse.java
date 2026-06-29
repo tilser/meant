@@ -14,6 +14,7 @@ public record CartResponse(
         String endpoint,
         String remoteCartId,
         String checkoutUrl,
+        String continueUrl,
         String instructions,
         Integer totalQuantity,
         String totalAmount,
@@ -22,12 +23,14 @@ public record CartResponse(
         boolean active,
         Instant remoteCreatedAt,
         Instant remoteUpdatedAt,
+        Instant expiresAt,
         Instant createdAt,
         Instant updatedAt,
         Instant refreshedAt,
         List<CartAppliedCodeResponse> appliedCodes,
         List<CartLineResponse> lines,
-        List<CartDeliveryGroupResponse> deliveryGroups
+        List<CartDeliveryGroupResponse> deliveryGroups,
+        List<CartMessageResponse> messages
 ) {
 
     public static CartResponse from(CartResult result) {
@@ -38,6 +41,7 @@ public record CartResponse(
                 result.endpoint(),
                 result.remoteCartId(),
                 result.checkoutUrl(),
+                result.continueUrl(),
                 result.instructions(),
                 result.totalQuantity(),
                 result.totalAmount(),
@@ -46,6 +50,7 @@ public record CartResponse(
                 result.active(),
                 result.remoteCreatedAt(),
                 result.remoteUpdatedAt(),
+                result.expiresAt(),
                 result.createdAt(),
                 result.updatedAt(),
                 result.refreshedAt(),
@@ -54,6 +59,10 @@ public record CartResponse(
                 safeNonNullList(result.deliveryGroups()).stream()
                         .map(CartDeliveryGroupResponse::from)
                         .filter(group -> group != null)
+                        .toList(),
+                safeNonNullList(result.messages()).stream()
+                        .map(CartMessageResponse::from)
+                        .filter(message -> message != null)
                         .toList()
         );
     }

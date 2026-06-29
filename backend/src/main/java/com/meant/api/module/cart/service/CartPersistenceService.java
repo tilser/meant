@@ -8,10 +8,10 @@ import com.meant.api.module.cart.entity.CartAppliedCode;
 import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
-import com.meant.api.module.cart.service.dto.CartToolResponse;
-import com.meant.api.module.cart.service.dto.CartToolResult;
-import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.cart.common.support.UcpCartMoney;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -40,11 +40,14 @@ public class CartPersistenceService {
         Cart cart = cartRepository.findWithLinesByIdAndUserId(cartId, userId)
                 .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
         Hibernate.initialize(cart.getAppliedCodes());
+        if (cart.getExpiresAt() != null && !cart.getExpiresAt().isAfter(Instant.now())) {
+            throw CartException.notFound("Cart expired: " + cartId);
+        }
         return cart;
     }
 
     @Transactional
-    public Cart saveSnapshot(UUID cartId, UUID userId, MerchantCartProvider provider, CartToolResult result) {
+    public Cart saveSnapshot(UUID cartId, UUID userId, MerchantCartProvider provider, UcpCartToolResult result) {
         return saveSnapshot(cartId, userId, provider, result, null);
     }
 
@@ -53,10 +56,10 @@ public class CartPersistenceService {
             UUID cartId,
             UUID userId,
             MerchantCartProvider provider,
-            CartToolResult result,
-            UpdateCartArguments updateArguments
+            UcpCartToolResult result,
+            List<String> submittedGiftCardCodes
     ) {
-        CartToolResponse.Cart remoteCart = result.response().cart();
+        UcpCartResponse.Cart remoteCart = result.response().cart();
         Instant now = Instant.now();
         Cart cart = cartId == null
                 ? Cart.builder()
@@ -68,14 +71,15 @@ public class CartPersistenceService {
                 : findCart(cartId, userId);
         cart.assignProvider(provider.merchantId(), provider.domain());
         String remoteCartId = required(remoteCart.id(), "Remote cart id is required");
-        CartToolResponse.Money totalAmount = remoteCart.cost() == null ? null : remoteCart.cost().totalAmount();
-        CartToolResponse.Money subtotalAmount = remoteCart.cost() == null ? null : remoteCart.cost().subtotalAmount();
+        UcpCartResponse.Money totalAmount = remoteCart.cost() == null ? null : remoteCart.cost().totalAmount();
+        UcpCartResponse.Money subtotalAmount = remoteCart.cost() == null ? null : remoteCart.cost().subtotalAmount();
         String currency = currency(totalAmount, subtotalAmount);
         cart.replaceSnapshot(
                 result.endpoint(),
                 remoteCartId,
                 hash(remoteCartId),
                 remoteCart.checkoutUrl(),
+                remoteCart.continueUrl(),
                 result.response().instructions(),
                 result.rawResponse(),
                 remoteCart.totalQuantity() == null ? totalQuantity(remoteCart.lines()) : remoteCart.totalQuantity(),
@@ -84,6 +88,7 @@ public class CartPersistenceService {
                 currency,
                 remoteCart.createdAt(),
                 remoteCart.updatedAt(),
+                remoteCart.expiresAt(),
                 now
         );
         cart.replaceLines(safeNonNullList(remoteCart.lines()).stream()
@@ -92,17 +97,24 @@ public class CartPersistenceService {
         cart.replaceAppliedCodes(toAppliedCodes(
                 remoteCart,
                 currency,
-                updateArguments == null ? null : updateArguments.giftCardCodes(),
+                submittedGiftCardCodes,
                 cart.getAppliedCodes()
         ));
         return cartRepository.save(cart);
     }
 
-    private CartLine toCartLine(CartToolResponse.Line line, Instant now) {
-        CartToolResponse.Merchandise merchandise = line.merchandise();
-        CartToolResponse.Product product = merchandise == null ? null : merchandise.product();
-        CartToolResponse.Money totalAmount = line.cost() == null ? null : line.cost().totalAmount();
-        CartToolResponse.Money subtotalAmount = line.cost() == null ? null : line.cost().subtotalAmount();
+    @Transactional
+    public void deactivate(UUID cartId, UUID userId) {
+        Cart cart = findCart(cartId, userId);
+        cart.deactivate(Instant.now());
+        cartRepository.save(cart);
+    }
+
+    private CartLine toCartLine(UcpCartResponse.Line line, Instant now) {
+        UcpCartResponse.Merchandise merchandise = line.merchandise();
+        UcpCartResponse.Product product = merchandise == null ? null : merchandise.product();
+        UcpCartResponse.Money totalAmount = line.cost() == null ? null : line.cost().totalAmount();
+        UcpCartResponse.Money subtotalAmount = line.cost() == null ? null : line.cost().subtotalAmount();
         return CartLine.builder()
                 .remoteCartLineId(required(line.id(), "Remote cart line id is required"))
                 .productId(product == null ? null : product.id())
@@ -120,7 +132,7 @@ public class CartPersistenceService {
     }
 
     private List<CartAppliedCode> toAppliedCodes(
-            CartToolResponse.Cart remoteCart,
+            UcpCartResponse.Cart remoteCart,
             String cartCurrency,
             List<String> submittedGiftCardCodes,
             List<CartAppliedCode> existingAppliedCodes
@@ -152,11 +164,11 @@ public class CartPersistenceService {
     private void addAppliedCodeValues(
             List<AppliedCodeValue> values,
             CartAppliedCodeType type,
-            List<CartToolResponse.AppliedCode> appliedCodes,
+            List<UcpCartResponse.AppliedCode> appliedCodes,
             String cartCurrency,
             List<String> knownGiftCardCodes
     ) {
-        for (CartToolResponse.AppliedCode appliedCode : safeNonNullList(appliedCodes)) {
+        for (UcpCartResponse.AppliedCode appliedCode : safeNonNullList(appliedCodes)) {
             String remoteCode = blankToNull(appliedCode.code());
             AppliedCodeValue value = new AppliedCodeValue(
                     type,
@@ -219,30 +231,24 @@ public class CartPersistenceService {
         return -1;
     }
 
-    private int totalQuantity(List<CartToolResponse.Line> lines) {
+    private int totalQuantity(List<UcpCartResponse.Line> lines) {
         return safeNonNullList(lines).stream()
-                .map(CartToolResponse.Line::quantity)
+                .map(UcpCartResponse.Line::quantity)
                 .filter(quantity -> quantity != null)
                 .mapToInt(Integer::intValue)
                 .sum();
     }
 
-    private String amount(CartToolResponse.Money money) {
-        return money == null ? null : money.amount();
+    private String amount(UcpCartResponse.Money money) {
+        return UcpCartMoney.displayAmount(money);
     }
 
-    private String currency(CartToolResponse.Money first, CartToolResponse.Money second) {
-        return currency(first, second, null);
+    private String currency(UcpCartResponse.Money first, UcpCartResponse.Money second) {
+        return UcpCartMoney.currency(first, second);
     }
 
-    private String currency(CartToolResponse.Money first, CartToolResponse.Money second, String fallback) {
-        if (first != null && first.currency() != null && !first.currency().isBlank()) {
-            return first.currency();
-        }
-        if (second != null && second.currency() != null && !second.currency().isBlank()) {
-            return second.currency();
-        }
-        return fallback;
+    private String currency(UcpCartResponse.Money first, UcpCartResponse.Money second, String fallback) {
+        return UcpCartMoney.currency(first, second, fallback);
     }
 
     private String blankToNull(String value) {

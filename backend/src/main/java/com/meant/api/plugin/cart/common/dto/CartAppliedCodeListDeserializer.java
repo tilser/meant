@@ -1,4 +1,4 @@
-package com.meant.api.module.cart.service.dto;
+package com.meant.api.plugin.cart.common.dto;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,15 +8,15 @@ import tools.jackson.core.JsonToken;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.ValueDeserializer;
 
-public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<CartToolResponse.AppliedCode>> {
+public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<UcpCartResponse.AppliedCode>> {
 
     @Override
-    public List<CartToolResponse.AppliedCode> deserialize(
+    public List<UcpCartResponse.AppliedCode> deserialize(
             JsonParser parser,
             DeserializationContext context
     ) throws JacksonException {
         if (parser.currentToken() == JsonToken.VALUE_STRING) {
-            return List.of(new CartToolResponse.AppliedCode(parser.getValueAsString(), null, null, null));
+            return List.of(new UcpCartResponse.AppliedCode(parser.getValueAsString(), null, null, null));
         }
         if (parser.currentToken() == JsonToken.START_OBJECT) {
             return List.of(readAppliedCode(parser));
@@ -26,11 +26,11 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
             return List.of();
         }
 
-        List<CartToolResponse.AppliedCode> values = new ArrayList<>();
+        List<UcpCartResponse.AppliedCode> values = new ArrayList<>();
         JsonToken token;
         while ((token = parser.nextToken()) != null && token != JsonToken.END_ARRAY) {
             if (token == JsonToken.VALUE_STRING) {
-                values.add(new CartToolResponse.AppliedCode(parser.getValueAsString(), null, null, null));
+                values.add(new UcpCartResponse.AppliedCode(parser.getValueAsString(), null, null, null));
             } else if (token == JsonToken.START_OBJECT) {
                 values.add(readAppliedCode(parser));
             } else {
@@ -40,11 +40,11 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
         return values;
     }
 
-    private CartToolResponse.AppliedCode readAppliedCode(JsonParser parser) throws JacksonException {
+    private UcpCartResponse.AppliedCode readAppliedCode(JsonParser parser) throws JacksonException {
         String code = null;
         String label = null;
         Boolean applicable = null;
-        CartToolResponse.Money amount = null;
+        UcpCartResponse.Money amount = null;
 
         JsonToken token;
         while ((token = parser.nextToken()) != null && token != JsonToken.END_OBJECT) {
@@ -62,7 +62,7 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
                 case "title", "label", "name" -> label = scalarValue(parser);
                 case "applicable", "valid" -> applicable = booleanValue(parser);
                 case "amount", "discounted_amount", "amount_used", "applied_amount", "value" -> {
-                    CartToolResponse.Money candidate = moneyValue(parser);
+                    UcpCartResponse.Money candidate = moneyValue(parser);
                     if (candidate != null) {
                         amount = candidate;
                     }
@@ -71,12 +71,12 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
             }
         }
 
-        return new CartToolResponse.AppliedCode(code, label, applicable, amount);
+        return new UcpCartResponse.AppliedCode(code, label, applicable, amount);
     }
 
-    private CartToolResponse.Money moneyValue(JsonParser parser) throws JacksonException {
+    private UcpCartResponse.Money moneyValue(JsonParser parser) throws JacksonException {
         if (parser.currentToken() == JsonToken.START_OBJECT) {
-            String amount = null;
+            Object amount = null;
             String currency = null;
             JsonToken token;
             while ((token = parser.nextToken()) != null && token != JsonToken.END_OBJECT) {
@@ -90,15 +90,15 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<Cart
                     break;
                 }
                 switch (fieldName) {
-                    case "amount", "value" -> amount = scalarValue(parser);
+                    case "amount", "value", "minor_amount", "amount_minor", "amount_cents" -> amount = scalarValue(parser);
                     case "currency", "currency_code", "currencyCode" -> currency = scalarValue(parser);
                     default -> parser.skipChildren();
                 }
             }
-            return amount == null && currency == null ? null : new CartToolResponse.Money(amount, currency);
+            return amount == null && currency == null ? null : new UcpCartResponse.Money(amount, currency);
         }
         String amount = scalarValue(parser);
-        return amount == null ? null : new CartToolResponse.Money(amount, null);
+        return amount == null ? null : new UcpCartResponse.Money(amount, null);
     }
 
     private String scalarValue(JsonParser parser) throws JacksonException {

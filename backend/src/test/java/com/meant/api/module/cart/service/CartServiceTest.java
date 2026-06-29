@@ -13,17 +13,24 @@ import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
-import com.meant.api.module.cart.service.dto.CartToolResponse;
-import com.meant.api.module.cart.service.dto.CartToolResult;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
-import com.meant.api.module.cart.service.dto.UpdateCartArguments;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
+import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
+import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.cart.common.service.MerchantCartPluginDispatchService;
+import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
+import com.meant.api.plugin.cart.get.dto.GetCartRequest;
+import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.support.UcpSession;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -48,7 +55,7 @@ class CartServiceTest {
 
     private FakeMerchantRepository merchantRepository;
     private FakeCartRepository cartRepository;
-    private FakeCartClient cartClient;
+    private FakeCartDispatchService cartDispatchService;
     private FakeUserInventoryService userInventoryService;
     private CartService cartService;
     private Merchant merchant;
@@ -57,7 +64,7 @@ class CartServiceTest {
     void setUp() {
         merchantRepository = new FakeMerchantRepository();
         cartRepository = new FakeCartRepository();
-        cartClient = new FakeCartClient();
+        cartDispatchService = new FakeCartDispatchService();
         userInventoryService = new FakeUserInventoryService();
         CartPersistenceService cartPersistenceService = new CartPersistenceService(
                 cartRepository.proxy(),
@@ -66,13 +73,13 @@ class CartServiceTest {
         cartService = new CartService(
                 new MerchantCartProviderLookupService(merchantRepository.proxy()),
                 cartPersistenceService,
-                cartClient,
+                cartDispatchService,
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper())
         );
         merchant = merchant();
         merchantRepository.save(merchant);
-        cartClient.cartToolResult = cartToolResult();
+        cartDispatchService.cartToolResult = cartToolResult();
     }
 
     @Test
@@ -96,12 +103,13 @@ class CartServiceTest {
         assertThat(result.lines()).hasSize(1);
         assertThat(result.lines().getFirst().remoteCartLineId()).isEqualTo("gid://shopify/CartLine/1");
         assertThat(cartRepository.saveCount).isEqualTo(1);
-        assertThat(cartClient.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.createCount).isEqualTo(1);
+        assertThat(cartDispatchService.updateCount).isZero();
     }
 
     @Test
     void createSavesAppliedCodesAndAdjustedTotal() {
-        cartClient.cartToolResult = cartToolResultWithAppliedCodes();
+        cartDispatchService.cartToolResult = cartToolResultWithAppliedCodes();
 
         CartResult result = cartService.create(new CreateCartCommand(
                 USER_ID,
@@ -128,7 +136,7 @@ class CartServiceTest {
 
     @Test
     void createCarriesDeliveryGroupsFromRemoteSnapshot() {
-        cartClient.cartToolResult = cartToolResult(List.of(cartLine()), 1, List.of(deliveryGroup()));
+        cartDispatchService.cartToolResult = cartToolResult(List.of(cartLine()), 1, List.of(deliveryGroup()));
 
         CartResult result = cartService.create(new CreateCartCommand(
                 USER_ID,
@@ -162,7 +170,7 @@ class CartServiceTest {
                 .displayOrder(0)
                 .build()));
         cartRepository.save(cart);
-        cartClient.cartToolResult = cartToolResultWithAppliedCodes();
+        cartDispatchService.cartToolResult = cartToolResultWithAppliedCodes();
 
         CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, true));
 
@@ -174,7 +182,7 @@ class CartServiceTest {
 
     @Test
     void getWithoutRefreshReturnsDeliveryGroupsFromStoredSnapshot() {
-        cartClient.cartToolResult = cartToolResult(List.of(cartLine()), 1, List.of(deliveryGroup()));
+        cartDispatchService.cartToolResult = cartToolResult(List.of(cartLine()), 1, List.of(deliveryGroup()));
         CartResult created = cartService.create(new CreateCartCommand(
                 USER_ID,
                 merchant.getId(),
@@ -188,14 +196,14 @@ class CartServiceTest {
                 List.of(),
                 null
         ));
-        cartClient.getCount = 0;
+        cartDispatchService.getCount = 0;
 
         CartResult result = cartService.get(new GetCartQuery(created.cartId(), USER_ID, false));
 
         assertThat(result.deliveryGroups()).hasSize(1);
         assertThat(result.deliveryGroups().getFirst().deliveryOptions()).extracting("cost.amount")
                 .containsExactly("5.00", "12.00");
-        assertThat(cartClient.getCount).isZero();
+        assertThat(cartDispatchService.getCount).isZero();
     }
 
     @Test
@@ -209,13 +217,13 @@ class CartServiceTest {
 
     @Test
     void cartResultMapperFiltersNullDeliveryGroupsAndOptions() {
-        CartToolResponse.DeliveryGroup group = new CartToolResponse.DeliveryGroup(
+        UcpCartResponse.DeliveryGroup group = new UcpCartResponse.DeliveryGroup(
                 "delivery-group-1",
                 "delivery-group-handle-1",
                 Arrays.asList(null, deliveryOption("standard", true)),
                 null
         );
-        CartToolResponse response = cartToolResponse(List.of(cartLine()), 1, Arrays.asList(null, group));
+        UcpCartResponse response = cartToolResponse(List.of(cartLine()), 1, Arrays.asList(null, group));
         Cart cart = cart(UUID.randomUUID(), "https://merchant.example/checkout", UUID.randomUUID(), raw(response));
 
         CartResult result = new CartResultMapper(new ObjectMapper()).from(cart);
@@ -233,7 +241,7 @@ class CartServiceTest {
         CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(cartClient.getCount).isZero();
+        assertThat(cartDispatchService.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
 
@@ -245,8 +253,8 @@ class CartServiceTest {
         CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, true));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(cartClient.getCount).isEqualTo(1);
-        assertThat(cartClient.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
+        assertThat(cartDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
         assertThat(cartRepository.saveCount).isEqualTo(1);
     }
 
@@ -272,9 +280,9 @@ class CartServiceTest {
                 null
         ));
 
-        assertThat(cartClient.lastUpdateArguments.updateItems()).extracting("id")
+        assertThat(cartDispatchService.lastUpdateRequest.updateItems()).extracting("id")
                 .containsExactly("gid://shopify/CartLine/1");
-        assertThat(cartClient.lastUpdateArguments.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
+        assertThat(cartDispatchService.lastUpdateRequest.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
     }
 
     @Test
@@ -299,8 +307,8 @@ class CartServiceTest {
                 null
         ));
 
-        assertThat(cartClient.lastUpdateArguments.discountCodes()).isNull();
-        assertThat(cartClient.lastUpdateArguments.giftCardCodes()).isNull();
+        assertThat(cartDispatchService.lastUpdateRequest.discountCodes()).isNull();
+        assertThat(cartDispatchService.lastUpdateRequest.giftCardCodes()).isNull();
     }
 
     @Test
@@ -327,7 +335,7 @@ class CartServiceTest {
                 null
         ));
 
-        assertThat(cartClient.lastUpdateArguments.selectedDeliveryOptions())
+        assertThat(cartDispatchService.lastUpdateRequest.selectedDeliveryOptions())
                 .containsExactly(Map.of(
                         "delivery_group_id", "delivery-group-1",
                         "delivery_option_handle", "express"
@@ -338,7 +346,7 @@ class CartServiceTest {
     void updateRejectedByMerchantLeavesStoredCartUnchanged() {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
-        cartClient.updateException = CartException.rejected("Discount code EXPIRED was not accepted by the merchant.");
+        cartDispatchService.updateException = CartException.rejected("Discount code EXPIRED was not accepted by the merchant.");
 
         assertThatThrownBy(() -> cartService.update(new UpdateCartCommand(
                 cartId,
@@ -365,7 +373,7 @@ class CartServiceTest {
 
     @Test
     void createIgnoresNullRemoteCartLinesWhenSavingSnapshot() {
-        cartClient.cartToolResult = cartToolResult(Arrays.asList(null, cartLine()), null);
+        cartDispatchService.cartToolResult = cartToolResult(Arrays.asList(null, cartLine()), null);
 
         CartResult result = cartService.create(new CreateCartCommand(
                 USER_ID,
@@ -394,8 +402,8 @@ class CartServiceTest {
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(cartClient.getCount).isEqualTo(1);
-        assertThat(cartClient.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
+        assertThat(cartDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
         assertImportedCandle();
     }
 
@@ -407,7 +415,7 @@ class CartServiceTest {
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
-        assertThat(cartClient.getCount).isZero();
+        assertThat(cartDispatchService.getCount).isZero();
         assertImportedCandle();
     }
 
@@ -419,8 +427,53 @@ class CartServiceTest {
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, true));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(cartClient.getCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
         assertImportedCandle();
+    }
+
+    @Test
+    void cartLifecycleCreateUpdateCancelThenGetReturnsNotFound() {
+        CartResult created = cartService.create(new CreateCartCommand(
+                USER_ID,
+                merchant.getId(),
+                null,
+                List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+
+        cartService.update(new UpdateCartCommand(
+                created.cartId(),
+                USER_ID,
+                List.of(new UpdateCartCommand.AddItem("gid://shopify/ProductVariant/2", 1)),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+        cartService.cancel(new CancelCartCommand(created.cartId(), USER_ID));
+
+        assertThat(cartDispatchService.createCount).isEqualTo(1);
+        assertThat(cartDispatchService.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.cancelCount).isEqualTo(1);
+        assertThat(cartDispatchService.lastCanceledRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartRepository.carts.get(created.cartId()).isActive()).isFalse();
+        assertThatThrownBy(() -> cartService.get(new GetCartQuery(created.cartId(), USER_ID, false)))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart not found: " + created.cartId())
+                .satisfies(exception -> assertThat(((CartException) exception).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     @Test
@@ -433,7 +486,7 @@ class CartServiceTest {
                 .hasMessage("Cart not found: " + cartId)
                 .satisfies(exception -> assertThat(((CartException) exception).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));
-        assertThat(cartClient.getCount).isZero();
+        assertThat(cartDispatchService.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
 
@@ -461,7 +514,7 @@ class CartServiceTest {
                 .hasMessage("Cart not found: " + cartId)
                 .satisfies(exception -> assertThat(((CartException) exception).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));
-        assertThat(cartClient.updateCount).isZero();
+        assertThat(cartDispatchService.updateCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
 
@@ -475,7 +528,7 @@ class CartServiceTest {
                 .hasMessage("Cart not found: " + cartId)
                 .satisfies(exception -> assertThat(((CartException) exception).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));
-        assertThat(cartClient.getCount).isZero();
+        assertThat(cartDispatchService.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
 
@@ -584,7 +637,7 @@ class CartServiceTest {
         });
     }
 
-    private CartToolResult cartToolResult() {
+    private UcpCartToolResult cartToolResult() {
         return cartToolResult(List.of(cartLine()), 1, List.of());
     }
 
@@ -602,112 +655,120 @@ class CartServiceTest {
         }
     }
 
-    private CartToolResult cartToolResult(List<CartToolResponse.Line> lines, Integer totalQuantity) {
+    private UcpCartToolResult cartToolResult(List<UcpCartResponse.Line> lines, Integer totalQuantity) {
         return cartToolResult(lines, totalQuantity, List.of());
     }
 
-    private CartToolResult cartToolResult(
-            List<CartToolResponse.Line> lines,
+    private UcpCartToolResult cartToolResult(
+            List<UcpCartResponse.Line> lines,
             Integer totalQuantity,
-            List<CartToolResponse.DeliveryGroup> deliveryGroups
+            List<UcpCartResponse.DeliveryGroup> deliveryGroups
     ) {
-        CartToolResponse response = cartToolResponse(lines, totalQuantity, deliveryGroups);
-        return new CartToolResult(
+        UcpCartResponse response = cartToolResponse(lines, totalQuantity, deliveryGroups);
+        return new UcpCartToolResult(
                 "https://merchant.example/api/mcp",
                 raw(response),
                 response
         );
     }
 
-    private CartToolResponse cartToolResponse(
-            List<CartToolResponse.Line> lines,
+    private UcpCartResponse cartToolResponse(
+            List<UcpCartResponse.Line> lines,
             Integer totalQuantity,
-            List<CartToolResponse.DeliveryGroup> deliveryGroups
+            List<UcpCartResponse.DeliveryGroup> deliveryGroups
     ) {
-        return new CartToolResponse(
+        return new UcpCartResponse(
                 "Checkout when ready",
-                new CartToolResponse.Cart(
+                new UcpCartResponse.Cart(
                         "gid://shopify/Cart/1",
                         CART_REMOTE_CREATED_AT,
                         CART_REMOTE_UPDATED_AT,
+                        null,
                         lines,
-                        new CartToolResponse.Cost(
-                                new CartToolResponse.Money("14.95", "USD"),
-                                new CartToolResponse.Money("14.95", "USD")
+                        new UcpCartResponse.Cost(
+                                new UcpCartResponse.Money("14.95", "USD"),
+                                new UcpCartResponse.Money("14.95", "USD")
                         ),
                         totalQuantity,
                         "https://merchant.example/checkout",
+                        null,
                         List.of(),
                         List.of(),
                         List.of(),
                         List.of(),
                         List.of(),
-                        deliveryGroups
+                        deliveryGroups,
+                        List.of()
                 ),
+                List.of(),
                 List.of()
         );
     }
 
-    private CartToolResult cartToolResultWithAppliedCodes() {
-        CartToolResponse response = new CartToolResponse(
+    private UcpCartToolResult cartToolResultWithAppliedCodes() {
+        UcpCartResponse response = new UcpCartResponse(
                 "Checkout when ready",
-                new CartToolResponse.Cart(
+                new UcpCartResponse.Cart(
                         "gid://shopify/Cart/1",
                         CART_REMOTE_CREATED_AT,
                         CART_REMOTE_UPDATED_AT,
+                        null,
                         List.of(cartLine()),
-                        new CartToolResponse.Cost(
-                                new CartToolResponse.Money("7.95", "USD"),
-                                new CartToolResponse.Money("14.95", "USD")
+                        new UcpCartResponse.Cost(
+                                new UcpCartResponse.Money("7.95", "USD"),
+                                new UcpCartResponse.Money("14.95", "USD")
                         ),
                         1,
                         "https://merchant.example/checkout",
-                        List.of(new CartToolResponse.AppliedCode(
+                        null,
+                        List.of(new UcpCartResponse.AppliedCode(
                                 "SAVE5",
                                 "Spring discount",
                                 true,
-                                new CartToolResponse.Money("5.00", "USD")
+                                new UcpCartResponse.Money("5.00", "USD")
                         )),
                         List.of(),
                         List.of(),
-                        List.of(new CartToolResponse.AppliedCode(
+                        List.of(new UcpCartResponse.AppliedCode(
                                 "1234",
                                 "Gift card",
                                 true,
-                                new CartToolResponse.Money("2.00", "USD")
+                                new UcpCartResponse.Money("2.00", "USD")
                         )),
+                        List.of(),
                         List.of(),
                         List.of()
                 ),
+                List.of(),
                 List.of()
         );
-        return new CartToolResult(
+        return new UcpCartToolResult(
                 "https://merchant.example/api/mcp",
                 raw(response),
                 response
         );
     }
 
-    private CartToolResponse.Line cartLine() {
-        return new CartToolResponse.Line(
+    private UcpCartResponse.Line cartLine() {
+        return new UcpCartResponse.Line(
                 "gid://shopify/CartLine/1",
                 1,
-                new CartToolResponse.Cost(
-                        new CartToolResponse.Money("14.95", "USD"),
-                        new CartToolResponse.Money("14.95", "USD")
+                new UcpCartResponse.Cost(
+                        new UcpCartResponse.Money("14.95", "USD"),
+                        new UcpCartResponse.Money("14.95", "USD")
                 ),
-                new CartToolResponse.Merchandise(
+                new UcpCartResponse.Merchandise(
                         "gid://shopify/ProductVariant/1",
                         "3x6",
-                        new CartToolResponse.Product("gid://shopify/Product/1", "Candle")
+                        new UcpCartResponse.Product("gid://shopify/Product/1", "Candle")
                 )
         );
     }
 
-    private CartToolResponse.DeliveryGroup deliveryGroup() {
-        CartToolResponse.DeliveryOption standard = deliveryOption("standard", true);
-        CartToolResponse.DeliveryOption express = deliveryOption("express", false);
-        return new CartToolResponse.DeliveryGroup(
+    private UcpCartResponse.DeliveryGroup deliveryGroup() {
+        UcpCartResponse.DeliveryOption standard = deliveryOption("standard", true);
+        UcpCartResponse.DeliveryOption express = deliveryOption("express", false);
+        return new UcpCartResponse.DeliveryGroup(
                 "delivery-group-1",
                 "delivery-group-handle-1",
                 List.of(standard, express),
@@ -715,16 +776,16 @@ class CartServiceTest {
         );
     }
 
-    private CartToolResponse.DeliveryOption deliveryOption(String handle, boolean selected) {
+    private UcpCartResponse.DeliveryOption deliveryOption(String handle, boolean selected) {
         String title = handle.equals("standard") ? "Standard" : "Express";
         String speed = handle.equals("standard") ? "3 to 5 business days" : "1 to 2 business days";
         String cost = handle.equals("standard") ? "5.00" : "12.00";
-        return new CartToolResponse.DeliveryOption(
+        return new UcpCartResponse.DeliveryOption(
                 handle,
                 title,
                 "Arrives in " + speed,
                 null,
-                new CartToolResponse.Money(cost, "USD"),
+                new UcpCartResponse.Money(cost, "USD"),
                 null,
                 "shipping",
                 speed,
@@ -734,7 +795,7 @@ class CartServiceTest {
         );
     }
 
-    private String raw(CartToolResponse response) {
+    private String raw(UcpCartResponse response) {
         try {
             return new ObjectMapper().writeValueAsString(response);
         } catch (JacksonException exception) {
@@ -742,23 +803,40 @@ class CartServiceTest {
         }
     }
 
-    static class FakeCartClient extends CartClient {
+    static class FakeCartDispatchService extends MerchantCartPluginDispatchService {
 
-        private CartToolResult cartToolResult;
-        private UpdateCartArguments lastUpdateArguments;
+        private UcpCartToolResult cartToolResult;
+        private UpdateCartRequest lastUpdateRequest;
         private RuntimeException updateException;
         private String lastRemoteCartId;
+        private String lastCanceledRemoteCartId;
+        private int createCount;
         private int updateCount;
         private int getCount;
+        private int cancelCount;
 
-        FakeCartClient() {
-            super(null, null);
+        FakeCartDispatchService() {
+            super(null, null, null);
         }
 
         @Override
-        public CartToolResult updateCart(MerchantCartProvider provider, UpdateCartArguments arguments) {
+        public UcpCartToolResult createCart(
+                MerchantCartProvider provider,
+                CreateCartRequest request,
+                UcpSession session
+        ) {
+            createCount++;
+            return cartToolResult;
+        }
+
+        @Override
+        public UcpCartToolResult updateCart(
+                MerchantCartProvider provider,
+                UpdateCartRequest request,
+                UcpSession session
+        ) {
             updateCount++;
-            lastUpdateArguments = arguments;
+            lastUpdateRequest = request;
             if (updateException != null) {
                 throw updateException;
             }
@@ -766,10 +844,25 @@ class CartServiceTest {
         }
 
         @Override
-        public CartToolResult getCart(MerchantCartProvider provider, String remoteCartId) {
+        public UcpCartToolResult getCart(
+                MerchantCartProvider provider,
+                GetCartRequest request,
+                UcpSession session
+        ) {
             getCount++;
-            lastRemoteCartId = remoteCartId;
+            lastRemoteCartId = request.cartId();
             return cartToolResult;
+        }
+
+        @Override
+        public CancelCartResponse cancelCart(
+                MerchantCartProvider provider,
+                CancelCartRequest request,
+                UcpSession session
+        ) {
+            cancelCount++;
+            lastCanceledRemoteCartId = request.cartId();
+            return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
         }
     }
 
@@ -816,7 +909,7 @@ class CartServiceTest {
                     (proxy, method, args) -> switch (method.getName()) {
                         case "findWithLinesByIdAndUserId" -> {
                             Cart cart = carts.get(args[0]);
-                            yield cart == null || !cart.getUserId().equals(args[1])
+                            yield cart == null || !cart.getUserId().equals(args[1]) || !cart.isActive()
                                     ? Optional.empty()
                                     : Optional.of(cart);
                         }

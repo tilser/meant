@@ -1,7 +1,9 @@
-package com.meant.api.module.cart.service.dto;
+package com.meant.api.plugin.cart.update.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import java.util.List;
 import java.util.Map;
 

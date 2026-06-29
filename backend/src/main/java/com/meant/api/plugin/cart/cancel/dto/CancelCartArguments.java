@@ -1,8 +1,8 @@
-package com.meant.api.module.cart.service.dto;
+package com.meant.api.plugin.cart.cancel.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public record GetCartArguments(
+public record CancelCartArguments(
         @JsonProperty("cart_id")
         String cartId
 ) {

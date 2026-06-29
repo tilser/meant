@@ -6,10 +6,11 @@ import java.util.UUID;
 public record CheckoutResponse(
         UUID cartId,
         String remoteCartId,
-        String checkoutUrl
+        String checkoutUrl,
+        String continueUrl
 ) {
 
     public static CheckoutResponse from(CheckoutResult result) {
-        return new CheckoutResponse(result.cartId(), result.remoteCartId(), result.checkoutUrl());
+        return new CheckoutResponse(result.cartId(), result.remoteCartId(), result.checkoutUrl(), result.continueUrl());
     }
 }

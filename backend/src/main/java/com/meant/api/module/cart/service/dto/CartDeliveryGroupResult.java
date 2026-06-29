@@ -2,6 +2,7 @@ package com.meant.api.module.cart.service.dto;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import java.util.List;
 
 public record CartDeliveryGroupResult(
@@ -11,7 +12,7 @@ public record CartDeliveryGroupResult(
         CartDeliveryOptionResult selectedDeliveryOption
 ) {
 
-    public static CartDeliveryGroupResult from(CartToolResponse.DeliveryGroup group) {
+    public static CartDeliveryGroupResult from(UcpCartResponse.DeliveryGroup group) {
         if (group == null) {
             return null;
         }

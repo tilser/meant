@@ -5,6 +5,7 @@ import java.util.UUID;
 public record CheckoutResult(
         UUID cartId,
         String remoteCartId,
-        String checkoutUrl
+        String checkoutUrl,
+        String continueUrl
 ) {
 }

@@ -11,6 +11,6 @@ import org.springframework.data.repository.query.Param;
 public interface CartRepository extends JpaRepository<Cart, UUID> {
 
     @EntityGraph(attributePaths = {"lines"})
-    @Query("select cart from Cart cart where cart.id = :id and cart.userId = :userId")
+    @Query("select cart from Cart cart where cart.id = :id and cart.userId = :userId and cart.active = true")
     Optional<Cart> findWithLinesByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 }

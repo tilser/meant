@@ -1,5 +1,6 @@
 package com.meant.api.module.cart.service.dto;
 
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import java.time.Instant;
 
 public record CartDeliveryOptionResult(
@@ -15,7 +16,7 @@ public record CartDeliveryOptionResult(
         Boolean selected
 ) {
 
-    public static CartDeliveryOptionResult from(CartToolResponse.DeliveryOption option) {
+    public static CartDeliveryOptionResult from(UcpCartResponse.DeliveryOption option) {
         if (option == null) {
             return null;
         }
