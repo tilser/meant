@@ -2,6 +2,7 @@ package com.meant.api.plugin.transport.profile;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.meant.api.plugin.signing.PublicSigningKey;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import java.net.URI;
 import java.util.Collections;
@@ -16,6 +17,7 @@ public record AgentProfile(
         @JsonProperty("protocol_version") String protocolVersion,
         @JsonProperty("supported_versions") Map<String, String> supportedVersions,
         @JsonProperty("signing_key_id") String signingKeyId,
+        @JsonProperty("signing_keys") List<PublicSigningKey> signingKeys,
         List<CapabilityAdvertisement> capabilities
 ) {
 
@@ -24,17 +26,31 @@ public record AgentProfile(
         protocolVersion = requireText(protocolVersion, "protocolVersion");
         supportedVersions = immutableLinkedMap(supportedVersions);
         signingKeyId = requireText(signingKeyId, "signingKeyId");
+        signingKeys = signingKeys == null ? List.of() : List.copyOf(signingKeys);
         capabilities = capabilities == null ? List.of() : List.copyOf(capabilities);
     }
 
     public static AgentProfile from(AgentIdentity identity, List<CapabilityAdvertisement> capabilities) {
+        return from(identity, capabilities, List.of());
+    }
+
+    public static AgentProfile from(
+            AgentIdentity identity,
+            List<CapabilityAdvertisement> capabilities,
+            List<PublicSigningKey> signingKeys
+    ) {
         return new AgentProfile(
                 identity.profileUrl(),
                 identity.protocolVersion(),
                 Map.of(identity.protocolVersion(), protocolSpecUrl(identity.protocolVersion())),
                 identity.signingKeyId(),
+                signingKeys,
                 capabilities
         );
+    }
+
+    public AgentProfile withSigningKeys(List<PublicSigningKey> signingKeys) {
+        return new AgentProfile(profileUrl, protocolVersion, supportedVersions, signingKeyId, signingKeys, capabilities);
     }
 
     private static String protocolSpecUrl(String protocolVersion) {

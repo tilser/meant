@@ -23,6 +23,9 @@
         <lombok.version>1.18.46</lombok.version>
         <springdoc-openapi.version>3.0.0</springdoc-openapi.version>
         <testcontainers.version>2.0.2</testcontainers.version>
+        <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
+        <java-json-canonicalization.version>1.1</java-json-canonicalization.version>
+        <http-message-signatures.version>1.8</http-message-signatures.version>
     </properties>
 
     <dependencies>
@@ -61,6 +64,21 @@
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>${nimbus-jose-jwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.erdtman</groupId>
+            <artifactId>java-json-canonicalization</artifactId>
+            <version>${java-json-canonicalization.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.authlete</groupId>
+            <artifactId>http-message-signatures</artifactId>
+            <version>${http-message-signatures.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springdoc</groupId>

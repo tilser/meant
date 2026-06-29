@@ -96,6 +96,10 @@ ucp:
     profile-url: ${UCP_AGENT_PROFILE_URL:https://www.machinecommerce.dev/ucp/agent-profile/ucp-agent.json}
     protocol-version: ${UCP_AGENT_PROTOCOL_VERSION:2026-04-08}
     signing-key-id: ${UCP_AGENT_SIGNING_KEY_ID:meant-local}
+  signing:
+    signature-ttl: ${UCP_SIGNING_SIGNATURE_TTL:PT5M}
+    clock-skew: ${UCP_SIGNING_CLOCK_SKEW:PT30S}
+    keys: []
 
 ai:
   openrouter:

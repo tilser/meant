@@ -8,9 +8,16 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.signing.PublicSigningKey;
+import com.meant.api.plugin.signing.SigningKeyProvider;
+import com.meant.api.plugin.signing.SigningKeyPurpose;
+import com.meant.api.plugin.signing.SigningKeyStatus;
+import com.meant.api.plugin.signing.SigningKey;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -40,9 +47,10 @@ class AgentProfileProviderTest {
 
     @Test
     void generatedProfileSerializesToUcpAgentProfileShape() throws Exception {
-        AgentProfile profile = new CapabilityRegistry(List.of(
+        AgentProfileProvider provider = new AgentProfileProvider(new CapabilityRegistry(List.of(
                 capability("dev.ucp.shopping.catalog.search", "search_catalog", true)
-        )).agentProfile(identity());
+        )), identity(), new StaticSigningKeyProvider(List.of(publicSigningKey())));
+        AgentProfile profile = provider.profile();
         ObjectMapper objectMapper = new ObjectMapper();
 
         JsonNode root = objectMapper.readTree(objectMapper.writeValueAsString(profile));
@@ -53,6 +61,12 @@ class AgentProfileProviderTest {
         assertThat(root.path("supported_versions").path(PROTOCOL_VERSION).asText())
                 .isEqualTo("https://ucp.dev/" + PROTOCOL_VERSION);
         assertThat(root.path("signing_key_id").asText()).isEqualTo("agent-key-1");
+        assertThat(root.path("signing_keys").isArray()).isTrue();
+        assertThat(root.path("signing_keys").get(0).path("kid").asText()).isEqualTo("agent-key-1");
+        assertThat(root.path("signing_keys").get(0).path("purpose").asText()).isEqualTo("transport");
+        assertThat(root.path("signing_keys").get(0).path("status").asText()).isEqualTo("active");
+        assertThat(root.path("signing_keys").get(0).path("jwk").path("kty").asText()).isEqualTo("EC");
+        assertThat(root.path("signing_keys").get(0).path("jwk").path("d").isMissingNode()).isTrue();
         assertThat(root.path("capabilities").isArray()).isTrue();
         assertThat(root.path("capabilities").get(0).path("id").asText())
                 .isEqualTo("dev.ucp.shopping.catalog.search");
@@ -74,6 +88,23 @@ class AgentProfileProviderTest {
                 URI.create("https://agent.example/.well-known/ucp-agent.json"),
                 PROTOCOL_VERSION,
                 "agent-key-1"
+        );
+    }
+
+    private static PublicSigningKey publicSigningKey() {
+        return new PublicSigningKey(
+                "agent-key-1",
+                SigningKeyPurpose.TRANSPORT,
+                SigningKeyStatus.ACTIVE,
+                Map.of(
+                        "kty", "EC",
+                        "crv", "P-256",
+                        "kid", "agent-key-1",
+                        "alg", "ES256",
+                        "x", "qIVYZVLCrPZHGHjP17CTW0_-D9Lfw0EkjqF7xB4FivA",
+                        "y", "Mc4nN9LTDOBhfoUeg8Ye9WedFRhnZXZJA12Qp0zZ6F0"
+                ),
+                null
         );
     }
 
@@ -108,6 +139,19 @@ class AgentProfileProviderTest {
 
         int generationCount() {
             return generationCount;
+        }
+    }
+
+    private record StaticSigningKeyProvider(List<PublicSigningKey> publicKeys) implements SigningKeyProvider {
+
+        @Override
+        public SigningKey activePrivateKey(SigningKeyPurpose purpose) {
+            throw new UnsupportedOperationException("No private keys in this test provider");
+        }
+
+        @Override
+        public Optional<SigningKey> key(String kid, SigningKeyPurpose purpose) {
+            return Optional.empty();
         }
     }
 

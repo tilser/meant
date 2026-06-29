@@ -58,6 +58,10 @@ ucp:
     profile-url: http://localhost:8080/.well-known/ucp-agent.json
     protocol-version: 2026-04-08
     signing-key-id: meant-test
+  signing:
+    signature-ttl: PT5M
+    clock-skew: PT30S
+    keys: []
 
 ai:
   openrouter:
