@@ -290,6 +290,27 @@ not on every sign — avoids needless secret-store load and latency per completi
 - Refunds / post-purchase (Phase 7 orders territory).
 - Non-AP2 payment-token-exchange variants (only AP2 mandate path here).
 
+## Crypto libraries (PINNED — MEA-60 prerequisite, resolved)
+
+One ES256 signing core, used across all four layers. Three of four are vetted libraries with
+RFC test vectors — we wire crypto, we don't write it.
+
+| Layer | Purpose | Library | Coordinates |
+|---|---|---|---|
+| Signing core | ES256 / JWS / JWK | nimbus-jose-jwt | `com.nimbusds:nimbus-jose-jwt:10.9.1` |
+| JCS (RFC 8785) | canonical bytes so signatures match | erdtman java-json-canonicalization | `io.github.erdtman:java-json-canonicalization` (reference impl, Ryu numbers) |
+| RFC 9421 | "I am Meant + request unaltered" (transport) | authlete http-message-signatures | `com.authlete:http-message-signatures` (has RFC9421Test.java with RFC-appendix vectors) |
+| SD-JWT+kb (AP2) | "user authorized this spend" (business) | authlete sd-jwt | `com.authlete:sd-jwt:1.9` (RFC 9901, key binding) |
+
+Notes:
+- The Authlete libraries build on nimbus, so the whole stack shares one crypto core — no
+  competing stacks.
+- Authlete = OpenID-certified identity vendor; both libs Apache-2.0.
+- Pin exact `http-message-signatures` version from its CHANGES.md at implementation time.
+- JCS pitfall to enforce: the JCS canonical bytes MUST be the exact bytes Content-Digest
+  covers and that go on the wire — do NOT canonicalize then re-serialize via Jackson
+  differently (Codex's wire-bytes warning).
+
 ## 4-ticket split (D1) — to create after this review
 
 - **6b-1 Signing primitives** (no money): Jcs (RFC 8785 lib), Rfc9421Signer (covered

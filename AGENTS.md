@@ -185,7 +185,7 @@ Use this commit message format:
 If the work is associated with a Linear ticket, the ticket key (including the project prefix, e.g., MEA-123) must always be included before the standard commit message:
 
 ```text
-<TICKET_NUMBER> - <type>[optional scope]: <description>
+<type>[TICKET_NUMBER]: <description>
 ```
 
 Allowed types:
