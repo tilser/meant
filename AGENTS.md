@@ -18,7 +18,25 @@ com.meant.api
     constant
   plugin
     spi
+    support
+    catalog
+      search
+        dto
+      lookup
+        dto
+      getproduct
+        dto
+      shopify
+        dto
+      dto
+      support
+      exception
+      service
     transport
+      client
+      dto
+      profile
+      registry
   module
     user
       controller
@@ -38,7 +56,13 @@ com.meant.api
 
 Use `common` for shared cross-cutting code such as Swagger/OpenAPI configuration, security, shared web configuration, shared exceptions, and other infrastructure that is not owned by a business module.
 
-Use top-level `plugin` for the UCP plugin layer. `plugin.spi` is contract-only and owns UCP plugin contracts such as `UcpCapability`, `CapabilityId`, `NegotiatedCapabilities`, `CapabilityAdvertisement`, and `UcpToolResponse`. `plugin.transport` owns transport-facing infrastructure such as `CapabilityRegistry`, generated agent profile serving, request signing, and MCP transport clients. Do not place UCP plugin SPI or transport code under `common` or a business `module`.
+Use top-level `plugin` for the UCP plugin layer. `plugin.spi` is contract-only and owns UCP plugin contracts such as `UcpCapability`, `CapabilityId`, `NegotiatedCapabilities`, `CapabilityAdvertisement`, and `UcpToolResponse`. Keep `plugin.spi` and `plugin.support` flat while they remain small and contract/support-only.
+
+`plugin.catalog` is split by catalog capability and shared role. Capability implementations live in `catalog.search`, `catalog.lookup`, `catalog.getproduct`, and `catalog.shopify`; their capability-specific request/argument/response records live in each capability's `dto` subpackage. Shared catalog metadata lives in `catalog.dto`, catalog JSON helpers in `catalog.support`, catalog exceptions in `catalog.exception`, and catalog-plugin dispatch orchestration in `catalog.service`.
+
+`plugin.transport` is split by transport role: MCP clients and client exceptions in `transport.client`, transport wire records in `transport.dto`, generated agent profile serving and hashing in `transport.profile`, and capability lookup/registration in `transport.registry`.
+
+Plugins should not get `controller` or `repository` packages unless they actually own that role. Do not place UCP plugin SPI, catalog plugin, or transport code under `common` or a business `module`.
 
 Use `module` for business logic modules. Each module, such as `user`, owns its own packages and should not leak internal entities or repositories into other modules.
 

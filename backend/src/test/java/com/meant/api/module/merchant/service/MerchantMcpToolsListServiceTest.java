@@ -8,7 +8,7 @@ import com.meant.api.module.merchant.entity.MerchantMcpToolsList;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListFetchResult;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListResult;
-import com.meant.api.plugin.transport.AgentProfileHashProvider;
+import com.meant.api.plugin.transport.profile.AgentProfileHashProvider;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;

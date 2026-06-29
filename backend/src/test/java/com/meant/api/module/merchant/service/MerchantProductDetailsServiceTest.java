@@ -8,6 +8,7 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
+import com.meant.api.plugin.catalog.service.MerchantCatalogPluginDispatchService;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import java.util.List;
 import java.util.UUID;
