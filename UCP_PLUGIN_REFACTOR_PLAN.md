@@ -69,16 +69,17 @@ FE "running shoes" ──POST /search──► SearchOrchestrator
 
 ### Phase 1 — also: agent profile generation (decided D-profile)
 - Our agent profile is GENERATED from `List<UcpCapability>` (Spring injects all
-  `@Component` plugins) via `CapabilityRegistry`/`AgentProfileProvider`. NOT from .env,
+  `@Component` plugins) via `CapabilityRegistry`/`AgentProfileProvider`. NOT from config,
   NOT from DB. Single source of truth = the enabled plugin set.
 - Generated ONCE at startup, held immutable in memory, served O(1) at
   `GET /.well-known/ucp-agent.json`. No TTL — plugins don't change without a restart.
-- Outgoing requests carry only the profile URL string (from .env) in
-  `meta.ucp-agent.profile` — nothing is generated on the hot path.
-- `.env` holds: profile URL, protocol version, signing key id. NOT the capability list.
+- Outgoing requests carry only the profile URL string (from Spring config /
+  `application.yml`) in `meta.ucp-agent.profile` — nothing is generated on the hot path.
+- Config (`application.yml`, bound via `@ConfigurationProperties`) holds: profile URL,
+  protocol version, signing key id. NOT the capability list.
 
 ### Phase 2 — UCP transport
-- `UcpMcpClient`: sends `meta.ucp-agent.profile` (URL from .env), parses
+- `UcpMcpClient`: sends `meta.ucp-agent.profile` (URL from Spring config), parses
   `result.structuredContent`, reads `structuredContent.ucp.capabilities` into
   `NegotiatedCapabilities`.
 - Extend `McpToolResult` to carry `structuredContent`.
