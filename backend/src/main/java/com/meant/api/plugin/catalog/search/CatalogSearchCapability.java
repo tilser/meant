@@ -1,11 +1,11 @@
 package com.meant.api.plugin.catalog.search;
 
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
-import com.meant.api.plugin.catalog.dto.CatalogCapabilityMetadata;
+import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
 import com.meant.api.plugin.catalog.search.dto.CatalogSearchArguments;
 import com.meant.api.plugin.catalog.search.dto.CatalogSearchRequest;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
-import com.meant.api.plugin.catalog.support.CatalogPluginJson;
+import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;

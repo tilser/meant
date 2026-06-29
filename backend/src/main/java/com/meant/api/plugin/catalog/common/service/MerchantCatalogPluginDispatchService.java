@@ -1,4 +1,4 @@
-package com.meant.api.plugin.catalog.service;
+package com.meant.api.plugin.catalog.common.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 

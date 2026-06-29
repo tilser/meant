@@ -1,4 +1,4 @@
-package com.meant.api.plugin.catalog.exception;
+package com.meant.api.plugin.catalog.common.exception;
 
 public class UcpCatalogResponseException extends RuntimeException {
 

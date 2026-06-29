@@ -1,12 +1,12 @@
 package com.meant.api.plugin.catalog.getproduct;
 
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
-import com.meant.api.plugin.catalog.dto.CatalogCapabilityMetadata;
-import com.meant.api.plugin.catalog.exception.UcpCatalogResponseException;
+import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
+import com.meant.api.plugin.catalog.common.exception.UcpCatalogResponseException;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
-import com.meant.api.plugin.catalog.support.CatalogPluginJson;
+import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;

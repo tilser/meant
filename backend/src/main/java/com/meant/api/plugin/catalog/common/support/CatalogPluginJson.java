@@ -1,6 +1,6 @@
-package com.meant.api.plugin.catalog.support;
+package com.meant.api.plugin.catalog.common.support;
 
-import com.meant.api.plugin.catalog.exception.UcpCatalogResponseException;
+import com.meant.api.plugin.catalog.common.exception.UcpCatalogResponseException;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;

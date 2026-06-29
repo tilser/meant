@@ -28,10 +28,11 @@ com.meant.api
         dto
       shopify
         dto
-      dto
-      support
-      exception
-      service
+      common
+        dto
+        support
+        exception
+        service
     transport
       client
       dto
@@ -54,11 +55,11 @@ com.meant.api
       properties
 ```
 
-Use `common` for shared cross-cutting code such as Swagger/OpenAPI configuration, security, shared web configuration, shared exceptions, and other infrastructure that is not owned by a business module.
+Use top-level `common` for application-wide cross-cutting code such as Swagger/OpenAPI configuration, security, shared web configuration, shared exceptions, and other infrastructure that is not owned by a business module or plugin.
 
 Use top-level `plugin` for the UCP plugin layer. `plugin.spi` is contract-only and owns UCP plugin contracts such as `UcpCapability`, `CapabilityId`, `NegotiatedCapabilities`, `CapabilityAdvertisement`, and `UcpToolResponse`. Keep `plugin.spi` and `plugin.support` flat while they remain small and contract/support-only.
 
-`plugin.catalog` is split by catalog capability and shared role. Capability implementations live in `catalog.search`, `catalog.lookup`, `catalog.getproduct`, and `catalog.shopify`; their capability-specific request/argument/response records live in each capability's `dto` subpackage. Shared catalog metadata lives in `catalog.dto`, catalog JSON helpers in `catalog.support`, catalog exceptions in `catalog.exception`, and catalog-plugin dispatch orchestration in `catalog.service`.
+`plugin.catalog` is split by catalog capability and shared role. Capability implementations live in `catalog.search`, `catalog.lookup`, `catalog.getproduct`, and `catalog.shopify`; their capability-specific request/argument/response records live in each capability's `dto` subpackage. Per CEO David Tilser's decision, catalog-shared code belongs under `catalog.common`, not top-level `common`: shared catalog metadata lives in `catalog.common.dto`, catalog JSON helpers in `catalog.common.support`, catalog exceptions in `catalog.common.exception`, and catalog-plugin dispatch orchestration in `catalog.common.service`.
 
 `plugin.transport` is split by transport role: MCP clients and client exceptions in `transport.client`, transport wire records in `transport.dto`, generated agent profile serving and hashing in `transport.profile`, and capability lookup/registration in `transport.registry`.
 

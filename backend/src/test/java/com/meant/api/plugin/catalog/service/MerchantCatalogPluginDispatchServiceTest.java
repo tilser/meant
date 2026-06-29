@@ -15,6 +15,7 @@ import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
+import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
 import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
 import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.search.CatalogSearchCapability;

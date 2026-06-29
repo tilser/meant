@@ -26,7 +26,7 @@ import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
-import com.meant.api.plugin.catalog.service.MerchantCatalogPluginDispatchService;
+import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;

@@ -1,4 +1,4 @@
-package com.meant.api.plugin.catalog.dto;
+package com.meant.api.plugin.catalog.common.dto;
 
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;

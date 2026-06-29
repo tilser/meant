@@ -1,6 +1,6 @@
 package com.meant.api.plugin.catalog.shopify;
 
-import com.meant.api.plugin.catalog.dto.CatalogCapabilityMetadata;
+import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
