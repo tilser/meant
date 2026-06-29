@@ -2,15 +2,15 @@ package com.meant.api.plugin.spi;
 
 import java.util.List;
 
-public interface UcpCapability<TRequest, TArguments, TResult> {
+public interface UcpCapability<TRequest, TResult> {
 
     CapabilityId id();
 
     List<CapabilityAdvertisement> advertisements();
 
-    TArguments buildArguments(TRequest request, NegotiatedCapabilities activeCapabilities);
+    Object buildArguments(TRequest request, NegotiatedCapabilities activeCapabilities);
 
-    TResult parseResponse(UcpToolResponse<?> response);
+    TResult parseResponse(UcpToolResponse response);
 
     default List<String> toolNames() {
         return advertisements().stream()

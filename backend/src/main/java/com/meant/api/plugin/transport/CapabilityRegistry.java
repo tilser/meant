@@ -13,20 +13,20 @@ import org.springframework.stereotype.Component;
 @Component
 public class CapabilityRegistry {
 
-    private final List<UcpCapability<?, ?, ?>> capabilities;
-    private final Map<String, UcpCapability<?, ?, ?>> toolToCapability;
+    private final List<UcpCapability<?, ?>> capabilities;
+    private final Map<String, UcpCapability<?, ?>> toolToCapability;
 
-    public CapabilityRegistry(List<UcpCapability<?, ?, ?>> capabilities) {
+    public CapabilityRegistry(List<UcpCapability<?, ?>> capabilities) {
         this.capabilities = capabilities == null ? List.of() : List.copyOf(capabilities);
         this.toolToCapability = buildToolMap(this.capabilities);
     }
 
-    public UcpCapability<?, ?, ?> capabilityForTool(String toolName) {
+    public UcpCapability<?, ?> capabilityForTool(String toolName) {
         return findCapabilityForTool(toolName)
                 .orElseThrow(() -> new UnknownUcpToolException(toolName));
     }
 
-    public Optional<UcpCapability<?, ?, ?>> findCapabilityForTool(String toolName) {
+    public Optional<UcpCapability<?, ?>> findCapabilityForTool(String toolName) {
         return Optional.ofNullable(toolToCapability.get(normalizeToolName(toolName)));
     }
 
@@ -40,20 +40,20 @@ public class CapabilityRegistry {
         return AgentProfile.from(identity, advertisements);
     }
 
-    public List<UcpCapability<?, ?, ?>> capabilities() {
+    public List<UcpCapability<?, ?>> capabilities() {
         return capabilities;
     }
 
-    public Map<String, UcpCapability<?, ?, ?>> toolToCapability() {
+    public Map<String, UcpCapability<?, ?>> toolToCapability() {
         return toolToCapability;
     }
 
-    private Map<String, UcpCapability<?, ?, ?>> buildToolMap(List<UcpCapability<?, ?, ?>> capabilities) {
-        Map<String, UcpCapability<?, ?, ?>> tools = new LinkedHashMap<>();
-        for (UcpCapability<?, ?, ?> capability : capabilities) {
+    private Map<String, UcpCapability<?, ?>> buildToolMap(List<UcpCapability<?, ?>> capabilities) {
+        Map<String, UcpCapability<?, ?>> tools = new LinkedHashMap<>();
+        for (UcpCapability<?, ?> capability : capabilities) {
             for (String toolName : capability.toolNames()) {
                 String normalizedToolName = normalizeToolName(toolName);
-                UcpCapability<?, ?, ?> existingCapability = tools.putIfAbsent(normalizedToolName, capability);
+                UcpCapability<?, ?> existingCapability = tools.putIfAbsent(normalizedToolName, capability);
                 if (existingCapability != null) {
                     throw new DuplicateUcpToolException(
                             normalizedToolName,

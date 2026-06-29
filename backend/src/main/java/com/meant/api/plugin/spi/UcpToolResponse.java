@@ -1,8 +1,8 @@
 package com.meant.api.plugin.spi;
 
-public record UcpToolResponse<TStructuredContent>(
+public record UcpToolResponse(
         String textContent,
-        TStructuredContent structuredContent,
+        Object structuredContent,
         NegotiatedCapabilities negotiatedCapabilities
 ) {
 

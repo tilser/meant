@@ -106,15 +106,15 @@ class CapabilityRegistryTest {
     private record TestCapability(
             CapabilityId id,
             List<CapabilityAdvertisement> advertisements
-    ) implements UcpCapability<Void, Void, String> {
+    ) implements UcpCapability<Void, String> {
 
         @Override
-        public Void buildArguments(Void request, NegotiatedCapabilities activeCapabilities) {
+        public Object buildArguments(Void request, NegotiatedCapabilities activeCapabilities) {
             return null;
         }
 
         @Override
-        public String parseResponse(UcpToolResponse<?> response) {
+        public String parseResponse(UcpToolResponse response) {
             return response.textContent();
         }
     }
