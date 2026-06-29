@@ -1,7 +1,6 @@
 package com.meant.api.plugin.signing;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.authlete.hms.ComponentValueProvider;
 import com.authlete.hms.HttpVerifier;
@@ -58,7 +57,9 @@ class Rfc9421SignerTest {
                 .contains("\"content-type\": application/json")
                 .contains("\"idempotency-key\": idem-1")
                 .contains("\"request-id\": req-1");
-        assertThat(signer.verify(request, signedRequest.headers(), publicKey(), NOW)).isTrue();
+        Rfc9421Signer.VerificationResult result = signer.verify(request, signedRequest.headers(), publicKey(), NOW);
+        assertThat(result.valid()).isTrue();
+        assertThat(result.reason()).isNull();
     }
 
     @Test
@@ -69,23 +70,32 @@ class Rfc9421SignerTest {
         Map<String, String> alteredHeaders = new LinkedHashMap<>(signedRequest.headers());
         alteredHeaders.put(Rfc9421Signer.IDEMPOTENCY_KEY, "idem-2");
 
-        assertThat(signer.verify(request, alteredHeaders, publicKey(), NOW)).isFalse();
+        Rfc9421Signer.VerificationResult result = signer.verify(request, alteredHeaders, publicKey(), NOW);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("cryptographic verification failed");
     }
 
     @Test
-    void alteredBodyBytesAreRejectedBeforeSignatureVerification() {
+    void alteredBodyBytesReturnInvalidVerificationResult() {
         Rfc9421Signer signer = signer();
         Rfc9421Signer.SigningRequest request = request("{\"a\":1}".getBytes(StandardCharsets.UTF_8));
         Rfc9421Signer.SignedRequest signedRequest = signer.sign(request);
         Rfc9421Signer.SigningRequest alteredBodyRequest = request("{\"a\":2}".getBytes(StandardCharsets.UTF_8));
 
-        assertThatThrownBy(() -> signer.verify(alteredBodyRequest, signedRequest.headers(), publicKey(), NOW))
-                .isInstanceOf(SigningException.class)
-                .hasMessageContaining("Content-Digest");
+        Rfc9421Signer.VerificationResult result = signer.verify(
+                alteredBodyRequest,
+                signedRequest.headers(),
+                publicKey(),
+                NOW
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("Content-Digest");
     }
 
     @Test
-    void rejectsWrongKidWrongAlgStaleAndFutureCreated() {
+    void verificationValidationFailuresReturnInvalidResults() {
         Rfc9421Signer signer = signer();
         Rfc9421Signer.SigningRequest request = request("{\"a\":1}".getBytes(StandardCharsets.UTF_8));
         Rfc9421Signer.SignedRequest signedRequest = signer.sign(request);
@@ -95,25 +105,67 @@ class Rfc9421SignerTest {
                 "keyid=\"transport-1\"",
                 "keyid=\"other\""
         );
-        assertThatThrownBy(() -> signer.verify(request, wrongKidHeaders, publicKey(), NOW))
-                .isInstanceOf(SigningException.class)
-                .hasMessageContaining("keyid");
+        Rfc9421Signer.VerificationResult wrongKidResult = signer.verify(request, wrongKidHeaders, publicKey(), NOW);
+        assertThat(wrongKidResult.valid()).isFalse();
+        assertThat(wrongKidResult.reason()).contains("keyid");
 
         Map<String, String> wrongAlgHeaders = replaceSignatureInput(
                 signedRequest.headers(),
                 "alg=\"ES256\"",
                 "alg=\"RS256\""
         );
-        assertThatThrownBy(() -> signer.verify(request, wrongAlgHeaders, publicKey(), NOW))
-                .isInstanceOf(SigningException.class)
-                .hasMessageContaining("alg");
+        Rfc9421Signer.VerificationResult wrongAlgResult = signer.verify(request, wrongAlgHeaders, publicKey(), NOW);
+        assertThat(wrongAlgResult.valid()).isFalse();
+        assertThat(wrongAlgResult.reason()).contains("alg");
 
-        assertThatThrownBy(() -> signer.verify(request, signedRequest.headers(), publicKey(), NOW.plus(Duration.ofMinutes(6))))
-                .isInstanceOf(SigningException.class)
-                .hasMessageContaining("stale");
-        assertThatThrownBy(() -> signer.verify(request, signedRequest.headers(), publicKey(), NOW.minus(Duration.ofMinutes(1))))
-                .isInstanceOf(SigningException.class)
-                .hasMessageContaining("future");
+        Rfc9421Signer.VerificationResult staleResult = signer.verify(
+                request,
+                signedRequest.headers(),
+                publicKey(),
+                NOW.plus(Duration.ofMinutes(6))
+        );
+        assertThat(staleResult.valid()).isFalse();
+        assertThat(staleResult.reason()).contains("stale");
+
+        Rfc9421Signer.VerificationResult futureResult = signer.verify(
+                request,
+                signedRequest.headers(),
+                publicKey(),
+                NOW.minus(Duration.ofMinutes(1))
+        );
+        assertThat(futureResult.valid()).isFalse();
+        assertThat(futureResult.reason()).contains("future");
+    }
+
+    @Test
+    void verifyIgnoresHeadersWithNullValues() {
+        Rfc9421Signer signer = signer();
+        Rfc9421Signer.SigningRequest request = request("{\"a\":1}".getBytes(StandardCharsets.UTF_8));
+        Rfc9421Signer.SignedRequest signedRequest = signer.sign(request);
+        Map<String, String> headersWithNull = new LinkedHashMap<>(signedRequest.headers());
+        headersWithNull.put("X-Optional", null);
+
+        Rfc9421Signer.VerificationResult result = signer.verify(request, headersWithNull, publicKey(), NOW);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.reason()).isNull();
+    }
+
+    @Test
+    void rejectsUnexpectedCoveredComponentsWithInvalidResult() {
+        Rfc9421Signer signer = signer();
+        Rfc9421Signer.SigningRequest request = request("{\"a\":1}".getBytes(StandardCharsets.UTF_8));
+        Rfc9421Signer.SignedRequest signedRequest = signer.sign(request);
+        Map<String, String> wrongComponentsHeaders = replaceSignatureInput(
+                signedRequest.headers(),
+                "\"request-id\"",
+                "\"x-request-id\""
+        );
+
+        Rfc9421Signer.VerificationResult result = signer.verify(request, wrongComponentsHeaders, publicKey(), NOW);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("covered components");
     }
 
     @Test

@@ -98,23 +98,26 @@ public class Rfc9421Signer {
         }
     }
 
-    public boolean verify(SigningRequest request, Map<String, String> headers, ECKey publicKey, Instant receivedAt) {
-        Objects.requireNonNull(request, "request must not be null");
-        Objects.requireNonNull(headers, "headers must not be null");
-        Objects.requireNonNull(publicKey, "publicKey must not be null");
-        Objects.requireNonNull(receivedAt, "receivedAt must not be null");
-
-        validateContentDigest(request.body(), requireHeader(headers, CONTENT_DIGEST));
-
+    public VerificationResult verify(
+            SigningRequest request,
+            Map<String, String> headers,
+            ECKey publicKey,
+            Instant receivedAt
+    ) {
         try {
+            requireVerificationInput(request, headers, publicKey, receivedAt);
+            validateContentDigest(request.body(), requireHeader(headers, CONTENT_DIGEST));
             SignatureField signatureField = SignatureField.parse(requireHeader(headers, SIGNATURE));
             SignatureInputField signatureInputField = SignatureInputField.parse(requireHeader(headers, SIGNATURE_INPUT));
             SignatureEntry entry = signatureEntry(signatureField, signatureInputField);
             validateMetadata(entry.getMetadata(), publicKey, receivedAt);
             SignatureBase signatureBase = signatureBase(request.method(), request.uri(), headers, entry.getMetadata());
-            return signatureBase.verify(new JoseHttpVerifier(publicKey, JWSAlgorithm.ES256), entry.getSignature());
-        } catch (SignatureException | IllegalArgumentException exception) {
-            throw new SigningException("RFC 9421 request verification failed", exception);
+            if (!signatureBase.verify(new JoseHttpVerifier(publicKey, JWSAlgorithm.ES256), entry.getSignature())) {
+                return VerificationResult.invalid("RFC 9421 signature cryptographic verification failed");
+            }
+            return VerificationResult.success();
+        } catch (SigningException | SignatureException | IllegalArgumentException exception) {
+            return invalidVerificationResult(exception);
         }
     }
 
@@ -151,7 +154,11 @@ public class Rfc9421Signer {
 
     private Map<String, List<String>> headerValues(Map<String, String> headers) {
         Map<String, List<String>> values = new LinkedHashMap<>();
-        headers.forEach((name, value) -> values.put(name, List.of(value)));
+        headers.forEach((name, value) -> {
+            if (name != null && value != null) {
+                values.put(name, List.of(value));
+            }
+        });
         return values;
     }
 
@@ -165,10 +172,13 @@ public class Rfc9421Signer {
     }
 
     private void validateMetadata(SignatureMetadata metadata, ECKey publicKey, Instant receivedAt) {
-        if (!COVERED_COMPONENTS.equals(metadata)) {
+        if (!hasPinnedCoveredComponents(metadata)) {
             throw new SigningException("RFC 9421 covered components do not match the pinned UCP component set");
         }
         SignatureMetadataParameters parameters = metadata.getParameters();
+        if (parameters == null) {
+            throw new SigningException("RFC 9421 signature parameters are required");
+        }
         if (!SIGNATURE_ALGORITHM.equals(parameters.getAlg())) {
             throw new SigningException("RFC 9421 signature alg must be " + SIGNATURE_ALGORITHM);
         }
@@ -195,6 +205,22 @@ public class Rfc9421Signer {
         }
     }
 
+    private boolean hasPinnedCoveredComponents(SignatureMetadata metadata) {
+        // SignatureMetadata extends ArrayList; compare the intended ordered component list explicitly.
+        if (metadata == null) {
+            return false;
+        }
+        if (metadata.size() != COVERED_COMPONENTS.size()) {
+            return false;
+        }
+        for (int index = 0; index < COVERED_COMPONENTS.size(); index++) {
+            if (!COVERED_COMPONENTS.get(index).equals(metadata.get(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void validateContentDigest(byte[] body, String contentDigest) {
         if (!contentDigest(body).equals(contentDigest)) {
             throw new SigningException("Content-Digest does not match the actual request body bytes");
@@ -203,11 +229,39 @@ public class Rfc9421Signer {
 
     private String requireHeader(Map<String, String> headers, String headerName) {
         return headers.entrySet().stream()
-                .filter(entry -> entry.getKey().equalsIgnoreCase(headerName))
+                .filter(entry -> entry.getKey() != null && entry.getKey().equalsIgnoreCase(headerName))
                 .map(Map.Entry::getValue)
                 .filter(value -> value != null && !value.isBlank())
                 .findFirst()
                 .orElseThrow(() -> new SigningException("Missing required RFC 9421 header " + headerName));
+    }
+
+    private VerificationResult invalidVerificationResult(Exception exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = "RFC 9421 request verification failed";
+        }
+        return VerificationResult.invalid(message);
+    }
+
+    private void requireVerificationInput(
+            SigningRequest request,
+            Map<String, String> headers,
+            ECKey publicKey,
+            Instant receivedAt
+    ) {
+        if (request == null) {
+            throw new SigningException("request must not be null");
+        }
+        if (headers == null) {
+            throw new SigningException("headers must not be null");
+        }
+        if (publicKey == null) {
+            throw new SigningException("publicKey must not be null");
+        }
+        if (receivedAt == null) {
+            throw new SigningException("receivedAt must not be null");
+        }
     }
 
     public record SigningRequest(
@@ -248,6 +302,28 @@ public class Rfc9421Signer {
             Objects.requireNonNull(created, "created must not be null");
             Objects.requireNonNull(expires, "expires must not be null");
             keyId = requireText(keyId, "keyId");
+        }
+    }
+
+    public record VerificationResult(boolean valid, String reason) {
+
+        public VerificationResult {
+            if (valid) {
+                if (reason != null && !reason.isBlank()) {
+                    throw new IllegalArgumentException("valid verification result must not include a reason");
+                }
+                reason = null;
+            } else {
+                reason = requireText(reason, "reason");
+            }
+        }
+
+        public static VerificationResult success() {
+            return new VerificationResult(true, null);
+        }
+
+        public static VerificationResult invalid(String reason) {
+            return new VerificationResult(false, reason);
         }
     }
 
