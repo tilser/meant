@@ -41,11 +41,27 @@ public class MerchantOutboundUrlValidator {
         }
     }
 
+    public URI validateOutboundUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            throw new MerchantOutboundUrlException("Merchant outbound URL is blank");
+        }
+        try {
+            return validateOutboundUrl(new URI(rawUrl.trim()));
+        } catch (URISyntaxException exception) {
+            throw new MerchantOutboundUrlException("Merchant outbound URL is malformed", exception);
+        }
+    }
+
+    public URI validateOutboundUrl(URI uri) {
+        String normalizedHost = validateAbsoluteHttpsUrlAndNormalizeHost(uri);
+        resolveAndValidatePublicHost(normalizedHost);
+        return uri;
+    }
+
     public URI validateMerchantUrl(String merchantDomain, URI uri) {
-        validateAbsoluteHttpsUrl(uri);
+        String normalizedHost = validateAbsoluteHttpsUrlAndNormalizeHost(uri);
 
         String normalizedDomain = normalizeDomain(merchantDomain);
-        String normalizedHost = normalizeHost(uri.getHost(), "Merchant outbound URL host is invalid");
         if (!isAllowedMerchantHost(normalizedDomain, normalizedHost)) {
             throw new MerchantOutboundUrlException(
                     "Merchant outbound URL host is not under merchant domain " + normalizedDomain
@@ -55,7 +71,7 @@ public class MerchantOutboundUrlValidator {
         return uri;
     }
 
-    private void validateAbsoluteHttpsUrl(URI uri) {
+    private String validateAbsoluteHttpsUrlAndNormalizeHost(URI uri) {
         if (uri == null || !uri.isAbsolute() || uri.isOpaque()) {
             throw new MerchantOutboundUrlException("Merchant outbound URL must be absolute");
         }
@@ -68,6 +84,7 @@ public class MerchantOutboundUrlValidator {
         if (uri.getUserInfo() != null) {
             throw new MerchantOutboundUrlException("Merchant outbound URL must not include user info");
         }
+        return normalizeHost(uri.getHost(), "Merchant outbound URL host is invalid");
     }
 
     private boolean isAllowedMerchantHost(String normalizedDomain, String normalizedHost) {

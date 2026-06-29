@@ -22,6 +22,11 @@ spring:
         jwt:
           jwk-set-uri: ${SUPABASE_JWKS_URI:#{null}}
           issuer-uri: ${SUPABASE_ISSUER_URI:#{null}}
+  web:
+    error:
+      include-message: never
+      include-stacktrace: never
+      include-binding-errors: never
 
 management:
   endpoints:
@@ -38,10 +43,6 @@ server:
   # default private/loopback ranges); prefer "native" over "framework", whose ForwardedHeaderFilter
   # applies the headers with no trusted-proxy check. See MEA-28.
   forward-headers-strategy: ${MEANT_FORWARD_HEADERS_STRATEGY:none}
-  error:
-    include-message: never
-    include-stacktrace: never
-    include-binding-errors: never
 
 rest-client:
   connect-timeout-milliseconds: ${REST_CLIENT_CONNECT_TIMEOUT_MILLISECONDS:5000}
@@ -92,7 +93,7 @@ app:
 
 ucp:
   agent:
-    profile-url: ${UCP_AGENT_PROFILE_URL:http://localhost:8080/.well-known/ucp-agent.json}
+    profile-url: ${UCP_AGENT_PROFILE_URL:https://www.machinecommerce.dev/ucp/agent-profile/ucp-agent.json}
     protocol-version: ${UCP_AGENT_PROTOCOL_VERSION:2026-04-08}
     signing-key-id: ${UCP_AGENT_SIGNING_KEY_ID:meant-local}
 

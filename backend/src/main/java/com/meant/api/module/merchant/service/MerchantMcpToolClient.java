@@ -176,7 +176,7 @@ public class MerchantMcpToolClient {
                 break;
             }
             try {
-                URI endpointUri = merchantOutboundUrlValidator.validateMerchantUrl(domain, endpoint);
+                URI endpointUri = merchantOutboundUrlValidator.validateOutboundUrl(endpoint);
                 return new EndpointResult<>(endpointUri.toString(), endpointCall.apply(endpointUri));
             } catch (RestClientException
                      | MerchantMcpToolException

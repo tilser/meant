@@ -75,6 +75,50 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
+    void usesDelegatedAdvertisedEndpointOutsideMerchantDomain() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
+        server.expect(requestTo("https://americangiant.myshopify.com/api/ucp/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 4,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\"ok\\":true}"
+                              }
+                            ],
+                            "isError": false
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        MerchantMcpToolCallResult result = client.callTool(
+                new MerchantSemanticSearchResult(
+                        UUID.randomUUID(),
+                        "american-giant.com",
+                        "American Giant",
+                        "https://americangiant.myshopify.com/api/ucp/mcp",
+                        null,
+                        "Context",
+                        0.9d,
+                        0.8d,
+                        1
+                ),
+                "lookup_catalog",
+                Map.of("id", "gid://shopify/Product/2111643746401")
+        );
+
+        assertThat(result.endpoint()).isEqualTo("https://americangiant.myshopify.com/api/ucp/mcp");
+        assertThat(result.contentText()).isEqualTo("{\"ok\":true}");
+        server.verify();
+    }
+
+    @Test
     void blocksLocalhostEndpointWithoutSendingRequest() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();

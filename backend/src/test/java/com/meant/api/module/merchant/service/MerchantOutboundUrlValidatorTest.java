@@ -23,6 +23,15 @@ class MerchantOutboundUrlValidatorTest {
     }
 
     @Test
+    void allowsDelegatedOutboundUrlOutsideMerchantDomain() {
+        MerchantOutboundUrlValidator validator = validatorResolvingTo("93.184.216.34");
+
+        URI uri = validator.validateOutboundUrl("https://merchant.myshopify.com/api/ucp/mcp");
+
+        assertThat(uri).isEqualTo(URI.create("https://merchant.myshopify.com/api/ucp/mcp"));
+    }
+
+    @Test
     void rejectsNonHttpsUrl() {
         MerchantOutboundUrlValidator validator = validatorResolvingTo("93.184.216.34");
 
