@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-buyer-consent" author="codex">
+        <createTable tableName="buyer_consent">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_id_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="line_items_json" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="total_amount" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="currency" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tax_amount" type="bigint"/>
+            <column name="shipping_address_json" type="text"/>
+            <column name="shipping_method" type="text"/>
+            <column name="payment_instrument_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="presented_terms_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="consented_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="buyer_consent"
+                baseColumnNames="user_id"
+                constraintName="fk_buyer_consent_user"
+                referencedTableName="users"
+                referencedColumnNames="id"/>
+        <addForeignKeyConstraint
+                baseTableName="buyer_consent"
+                baseColumnNames="merchant_id"
+                constraintName="fk_buyer_consent_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="buyer_consent"
+                columnNames="user_id, merchant_id, checkout_id_hash, presented_terms_hash"
+                constraintName="uk_buyer_consent_checkout_terms"/>
+        <createIndex tableName="buyer_consent" indexName="idx_buyer_consent_checkout">
+            <column name="checkout_id_hash"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="002-create-checkout-idempotency-key" author="codex">
+        <createTable tableName="checkout_idempotency_key">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="idempotency_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="body_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="consent_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="currency" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remote_response" type="text"/>
+            <column name="final_order_ref" type="text"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="checkout_idempotency_key"
+                baseColumnNames="consent_id"
+                constraintName="fk_checkout_idempotency_buyer_consent"
+                referencedTableName="buyer_consent"
+                referencedColumnNames="id"/>
+        <addForeignKeyConstraint
+                baseTableName="checkout_idempotency_key"
+                baseColumnNames="merchant_id"
+                constraintName="fk_checkout_idempotency_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="checkout_idempotency_key"
+                columnNames="idempotency_key"
+                constraintName="uk_checkout_idempotency_key"/>
+        <createIndex tableName="checkout_idempotency_key" indexName="idx_checkout_idempotency_checkout">
+            <column name="checkout_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="003-create-checkout-completion-state" author="codex">
+        <createTable tableName="checkout_completion_state">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="cart_id" type="uuid"/>
+            <column name="checkout_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_id_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="checkout_completion_state"
+                baseColumnNames="cart_id"
+                constraintName="fk_checkout_completion_state_cart"
+                referencedTableName="cart"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="checkout_completion_state"
+                columnNames="checkout_id_hash"
+                constraintName="uk_checkout_completion_state_hash"/>
+        <createIndex tableName="checkout_completion_state" indexName="idx_checkout_completion_state_status">
+            <column name="status"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
