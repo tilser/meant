@@ -8,6 +8,8 @@ public class UcpSession {
     private NegotiatedCapabilities activeCapabilities;
     private String cartId;
     private Instant cartExpiresAt;
+    private String checkoutId;
+    private Instant checkoutExpiresAt;
     private String continueUrl;
 
     private UcpSession(
@@ -42,6 +44,14 @@ public class UcpSession {
         return cartExpiresAt;
     }
 
+    public String checkoutId() {
+        return checkoutId;
+    }
+
+    public Instant checkoutExpiresAt() {
+        return checkoutExpiresAt;
+    }
+
     public String continueUrl() {
         return continueUrl;
     }
@@ -60,9 +70,19 @@ public class UcpSession {
         this.continueUrl = continueUrl;
     }
 
+    public void updateCheckoutState(String checkoutId, Instant checkoutExpiresAt, String continueUrl) {
+        if (checkoutId != null && !checkoutId.isBlank()) {
+            this.checkoutId = checkoutId;
+        }
+        this.checkoutExpiresAt = checkoutExpiresAt;
+        this.continueUrl = continueUrl;
+    }
+
     public void clearCartState() {
         this.cartId = null;
         this.cartExpiresAt = null;
+        this.checkoutId = null;
+        this.checkoutExpiresAt = null;
         this.continueUrl = null;
     }
 }

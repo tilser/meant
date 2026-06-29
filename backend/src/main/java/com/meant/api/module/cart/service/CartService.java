@@ -23,6 +23,9 @@ import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -43,6 +46,7 @@ public class CartService {
     private final MerchantCartProviderLookupService merchantCartProviderLookupService;
     private final CartPersistenceService cartPersistenceService;
     private final MerchantCartPluginDispatchService merchantCartPluginDispatchService;
+    private final MerchantCheckoutPluginDispatchService merchantCheckoutPluginDispatchService;
     private final UserInventoryService userInventoryService;
     private final CartResultMapper cartResultMapper;
 
@@ -92,18 +96,18 @@ public class CartService {
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
-        if (!query.refresh() && hasText(handoffUrl(cart))) {
+        if (!query.refresh() && hasText(cart.getContinueUrl())) {
             importCartInventory(cart);
             return new CheckoutResult(cart.getId(), cart.getRemoteCartId(), cart.getCheckoutUrl(), cart.getContinueUrl());
         }
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         UcpSession session = session(cart);
-        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
+        UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
                 provider,
-                new GetCartRequest(cart.getRemoteCartId()),
+                new CreateCheckoutRequest(cart.getRemoteCartId()),
                 session
         );
-        Cart refreshedCart = cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result);
+        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart.getId(), query.userId(), result);
         importCartInventory(refreshedCart);
         return new CheckoutResult(
                 refreshedCart.getId(),

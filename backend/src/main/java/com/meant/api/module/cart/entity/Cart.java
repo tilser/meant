@@ -140,6 +140,13 @@ public class Cart {
         this.refreshedAt = refreshedAt;
     }
 
+    public void replaceCheckoutHandoff(String checkoutUrl, String continueUrl, Instant refreshedAt) {
+        this.checkoutUrl = checkoutUrl;
+        this.continueUrl = continueUrl;
+        this.updatedAt = refreshedAt;
+        this.refreshedAt = refreshedAt;
+    }
+
     public void deactivate(Instant updatedAt) {
         this.active = false;
         this.updatedAt = updatedAt;

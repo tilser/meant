@@ -30,6 +30,10 @@ import com.meant.api.plugin.cart.common.service.MerchantCartPluginDispatchServic
 import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
@@ -56,6 +60,7 @@ class CartServiceTest {
     private FakeMerchantRepository merchantRepository;
     private FakeCartRepository cartRepository;
     private FakeCartDispatchService cartDispatchService;
+    private FakeCheckoutDispatchService checkoutDispatchService;
     private FakeUserInventoryService userInventoryService;
     private CartService cartService;
     private Merchant merchant;
@@ -65,6 +70,7 @@ class CartServiceTest {
         merchantRepository = new FakeMerchantRepository();
         cartRepository = new FakeCartRepository();
         cartDispatchService = new FakeCartDispatchService();
+        checkoutDispatchService = new FakeCheckoutDispatchService();
         userInventoryService = new FakeUserInventoryService();
         CartPersistenceService cartPersistenceService = new CartPersistenceService(
                 cartRepository.proxy(),
@@ -74,6 +80,7 @@ class CartServiceTest {
                 new MerchantCartProviderLookupService(merchantRepository.proxy()),
                 cartPersistenceService,
                 cartDispatchService,
+                checkoutDispatchService,
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper())
         );
@@ -402,20 +409,28 @@ class CartServiceTest {
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(cartDispatchService.getCount).isEqualTo(1);
-        assertThat(cartDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(result.continueUrl()).isEqualTo("https://merchant.example/continue");
+        assertThat(checkoutDispatchService.createCount).isEqualTo(1);
+        assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartDispatchService.getCount).isZero();
         assertImportedCandle();
     }
 
     @Test
     void checkoutReturnsStoredUrlWithoutRefresh() {
         UUID cartId = UUID.randomUUID();
-        cartRepository.save(cart(cartId, "https://merchant.example/stored-checkout"));
+        cartRepository.save(cart(
+                cartId,
+                "https://merchant.example/stored-checkout",
+                "https://merchant.example/stored-continue"
+        ));
 
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
+        assertThat(result.continueUrl()).isEqualTo("https://merchant.example/stored-continue");
         assertThat(cartDispatchService.getCount).isZero();
+        assertThat(checkoutDispatchService.createCount).isZero();
         assertImportedCandle();
     }
 
@@ -427,7 +442,10 @@ class CartServiceTest {
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, true));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(cartDispatchService.getCount).isEqualTo(1);
+        assertThat(result.continueUrl()).isEqualTo("https://merchant.example/continue");
+        assertThat(checkoutDispatchService.createCount).isEqualTo(1);
+        assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartDispatchService.getCount).isZero();
         assertImportedCandle();
     }
 
@@ -487,6 +505,7 @@ class CartServiceTest {
                 .satisfies(exception -> assertThat(((CartException) exception).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));
         assertThat(cartDispatchService.getCount).isZero();
+        assertThat(checkoutDispatchService.createCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
     }
 
@@ -583,14 +602,32 @@ class CartServiceTest {
     }
 
     private Cart cart(UUID cartId, String checkoutUrl) {
-        return cart(cartId, checkoutUrl, UUID.randomUUID());
+        return cart(cartId, checkoutUrl, (String) null);
+    }
+
+    private Cart cart(UUID cartId, String checkoutUrl, String continueUrl) {
+        return cart(cartId, checkoutUrl, continueUrl, UUID.randomUUID());
     }
 
     private Cart cart(UUID cartId, String checkoutUrl, UUID cartLineId) {
-        return cart(cartId, checkoutUrl, cartLineId, "{}");
+        return cart(cartId, checkoutUrl, null, cartLineId, "{}");
+    }
+
+    private Cart cart(UUID cartId, String checkoutUrl, String continueUrl, UUID cartLineId) {
+        return cart(cartId, checkoutUrl, continueUrl, cartLineId, "{}");
     }
 
     private Cart cart(UUID cartId, String checkoutUrl, UUID cartLineId, String rawCartResponse) {
+        return cart(cartId, checkoutUrl, null, cartLineId, rawCartResponse);
+    }
+
+    private Cart cart(
+            UUID cartId,
+            String checkoutUrl,
+            String continueUrl,
+            UUID cartLineId,
+            String rawCartResponse
+    ) {
         Instant now = Instant.parse("2026-06-16T11:05:00Z");
         CartLine line = CartLine.builder()
                 .id(cartLineId)
@@ -613,6 +650,7 @@ class CartServiceTest {
                 .remoteCartId("gid://shopify/Cart/1")
                 .remoteCartIdHash("hash")
                 .checkoutUrl(checkoutUrl)
+                .continueUrl(continueUrl)
                 .rawCartResponse(rawCartResponse)
                 .totalQuantity(1)
                 .active(true)
@@ -863,6 +901,63 @@ class CartServiceTest {
             cancelCount++;
             lastCanceledRemoteCartId = request.cartId();
             return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
+        }
+    }
+
+    static class FakeCheckoutDispatchService extends MerchantCheckoutPluginDispatchService {
+
+        private UcpCheckoutToolResult checkoutToolResult;
+        private String lastRemoteCartId;
+        private int createCount;
+
+        FakeCheckoutDispatchService() {
+            super(null, null, null);
+            checkoutToolResult = checkoutToolResult("gid://shopify/Cart/1");
+        }
+
+        @Override
+        public UcpCheckoutToolResult createCheckout(
+                MerchantCartProvider provider,
+                CreateCheckoutRequest request,
+                UcpSession session
+        ) {
+            createCount++;
+            lastRemoteCartId = request.cartId();
+            return checkoutToolResult;
+        }
+
+        private UcpCheckoutToolResult checkoutToolResult(String cartId) {
+            UcpCheckoutResponse response = new UcpCheckoutResponse(
+                    "Open checkout in browser",
+                    new UcpCheckoutResponse.Checkout(
+                            "gid://shopify/Checkout/1",
+                            cartId,
+                            "open",
+                            "https://merchant.example/checkout",
+                            "https://merchant.example/continue",
+                            Instant.parse("2026-06-16T11:06:00Z"),
+                            Instant.parse("2026-06-16T11:06:01Z"),
+                            null,
+                            Map.of("email", "ada@example.com"),
+                            Map.of(),
+                            List.of()
+                    ),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    List.of(),
+                    List.of()
+            );
+            return new UcpCheckoutToolResult(
+                    "https://merchant.example/api/mcp",
+                    "{}",
+                    response
+            );
         }
     }
 

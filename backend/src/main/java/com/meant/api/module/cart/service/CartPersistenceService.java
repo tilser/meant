@@ -12,6 +12,8 @@ import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.cart.common.support.UcpCartMoney;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -100,6 +102,25 @@ public class CartPersistenceService {
                 submittedGiftCardCodes,
                 cart.getAppliedCodes()
         ));
+        return cartRepository.save(cart);
+    }
+
+    @Transactional
+    public Cart saveCheckoutHandoff(UUID cartId, UUID userId, UcpCheckoutToolResult result) {
+        Cart cart = findCart(cartId, userId);
+        UcpCheckoutResponse.Checkout checkout = result.response().resolvedCheckout();
+        if (checkout == null) {
+            throw CartException.upstream("UCP checkout response did not contain checkout");
+        }
+        if (hasText(checkout.cartId()) && !checkout.cartId().equals(cart.getRemoteCartId())) {
+            throw CartException.upstream("UCP checkout response did not match cart");
+        }
+        String checkoutUrl = blankToNull(checkout.checkoutUrl());
+        String continueUrl = blankToNull(checkout.continueUrl());
+        if (checkoutUrl == null && continueUrl == null) {
+            throw CartException.upstream("UCP checkout response did not contain a handoff URL");
+        }
+        cart.replaceCheckoutHandoff(checkoutUrl, continueUrl, Instant.now());
         return cartRepository.save(cart);
     }
 
@@ -253,6 +274,10 @@ public class CartPersistenceService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String required(String value, String message) {

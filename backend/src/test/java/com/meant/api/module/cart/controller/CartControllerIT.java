@@ -20,6 +20,10 @@ import com.meant.api.plugin.cart.common.service.MerchantCartPluginDispatchServic
 import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -63,11 +67,15 @@ class CartControllerIT extends PostgresIntegrationTest {
     @Autowired
     private FakeCartDispatchService cartDispatchService;
 
+    @Autowired
+    private FakeCheckoutDispatchService checkoutDispatchService;
+
     private RestTestClient client;
 
     @BeforeEach
     void setUp() {
         cartDispatchService.reset();
+        checkoutDispatchService.reset();
         client = RestTestClient.bindToServer(new JdkClientHttpRequestFactory())
                 .baseUrl("http://localhost:" + port)
                 .build();
@@ -139,6 +147,8 @@ class CartControllerIT extends PostgresIntegrationTest {
         assertThat(checkout).isNotNull();
         assertThat(checkout.cartId()).isEqualTo(created.cartId());
         assertThat(checkout.checkoutUrl()).contains("checkout");
+        assertThat(checkout.continueUrl()).contains("continue");
+        assertThat(checkoutDispatchService.createCount()).isEqualTo(1);
 
         Cart persisted = cartRepository.findById(created.cartId()).orElseThrow();
         assertThat(persisted.getUserId()).isEqualTo(userId);
@@ -193,6 +203,7 @@ class CartControllerIT extends PostgresIntegrationTest {
         assertThat(cartDispatchService.createCount()).isEqualTo(1);
         assertThat(cartDispatchService.updateCount()).isZero();
         assertThat(cartDispatchService.getCount()).isZero();
+        assertThat(checkoutDispatchService.createCount()).isZero();
     }
 
     private CartResponse createCart(UUID userId, UUID merchantId) {
@@ -308,6 +319,12 @@ class CartControllerIT extends PostgresIntegrationTest {
         @Primary
         FakeCartDispatchService testCartDispatchService() {
             return new FakeCartDispatchService();
+        }
+
+        @Bean
+        @Primary
+        FakeCheckoutDispatchService testCheckoutDispatchService() {
+            return new FakeCheckoutDispatchService();
         }
     }
 
@@ -473,6 +490,71 @@ class CartControllerIT extends PostgresIntegrationTest {
         }
 
         private String raw(UcpCartResponse response) {
+            try {
+                return new ObjectMapper().writeValueAsString(response);
+            } catch (JacksonException exception) {
+                throw new AssertionError(exception);
+            }
+        }
+    }
+
+    static class FakeCheckoutDispatchService extends MerchantCheckoutPluginDispatchService {
+
+        private final AtomicInteger createCount = new AtomicInteger();
+
+        FakeCheckoutDispatchService() {
+            super(null, null, null);
+        }
+
+        void reset() {
+            createCount.set(0);
+        }
+
+        int createCount() {
+            return createCount.get();
+        }
+
+        @Override
+        public UcpCheckoutToolResult createCheckout(
+                MerchantCartProvider provider,
+                CreateCheckoutRequest request,
+                UcpSession session
+        ) {
+            createCount.incrementAndGet();
+            UcpCheckoutResponse response = new UcpCheckoutResponse(
+                    "Open checkout in browser",
+                    new UcpCheckoutResponse.Checkout(
+                            "gid://shopify/Checkout/" + createCount.get(),
+                            request.cartId(),
+                            "open",
+                            "https://merchant.example/checkout/" + createCount.get(),
+                            "https://merchant.example/continue/" + createCount.get(),
+                            Instant.parse("2026-06-16T11:06:00Z"),
+                            Instant.parse("2026-06-16T11:06:01Z"),
+                            null,
+                            Map.of(),
+                            Map.of(),
+                            List.of()
+                    ),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    List.of(),
+                    List.of()
+            );
+            return new UcpCheckoutToolResult(
+                    "https://merchant.example/api/mcp",
+                    raw(response),
+                    response
+            );
+        }
+
+        private String raw(UcpCheckoutResponse response) {
             try {
                 return new ObjectMapper().writeValueAsString(response);
             } catch (JacksonException exception) {
