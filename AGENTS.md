@@ -182,6 +182,12 @@ Use this commit message format:
 <type>[optional scope]: <description>
 ```
 
+If the work is associated with a Linear ticket, the ticket number must always be included before the standard commit message:
+
+```text
+<TICKET_NUMBER> - <type>[optional scope]: <description>
+```
+
 Allowed types:
 
 - `feat` for feature work
@@ -201,3 +207,4 @@ Examples:
 - `fix: handle missing merchant checkout URL`
 - `docs: document Meant product specification`
 - `feat(user): add preference commands`
+- `MEA-123 - feat(user): add preference commands`
