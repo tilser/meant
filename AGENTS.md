@@ -16,6 +16,9 @@ com.meant.api
     repository
     entity
     constant
+  plugin
+    spi
+    transport
   module
     user
       controller
@@ -34,6 +37,8 @@ com.meant.api
 ```
 
 Use `common` for shared cross-cutting code such as Swagger/OpenAPI configuration, security, shared web configuration, shared exceptions, and other infrastructure that is not owned by a business module.
+
+Use top-level `plugin` for the UCP plugin layer. `plugin.spi` is contract-only and owns UCP plugin contracts such as `UcpCapability`, `CapabilityId`, `NegotiatedCapabilities`, `CapabilityAdvertisement`, and `UcpToolResponse`. `plugin.transport` owns transport-facing infrastructure such as `CapabilityRegistry`, generated agent profile serving, request signing, and MCP transport clients. Do not place UCP plugin SPI or transport code under `common` or a business `module`.
 
 Use `module` for business logic modules. Each module, such as `user`, owns its own packages and should not leak internal entities or repositories into other modules.
 

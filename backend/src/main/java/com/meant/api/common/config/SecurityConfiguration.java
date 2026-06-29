@@ -39,6 +39,7 @@ public class SecurityConfiguration {
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health",
             "/actuator/info",
+            "/.well-known/ucp-agent.json",
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/v3/api-docs/**"

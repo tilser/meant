@@ -88,6 +88,12 @@ app:
         - method: GET
           path: /api/carts/{cartId}/checkout
 
+ucp:
+  agent:
+    profile-url: ${UCP_AGENT_PROFILE_URL:http://localhost:8080/.well-known/ucp-agent.json}
+    protocol-version: ${UCP_AGENT_PROTOCOL_VERSION:2026-04-08}
+    signing-key-id: ${UCP_AGENT_SIGNING_KEY_ID:meant-local}
+
 ai:
   openrouter:
     base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}

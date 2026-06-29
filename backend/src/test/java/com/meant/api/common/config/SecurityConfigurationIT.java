@@ -78,4 +78,15 @@ class SecurityConfigurationIT extends PostgresIntegrationTest {
                 .exchange()
                 .expectStatus().isOk();
     }
+
+    @Test
+    void agentProfileEndpointStaysPublic() {
+        client.get().uri("/.well-known/ucp-agent.json")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.profile_url").isEqualTo("http://localhost:8080/.well-known/ucp-agent.json")
+                .jsonPath("$.protocol_version").isEqualTo("2026-04-08")
+                .jsonPath("$.signing_key_id").isEqualTo("meant-test");
+    }
 }

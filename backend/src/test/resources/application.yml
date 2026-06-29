@@ -51,6 +51,12 @@ app:
         - method: GET
           path: /api/carts/{cartId}/checkout
 
+ucp:
+  agent:
+    profile-url: http://localhost:8080/.well-known/ucp-agent.json
+    protocol-version: 2026-04-08
+    signing-key-id: meant-test
+
 ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1
