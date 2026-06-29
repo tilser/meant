@@ -1,4 +1,4 @@
-package com.meant.api.module.merchant.service.dto;
+package com.meant.api.plugin.transport;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 

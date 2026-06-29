@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-merchant-mcp-tools-list" author="codex">
+        <createTable tableName="merchant_mcp_tools_list">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="agent_profile_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="endpoint" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tools_list_raw" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tools_list_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="captured_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_mcp_tools_list"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_mcp_tools_list_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+        <addUniqueConstraint
+                tableName="merchant_mcp_tools_list"
+                columnNames="merchant_id, agent_profile_hash"
+                constraintName="uk_merchant_mcp_tools_list_merchant_profile"/>
+        <createIndex tableName="merchant_mcp_tools_list" indexName="idx_merchant_mcp_tools_list_merchant">
+            <column name="merchant_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

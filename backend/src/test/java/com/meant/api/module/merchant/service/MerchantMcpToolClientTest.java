@@ -10,7 +10,10 @@ import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import com.meant.api.plugin.transport.AgentIdentity;
+import com.meant.api.plugin.transport.UcpMcpClient;
 import java.net.InetAddress;
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -106,8 +109,9 @@ class MerchantMcpToolClientTest {
 
         MerchantMcpToolClient client = new MerchantMcpToolClient(
                 restClientBuilder,
-                new MerchantMcpToolProperties(5000, 5000),
-                new MerchantOutboundUrlValidator()
+                new MerchantMcpToolProperties(5000, 5000, 15000, Duration.ofHours(1)),
+                new MerchantOutboundUrlValidator(),
+                ucpMcpClient()
         );
 
         MerchantClientHttpRequestFactory mcpRequestFactory = merchantRequestFactory(
@@ -123,11 +127,75 @@ class MerchantMcpToolClientTest {
         assertThat(ReflectionTestUtils.getField(sharedBuilderRequestFactory, "readTimeout")).isEqualTo(5678);
     }
 
+    @Test
+    void fallsBackToAdvertisedEndpointWhenProfileEndpointFails() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
+        server.expect(requestTo("https://advertised.example/profile-mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [],
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://advertised.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 2,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\"ok\\":true}"
+                              }
+                            ],
+                            "isError": false
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        MerchantMcpToolCallResult result = client.callTool(
+                new MerchantSemanticSearchResult(
+                        UUID.randomUUID(),
+                        "advertised.example",
+                        "Merchant",
+                        "https://advertised.example/api/mcp",
+                        "https://advertised.example/profile-mcp",
+                        "Context",
+                        0.9d,
+                        0.8d,
+                        1
+                ),
+                "search_catalog",
+                Map.of("catalog", Map.of("query", "candle"))
+        );
+
+        assertThat(result.endpoint()).isEqualTo("https://advertised.example/api/mcp");
+        assertThat(result.contentText()).isEqualTo("{\"ok\":true}");
+        server.verify();
+    }
+
     private MerchantMcpToolClient client(RestClient restClient, String resolvedAddress) {
         return new MerchantMcpToolClient(
                 restClient,
                 MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName(resolvedAddress)))
         );
+    }
+
+    private UcpMcpClient ucpMcpClient() {
+        return new UcpMcpClient(new AgentIdentity(
+                URI.create("https://agent.example/.well-known/ucp-agent.json"),
+                "2026-04-08",
+                "agent-key-1"
+        ));
     }
 
     private MerchantClientHttpRequestFactory merchantRequestFactory(Object restClient) {

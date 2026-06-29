@@ -1,22 +1,23 @@
 package com.meant.api.module.merchant.service;
 
-import static com.meant.api.common.util.CollectionUtils.safeList;
-
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
-import com.meant.api.module.merchant.service.dto.McpContent;
-import com.meant.api.module.merchant.service.dto.McpToolCallParams;
-import com.meant.api.module.merchant.service.dto.McpToolCallRequest;
-import com.meant.api.module.merchant.service.dto.McpToolCallResponse;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListFetchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.transport.AgentIdentity;
+import com.meant.api.plugin.transport.UcpMcpClient;
+import com.meant.api.plugin.transport.UcpMcpException;
 import java.net.URI;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -27,12 +28,15 @@ public class MerchantMcpToolClient {
 
     private final RestClient restClient;
     private final MerchantOutboundUrlValidator merchantOutboundUrlValidator;
+    private final UcpMcpClient ucpMcpClient;
+    private final Duration merchantTimeout;
 
     @Autowired
     public MerchantMcpToolClient(
             RestClient.Builder restClientBuilder,
             MerchantMcpToolProperties merchantMcpToolProperties,
-            MerchantOutboundUrlValidator merchantOutboundUrlValidator
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator,
+            UcpMcpClient ucpMcpClient
     ) {
         MerchantClientHttpRequestFactory requestFactory = new MerchantClientHttpRequestFactory(
                 merchantOutboundUrlValidator,
@@ -41,6 +45,8 @@ public class MerchantMcpToolClient {
         );
         this.restClient = restClientBuilder.clone().requestFactory(requestFactory).build();
         this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
+        this.ucpMcpClient = ucpMcpClient;
+        this.merchantTimeout = Duration.ofMillis(merchantMcpToolProperties.merchantTimeoutMilliseconds());
     }
 
     public MerchantMcpToolClient(RestClient restClient) {
@@ -48,8 +54,28 @@ public class MerchantMcpToolClient {
     }
 
     public MerchantMcpToolClient(RestClient restClient, MerchantOutboundUrlValidator merchantOutboundUrlValidator) {
+        this(
+                restClient,
+                merchantOutboundUrlValidator,
+                new UcpMcpClient(new AgentIdentity(
+                        URI.create("http://localhost:8080/.well-known/ucp-agent.json"),
+                        "2026-04-08",
+                        "meant-test"
+                )),
+                Duration.ofSeconds(5)
+        );
+    }
+
+    public MerchantMcpToolClient(
+            RestClient restClient,
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator,
+            UcpMcpClient ucpMcpClient,
+            Duration merchantTimeout
+    ) {
         this.restClient = restClient;
         this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
+        this.ucpMcpClient = ucpMcpClient;
+        this.merchantTimeout = merchantTimeout;
     }
 
     public MerchantMcpToolCallResult callTool(
@@ -76,6 +102,14 @@ public class MerchantMcpToolClient {
         );
     }
 
+    public MerchantMcpToolsListFetchResult listTools(Merchant merchant) {
+        return listTools(
+                merchant.getDomain(),
+                merchant.getAdvertisedMcpEndpoint(),
+                merchant.getProfileMcpEndpoint()
+        );
+    }
+
     public MerchantMcpToolCallResult callTool(MerchantCartProvider provider, String toolName, Object arguments) {
         return callTool(
                 provider.domain(),
@@ -93,55 +127,78 @@ public class MerchantMcpToolClient {
             String toolName,
             Object arguments
     ) {
-        List<MerchantMcpToolException> failures = new ArrayList<>();
-        for (String endpoint : endpointCandidates(domain, advertisedMcpEndpoint, profileMcpEndpoint)) {
-            try {
-                URI endpointUri = merchantOutboundUrlValidator.validateMerchantUrl(domain, endpoint);
-                return new MerchantMcpToolCallResult(
-                        endpointUri.toString(),
-                        callToolFromEndpoint(endpointUri, toolName, arguments)
-                );
-            } catch (RestClientException | MerchantMcpToolException | MerchantOutboundUrlException exception) {
-                failures.add(new MerchantMcpToolException("MCP tool call failed for " + endpoint, exception));
-            }
-        }
-        throw mcpToolException(domain, toolName, failures);
+        EndpointResult<UcpToolResponse> result = executeWithEndpointFallback(
+                domain,
+                advertisedMcpEndpoint,
+                profileMcpEndpoint,
+                "MCP tool " + toolName,
+                endpoint -> {
+                    UcpToolResponse response = ucpMcpClient.callTool(restClient, endpoint, toolName, arguments);
+                    requireContentText(response);
+                    return response;
+                }
+        );
+        UcpToolResponse response = result.value();
+        return new MerchantMcpToolCallResult(
+                result.endpoint(),
+                requireContentText(response),
+                response.structuredContent(),
+                response.negotiatedCapabilities()
+        );
     }
 
-    private String callToolFromEndpoint(URI endpoint, String toolName, Object arguments) {
-        McpToolCallResponse response = restClient.post()
-                .uri(endpoint)
-                .body(toolRequest(toolName, arguments))
-                .retrieve()
-                .body(McpToolCallResponse.class);
+    private MerchantMcpToolsListFetchResult listTools(
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint
+    ) {
+        EndpointResult<String> result = executeWithEndpointFallback(
+                domain,
+                advertisedMcpEndpoint,
+                profileMcpEndpoint,
+                "MCP tools/list",
+                endpoint -> ucpMcpClient.listTools(restClient, endpoint)
+        );
+        return new MerchantMcpToolsListFetchResult(result.endpoint(), result.value());
+    }
 
-        if (response == null) {
-            throw new MerchantMcpToolException("MCP response was empty");
+    private <T> EndpointResult<T> executeWithEndpointFallback(
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint,
+            String operation,
+            Function<URI, T> endpointCall
+    ) {
+        List<MerchantMcpToolException> failures = new ArrayList<>();
+        Instant deadline = Instant.now().plus(merchantTimeout);
+        for (String endpoint : endpointCandidates(domain, advertisedMcpEndpoint, profileMcpEndpoint)) {
+            if (Instant.now().isAfter(deadline)) {
+                failures.add(new MerchantMcpToolException(operation + " exceeded merchant deadline"));
+                break;
+            }
+            try {
+                URI endpointUri = merchantOutboundUrlValidator.validateMerchantUrl(domain, endpoint);
+                return new EndpointResult<>(endpointUri.toString(), endpointCall.apply(endpointUri));
+            } catch (RestClientException
+                     | MerchantMcpToolException
+                     | MerchantOutboundUrlException
+                     | UcpMcpException exception) {
+                failures.add(new MerchantMcpToolException(operation + " failed for " + endpoint, exception));
+            }
         }
-        if (response.error() != null) {
-            throw new MerchantMcpToolException("MCP error: " + response.error().message());
-        }
-        if (response.result() == null) {
-            throw new MerchantMcpToolException("MCP result was missing");
-        }
-        if (response.result().isError()) {
-            throw new MerchantMcpToolException(
-                    "MCP result was marked as error: " + contentText(response.result().content())
-            );
-        }
-        return contentText(response.result().content());
+        throw mcpToolException(domain, operation, failures);
     }
 
     private MerchantMcpToolException mcpToolException(
             String domain,
-            String toolName,
+            String operation,
             List<MerchantMcpToolException> failures
     ) {
         if (failures.isEmpty()) {
             return new MerchantMcpToolException("No MCP endpoint candidates for " + domain);
         }
         MerchantMcpToolException exception = new MerchantMcpToolException(
-                "MCP tool " + toolName + " failed for all endpoint candidates for " + domain,
+                operation + " failed for all endpoint candidates for " + domain,
                 failures.getLast()
         );
         failures.stream()
@@ -150,22 +207,11 @@ public class MerchantMcpToolClient {
         return exception;
     }
 
-    private String contentText(List<McpContent> content) {
-        return safeList(content).stream()
-                .filter(item -> "text".equals(item.type()))
-                .map(McpContent::text)
-                .filter(text -> text != null && !text.isBlank())
-                .findFirst()
-                .orElseThrow(() -> new MerchantMcpToolException("MCP result did not contain text content"));
-    }
-
-    private McpToolCallRequest toolRequest(String toolName, Object arguments) {
-        return new McpToolCallRequest(
-                "2.0",
-                4,
-                "tools/call",
-                new McpToolCallParams(toolName, arguments)
-        );
+    private String requireContentText(UcpToolResponse response) {
+        if (response.textContent() == null || response.textContent().isBlank()) {
+            throw new MerchantMcpToolException("MCP result did not contain text content");
+        }
+        return response.textContent();
     }
 
     private List<String> endpointCandidates(
@@ -208,4 +254,9 @@ public class MerchantMcpToolClient {
         return value != null && !value.isBlank();
     }
 
+    private record EndpointResult<T>(
+            String endpoint,
+            T value
+    ) {
+    }
 }

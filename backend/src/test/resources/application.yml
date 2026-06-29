@@ -109,6 +109,8 @@ merchant:
   mcp-tool:
     connect-timeout-milliseconds: 5000
     read-timeout-milliseconds: 5000
+    merchant-timeout-milliseconds: 15000
+    tools-list-cache-ttl: 1h
   identity-linking:
     client-id: meant-test
     client-secret: test-secret

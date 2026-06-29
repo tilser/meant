@@ -2,13 +2,13 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
-import com.meant.api.module.merchant.service.dto.McpContent;
-import com.meant.api.module.merchant.service.dto.McpToolCallParams;
-import com.meant.api.module.merchant.service.dto.McpToolCallRequest;
-import com.meant.api.module.merchant.service.dto.McpToolCallResponse;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
 import com.meant.api.module.merchant.service.dto.StorePolicyFaqEntry;
 import com.meant.api.module.merchant.service.dto.StoreProfileArguments;
+import com.meant.api.plugin.transport.McpContent;
+import com.meant.api.plugin.transport.McpToolCallParams;
+import com.meant.api.plugin.transport.McpToolCallRequest;
+import com.meant.api.plugin.transport.McpToolCallResponse;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
