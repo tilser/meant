@@ -32,6 +32,7 @@ import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.controller.response.UserTasteProfileResponse;
 import com.meant.api.module.user.controller.response.UserTasteSignalResponse;
 import com.meant.api.module.user.properties.UserCollectionProperties;
+import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.UserAssistantChatService;
 import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserPreferenceFilterParsingService;
@@ -77,6 +78,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -93,6 +100,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import tools.jackson.databind.ObjectMapper;
 
@@ -124,6 +132,7 @@ public class UserController {
     private final UserInventoryService userInventoryService;
     private final UserTasteProfileService userTasteProfileService;
     private final UserCollectionProperties userCollectionProperties;
+    private final UserProductSearchProperties userProductSearchProperties;
     private final ObjectMapper objectMapper;
 
     @GetMapping("/me")
@@ -380,7 +389,7 @@ public class UserController {
             description = "Streams Discovery Agent catalog candidates, Meant Curator score and order updates, "
                     + "and final pagination metadata as soon as each piece is available."
     )
-    public StreamingResponseBody streamSearchProducts(
+    public SseEmitter streamSearchProducts(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody UserProductSearchRequest request,
             HttpServletRequest httpRequest
@@ -395,31 +404,19 @@ public class UserController {
                 request.offset(),
                 request.limit()
         );
-        return outputStream -> {
-            try {
-                try {
-                    userProductSearchService.stream(
-                            UserCommandMapper.toUpsertCommand(authenticatedUser),
-                            command,
-                            event -> writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.from(event))
-                    );
-                } catch (UncheckedIOException exception) {
-                    throw exception;
-                } catch (RuntimeException exception) {
-                    log.warn(
-                            "Product search stream failed. userId={}, merchantId={}",
-                            authenticatedUser.id(),
-                            command.merchantId(),
-                            exception
-                    );
-                    writeProductSearchEvent(outputStream, UserProductSearchStreamEventResponse.error(
-                            "Product search failed. Please try again."
-                    ));
-                }
-            } catch (UncheckedIOException exception) {
-                throw exception.getCause();
-            }
-        };
+        SseEmitter emitter = new SseEmitter(userProductSearchProperties.streamTimeout().toMillis());
+        ProductSearchSseSession session = new ProductSearchSseSession(
+                emitter,
+                userProductSearchProperties.streamQueueCapacity(),
+                authenticatedUser.id(),
+                command.merchantId()
+        );
+        session.start(() -> userProductSearchService.stream(
+                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                command,
+                event -> session.send(UserProductSearchStreamEventResponse.from(event))
+        ));
+        return emitter;
     }
 
     @GetMapping("/me/product-search-suggestions")
@@ -910,16 +907,133 @@ public class UserController {
     }
 
     private void writeProductSearchEvent(
-            OutputStream outputStream,
+            SseEmitter emitter,
             UserProductSearchStreamEventResponse event
-    ) {
-        try {
-            String payload = objectMapper.writeValueAsString(event);
-            outputStream.write(("event: " + event.type() + "\n").getBytes(StandardCharsets.UTF_8));
-            outputStream.write(("data: " + payload + "\n\n").getBytes(StandardCharsets.UTF_8));
-            outputStream.flush();
-        } catch (IOException exception) {
-            throw new UncheckedIOException(exception);
+    ) throws IOException {
+        String payload = objectMapper.writeValueAsString(event);
+        emitter.send(SseEmitter.event()
+                .name(event.type())
+                .data(payload));
+    }
+
+    private final class ProductSearchSseSession {
+
+        private static final long DRAIN_POLL_MILLISECONDS = 250L;
+
+        private final SseEmitter emitter;
+        private final ArrayBlockingQueue<UserProductSearchStreamEventResponse> events;
+        private final UUID userId;
+        private final UUID merchantId;
+        private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        private final AtomicBoolean closed = new AtomicBoolean();
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+
+        private CompletableFuture<Void> searchFuture;
+        private CompletableFuture<Void> drainFuture;
+
+        private ProductSearchSseSession(SseEmitter emitter, int queueCapacity, UUID userId, UUID merchantId) {
+            this.emitter = emitter;
+            this.events = new ArrayBlockingQueue<>(queueCapacity);
+            this.userId = userId;
+            this.merchantId = merchantId;
+        }
+
+        private void start(Runnable searchTask) {
+            emitter.onCompletion(this::cancel);
+            emitter.onTimeout(() -> {
+                cancel();
+                emitter.complete();
+            });
+            emitter.onError(exception -> cancel());
+
+            searchFuture = CompletableFuture.runAsync(searchTask, executor)
+                    .whenComplete((ignored, exception) -> {
+                        if (exception != null && !cancelled.get()) {
+                            log.warn(
+                                    "Product search stream failed. userId={}, merchantId={}",
+                                    userId,
+                                    merchantId,
+                                    exception
+                            );
+                            send(UserProductSearchStreamEventResponse.error(
+                                    "Product search failed. Please try again."
+                            ));
+                        }
+                        closed.set(true);
+                    });
+            drainFuture = CompletableFuture.runAsync(this::drain, executor);
+        }
+
+        private void send(UserProductSearchStreamEventResponse event) {
+            if (cancelled.get()) {
+                return;
+            }
+            if (events.offer(event)) {
+                return;
+            }
+            if (!isTerminal(event)) {
+                log.debug(
+                        "Dropping product search stream event because the client queue is full. userId={}, eventType={}",
+                        userId,
+                        event.type()
+                );
+                return;
+            }
+            while (!events.offer(event)) {
+                events.poll();
+            }
+        }
+
+        private void drain() {
+            try {
+                while (!closed.get() || !events.isEmpty()) {
+                    UserProductSearchStreamEventResponse event = events.poll(
+                            DRAIN_POLL_MILLISECONDS,
+                            TimeUnit.MILLISECONDS
+                    );
+                    if (event != null) {
+                        writeProductSearchEvent(emitter, event);
+                    }
+                }
+                emitter.complete();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                completeWithError(exception);
+            } catch (IOException | RuntimeException exception) {
+                completeWithError(exception);
+            } finally {
+                cancel();
+            }
+        }
+
+        private void completeWithError(Throwable exception) {
+            if (cancelled.compareAndSet(false, true)) {
+                emitter.completeWithError(exception);
+            }
+            shutdown();
+        }
+
+        private void cancel() {
+            if (!cancelled.compareAndSet(false, true)) {
+                shutdown();
+                return;
+            }
+            closed.set(true);
+            if (searchFuture != null) {
+                searchFuture.cancel(true);
+            }
+            if (drainFuture != null) {
+                drainFuture.cancel(true);
+            }
+            shutdown();
+        }
+
+        private void shutdown() {
+            executor.shutdownNow();
+        }
+
+        private boolean isTerminal(UserProductSearchStreamEventResponse event) {
+            return "done".equals(event.type()) || "error".equals(event.type());
         }
     }
 }

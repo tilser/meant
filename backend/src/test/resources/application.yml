@@ -34,6 +34,8 @@ app:
       endpoints:
         - method: POST
           path: /api/users/me/product-searches
+        - method: POST
+          path: /api/users/me/product-searches:stream
         - method: GET
           path: /api/users/me/product-search-suggestions
         - method: POST
@@ -85,6 +87,8 @@ user:
     query-parser-prompt-version: v2
     explanation-prompt-version: v1
     cache-ttl: 24h
+    stream-timeout: 45s
+    stream-queue-capacity: 128
     discovery-recent-search-limit: 5
     discovery-recent-product-limit: 12
     popular-search-window: 24h

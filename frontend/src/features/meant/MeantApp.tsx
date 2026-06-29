@@ -931,6 +931,7 @@ function productFromSearchResult(
     skus,
     collections,
     catalogAttributes,
+    detailError: product.detailError,
     detailDescription: detail || null,
     offers: [
       {
@@ -3717,11 +3718,14 @@ function ProductCard({
             />
           ))}
         </div>
-        {catalogBadges.length > 0 ? (
+        {catalogBadges.length > 0 || product.detailError ? (
           <div className="mt-catalog-pills">
             {catalogBadges.map((label) => (
               <span className="mt-catalog-pill" key={label}>{label}</span>
             ))}
+            {product.detailError ? (
+              <span className="mt-catalog-pill mt-catalog-pill-warning">Details unavailable</span>
+            ) : null}
           </div>
         ) : null}
         <div className="mt-card-foot">
@@ -9745,7 +9749,7 @@ export function MeantApp() {
           upsertStreamProduct(event, 'candidate')
         },
         onProductUpdate: (event) => {
-          upsertStreamProduct(event, 'curating')
+          upsertStreamProduct(event, event.agent === 'discovery' ? 'enriched' : 'curating')
         },
         onRankUpdate: (event) => {
           if (searchRequestRef.current !== requestId) {

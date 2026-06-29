@@ -23,6 +23,12 @@ public record UserProductSearchProperties(
         @NotNull
         Duration cacheTtl,
 
+        @NotNull
+        Duration streamTimeout,
+
+        @Positive
+        int streamQueueCapacity,
+
         @Positive
         int discoveryRecentSearchLimit,
 

@@ -1937,6 +1937,12 @@ button:disabled {
   padding: 4px 7px;
 }
 
+.mt-catalog-pill-warning {
+  border-color: color-mix(in srgb, var(--danger, #d4543a) 28%, var(--line));
+  background: color-mix(in srgb, var(--danger, #d4543a) 9%, var(--surface));
+  color: var(--ink);
+}
+
 .mt-chip {
   display: inline-flex;
   align-items: center;

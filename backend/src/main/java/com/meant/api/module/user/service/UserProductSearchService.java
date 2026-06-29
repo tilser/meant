@@ -28,7 +28,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -217,7 +219,7 @@ public class UserProductSearchService {
                 UserProductSearchAgent.DISCOVERY.getValue(),
                 "Searching merchant catalogs"
         ));
-        Map<String, UserProductSearchProductSnapshot> emittedCandidates = new LinkedHashMap<>();
+        Set<String> emittedCandidateKeys = ConcurrentHashMap.newKeySet();
         List<UserProductSearchProductSnapshot> fetchedProducts = productSnapshots(
                 catalogInput,
                 command.merchantId(),
@@ -227,10 +229,18 @@ public class UserProductSearchService {
                     if (rank <= offset || rank > pageEnd(offset, limit)) {
                         return;
                     }
-                    if (emittedCandidates.putIfAbsent(candidate.productKey(), candidate) == null) {
+                    if (emittedCandidateKeys.add(candidate.productKey())) {
                         eventConsumer.accept(UserProductSearchStreamEvent.product(
                                 UserProductSearchAgent.DISCOVERY.getValue(),
                                 "Product candidate found",
+                                previewProductResult(candidate, now)
+                        ));
+                    } else {
+                        eventConsumer.accept(UserProductSearchStreamEvent.productUpdate(
+                                UserProductSearchAgent.DISCOVERY.getValue(),
+                                candidate.product().detailError() == null
+                                        ? "Product details updated"
+                                        : "Product detail unavailable",
                                 previewProductResult(candidate, now)
                         ));
                     }

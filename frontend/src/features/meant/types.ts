@@ -111,6 +111,7 @@ export interface Product {
   skus?: readonly string[]
   collections?: readonly string[]
   catalogAttributes?: readonly ProductCatalogAttribute[]
+  detailError?: string | null
   detailDescription?: string | null
   detailOptions?: readonly ProductOption[]
   selectedOptions?: readonly ProductSelectedOption[]

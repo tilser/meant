@@ -13,6 +13,7 @@ import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
@@ -123,6 +124,29 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     @Test
+    void keepsSuccessfulProductsAndCompletesWhenMerchantPluginThrowsRuntimeException() {
+        MerchantSemanticSearchResult failingMerchant = merchant("failing.example", "Failing Store", 1);
+        MerchantSemanticSearchResult workingMerchant = merchant("working.example", "Working Store", 2);
+        merchantSemanticSearchService.results = List.of(failingMerchant, workingMerchant);
+        merchantCatalogPluginDispatchService.runtimeFailures.put(failingMerchant.domain(), "plugin exploded");
+        merchantCatalogPluginDispatchService.results.put(workingMerchant.domain(), catalogSearchResult(workingMerchant, List.of(
+                product("runner", "Running Shoe", "Light road shoe", "shoes")
+        )));
+
+        List<String> streamedProductIds = new CopyOnWriteArrayList<>();
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("running shoes", null, null, null, null, null),
+                product -> streamedProductIds.add(product.productId() + ":" + product.selectedVariantId())
+        );
+
+        assertThat(result.merchants()).hasSize(2);
+        assertThat(result.merchants().getFirst().error()).contains("plugin exploded");
+        assertThat(result.merchants().getLast().productCount()).isEqualTo(1);
+        assertThat(result.products()).extracting("productId").containsExactly("runner");
+        assertThat(streamedProductIds).containsExactly("runner:null", "runner:runner-selected");
+    }
+
+    @Test
     void keepsPartialProductWhenProductDetailsFails() {
         MerchantSemanticSearchResult merchant = merchant("shoe.example", "Shoe Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
@@ -139,6 +163,35 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.products().getFirst().productId()).isEqualTo("runner");
         assertThat(result.products().getFirst().detailError()).contains("details unavailable");
         assertThat(result.products().getFirst().selectedVariantId()).isNull();
+    }
+
+    @Test
+    void streamsCatalogCandidateBeforeAsyncProductDetailsUpdate() {
+        MerchantSemanticSearchResult merchant = merchant("shoe.example", "Shoe Store", 1);
+        merchantSemanticSearchService.results = List.of(merchant);
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+                product("runner", "Running Shoe", "Light road shoe", "shoes")
+        )));
+        List<MerchantSemanticProductResult> streamedProducts = new CopyOnWriteArrayList<>();
+
+        MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
+                new SemanticProductSearchQuery("running shoes", null, null, null, null, null),
+                streamedProducts::add
+        );
+
+        assertThat(result.products()).singleElement()
+                .satisfies(product -> assertThat(product.selectedVariantId()).isEqualTo("runner-selected"));
+        assertThat(streamedProducts).hasSize(2);
+        assertThat(streamedProducts.getFirst()).satisfies(product -> {
+            assertThat(product.productId()).isEqualTo("runner");
+            assertThat(product.selectedVariantId()).isNull();
+            assertThat(product.detailDescription()).isNull();
+        });
+        assertThat(streamedProducts.getLast()).satisfies(product -> {
+            assertThat(product.productId()).isEqualTo("runner");
+            assertThat(product.selectedVariantId()).isEqualTo("runner-selected");
+            assertThat(product.detailDescription()).isEqualTo("Detailed description");
+        });
     }
 
     @Test
@@ -944,6 +997,7 @@ class MerchantSemanticProductSearchServiceTest {
 
         private final Map<String, CatalogSearchResult> results = new HashMap<>();
         private final Map<String, String> failures = new HashMap<>();
+        private final Map<String, String> runtimeFailures = new HashMap<>();
         private final Map<String, ProductDetailsResponse.Product> products = new HashMap<>();
         private final Map<String, String> prices = new HashMap<>();
         private final Map<String, String> currencies = new HashMap<>();
@@ -968,6 +1022,9 @@ class MerchantSemanticProductSearchServiceTest {
         ) {
             catalogSearchCalls.add(merchant.domain() + ":" + query + ":" + limit);
             awaitConcurrentCalls(concurrentCatalogSearches, "Catalog search");
+            if (runtimeFailures.containsKey(merchant.domain())) {
+                throw new IllegalStateException(runtimeFailures.get(merchant.domain()));
+            }
             if (failures.containsKey(merchant.domain())) {
                 throw new MerchantCatalogSearchException(failures.get(merchant.domain()));
             }

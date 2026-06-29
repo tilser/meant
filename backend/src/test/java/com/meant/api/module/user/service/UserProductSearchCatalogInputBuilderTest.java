@@ -140,6 +140,8 @@ class UserProductSearchCatalogInputBuilderTest {
                 "v2",
                 "v1",
                 Duration.ofHours(24),
+                Duration.ofSeconds(45),
+                128,
                 5,
                 12,
                 Duration.ofHours(24),
