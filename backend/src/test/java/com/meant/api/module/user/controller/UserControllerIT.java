@@ -205,7 +205,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         @Bean
         @Primary
         MerchantSemanticProductSearchService testMerchantSemanticProductSearchService() {
-            return new MerchantSemanticProductSearchService(null, null, null, null, null, null) {
+            return new MerchantSemanticProductSearchService(null, null, null, null, null) {
                 @Override
                 public MerchantSemanticProductSearchResult search(SemanticProductSearchQuery query) {
                     return search(query, null);

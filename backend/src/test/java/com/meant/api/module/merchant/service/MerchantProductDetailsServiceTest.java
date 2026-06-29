@@ -2,11 +2,13 @@ package com.meant.api.module.merchant.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -17,10 +19,11 @@ class MerchantProductDetailsServiceTest {
     void fetchesProductDetailsFromActiveMerchantWithContext() {
         UUID merchantId = UUID.randomUUID();
         FakeMerchantLookupService merchantLookupService = new FakeMerchantLookupService();
-        FakeMerchantProductDetailsClient merchantProductDetailsClient = new FakeMerchantProductDetailsClient();
+        FakeMerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService =
+                new FakeMerchantCatalogPluginDispatchService();
         MerchantProductDetailsService service = new MerchantProductDetailsService(
                 merchantLookupService,
-                merchantProductDetailsClient
+                merchantCatalogPluginDispatchService
         );
 
         ProductDetailsResult result = service.get(new GetMerchantProductDetailsQuery(
@@ -31,11 +34,17 @@ class MerchantProductDetailsServiceTest {
         ));
 
         assertThat(merchantLookupService.requestedMerchantId).isEqualTo(merchantId);
-        assertThat(merchantProductDetailsClient.requestedMerchant).isSameAs(merchantLookupService.merchant);
-        assertThat(merchantProductDetailsClient.requestedProductId).isEqualTo("gid://shopify/Product/1");
-        assertThat(merchantProductDetailsClient.requestedContext.addressCountry()).isEqualTo("US");
-        assertThat(merchantProductDetailsClient.requestedContext.language()).isEqualTo("en");
-        assertThat(merchantProductDetailsClient.requestedContext.intent()).isEqualTo("Product detail");
+        assertThat(merchantCatalogPluginDispatchService.requestedLookupMerchant)
+                .isSameAs(merchantLookupService.merchant);
+        assertThat(merchantCatalogPluginDispatchService.requestedLookupProductId)
+                .isEqualTo("gid://shopify/Product/1");
+        assertThat(merchantCatalogPluginDispatchService.requestedGetProductMerchant)
+                .isSameAs(merchantLookupService.merchant);
+        assertThat(merchantCatalogPluginDispatchService.requestedGetProductId)
+                .isEqualTo("gid://shopify/Product/1");
+        assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.addressCountry()).isEqualTo("US");
+        assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.language()).isEqualTo("en");
+        assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.intent()).isEqualTo("Product detail");
         assertThat(result.product().title()).isEqualTo("Blue Shirt");
         assertThat(result.product().options()).extracting("name").containsExactly("Size");
     }
@@ -66,25 +75,40 @@ class MerchantProductDetailsServiceTest {
         }
     }
 
-    private static class FakeMerchantProductDetailsClient extends MerchantProductDetailsClient {
+    private static class FakeMerchantCatalogPluginDispatchService extends MerchantCatalogPluginDispatchService {
 
-        private MerchantSemanticSearchResult requestedMerchant;
-        private String requestedProductId;
-        private CatalogSearchContext requestedContext;
+        private MerchantSemanticSearchResult requestedLookupMerchant;
+        private String requestedLookupProductId;
+        private MerchantSemanticSearchResult requestedGetProductMerchant;
+        private String requestedGetProductId;
+        private CatalogSearchContext requestedGetProductContext;
 
-        FakeMerchantProductDetailsClient() {
+        FakeMerchantCatalogPluginDispatchService() {
             super(null, null);
         }
 
         @Override
-        public ProductDetailsResult getProductDetails(
+        public CatalogLookupResult lookupCatalog(
                 MerchantSemanticSearchResult merchant,
                 String productId,
-                CatalogSearchContext context
+                CatalogSearchContext context,
+                NegotiatedCapabilities activeCapabilities
         ) {
-            requestedMerchant = merchant;
-            requestedProductId = productId;
-            requestedContext = context;
+            requestedLookupMerchant = merchant;
+            requestedLookupProductId = productId;
+            return new CatalogLookupResult(merchant.advertisedMcpEndpoint(), productId, null, null);
+        }
+
+        @Override
+        public ProductDetailsResult getProduct(
+                MerchantSemanticSearchResult merchant,
+                String productId,
+                CatalogSearchContext context,
+                NegotiatedCapabilities activeCapabilities
+        ) {
+            requestedGetProductMerchant = merchant;
+            requestedGetProductId = productId;
+            requestedGetProductContext = context;
             return new ProductDetailsResult(
                     merchant.advertisedMcpEndpoint(),
                     "{}",

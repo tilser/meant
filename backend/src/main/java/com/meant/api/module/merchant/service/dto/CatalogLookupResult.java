@@ -1,19 +1,15 @@
 package com.meant.api.module.merchant.service.dto;
 
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
-import java.util.List;
 
-public record CatalogSearchResult(
+public record CatalogLookupResult(
         String endpoint,
-        List<CatalogSearchResponse.Product> products,
+        String productId,
+        ProductDetailsResponse.Product product,
         NegotiatedCapabilities negotiatedCapabilities
 ) {
 
-    public CatalogSearchResult(String endpoint, List<CatalogSearchResponse.Product> products) {
-        this(endpoint, products, NegotiatedCapabilities.none());
-    }
-
-    public CatalogSearchResult {
+    public CatalogLookupResult {
         negotiatedCapabilities = negotiatedCapabilities == null
                 ? NegotiatedCapabilities.none()
                 : negotiatedCapabilities;

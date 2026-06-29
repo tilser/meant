@@ -1,0 +1,29 @@
+package com.meant.api.plugin.catalog;
+
+import com.meant.api.plugin.spi.UcpToolResponse;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+final class CatalogPluginJson {
+
+    private CatalogPluginJson() {
+    }
+
+    static <T> T parse(ObjectMapper objectMapper, UcpToolResponse response, Class<T> type) {
+        try {
+            if (response.textContent() != null && !response.textContent().isBlank()) {
+                return objectMapper.readValue(response.textContent(), type);
+            }
+            if (response.structuredContent() != null) {
+                return objectMapper.readValue(
+                        objectMapper.writeValueAsString(response.structuredContent()),
+                        type
+                );
+            }
+            throw new UcpCatalogResponseException("UCP catalog response did not contain text or structured content");
+        } catch (JacksonException exception) {
+            throw new UcpCatalogResponseException("UCP catalog response could not be parsed as " + type.getSimpleName(),
+                    exception);
+        }
+    }
+}

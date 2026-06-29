@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service.dto;
 import static com.meant.api.common.util.CollectionUtils.safeList;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,11 +15,27 @@ public record MerchantCatalogProductCandidate(
         MerchantSemanticSearchResult merchant,
         String endpoint,
         CatalogSearchResponse.Product product,
-        int catalogRank
+        int catalogRank,
+        NegotiatedCapabilities negotiatedCapabilities
 ) {
 
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
+
+    public MerchantCatalogProductCandidate(
+            MerchantSemanticSearchResult merchant,
+            String endpoint,
+            CatalogSearchResponse.Product product,
+            int catalogRank
+    ) {
+        this(merchant, endpoint, product, catalogRank, NegotiatedCapabilities.none());
+    }
+
+    public MerchantCatalogProductCandidate {
+        negotiatedCapabilities = negotiatedCapabilities == null
+                ? NegotiatedCapabilities.none()
+                : negotiatedCapabilities;
+    }
 
     public String productKey() {
         return merchant.domain() + ":" + product.id();

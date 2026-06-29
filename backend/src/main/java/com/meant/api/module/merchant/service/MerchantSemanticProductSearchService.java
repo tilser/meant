@@ -6,6 +6,7 @@ import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
+import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
@@ -25,10 +26,11 @@ import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
+import com.meant.api.plugin.support.UcpDecimal;
+import com.meant.api.plugin.support.UcpMoney;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -74,8 +76,7 @@ public class MerchantSemanticProductSearchService {
             Pattern.compile("\\b(?:unisex|gender neutral|all gender|all genders|everyone)\\b");
 
     private final MerchantSemanticSearchService merchantSemanticSearchService;
-    private final MerchantCatalogSearchClient merchantCatalogSearchClient;
-    private final MerchantProductDetailsClient merchantProductDetailsClient;
+    private final MerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService;
     private final VoyageRerankClient voyageRerankClient;
     private final MerchantLookupService merchantLookupService;
     private final MerchantCatalogSearchProperties merchantCatalogSearchProperties;
@@ -175,7 +176,7 @@ public class MerchantSemanticProductSearchService {
             MerchantSemanticSearchResult merchant
     ) {
         try {
-            CatalogSearchResult catalogSearchResult = merchantCatalogSearchClient.searchCatalog(
+            CatalogSearchResult catalogSearchResult = merchantCatalogPluginDispatchService.searchCatalog(
                     merchant,
                     query,
                     context,
@@ -232,7 +233,8 @@ public class MerchantSemanticProductSearchService {
                         merchant,
                         catalogSearchResult.endpoint(),
                         products.get(index),
-                        index + 1
+                        index + 1,
+                        catalogSearchResult.negotiatedCapabilities()
                 ))
                 .toList();
     }
@@ -334,11 +336,27 @@ public class MerchantSemanticProductSearchService {
             MerchantCatalogProductCandidate productCandidate,
             CatalogSearchContext context
     ) {
-        return merchantProductDetailsClient.getProductDetails(
+        NegotiatedCapabilities activeCapabilities = productCandidate.negotiatedCapabilities();
+        CatalogLookupResult lookupResult = merchantCatalogPluginDispatchService.lookupCatalog(
                 productCandidate.merchant(),
                 productCandidate.product().id(),
-                context
+                context,
+                activeCapabilities
         );
+        activeCapabilities = activeCapabilities(lookupResult.negotiatedCapabilities(), activeCapabilities);
+        return merchantCatalogPluginDispatchService.getProduct(
+                productCandidate.merchant(),
+                lookupResult.productId(),
+                context,
+                activeCapabilities
+        );
+    }
+
+    private NegotiatedCapabilities activeCapabilities(
+            NegotiatedCapabilities current,
+            NegotiatedCapabilities fallback
+    ) {
+        return current == null || current.versions().isEmpty() ? fallback : current;
     }
 
     private List<MerchantSemanticProductResult> productResults(
@@ -456,25 +474,25 @@ public class MerchantSemanticProductSearchService {
                 detailPriceRange == null ? null : detailPriceRange.currency(),
                 productCandidate.priceCurrency()
         );
-        MoneyValue listPrice = firstPresent(
-                moneyValue(selectedVariant == null ? null : selectedVariant.listPrice(), currency),
-                moneyValue(detailProduct == null ? null : detailProduct.listPrice(), currency),
+        UcpMoney listPrice = firstPresent(
+                UcpMoney.value(selectedVariant == null ? null : selectedVariant.listPrice(), currency),
+                UcpMoney.value(detailProduct == null ? null : detailProduct.listPrice(), currency),
                 firstVariantListPrice(catalogProduct, currency),
-                moneyValue(catalogProduct.listPrice(), currency)
+                UcpMoney.value(catalogProduct.listPrice(), currency)
         );
         List<ProductCatalogAttribute> attributes = richAttributes(catalogProduct, detailProduct);
         return new RichCatalogData(
                 listPrice == null ? null : listPrice.amount(),
                 listPrice == null ? null : firstPresent(listPrice.currency(), currency),
                 firstPresent(
-                        ratingValue(detailProduct == null ? null : detailProduct.rating()),
-                        ratingValue(catalogProduct.rating())
+                        UcpDecimal.ratingValue(detailProduct == null ? null : detailProduct.rating()),
+                        UcpDecimal.ratingValue(catalogProduct.rating())
                 ),
                 firstPresent(
-                        reviewCountValue(detailProduct == null ? null : detailProduct.reviewCount()),
-                        reviewCountValue(detailProduct == null ? null : detailProduct.rating()),
-                        reviewCountValue(catalogProduct.reviewCount()),
-                        reviewCountValue(catalogProduct.rating())
+                        UcpDecimal.reviewCountValue(detailProduct == null ? null : detailProduct.reviewCount()),
+                        UcpDecimal.reviewCountValue(detailProduct == null ? null : detailProduct.rating()),
+                        UcpDecimal.reviewCountValue(catalogProduct.reviewCount()),
+                        UcpDecimal.reviewCountValue(catalogProduct.rating())
                 ),
                 richMedia(catalogProduct, detailProduct, selectedVariant),
                 richCategories(catalogProduct),
@@ -499,12 +517,12 @@ public class MerchantSemanticProductSearchService {
         );
     }
 
-    private MoneyValue firstVariantListPrice(CatalogSearchResponse.Product product, String currency) {
+    private UcpMoney firstVariantListPrice(CatalogSearchResponse.Product product, String currency) {
         if (product == null) {
             return null;
         }
         return safeNonNullList(product.variants()).stream()
-                .map(variant -> moneyValue(variant.listPrice(), currency))
+                .map(variant -> UcpMoney.value(variant.listPrice(), currency))
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
@@ -750,183 +768,6 @@ public class MerchantSemanticProductSearchService {
         return values;
     }
 
-    private MoneyValue moneyValue(Object value, String fallbackCurrency) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof CatalogSearchResponse.Money money) {
-            return money.amount() == null ? null : new MoneyValue(money.amount(), firstPresent(money.currency(), fallbackCurrency));
-        }
-        if (value instanceof Map<?, ?> map) {
-            String currency = firstPresent(firstStringValue(map, "currency", "currencyCode"), fallbackCurrency);
-            Object explicitMinorAmount = firstMapValue(map,
-                    "minorAmount",
-                    "minor_amount",
-                    "amountMinor",
-                    "amount_minor",
-                    "amountInMinorUnits",
-                    "amount_in_minor_units",
-                    "amountCents",
-                    "amount_cents",
-                    "cents");
-            Long explicitMinor = wholeNumberAmount(explicitMinorAmount);
-            if (explicitMinor != null) {
-                return new MoneyValue(explicitMinor, currency);
-            }
-            Object amount = firstMapValue(map, "amount", "value", "price", "min");
-            Long minorAmount = hasMinorUnitHint(map)
-                    ? wholeNumberAmount(amount)
-                    : minorAmount(amount, currency);
-            return minorAmount == null ? null : new MoneyValue(minorAmount, currency);
-        }
-        Long minorAmount = minorAmount(value, fallbackCurrency);
-        return minorAmount == null ? null : new MoneyValue(minorAmount, fallbackCurrency);
-    }
-
-    private Long minorAmount(Object value, String currency) {
-        if (value == null) {
-            return null;
-        }
-        return decimalAmountToMinor(value.toString(), currency);
-    }
-
-    private Long wholeNumberAmount(Object value) {
-        if (value == null) {
-            return null;
-        }
-        String amount = value.toString().trim();
-        if (amount.isBlank()) {
-            return null;
-        }
-        String wholeNumber = amount.replace(",", "").replaceAll("\\s+", "");
-        if (!wholeNumber.matches("-?\\d+")) {
-            return null;
-        }
-        try {
-            return Long.parseLong(wholeNumber);
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
-    private boolean hasMinorUnitHint(Map<?, ?> map) {
-        String unit = firstStringValue(map,
-                "unit",
-                "units",
-                "amountUnit",
-                "amount_unit",
-                "scale",
-                "format");
-        if (unit == null) {
-            return false;
-        }
-        String normalized = normalizedValue(unit);
-        return normalized.contains("minor")
-                || normalized.equals("cent")
-                || normalized.equals("cents")
-                || normalized.equals("centavo")
-                || normalized.equals("centavos");
-    }
-
-    private Double ratingValue(Object value) {
-        Object ratingValue = value;
-        if (value instanceof Map<?, ?> map) {
-            ratingValue = firstMapValue(map, "ratingValue", "rating_value", "value", "average", "score", "rating");
-        }
-        Double rating = decimalValue(ratingValue);
-        if (rating == null) {
-            return null;
-        }
-        if (rating > 5.0d && rating <= 10.0d) {
-            return rating / 2.0d;
-        }
-        if (rating > 10.0d && rating <= 100.0d) {
-            return rating / 20.0d;
-        }
-        return rating;
-    }
-
-    private Integer reviewCountValue(Object value) {
-        Object countValue = value;
-        if (value instanceof Map<?, ?> map) {
-            countValue = firstMapValue(map, "reviewCount", "review_count", "reviewsCount", "reviews_count",
-                    "ratingCount", "rating_count", "count");
-        }
-        Double count = decimalValue(countValue);
-        return count == null ? null : Math.max(0, count.intValue());
-    }
-
-    private Double decimalValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        String scalar = scalarString(value);
-        if (scalar == null) {
-            return null;
-        }
-        String cleaned = scalar.trim().replaceAll("[^0-9,.\\-]", "");
-        if (cleaned.isBlank()) {
-            return null;
-        }
-        if (cleaned.contains(".") && cleaned.contains(",")) {
-            int lastDot = cleaned.lastIndexOf('.');
-            int lastComma = cleaned.lastIndexOf(',');
-            cleaned = lastComma > lastDot
-                    ? cleaned.replace(".", "").replace(',', '.')
-                    : cleaned.replace(",", "");
-        } else if (cleaned.contains(",")) {
-            cleaned = normalizeSingleSeparatorDecimal(cleaned, ',');
-        } else if (cleaned.contains(".")) {
-            cleaned = normalizeSingleSeparatorDecimal(cleaned, '.');
-        }
-        if (cleaned == null) {
-            return null;
-        }
-        try {
-            return Double.parseDouble(cleaned);
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
-    private String normalizeSingleSeparatorDecimal(String value, char separator) {
-        int firstSeparator = value.indexOf(separator);
-        int lastSeparator = value.lastIndexOf(separator);
-        if (firstSeparator != lastSeparator) {
-            return hasGroupedThousands(value, separator)
-                    ? value.replace(String.valueOf(separator), "")
-                    : null;
-        }
-        int signedOffset = value.startsWith("-") ? 1 : 0;
-        int integralDigits = lastSeparator - signedOffset;
-        int fractionalDigits = value.length() - lastSeparator - 1;
-        if (separator == ',' && fractionalDigits == 3 && integralDigits >= 1 && integralDigits <= 3) {
-            return value.replace(String.valueOf(separator), "");
-        }
-        return separator == ',' ? value.replace(',', '.') : value;
-    }
-
-    private boolean hasGroupedThousands(String value, char separator) {
-        int start = value.startsWith("-") ? 1 : 0;
-        int firstSeparator = value.indexOf(separator, start);
-        if (firstSeparator <= start || firstSeparator - start > 3) {
-            return false;
-        }
-        int groupStart = firstSeparator + 1;
-        while (groupStart < value.length()) {
-            int nextSeparator = value.indexOf(separator, groupStart);
-            int groupEnd = nextSeparator == -1 ? value.length() : nextSeparator;
-            if (groupEnd - groupStart != 3) {
-                return false;
-            }
-            groupStart = groupEnd + 1;
-        }
-        return groupStart == value.length() + 1;
-    }
-
     private Object firstMapValue(Map<?, ?> map, String... keys) {
         for (String key : keys) {
             for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -1015,9 +856,9 @@ public class MerchantSemanticProductSearchService {
                 product.detailPriceCurrency(),
                 product.priceCurrency()
         );
-        Long selectedVariantPrice = decimalAmountToMinor(product.selectedVariantPriceAmount(), currency);
-        Long detailMin = decimalAmountToMinor(product.detailPriceMin(), currency);
-        Long detailMax = decimalAmountToMinor(product.detailPriceMax(), currency);
+        Long selectedVariantPrice = UcpDecimal.decimalAmountToMinor(product.selectedVariantPriceAmount(), currency);
+        Long detailMin = UcpDecimal.decimalAmountToMinor(product.detailPriceMin(), currency);
+        Long detailMax = UcpDecimal.decimalAmountToMinor(product.detailPriceMax(), currency);
         Long minAmount = firstPresent(selectedVariantPrice, detailMin, product.priceMinAmount());
         Long maxAmount = firstPresent(selectedVariantPrice, detailMax, product.priceMaxAmount(), minAmount);
         return matchesPrice(minAmount, maxAmount, currency, context, filters)
@@ -1167,8 +1008,8 @@ public class MerchantSemanticProductSearchService {
         if (price == null || (price.min() == null && price.max() == null)) {
             return true;
         }
-        String expectedCurrency = normalizedCurrency(context == null ? null : context.currency());
-        String productCurrency = normalizedCurrency(currency);
+        String expectedCurrency = UcpDecimal.normalizedCurrency(context == null ? null : context.currency());
+        String productCurrency = UcpDecimal.normalizedCurrency(currency);
         if (expectedCurrency != null && productCurrency != null && !expectedCurrency.equals(productCurrency)) {
             return false;
         }
@@ -1190,56 +1031,6 @@ public class MerchantSemanticProductSearchService {
             return minAmount <= threshold;
         }
         return maxAmount != null && maxAmount <= threshold;
-    }
-
-    private Long decimalAmountToMinor(String amount, String currency) {
-        if (amount == null || amount.isBlank()) {
-            return null;
-        }
-        String cleaned = amount.trim()
-                .replaceAll("[^0-9,.\\-]", "");
-        if (cleaned.isBlank()) {
-            return null;
-        }
-        if (cleaned.contains(".") && cleaned.contains(",")) {
-            int lastDot = cleaned.lastIndexOf('.');
-            int lastComma = cleaned.lastIndexOf(',');
-            cleaned = lastComma > lastDot
-                    ? cleaned.replace(".", "").replace(',', '.')
-                    : cleaned.replace(",", "");
-        } else if (cleaned.contains(",")) {
-            cleaned = normalizeSingleSeparatorDecimal(cleaned, ',');
-        } else if (cleaned.contains(".")) {
-            cleaned = normalizeSingleSeparatorDecimal(cleaned, '.');
-        }
-        if (cleaned == null) {
-            return null;
-        }
-        try {
-            BigDecimal decimal = new BigDecimal(cleaned);
-            return decimal
-                    .movePointRight(currencyExponent(currency))
-                    .setScale(0, RoundingMode.HALF_UP)
-                    .longValue();
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
-    private int currencyExponent(String currency) {
-        return switch (normalizedCurrency(currency) == null ? "" : normalizedCurrency(currency)) {
-            case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND",
-                    "VUV", "XAF", "XOF", "XPF" -> 0;
-            case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND" -> 3;
-            default -> 2;
-        };
-    }
-
-    private String normalizedCurrency(String currency) {
-        if (currency == null || currency.isBlank()) {
-            return null;
-        }
-        return currency.trim().toUpperCase(Locale.ROOT);
     }
 
     private String normalizedValue(String value) {
@@ -1275,8 +1066,8 @@ public class MerchantSemanticProductSearchService {
         return value == null ? fourth : value;
     }
 
-    private MoneyValue firstPresent(MoneyValue... values) {
-        for (MoneyValue value : values) {
+    private UcpMoney firstPresent(UcpMoney... values) {
+        for (UcpMoney value : values) {
             if (value != null && value.amount() != null) {
                 return value;
             }
@@ -1320,12 +1111,6 @@ public class MerchantSemanticProductSearchService {
             List<String> skus,
             List<String> collections,
             List<ProductCatalogAttribute> attributes
-    ) {
-    }
-
-    private record MoneyValue(
-            Long amount,
-            String currency
     ) {
     }
 

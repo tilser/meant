@@ -6,6 +6,7 @@ import com.meant.api.module.merchant.controller.response.MerchantSemanticProduct
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
+import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
@@ -35,8 +36,7 @@ import org.springframework.web.client.RestClient;
 class MerchantSemanticProductSearchServiceTest {
 
     private FakeMerchantSemanticSearchService merchantSemanticSearchService;
-    private FakeMerchantCatalogSearchClient merchantCatalogSearchClient;
-    private FakeMerchantProductDetailsClient merchantProductDetailsClient;
+    private FakeMerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService;
     private FakeVoyageRerankClient voyageRerankClient;
     private FakeMerchantLookupService merchantLookupService;
     private MerchantSemanticProductSearchService merchantSemanticProductSearchService;
@@ -44,14 +44,12 @@ class MerchantSemanticProductSearchServiceTest {
     @BeforeEach
     void setUp() {
         merchantSemanticSearchService = new FakeMerchantSemanticSearchService();
-        merchantCatalogSearchClient = new FakeMerchantCatalogSearchClient();
-        merchantProductDetailsClient = new FakeMerchantProductDetailsClient();
+        merchantCatalogPluginDispatchService = new FakeMerchantCatalogPluginDispatchService();
         voyageRerankClient = new FakeVoyageRerankClient();
         merchantLookupService = new FakeMerchantLookupService();
         merchantSemanticProductSearchService = new MerchantSemanticProductSearchService(
                 merchantSemanticSearchService,
-                merchantCatalogSearchClient,
-                merchantProductDetailsClient,
+                merchantCatalogPluginDispatchService,
                 voyageRerankClient,
                 merchantLookupService,
                 new MerchantCatalogSearchProperties(3, 2, 2, 2)
@@ -64,11 +62,11 @@ class MerchantSemanticProductSearchServiceTest {
         MerchantSemanticSearchResult shoeMerchant = merchant("shoe.example", "Shoe Store", 2);
         MerchantSemanticSearchResult skippedMerchant = merchant("skipped.example", "Skipped Store", 3);
         merchantSemanticSearchService.results = List.of(homeMerchant, shoeMerchant, skippedMerchant);
-        merchantCatalogSearchClient.results.put(homeMerchant.domain(), catalogSearchResult(homeMerchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(homeMerchant.domain(), catalogSearchResult(homeMerchant, List.of(
                 product("home-lamp", "Modern Table Lamp", "A warm lamp for desks", "home-lighting"),
                 product("home-sneaker-rack", "Entryway Shoe Rack", "Storage for running shoes", "home-storage")
         )));
-        merchantCatalogSearchClient.results.put(shoeMerchant.domain(), catalogSearchResult(shoeMerchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(shoeMerchant.domain(), catalogSearchResult(shoeMerchant, List.of(
                 product("trail-runner", "Trail Running Shoe", "Grip for long runs", "shoes"),
                 product("casual-sneaker", "Casual Sneaker", "Everyday walking shoe", "shoes")
         )));
@@ -78,7 +76,7 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(merchantSemanticSearchService.lastQuery.limit()).isEqualTo(3);
-        assertThat(merchantCatalogSearchClient.calls).containsExactlyInAnyOrder(
+        assertThat(merchantCatalogPluginDispatchService.catalogSearchCalls).containsExactlyInAnyOrder(
                 "home.example:running shoes:2",
                 "shoe.example:running shoes:2"
         );
@@ -87,7 +85,11 @@ class MerchantSemanticProductSearchServiceTest {
                 .containsExactly("home.example", "shoe.example");
         assertThat(result.products()).extracting("productId")
                 .containsExactly("trail-runner", "casual-sneaker");
-        assertThat(merchantProductDetailsClient.calls).containsExactlyInAnyOrder(
+        assertThat(merchantCatalogPluginDispatchService.lookupCalls).containsExactlyInAnyOrder(
+                "shoe.example:trail-runner",
+                "shoe.example:casual-sneaker"
+        );
+        assertThat(merchantCatalogPluginDispatchService.getProductCalls).containsExactlyInAnyOrder(
                 "shoe.example:trail-runner",
                 "shoe.example:casual-sneaker"
         );
@@ -104,8 +106,8 @@ class MerchantSemanticProductSearchServiceTest {
         MerchantSemanticSearchResult failingMerchant = merchant("failing.example", "Failing Store", 1);
         MerchantSemanticSearchResult workingMerchant = merchant("working.example", "Working Store", 2);
         merchantSemanticSearchService.results = List.of(failingMerchant, workingMerchant);
-        merchantCatalogSearchClient.failures.put(failingMerchant.domain(), "catalog unavailable");
-        merchantCatalogSearchClient.results.put(workingMerchant.domain(), catalogSearchResult(workingMerchant, List.of(
+        merchantCatalogPluginDispatchService.failures.put(failingMerchant.domain(), "catalog unavailable");
+        merchantCatalogPluginDispatchService.results.put(workingMerchant.domain(), catalogSearchResult(workingMerchant, List.of(
                 product("runner", "Running Shoe", "Light road shoe", "shoes")
         )));
 
@@ -123,10 +125,10 @@ class MerchantSemanticProductSearchServiceTest {
     void keepsPartialProductWhenProductDetailsFails() {
         MerchantSemanticSearchResult merchant = merchant("shoe.example", "Shoe Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("runner", "Running Shoe", "Light road shoe", "shoes")
         )));
-        merchantProductDetailsClient.failures.put("runner", "details unavailable");
+        merchantCatalogPluginDispatchService.failures.put("runner", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("running shoes", null, null, null, null, null)
@@ -142,8 +144,8 @@ class MerchantSemanticProductSearchServiceTest {
     void capturesRichCatalogDataWhenProductDetailsAreMissing() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct())));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct())));
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -168,14 +170,14 @@ class MerchantSemanticProductSearchServiceTest {
     void parsesLocalizedDecimalRatingValues() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
                 Map.of("value", "4,75", "reviewCount", "1,234,567"),
                 "1,234,567",
                 Map.of("fabric", "100% organic cotton"),
                 Map.of("fit", "relaxed")
         ))));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -191,14 +193,14 @@ class MerchantSemanticProductSearchServiceTest {
     void treatsSingleDotRatingDecimalAsDecimalValue() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
                 Map.of("value", "4.500"),
                 "214",
                 Map.of("fabric", "100% organic cotton"),
                 Map.of("fit", "relaxed")
         ))));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -214,10 +216,10 @@ class MerchantSemanticProductSearchServiceTest {
     void ignoresNullRichCatalogListItems() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 richProductWithNullCatalogItems()
         )));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -235,10 +237,10 @@ class MerchantSemanticProductSearchServiceTest {
     void filtersNullProductDetailListItems() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("detail-tee", "Detail Tee", "Soft tee", "apparel")
         )));
-        merchantProductDetailsClient.products.put("detail-tee", detailProductWithNullListItems("detail-tee"));
+        merchantCatalogPluginDispatchService.products.put("detail-tee", detailProductWithNullListItems("detail-tee"));
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("soft tee", null, null, null, null, null)
@@ -261,14 +263,14 @@ class MerchantSemanticProductSearchServiceTest {
     void handlesDeeplyNestedCatalogMetadata() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
                 Map.of("value", 4.8d, "reviewCount", 214),
                 214,
                 deeplyNestedValue(10_000),
                 null
         ))));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -282,8 +284,8 @@ class MerchantSemanticProductSearchServiceTest {
     void treatsRawNumericListPricesAsMajorUnits() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(1200))));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(1200))));
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -299,10 +301,10 @@ class MerchantSemanticProductSearchServiceTest {
     void preservesExplicitMinorUnitListPrices() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 richProduct(Map.of("amount_cents", 5200, "currency", "USD"))
         )));
-        merchantProductDetailsClient.failures.put("rich-tee", "details unavailable");
+        merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery("organic cotton tee", null, null, null, null, null)
@@ -329,7 +331,7 @@ class MerchantSemanticProductSearchServiceTest {
                 1
         ));
         merchantSemanticSearchService.results = List.of(merchant("other.example", "Other Store", 1));
-        merchantCatalogSearchClient.results.put("focused.example", new CatalogSearchResult(
+        merchantCatalogPluginDispatchService.results.put("focused.example", new CatalogSearchResult(
                 "https://focused.example/api/mcp",
                 List.of(product("focused-runner", "Focused Running Shoe", "Light road shoe", "shoes"))
         ));
@@ -339,7 +341,7 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(merchantSemanticSearchService.lastQuery).isNull();
-        assertThat(merchantCatalogSearchClient.calls).containsExactly("focused.example:running shoes:2");
+        assertThat(merchantCatalogPluginDispatchService.catalogSearchCalls).containsExactly("focused.example:running shoes:2");
         assertThat(result.merchants()).extracting("domain").containsExactly("focused.example");
         assertThat(result.products()).extracting("productId").containsExactly("focused-runner");
     }
@@ -349,11 +351,11 @@ class MerchantSemanticProductSearchServiceTest {
         MerchantSemanticSearchResult firstMerchant = merchant("first.example", "First Store", 1);
         MerchantSemanticSearchResult secondMerchant = merchant("second.example", "Second Store", 2);
         merchantSemanticSearchService.results = List.of(firstMerchant, secondMerchant);
-        merchantCatalogSearchClient.concurrentCatalogSearches = new CountDownLatch(2);
-        merchantCatalogSearchClient.results.put(firstMerchant.domain(), catalogSearchResult(firstMerchant, List.of(
+        merchantCatalogPluginDispatchService.concurrentCatalogSearches = new CountDownLatch(2);
+        merchantCatalogPluginDispatchService.results.put(firstMerchant.domain(), catalogSearchResult(firstMerchant, List.of(
                 product("first-lamp", "First Lamp", "Warm lamp", "lighting")
         )));
-        merchantCatalogSearchClient.results.put(secondMerchant.domain(), catalogSearchResult(secondMerchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(secondMerchant.domain(), catalogSearchResult(secondMerchant, List.of(
                 product("second-lamp", "Second Lamp", "Warm lamp", "lighting")
         )));
 
@@ -363,7 +365,7 @@ class MerchantSemanticProductSearchServiceTest {
 
         assertThat(result.merchants()).extracting("domain")
                 .containsExactly("first.example", "second.example");
-        assertThat(merchantCatalogSearchClient.calls).containsExactlyInAnyOrder(
+        assertThat(merchantCatalogPluginDispatchService.catalogSearchCalls).containsExactlyInAnyOrder(
                 "first.example:warm lamp:2",
                 "second.example:warm lamp:2"
         );
@@ -373,8 +375,8 @@ class MerchantSemanticProductSearchServiceTest {
     void fetchesProductDetailsInParallel() {
         MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantProductDetailsClient.concurrentProductDetails = new CountDownLatch(2);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.concurrentGetProducts = new CountDownLatch(2);
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("first-lamp", "First Lamp", "Warm lamp", "lighting"),
                 product("second-lamp", "Second Lamp", "Warm lamp", "lighting")
         )));
@@ -384,7 +386,7 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(result.products()).hasSize(2);
-        assertThat(merchantProductDetailsClient.calls).containsExactlyInAnyOrder(
+        assertThat(merchantCatalogPluginDispatchService.getProductCalls).containsExactlyInAnyOrder(
                 "home.example:first-lamp",
                 "home.example:second-lamp"
         );
@@ -394,7 +396,7 @@ class MerchantSemanticProductSearchServiceTest {
     void appliesPriceFilterBeforeRerankingAndDetailsWhenMerchantReturnsUnfilteredProducts() {
         MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("cheap-pillow", "Affordable Throw Pillow", "Soft pillow", "pillows", 8000L),
                 product("expensive-pillow", "Premium Throw Pillow", "Soft pillow", "pillows", 15000L)
         )));
@@ -422,14 +424,14 @@ class MerchantSemanticProductSearchServiceTest {
 
         assertThat(result.products()).extracting("productId").containsExactly("cheap-pillow");
         assertThat(voyageRerankClient.documents).hasSize(1);
-        assertThat(merchantProductDetailsClient.calls).containsExactly("home.example:cheap-pillow");
+        assertThat(merchantCatalogPluginDispatchService.getProductCalls).containsExactly("home.example:cheap-pillow");
     }
 
     @Test
     void keepsProductWhenOnlyCatalogMaxPriceAndNoCurrencyAreKnown() {
         MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("known-max-pillow", "Affordable Throw Pillow", "Soft pillow", "pillows", null, 8000L, null)
         )));
 
@@ -448,18 +450,18 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(result.products()).extracting("productId").containsExactly("known-max-pillow");
-        assertThat(merchantProductDetailsClient.calls).containsExactly("home.example:known-max-pillow");
+        assertThat(merchantCatalogPluginDispatchService.getProductCalls).containsExactly("home.example:known-max-pillow");
     }
 
     @Test
     void appliesDetailPriceFilterWithGroupedEuropeanDecimalSeparators() {
         MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("euro-lamp", "European Lamp", "Warm lamp", "lighting", 123456L, 123456L, "EUR")
         )));
-        merchantProductDetailsClient.prices.put("euro-lamp", "1.234,56");
-        merchantProductDetailsClient.currencies.put("euro-lamp", "EUR");
+        merchantCatalogPluginDispatchService.prices.put("euro-lamp", "1.234,56");
+        merchantCatalogPluginDispatchService.currencies.put("euro-lamp", "EUR");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery(
@@ -482,11 +484,11 @@ class MerchantSemanticProductSearchServiceTest {
     void appliesDetailPriceFilterWithSingleDotDecimalSeparator() {
         MerchantSemanticSearchResult merchant = merchant("home.example", "Home Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("decimal-candle", "Decimal Candle", "Small candle", "decor", 450L, 450L, "USD")
         )));
-        merchantProductDetailsClient.prices.put("decimal-candle", "4.500");
-        merchantProductDetailsClient.currencies.put("decimal-candle", "USD");
+        merchantCatalogPluginDispatchService.prices.put("decimal-candle", "4.500");
+        merchantCatalogPluginDispatchService.currencies.put("decimal-candle", "USD");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery(
@@ -509,7 +511,7 @@ class MerchantSemanticProductSearchServiceTest {
     void appliesMensFitAudienceFilterBeforeRerankingWhenCatalogAudienceIsExplicit() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("women-swimsuit", "Women's Swimsuit", "One-piece swimwear", "Women's Swimwear"),
                 product("men-swim-shorts", "Men's Swim Shorts", "Quick-dry swim shorts", "Men's Swimwear")
         )));
@@ -530,18 +532,18 @@ class MerchantSemanticProductSearchServiceTest {
 
         assertThat(result.products()).extracting("productId").containsExactly("men-swim-shorts");
         assertThat(voyageRerankClient.documents).hasSize(1);
-        assertThat(merchantProductDetailsClient.calls).containsExactly("apparel.example:men-swim-shorts");
+        assertThat(merchantCatalogPluginDispatchService.getProductCalls).containsExactly("apparel.example:men-swim-shorts");
     }
 
     @Test
     void appliesMensFitAudienceFilterAfterDetailsRevealWomenProductType() {
         MerchantSemanticSearchResult merchant = merchant("billabong.com", "Billabong", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("palm-viva", "Palm Viva Woven Shorts - Sweet Lilac", "Open-weave cotton shorts", "Clothing"),
                 product("mens-boardshort", "Sundown Boardshorts", "Swim shorts with a drawcord", "Clothing")
         )));
-        merchantProductDetailsClient.products.put("palm-viva", detailProduct(
+        merchantCatalogPluginDispatchService.products.put("palm-viva", detailProduct(
                 "palm-viva",
                 "Palm Viva Woven Shorts - Sweet Lilac",
                 "Product Type: Women's casual woven shorts for everyday wear and swim cover-up"
@@ -562,7 +564,7 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(result.products()).extracting("productId").containsExactly("mens-boardshort");
-        assertThat(merchantProductDetailsClient.calls).containsExactlyInAnyOrder(
+        assertThat(merchantCatalogPluginDispatchService.getProductCalls).containsExactlyInAnyOrder(
                 "billabong.com:palm-viva",
                 "billabong.com:mens-boardshort"
         );
@@ -572,11 +574,11 @@ class MerchantSemanticProductSearchServiceTest {
     void appliesWomensFitAudienceFilterAfterDetailsRevealMenProductType() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogSearchClient.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
+        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
                 product("mens-boardshort", "Sundown Boardshorts", "Swim shorts with a drawcord", "Clothing"),
                 product("women-swim-short", "High-Rise Swim Short", "Swim shorts with a relaxed fit", "Clothing")
         )));
-        merchantProductDetailsClient.products.put("mens-boardshort", detailProduct(
+        merchantCatalogPluginDispatchService.products.put("mens-boardshort", detailProduct(
                 "mens-boardshort",
                 "Sundown Boardshorts",
                 "Product Type: Men's swim trunks"
@@ -937,14 +939,20 @@ class MerchantSemanticProductSearchServiceTest {
         }
     }
 
-    static class FakeMerchantCatalogSearchClient extends MerchantCatalogSearchClient {
+    static class FakeMerchantCatalogPluginDispatchService extends MerchantCatalogPluginDispatchService {
 
         private final Map<String, CatalogSearchResult> results = new HashMap<>();
         private final Map<String, String> failures = new HashMap<>();
-        private final List<String> calls = new CopyOnWriteArrayList<>();
+        private final Map<String, ProductDetailsResponse.Product> products = new HashMap<>();
+        private final Map<String, String> prices = new HashMap<>();
+        private final Map<String, String> currencies = new HashMap<>();
+        private final List<String> catalogSearchCalls = new CopyOnWriteArrayList<>();
+        private final List<String> lookupCalls = new CopyOnWriteArrayList<>();
+        private final List<String> getProductCalls = new CopyOnWriteArrayList<>();
         private CountDownLatch concurrentCatalogSearches;
+        private CountDownLatch concurrentGetProducts;
 
-        FakeMerchantCatalogSearchClient() {
+        FakeMerchantCatalogPluginDispatchService() {
             super(null, null);
         }
 
@@ -957,36 +965,37 @@ class MerchantSemanticProductSearchServiceTest {
                 CatalogSearchFilters filters,
                 int limit
         ) {
-            calls.add(merchant.domain() + ":" + query + ":" + limit);
+            catalogSearchCalls.add(merchant.domain() + ":" + query + ":" + limit);
             awaitConcurrentCalls(concurrentCatalogSearches, "Catalog search");
             if (failures.containsKey(merchant.domain())) {
                 throw new MerchantCatalogSearchException(failures.get(merchant.domain()));
             }
             return results.get(merchant.domain());
         }
-    }
 
-    static class FakeMerchantProductDetailsClient extends MerchantProductDetailsClient {
-
-        private final Map<String, String> failures = new HashMap<>();
-        private final Map<String, ProductDetailsResponse.Product> products = new HashMap<>();
-        private final Map<String, String> prices = new HashMap<>();
-        private final Map<String, String> currencies = new HashMap<>();
-        private final List<String> calls = new CopyOnWriteArrayList<>();
-        private CountDownLatch concurrentProductDetails;
-
-        FakeMerchantProductDetailsClient() {
-            super(null, null);
+        @Override
+        public CatalogLookupResult lookupCatalog(
+                MerchantSemanticSearchResult merchant,
+                String productId,
+                CatalogSearchContext context,
+                com.meant.api.plugin.spi.NegotiatedCapabilities activeCapabilities
+        ) {
+            lookupCalls.add(merchant.domain() + ":" + productId);
+            if (failures.containsKey(productId)) {
+                throw new MerchantProductDetailsException(failures.get(productId));
+            }
+            return new CatalogLookupResult(merchant.advertisedMcpEndpoint(), productId, products.get(productId), null);
         }
 
         @Override
-        public ProductDetailsResult getProductDetails(
+        public ProductDetailsResult getProduct(
                 MerchantSemanticSearchResult merchant,
                 String productId,
-                CatalogSearchContext context
+                CatalogSearchContext context,
+                com.meant.api.plugin.spi.NegotiatedCapabilities activeCapabilities
         ) {
-            calls.add(merchant.domain() + ":" + productId);
-            awaitConcurrentCalls(concurrentProductDetails, "Product details");
+            getProductCalls.add(merchant.domain() + ":" + productId);
+            awaitConcurrentCalls(concurrentGetProducts, "get_product");
             if (failures.containsKey(productId)) {
                 throw new MerchantProductDetailsException(failures.get(productId));
             }

@@ -99,18 +99,14 @@ public record CapabilityAdvertisement(
     }
 
     private static List<String> normalizedTools(List<String> tools) {
-        List<String> normalizedTools = tools == null
+        return tools == null
                 ? List.of()
-                : tools.stream()
+                : List.copyOf(tools.stream()
                         .filter(Objects::nonNull)
                         .map(String::trim)
                         .filter(tool -> !tool.isBlank())
                         .distinct()
-                        .toList();
-        if (normalizedTools.isEmpty()) {
-            throw new IllegalArgumentException("tools must contain at least one tool name");
-        }
-        return List.copyOf(normalizedTools);
+                        .toList());
     }
 
     private static String requireText(String value, String fieldName) {

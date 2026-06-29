@@ -14,6 +14,7 @@ public record ProductDetailsResponse(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Product(
             @JsonProperty("product_id")
+            @JsonAlias({"productId", "id"})
             String productId,
             String title,
             String description,
@@ -50,6 +51,7 @@ public record ProductDetailsResponse(
             @JsonAlias({"techSpecs", "specifications"})
             Object techSpecs,
             @JsonProperty("selectedOrFirstAvailableVariant")
+            @JsonAlias({"selected_or_first_available_variant", "selected_variant", "selectedVariant"})
             SelectedVariant selectedOrFirstAvailableVariant
     ) {
         public Product(
@@ -133,6 +135,7 @@ public record ProductDetailsResponse(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SelectedVariant(
             @JsonProperty("variant_id")
+            @JsonAlias({"variantId", "id"})
             String variantId,
             String title,
             String price,
