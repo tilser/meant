@@ -14,6 +14,10 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64URL;
+import com.nimbusds.jwt.SignedJWT;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -152,6 +156,8 @@ class Ap2MandateServiceTest {
 
         assertThat(result.spendScope().maxAmountMinor()).isEqualTo(1999L);
         assertThat(result.checkoutMandate()).contains("~");
+        assertThat(SignedJWT.parse(result.kbJwt()).getJWTClaimsSet().getClaim("sd_hash"))
+                .isEqualTo(referenceSdHash(result));
         assertThat(verified.issuer()).isEqualTo("https://agent.example");
         assertThat(verified.subject()).isEqualTo("user-1");
         assertThat(verified.disclosedClaims()).containsKey("checkout");
@@ -248,6 +254,13 @@ class Ap2MandateServiceTest {
         header.putAll(replacements);
         parts[0] = Base64URL.encode(objectMapper.writeValueAsBytes(header)).toString();
         return String.join(".", parts);
+    }
+
+    private String referenceSdHash(Ap2MandateService.MandateResult result) throws NoSuchAlgorithmException {
+        String presentationBeforeKeyBinding = result.sdJwt() + "~" + String.join("~", result.disclosures()) + "~";
+        return Base64URL.encode(MessageDigest.getInstance("SHA-256")
+                        .digest(presentationBeforeKeyBinding.getBytes(StandardCharsets.US_ASCII)))
+                .toString();
     }
 
     private ECKey key(String kid) throws JOSEException {

@@ -17,6 +17,9 @@ public interface CheckoutCompletionStateRepository extends JpaRepository<Checkou
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<CheckoutCompletionState> findByCheckoutIdHash(String checkoutIdHash);
 
+    @Query("select state from CheckoutCompletionState state where state.checkoutIdHash = :checkoutIdHash")
+    Optional<CheckoutCompletionState> findReadOnlyByCheckoutIdHash(@Param("checkoutIdHash") String checkoutIdHash);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update CheckoutCompletionState state

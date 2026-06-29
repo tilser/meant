@@ -379,7 +379,8 @@ public class Ap2MandateService {
     }
 
     private String sdHash(String sdJwt, List<String> disclosures) {
-        return sha256Base64Url(String.join("~", mandateParts(sdJwt, disclosures, null)).getBytes(StandardCharsets.US_ASCII));
+        String presentationBeforeKeyBinding = String.join("~", mandateParts(sdJwt, disclosures, null)) + "~";
+        return sha256Base64Url(presentationBeforeKeyBinding.getBytes(StandardCharsets.US_ASCII));
     }
 
     private List<String> mandateParts(String sdJwt, List<String> disclosures, String kbJwt) {

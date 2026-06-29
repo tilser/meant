@@ -13,17 +13,48 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.validation.annotation.Validated;
 
 @Service
 @Validated
-@RequiredArgsConstructor
 public class IdempotencyKeyStore {
 
     private final CheckoutIdempotencyKeyRepository repository;
+    private final TransactionOperations createTransaction;
+
+    @Autowired
+    public IdempotencyKeyStore(
+            CheckoutIdempotencyKeyRepository repository,
+            PlatformTransactionManager transactionManager
+    ) {
+        this(repository, requiresNewTransaction(transactionManager));
+    }
+
+    IdempotencyKeyStore(CheckoutIdempotencyKeyRepository repository) {
+        this(repository, new TransactionOperations() {
+            @Override
+            public <T> T execute(TransactionCallback<T> action) {
+                return action.doInTransaction(null);
+            }
+        });
+    }
+
+    private IdempotencyKeyStore(
+            CheckoutIdempotencyKeyRepository repository,
+            TransactionOperations createTransaction
+    ) {
+        this.repository = repository;
+        this.createTransaction = createTransaction;
+    }
 
     @Transactional
     public CheckoutIdempotencyKey reserve(@NotNull @Valid ReserveIdempotencyKeyCommand command) {
@@ -64,8 +95,21 @@ public class IdempotencyKeyStore {
     }
 
     private CheckoutIdempotencyKey create(ReserveIdempotencyKeyCommand command, String bodyHash) {
+        try {
+            return createTransaction.execute(status -> saveNew(command, bodyHash));
+        } catch (DataIntegrityViolationException exception) {
+            return repository.findByIdempotencyKey(command.idempotencyKey())
+                    .map(existing -> existingOrConflict(existing, bodyHash))
+                    .orElseThrow(() -> new UcpCheckoutSafetyException(
+                            "Idempotency key reservation collided but no existing record was found",
+                            exception
+                    ));
+        }
+    }
+
+    private CheckoutIdempotencyKey saveNew(ReserveIdempotencyKeyCommand command, String bodyHash) {
         Instant now = Instant.now();
-        return repository.save(CheckoutIdempotencyKey.builder()
+        return repository.saveAndFlush(CheckoutIdempotencyKey.builder()
                 .idempotencyKey(command.idempotencyKey().trim())
                 .bodyHash(bodyHash)
                 .checkoutId(command.checkoutId().trim())
@@ -77,6 +121,12 @@ public class IdempotencyKeyStore {
                 .createdAt(now)
                 .updatedAt(now)
                 .build());
+    }
+
+    private static TransactionOperations requiresNewTransaction(PlatformTransactionManager transactionManager) {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return transactionTemplate;
     }
 
     private String hash(byte[] body) {

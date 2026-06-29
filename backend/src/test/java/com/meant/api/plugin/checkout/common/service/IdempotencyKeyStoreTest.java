@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 class IdempotencyKeyStoreTest {
 
@@ -59,6 +60,32 @@ class IdempotencyKeyStoreTest {
     }
 
     @Test
+    void concurrentCreateRaceReturnsExistingRecordWhenBodyMatches() {
+        UUID consentId = UUID.randomUUID();
+        ReserveIdempotencyKeyCommand command = reserveCommand("idem-1", "{\"total\":1999}", consentId);
+        CheckoutIdempotencyKey concurrentRecord = existingRecord(command, store.bodyHash(command.body()));
+        repository.concurrentRecord = concurrentRecord;
+        repository.throwDataIntegrityOnNextSave = true;
+
+        CheckoutIdempotencyKey reserved = store.reserve(command);
+
+        assertThat(reserved.getId()).isEqualTo(concurrentRecord.getId());
+        assertThat(reserved.getBodyHash()).isEqualTo(concurrentRecord.getBodyHash());
+    }
+
+    @Test
+    void concurrentCreateRaceWithDifferentBodyHardFailsCleanly() {
+        UUID consentId = UUID.randomUUID();
+        ReserveIdempotencyKeyCommand command = reserveCommand("idem-1", "{\"total\":1999}", consentId);
+        repository.concurrentRecord = existingRecord(command, store.bodyHash("{\"total\":2999}".getBytes(StandardCharsets.UTF_8)));
+        repository.throwDataIntegrityOnNextSave = true;
+
+        assertThatThrownBy(() -> store.reserve(command))
+                .isInstanceOf(UcpCheckoutSafetyException.class)
+                .hasMessageContaining("different request body");
+    }
+
+    @Test
     void recordsRemoteResponseAndFinalOrderReference() {
         UUID consentId = UUID.randomUUID();
         store.reserve(reserveCommand("idem-1", "{\"total\":1999}", consentId));
@@ -87,10 +114,27 @@ class IdempotencyKeyStoreTest {
         );
     }
 
+    private CheckoutIdempotencyKey existingRecord(ReserveIdempotencyKeyCommand command, String bodyHash) {
+        return CheckoutIdempotencyKey.builder()
+                .idempotencyKey(command.idempotencyKey())
+                .bodyHash(bodyHash)
+                .checkoutId(command.checkoutId())
+                .consentId(command.consentId())
+                .amount(command.amount())
+                .currency(command.currency().toUpperCase(java.util.Locale.ROOT))
+                .merchantId(command.merchantId())
+                .status(CheckoutIdempotencyStatus.RESERVED)
+                .createdAt(java.time.Instant.now())
+                .updatedAt(java.time.Instant.now())
+                .build();
+    }
+
     private static final class FakeCheckoutIdempotencyKeyRepository {
 
         private final Map<String, CheckoutIdempotencyKey> records = new LinkedHashMap<>();
         private int saveCount;
+        private boolean throwDataIntegrityOnNextSave;
+        private CheckoutIdempotencyKey concurrentRecord;
 
         private CheckoutIdempotencyKeyRepository proxy() {
             return (CheckoutIdempotencyKeyRepository) Proxy.newProxyInstance(
@@ -101,7 +145,12 @@ class IdempotencyKeyStoreTest {
                         if ("findByIdempotencyKey".equals(methodName)) {
                             return Optional.ofNullable(records.get(args[0]));
                         }
-                        if ("save".equals(methodName)) {
+                        if ("save".equals(methodName) || "saveAndFlush".equals(methodName)) {
+                            if (throwDataIntegrityOnNextSave) {
+                                throwDataIntegrityOnNextSave = false;
+                                records.put(concurrentRecord.getIdempotencyKey(), concurrentRecord);
+                                throw new DataIntegrityViolationException("duplicate idempotency key");
+                            }
                             CheckoutIdempotencyKey record = (CheckoutIdempotencyKey) args[0];
                             records.put(record.getIdempotencyKey(), record);
                             saveCount++;

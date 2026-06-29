@@ -96,6 +96,42 @@ class CheckoutTotalsReconcilerTest {
         assertThat(result.violations()).contains("total amount exceeds authorized spend ceiling");
     }
 
+    @Test
+    void idLessLineItemsReturnMismatchInsteadOfThrowing() {
+        Map<String, Object> checkout = checkoutWith(
+                "line_items",
+                List.of(lineWithNullableIds(null, null, 1, 1499L))
+        );
+
+        CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
+
+        assertThat(result.match()).isFalse();
+        assertThat(result.violations()).anyMatch(violation -> violation.contains("line item"));
+    }
+
+    @Test
+    void nullCurrencyReturnsMismatchInsteadOfThrowing() {
+        Map<String, Object> checkout = checkoutWith("total_amount", Map.of("amount_minor", 1999L));
+
+        CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
+
+        assertThat(result.match()).isFalse();
+        assertThat(result.violations()).contains("currency mismatch");
+    }
+
+    @Test
+    void oversizedQuantityReturnsMismatchInsteadOfThrowing() {
+        Map<String, Object> checkout = checkoutWith(
+                "line_items",
+                List.of(lineWithNullableIds("line-1", "variant-1", "123456789012345", 1499L))
+        );
+
+        CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
+
+        assertThat(result.match()).isFalse();
+        assertThat(result.violations()).contains("line item variant-1 quantity mismatch");
+    }
+
     private CheckoutTotalsReconciler.ExpectedCheckout expected() {
         return new CheckoutTotalsReconciler.ExpectedCheckout(
                 "co_123",
@@ -155,6 +191,20 @@ class CheckoutTotalsReconcilerTest {
                 "quantity", quantity,
                 "total_amount", money(totalAmount, "USD")
         );
+    }
+
+    private Map<String, Object> lineWithNullableIds(
+            String id,
+            String variantId,
+            Object quantity,
+            Long totalAmount
+    ) {
+        Map<String, Object> line = new java.util.LinkedHashMap<>();
+        line.put("id", id);
+        line.put("product_variant_id", variantId);
+        line.put("quantity", quantity);
+        line.put("total_amount", money(totalAmount, "USD"));
+        return line;
     }
 
     private Map<String, Object> money(Long amount, String currency) {

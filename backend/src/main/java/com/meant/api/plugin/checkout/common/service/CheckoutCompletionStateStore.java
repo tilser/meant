@@ -63,7 +63,7 @@ public class CheckoutCompletionStateStore {
 
     @Transactional
     public CheckoutCompletionState markCompleted(@NotNull @Valid StartCheckoutCompletionCommand command) {
-        CheckoutCompletionState state = find(command);
+        CheckoutCompletionState state = findLocked(command);
         if (state.getStatus() != CheckoutCompletionStatus.COMPLETION_IN_FLIGHT) {
             throw new UcpCheckoutSafetyException("Checkout completion is not in flight: " + command.checkoutId());
         }
@@ -73,6 +73,13 @@ public class CheckoutCompletionStateStore {
 
     @Transactional(readOnly = true)
     public CheckoutCompletionState find(@NotNull @Valid StartCheckoutCompletionCommand command) {
+        return repository.findReadOnlyByCheckoutIdHash(hash(command.checkoutId()))
+                .orElseThrow(() -> new UcpCheckoutSafetyException(
+                        "Checkout completion state was not authorized: " + command.checkoutId()
+                ));
+    }
+
+    private CheckoutCompletionState findLocked(StartCheckoutCompletionCommand command) {
         return repository.findByCheckoutIdHash(hash(command.checkoutId()))
                 .orElseThrow(() -> new UcpCheckoutSafetyException(
                         "Checkout completion state was not authorized: " + command.checkoutId()

@@ -93,6 +93,9 @@ class CheckoutCompletionStateStoreTest {
                         if ("findByCheckoutIdHash".equals(methodName)) {
                             return Optional.ofNullable(records.get(args[0]));
                         }
+                        if ("findReadOnlyByCheckoutIdHash".equals(methodName)) {
+                            return Optional.ofNullable(records.get(args[0]));
+                        }
                         if ("save".equals(methodName)) {
                             CheckoutCompletionState state = (CheckoutCompletionState) args[0];
                             records.put(state.getCheckoutIdHash(), state);

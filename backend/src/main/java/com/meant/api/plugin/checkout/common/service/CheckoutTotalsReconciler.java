@@ -288,7 +288,11 @@ public class CheckoutTotalsReconciler {
         if (scalar == null || !scalar.matches("-?\\d+")) {
             return null;
         }
-        return Integer.parseInt(scalar);
+        try {
+            return Integer.parseInt(scalar);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private Map<String, Object> stringKeyMap(Map<?, ?> source) {
@@ -334,7 +338,8 @@ public class CheckoutTotalsReconciler {
     }
 
     private String normalizedCurrency(String currency) {
-        return UcpDecimal.normalizedCurrency(currency);
+        String normalized = UcpDecimal.normalizedCurrency(currency);
+        return normalized == null ? "" : normalized;
     }
 
     private String firstPresent(String first, String second) {
@@ -342,11 +347,11 @@ public class CheckoutTotalsReconciler {
     }
 
     private String lineKey(ExpectedLineItem line) {
-        return firstPresent(line.productVariantId(), line.id());
+        return Objects.requireNonNullElse(firstPresent(line.productVariantId(), line.id()), "");
     }
 
     private String lineKey(ObservedLineItem line) {
-        return firstPresent(line.productVariantId(), line.id());
+        return Objects.requireNonNullElse(firstPresent(line.productVariantId(), line.id()), "");
     }
 
     private <T> List<T> safeList(List<T> values) {
