@@ -29,7 +29,7 @@ public record CompleteCheckoutCommand(
     }
 
     public record Ap2MandateCommand(
-            Map<String, Object> merchantPublicJwk,
+            @NotEmpty Map<String, Object> merchantPublicJwk,
             @NotBlank String expectedMerchantAuthorizationKid,
             @NotBlank String merchantAuthorizationIssuer,
             @NotBlank String agentIssuer,

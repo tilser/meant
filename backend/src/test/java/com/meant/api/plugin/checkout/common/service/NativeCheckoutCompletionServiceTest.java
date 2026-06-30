@@ -15,6 +15,7 @@ import com.meant.api.plugin.checkout.common.exception.UcpCheckoutSafetyException
 import com.meant.api.plugin.checkout.common.repository.CheckoutCompletionStateRepository;
 import com.meant.api.plugin.checkout.common.repository.CheckoutIdempotencyKeyRepository;
 import com.meant.api.plugin.checkout.common.service.CheckoutCanaryService.CanaryEventCommand;
+import com.meant.api.plugin.checkout.common.service.CheckoutTotalsReconciler.ExpectedCheckout;
 import com.meant.api.plugin.checkout.common.service.command.AuthorizeCheckoutCompletionCommand;
 import com.meant.api.plugin.checkout.common.service.command.NativeCheckoutCancellationCommand;
 import com.meant.api.plugin.checkout.common.service.command.NativeCheckoutCompletionCommand;
@@ -29,6 +30,7 @@ import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.payment.common.dto.PaymentCredential;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import com.meant.api.plugin.payment.common.dto.PaymentScaLiability;
+import com.meant.api.plugin.signing.Ap2MandateException;
 import com.meant.api.plugin.signing.Jcs;
 import com.meant.api.plugin.signing.PublicSigningKey;
 import com.meant.api.plugin.signing.Rfc9421Signer;
@@ -39,6 +41,7 @@ import com.meant.api.plugin.signing.SigningKeyProvider;
 import com.meant.api.plugin.signing.SigningKeyPurpose;
 import com.meant.api.plugin.signing.SigningKeyStatus;
 import com.meant.api.plugin.support.UcpSession;
+import com.nimbusds.jose.jwk.ECKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -48,7 +51,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
-import com.nimbusds.jose.jwk.ECKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.core.JacksonException;
@@ -122,6 +124,48 @@ class NativeCheckoutCompletionServiceTest {
     }
 
     @Test
+    void completedStatusAfterExistingInFlightStateReconcilesWithoutReposting() {
+        completionStateStore.authorizeException = new UcpCheckoutSafetyException(
+                "Checkout completion cannot be re-authorized after completion starts"
+        );
+        dispatchService.getResults.add(toolResult(completedCheckoutJson("order-789")));
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.COMPLETED);
+        assertThat(result.orderRef()).isEqualTo("order-789");
+        assertThat(dispatchService.completeCount).isZero();
+        assertThat(completionStateStore.markCompletedCount).isEqualTo(1);
+    }
+
+    @Test
+    void nullRawCheckoutPayloadFailsCleanlyWhenBuildingAp2Mandate() {
+        Jcs jcs = new Jcs();
+        service = new NativeCheckoutCompletionService(
+                dispatchService,
+                new CompleteCheckoutCapability(objectMapper),
+                completionStateStore,
+                idempotencyKeyStore,
+                new FakeBuyerConsentService(consent(), objectMapper),
+                new NoopCheckoutTotalsReconciler(objectMapper, jcs),
+                null,
+                signer(),
+                jcs,
+                checkoutCanaryService,
+                objectMapper
+        );
+        dispatchService.getResults.add(toolResult("null", openCheckoutJson()));
+
+        assertThatThrownBy(() -> service.complete(
+                provider(true),
+                commandWithAp2Mandate(),
+                UcpSession.cart("cart-1", null, null)
+        )).isInstanceOf(UcpCheckoutSafetyException.class)
+                .hasMessageContaining("could not be prepared")
+                .hasCauseInstanceOf(Ap2MandateException.class);
+    }
+
+    @Test
     void ap2SecurityLockBlocksFeatureFlagHandoffFallback() {
         NativeCheckoutResult result = service.complete(
                 provider(false),
@@ -186,6 +230,29 @@ class NativeCheckoutCompletionServiceTest {
         );
     }
 
+    private NativeCheckoutCompletionCommand commandWithAp2Mandate() {
+        return new NativeCheckoutCompletionCommand(
+                CART_ID,
+                USER_ID,
+                CONSENT_ID,
+                CHECKOUT_ID,
+                List.of(paymentInstrument()),
+                "idem-1",
+                true,
+                new NativeCheckoutCompletionCommand.Ap2MandateInput(
+                        Map.of("kty", "EC"),
+                        "merchant-key",
+                        "merchant.example",
+                        "agent.example",
+                        "merchant.example",
+                        "nonce-1",
+                        NOW.plus(Duration.ofMinutes(10)),
+                        "merchant-authorization-jws"
+                ),
+                Map.of("source", "test")
+        );
+    }
+
     private PaymentInstrument paymentInstrument() {
         return new PaymentInstrument(
                 "card",
@@ -226,11 +293,15 @@ class NativeCheckoutCompletionServiceTest {
     }
 
     private UcpCheckoutToolResult toolResult(String json) {
+        return toolResult(json, json);
+    }
+
+    private UcpCheckoutToolResult toolResult(String rawJson, String responseJson) {
         try {
             return new UcpCheckoutToolResult(
                     "https://merchant.example/api/mcp",
-                    json,
-                    objectMapper.readValue(json, UcpCheckoutResponse.class)
+                    rawJson,
+                    objectMapper.readValue(responseJson, UcpCheckoutResponse.class)
             );
         } catch (JacksonException exception) {
             throw new AssertionError(exception);
@@ -420,6 +491,7 @@ class NativeCheckoutCompletionServiceTest {
         private boolean startResult = true;
         private boolean cancelResult = true;
         private int markCompletedCount;
+        private UcpCheckoutSafetyException authorizeException;
 
         private FakeCompletionStateStore() {
             super((CheckoutCompletionStateRepository) null);
@@ -427,6 +499,9 @@ class NativeCheckoutCompletionServiceTest {
 
         @Override
         public CheckoutCompletionState authorize(AuthorizeCheckoutCompletionCommand command) {
+            if (authorizeException != null) {
+                throw authorizeException;
+            }
             return null;
         }
 
@@ -442,6 +517,12 @@ class NativeCheckoutCompletionServiceTest {
 
         @Override
         public CheckoutCompletionState markCompleted(StartCheckoutCompletionCommand command) {
+            markCompletedCount++;
+            return null;
+        }
+
+        @Override
+        public CheckoutCompletionState markCompletedFromRemoteStatus(StartCheckoutCompletionCommand command) {
             markCompletedCount++;
             return null;
         }
@@ -484,6 +565,17 @@ class NativeCheckoutCompletionServiceTest {
         @Override
         public BuyerConsentArtifact findArtifact(UUID consentId, UUID userId) {
             return artifact;
+        }
+    }
+
+    private static final class NoopCheckoutTotalsReconciler extends CheckoutTotalsReconciler {
+
+        private NoopCheckoutTotalsReconciler(ObjectMapper objectMapper, Jcs jcs) {
+            super(objectMapper, jcs);
+        }
+
+        @Override
+        public void rejectIfMismatch(ExpectedCheckout expected, Object checkout) {
         }
     }
 

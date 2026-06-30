@@ -231,9 +231,11 @@ public class CheckoutTotalsReconciler {
         }
         try {
             if (value instanceof String string) {
-                return objectMapper.readValue(string, MAP_TYPE);
+                Map<String, Object> parsed = objectMapper.readValue(string, MAP_TYPE);
+                return parsed == null ? Map.of() : parsed;
             }
-            return objectMapper.convertValue(value, MAP_TYPE);
+            Map<String, Object> converted = objectMapper.convertValue(value, MAP_TYPE);
+            return converted == null ? Map.of() : converted;
         } catch (IllegalArgumentException | JacksonException exception) {
             throw new UcpCheckoutSafetyException("Checkout payload could not be read for reconciliation", exception);
         }

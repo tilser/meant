@@ -29,7 +29,7 @@ public record NativeCheckoutCompletionCommand(
     }
 
     public record Ap2MandateInput(
-            Map<String, Object> merchantPublicJwk,
+            @NotEmpty Map<String, Object> merchantPublicJwk,
             @NotBlank String expectedMerchantAuthorizationKid,
             @NotBlank String merchantAuthorizationIssuer,
             @NotBlank String agentIssuer,

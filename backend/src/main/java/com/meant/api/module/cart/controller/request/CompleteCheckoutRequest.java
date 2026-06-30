@@ -63,7 +63,7 @@ public record CompleteCheckoutRequest(
 
     public record Ap2MandateRequest(
             @JsonProperty("merchant_public_jwk")
-            Map<String, Object> merchantPublicJwk,
+            @NotEmpty Map<String, Object> merchantPublicJwk,
             @JsonProperty("expected_merchant_authorization_kid")
             @NotBlank String expectedMerchantAuthorizationKid,
             @JsonProperty("merchant_authorization_issuer")

@@ -72,6 +72,23 @@ public class CheckoutCompletionStateStore {
     }
 
     @Transactional
+    public CheckoutCompletionState markCompletedFromRemoteStatus(@NotNull @Valid StartCheckoutCompletionCommand command) {
+        CheckoutCompletionState state = findLocked(command);
+        if (state.getStatus() == CheckoutCompletionStatus.COMPLETED) {
+            return state;
+        }
+        if (state.getStatus() != CheckoutCompletionStatus.AUTHORIZED_TO_COMPLETE
+                && state.getStatus() != CheckoutCompletionStatus.COMPLETION_IN_FLIGHT) {
+            throw new UcpCheckoutSafetyException(
+                    "Checkout completion cannot be reconciled from status " + state.getStatus()
+                            + ": " + command.checkoutId()
+            );
+        }
+        state.markCompleted(Instant.now());
+        return repository.save(state);
+    }
+
+    @Transactional
     public CheckoutCompletionState markCanceled(@NotNull @Valid StartCheckoutCompletionCommand command) {
         CheckoutCompletionState state = findLocked(command);
         if (state.getStatus() != CheckoutCompletionStatus.CANCELED) {
