@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogProductResponse;
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -12,12 +13,12 @@ public record CatalogLookupResponse(
         @JsonAlias({"productId", "id"})
         String productId,
 
-        ProductDetailsResponse.Product product,
+        CatalogProductResponse product,
 
-        List<ProductDetailsResponse.Product> products
+        List<CatalogProductResponse> products
 ) {
 
-    public CatalogLookupResponse(String productId, ProductDetailsResponse.Product product) {
+    public CatalogLookupResponse(String productId, CatalogProductResponse product) {
         this(productId, product, List.of());
     }
 
@@ -25,21 +26,22 @@ public record CatalogLookupResponse(
         if (productId != null && !productId.isBlank()) {
             return productId;
         }
-        if (product != null && product.productId() != null && !product.productId().isBlank()) {
-            return product.productId();
+        if (product != null && product.id() != null && !product.id().isBlank()) {
+            return product.id();
         }
-        ProductDetailsResponse.Product firstProduct = firstProduct();
-        if (firstProduct != null && firstProduct.productId() != null && !firstProduct.productId().isBlank()) {
-            return firstProduct.productId();
+        CatalogProductResponse firstProduct = firstProduct();
+        if (firstProduct != null && firstProduct.id() != null && !firstProduct.id().isBlank()) {
+            return firstProduct.id();
         }
         return fallbackProductId;
     }
 
     public ProductDetailsResponse.Product resolvedProduct() {
-        return product == null ? firstProduct() : product;
+        CatalogProductResponse resolvedProduct = product == null ? firstProduct() : product;
+        return resolvedProduct == null ? null : resolvedProduct.toProductDetailsProduct();
     }
 
-    private ProductDetailsResponse.Product firstProduct() {
+    private CatalogProductResponse firstProduct() {
         return products == null || products.isEmpty() ? null : products.getFirst();
     }
 }

@@ -97,6 +97,98 @@ class CatalogCapabilityTest {
     }
 
     @Test
+    void lookupParsesShopifyCatalogProductObjects() {
+        CatalogLookupCapability capability = new CatalogLookupCapability(objectMapper);
+
+        CatalogLookupResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "products": [
+                            {
+                              "id": "gid://shopify/Product/1",
+                              "title": "Runner",
+                              "description": {
+                                "html": "Weather-ready wool runner."
+                              },
+                              "media": [
+                                {
+                                  "type": "image",
+                                  "url": "https://example.test/runner.jpg",
+                                  "alt_text": "Runner profile"
+                                }
+                              ],
+                              "price_range": {
+                                "min": {
+                                  "amount": 6500,
+                                  "currency": "USD"
+                                },
+                                "max": {
+                                  "amount": 13000,
+                                  "currency": "USD"
+                                }
+                              },
+                              "options": [
+                                {
+                                  "name": "Size",
+                                  "values": [
+                                    {
+                                      "label": "8"
+                                    },
+                                    {
+                                      "label": "9"
+                                    }
+                                  ]
+                                }
+                              ],
+                              "variants": [
+                                {
+                                  "id": "gid://shopify/ProductVariant/1",
+                                  "title": "8",
+                                  "price": {
+                                    "amount": 6500,
+                                    "currency": "USD"
+                                  },
+                                  "availability": {
+                                    "available": true
+                                  },
+                                  "options": [
+                                    {
+                                      "name": "Size",
+                                      "label": "8"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        ProductDetailsResponse.Product product = response.resolvedProduct();
+        assertThat(product.productId()).isEqualTo("gid://shopify/Product/1");
+        assertThat(product.description()).isEqualTo("Weather-ready wool runner.");
+        assertThat(product.imageUrl()).isEqualTo("https://example.test/runner.jpg");
+        assertThat(product.media()).singleElement()
+                .satisfies(media -> {
+                    assertThat(media.type()).isEqualTo("image");
+                    assertThat(media.url()).isEqualTo("https://example.test/runner.jpg");
+                    assertThat(media.altText()).isEqualTo("Runner profile");
+                });
+        assertThat(product.priceRange().min()).isEqualTo("6500");
+        assertThat(product.priceRange().max()).isEqualTo("13000");
+        assertThat(product.priceRange().currency()).isEqualTo("USD");
+        assertThat(product.options().getFirst().values()).containsExactly("8", "9");
+        assertThat(product.selectedOrFirstAvailableVariant().variantId()).isEqualTo("gid://shopify/ProductVariant/1");
+        assertThat(product.selectedOrFirstAvailableVariant().price()).isEqualTo("6500");
+        assertThat(product.selectedOrFirstAvailableVariant().currency()).isEqualTo("USD");
+        assertThat(product.selectedOrFirstAvailableVariant().available()).isTrue();
+        assertThat(product.selectedOrFirstAvailableVariant().selectedOptions().getFirst().value()).isEqualTo("8");
+    }
+
+    @Test
     void getProductBuildsTypedArgumentsParsesResponseAndGatesShopifyExtension() throws Exception {
         CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
         CatalogGetProductRequest request = new CatalogGetProductRequest(
@@ -120,6 +212,58 @@ class CatalogCapabilityTest {
 
         assertThat(response.product().productId()).isEqualTo("gid://shopify/Product/1");
         assertThat(response.product().title()).isEqualTo("Candle");
+    }
+
+    @Test
+    void getProductParsesShopifyCatalogProductObject() {
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+
+        ProductDetailsResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "product": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Runner",
+                            "description": {
+                              "html": "Weather-ready wool runner."
+                            },
+                            "price_range": {
+                              "min": {
+                                "amount": 6500,
+                                "currency": "USD"
+                              },
+                              "max": {
+                                "amount": 6500,
+                                "currency": "USD"
+                              }
+                            },
+                            "variants": [
+                              {
+                                "id": "gid://shopify/ProductVariant/1",
+                                "sku": "A10990W050",
+                                "title": "5",
+                                "price": {
+                                  "amount": 6500,
+                                  "currency": "USD"
+                                },
+                                "availability": {
+                                  "available": true
+                                }
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        ProductDetailsResponse.Product product = response.product();
+        assertThat(product.productId()).isEqualTo("gid://shopify/Product/1");
+        assertThat(product.description()).isEqualTo("Weather-ready wool runner.");
+        assertThat(product.priceRange().min()).isEqualTo("6500");
+        assertThat(product.selectedOrFirstAvailableVariant().variantId()).isEqualTo("gid://shopify/ProductVariant/1");
+        assertThat(product.selectedOrFirstAvailableVariant().sku()).isEqualTo("A10990W050");
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
 import com.meant.api.plugin.catalog.common.exception.UcpCatalogResponseException;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
+import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductResponse;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
 import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
@@ -56,11 +57,14 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
 
     @Override
     public ProductDetailsResponse parseResponse(UcpToolResponse response) {
-        ProductDetailsResponse productDetailsResponse = CatalogPluginJson.parse(
+        CatalogGetProductResponse catalogGetProductResponse = CatalogPluginJson.parse(
                 objectMapper,
                 response,
-                ProductDetailsResponse.class
+                CatalogGetProductResponse.class
         );
+        ProductDetailsResponse productDetailsResponse = catalogGetProductResponse == null
+                ? null
+                : catalogGetProductResponse.toProductDetailsResponse();
         if (productDetailsResponse == null || productDetailsResponse.product() == null) {
             throw new UcpCatalogResponseException("UCP get_product response did not contain product");
         }
