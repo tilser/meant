@@ -41,8 +41,11 @@ public class PaymentHandlerRegistry {
         Map<String, PaymentHandler<?, ?>> values = new LinkedHashMap<>();
         for (PaymentHandler<?, ?> handler : handlers) {
             register(values, handler.id(), handler);
-            for (String name : handler.names()) {
-                register(values, name, handler);
+            List<String> names = handler.names();
+            if (names != null) {
+                for (String name : names) {
+                    register(values, name, handler);
+                }
             }
         }
         return Collections.unmodifiableMap(values);

@@ -6,6 +6,7 @@ import com.meant.api.plugin.support.UcpDecimal;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Currency;
 import java.util.Objects;
 
 public final class PaymentBindingValidator {
@@ -65,9 +66,17 @@ public final class PaymentBindingValidator {
     }
 
     public static String normalizedCurrency(String currency, String fieldName) {
+        if (currency == null || currency.isBlank()) {
+            throw new PaymentHandlerException(fieldName + " must not be blank");
+        }
         String normalized = UcpDecimal.normalizedCurrency(currency);
         if (normalized == null) {
-            throw new PaymentHandlerException(fieldName + " must not be blank");
+            throw new PaymentHandlerException(fieldName + " is invalid");
+        }
+        try {
+            Currency.getInstance(normalized);
+        } catch (IllegalArgumentException exception) {
+            throw new PaymentHandlerException(fieldName + " is invalid");
         }
         return normalized;
     }

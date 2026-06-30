@@ -7,7 +7,11 @@ import com.meant.api.plugin.payment.card.CardHandler;
 import com.meant.api.plugin.payment.card.dto.CardCredentialDetails;
 import com.meant.api.plugin.payment.card.dto.CardCredentialRequest;
 import com.meant.api.plugin.payment.card.dto.CardPaymentResult;
+import com.meant.api.plugin.payment.common.PaymentHandler;
 import com.meant.api.plugin.payment.common.PaymentHandlerRegistry;
+import com.meant.api.plugin.payment.common.support.PaymentBindingValidator;
+import com.meant.api.plugin.payment.common.support.PaymentHandlerJson;
+import com.meant.api.plugin.payment.common.support.PaymentResultValues;
 import com.meant.api.plugin.payment.common.dto.PaymentBinding;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import com.meant.api.plugin.payment.common.exception.PaymentHandlerException;
@@ -247,6 +251,65 @@ class PaymentHandlerTest {
         assertThat(registry.handler("card_token")).isInstanceOf(CardHandler.class);
         assertThatThrownBy(() -> registry.handler("paypal"))
                 .isInstanceOf(UnknownPaymentHandlerException.class);
+    }
+
+    @Test
+    void paymentJsonRejectsNullAndUsesMapInputsDirectly() {
+        assertThatThrownBy(() -> PaymentHandlerJson.map(objectMapper, null, "payment result"))
+                .isInstanceOf(PaymentHandlerException.class)
+                .hasMessageContaining("payment result must not be null");
+
+        assertThat(PaymentHandlerJson.map(objectMapper, Map.of(1, "one", "status", "completed"), "payment result"))
+                .containsEntry("1", "one")
+                .containsEntry("status", "completed");
+    }
+
+    @Test
+    void resultValueLookupHandlesNullSourcesWithoutNpe() {
+        assertThat(PaymentResultValues.firstValue(null, "status")).isNull();
+        assertThat(PaymentResultValues.optionalText(null, "status")).isNull();
+        assertThatThrownBy(() -> PaymentResultValues.text(null, "status", "status"))
+                .isInstanceOf(PaymentHandlerException.class)
+                .hasMessageContaining("status is required");
+    }
+
+    @Test
+    void currencyValidationDistinguishesBlankFromInvalid() {
+        assertThatThrownBy(() -> PaymentBindingValidator.normalizedCurrency(" ", "currency"))
+                .isInstanceOf(PaymentHandlerException.class)
+                .hasMessageContaining("currency must not be blank");
+        assertThatThrownBy(() -> PaymentBindingValidator.normalizedCurrency("not-a-currency", "currency"))
+                .isInstanceOf(PaymentHandlerException.class)
+                .hasMessageContaining("currency is invalid");
+    }
+
+    @Test
+    void registryIndexesHandlerIdWhenAliasNamesAreNull() {
+        PaymentHandler<Object, Object> handler = new PaymentHandler<>() {
+            @Override
+            public String id() {
+                return "no-alias-handler";
+            }
+
+            @Override
+            public List<String> names() {
+                return null;
+            }
+
+            @Override
+            public PaymentInstrument buildCredential(Object request) {
+                return null;
+            }
+
+            @Override
+            public Object parseResult(Object result, PaymentBinding expectedBinding) {
+                return null;
+            }
+        };
+
+        PaymentHandlerRegistry registry = new PaymentHandlerRegistry(List.of(handler));
+
+        assertThat(registry.handler("no-alias-handler")).isSameAs(handler);
     }
 
     private ShopPayCredentialRequest shopPayRequest() {

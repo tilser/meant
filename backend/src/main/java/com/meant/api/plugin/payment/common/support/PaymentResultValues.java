@@ -35,6 +35,9 @@ public final class PaymentResultValues {
     }
 
     public static Object firstValue(Map<String, Object> source, String... keys) {
+        if (source == null || keys == null) {
+            return null;
+        }
         for (String key : keys) {
             for (Map.Entry<String, Object> entry : source.entrySet()) {
                 if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(key)) {
