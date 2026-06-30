@@ -89,6 +89,11 @@ class CartCapabilityTest {
                                 2
                         )),
                         List.of("gid://shopify/CartLine/2"),
+                        List.of(new CartUpdateItem(
+                                "gid://shopify/CartLine/2",
+                                "gid://shopify/ProductVariant/3",
+                                0
+                        )),
                         null,
                         List.of(),
                         List.of(),
@@ -107,6 +112,9 @@ class CartCapabilityTest {
                 .containsExactly(null, "gid://shopify/CartLine/1", "gid://shopify/CartLine/2");
         assertThat(arguments.cart().lineItems().get(1).item().id())
                 .isEqualTo("gid://shopify/ProductVariant/2");
+        assertThat(arguments.cart().lineItems().get(2).item().id())
+                .isEqualTo("gid://shopify/ProductVariant/3");
+        assertThat(arguments.cart().lineItems().get(2).quantity()).isZero();
         assertThat(response.cart().lines()).hasSize(1);
     }
 

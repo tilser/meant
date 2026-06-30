@@ -291,6 +291,10 @@ class CartServiceTest {
         assertThat(cartDispatchService.lastUpdateRequest.updateItems()).extracting("id")
                 .containsExactly("gid://shopify/CartLine/1");
         assertThat(cartDispatchService.lastUpdateRequest.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
+        assertThat(cartDispatchService.lastUpdateRequest.removeItems()).hasSize(1);
+        assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().productVariantId())
+                .isEqualTo("gid://shopify/ProductVariant/1");
+        assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().quantity()).isZero();
     }
 
     @Test

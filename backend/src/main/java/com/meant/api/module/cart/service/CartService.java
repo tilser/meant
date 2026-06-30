@@ -40,6 +40,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -285,6 +286,7 @@ public class CartService {
             linesByRemoteId.put(line.getRemoteCartLineId(), line);
         });
         Map<UUID, String> remoteLineIdsByLocalId = remoteLineIds(linesByLocalId);
+        List<CartUpdateItem> removeItems = removeItems(command, linesByLocalId, linesByRemoteId);
         return new UpdateCartRequest(
                 cart.getRemoteCartId(),
                 safeList(command.addItems()).stream()
@@ -293,7 +295,8 @@ public class CartService {
                 safeList(command.updateItems()).stream()
                         .map(item -> cartUpdateItem(item, linesByLocalId, linesByRemoteId, remoteLineIdsByLocalId))
                         .toList(),
-                removeLineIds(command, remoteLineIdsByLocalId),
+                removeLineIds(removeItems),
+                removeItems,
                 command.buyerIdentity(),
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
@@ -359,22 +362,42 @@ public class CartService {
         return remoteCartLineId;
     }
 
-    private List<String> removeLineIds(
+    private List<CartUpdateItem> removeItems(
             UpdateCartCommand command,
-            Map<UUID, String> remoteLineIdsByLocalId
+            Map<UUID, CartLine> linesByLocalId,
+            Map<String, CartLine> linesByRemoteId
     ) {
-        List<String> localRemoteIds = safeList(command.removeCartLineIds()).stream()
-                .map(cartLineId -> {
-                    String remoteCartLineId = remoteLineIdsByLocalId.get(cartLineId);
-                    if (remoteCartLineId == null) {
-                        throw CartException.notFound("Cart line not found: " + cartLineId);
-                    }
-                    return remoteCartLineId;
-                })
-                .toList();
-        return java.util.stream.Stream.concat(localRemoteIds.stream(), safeList(command.removeRemoteCartLineIds()).stream())
+        Map<String, CartUpdateItem> items = new LinkedHashMap<>();
+        safeList(command.removeCartLineIds()).forEach(cartLineId -> {
+            CartLine line = linesByLocalId.get(cartLineId);
+            if (line == null || line.getRemoteCartLineId() == null || line.getRemoteCartLineId().isBlank()) {
+                throw CartException.notFound("Cart line not found: " + cartLineId);
+            }
+            items.put(line.getRemoteCartLineId(), new CartUpdateItem(
+                    line.getRemoteCartLineId(),
+                    line.getProductVariantId(),
+                    0
+            ));
+        });
+        safeList(command.removeRemoteCartLineIds()).stream()
                 .filter(value -> value != null && !value.isBlank())
-                .distinct()
+                .forEach(remoteCartLineId -> {
+                    CartLine line = linesByRemoteId.get(remoteCartLineId);
+                    if (line == null) {
+                        throw CartException.notFound("Cart line not found: " + remoteCartLineId);
+                    }
+                    items.putIfAbsent(remoteCartLineId, new CartUpdateItem(
+                            remoteCartLineId,
+                            line.getProductVariantId(),
+                            0
+                    ));
+                });
+        return List.copyOf(items.values());
+    }
+
+    private List<String> removeLineIds(List<CartUpdateItem> removeItems) {
+        return safeList(removeItems).stream()
+                .map(CartUpdateItem::id)
                 .toList();
     }
 

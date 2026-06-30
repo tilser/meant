@@ -47,7 +47,7 @@ public class UpdateCartCapability implements UcpCapability<UpdateCartRequest, Uc
                 CartToolArguments.update(
                         request.addItems(),
                         request.updateItems(),
-                        request.removeLineIds(),
+                        request.removeItems(),
                         request.buyerIdentity(),
                         request.deliveryAddressesToAdd(),
                         request.deliveryAddressesToReplace(),

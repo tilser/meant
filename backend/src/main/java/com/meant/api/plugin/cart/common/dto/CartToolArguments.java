@@ -38,7 +38,7 @@ public record CartToolArguments(
     public static CartToolArguments update(
             List<CartAddItem> addItems,
             List<CartUpdateItem> updateItems,
-            List<String> removeLineIds,
+            List<CartUpdateItem> removeItems,
             Map<String, Object> buyerIdentity,
             List<Map<String, Object>> deliveryAddressesToAdd,
             List<Map<String, Object>> deliveryAddressesToReplace,
@@ -55,9 +55,13 @@ public record CartToolArguments(
                         hasText(item.productVariantId()) ? new Item(item.productVariantId()) : null
                 ))
                 .forEach(lineItems::add);
-        safeList(removeLineIds).stream()
-                .filter(CartToolArguments::hasText)
-                .map(lineId -> new LineItem(lineId, 0, null))
+        safeList(removeItems).stream()
+                .filter(item -> item != null && hasText(item.id()))
+                .map(item -> new LineItem(
+                        item.id(),
+                        0,
+                        hasText(item.productVariantId()) ? new Item(item.productVariantId()) : null
+                ))
                 .forEach(lineItems::add);
 
         return new CartToolArguments(
