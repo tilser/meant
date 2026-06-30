@@ -9415,6 +9415,35 @@ export function MeantApp() {
       : [{ productVariantId: fallbackProductVariantId, quantity: 1 }]
   }
 
+  /**
+   * Recovers from a stale (server-side-expired) cart: clears the dead cartId
+   * from local state and rebuilds the merchant cart from the items still in the
+   * local cart, returning the fresh snapshot so callers can re-apply their
+   * intent (codes, delivery) against the new cartId. Returns null when there is
+   * nothing left to rebuild (e.g. the merchant has no remaining cartable items).
+   */
+  const recreateMerchantCart = async (merchantKey: string): Promise<CartProfile | null> => {
+    const merchantItem = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
+    const rebuildItems = cartRef.current
+      .filter((item) => cartMerchantKey(item) === merchantKey && item.productVariantId)
+      .map((item) => ({
+        productVariantId: item.productVariantId as string,
+        quantity: Math.max(item.qty, 1),
+      }))
+    clearMerchantCartState(merchantKey)
+    if (rebuildItems.length === 0) {
+      return null
+    }
+    const snapshot = await createCart({
+      merchantId: merchantItem?.merchantId,
+      merchantDomain: merchantItem?.merchantDomain,
+      addItems: rebuildItems,
+    })
+    updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+    storeCartSnapshot(merchantKey, merchantItem?.merchant ?? merchantKey, snapshot)
+    return snapshot
+  }
+
   const updateMerchantCartItems = (
     merchantKey: string,
     patch: Pick<CartItem, 'syncing' | 'syncError'>,
@@ -9628,7 +9657,13 @@ export function MeantApp() {
         updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
         storeCartSnapshot(merchantKey, item.merchant, snapshot)
       })
-      .catch(() => {
+      .catch(async (error) => {
+        if (isCartNotFoundError(error)) {
+          // The local qty is already applied, so rebuilding the cart from
+          // current items carries the new quantity onto the fresh cart.
+          await recreateMerchantCart(merchantKey).catch(() => undefined)
+          return
+        }
         updateStoredCart((current) =>
           current.map((candidate) =>
             cartItemMatches(candidate, id, merchant)
@@ -9666,13 +9701,33 @@ export function MeantApp() {
     const nextCodes = Array.from(new Set([...existingCodes, code]))
 
     try {
-      const updated = await updateCart({
-        cartId: input.cartId,
+      let cartId = input.cartId
+      try {
+        const updated = await updateCart({
+          cartId,
+          discountCodes: input.type === 'DISCOUNT' ? nextCodes : undefined,
+          giftCardCodes: input.type === 'GIFT_CARD' ? nextCodes : undefined,
+        })
+        updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
+        storeCartSnapshot(input.merchantKey, input.merchant, updated)
+        return { ok: true }
+      } catch (error) {
+        if (!isCartNotFoundError(error)) {
+          throw error
+        }
+        const rebuilt = await recreateMerchantCart(input.merchantKey)
+        if (!rebuilt?.cartId) {
+          throw error
+        }
+        cartId = rebuilt.cartId
+      }
+      const reapplied = await updateCart({
+        cartId,
         discountCodes: input.type === 'DISCOUNT' ? nextCodes : undefined,
         giftCardCodes: input.type === 'GIFT_CARD' ? nextCodes : undefined,
       })
-      updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
-      storeCartSnapshot(input.merchantKey, input.merchant, updated)
+      updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, reapplied))
+      storeCartSnapshot(input.merchantKey, input.merchant, reapplied)
       return { ok: true }
     } catch (error) {
       return {
@@ -9692,13 +9747,35 @@ export function MeantApp() {
       .filter((code) => code !== codeToRemove)
 
     try {
-      const updated = await updateCart({
-        cartId: input.cartId,
+      let cartId = input.cartId
+      try {
+        const updated = await updateCart({
+          cartId,
+          discountCodes: input.code.type === 'DISCOUNT' ? remainingCodes : undefined,
+          giftCardCodes: input.code.type === 'GIFT_CARD' ? remainingCodes : undefined,
+        })
+        updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
+        storeCartSnapshot(input.merchantKey, input.merchant, updated)
+        return { ok: true }
+      } catch (error) {
+        if (!isCartNotFoundError(error)) {
+          throw error
+        }
+        const rebuilt = await recreateMerchantCart(input.merchantKey)
+        // A rebuilt cart starts with no codes, so the removal is already
+        // satisfied; re-apply the codes that should remain on the fresh cart.
+        if (!rebuilt?.cartId) {
+          return { ok: true }
+        }
+        cartId = rebuilt.cartId
+      }
+      const reapplied = await updateCart({
+        cartId,
         discountCodes: input.code.type === 'DISCOUNT' ? remainingCodes : undefined,
         giftCardCodes: input.code.type === 'GIFT_CARD' ? remainingCodes : undefined,
       })
-      updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, updated))
-      storeCartSnapshot(input.merchantKey, input.merchant, updated)
+      updateStoredCart((current) => mergeCartSnapshot(current, input.merchantKey, reapplied))
+      storeCartSnapshot(input.merchantKey, input.merchant, reapplied)
       return { ok: true }
     } catch (error) {
       return {
@@ -9711,8 +9788,27 @@ export function MeantApp() {
   const updateDeliveryAddress = async (payload: DeliveryAddressPayload): Promise<boolean> => {
     updateMerchantCartItems(payload.merchantKey, { syncing: true, syncError: null })
     try {
+      let cartId = payload.cartId
+      try {
+        const snapshot = await updateCart({
+          cartId,
+          deliveryAddressesToAdd: [deliveryAddressArguments(payload)],
+        })
+        updateStoredCart((current) => mergeCartSnapshot(current, payload.merchantKey, snapshot))
+        storeCartSnapshot(payload.merchantKey, payload.merchant, snapshot)
+        return true
+      } catch (error) {
+        if (!isCartNotFoundError(error)) {
+          throw error
+        }
+        const rebuilt = await recreateMerchantCart(payload.merchantKey)
+        if (!rebuilt?.cartId) {
+          throw error
+        }
+        cartId = rebuilt.cartId
+      }
       const snapshot = await updateCart({
-        cartId: payload.cartId,
+        cartId,
         deliveryAddressesToAdd: [deliveryAddressArguments(payload)],
       })
       updateStoredCart((current) => mergeCartSnapshot(current, payload.merchantKey, snapshot))
@@ -9751,7 +9847,18 @@ export function MeantApp() {
       updateStoredCart((current) => mergeCartSnapshot(current, payload.merchantKey, snapshot))
       storeCartSnapshot(payload.merchantKey, payload.merchant, snapshot)
       return true
-    } catch {
+    } catch (error) {
+      if (isCartNotFoundError(error)) {
+        // A rebuilt cart has fresh delivery groups, so the old delivery handle
+        // is no longer valid — recover the cart and ask the user to re-select
+        // rather than replaying a stale handle.
+        await recreateMerchantCart(payload.merchantKey).catch(() => undefined)
+        updateMerchantCartItems(payload.merchantKey, {
+          syncing: false,
+          syncError: 'Cart was refreshed — please choose a delivery option again.',
+        })
+        return false
+      }
       updateMerchantCartItems(payload.merchantKey, {
         syncing: false,
         syncError: 'Could not update the delivery option.',
