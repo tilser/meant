@@ -98,6 +98,9 @@
             <column name="remote_order_line_id" type="text">
                 <constraints nullable="false"/>
             </column>
+            <column name="position" type="int">
+                <constraints nullable="false"/>
+            </column>
             <column name="product_id" type="text"/>
             <column name="product_title" type="text">
                 <constraints nullable="false"/>

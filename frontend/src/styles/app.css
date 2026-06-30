@@ -6055,8 +6055,20 @@ button:disabled {
   background: var(--line-soft);
 }
 
+.mt-order-item:disabled {
+  cursor: default;
+}
+
+.mt-order-item:disabled:hover {
+  background: transparent;
+}
+
 .mt-order-item:active {
   transform: scale(0.995);
+}
+
+.mt-order-item:disabled:active {
+  transform: none;
 }
 
 .mt-order-item-media {

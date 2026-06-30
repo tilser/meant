@@ -143,6 +143,7 @@ public class OrderPersistenceService {
         return MerchantOrderLine.builder()
                 .remoteOrderLineId(required(firstText(line.id(), variantId, productId, String.valueOf(index)),
                         "Remote order line id is required"))
+                .position(index)
                 .productId(blankToNull(productId))
                 .productTitle(productTitle)
                 .productVariantId(blankToNull(variantId))

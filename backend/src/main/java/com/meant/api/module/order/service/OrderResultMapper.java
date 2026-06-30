@@ -33,7 +33,7 @@ public class OrderResultMapper {
                 order.getTotalQuantity(),
                 order.getOrderStatusUrl(),
                 order.getLines().stream()
-                        .sorted(Comparator.comparing(MerchantOrderLine::getCreatedAt))
+                        .sorted(Comparator.comparing(MerchantOrderLine::getPosition))
                         .map(line -> lineResult(order, line))
                         .toList(),
                 order.getCreatedAt(),

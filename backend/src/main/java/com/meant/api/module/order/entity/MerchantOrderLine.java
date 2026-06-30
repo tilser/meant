@@ -44,6 +44,9 @@ public class MerchantOrderLine {
     @Column(nullable = false)
     private String remoteOrderLineId;
 
+    @Column(nullable = false)
+    private Integer position;
+
     private String productId;
 
     @Column(nullable = false)
@@ -84,6 +87,7 @@ public class MerchantOrderLine {
     }
 
     void updateFrom(MerchantOrderLine other) {
+        this.position = other.position;
         this.productId = other.productId;
         this.productTitle = other.productTitle;
         this.productVariantId = other.productVariantId;

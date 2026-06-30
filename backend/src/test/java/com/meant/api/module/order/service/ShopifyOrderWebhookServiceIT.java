@@ -13,6 +13,7 @@ import com.meant.api.module.order.entity.MerchantOrder;
 import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.order.repository.MerchantOrderRepository;
 import com.meant.api.module.order.service.command.ReceiveShopifyOrderWebhookCommand;
+import com.meant.api.module.order.service.query.ListOrdersQuery;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +37,9 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
     private ShopifyOrderWebhookService webhookService;
 
     @Autowired
+    private OrderService orderService;
+
+    @Autowired
     private MerchantRepository merchantRepository;
 
     @Autowired
@@ -54,10 +58,10 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
         Merchant merchant = saveMerchant();
         String remoteOrderId = "gid://shopify/Order/" + UUID.randomUUID();
 
-        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "unfulfilled"));
-        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "in_transit"));
-        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "fulfilled"));
-        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "unfulfilled"));
+        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "unfulfilled", false));
+        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "in_transit", false));
+        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "fulfilled", false));
+        receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "unfulfilled", true));
 
         List<MerchantOrder> orders = orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(userId);
         assertThat(orders).hasSize(1);
@@ -65,9 +69,12 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
         assertThat(order.getState()).isEqualTo(OrderState.DELIVERED);
         assertThat(order.getRemoteOrderId()).isEqualTo(remoteOrderId);
         assertThat(order.getCustomerEmail()).isEqualTo(user.getEmail());
-        assertThat(order.getLines()).hasSize(1);
-        assertThat(order.getLines().getFirst().getProductTitle()).isEqualTo("Candle");
-        assertThat(order.getLines().getFirst().getQuantity()).isEqualTo(2);
+        assertThat(order.getLines()).hasSize(2);
+        assertThat(order.getLines()).extracting("position")
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(orderService.list(new ListOrdersQuery(userId)).getFirst().lines())
+                .extracting("productTitle")
+                .containsExactly("Diffuser", "Candle");
     }
 
     @Test
@@ -76,7 +83,7 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
         User user = saveUser(userId, "grace-%s@example.com".formatted(userId));
         Merchant merchant = saveMerchant();
         byte[] body = orderBody("gid://shopify/Order/" + UUID.randomUUID(), "#1002", user.getEmail(), "paid",
-                "unfulfilled").getBytes(StandardCharsets.UTF_8);
+                "unfulfilled", false).getBytes(StandardCharsets.UTF_8);
 
         assertThatThrownBy(() -> webhookService.receive(new ReceiveShopifyOrderWebhookCommand(
                 merchant.getDomain(),
@@ -167,8 +174,30 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
             String name,
             String email,
             String financialStatus,
-            String fulfillmentStatus
+            String fulfillmentStatus,
+            boolean reverseLines
     ) {
+        String candle = lineItem(
+                "gid://shopify/LineItem/1",
+                "Candle",
+                2,
+                "gid://shopify/Product/1",
+                "gid://shopify/ProductVariant/1",
+                "3x6",
+                "14.95",
+                "29.90"
+        );
+        String diffuser = lineItem(
+                "gid://shopify/LineItem/2",
+                "Diffuser",
+                1,
+                "gid://shopify/Product/2",
+                "gid://shopify/ProductVariant/2",
+                "Lavender",
+                "9.99",
+                "9.99"
+        );
+        String lineItems = reverseLines ? diffuser + ",\n" + candle : candle + ",\n" + diffuser;
         return """
                 {
                   "id": "%s",
@@ -180,24 +209,47 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
                   "created_at": "2026-06-18T10:00:00Z",
                   "processed_at": "2026-06-18T10:05:00Z",
                   "updated_at": "2026-06-18T10:06:00Z",
-                  "total_price": "29.90",
-                  "subtotal_price": "29.90",
+                  "total_price": "39.89",
+                  "subtotal_price": "39.89",
                   "currency": "USD",
                   "line_items": [
-                    {
-                      "id": "gid://shopify/LineItem/1",
-                      "title": "Candle",
-                      "quantity": 2,
-                      "product_id": "gid://shopify/Product/1",
-                      "variant_id": "gid://shopify/ProductVariant/1",
-                      "variant_title": "3x6",
-                      "price": "14.95",
-                      "total_price": "29.90",
-                      "currency": "USD"
-                    }
+                %s
                   ]
                 }
-                """.formatted(orderId, name, name.replace("#", ""), financialStatus, fulfillmentStatus, email);
+                """.formatted(
+                orderId,
+                name,
+                name.replace("#", ""),
+                financialStatus,
+                fulfillmentStatus,
+                email,
+                lineItems.indent(4)
+        );
+    }
+
+    private String lineItem(
+            String id,
+            String title,
+            int quantity,
+            String productId,
+            String variantId,
+            String variantTitle,
+            String price,
+            String totalPrice
+    ) {
+        return """
+                {
+                  "id": "%s",
+                  "title": "%s",
+                  "quantity": %d,
+                  "product_id": "%s",
+                  "variant_id": "%s",
+                  "variant_title": "%s",
+                  "price": "%s",
+                  "total_price": "%s",
+                  "currency": "USD"
+                }
+                """.formatted(id, title, quantity, productId, variantId, variantTitle, price, totalPrice).stripTrailing();
     }
 
     private String hmac(byte[] body) {

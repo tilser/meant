@@ -551,7 +551,7 @@ function orderFromProfile(profile: OrderProfile): Order {
   return {
     id: profile.displayId || profile.remoteOrderId || profile.id,
     date: profile.date,
-    status: normalizeOrderStatus(profile.status),
+    status: profile.status as OrderStatus,
     statusNote: profile.statusNote,
     items: profile.lines.map((line) => ({
       id: line.productKey || line.productId || line.id,
@@ -570,23 +570,6 @@ function orderFromProfile(profile: OrderProfile): Order {
     })),
     saved: 0,
     savedNote: '',
-  }
-}
-
-function normalizeOrderStatus(status: string | null | undefined): OrderStatus {
-  switch ((status ?? '').toLowerCase()) {
-    case 'delivered':
-      return 'Delivered'
-    case 'in transit':
-    case 'in_transit':
-      return 'In transit'
-    case 'canceled':
-    case 'cancelled':
-      return 'Canceled'
-    case 'refunded':
-      return 'Refunded'
-    default:
-      return 'Processing'
   }
 }
 
@@ -8030,7 +8013,7 @@ function OrdersView({
 function orderLineUnitPrice(item: CartItem, product?: Product): number {
   if (product) {
     const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-    return offer.price
+    return offer ? offer.price : 0
   }
   const unitAmount = parseOrderAmount(item.unitPriceAmount)
   if (unitAmount !== null) {
@@ -8116,6 +8099,7 @@ function OrderCard({
               key={`${item.id}-${item.merchant}`}
               type="button"
               onClick={() => product && onOpen(product)}
+              disabled={!product}
             >
               <div className="mt-order-item-media">
                 {product ? (
