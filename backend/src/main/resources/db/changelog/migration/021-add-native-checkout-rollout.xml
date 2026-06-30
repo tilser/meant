@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-merchant-native-checkout-flag" author="codex">
+        <addColumn tableName="merchant">
+            <column name="native_checkout_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="002-create-checkout-canary-event" author="codex">
+        <createTable tableName="checkout_canary_event">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_id_hash" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="outcome" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="remote_status" type="text"/>
+            <column name="error_code" type="text"/>
+            <column name="charge_mismatch" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="native_checkout_enabled" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="checkout_canary_event"
+                baseColumnNames="merchant_id"
+                constraintName="fk_checkout_canary_event_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <createIndex tableName="checkout_canary_event" indexName="idx_checkout_canary_event_merchant_created">
+            <column name="merchant_id"/>
+            <column name="created_at"/>
+        </createIndex>
+        <createIndex tableName="checkout_canary_event" indexName="idx_checkout_canary_event_outcome">
+            <column name="outcome"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

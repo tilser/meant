@@ -7,10 +7,17 @@ public record CheckoutResponse(
         UUID cartId,
         String remoteCartId,
         String checkoutUrl,
-        String continueUrl
+        String continueUrl,
+        boolean nativeCheckoutEnabled
 ) {
 
     public static CheckoutResponse from(CheckoutResult result) {
-        return new CheckoutResponse(result.cartId(), result.remoteCartId(), result.checkoutUrl(), result.continueUrl());
+        return new CheckoutResponse(
+                result.cartId(),
+                result.remoteCartId(),
+                result.checkoutUrl(),
+                result.continueUrl(),
+                result.nativeCheckoutEnabled()
+        );
     }
 }

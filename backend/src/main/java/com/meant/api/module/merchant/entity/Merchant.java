@@ -76,6 +76,10 @@ public class Merchant {
     @Column(nullable = false)
     private boolean active;
 
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean nativeCheckoutEnabled = false;
+
     @Column(nullable = false)
     private Instant lastProfiledAt;
 

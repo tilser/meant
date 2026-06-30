@@ -111,12 +111,22 @@ public class MerchantMcpToolClient {
     }
 
     public MerchantMcpToolCallResult callTool(MerchantCartProvider provider, String toolName, Object arguments) {
+        return callTool(provider, toolName, arguments, java.util.Map.of());
+    }
+
+    public MerchantMcpToolCallResult callTool(
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments,
+            java.util.Map<String, String> headers
+    ) {
         return callTool(
                 provider.domain(),
                 provider.advertisedMcpEndpoint(),
                 provider.profileMcpEndpoint(),
                 toolName,
-                arguments
+                arguments,
+                headers
         );
     }
 
@@ -127,13 +137,24 @@ public class MerchantMcpToolClient {
             String toolName,
             Object arguments
     ) {
+        return callTool(domain, advertisedMcpEndpoint, profileMcpEndpoint, toolName, arguments, java.util.Map.of());
+    }
+
+    private MerchantMcpToolCallResult callTool(
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint,
+            String toolName,
+            Object arguments,
+            java.util.Map<String, String> headers
+    ) {
         EndpointResult<UcpToolResponse> result = executeWithEndpointFallback(
                 domain,
                 advertisedMcpEndpoint,
                 profileMcpEndpoint,
                 "MCP tool " + toolName,
                 endpoint -> {
-                    UcpToolResponse response = ucpMcpClient.callTool(restClient, endpoint, toolName, arguments);
+                    UcpToolResponse response = ucpMcpClient.callTool(restClient, endpoint, toolName, arguments, headers);
                     return response;
                 }
         );

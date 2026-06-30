@@ -6,8 +6,12 @@ import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
+import com.meant.api.plugin.checkout.cancel.CancelCheckoutCapability;
+import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.complete.CompleteCheckoutCapability;
+import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
 import com.meant.api.plugin.checkout.create.CreateCheckoutCapability;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.GetCheckoutCapability;
@@ -19,6 +23,7 @@ import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -92,6 +97,45 @@ public class MerchantCheckoutPluginDispatchService {
         return checkoutResult(result, response);
     }
 
+    public UcpCheckoutToolResult completeCheckout(
+            MerchantCartProvider provider,
+            CompleteCheckoutRequest request,
+            UcpSession session,
+            Map<String, String> signedHeaders
+    ) {
+        CompleteCheckoutCapability capability = capability(
+                CompleteCheckoutCapability.TOOL_NAME,
+                CompleteCheckoutCapability.class
+        );
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+                provider,
+                CompleteCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities()),
+                signedHeaders
+        );
+        UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "complete checkout");
+        updateSessionIfCheckoutPresent(session, result, response);
+        return checkoutResult(result, response);
+    }
+
+    public UcpCheckoutToolResult cancelCheckout(
+            MerchantCartProvider provider,
+            CancelCheckoutRequest request,
+            UcpSession session,
+            Map<String, String> signedHeaders
+    ) {
+        CancelCheckoutCapability capability = capability(CancelCheckoutCapability.TOOL_NAME, CancelCheckoutCapability.class);
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+                provider,
+                CancelCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities()),
+                signedHeaders
+        );
+        UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "cancel checkout");
+        updateSessionIfCheckoutPresent(session, result, response);
+        return checkoutResult(result, response);
+    }
+
     private UcpCheckoutResponse parseCheckoutResponse(
             UcpCapability<?, UcpCheckoutResponse> capability,
             MerchantMcpToolCallResult result,
@@ -156,6 +200,18 @@ public class MerchantCheckoutPluginDispatchService {
         session.acceptNegotiatedCapabilities(result.negotiatedCapabilities());
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
         session.updateCheckoutState(checkout.id(), checkout.expiresAt(), handoffUrl(checkout));
+    }
+
+    private void updateSessionIfCheckoutPresent(
+            UcpSession session,
+            MerchantMcpToolCallResult result,
+            UcpCheckoutResponse response
+    ) {
+        session.acceptNegotiatedCapabilities(result.negotiatedCapabilities());
+        UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
+        if (checkout != null) {
+            session.updateCheckoutState(checkout.id(), checkout.expiresAt(), handoffUrl(checkout));
+        }
     }
 
     private UcpCheckoutToolResult checkoutResult(

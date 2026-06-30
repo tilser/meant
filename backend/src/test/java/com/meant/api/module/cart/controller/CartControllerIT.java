@@ -529,6 +529,8 @@ class CartControllerIT extends PostgresIntegrationTest {
                             "open",
                             "https://merchant.example/checkout/" + createCount.get(),
                             "https://merchant.example/continue/" + createCount.get(),
+                            null,
+                            null,
                             Instant.parse("2026-06-16T11:06:00Z"),
                             Instant.parse("2026-06-16T11:06:01Z"),
                             null,
@@ -536,6 +538,8 @@ class CartControllerIT extends PostgresIntegrationTest {
                             Map.of(),
                             List.of()
                     ),
+                    null,
+                    null,
                     null,
                     null,
                     null,

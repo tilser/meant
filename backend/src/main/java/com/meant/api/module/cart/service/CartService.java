@@ -4,10 +4,13 @@ import static com.meant.api.common.util.CollectionUtils.safeList;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.service.command.CancelCheckoutCommand;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
+import com.meant.api.module.cart.service.command.CompleteCheckoutCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -25,6 +28,11 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.plugin.checkout.common.service.NativeCheckoutCompletionService;
+import com.meant.api.plugin.checkout.common.service.command.NativeCheckoutCancellationCommand;
+import com.meant.api.plugin.checkout.common.service.command.NativeCheckoutCompletionCommand;
+import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutResult;
+import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
@@ -47,6 +55,7 @@ public class CartService {
     private final CartPersistenceService cartPersistenceService;
     private final MerchantCartPluginDispatchService merchantCartPluginDispatchService;
     private final MerchantCheckoutPluginDispatchService merchantCheckoutPluginDispatchService;
+    private final NativeCheckoutCompletionService nativeCheckoutCompletionService;
     private final UserInventoryService userInventoryService;
     private final CartResultMapper cartResultMapper;
 
@@ -96,11 +105,17 @@ public class CartService {
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
+        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         if (!query.refresh() && hasText(cart.getContinueUrl())) {
             importCartInventory(cart);
-            return new CheckoutResult(cart.getId(), cart.getRemoteCartId(), cart.getCheckoutUrl(), cart.getContinueUrl());
+            return new CheckoutResult(
+                    cart.getId(),
+                    cart.getRemoteCartId(),
+                    cart.getCheckoutUrl(),
+                    cart.getContinueUrl(),
+                    provider.nativeCheckoutEnabled()
+            );
         }
-        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         UcpSession session = session(cart);
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
                 provider,
@@ -113,8 +128,40 @@ public class CartService {
                 refreshedCart.getId(),
                 refreshedCart.getRemoteCartId(),
                 refreshedCart.getCheckoutUrl(),
-                refreshedCart.getContinueUrl()
+                refreshedCart.getContinueUrl(),
+                provider.nativeCheckoutEnabled()
         );
+    }
+
+    public CheckoutCompletionResult completeCheckout(@NotNull @Valid CompleteCheckoutCommand command) {
+        Cart cart = findCart(command.cartId(), command.userId());
+        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
+        Cart checkoutCart = ensureHandoffWhenNativeDisabled(cart, command.userId(), provider, command.ap2SecurityLock());
+        NativeCheckoutResult result = nativeCheckoutCompletionService.complete(
+                provider,
+                nativeCompletionCommand(command),
+                session(checkoutCart)
+        );
+        if (result.status() == NativeCheckoutStatus.COMPLETED) {
+            importCartInventory(checkoutCart);
+        }
+        return completionResult(checkoutCart, result);
+    }
+
+    public CheckoutCompletionResult cancelCheckout(@NotNull @Valid CancelCheckoutCommand command) {
+        Cart cart = findCart(command.cartId(), command.userId());
+        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
+        NativeCheckoutResult result = nativeCheckoutCompletionService.cancel(
+                provider,
+                new NativeCheckoutCancellationCommand(
+                        command.cartId(),
+                        command.checkoutId(),
+                        command.reason(),
+                        command.ap2SecurityLock()
+                ),
+                session(cart)
+        );
+        return completionResult(cart, result);
     }
 
     public void cancel(@NotNull @Valid CancelCartCommand command) {
@@ -156,6 +203,68 @@ public class CartService {
                 normalizeCodes(command.discountCodes()),
                 normalizeCodes(command.giftCardCodes()),
                 command.note()
+        );
+    }
+
+    private Cart ensureHandoffWhenNativeDisabled(
+            Cart cart,
+            UUID userId,
+            MerchantCartProvider provider,
+            boolean ap2SecurityLock
+    ) {
+        if (provider.nativeCheckoutEnabled() || ap2SecurityLock || hasText(handoffUrl(cart))) {
+            return cart;
+        }
+        UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
+                provider,
+                new CreateCheckoutRequest(cart.getRemoteCartId()),
+                session(cart)
+        );
+        return cartPersistenceService.saveCheckoutHandoff(cart.getId(), userId, result);
+    }
+
+    private NativeCheckoutCompletionCommand nativeCompletionCommand(CompleteCheckoutCommand command) {
+        return new NativeCheckoutCompletionCommand(
+                command.cartId(),
+                command.userId(),
+                command.buyerConsentId(),
+                command.checkoutId(),
+                command.paymentInstruments(),
+                command.idempotencyKey(),
+                command.ap2SecurityLock(),
+                ap2MandateInput(command.ap2Mandate()),
+                command.signals()
+        );
+    }
+
+    private NativeCheckoutCompletionCommand.Ap2MandateInput ap2MandateInput(
+            CompleteCheckoutCommand.Ap2MandateCommand command
+    ) {
+        if (command == null) {
+            return null;
+        }
+        return new NativeCheckoutCompletionCommand.Ap2MandateInput(
+                command.merchantPublicJwk(),
+                command.expectedMerchantAuthorizationKid(),
+                command.merchantAuthorizationIssuer(),
+                command.agentIssuer(),
+                command.audience(),
+                command.nonce(),
+                command.expiresAt(),
+                command.merchantAuthorizationJws()
+        );
+    }
+
+    private CheckoutCompletionResult completionResult(Cart cart, NativeCheckoutResult result) {
+        return new CheckoutCompletionResult(
+                cart.getId(),
+                cart.getRemoteCartId(),
+                result.status(),
+                result.checkoutId(),
+                result.orderRef(),
+                result.continueUrl(),
+                result.messages(),
+                result.nativeAttempted()
         );
     }
 

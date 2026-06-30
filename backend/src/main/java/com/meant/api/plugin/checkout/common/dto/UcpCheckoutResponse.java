@@ -24,6 +24,10 @@ public record UcpCheckoutResponse(
         @JsonProperty("continue_url")
         @JsonAlias("continueUrl")
         String continueUrl,
+        @JsonProperty("order_id")
+        @JsonAlias({"orderId", "order_ref", "orderRef"})
+        String orderId,
+        Map<String, Object> order,
         @JsonProperty("created_at")
         @JsonAlias("createdAt")
         Instant createdAt,
@@ -50,6 +54,8 @@ public record UcpCheckoutResponse(
                 status,
                 checkoutUrl,
                 continueUrl,
+                orderId,
+                order,
                 createdAt,
                 updatedAt,
                 expiresAt,
@@ -72,6 +78,10 @@ public record UcpCheckoutResponse(
             @JsonProperty("continue_url")
             @JsonAlias("continueUrl")
             String continueUrl,
+            @JsonProperty("order_id")
+            @JsonAlias({"orderId", "order_ref", "orderRef"})
+            String orderId,
+            Map<String, Object> order,
             @JsonProperty("created_at")
             @JsonAlias("createdAt")
             Instant createdAt,
@@ -107,6 +117,23 @@ public record UcpCheckoutResponse(
             return matches(code, "not_found")
                     || matches(code, "checkout_not_found")
                     || matches(code, "cart_not_found");
+        }
+
+        public boolean isRecoverable() {
+            return matches(severity, "recoverable")
+                    || matches(type, "recoverable")
+                    || matches(code, "recoverable")
+                    || matches(code, "temporarily_unavailable")
+                    || matches(code, "retryable");
+        }
+
+        public boolean isUnrecoverable() {
+            return matches(severity, "unrecoverable")
+                    || matches(type, "unrecoverable")
+                    || matches(code, "unrecoverable")
+                    || matches(code, "payment_declined")
+                    || matches(code, "mandate_required")
+                    || matches(code, "charge_mismatch");
         }
 
         private boolean matches(String value, String expected) {

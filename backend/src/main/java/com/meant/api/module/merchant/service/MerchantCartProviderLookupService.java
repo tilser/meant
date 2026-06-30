@@ -35,7 +35,8 @@ public class MerchantCartProviderLookupService {
                 merchant.getId(),
                 merchant.getDomain(),
                 merchant.getAdvertisedMcpEndpoint(),
-                merchant.getProfileMcpEndpoint()
+                merchant.getProfileMcpEndpoint(),
+                merchant.isNativeCheckoutEnabled()
         );
     }
 }

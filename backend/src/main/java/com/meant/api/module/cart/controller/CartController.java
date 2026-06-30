@@ -1,8 +1,11 @@
 package com.meant.api.module.cart.controller;
 
 import com.meant.api.module.cart.controller.mapper.CartCommandMapper;
+import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
+import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
+import com.meant.api.module.cart.controller.response.CheckoutCompletionResponse;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
 import com.meant.api.module.cart.service.CartService;
@@ -144,6 +147,50 @@ public class CartController {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutResponse.from(
                 cartService.checkout(new GetCheckoutQuery(cartId, authenticatedUser.id(), refresh))
+        );
+    }
+
+    @PostMapping("/{cartId}/checkout/complete")
+    @Operation(
+            summary = "Complete cart checkout natively",
+            description = "Completes checkout through the merchant UCP complete_checkout tool when native checkout is enabled for the merchant."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Native checkout completion result",
+            content = @Content(schema = @Schema(implementation = CheckoutCompletionResponse.class))
+    )
+    public CheckoutCompletionResponse completeCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Local cart UUID.", required = true)
+            @PathVariable UUID cartId,
+            @Valid @RequestBody CompleteCheckoutRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return CheckoutCompletionResponse.from(
+                cartService.completeCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
+        );
+    }
+
+    @PostMapping("/{cartId}/checkout/cancel")
+    @Operation(
+            summary = "Cancel native cart checkout",
+            description = "Cancels checkout through the merchant UCP cancel_checkout tool unless completion is already in flight."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Native checkout cancellation result",
+            content = @Content(schema = @Schema(implementation = CheckoutCompletionResponse.class))
+    )
+    public CheckoutCompletionResponse cancelCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Local cart UUID.", required = true)
+            @PathVariable UUID cartId,
+            @Valid @RequestBody CancelCheckoutRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return CheckoutCompletionResponse.from(
+                cartService.cancelCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
         );
     }
 

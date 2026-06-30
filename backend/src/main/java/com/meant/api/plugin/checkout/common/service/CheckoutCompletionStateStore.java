@@ -71,6 +71,26 @@ public class CheckoutCompletionStateStore {
         return repository.save(state);
     }
 
+    @Transactional
+    public CheckoutCompletionState markCanceled(@NotNull @Valid StartCheckoutCompletionCommand command) {
+        CheckoutCompletionState state = findLocked(command);
+        if (state.getStatus() != CheckoutCompletionStatus.CANCELED) {
+            throw new UcpCheckoutSafetyException("Checkout cancellation was not reserved: " + command.checkoutId());
+        }
+        state.markCanceled(Instant.now());
+        return repository.save(state);
+    }
+
+    @Transactional
+    public CheckoutCompletionState releaseCompletionStart(@NotNull @Valid StartCheckoutCompletionCommand command) {
+        CheckoutCompletionState state = findLocked(command);
+        if (state.getStatus() != CheckoutCompletionStatus.COMPLETION_IN_FLIGHT) {
+            throw new UcpCheckoutSafetyException("Checkout completion is not in flight: " + command.checkoutId());
+        }
+        state.transitionTo(CheckoutCompletionStatus.AUTHORIZED_TO_COMPLETE, Instant.now());
+        return repository.save(state);
+    }
+
     @Transactional(readOnly = true)
     public CheckoutCompletionState find(@NotNull @Valid StartCheckoutCompletionCommand command) {
         return repository.findReadOnlyByCheckoutIdHash(hash(command.checkoutId()))

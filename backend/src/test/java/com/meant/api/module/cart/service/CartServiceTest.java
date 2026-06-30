@@ -81,6 +81,7 @@ class CartServiceTest {
                 cartPersistenceService,
                 cartDispatchService,
                 checkoutDispatchService,
+                null,
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper())
         );
@@ -935,6 +936,8 @@ class CartServiceTest {
                             "open",
                             "https://merchant.example/checkout",
                             "https://merchant.example/continue",
+                            null,
+                            null,
                             Instant.parse("2026-06-16T11:06:00Z"),
                             Instant.parse("2026-06-16T11:06:01Z"),
                             null,
@@ -942,6 +945,8 @@ class CartServiceTest {
                             Map.of(),
                             List.of()
                     ),
+                    null,
+                    null,
                     null,
                     null,
                     null,

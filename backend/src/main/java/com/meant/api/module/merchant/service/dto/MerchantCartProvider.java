@@ -6,6 +6,16 @@ public record MerchantCartProvider(
         UUID merchantId,
         String domain,
         String advertisedMcpEndpoint,
-        String profileMcpEndpoint
+        String profileMcpEndpoint,
+        boolean nativeCheckoutEnabled
 ) {
+
+    public MerchantCartProvider(
+            UUID merchantId,
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint
+    ) {
+        this(merchantId, domain, advertisedMcpEndpoint, profileMcpEndpoint, false);
+    }
 }

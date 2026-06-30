@@ -43,8 +43,23 @@ public class UcpMcpClient {
     }
 
     public UcpToolResponse callTool(RestClient restClient, URI endpoint, String toolName, Object arguments) {
+        return callTool(restClient, endpoint, toolName, arguments, Map.of());
+    }
+
+    public UcpToolResponse callTool(
+            RestClient restClient,
+            URI endpoint,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers
+    ) {
         McpToolCallResponse response = restClient.post()
                 .uri(endpoint)
+                .headers(httpHeaders -> {
+                    if (headers != null) {
+                        headers.forEach(httpHeaders::set);
+                    }
+                })
                 .body(request("tools/call", new McpToolCallParams(toolName, arguments)))
                 .retrieve()
                 .body(McpToolCallResponse.class);
