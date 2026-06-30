@@ -8,10 +8,16 @@ import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CatalogLookupArguments(
-        List<String> ids,
-
-        CatalogSearchContext context,
+        Catalog catalog,
 
         Map<String, ShopifyCatalogExtensionArguments> extensions
 ) {
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record Catalog(
+            List<String> ids,
+
+            CatalogSearchContext context
+    ) {
+    }
 }

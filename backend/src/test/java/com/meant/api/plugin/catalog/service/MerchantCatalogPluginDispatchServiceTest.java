@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -72,7 +73,8 @@ class MerchantCatalogPluginDispatchServiceTest {
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"lookup_catalog\"")))
-                .andExpect(content().string(containsString("\"ids\"")))
+                .andExpect(jsonPath("$.params.arguments.catalog.ids[0]").value("gid://shopify/Product/1"))
+                .andExpect(jsonPath("$.params.arguments.meta['ucp-agent'].profile").exists())
                 .andExpect(content().string(containsString("dev.shopify.catalog")))
                 .andRespond(withSuccess("""
                         {
@@ -99,7 +101,8 @@ class MerchantCatalogPluginDispatchServiceTest {
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"get_product\"")))
-                .andExpect(content().string(containsString("\"id\":\"gid://shopify/Product/1\"")))
+                .andExpect(jsonPath("$.params.arguments.catalog.id").value("gid://shopify/Product/1"))
+                .andExpect(jsonPath("$.params.arguments.meta['ucp-agent'].profile").exists())
                 .andExpect(content().string(not(containsString("get_product_details"))))
                 .andExpect(content().string(containsString("dev.shopify.catalog")))
                 .andRespond(withSuccess("""

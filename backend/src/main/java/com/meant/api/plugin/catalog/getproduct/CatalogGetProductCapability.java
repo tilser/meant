@@ -44,10 +44,12 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
             NegotiatedCapabilities activeCapabilities
     ) {
         return new CatalogGetProductArguments(
-                request.productId(),
-                request.selected(),
-                request.preferences(),
-                request.context(),
+                new CatalogGetProductArguments.Catalog(
+                        request.productId(),
+                        request.selected(),
+                        request.preferences(),
+                        request.context()
+                ),
                 ShopifyCatalogExtensionArguments.extensions(activeCapabilities)
         );
     }

@@ -43,8 +43,10 @@ public class CatalogLookupCapability implements UcpCapability<CatalogLookupReque
             NegotiatedCapabilities activeCapabilities
     ) {
         return new CatalogLookupArguments(
-                List.of(request.productId()),
-                request.context(),
+                new CatalogLookupArguments.Catalog(
+                        List.of(request.productId()),
+                        request.context()
+                ),
                 ShopifyCatalogExtensionArguments.extensions(activeCapabilities)
         );
     }

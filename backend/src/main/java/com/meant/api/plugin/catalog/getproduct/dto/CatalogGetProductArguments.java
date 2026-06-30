@@ -10,15 +10,21 @@ import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CatalogGetProductArguments(
-        @JsonProperty("id")
-        String id,
-
-        List<ProductDetailsResponse.SelectedOption> selected,
-
-        List<String> preferences,
-
-        CatalogSearchContext context,
+        Catalog catalog,
 
         Map<String, ShopifyCatalogExtensionArguments> extensions
 ) {
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record Catalog(
+            @JsonProperty("id")
+            String id,
+
+            List<ProductDetailsResponse.SelectedOption> selected,
+
+            List<String> preferences,
+
+            CatalogSearchContext context
+    ) {
+    }
 }

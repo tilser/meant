@@ -81,8 +81,8 @@ class CatalogCapabilityTest {
         CatalogLookupArguments unnegotiated = capability.buildArguments(request, NegotiatedCapabilities.none());
         CatalogLookupArguments negotiated = capability.buildArguments(request, shopifyActive());
 
-        assertThat(unnegotiated.ids()).containsExactly("gid://shopify/Product/1");
-        assertThat(unnegotiated.context().addressCountry()).isEqualTo("US");
+        assertThat(unnegotiated.catalog().ids()).containsExactly("gid://shopify/Product/1");
+        assertThat(unnegotiated.catalog().context().addressCountry()).isEqualTo("US");
         assertThat(objectMapper.writeValueAsString(unnegotiated)).doesNotContain("dev.shopify.catalog");
         assertThat(objectMapper.writeValueAsString(negotiated)).contains("dev.shopify.catalog");
 
@@ -107,8 +107,8 @@ class CatalogCapabilityTest {
         CatalogGetProductArguments unnegotiated = capability.buildArguments(request, NegotiatedCapabilities.none());
         CatalogGetProductArguments negotiated = capability.buildArguments(request, shopifyActive());
 
-        assertThat(unnegotiated.id()).isEqualTo("gid://shopify/Product/1");
-        assertThat(unnegotiated.context().addressCountry()).isEqualTo("US");
+        assertThat(unnegotiated.catalog().id()).isEqualTo("gid://shopify/Product/1");
+        assertThat(unnegotiated.catalog().context().addressCountry()).isEqualTo("US");
         assertThat(objectMapper.writeValueAsString(unnegotiated)).doesNotContain("dev.shopify.catalog");
         assertThat(objectMapper.writeValueAsString(negotiated)).contains("dev.shopify.catalog");
 
