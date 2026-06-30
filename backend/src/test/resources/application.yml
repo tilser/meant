@@ -63,6 +63,10 @@ ucp:
     clock-skew: PT30S
     keys: []
 
+order:
+  webhook:
+    shopify-secret: test-shopify-webhook-secret
+
 ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1

@@ -19,7 +19,6 @@ import {
 import {
   DEFAULT_CART,
   DEFAULT_COMPARE,
-  DEFAULT_ORDERS,
   DEFAULT_PREFERENCE_IDS,
   DEFAULT_USER,
   LOCATIONS,
@@ -45,6 +44,7 @@ import {
   getMerchantProductDetails,
   getMerchantIdentityLinks,
   getMerchants,
+  getOrders,
   getProfilePictureUrl,
   getProductDiscovery,
   getPopularProductSearches,
@@ -68,6 +68,7 @@ import {
   type MerchantIdentityLinkProfile,
   type MerchantProductDetailsProfile,
   type MerchantProfile,
+  type OrderProfile,
   type ProductOptionProfile,
   type ProductSelectedOptionProfile,
   type ShoppingFilterProfile,
@@ -102,6 +103,7 @@ import type {
   CorePreferenceId,
   Offer,
   Order,
+  OrderStatus,
   Preference,
   PreferenceId,
   Product,
@@ -542,6 +544,49 @@ function preferenceFromFilter(filter: ShoppingFilterProfile): Preference {
     category: filter.category,
     polarity: filter.polarity,
     displayOrder: filter.displayOrder,
+  }
+}
+
+function orderFromProfile(profile: OrderProfile): Order {
+  return {
+    id: profile.displayId || profile.remoteOrderId || profile.id,
+    date: profile.date,
+    status: normalizeOrderStatus(profile.status),
+    statusNote: profile.statusNote,
+    items: profile.lines.map((line) => ({
+      id: line.productKey || line.productId || line.id,
+      merchant: line.merchantName || profile.merchantName || profile.merchantDomain,
+      qty: line.quantity ?? 0,
+      merchantId: profile.merchantId,
+      merchantDomain: profile.merchantDomain,
+      productVariantId: line.productVariantId,
+      variantTitle: line.variantTitle,
+      productTitle: line.productTitle,
+      imageUrl: line.imageUrl,
+      productUrl: line.productUrl,
+      unitPriceAmount: line.unitAmount,
+      lineTotalAmount: line.totalAmount,
+      orderCurrency: line.currency ?? profile.currency,
+    })),
+    saved: 0,
+    savedNote: '',
+  }
+}
+
+function normalizeOrderStatus(status: string | null | undefined): OrderStatus {
+  switch ((status ?? '').toLowerCase()) {
+    case 'delivered':
+      return 'Delivered'
+    case 'in transit':
+    case 'in_transit':
+      return 'In transit'
+    case 'canceled':
+    case 'cancelled':
+      return 'Canceled'
+    case 'refunded':
+      return 'Refunded'
+    default:
+      return 'Processing'
   }
 }
 
@@ -7878,6 +7923,8 @@ function CartView({
 function OrdersView({
   orders,
   products,
+  loading,
+  error,
   flashId,
   preferences,
   onOpen,
@@ -7885,6 +7932,8 @@ function OrdersView({
 }: Readonly<{
   orders: readonly Order[]
   products: readonly Product[]
+  loading: boolean
+  error: string | null
   flashId: string | null
   preferences: readonly Preference[]
   onOpen: (product: Product) => void
@@ -7909,8 +7958,8 @@ function OrdersView({
       <main className="mt-feed mt-view">
         <ViewHead eyebrow="Your purchases" title="Order history" />
         <EmptyState
-          title="No orders yet"
-          sub="When you check out, your orders land here."
+          title={loading ? 'Loading orders' : error ? 'Could not load orders' : 'No orders yet'}
+          sub={error ?? 'When you check out, your orders land here.'}
           mark={<CartIcon />}
         />
       </main>
@@ -7978,6 +8027,42 @@ function OrdersView({
   )
 }
 
+function orderLineUnitPrice(item: CartItem, product?: Product): number {
+  if (product) {
+    const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+    return offer.price
+  }
+  const unitAmount = parseOrderAmount(item.unitPriceAmount)
+  if (unitAmount !== null) {
+    return unitAmount
+  }
+  const totalAmount = parseOrderAmount(item.lineTotalAmount)
+  return totalAmount !== null && item.qty > 0 ? totalAmount / item.qty : 0
+}
+
+function orderLineTotal(item: CartItem, product?: Product): number {
+  if (product) {
+    return orderLineUnitPrice(item, product) * item.qty
+  }
+  const totalAmount = parseOrderAmount(item.lineTotalAmount)
+  return totalAmount ?? orderLineUnitPrice(item, product) * item.qty
+}
+
+function parseOrderAmount(value?: string | number | null): number | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  const amount = Number(trimmed)
+  return Number.isFinite(amount) ? amount : null
+}
+
 function OrderCard({
   order,
   products,
@@ -7996,13 +8081,10 @@ function OrderCard({
   const lines = order.items.map((item) => ({
     item,
     product: products.find((product) => product.id === item.id),
-  })).filter((line): line is { item: CartItem; product: Product } => Boolean(line.product))
-  const total = lines.reduce((sum, { item, product }) => {
-    const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-    return sum + offer.price * item.qty
-  }, 0)
+  }))
+  const total = lines.reduce((sum, { item, product }) => sum + orderLineTotal(item, product), 0)
   const matched = Array.from(
-    new Set(lines.flatMap((line) => line.product.satisfies)),
+    new Set(lines.flatMap((line) => line.product?.satisfies ?? [])),
   )
 
   return (
@@ -8024,25 +8106,34 @@ function OrderCard({
       <div className="mt-order-track mt-mono">{order.statusNote}</div>
       <div className="mt-order-items">
         {lines.map(({ item, product }) => {
-          const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+          const unitPrice = orderLineUnitPrice(item, product)
+          const lineTotal = orderLineTotal(item, product)
+          const productName = product?.name ?? item.productTitle ?? item.productVariantId ?? item.id
+          const productBrand = product?.brand ?? item.merchant
           return (
             <button
               className="mt-order-item"
               key={`${item.id}-${item.merchant}`}
               type="button"
-              onClick={() => onOpen(product)}
+              onClick={() => product && onOpen(product)}
             >
               <div className="mt-order-item-media">
-                <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                {product ? (
+                  <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                ) : item.imageUrl ? (
+                  <img className="mt-order-item-img" src={item.imageUrl} alt={productName} />
+                ) : (
+                  <div className="mt-order-item-fallback mt-mono">{productName.slice(0, 2).toUpperCase()}</div>
+                )}
               </div>
               <div className="mt-order-item-info">
-                <div className="mt-mono mt-order-item-brand">{product.brand}</div>
-                <div className="mt-order-item-name">{product.name}</div>
+                <div className="mt-mono mt-order-item-brand">{productBrand}</div>
+                <div className="mt-order-item-name">{productName}</div>
                 <div className="mt-mono mt-order-item-meta">
-                  {item.qty} × {money(offer.price)} · {item.merchant}
+                  {item.qty} × {money(unitPrice)} · {item.merchant}
                 </div>
               </div>
-              <div className="mt-order-item-price">{money(offer.price * item.qty)}</div>
+              <div className="mt-order-item-price">{money(lineTotal)}</div>
             </button>
           )
         })}
@@ -8625,7 +8716,9 @@ export function MeantApp() {
   )
   const [checkoutMerchant, setCheckoutMerchant] = useState<string | null>(null)
   const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(null)
-  const [orders] = useStoredState<Order[]>('meant.orders', [...DEFAULT_ORDERS])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [ordersError, setOrdersError] = useState<string | null>(null)
   const [lastPlaced, setLastPlaced] = useState<string | null>(null)
   const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
   const [cartPeek, setCartPeek] = useState(false)
@@ -8634,6 +8727,7 @@ export function MeantApp() {
   const searchAbortRef = useRef<AbortController | null>(null)
   const searchSuggestionsRequestRef = useRef(0)
   const inventoryRequestRef = useRef(0)
+  const ordersRequestRef = useRef(0)
   const cartRef = useRef<readonly CartItem[]>(cart)
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
@@ -8909,6 +9003,38 @@ export function MeantApp() {
     }
   }, [userId])
 
+  const loadOrders = useCallback(async (options?: { silent?: boolean }) => {
+    if (!userId) {
+      setOrders([])
+      setOrdersError(null)
+      setOrdersLoading(false)
+      return
+    }
+    const requestId = ordersRequestRef.current + 1
+    ordersRequestRef.current = requestId
+    if (!options?.silent) {
+      setOrdersLoading(true)
+    }
+    setOrdersError(null)
+    try {
+      const result = await getOrders()
+      if (ordersRequestRef.current !== requestId) {
+        return
+      }
+      setOrders(result.map(orderFromProfile))
+    } catch {
+      if (ordersRequestRef.current !== requestId) {
+        return
+      }
+      setOrdersError('Could not load orders')
+      setOrders([])
+    } finally {
+      if (ordersRequestRef.current === requestId && !options?.silent) {
+        setOrdersLoading(false)
+      }
+    }
+  }, [userId])
+
   useEffect(() => {
     if (!authed) {
       setInventoryItems([])
@@ -8918,6 +9044,16 @@ export function MeantApp() {
     }
     void loadInventory()
   }, [authed, loadInventory])
+
+  useEffect(() => {
+    if (!authed) {
+      setOrders([])
+      setOrdersError(null)
+      setOrdersLoading(false)
+      return
+    }
+    void loadOrders()
+  }, [authed, loadOrders])
 
   const refreshSearchSuggestions = useCallback(async () => {
     if (!userId) {
@@ -9097,6 +9233,9 @@ export function MeantApp() {
     setView(next)
     setCartPeek(false)
     setAccountMenu(false)
+    if (next === 'orders') {
+      void loadOrders({ silent: true })
+    }
     if (next !== 'orders') {
       setLastPlaced(null)
     }
@@ -9928,6 +10067,7 @@ export function MeantApp() {
       opener.click()
       opener.remove()
       void loadInventory({ silent: true })
+      void loadOrders({ silent: true })
     } catch {
       setCheckoutError({
         merchant,
@@ -10051,6 +10191,8 @@ export function MeantApp() {
           <OrdersView
             orders={orders}
             products={allKnownProducts}
+            loading={ordersLoading}
+            error={ordersError}
             preferences={allPreferences}
             flashId={lastPlaced}
             onOpen={(product) => openProduct(product)}

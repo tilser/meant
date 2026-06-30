@@ -403,6 +403,45 @@ export type CartProfile = components['schemas']['CartResponse']
 export type CartDeliveryGroupProfile = NonNullable<CartProfile['deliveryGroups']>[number]
 export type CheckoutProfile = components['schemas']['CheckoutResponse']
 
+export interface OrderLineProfile {
+  id: string
+  productKey: string | null
+  productId: string | null
+  productTitle: string | null
+  merchantName: string | null
+  productVariantId: string | null
+  variantTitle: string | null
+  sku: string | null
+  imageUrl: string | null
+  productUrl: string | null
+  quantity: number | null
+  unitAmount: string | null
+  totalAmount: string | null
+  currency: string | null
+}
+
+export interface OrderProfile {
+  id: string
+  merchantId: string
+  merchantDomain: string
+  merchantName: string | null
+  remoteOrderId: string
+  displayId: string
+  orderNumber: string | null
+  state: string
+  status: string
+  statusNote: string
+  date: string
+  totalAmount: string | null
+  subtotalAmount: string | null
+  currency: string | null
+  totalQuantity: number
+  orderStatusUrl: string | null
+  lines: OrderLineProfile[]
+  createdAt: string
+  updatedAt: string
+}
+
 export type UserInventoryCategory = 'APPAREL' | 'PANTRY' | 'HOME' | 'OTHER'
 export type UserInventorySource = 'MANUAL' | 'PHOTO' | 'MEANT_PURCHASE'
 export type UserInventoryRecommendationRelationship =
@@ -1246,6 +1285,14 @@ export async function getCartCheckout(input: {
     headers: await authHeaders(),
   })
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
+}
+
+export async function getOrders(): Promise<OrderProfile[]> {
+  const response = await fetch(`${API_URL}/api/orders`, {
+    cache: 'no-store',
+    headers: await authHeaders(),
+  })
+  return parseJsonResponse<OrderProfile[]>(response, 'Failed to load orders')
 }
 
 function handleAssistantStreamEvent(

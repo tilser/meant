@@ -17,7 +17,7 @@ export type View =
 
 export type Theme = 'light' | 'dark'
 export type AuthMode = 'signin' | 'signup' | 'reset'
-export type OrderStatus = 'Delivered' | 'In transit' | 'Processing'
+export type OrderStatus = 'Delivered' | 'In transit' | 'Processing' | 'Canceled' | 'Refunded'
 export type DiscountType = 'percent' | 'fixed' | 'shipping'
 export type ClothingFit = 'none' | 'men' | 'women' | 'other'
 export type ProductAudience = 'men' | 'women' | 'other' | 'unisex'
@@ -175,6 +175,12 @@ export interface CartItem {
   cartSubtotalAmount?: string | null
   cartCurrency?: string | null
   deliveryGroups?: readonly CartDeliveryGroup[]
+  productTitle?: string | null
+  imageUrl?: string | null
+  productUrl?: string | null
+  unitPriceAmount?: string | null
+  lineTotalAmount?: string | null
+  orderCurrency?: string | null
   syncing?: boolean
   syncError?: string | null
 }
