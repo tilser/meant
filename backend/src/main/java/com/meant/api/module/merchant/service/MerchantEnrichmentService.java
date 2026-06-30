@@ -6,11 +6,16 @@ import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.command.EnrichMerchantsCommand;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListFetchResult;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListResult;
 import com.meant.api.module.merchant.service.dto.MerchantProfileData;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
+import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
+import com.meant.api.plugin.transport.profile.AgentProfileHashProvider;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,8 +39,11 @@ public class MerchantEnrichmentService {
     private final MerchantRawRepository merchantRawRepository;
     private final UcpProfileClient ucpProfileClient;
     private final MerchantDomainMcpClient merchantDomainMcpClient;
+    private final MerchantMcpToolClient merchantMcpToolClient;
     private final MerchantProfileParser merchantProfileParser;
     private final MerchantProfileHashService merchantProfileHashService;
+    private final MerchantMcpToolsListHashService merchantMcpToolsListHashService;
+    private final AgentProfileHashProvider agentProfileHashProvider;
     private final MerchantEnrichmentPersistenceService merchantEnrichmentPersistenceService;
 
     public void enrichMerchants(@NotNull @Valid EnrichMerchantsCommand command) {
@@ -46,18 +54,28 @@ public class MerchantEnrichmentService {
 
     private void enrichMerchant(MerchantRaw merchantRaw) {
         try {
-            UcpProfile ucpProfile = ucpProfileClient.fetchProfile(merchantRaw.getDomain(), merchantRaw.getUcpUrl());
+            UcpProfileFetchResult profileResult = ucpProfileClient.fetchProfileResult(
+                    merchantRaw.getDomain(),
+                    merchantRaw.getUcpUrl()
+            );
+            UcpProfile ucpProfile = profileResult.profile();
             MerchantMcpProfileResult mcpProfile = merchantDomainMcpClient.fetchStoreProfile(merchantRaw.getDomain());
             MerchantProfileData profileData = merchantProfileParser.parse(merchantRaw.getDomain(), mcpProfile.entry());
             String profileHash = merchantProfileHashService.hash(ucpProfile, profileData);
             String advertisedMcpEndpoint = advertisedMcpEndpoint(ucpProfile);
+            MerchantMcpToolsListResult toolsList = fetchToolsList(
+                    merchantRaw.getDomain(),
+                    advertisedMcpEndpoint,
+                    mcpProfile.endpoint()
+            );
             persistProfile(
                     merchantRaw,
-                    ucpProfile,
+                    profileResult,
                     mcpProfile,
                     profileData,
                     profileHash,
-                    advertisedMcpEndpoint
+                    advertisedMcpEndpoint,
+                    toolsList
             );
         } catch (RuntimeException exception) {
             markFailure(merchantRaw.getId(), exception);
@@ -66,19 +84,43 @@ public class MerchantEnrichmentService {
 
     private void persistProfile(
             MerchantRaw fetchedMerchantRaw,
-            UcpProfile ucpProfile,
+            UcpProfileFetchResult profileResult,
             MerchantMcpProfileResult mcpProfile,
             MerchantProfileData profileData,
             String profileHash,
-            String advertisedMcpEndpoint
+            String advertisedMcpEndpoint,
+            MerchantMcpToolsListResult toolsList
     ) {
         merchantEnrichmentPersistenceService.persistProfile(
                 fetchedMerchantRaw.getId(),
-                ucpProfile,
+                profileResult.profile(),
+                profileResult.rawProfile(),
+                profileResult.endpoint(),
+                profileResult.capturedAt(),
                 mcpProfile,
                 profileData,
                 profileHash,
-                advertisedMcpEndpoint
+                advertisedMcpEndpoint,
+                toolsList
+        );
+    }
+
+    private MerchantMcpToolsListResult fetchToolsList(
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint
+    ) {
+        MerchantMcpToolsListFetchResult fetchResult = merchantMcpToolClient.listTools(
+                domain,
+                advertisedMcpEndpoint,
+                profileMcpEndpoint
+        );
+        return new MerchantMcpToolsListResult(
+                fetchResult.endpoint(),
+                fetchResult.toolsListRaw(),
+                merchantMcpToolsListHashService.hash(fetchResult.toolsListRaw()),
+                agentProfileHashProvider.currentHash(),
+                Instant.now()
         );
     }
 

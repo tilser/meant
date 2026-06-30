@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantCategory;
+import com.meant.api.module.merchant.entity.MerchantMcpToolsList;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantCapabilityExtensionRepository;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRequirementRepository;
 import com.meant.api.module.merchant.repository.MerchantCategoryRepository;
+import com.meant.api.module.merchant.repository.MerchantMcpToolsListRepository;
 import com.meant.api.module.merchant.repository.MerchantPaymentHandlerRepository;
 import com.meant.api.module.merchant.repository.MerchantPopularSearchRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
@@ -17,14 +19,17 @@ import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantServiceRepository;
 import com.meant.api.module.merchant.service.command.EnrichMerchantsCommand;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListFetchResult;
 import com.meant.api.module.merchant.service.dto.StorePolicyFaqEntry;
 import com.meant.api.module.merchant.service.dto.UcpCapabilityDefinition;
 import com.meant.api.module.merchant.service.dto.UcpCapabilityRequires;
 import com.meant.api.module.merchant.service.dto.UcpPaymentHandlerDefinition;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
+import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
 import com.meant.api.module.merchant.service.dto.UcpResourceReference;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.merchant.service.dto.UcpVersionRange;
+import com.meant.api.plugin.transport.profile.AgentProfileHashProvider;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
 import java.util.List;
@@ -37,6 +42,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
@@ -65,6 +71,9 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
     private MerchantCapabilityRequirementRepository merchantCapabilityRequirementRepository;
 
     @Autowired
+    private MerchantMcpToolsListRepository merchantMcpToolsListRepository;
+
+    @Autowired
     private MerchantPaymentHandlerRepository merchantPaymentHandlerRepository;
 
     @Autowired
@@ -74,10 +83,16 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
     private MerchantPopularSearchRepository merchantPopularSearchRepository;
 
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private FakeUcpProfileClient ucpProfileClient;
 
     @Autowired
     private FakeMerchantDomainMcpClient merchantDomainMcpClient;
+
+    @Autowired
+    private FakeMerchantMcpToolClient merchantMcpToolClient;
 
     @BeforeEach
     void setUp() {
@@ -85,13 +100,21 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         merchantCapabilityRequirementRepository.deleteAllInBatch();
         merchantCapabilityRepository.deleteAllInBatch();
         merchantServiceRepository.deleteAllInBatch();
+        merchantMcpToolsListRepository.deleteAllInBatch();
         merchantPaymentHandlerRepository.deleteAllInBatch();
         merchantCategoryRepository.deleteAllInBatch();
         merchantPopularSearchRepository.deleteAllInBatch();
         merchantRepository.deleteAllInBatch();
         merchantRawRepository.deleteAllInBatch();
         ucpProfileClient.profile = ucpProfile();
+        ucpProfileClient.rawProfile = rawProfile("gold");
+        ucpProfileClient.endpoint = "https://allbirds.com/.well-known/ucp.json";
+        ucpProfileClient.capturedAt = Instant.parse("2026-06-30T08:15:30Z");
         merchantDomainMcpClient.profile = mcpProfile();
+        merchantMcpToolClient.toolsList = new MerchantMcpToolsListFetchResult(
+                "https://allbirds.com/api/mcp",
+                "{\"tools\":[{\"name\":\"search_catalog\"}]}"
+        );
     }
 
     @Test
@@ -103,7 +126,13 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         Merchant merchant = merchantRepository.findByDomain("allbirds.com").orElseThrow();
         assertThat(merchant.getAdvertisedMcpEndpoint()).isEqualTo("https://shop.example/api/ucp/mcp");
         assertThat(merchant.getProfileMcpEndpoint()).isEqualTo("https://allbirds.com/api/mcp");
+        assertThat(merchant.getUcpVersion()).isEqualTo("2026-01-23");
         assertThat(merchant.getDescription()).isEqualTo("Comfortable shoes and apparel.");
+        assertThat(merchant.getProfileRaw()).contains("\"x-merchant-extension\"");
+        assertThat(merchant.getProfileCapturedAt()).isEqualTo(Instant.parse("2026-06-30T08:15:30Z"));
+        assertThat(merchant.getProfileEndpoint()).isEqualTo("https://allbirds.com/.well-known/ucp.json");
+        assertThat(merchant.getProfileProtocolVersion()).isEqualTo("2026-01-23");
+        assertThat(merchant.getProfileAgentProfileHash()).isEqualTo("agent-profile-test-hash");
         assertThat(merchant.isActive()).isTrue();
         assertThat(merchantServiceRepository.count()).isEqualTo(2);
         assertThat(merchantCapabilityRepository.count()).isEqualTo(1);
@@ -116,6 +145,18 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         assertThat(merchantPopularSearchRepository.findByMerchant(merchant))
                 .extracting("searchText")
                 .containsExactlyInAnyOrder("wool runners", "sneakers");
+        assertThat(jdbcTemplate.queryForObject(
+                "select profile_raw -> 'x-merchant-extension' ->> 'tier' from merchant where domain = ?",
+                String.class,
+                "allbirds.com"
+        )).isEqualTo("gold");
+        MerchantMcpToolsList toolsList = merchantMcpToolsListRepository
+                .findByMerchantIdAndAgentProfileHash(merchant.getId(), "agent-profile-test-hash")
+                .orElseThrow();
+        assertThat(toolsList.getEndpoint()).isEqualTo("https://allbirds.com/api/mcp");
+        assertThat(toolsList.getToolsListRaw()).contains("search_catalog");
+        assertThat(toolsList.getCapturedAt()).isNotNull();
+        assertThat(merchant.getProfileToolsListHash()).isEqualTo(toolsList.getToolsListHash());
 
         MerchantRaw raw = merchantRawRepository.findByDomain("allbirds.com").orElseThrow();
         assertThat(raw.isProcessed()).isTrue();
@@ -151,6 +192,11 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         );
         merchantRawRepository.save(raw);
         merchantDomainMcpClient.profile = new MerchantMcpProfileResult("https://www.allbirds.com/api/mcp", mcpProfile().entry());
+        ucpProfileClient.rawProfile = rawProfile("platinum");
+        merchantMcpToolClient.toolsList = new MerchantMcpToolsListFetchResult(
+                "https://www.allbirds.com/api/mcp",
+                "{\"tools\":[{\"name\":\"lookup_catalog\"}]}"
+        );
 
         service.enrichMerchants(new EnrichMerchantsCommand(10));
 
@@ -161,6 +207,18 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         assertThat(updatedMerchant.getUcpUrl()).isEqualTo("https://www.allbirds.com/.well-known/ucp");
         assertThat(updatedMerchant.getProfileMcpEndpoint()).isEqualTo("https://www.allbirds.com/api/mcp");
         assertThat(merchantCategoryRepository.findByMerchant(updatedMerchant).getFirst().getId()).isEqualTo(categoryId);
+        assertThat(jdbcTemplate.queryForObject(
+                "select profile_raw -> 'x-merchant-extension' ->> 'tier' from merchant where domain = ?",
+                String.class,
+                "allbirds.com"
+        )).isEqualTo("platinum");
+        assertThat(merchantMcpToolsListRepository
+                .findByMerchantIdAndAgentProfileHash(updatedMerchant.getId(), "agent-profile-test-hash"))
+                .hasValueSatisfying(toolsList -> {
+                    assertThat(toolsList.getEndpoint()).isEqualTo("https://www.allbirds.com/api/mcp");
+                    assertThat(toolsList.getToolsListRaw()).contains("lookup_catalog");
+                    assertThat(updatedMerchant.getProfileToolsListHash()).isEqualTo(toolsList.getToolsListHash());
+                });
     }
 
     @Test
@@ -257,6 +315,30 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         );
     }
 
+    private String rawProfile(String extensionTier) {
+        return """
+                {
+                  "version": "2026-01-23",
+                  "supported_versions": {
+                    "2026-01-23": "https://ucp.dev/2026-01-23"
+                  },
+                  "services": {
+                    "dev.ucp.shopping": [
+                      {
+                        "id": "dev.ucp.shopping",
+                        "version": "1.0.0",
+                        "transport": "mcp",
+                        "endpoint": "https://shop.example/api/ucp/mcp"
+                      }
+                    ]
+                  },
+                  "x-merchant-extension": {
+                    "tier": "%s"
+                  }
+                }
+                """.formatted(extensionTier);
+    }
+
     @TestConfiguration
     static class Configuration {
 
@@ -272,11 +354,26 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
             return new FakeMerchantDomainMcpClient();
         }
 
+        @Bean
+        @Primary
+        FakeMerchantMcpToolClient fakeMerchantMcpToolClient() {
+            return new FakeMerchantMcpToolClient();
+        }
+
+        @Bean
+        @Primary
+        AgentProfileHashProvider fakeAgentProfileHashProvider() {
+            return () -> "agent-profile-test-hash";
+        }
+
     }
 
     static class FakeUcpProfileClient extends UcpProfileClient {
 
         private UcpProfile profile;
+        private String rawProfile;
+        private String endpoint;
+        private Instant capturedAt;
 
         FakeUcpProfileClient() {
             super(RestClient.builder(), new ObjectMapper());
@@ -285,6 +382,11 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         @Override
         public UcpProfile fetchProfile(String merchantDomain, String ucpUrl) {
             return profile;
+        }
+
+        @Override
+        public UcpProfileFetchResult fetchProfileResult(String merchantDomain, String ucpUrl) {
+            return new UcpProfileFetchResult(profile, rawProfile, endpoint, capturedAt);
         }
     }
 
@@ -299,6 +401,24 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         @Override
         public MerchantMcpProfileResult fetchStoreProfile(String domain) {
             return profile;
+        }
+    }
+
+    static class FakeMerchantMcpToolClient extends MerchantMcpToolClient {
+
+        private MerchantMcpToolsListFetchResult toolsList;
+
+        FakeMerchantMcpToolClient() {
+            super(RestClient.builder().build());
+        }
+
+        @Override
+        public MerchantMcpToolsListFetchResult listTools(
+                String domain,
+                String advertisedMcpEndpoint,
+                String profileMcpEndpoint
+        ) {
+            return toolsList;
         }
     }
 }

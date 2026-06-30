@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-merchant-profile-raw-metadata" author="codex">
+        <addColumn tableName="merchant">
+            <column name="profile_raw" type="jsonb"/>
+            <column name="profile_captured_at" type="timestamp with time zone"/>
+            <column name="profile_endpoint" type="text"/>
+            <column name="profile_protocol_version" type="text"/>
+            <column name="profile_agent_profile_hash" type="text"/>
+            <column name="profile_tools_list_hash" type="text"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

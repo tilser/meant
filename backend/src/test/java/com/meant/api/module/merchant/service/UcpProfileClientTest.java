@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
+import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
 import java.net.InetAddress;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,24 @@ class UcpProfileClientTest {
     }
 
     @Test
+    void fetchProfileResultPreservesUnknownProfileFieldsInRawArchive() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        server.expect(once(), requestTo("https://allbirds.com/.well-known/ucp"))
+                .andRespond(withSuccess(profileResponse(), MediaType.APPLICATION_JSON));
+        UcpProfileClient client = client(restClientBuilder, "93.184.216.34");
+
+        UcpProfileFetchResult result = client.fetchProfileResult("allbirds.com", "https://allbirds.com/.well-known/ucp");
+
+        assertThat(result.profile().version()).isEqualTo("2026-04-08");
+        assertThat(result.rawProfile()).contains("\"x-merchant-extension\"");
+        assertThat(result.rawProfile()).doesNotContain("\"ucp\"");
+        assertThat(result.endpoint()).isEqualTo("https://allbirds.com/.well-known/ucp");
+        assertThat(result.capturedAt()).isNotNull();
+        server.verify();
+    }
+
+    @Test
     void blocksProfileUrlResolvingToLocalAddress() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
@@ -81,6 +100,9 @@ class UcpProfileClientTest {
                           "endpoint": "https://reebok.com/api/mcp"
                         }
                       ]
+                    },
+                    "x-merchant-extension": {
+                      "tier": "gold"
                     }
                   }
                 }

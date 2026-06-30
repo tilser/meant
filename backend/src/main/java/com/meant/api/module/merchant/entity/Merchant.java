@@ -15,6 +15,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Getter
@@ -72,6 +74,19 @@ public class Merchant {
 
     @Column(nullable = false)
     private String profileAnswerRaw;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String profileRaw;
+
+    private Instant profileCapturedAt;
+
+    private String profileEndpoint;
+
+    private String profileProtocolVersion;
+
+    private String profileAgentProfileHash;
+
+    private String profileToolsListHash;
 
     @Column(nullable = false)
     private boolean active;
@@ -145,6 +160,22 @@ public class Merchant {
         this.active = active;
         this.lastProfiledAt = lastProfiledAt;
         this.updatedAt = updatedAt;
+    }
+
+    public void updateProfileArchive(
+            String profileRaw,
+            Instant profileCapturedAt,
+            String profileEndpoint,
+            String profileProtocolVersion,
+            String profileAgentProfileHash,
+            String profileToolsListHash
+    ) {
+        this.profileRaw = profileRaw;
+        this.profileCapturedAt = profileCapturedAt;
+        this.profileEndpoint = profileEndpoint;
+        this.profileProtocolVersion = profileProtocolVersion;
+        this.profileAgentProfileHash = profileAgentProfileHash;
+        this.profileToolsListHash = profileToolsListHash;
     }
 
     public void markInactive(Instant updatedAt) {

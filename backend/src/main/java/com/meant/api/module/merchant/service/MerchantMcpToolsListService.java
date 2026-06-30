@@ -9,11 +9,7 @@ import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListFetchResult;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListResult;
 import com.meant.api.plugin.transport.profile.AgentProfileHashProvider;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,6 +20,7 @@ public class MerchantMcpToolsListService {
     private final MerchantMcpToolsListStore store;
     private final MerchantMcpToolClient merchantMcpToolClient;
     private final AgentProfileHashProvider agentProfileHashProvider;
+    private final MerchantMcpToolsListHashService merchantMcpToolsListHashService;
     private final Cache<CacheKey, MerchantMcpToolsListResult> cache;
 
     @Autowired
@@ -31,12 +28,14 @@ public class MerchantMcpToolsListService {
             MerchantMcpToolsListStore store,
             MerchantMcpToolClient merchantMcpToolClient,
             AgentProfileHashProvider agentProfileHashProvider,
+            MerchantMcpToolsListHashService merchantMcpToolsListHashService,
             MerchantMcpToolProperties properties
     ) {
         this(
                 store,
                 merchantMcpToolClient,
                 agentProfileHashProvider,
+                merchantMcpToolsListHashService,
                 properties,
                 Ticker.systemTicker()
         );
@@ -46,12 +45,14 @@ public class MerchantMcpToolsListService {
             MerchantMcpToolsListStore store,
             MerchantMcpToolClient merchantMcpToolClient,
             AgentProfileHashProvider agentProfileHashProvider,
+            MerchantMcpToolsListHashService merchantMcpToolsListHashService,
             MerchantMcpToolProperties properties,
             Ticker ticker
     ) {
         this.store = store;
         this.merchantMcpToolClient = merchantMcpToolClient;
         this.agentProfileHashProvider = agentProfileHashProvider;
+        this.merchantMcpToolsListHashService = merchantMcpToolsListHashService;
         this.cache = Caffeine.newBuilder()
                 .expireAfterWrite(properties.toolsListCacheTtl())
                 .ticker(ticker)
@@ -73,7 +74,7 @@ public class MerchantMcpToolsListService {
     private MerchantMcpToolsListResult fetchAndPersistToolsList(Merchant merchant, String agentProfileHash) {
         MerchantMcpToolsListFetchResult fetchResult = merchantMcpToolClient.listTools(merchant);
         Instant now = Instant.now();
-        String toolsListHash = sha256(fetchResult.toolsListRaw());
+        String toolsListHash = merchantMcpToolsListHashService.hash(fetchResult.toolsListRaw());
 
         MerchantMcpToolsList toolsList = store
                 .find(merchant.getId(), agentProfileHash)
@@ -101,15 +102,6 @@ public class MerchantMcpToolsListService {
                 toolsList.getAgentProfileHash(),
                 toolsList.getCapturedAt()
         );
-    }
-
-    private String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is not available", exception);
-        }
     }
 
     private record CacheKey(

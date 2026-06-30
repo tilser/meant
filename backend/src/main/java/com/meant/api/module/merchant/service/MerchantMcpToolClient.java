@@ -110,6 +110,21 @@ public class MerchantMcpToolClient {
         );
     }
 
+    public MerchantMcpToolsListFetchResult listTools(
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint
+    ) {
+        EndpointResult<String> result = executeWithEndpointFallback(
+                domain,
+                advertisedMcpEndpoint,
+                profileMcpEndpoint,
+                "MCP tools/list",
+                endpoint -> ucpMcpClient.listTools(restClient, endpoint)
+        );
+        return new MerchantMcpToolsListFetchResult(result.endpoint(), result.value());
+    }
+
     public MerchantMcpToolCallResult callTool(MerchantCartProvider provider, String toolName, Object arguments) {
         return callTool(provider, toolName, arguments, java.util.Map.of());
     }
@@ -165,21 +180,6 @@ public class MerchantMcpToolClient {
                 response.structuredContent(),
                 response.negotiatedCapabilities()
         );
-    }
-
-    private MerchantMcpToolsListFetchResult listTools(
-            String domain,
-            String advertisedMcpEndpoint,
-            String profileMcpEndpoint
-    ) {
-        EndpointResult<String> result = executeWithEndpointFallback(
-                domain,
-                advertisedMcpEndpoint,
-                profileMcpEndpoint,
-                "MCP tools/list",
-                endpoint -> ucpMcpClient.listTools(restClient, endpoint)
-        );
-        return new MerchantMcpToolsListFetchResult(result.endpoint(), result.value());
     }
 
     private <T> EndpointResult<T> executeWithEndpointFallback(

@@ -158,6 +158,7 @@ class MerchantMcpToolsListServiceTest {
                 store,
                 client,
                 profileHashProvider,
+                new MerchantMcpToolsListHashService(),
                 new MerchantMcpToolProperties(5000, 5000, 15000, ttl),
                 ticker
         );

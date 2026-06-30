@@ -7,6 +7,7 @@ import com.meant.api.module.merchant.entity.MerchantCapability;
 import com.meant.api.module.merchant.entity.MerchantCapabilityExtension;
 import com.meant.api.module.merchant.entity.MerchantCapabilityRequirement;
 import com.meant.api.module.merchant.entity.MerchantCategory;
+import com.meant.api.module.merchant.entity.MerchantMcpToolsList;
 import com.meant.api.module.merchant.entity.MerchantPaymentHandler;
 import com.meant.api.module.merchant.entity.MerchantPopularSearch;
 import com.meant.api.module.merchant.entity.MerchantRaw;
@@ -14,12 +15,14 @@ import com.meant.api.module.merchant.repository.MerchantCapabilityExtensionRepos
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRequirementRepository;
 import com.meant.api.module.merchant.repository.MerchantCategoryRepository;
+import com.meant.api.module.merchant.repository.MerchantMcpToolsListRepository;
 import com.meant.api.module.merchant.repository.MerchantPaymentHandlerRepository;
 import com.meant.api.module.merchant.repository.MerchantPopularSearchRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantServiceRepository;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListResult;
 import com.meant.api.module.merchant.service.dto.MerchantProfileData;
 import com.meant.api.module.merchant.service.dto.UcpCapabilityDefinition;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
@@ -48,6 +51,7 @@ public class MerchantEnrichmentPersistenceService {
     private final MerchantCapabilityRepository merchantCapabilityRepository;
     private final MerchantCapabilityExtensionRepository merchantCapabilityExtensionRepository;
     private final MerchantCapabilityRequirementRepository merchantCapabilityRequirementRepository;
+    private final MerchantMcpToolsListRepository merchantMcpToolsListRepository;
     private final MerchantPaymentHandlerRepository merchantPaymentHandlerRepository;
     private final MerchantCategoryRepository merchantCategoryRepository;
     private final MerchantPopularSearchRepository merchantPopularSearchRepository;
@@ -57,10 +61,14 @@ public class MerchantEnrichmentPersistenceService {
     public void persistProfile(
             UUID merchantRawId,
             UcpProfile ucpProfile,
+            String profileRaw,
+            String profileEndpoint,
+            Instant profileCapturedAt,
             MerchantMcpProfileResult mcpProfile,
             MerchantProfileData profileData,
             String profileHash,
-            String advertisedMcpEndpoint
+            String advertisedMcpEndpoint,
+            MerchantMcpToolsListResult toolsList
     ) {
         MerchantRaw merchantRaw = merchantRawRepository.getReferenceById(merchantRawId);
         Merchant merchant = merchantRepository.findByDomain(merchantRaw.getDomain()).orElse(null);
@@ -78,6 +86,15 @@ public class MerchantEnrichmentPersistenceService {
                     now,
                     now
             );
+            updateProfileArchive(
+                    merchant,
+                    ucpProfile,
+                    profileRaw,
+                    profileEndpoint,
+                    profileCapturedAt,
+                    toolsList
+            );
+            persistToolsList(merchant, toolsList, now);
             merchantRaw.markProcessed(PROCESSED_UNCHANGED, now);
             return;
         }
@@ -122,8 +139,17 @@ public class MerchantEnrichmentPersistenceService {
                     now
             );
         }
+        updateProfileArchive(
+                merchant,
+                ucpProfile,
+                profileRaw,
+                profileEndpoint,
+                profileCapturedAt,
+                toolsList
+        );
 
         Merchant savedMerchant = merchantRepository.save(merchant);
+        persistToolsList(savedMerchant, toolsList, now);
         replaceChildren(savedMerchant, ucpProfile, profileData);
         merchantRaw.markProcessed(PROCESSED_UPDATED, now);
     }
@@ -243,6 +269,42 @@ public class MerchantEnrichmentPersistenceService {
                         .build())
                 .toList();
         merchantPopularSearchRepository.saveAll(popularSearches);
+    }
+
+    private void updateProfileArchive(
+            Merchant merchant,
+            UcpProfile ucpProfile,
+            String profileRaw,
+            String profileEndpoint,
+            Instant profileCapturedAt,
+            MerchantMcpToolsListResult toolsList
+    ) {
+        merchant.updateProfileArchive(
+                profileRaw,
+                profileCapturedAt,
+                profileEndpoint,
+                valueOrEmpty(ucpProfile.version()),
+                toolsList.agentProfileHash(),
+                toolsList.toolsListHash()
+        );
+    }
+
+    private void persistToolsList(Merchant merchant, MerchantMcpToolsListResult toolsList, Instant now) {
+        MerchantMcpToolsList toolsListRecord = merchantMcpToolsListRepository
+                .findByMerchantIdAndAgentProfileHash(merchant.getId(), toolsList.agentProfileHash())
+                .orElseGet(() -> MerchantMcpToolsList.builder()
+                        .merchant(merchant)
+                        .agentProfileHash(toolsList.agentProfileHash())
+                        .createdAt(now)
+                        .build());
+        toolsListRecord.updateToolsList(
+                toolsList.endpoint(),
+                toolsList.toolsListRaw(),
+                toolsList.toolsListHash(),
+                toolsList.capturedAt(),
+                now
+        );
+        merchantMcpToolsListRepository.save(toolsListRecord);
     }
 
     private String protocolMin(UcpCapabilityDefinition capabilityDefinition) {

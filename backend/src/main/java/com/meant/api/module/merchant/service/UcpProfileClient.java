@@ -3,8 +3,10 @@ package com.meant.api.module.merchant.service;
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
+import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
 import com.meant.api.module.merchant.service.dto.UcpProfileResponse;
 import java.net.URI;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -52,6 +55,10 @@ public class UcpProfileClient {
     }
 
     public UcpProfile fetchProfile(String merchantDomain, String ucpUrl) {
+        return fetchProfileResult(merchantDomain, ucpUrl).profile();
+    }
+
+    public UcpProfileFetchResult fetchProfileResult(String merchantDomain, String ucpUrl) {
         URI originalUri;
         try {
             originalUri = merchantOutboundUrlValidator.validateMerchantUrl(merchantDomain, ucpUrl);
@@ -67,7 +74,7 @@ public class UcpProfileClient {
                     lastFailure = new MerchantEnrichmentException("UCP profile response was empty");
                     continue;
                 }
-                return parseBody(body);
+                return parseBody(body, validatedUri, Instant.now());
             } catch (MerchantOutboundUrlException exception) {
                 lastFailure = new MerchantEnrichmentException("Blocked UCP profile URL", exception);
             } catch (MerchantEnrichmentException exception) {
@@ -82,16 +89,30 @@ public class UcpProfileClient {
                 : lastFailure;
     }
 
-    private UcpProfile parseBody(String body) {
+    private UcpProfileFetchResult parseBody(String body, URI endpoint, Instant capturedAt) {
         try {
-            UcpProfileResponse response = objectMapper.readValue(body, UcpProfileResponse.class);
-            if (response != null && response.ucp() != null) {
-                return response.ucp();
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode ucpNode = root.path("ucp");
+            if (!ucpNode.isMissingNode() && !ucpNode.isNull()) {
+                UcpProfileResponse response = objectMapper.readValue(body, UcpProfileResponse.class);
+                if (response != null && response.ucp() != null) {
+                    return new UcpProfileFetchResult(
+                            response.ucp(),
+                            objectMapper.writeValueAsString(ucpNode),
+                            endpoint.toString(),
+                            capturedAt
+                    );
+                }
             }
 
             UcpProfile profile = objectMapper.readValue(body, UcpProfile.class);
             if (profile.version() != null) {
-                return profile;
+                return new UcpProfileFetchResult(
+                        profile,
+                        objectMapper.writeValueAsString(root),
+                        endpoint.toString(),
+                        capturedAt
+                );
             }
         } catch (JacksonException exception) {
             throw new MerchantEnrichmentException("UCP profile response was not valid UCP JSON", exception);
