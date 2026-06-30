@@ -2015,6 +2015,10 @@ function firstUrl(...urls: Array<string | null | undefined>): string | null {
   return urls.find((url): url is string => Boolean(url?.trim()))?.trim() ?? null
 }
 
+function isCartNotFoundError(error: unknown): boolean {
+  return error instanceof Error && /cart not found/i.test(error.message)
+}
+
 function looksLikeGiftCardSuffix(value: string | null): boolean {
   return Boolean(value && /^[a-z0-9]{1,4}$/i.test(value))
 }
@@ -9363,6 +9367,53 @@ export function MeantApp() {
     }))
   }
 
+  const clearMerchantCartState = (merchantKey: string) => {
+    updateStoredCartSnapshots((current) => {
+      if (!current[merchantKey]) {
+        return current
+      }
+      const next = { ...current }
+      delete next[merchantKey]
+      return next
+    })
+    updateStoredCart((current) =>
+      current.map((item) =>
+        cartMerchantKey(item) === merchantKey
+          ? {
+              ...item,
+              cartId: null,
+              remoteCartId: null,
+              checkoutUrl: null,
+              continueUrl: null,
+              cartLineId: null,
+              remoteCartLineId: null,
+              cartTotalAmount: null,
+              cartSubtotalAmount: null,
+              cartCurrency: null,
+              deliveryGroups: [],
+              syncing: false,
+              syncError: null,
+            }
+          : item,
+      ),
+    )
+  }
+
+  const cartAddItemsForMerchant = (
+    merchantKey: string,
+    fallbackProductVariantId: string,
+  ): { productVariantId: string; quantity: number }[] => {
+    const addItems = cartRef.current
+      .filter((item) => cartMerchantKey(item) === merchantKey && item.productVariantId)
+      .map((item) => ({
+        productVariantId: item.productVariantId as string,
+        quantity: Math.max(item.qty, 1),
+      }))
+    return addItems.length > 0
+      ? addItems
+      : [{ productVariantId: fallbackProductVariantId, quantity: 1 }]
+  }
+
   const updateMerchantCartItems = (
     merchantKey: string,
     patch: Pick<CartItem, 'syncing' | 'syncError'>,
@@ -9434,16 +9485,29 @@ export function MeantApp() {
 
     try {
       const currentGroup = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
-      const snapshot = currentGroup?.cartId
-        ? await updateCart({
-            cartId: currentGroup.cartId,
-            addItems: [{ productVariantId, quantity: 1 }],
-          })
-        : await createCart({
-            merchantId: offer.merchantId,
-            merchantDomain: offer.merchantDomain,
-            addItems: [{ productVariantId, quantity: 1 }],
-          })
+      let snapshot: CartProfile
+      try {
+        snapshot = currentGroup?.cartId
+          ? await updateCart({
+              cartId: currentGroup.cartId,
+              addItems: [{ productVariantId, quantity: 1 }],
+            })
+          : await createCart({
+              merchantId: offer.merchantId,
+              merchantDomain: offer.merchantDomain,
+              addItems: [{ productVariantId, quantity: 1 }],
+            })
+      } catch (error) {
+        if (!currentGroup?.cartId || !isCartNotFoundError(error)) {
+          throw error
+        }
+        clearMerchantCartState(merchantKey)
+        snapshot = await createCart({
+          merchantId: offer.merchantId,
+          merchantDomain: offer.merchantDomain,
+          addItems: cartAddItemsForMerchant(merchantKey, productVariantId),
+        })
+      }
       updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
       storeCartSnapshot(merchantKey, offer.merchant, snapshot)
       return true
@@ -9509,7 +9573,11 @@ export function MeantApp() {
         updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
         storeCartSnapshot(merchantKey, item.merchant, snapshot)
       })
-      .catch(() => {
+      .catch((error) => {
+        if (isCartNotFoundError(error)) {
+          clearMerchantCartState(merchantKey)
+          return
+        }
         updateStoredCart((current) => [
           ...current,
           {
