@@ -26,7 +26,8 @@ public enum OrderState {
         if (contains(fulfillmentStatus, "deliver") || contains(status, "deliver")) {
             return DELIVERED;
         }
-        if (contains(fulfillmentStatus, "fulfill") || closedAt != null) {
+        if ((contains(fulfillmentStatus, "fulfill") && !contains(fulfillmentStatus, "unfulfill"))
+                || closedAt != null) {
             return DELIVERED;
         }
         if (contains(fulfillmentStatus, "transit")

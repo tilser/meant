@@ -8,6 +8,18 @@ import org.junit.jupiter.api.Test;
 class OrderStateTest {
 
     @Test
+    void unfulfilledRemoteStatusMapsToProcessing() {
+        assertThat(OrderState.fromRemote(null, "paid", "unfulfilled", null, null))
+                .isEqualTo(OrderState.PROCESSING);
+    }
+
+    @Test
+    void fulfilledRemoteStatusMapsToDelivered() {
+        assertThat(OrderState.fromRemote(null, "paid", "fulfilled", null, null))
+                .isEqualTo(OrderState.DELIVERED);
+    }
+
+    @Test
     void transitionsMoveForwardThroughFulfillmentStates() {
         OrderState state = OrderState.transition(OrderState.UNKNOWN, OrderState.PROCESSING);
         state = OrderState.transition(state, OrderState.IN_TRANSIT);
