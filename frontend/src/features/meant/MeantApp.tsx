@@ -62,7 +62,6 @@ import {
   startMerchantIdentityAuthorization,
   streamAssistantMessage,
   streamUserProductSearch,
-  ApiError,
   type AssistantChatContextInput,
   type SaveUserProductInput,
   type CartProfile,
@@ -128,13 +127,19 @@ import {
   canMerchantShip,
   cartGroups,
   cartLines,
+  cartMerchantKey,
+  cartRebuildItems,
   computeSmartAlerts,
   cartDeliveryOptionAmount,
   cartDeliveryOptions,
   displayProductCategoryValue,
+  firstUrl,
   formatOrderDate,
+  isCartNotFoundError,
   listJoin,
+  mergeCartSnapshot,
   money,
+  normalizedMerchantName,
   prefLabel,
   productMerchantCount,
   productPriceFrom,
@@ -1661,10 +1666,6 @@ function advanceAgentActivity(
   )
 }
 
-function normalizedMerchantName(value: string | null | undefined): string {
-  return value?.trim().toLowerCase() ?? ''
-}
-
 function merchantNameSet(merchant: MerchantProfile): ReadonlySet<string> {
   return new Set([
     normalizedMerchantName(merchant.name),
@@ -1866,14 +1867,6 @@ function visibleProductResults(
     .map(({ product }) => product)
 }
 
-function cartMerchantKey(input: {
-  merchant: string
-  merchantId?: string | null
-  merchantDomain?: string | null
-}): string {
-  return input.merchantId || normalizedMerchantName(input.merchantDomain) || normalizedMerchantName(input.merchant)
-}
-
 function emptyDeliveryAddressDraft(locations: readonly UserLocation[]): DeliveryAddressDraft {
   const location = locations[0]
   return {
@@ -1990,34 +1983,12 @@ function offerCartable(offer: Offer): boolean {
   )
 }
 
-function cartLineForItem(
-  snapshot: CartProfile,
-  item: CartItem,
-): NonNullable<CartProfile['lines']>[number] | undefined {
-  const lines = snapshot.lines ?? []
-  return lines.find((line) => {
-    return Boolean(
-      (item.cartLineId && line.cartLineId === item.cartLineId) ||
-      (item.remoteCartLineId && line.remoteCartLineId === item.remoteCartLineId) ||
-      (item.productVariantId && line.productVariantId === item.productVariantId),
-    )
-  })
-}
-
 function parseCartAmount(value?: string | null): number | null {
   if (!value) {
     return null
   }
   const amount = Number(value)
   return Number.isFinite(amount) ? amount : null
-}
-
-function firstUrl(...urls: Array<string | null | undefined>): string | null {
-  return urls.find((url): url is string => Boolean(url?.trim()))?.trim() ?? null
-}
-
-function isCartNotFoundError(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 404 || error.code === 'not_found')
 }
 
 function looksLikeGiftCardSuffix(value: string | null): boolean {
@@ -2105,41 +2076,6 @@ function cartSnapshotSubtotal(
   fallbackSubtotal: number,
 ): number {
   return snapshot?.subtotalAmount ?? fallbackSubtotal
-}
-
-function mergeCartSnapshot(
-  cart: readonly CartItem[],
-  merchantKey: string,
-  snapshot: CartProfile,
-): CartItem[] {
-  const deliveryGroups = (snapshot.deliveryGroups as readonly CartDeliveryGroup[] | undefined)
-    ?.filter((group): group is CartDeliveryGroup => Boolean(group))
-  return cart.map((item) => {
-    if (cartMerchantKey(item) !== merchantKey) {
-      return item
-    }
-    const line = cartLineForItem(snapshot, item)
-    return {
-      ...item,
-      merchantId: snapshot.merchantId ?? item.merchantId,
-      merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
-      cartId: snapshot.cartId ?? item.cartId,
-      remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
-      checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
-      continueUrl: snapshot.continueUrl ?? item.continueUrl,
-      cartLineId: line?.cartLineId ?? item.cartLineId,
-      remoteCartLineId: line?.remoteCartLineId ?? item.remoteCartLineId,
-      productVariantId: line?.productVariantId ?? item.productVariantId,
-      variantTitle: line?.variantTitle ?? item.variantTitle,
-      cartTotalAmount: snapshot.totalAmount ?? item.cartTotalAmount,
-      cartSubtotalAmount: snapshot.subtotalAmount ?? item.cartSubtotalAmount,
-      cartCurrency: snapshot.currency ?? item.cartCurrency,
-      deliveryGroups: deliveryGroups ?? item.deliveryGroups ?? [],
-      qty: line?.quantity ?? item.qty,
-      syncing: false,
-      syncError: null,
-    }
-  })
 }
 
 function normalizeAssistantActionText(value: string): string {
@@ -9404,12 +9340,7 @@ export function MeantApp() {
     merchantKey: string,
     fallbackProductVariantId: string,
   ): { productVariantId: string; quantity: number }[] => {
-    const addItems = cartRef.current
-      .filter((item) => cartMerchantKey(item) === merchantKey && item.productVariantId)
-      .map((item) => ({
-        productVariantId: item.productVariantId as string,
-        quantity: Math.max(item.qty, 1),
-      }))
+    const addItems = cartRebuildItems(cartRef.current, merchantKey)
     return addItems.length > 0
       ? addItems
       : [{ productVariantId: fallbackProductVariantId, quantity: 1 }]
@@ -9424,12 +9355,7 @@ export function MeantApp() {
    */
   const recreateMerchantCart = async (merchantKey: string): Promise<CartProfile | null> => {
     const merchantItem = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
-    const rebuildItems = cartRef.current
-      .filter((item) => cartMerchantKey(item) === merchantKey && item.productVariantId)
-      .map((item) => ({
-        productVariantId: item.productVariantId as string,
-        quantity: Math.max(item.qty, 1),
-      }))
+    const rebuildItems = cartRebuildItems(cartRef.current, merchantKey)
     clearMerchantCartState(merchantKey)
     if (rebuildItems.length === 0) {
       return null

@@ -5,6 +5,8 @@ import {
   PRODUCTS,
   REPLIES,
 } from './data'
+import { ApiError } from '../../lib/apiError'
+import type { CartProfile } from '../../lib/apiClient'
 import type {
   CartDeliveryGroup,
   CartDeliveryOption,
@@ -85,6 +87,38 @@ export function displayProductCategoryValue(value: string | null | undefined): s
     return null
   }
   return trimmed
+}
+
+export function normalizedMerchantName(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+export function cartMerchantKey(input: {
+  merchant: string
+  merchantId?: string | null
+  merchantDomain?: string | null
+}): string {
+  return input.merchantId || normalizedMerchantName(input.merchantDomain) || normalizedMerchantName(input.merchant)
+}
+
+export function firstUrl(...urls: Array<string | null | undefined>): string | null {
+  return urls.find((url): url is string => Boolean(url?.trim()))?.trim() ?? null
+}
+
+export function isCartNotFoundError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || error.code === 'not_found')
+}
+
+export function cartRebuildItems(
+  items: readonly CartItem[],
+  merchantKey: string,
+): { productVariantId: string; quantity: number }[] {
+  return items
+    .filter((item) => cartMerchantKey(item) === merchantKey && item.productVariantId)
+    .map((item) => ({
+      productVariantId: item.productVariantId as string,
+      quantity: item.qty > 0 ? item.qty : 1,
+    }))
 }
 
 export function canMerchantShip(
@@ -394,6 +428,57 @@ export function cartLines(
         delivery: offer.delivery,
       },
     ]
+  })
+}
+
+function cartLineForItem(
+  snapshot: CartProfile,
+  item: CartItem,
+): NonNullable<CartProfile['lines']>[number] | undefined {
+  const lines = snapshot.lines ?? []
+  return lines.find((line) => {
+    return Boolean(
+      (item.cartLineId && line.cartLineId === item.cartLineId) ||
+      (item.remoteCartLineId && line.remoteCartLineId === item.remoteCartLineId) ||
+      (item.productVariantId && line.productVariantId === item.productVariantId),
+    )
+  })
+}
+
+export function mergeCartSnapshot(
+  cart: readonly CartItem[],
+  merchantKey: string,
+  snapshot: CartProfile,
+): CartItem[] {
+  const snapshotDeliveryGroups = (snapshot.deliveryGroups as readonly (CartDeliveryGroup | null | undefined)[] | undefined)
+    ?.filter((group): group is CartDeliveryGroup => Boolean(group))
+  return cart.map((item) => {
+    if (cartMerchantKey(item) !== merchantKey) {
+      return item
+    }
+    const line = cartLineForItem(snapshot, item)
+    return {
+      ...item,
+      merchantId: snapshot.merchantId ?? item.merchantId,
+      merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
+      cartId: snapshot.cartId ?? item.cartId,
+      remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
+      checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
+      continueUrl: snapshot.continueUrl ?? item.continueUrl,
+      cartLineId: line?.cartLineId ?? item.cartLineId,
+      remoteCartLineId: line?.remoteCartLineId ?? item.remoteCartLineId,
+      productVariantId: line?.productVariantId ?? item.productVariantId,
+      variantTitle: line?.variantTitle ?? item.variantTitle,
+      cartTotalAmount: snapshot.totalAmount ?? item.cartTotalAmount,
+      cartSubtotalAmount: snapshot.subtotalAmount ?? item.cartSubtotalAmount,
+      cartCurrency: snapshot.currency ?? item.cartCurrency,
+      deliveryGroups: snapshotDeliveryGroups && snapshotDeliveryGroups.length > 0
+        ? snapshotDeliveryGroups
+        : item.deliveryGroups ?? [],
+      qty: line?.quantity ?? item.qty,
+      syncing: false,
+      syncError: null,
+    }
   })
 }
 

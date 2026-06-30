@@ -1,6 +1,8 @@
 import createClient, { type Middleware } from 'openapi-fetch'
 
 import type { components, paths } from '../api/schema'
+import { parseJsonResponse } from './apiError'
+export { ApiError, parseErrorResponse, parseJsonResponse } from './apiError'
 import { supabase } from './supabase'
 
 const API_URL = import.meta.env.VITE_MEANT_API_URL ?? 'http://localhost:8080'
@@ -557,49 +559,6 @@ async function authHeaders(): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-/**
- * Error carrying the HTTP status and the backend's machine-readable `code`
- * (from the RFC 7807 ProblemDetail body). Callers branch on `status`/`code`
- * rather than the human-readable message, which the backend deliberately
- * scrubs of internal detail.
- */
-export class ApiError extends Error {
-  readonly status: number
-  readonly code: string | null
-
-  constructor(message: string, status: number, code: string | null) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-    this.code = code
-  }
-}
-
-async function parseJsonResponse<T>(response: Response, message: string): Promise<T> {
-  if (!response.ok) {
-    throw await parseErrorResponse(response, message)
-  }
-  return (await response.json()) as T
-}
-
-async function parseErrorResponse(response: Response, fallback: string): Promise<ApiError> {
-  try {
-    const payload = await response.json() as {
-      detail?: unknown
-      title?: unknown
-      message?: unknown
-      code?: unknown
-    }
-    const detail = typeof payload.detail === 'string' ? payload.detail : null
-    const title = typeof payload.title === 'string' ? payload.title : null
-    const payloadMessage = typeof payload.message === 'string' ? payload.message : null
-    const code = typeof payload.code === 'string' ? payload.code : null
-    return new ApiError(detail || payloadMessage || title || fallback, response.status, code)
-  } catch {
-    return new ApiError(fallback, response.status, null)
-  }
 }
 
 /** Fetches the current user, creating the backend profile row on first call (upsert-on-read). */
