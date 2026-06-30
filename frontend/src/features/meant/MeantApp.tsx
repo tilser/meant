@@ -62,6 +62,7 @@ import {
   startMerchantIdentityAuthorization,
   streamAssistantMessage,
   streamUserProductSearch,
+  ApiError,
   type AssistantChatContextInput,
   type SaveUserProductInput,
   type CartProfile,
@@ -2016,7 +2017,7 @@ function firstUrl(...urls: Array<string | null | undefined>): string | null {
 }
 
 function isCartNotFoundError(error: unknown): boolean {
-  return error instanceof Error && /cart not found/i.test(error.message)
+  return error instanceof ApiError && (error.status === 404 || error.code === 'not_found')
 }
 
 function looksLikeGiftCardSuffix(value: string | null): boolean {
