@@ -9838,6 +9838,7 @@ export function MeantApp() {
       setSearchMerchantId(merchantId)
       setProductSearchActivities([])
     }
+    const streamedProductIds = new Set<ProductId>()
     const upsertStreamProduct = (
       event: UserProductSearchStreamEventProfile,
       stage: ProductAgentStage,
@@ -9846,6 +9847,7 @@ export function MeantApp() {
         return
       }
       const product = productFromSearchResult(event.product, allPreferences, stage)
+      streamedProductIds.add(product.id)
       setSearchResults((current) => appendProductSnapshots(current, [product]))
       setRemoteProducts((current) => appendProductSnapshots(current, [product]))
       setProductSearchActivities((current) => upsertAgentActivity(current, event))
@@ -9854,6 +9856,26 @@ export function MeantApp() {
       event: UserProductSearchStreamEventProfile,
       stage: ProductAgentStage,
     ) => event.products.map((product) => productFromSearchResult(product, allPreferences, stage))
+    const noteFinalStreamProducts = (products: readonly Product[]) => {
+      if (products.length === 0) {
+        return streamedProductIds.size
+      }
+      streamedProductIds.clear()
+      products.forEach((product) => streamedProductIds.add(product.id))
+      return products.length
+    }
+    const finalStreamProducts = (current: Product[], products: readonly Product[]) => {
+      if (products.length === 0) {
+        return current
+      }
+      if (!append) {
+        return [...products]
+      }
+      return appendProductSnapshots(
+        current.filter((product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating'),
+        products,
+      )
+    }
     try {
       await streamUserProductSearch({
         query: submittedQuery,
@@ -9879,14 +9901,8 @@ export function MeantApp() {
             return
           }
           const products = orderedStreamProducts(event, 'curated')
-          setSearchResults((current) =>
-            append
-              ? appendProductSnapshots(
-                  current.filter((product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating'),
-                  products,
-                )
-              : products
-          )
+          noteFinalStreamProducts(products)
+          setSearchResults((current) => finalStreamProducts(current, products))
           setRemoteProducts((current) => appendProductSnapshots(current, products))
           setProductSearchActivities((current) => upsertAgentActivity(current, event))
         },
@@ -9895,14 +9911,8 @@ export function MeantApp() {
             return
           }
           const products = orderedStreamProducts(event, 'curated')
-          setSearchResults((current) =>
-            append
-              ? appendProductSnapshots(
-                  current.filter((product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating'),
-                  products,
-                )
-              : products
-          )
+          const displayedCount = noteFinalStreamProducts(products)
+          setSearchResults((current) => finalStreamProducts(current, products))
           setRemoteProducts((current) => appendProductSnapshots(current, products))
           setSearchHasMore(Boolean(event.hasMore))
           setSearchNextOffset(event.nextOffset)
@@ -9916,15 +9926,15 @@ export function MeantApp() {
           )
           if (append) {
             setReply(
-              products.length > 0
-                ? `Loaded ${products.length} more match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
+              displayedCount > 0
+                ? `Loaded ${displayedCount} more match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
                 : `No more matches found for "${submittedQuery}".`,
             )
           } else {
             setReply(
               event.cached
-                ? `Showing ${products.length} cached match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".`
-                : `Found ${products.length} match${products.length === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
+                ? `Showing ${displayedCount} cached match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
+                : `Found ${displayedCount} match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
             )
           }
         },
