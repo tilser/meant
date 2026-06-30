@@ -28,10 +28,6 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
         this.objectMapper = objectMapper;
     }
 
-    public CatalogGetProductCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

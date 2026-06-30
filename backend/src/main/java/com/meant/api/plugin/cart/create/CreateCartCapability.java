@@ -26,10 +26,6 @@ public class CreateCartCapability implements UcpCapability<CreateCartRequest, Uc
         this.objectMapper = objectMapper;
     }
 
-    public CreateCartCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

@@ -26,10 +26,6 @@ public class BuyerConsentCapability implements UcpCapability<BuyerConsentRequest
         this.objectMapper = objectMapper;
     }
 
-    public BuyerConsentCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

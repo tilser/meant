@@ -26,10 +26,6 @@ public class CancelCartCapability implements UcpCapability<CancelCartRequest, Ca
         this.objectMapper = objectMapper;
     }
 
-    public CancelCartCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

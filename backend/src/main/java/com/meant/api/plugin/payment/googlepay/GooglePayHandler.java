@@ -34,10 +34,6 @@ public class GooglePayHandler implements PaymentHandler<GooglePayCredentialReque
         this.objectMapper = objectMapper;
     }
 
-    public GooglePayHandler() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public String id() {
         return ID;

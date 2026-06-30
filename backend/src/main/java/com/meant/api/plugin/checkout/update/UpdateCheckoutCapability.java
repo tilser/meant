@@ -27,10 +27,6 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
         this.objectMapper = objectMapper;
     }
 
-    public UpdateCheckoutCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

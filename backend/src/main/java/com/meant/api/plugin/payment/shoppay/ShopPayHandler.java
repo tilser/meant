@@ -34,10 +34,6 @@ public class ShopPayHandler implements PaymentHandler<ShopPayCredentialRequest, 
         this.objectMapper = objectMapper;
     }
 
-    public ShopPayHandler() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public String id() {
         return ID;

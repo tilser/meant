@@ -26,10 +26,6 @@ public class CreateCheckoutCapability implements UcpCapability<CreateCheckoutReq
         this.objectMapper = objectMapper;
     }
 
-    public CreateCheckoutCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

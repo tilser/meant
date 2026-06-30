@@ -27,10 +27,6 @@ public class CatalogSearchCapability implements UcpCapability<CatalogSearchReque
         this.objectMapper = objectMapper;
     }
 
-    public CatalogSearchCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

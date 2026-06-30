@@ -26,10 +26,6 @@ public class GetCheckoutCapability implements UcpCapability<GetCheckoutRequest, 
         this.objectMapper = objectMapper;
     }
 
-    public GetCheckoutCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

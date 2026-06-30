@@ -34,10 +34,6 @@ public class CardHandler implements PaymentHandler<CardCredentialRequest, CardPa
         this.objectMapper = objectMapper;
     }
 
-    public CardHandler() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public String id() {
         return ID;
