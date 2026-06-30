@@ -203,6 +203,64 @@ class NativeCheckoutCompletionServiceTest {
     }
 
     @Test
+    void canceledCompletionResponseRecordsFailedIdempotencyResponse() {
+        dispatchService.getResults.add(toolResult(openCheckoutJson()));
+        dispatchService.completeResult = toolResult(canceledCheckoutJson());
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.CANCELED);
+        assertThat(idempotencyKeyStore.recordCommands)
+                .extracting(RecordIdempotencyResponseCommand::status)
+                .containsExactly(CheckoutIdempotencyStatus.FAILED);
+    }
+
+    @Test
+    void scaCompletionResponseRecordsInFlightIdempotencyResponse() {
+        dispatchService.getResults.add(toolResult(openCheckoutJson()));
+        dispatchService.completeResult = toolResult(scaCheckoutJson());
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.SCA_REQUIRED);
+        assertThat(idempotencyKeyStore.recordCommands)
+                .extracting(RecordIdempotencyResponseCommand::status)
+                .containsExactly(CheckoutIdempotencyStatus.COMPLETION_IN_FLIGHT);
+    }
+
+    @Test
+    void statusFirstCanceledAfterAmbiguousFailureRecordsFailedIdempotencyResponse() {
+        dispatchService.getResults.add(toolResult(openCheckoutJson()));
+        dispatchService.getResults.add(toolResult(canceledCheckoutJson()));
+        dispatchService.completeException = new RuntimeException("connection reset");
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.CANCELED);
+        assertThat(dispatchService.completeCount).isEqualTo(1);
+        assertThat(dispatchService.getCount).isEqualTo(2);
+        assertThat(idempotencyKeyStore.recordCommands)
+                .extracting(RecordIdempotencyResponseCommand::status)
+                .containsExactly(CheckoutIdempotencyStatus.FAILED);
+    }
+
+    @Test
+    void statusFirstScaAfterAmbiguousFailureRecordsInFlightIdempotencyResponse() {
+        dispatchService.getResults.add(toolResult(openCheckoutJson()));
+        dispatchService.getResults.add(toolResult(scaCheckoutJson()));
+        dispatchService.completeException = new RuntimeException("connection reset");
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.SCA_REQUIRED);
+        assertThat(dispatchService.completeCount).isEqualTo(1);
+        assertThat(dispatchService.getCount).isEqualTo(2);
+        assertThat(idempotencyKeyStore.recordCommands)
+                .extracting(RecordIdempotencyResponseCommand::status)
+                .containsExactly(CheckoutIdempotencyStatus.COMPLETION_IN_FLIGHT);
+    }
+
+    @Test
     void cancelAfterCompletionInFlightQueriesStatusAndBlocksWhenNotCompleted() {
         completionStateStore.cancelResult = false;
         dispatchService.getResults.add(toolResult(processingCheckoutJson()));
@@ -213,6 +271,21 @@ class NativeCheckoutCompletionServiceTest {
                 UcpSession.cart("cart-1", null, null)
         )).isInstanceOf(UcpCheckoutSafetyException.class)
                 .hasMessageContaining("blocked once completion is in flight");
+        assertThat(dispatchService.cancelCount).isZero();
+    }
+
+    @Test
+    void cancelRetryReturnsRemoteCanceledStatusWithoutPostingCancelAgain() {
+        completionStateStore.cancelResult = false;
+        dispatchService.getResults.add(toolResult(canceledCheckoutJson()));
+
+        NativeCheckoutResult result = service.cancel(
+                provider(true),
+                new NativeCheckoutCancellationCommand(CART_ID, CHECKOUT_ID, "buyer_changed_mind", false),
+                UcpSession.cart("cart-1", null, null)
+        );
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.CANCELED);
         assertThat(dispatchService.cancelCount).isZero();
     }
 
@@ -409,6 +482,33 @@ class NativeCheckoutCompletionServiceTest {
                   "checkout": {
                     "id": "co_123",
                     "status": "processing",
+                    "messages": []
+                  },
+                  "errors": []
+                }
+                """;
+    }
+
+    private String canceledCheckoutJson() {
+        return """
+                {
+                  "checkout": {
+                    "id": "co_123",
+                    "status": "canceled",
+                    "messages": []
+                  },
+                  "errors": []
+                }
+                """;
+    }
+
+    private String scaCheckoutJson() {
+        return """
+                {
+                  "checkout": {
+                    "id": "co_123",
+                    "status": "open",
+                    "continue_url": "https://merchant.example/sca",
                     "messages": []
                   },
                   "errors": []

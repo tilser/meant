@@ -332,13 +332,8 @@ public class NativeCheckoutCompletionService {
             if (terminal != null) {
                 if (terminal.status() == NativeCheckoutStatus.COMPLETED) {
                     completionStateStore.markCompletedFromRemoteStatus(stateCommand);
-                    idempotencyKeyStore.recordResponse(new RecordIdempotencyResponseCommand(
-                            idempotencyKey,
-                            CheckoutIdempotencyStatus.COMPLETED,
-                            status.rawResponse(),
-                            terminal.orderRef()
-                    ));
                 }
+                recordTerminalIdempotencyResponse(idempotencyKey, terminal, status.rawResponse());
                 return terminal;
             }
             idempotencyKeyStore.recordResponse(new RecordIdempotencyResponseCommand(
@@ -398,13 +393,8 @@ public class NativeCheckoutCompletionService {
         if (terminal != null) {
             if (terminal.status() == NativeCheckoutStatus.COMPLETED) {
                 completionStateStore.markCompletedFromRemoteStatus(stateCommand);
-                idempotencyKeyStore.recordResponse(new RecordIdempotencyResponseCommand(
-                        idempotencyKey,
-                        CheckoutIdempotencyStatus.COMPLETED,
-                        result.rawResponse(),
-                        terminal.orderRef()
-                ));
             }
+            recordTerminalIdempotencyResponse(idempotencyKey, terminal, result.rawResponse());
             return terminal;
         }
         UcpCheckoutResponse.CheckoutMessage recoverable = firstRecoverableMessage(result.response());
@@ -541,7 +531,7 @@ public class NativeCheckoutCompletionService {
                 true,
                 new StartCheckoutCompletionCommand(checkoutId)
         );
-        if (status.status() == NativeCheckoutStatus.COMPLETED) {
+        if (status.status() == NativeCheckoutStatus.COMPLETED || status.status() == NativeCheckoutStatus.CANCELED) {
             return status;
         }
         UcpCheckoutSafetyException blocked = new UcpCheckoutSafetyException(
@@ -561,6 +551,32 @@ public class NativeCheckoutCompletionService {
             return;
         }
         completionStateStore.markCompletedFromRemoteStatus(stateCommand);
+    }
+
+    private void recordTerminalIdempotencyResponse(
+            String idempotencyKey,
+            NativeCheckoutResult terminal,
+            String rawResponse
+    ) {
+        CheckoutIdempotencyStatus status = terminalIdempotencyStatus(terminal.status());
+        if (status == null) {
+            return;
+        }
+        idempotencyKeyStore.recordResponse(new RecordIdempotencyResponseCommand(
+                idempotencyKey,
+                status,
+                rawResponse,
+                terminal.status() == NativeCheckoutStatus.COMPLETED ? terminal.orderRef() : null
+        ));
+    }
+
+    private CheckoutIdempotencyStatus terminalIdempotencyStatus(NativeCheckoutStatus status) {
+        return switch (status) {
+            case COMPLETED -> CheckoutIdempotencyStatus.COMPLETED;
+            case CANCELED -> CheckoutIdempotencyStatus.FAILED;
+            case SCA_REQUIRED -> CheckoutIdempotencyStatus.COMPLETION_IN_FLIGHT;
+            default -> null;
+        };
     }
 
     private boolean ap2Required(NativeCheckoutCompletionCommand command, UcpSession session) {
