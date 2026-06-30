@@ -65,6 +65,7 @@ import {
   type AssistantChatContextInput,
   type SaveUserProductInput,
   type CartProfile,
+  type CheckoutProfile,
   type MerchantIdentityLinkProfile,
   type MerchantProductDetailsProfile,
   type MerchantProfile,
@@ -187,6 +188,7 @@ interface MerchantCartSnapshot {
   cartId: string | null
   remoteCartId: string | null
   checkoutUrl: string | null
+  continueUrl: string | null
   subtotalAmount: number | null
   totalAmount: number | null
   currency: string | null
@@ -2009,6 +2011,10 @@ function parseCartAmount(value?: string | null): number | null {
   return Number.isFinite(amount) ? amount : null
 }
 
+function firstUrl(...urls: Array<string | null | undefined>): string | null {
+  return urls.find((url): url is string => Boolean(url?.trim()))?.trim() ?? null
+}
+
 function looksLikeGiftCardSuffix(value: string | null): boolean {
   return Boolean(value && /^[a-z0-9]{1,4}$/i.test(value))
 }
@@ -2024,6 +2030,7 @@ function cartSnapshotFromProfile(
     cartId: snapshot.cartId ?? null,
     remoteCartId: snapshot.remoteCartId ?? null,
     checkoutUrl: snapshot.checkoutUrl ?? null,
+    continueUrl: snapshot.continueUrl ?? null,
     subtotalAmount: parseCartAmount(snapshot.subtotalAmount),
     totalAmount: parseCartAmount(snapshot.totalAmount),
     currency: snapshot.currency ?? null,
@@ -2114,6 +2121,7 @@ function mergeCartSnapshot(
       cartId: snapshot.cartId ?? item.cartId,
       remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
       checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
+      continueUrl: snapshot.continueUrl ?? item.continueUrl,
       cartLineId: line?.cartLineId ?? item.cartLineId,
       remoteCartLineId: line?.remoteCartLineId ?? item.remoteCartLineId,
       productVariantId: line?.productVariantId ?? item.productVariantId,
@@ -7642,15 +7650,12 @@ function CartView({
             const checkoutBlocked = scanning ||
               groupSyncing ||
               !groupCheckoutable ||
-              checkoutNeedsDelivery ||
               Boolean(checkoutMerchant)
             const checkoutSub = groupLineError ?? groupCheckoutError ??
               (groupSyncing
                 ? 'Syncing merchant cart'
                 : !groupCheckoutable
                   ? 'Checkout needs a merchant cart-ready item'
-                  : checkoutNeedsDelivery
-                    ? 'Choose a delivery option'
                   : appliedCodes.length > 0
                     ? `${appliedCodes.length} applied · -${cartMoney(savings, currency)}`
                     : deliveryDisplay)
@@ -7838,6 +7843,8 @@ function CartView({
                           ? appliedCodes.map((code) => `${appliedCodeDisplay(code)} applied`).join(', ')
                           : '',
                         merchant: group.merchant,
+                        checkoutUrl: snapshot?.checkoutUrl ?? null,
+                        continueUrl: snapshot?.continueUrl ?? null,
                       })
                     }
                   >
@@ -9397,6 +9404,7 @@ export function MeantApp() {
                 cartId: existingGroup?.cartId ?? item.cartId,
                 remoteCartId: existingGroup?.remoteCartId ?? item.remoteCartId,
                 checkoutUrl: existingGroup?.checkoutUrl ?? item.checkoutUrl,
+                continueUrl: existingGroup?.continueUrl ?? item.continueUrl,
                 qty: item.qty + 1,
                 syncing: true,
                 syncError: null,
@@ -9416,6 +9424,7 @@ export function MeantApp() {
           cartId: existingGroup?.cartId,
           remoteCartId: existingGroup?.remoteCartId,
           checkoutUrl: existingGroup?.checkoutUrl,
+          continueUrl: existingGroup?.continueUrl,
           qty: 1,
           syncing: true,
           syncError: null,
@@ -10015,6 +10024,14 @@ export function MeantApp() {
   const checkout = async (payload: CheckoutPayload) => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const cartId = payload.items.find((item) => item.cartId)?.cartId
+    const payloadCheckoutUrl = firstUrl(
+      payload.checkoutUrl,
+      payload.items.find((item) => item.checkoutUrl)?.checkoutUrl,
+    )
+    const payloadContinueUrl = firstUrl(
+      payload.continueUrl,
+      payload.items.find((item) => item.continueUrl)?.continueUrl,
+    )
     if (!cartId) {
       setCheckoutError({
         merchant,
@@ -10025,13 +10042,17 @@ export function MeantApp() {
     setCheckoutMerchant(merchant)
     setCheckoutError(null)
     try {
-      const checkoutProfile = await getCartCheckout({ cartId, refresh: true })
-      const checkoutUrl = checkoutProfile.checkoutUrl ??
-        payload.checkoutUrl ??
-        payload.items.find((item) => item.checkoutUrl)?.checkoutUrl
+      let checkoutProfile: CheckoutProfile | null = null
+      let checkoutUrl = firstUrl(payloadContinueUrl, payloadCheckoutUrl)
+      if (!checkoutUrl) {
+        checkoutProfile = await getCartCheckout({ cartId })
+        checkoutUrl = firstUrl(checkoutProfile.continueUrl, checkoutProfile.checkoutUrl)
+      }
       if (!checkoutUrl) {
         throw new Error('Missing checkout URL')
       }
+      const nextCheckoutUrl = checkoutProfile?.checkoutUrl ?? payloadCheckoutUrl
+      const nextContinueUrl = checkoutProfile?.continueUrl ?? payloadContinueUrl
 
       const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
       updateStoredCart((current) =>
@@ -10039,8 +10060,9 @@ export function MeantApp() {
           checkoutItems.has(`${item.id}:${item.merchant}`)
             ? {
                 ...item,
-                remoteCartId: checkoutProfile.remoteCartId ?? item.remoteCartId,
-                checkoutUrl,
+                remoteCartId: checkoutProfile?.remoteCartId ?? item.remoteCartId,
+                checkoutUrl: nextCheckoutUrl ?? item.checkoutUrl,
+                continueUrl: nextContinueUrl ?? item.continueUrl,
                 syncError: null,
               }
             : item,

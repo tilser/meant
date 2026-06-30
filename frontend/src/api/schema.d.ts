@@ -377,6 +377,7 @@ export interface components {
             endpoint?: string;
             remoteCartId?: string;
             checkoutUrl?: string;
+            continueUrl?: string;
             instructions?: string;
             /** Format: int32 */
             totalQuantity?: number;
@@ -465,6 +466,8 @@ export interface components {
             cartId?: string;
             remoteCartId?: string;
             checkoutUrl?: string;
+            continueUrl?: string;
+            nativeCheckoutEnabled?: boolean;
         };
     };
     responses: never;

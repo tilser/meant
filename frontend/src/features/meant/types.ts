@@ -169,6 +169,7 @@ export interface CartItem {
   cartId?: string | null
   remoteCartId?: string | null
   checkoutUrl?: string | null
+  continueUrl?: string | null
   cartLineId?: string | null
   remoteCartLineId?: string | null
   cartTotalAmount?: string | null
@@ -238,7 +239,8 @@ export interface CheckoutPayload {
   saved: number
   savedNote: string
   merchant?: string
-  checkoutUrl?: string
+  checkoutUrl?: string | null
+  continueUrl?: string | null
 }
 
 export interface SmartAlertFix {
