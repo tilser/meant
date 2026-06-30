@@ -5,10 +5,10 @@ import com.meant.api.module.merchant.exception.MerchantOutboundUrlException;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
 import com.meant.api.module.merchant.service.dto.StorePolicyFaqEntry;
 import com.meant.api.module.merchant.service.dto.StoreProfileArguments;
-import com.meant.api.plugin.transport.dto.McpContent;
-import com.meant.api.plugin.transport.dto.McpToolCallParams;
-import com.meant.api.plugin.transport.dto.McpToolCallRequest;
-import com.meant.api.plugin.transport.dto.McpToolCallResponse;
+import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.transport.client.UcpMcpClient;
+import com.meant.api.plugin.transport.client.UcpMcpException;
+import com.meant.api.plugin.transport.profile.AgentIdentity;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,22 +30,48 @@ public class MerchantDomainMcpClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final MerchantOutboundUrlValidator merchantOutboundUrlValidator;
+    private final UcpMcpClient ucpMcpClient;
 
     @Autowired
     public MerchantDomainMcpClient(
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
-            MerchantOutboundUrlValidator merchantOutboundUrlValidator
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator,
+            UcpMcpClient ucpMcpClient
     ) {
-        this.restClient = restClientBuilder.clone()
-                .requestFactory(new MerchantClientHttpRequestFactory(merchantOutboundUrlValidator))
-                .build();
+        this(
+                restClientBuilder.clone()
+                        .requestFactory(new MerchantClientHttpRequestFactory(merchantOutboundUrlValidator))
+                        .build(),
+                objectMapper,
+                merchantOutboundUrlValidator,
+                ucpMcpClient
+        );
+    }
+
+    MerchantDomainMcpClient(
+            RestClient restClient,
+            ObjectMapper objectMapper,
+            MerchantOutboundUrlValidator merchantOutboundUrlValidator,
+            UcpMcpClient ucpMcpClient
+    ) {
+        this.restClient = restClient;
         this.objectMapper = objectMapper;
         this.merchantOutboundUrlValidator = merchantOutboundUrlValidator;
+        this.ucpMcpClient = ucpMcpClient;
     }
 
     public MerchantDomainMcpClient(RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
-        this(restClientBuilder, objectMapper, new MerchantOutboundUrlValidator());
+        this(
+                restClientBuilder,
+                objectMapper,
+                new MerchantOutboundUrlValidator(),
+                new UcpMcpClient(new AgentIdentity(
+                        URI.create("http://localhost:8080/.well-known/ucp-agent.json"),
+                        "2026-04-08",
+                        "meant-test"
+                ))
+        );
     }
 
     public MerchantMcpProfileResult fetchStoreProfile(String domain) {
@@ -58,7 +84,10 @@ public class MerchantDomainMcpClient {
                         endpointUri.toString(),
                         fetchStoreProfileFromEndpoint(endpointUri)
                 );
-            } catch (RestClientException | MerchantEnrichmentException | MerchantOutboundUrlException exception) {
+            } catch (RestClientException
+                     | MerchantEnrichmentException
+                     | MerchantOutboundUrlException
+                     | UcpMcpException exception) {
                 lastException = new MerchantEnrichmentException("MCP profile fetch failed for " + endpoint, exception);
             }
         }
@@ -80,41 +109,17 @@ public class MerchantDomainMcpClient {
     }
 
     private StorePolicyFaqEntry fetchStoreProfileFromEndpoint(URI endpoint) {
-        McpToolCallResponse response = restClient.post()
-                .uri(endpoint)
-                .body(request())
-                .retrieve()
-                .body(McpToolCallResponse.class);
-
-        if (response == null) {
-            throw new MerchantEnrichmentException("MCP response was empty");
-        }
-        if (response.error() != null) {
-            throw new MerchantEnrichmentException("MCP error: " + response.error().message());
-        }
-        if (response.result() == null || response.result().isError()) {
-            throw new MerchantEnrichmentException("MCP result was missing or marked as error");
-        }
-
-        String contentText = response.result().content().stream()
-                .filter(content -> "text".equals(content.type()))
-                .map(McpContent::text)
-                .filter(text -> text != null && !text.isBlank())
-                .findFirst()
-                .orElseThrow(() -> new MerchantEnrichmentException("MCP result did not contain text content"));
-        return parseStorePolicyFaqContent(contentText);
-    }
-
-    private McpToolCallRequest request() {
-        return new McpToolCallRequest(
-                "2.0",
-                3,
-                "tools/call",
-                new McpToolCallParams(
-                        "search_shop_policies_and_faqs",
-                        new StoreProfileArguments(PROFILE_QUERY)
-                )
+        UcpToolResponse response = ucpMcpClient.callTool(
+                restClient,
+                endpoint,
+                "search_shop_policies_and_faqs",
+                new StoreProfileArguments(PROFILE_QUERY)
         );
+        String contentText = response.textContent();
+        if (contentText == null || contentText.isBlank()) {
+            throw new MerchantEnrichmentException("MCP result did not contain text content");
+        }
+        return parseStorePolicyFaqContent(contentText);
     }
 
     private List<String> endpointCandidates(String domain) {

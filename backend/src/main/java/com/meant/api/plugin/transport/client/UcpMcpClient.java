@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
@@ -27,6 +28,8 @@ public class UcpMcpClient {
     private static final String JSONRPC_VERSION = "2.0";
     private static final String UCP_AGENT_META_KEY = "ucp-agent";
     private static final String UCP_AGENT_PROFILE_KEY = "profile";
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
     private final AgentIdentity agentIdentity;
     private final ObjectMapper objectMapper;
@@ -60,7 +63,7 @@ public class UcpMcpClient {
                         headers.forEach(httpHeaders::set);
                     }
                 })
-                .body(request("tools/call", new McpToolCallParams(toolName, arguments)))
+                .body(request("tools/call", new McpToolCallParams(toolName, argumentsWithAgentMeta(arguments))))
                 .retrieve()
                 .body(McpToolCallResponse.class);
 
@@ -78,7 +81,7 @@ public class UcpMcpClient {
     public String listTools(RestClient restClient, URI endpoint) {
         McpToolsListResponse response = restClient.post()
                 .uri(endpoint)
-                .body(request("tools/list", null))
+                .body(request("tools/list", new McpToolCallParams(null, argumentsWithAgentMeta(null))))
                 .retrieve()
                 .body(McpToolsListResponse.class);
 
@@ -124,9 +127,49 @@ public class UcpMcpClient {
                 JSONRPC_VERSION,
                 requestIds.getAndIncrement(),
                 method,
-                params,
-                Map.of(UCP_AGENT_META_KEY, Map.of(UCP_AGENT_PROFILE_KEY, agentIdentity.profileUrl().toString()))
+                params
         );
+    }
+
+    private Map<String, Object> argumentsWithAgentMeta(Object arguments) {
+        Map<String, Object> values = objectMap(arguments);
+        Map<String, Object> meta = mapValue(values.get("meta"));
+        Map<String, Object> ucpAgent = mapValue(meta.get(UCP_AGENT_META_KEY));
+
+        ucpAgent.put(UCP_AGENT_PROFILE_KEY, agentIdentity.profileUrl().toString());
+        meta.put(UCP_AGENT_META_KEY, ucpAgent);
+        values.put("meta", meta);
+
+        return values;
+    }
+
+    private Map<String, Object> objectMap(Object value) {
+        if (value == null) {
+            return new LinkedHashMap<>();
+        }
+        if (value instanceof Map<?, ?> map) {
+            return stringKeyMap(map);
+        }
+        try {
+            Map<String, Object> converted = objectMapper.readValue(objectMapper.writeValueAsString(value), MAP_TYPE);
+            return converted == null ? new LinkedHashMap<>() : new LinkedHashMap<>(converted);
+        } catch (IllegalArgumentException | JacksonException exception) {
+            throw new UcpMcpException("MCP tool arguments could not be serialized", exception);
+        }
+    }
+
+    private Map<String, Object> mapValue(Object value) {
+        return value instanceof Map<?, ?> map ? stringKeyMap(map) : new LinkedHashMap<>();
+    }
+
+    private Map<String, Object> stringKeyMap(Map<?, ?> source) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        source.forEach((key, mapValue) -> {
+            if (key != null) {
+                values.put(key.toString(), mapValue);
+            }
+        });
+        return values;
     }
 
     private NegotiatedCapabilities negotiatedCapabilities(Object structuredContent) {

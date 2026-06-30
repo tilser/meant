@@ -3,6 +3,7 @@ package com.meant.api.plugin.transport.client;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -29,9 +30,11 @@ class UcpMcpClientTest {
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"method\":\"tools/call\"")))
-                .andExpect(content().string(containsString("\"meta\"")))
-                .andExpect(content().string(containsString("\"ucp-agent\"")))
-                .andExpect(content().string(containsString("\"profile\":\"https://agent.example/.well-known/ucp-agent.json\"")))
+                .andExpect(jsonPath("$.meta").doesNotExist())
+                .andExpect(jsonPath("$.params.name").value("search_catalog"))
+                .andExpect(jsonPath("$.params.arguments.catalog.query").value("jacket"))
+                .andExpect(jsonPath("$.params.arguments.meta['ucp-agent'].profile")
+                        .value("https://agent.example/.well-known/ucp-agent.json"))
                 .andRespond(withSuccess("""
                         {
                           "jsonrpc": "2.0",
@@ -84,7 +87,10 @@ class UcpMcpClientTest {
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"method\":\"tools/list\"")))
-                .andExpect(content().string(containsString("\"profile\":\"https://agent.example/.well-known/ucp-agent.json\"")))
+                .andExpect(jsonPath("$.meta").doesNotExist())
+                .andExpect(jsonPath("$.params.name").doesNotExist())
+                .andExpect(jsonPath("$.params.arguments.meta['ucp-agent'].profile")
+                        .value("https://agent.example/.well-known/ucp-agent.json"))
                 .andRespond(withSuccess("""
                         {
                           "jsonrpc": "2.0",
