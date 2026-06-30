@@ -106,7 +106,7 @@ public class UcpProfileClient {
             }
 
             UcpProfile profile = objectMapper.readValue(body, UcpProfile.class);
-            if (profile.version() != null) {
+            if (profile != null && profile.version() != null) {
                 return new UcpProfileFetchResult(
                         profile,
                         objectMapper.writeValueAsString(root),

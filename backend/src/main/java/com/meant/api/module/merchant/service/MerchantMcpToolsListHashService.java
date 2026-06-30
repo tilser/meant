@@ -10,6 +10,9 @@ import org.springframework.stereotype.Service;
 public class MerchantMcpToolsListHashService {
 
     public String hash(String toolsListRaw) {
+        if (toolsListRaw == null) {
+            throw new IllegalArgumentException("toolsListRaw cannot be null");
+        }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(toolsListRaw.getBytes(StandardCharsets.UTF_8)));

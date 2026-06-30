@@ -73,6 +73,23 @@ class UcpProfileClientTest {
     }
 
     @Test
+    void fetchProfileResultRejectsNullProfileBodyWithoutNullPointerException() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        server.expect(once(), requestTo("https://www.nullprofile.example/.well-known/ucp.json"))
+                .andRespond(withSuccess("null", MediaType.APPLICATION_JSON));
+        UcpProfileClient client = client(restClientBuilder, "93.184.216.34");
+
+        assertThatThrownBy(() -> client.fetchProfileResult(
+                "www.nullprofile.example",
+                "https://www.nullprofile.example/.well-known/ucp.json"
+        ))
+                .isInstanceOf(MerchantEnrichmentException.class)
+                .hasMessage("UCP profile response did not contain ucp data");
+        server.verify();
+    }
+
+    @Test
     void blocksProfileUrlResolvingToLocalAddress() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
