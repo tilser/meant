@@ -41,7 +41,16 @@ public class CreateCheckoutCapability implements UcpCapability<CreateCheckoutReq
             CreateCheckoutRequest request,
             NegotiatedCapabilities activeCapabilities
     ) {
-        return new CreateCheckoutArguments(request.cartId());
+        return new CreateCheckoutArguments(new CreateCheckoutArguments.Checkout(
+                request.cartId(),
+                request.lineItems().stream()
+                        .filter(item -> item.productVariantId() != null && !item.productVariantId().isBlank())
+                        .map(item -> new CreateCheckoutArguments.LineItem(
+                                new CreateCheckoutArguments.Item(item.productVariantId()),
+                                item.quantity()
+                        ))
+                        .toList()
+        ));
     }
 
     @Override

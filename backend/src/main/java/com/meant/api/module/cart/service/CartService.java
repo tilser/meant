@@ -3,6 +3,7 @@ package com.meant.api.module.cart.service;
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
 import com.meant.api.module.cart.entity.Cart;
+import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.command.CancelCheckoutCommand;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
@@ -106,7 +107,7 @@ public class CartService {
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        if (!query.refresh() && hasText(cart.getContinueUrl())) {
+        if (hasText(handoffUrl(cart))) {
             importCartInventory(cart);
             return new CheckoutResult(
                     cart.getId(),
@@ -119,7 +120,15 @@ public class CartService {
         UcpSession session = session(cart);
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
                 provider,
-                new CreateCheckoutRequest(cart.getRemoteCartId()),
+                new CreateCheckoutRequest(
+                        cart.getRemoteCartId(),
+                        cart.getLines().stream()
+                                .map(line -> new CreateCheckoutRequest.LineItem(
+                                        line.getProductVariantId(),
+                                        line.getQuantity()
+                                ))
+                                .toList()
+                ),
                 session
         );
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart.getId(), query.userId(), result);
@@ -269,15 +278,20 @@ public class CartService {
     }
 
     private UpdateCartRequest updateCartRequest(Cart cart, UpdateCartCommand command) {
-        Map<UUID, String> remoteLineIdsByLocalId = new HashMap<>();
-        cart.getLines().forEach(line -> remoteLineIdsByLocalId.put(line.getId(), line.getRemoteCartLineId()));
+        Map<UUID, CartLine> linesByLocalId = new HashMap<>();
+        Map<String, CartLine> linesByRemoteId = new HashMap<>();
+        cart.getLines().forEach(line -> {
+            linesByLocalId.put(line.getId(), line);
+            linesByRemoteId.put(line.getRemoteCartLineId(), line);
+        });
+        Map<UUID, String> remoteLineIdsByLocalId = remoteLineIds(linesByLocalId);
         return new UpdateCartRequest(
                 cart.getRemoteCartId(),
                 safeList(command.addItems()).stream()
                         .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
                         .toList(),
                 safeList(command.updateItems()).stream()
-                        .map(item -> new CartUpdateItem(remoteCartLineId(item, remoteLineIdsByLocalId), item.quantity()))
+                        .map(item -> cartUpdateItem(item, linesByLocalId, linesByRemoteId, remoteLineIdsByLocalId))
                         .toList(),
                 removeLineIds(command, remoteLineIdsByLocalId),
                 command.buyerIdentity(),
@@ -288,6 +302,29 @@ public class CartService {
                 normalizeCodes(command.giftCardCodes()),
                 command.note()
         );
+    }
+
+    private CartUpdateItem cartUpdateItem(
+            UpdateCartCommand.UpdateItem item,
+            Map<UUID, CartLine> linesByLocalId,
+            Map<String, CartLine> linesByRemoteId,
+            Map<UUID, String> remoteLineIdsByLocalId
+    ) {
+        String remoteCartLineId = remoteCartLineId(item, remoteLineIdsByLocalId);
+        CartLine line = item.cartLineId() == null
+                ? linesByRemoteId.get(remoteCartLineId)
+                : linesByLocalId.get(item.cartLineId());
+        return new CartUpdateItem(
+                remoteCartLineId,
+                line == null ? null : line.getProductVariantId(),
+                item.quantity()
+        );
+    }
+
+    private Map<UUID, String> remoteLineIds(Map<UUID, CartLine> linesByLocalId) {
+        Map<UUID, String> remoteLineIds = new HashMap<>();
+        linesByLocalId.forEach((id, line) -> remoteLineIds.put(id, line.getRemoteCartLineId()));
+        return remoteLineIds;
     }
 
     private UcpSession session(Cart cart) {

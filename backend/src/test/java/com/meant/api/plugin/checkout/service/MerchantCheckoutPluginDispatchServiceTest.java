@@ -46,6 +46,7 @@ class MerchantCheckoutPluginDispatchServiceTest {
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"create_checkout\"")))
+                .andExpect(content().string(containsString("\"checkout\"")))
                 .andExpect(content().string(containsString("\"cart_id\":\"gid://shopify/Cart/1\"")))
                 .andRespond(withSuccess(mcpResponse(checkoutResponse()), MediaType.APPLICATION_JSON));
 

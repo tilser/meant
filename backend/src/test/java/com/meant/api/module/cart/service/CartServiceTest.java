@@ -436,16 +436,16 @@ class CartServiceTest {
     }
 
     @Test
-    void checkoutRefreshesWhenRequested() {
+    void checkoutUsesStoredHandoffUrlEvenWhenRefreshIsRequested() {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/stored-checkout"));
 
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, true));
 
-        assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
-        assertThat(result.continueUrl()).isEqualTo("https://merchant.example/continue");
-        assertThat(checkoutDispatchService.createCount).isEqualTo(1);
-        assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
+        assertThat(result.continueUrl()).isNull();
+        assertThat(checkoutDispatchService.createCount).isZero();
+        assertThat(checkoutDispatchService.lastRemoteCartId).isNull();
         assertThat(cartDispatchService.getCount).isZero();
         assertImportedCandle();
     }

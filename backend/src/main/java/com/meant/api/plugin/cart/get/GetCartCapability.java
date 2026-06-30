@@ -43,6 +43,6 @@ public class GetCartCapability implements UcpCapability<GetCartRequest, UcpCartR
 
     @Override
     public UcpCartResponse parseResponse(UcpToolResponse response) {
-        return CartPluginJson.parse(objectMapper, response, UcpCartResponse.class);
+        return CartPluginJson.parseCartResponse(objectMapper, response);
     }
 }

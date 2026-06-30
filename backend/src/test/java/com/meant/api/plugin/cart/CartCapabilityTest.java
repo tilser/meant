@@ -50,9 +50,9 @@ class CartCapabilityTest {
         UcpCartResponse response = capability.parseResponse(new UcpToolResponse(cartResponseJson(), null,
                 NegotiatedCapabilities.none()));
 
-        assertThat(arguments.addItems()).extracting("productVariantId")
+        assertThat(arguments.cart().lineItems()).extracting(lineItem -> lineItem.item().id())
                 .containsExactly("gid://shopify/ProductVariant/1");
-        assertThat(arguments.discountCodes()).containsExactly("SAVE5");
+        assertThat(arguments.cart().discounts().codes()).containsExactly("SAVE5");
         assertThat(response.cart().id()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.cart().continueUrl()).isEqualTo("https://merchant.example/continue");
         assertThat(response.cart().expiresAt()).isEqualTo(Instant.parse("2026-06-16T12:05:00Z"));
@@ -71,7 +71,7 @@ class CartCapabilityTest {
                 Map.of("cart", Map.of("id", "gid://shopify/Cart/1"), "errors", List.of()),
                 NegotiatedCapabilities.none()));
 
-        assertThat(arguments.cartId()).isEqualTo("gid://shopify/Cart/1");
+        assertThat(arguments.id()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.cart().id()).isEqualTo("gid://shopify/Cart/1");
     }
 
@@ -83,7 +83,11 @@ class CartCapabilityTest {
                 new UpdateCartRequest(
                         "gid://shopify/Cart/1",
                         List.of(new CartAddItem("gid://shopify/ProductVariant/2", 1)),
-                        List.of(new CartUpdateItem("gid://shopify/CartLine/1", 2)),
+                        List.of(new CartUpdateItem(
+                                "gid://shopify/CartLine/1",
+                                "gid://shopify/ProductVariant/2",
+                                2
+                        )),
                         List.of("gid://shopify/CartLine/2"),
                         null,
                         List.of(),
@@ -98,10 +102,55 @@ class CartCapabilityTest {
         UcpCartResponse response = capability.parseResponse(new UcpToolResponse(cartResponseJson(), null,
                 NegotiatedCapabilities.none()));
 
-        assertThat(arguments.cartId()).isEqualTo("gid://shopify/Cart/1");
-        assertThat(arguments.updateItems()).extracting("id").containsExactly("gid://shopify/CartLine/1");
-        assertThat(arguments.removeLineIds()).containsExactly("gid://shopify/CartLine/2");
+        assertThat(arguments.id()).isEqualTo("gid://shopify/Cart/1");
+        assertThat(arguments.cart().lineItems()).extracting("id")
+                .containsExactly(null, "gid://shopify/CartLine/1", "gid://shopify/CartLine/2");
+        assertThat(arguments.cart().lineItems().get(1).item().id())
+                .isEqualTo("gid://shopify/ProductVariant/2");
         assertThat(response.cart().lines()).hasSize(1);
+    }
+
+    @Test
+    void createParsesShopifyRootCartResponse() {
+        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+
+        UcpCartResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "id": "gid://shopify/Cart/root",
+                          "line_items": [
+                            {
+                              "id": "gid://shopify/CartLine/1",
+                              "item": {
+                                "id": "gid://shopify/ProductVariant/1",
+                                "title": "Pocket T-Shirt - Black / S"
+                              },
+                              "quantity": 1,
+                              "totals": [
+                                {"type": "subtotal", "amount": 4900, "display_text": "Subtotal"},
+                                {"type": "total", "amount": 4900, "display_text": "Total"}
+                              ]
+                            }
+                          ],
+                          "currency": "USD",
+                          "totals": [
+                            {"type": "subtotal", "amount": 4900, "display_text": "Subtotal"},
+                            {"type": "total", "amount": 4900, "display_text": "Total"}
+                          ],
+                          "expires_at": "2026-07-30T20:48:44Z",
+                          "discounts": {"codes": [], "applied": []}
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        assertThat(response.cart().id()).isEqualTo("gid://shopify/Cart/root");
+        assertThat(response.cart().lines()).hasSize(1);
+        assertThat(response.cart().lines().getFirst().merchandise().id())
+                .isEqualTo("gid://shopify/ProductVariant/1");
+        assertThat(response.cart().cost().totalAmount().amount()).isEqualTo(4900);
+        assertThat(response.cart().cost().totalAmount().currency()).isEqualTo("USD");
     }
 
     @Test
@@ -120,7 +169,7 @@ class CartCapabilityTest {
                 NegotiatedCapabilities.none()
         ));
 
-        assertThat(arguments.cartId()).isEqualTo("gid://shopify/Cart/1");
+        assertThat(arguments.id()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.cartId()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.canceled()).isTrue();
     }

@@ -421,6 +421,9 @@ public class MerchantSemanticProductSearchService {
         ProductDetailsResponse.SelectedVariant selectedVariant = detailProduct == null
                 ? null
                 : detailProduct.selectedOrFirstAvailableVariant();
+        if (selectedVariant == null) {
+            selectedVariant = catalogSelectedVariant(productCandidate.product());
+        }
         RichCatalogData richCatalogData = richCatalogData(productCandidate, detailProduct, detailPriceRange, selectedVariant);
         return new MerchantSemanticProductResult(
                 merchant.merchantId(),
@@ -473,6 +476,51 @@ public class MerchantSemanticProductSearchService {
                 rerankResult.relevanceScore(),
                 rank
         );
+    }
+
+    private ProductDetailsResponse.SelectedVariant catalogSelectedVariant(CatalogSearchResponse.Product product) {
+        CatalogSearchResponse.Variant variant = safeNonNullList(product.variants()).stream()
+                .filter(candidate -> candidate != null
+                        && candidate.availability() != null
+                        && Boolean.TRUE.equals(candidate.availability().available()))
+                .findFirst()
+                .orElseGet(() -> safeNonNullList(product.variants()).stream()
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null));
+        if (variant == null) {
+            return null;
+        }
+        CatalogSearchResponse.Media media = safeNonNullList(variant.media()).stream()
+                .filter(Objects::nonNull)
+                .filter(candidate -> candidate.url() != null && !candidate.url().isBlank())
+                .findFirst()
+                .orElse(null);
+        boolean imageMedia = media != null && (media.type() == null
+                || media.type().isBlank()
+                || media.type().equalsIgnoreCase("image"));
+        return new ProductDetailsResponse.SelectedVariant(
+                variant.id(),
+                variant.title(),
+                catalogAmount(variant.price()),
+                variant.price() == null ? null : variant.price().currency(),
+                variant.sku(),
+                variant.listPrice(),
+                imageMedia ? media.url() : null,
+                imageMedia ? media.altText() : null,
+                media == null ? List.of() : List.of(new ProductDetailsResponse.Media(
+                        media.type(),
+                        media.url(),
+                        media.altText(),
+                        media.previewImageUrl()
+                )),
+                variant.availability() == null ? null : variant.availability().available(),
+                List.of()
+        );
+    }
+
+    private String catalogAmount(CatalogSearchResponse.Money money) {
+        return money == null || money.amount() == null ? null : money.amount().toString();
     }
 
     private RichCatalogData richCatalogData(

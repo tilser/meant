@@ -1,6 +1,7 @@
 package com.meant.api.plugin.cart.create;
 
 import com.meant.api.plugin.cart.common.dto.CartCapabilityMetadata;
+import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.support.CartPluginJson;
 import com.meant.api.plugin.cart.create.dto.CreateCartArguments;
@@ -42,19 +43,20 @@ public class CreateCartCapability implements UcpCapability<CreateCartRequest, Uc
             NegotiatedCapabilities activeCapabilities
     ) {
         return new CreateCartArguments(
-                request.addItems(),
-                request.buyerIdentity(),
-                request.deliveryAddressesToAdd(),
-                request.deliveryAddressesToReplace(),
-                request.selectedDeliveryOptions(),
-                request.discountCodes(),
-                request.giftCardCodes(),
-                request.note()
+                CartToolArguments.create(
+                        request.addItems(),
+                        request.buyerIdentity(),
+                        request.deliveryAddressesToAdd(),
+                        request.deliveryAddressesToReplace(),
+                        request.selectedDeliveryOptions(),
+                        request.discountCodes(),
+                        request.note()
+                )
         );
     }
 
     @Override
     public UcpCartResponse parseResponse(UcpToolResponse response) {
-        return CartPluginJson.parse(objectMapper, response, UcpCartResponse.class);
+        return CartPluginJson.parseCartResponse(objectMapper, response);
     }
 }

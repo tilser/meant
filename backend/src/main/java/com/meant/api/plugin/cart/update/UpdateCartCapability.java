@@ -1,6 +1,7 @@
 package com.meant.api.plugin.cart.update;
 
 import com.meant.api.plugin.cart.common.dto.CartCapabilityMetadata;
+import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.support.CartPluginJson;
 import com.meant.api.plugin.cart.update.dto.UpdateCartArguments;
@@ -43,21 +44,22 @@ public class UpdateCartCapability implements UcpCapability<UpdateCartRequest, Uc
     ) {
         return new UpdateCartArguments(
                 request.cartId(),
-                request.addItems(),
-                request.updateItems(),
-                request.removeLineIds(),
-                request.buyerIdentity(),
-                request.deliveryAddressesToAdd(),
-                request.deliveryAddressesToReplace(),
-                request.selectedDeliveryOptions(),
-                request.discountCodes(),
-                request.giftCardCodes(),
-                request.note()
+                CartToolArguments.update(
+                        request.addItems(),
+                        request.updateItems(),
+                        request.removeLineIds(),
+                        request.buyerIdentity(),
+                        request.deliveryAddressesToAdd(),
+                        request.deliveryAddressesToReplace(),
+                        request.selectedDeliveryOptions(),
+                        request.discountCodes(),
+                        request.note()
+                )
         );
     }
 
     @Override
     public UcpCartResponse parseResponse(UcpToolResponse response) {
-        return CartPluginJson.parse(objectMapper, response, UcpCartResponse.class);
+        return CartPluginJson.parseCartResponse(objectMapper, response);
     }
 }

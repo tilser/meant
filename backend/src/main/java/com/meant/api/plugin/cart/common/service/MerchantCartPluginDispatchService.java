@@ -3,12 +3,15 @@ package com.meant.api.plugin.cart.common.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.plugin.cart.cancel.CancelCartCapability;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
+import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.cart.create.CreateCartCapability;
@@ -22,8 +25,10 @@ import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -48,11 +53,7 @@ public class MerchantCartPluginDispatchService {
             UcpSession session
     ) {
         CreateCartCapability capability = capability(CreateCartCapability.TOOL_NAME, CreateCartCapability.class);
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
-                provider,
-                CreateCartCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities())
-        );
+        MerchantMcpToolCallResult result = callCreateCart(provider, request, session, capability);
         UcpCartResponse response = parseCartResponse(capability, result, "create cart");
         rejectCartProblems(null, request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
@@ -65,10 +66,12 @@ public class MerchantCartPluginDispatchService {
             UcpSession session
     ) {
         GetCartCapability capability = capability(GetCartCapability.TOOL_NAME, GetCartCapability.class);
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+        MerchantMcpToolCallResult result = callWithLegacyCartIdFallback(
                 provider,
                 GetCartCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities())
+                capability.buildArguments(request, session.activeCapabilities()),
+                "cart_id",
+                request.cartId()
         );
         UcpCartResponse response = parseCartResponse(capability, result, "get cart");
         rejectCartProblems(request.cartId(), List.of(), List.of(), response);
@@ -82,11 +85,7 @@ public class MerchantCartPluginDispatchService {
             UcpSession session
     ) {
         UpdateCartCapability capability = capability(UpdateCartCapability.TOOL_NAME, UpdateCartCapability.class);
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
-                provider,
-                UpdateCartCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities())
-        );
+        MerchantMcpToolCallResult result = callUpdateCart(provider, request, session, capability);
         UcpCartResponse response = parseCartResponse(capability, result, "update cart");
         rejectCartProblems(request.cartId(), request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
@@ -99,16 +98,267 @@ public class MerchantCartPluginDispatchService {
             UcpSession session
     ) {
         CancelCartCapability capability = capability(CancelCartCapability.TOOL_NAME, CancelCartCapability.class);
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+        MerchantMcpToolCallResult result = callWithLegacyCartIdFallback(
                 provider,
                 CancelCartCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities())
+                capability.buildArguments(request, session.activeCapabilities()),
+                "cart_id",
+                request.cartId()
         );
         CancelCartResponse response = capability.parseResponse(toolResponse(result));
         rejectCancelProblems(request.cartId(), response);
         session.acceptNegotiatedCapabilities(result.negotiatedCapabilities());
         session.clearCartState();
         return response;
+    }
+
+    private MerchantMcpToolCallResult callCreateCart(
+            MerchantCartProvider provider,
+            CreateCartRequest request,
+            UcpSession session,
+            CreateCartCapability capability
+    ) {
+        try {
+            return merchantMcpToolClient.callTool(
+                    provider,
+                    CreateCartCapability.TOOL_NAME,
+                    capability.buildArguments(request, session.activeCapabilities())
+            );
+        } catch (MerchantMcpToolException primaryException) {
+            try {
+                return merchantMcpToolClient.callTool(
+                        provider,
+                        CreateCartCapability.TOOL_NAME,
+                        legacyCreateCartArguments(request)
+                );
+            } catch (MerchantMcpToolException legacyCreateException) {
+                legacyCreateException.addSuppressed(primaryException);
+                try {
+                    return merchantMcpToolClient.callTool(
+                            provider,
+                            UpdateCartCapability.TOOL_NAME,
+                            legacyCreateWithUpdateCartArguments(request)
+                    );
+                } catch (MerchantMcpToolException legacyUpdateException) {
+                    legacyUpdateException.addSuppressed(legacyCreateException);
+                    throw legacyUpdateException;
+                }
+            }
+        }
+    }
+
+    private MerchantMcpToolCallResult callUpdateCart(
+            MerchantCartProvider provider,
+            UpdateCartRequest request,
+            UcpSession session,
+            UpdateCartCapability capability
+    ) {
+        try {
+            return merchantMcpToolClient.callTool(
+                    provider,
+                    UpdateCartCapability.TOOL_NAME,
+                    capability.buildArguments(request, session.activeCapabilities())
+            );
+        } catch (MerchantMcpToolException exception) {
+            return callLegacyAfterFailure(
+                    provider,
+                    UpdateCartCapability.TOOL_NAME,
+                    legacyUpdateCartArguments(request),
+                    exception
+            );
+        }
+    }
+
+    private MerchantMcpToolCallResult callWithLegacyCartIdFallback(
+            MerchantCartProvider provider,
+            String toolName,
+            Object primaryArguments,
+            String legacyIdKey,
+            String cartId
+    ) {
+        try {
+            return merchantMcpToolClient.callTool(provider, toolName, primaryArguments);
+        } catch (MerchantMcpToolException exception) {
+            Map<String, Object> legacyArguments = new LinkedHashMap<>();
+            put(legacyArguments, legacyIdKey, cartId);
+            return callLegacyAfterFailure(provider, toolName, legacyArguments, exception);
+        }
+    }
+
+    private MerchantMcpToolCallResult callLegacyAfterFailure(
+            MerchantCartProvider provider,
+            String toolName,
+            Object legacyArguments,
+            MerchantMcpToolException primaryException
+    ) {
+        try {
+            return merchantMcpToolClient.callTool(provider, toolName, legacyArguments);
+        } catch (MerchantMcpToolException legacyException) {
+            legacyException.addSuppressed(primaryException);
+            throw legacyException;
+        }
+    }
+
+    private Map<String, Object> legacyCreateCartArguments(CreateCartRequest request) {
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        put(arguments, "add_items", request.addItems());
+        put(arguments, "buyer_identity", request.buyerIdentity());
+        put(arguments, "delivery_addresses_to_add", legacyDeliveryAddresses(request.deliveryAddressesToAdd()));
+        put(arguments, "delivery_addresses_to_replace", legacyDeliveryAddresses(request.deliveryAddressesToReplace()));
+        put(arguments, "selected_delivery_options", legacySelectedDeliveryOptions(request.selectedDeliveryOptions()));
+        put(arguments, "discount_codes", request.discountCodes());
+        put(arguments, "gift_card_codes", request.giftCardCodes());
+        put(arguments, "note", request.note());
+        return arguments;
+    }
+
+    private Map<String, Object> legacyCreateWithUpdateCartArguments(CreateCartRequest request) {
+        return legacyUpdateCartArguments(
+                null,
+                request.addItems(),
+                List.of(),
+                List.of(),
+                request.buyerIdentity(),
+                request.deliveryAddressesToAdd(),
+                request.deliveryAddressesToReplace(),
+                request.selectedDeliveryOptions(),
+                request.discountCodes(),
+                request.giftCardCodes(),
+                request.note()
+        );
+    }
+
+    private Map<String, Object> legacyUpdateCartArguments(UpdateCartRequest request) {
+        return legacyUpdateCartArguments(
+                request.cartId(),
+                request.addItems(),
+                request.updateItems(),
+                request.removeLineIds(),
+                request.buyerIdentity(),
+                request.deliveryAddressesToAdd(),
+                request.deliveryAddressesToReplace(),
+                request.selectedDeliveryOptions(),
+                request.discountCodes(),
+                request.giftCardCodes(),
+                request.note()
+        );
+    }
+
+    private Map<String, Object> legacyUpdateCartArguments(
+            String cartId,
+            List<CartAddItem> addItems,
+            List<CartUpdateItem> updateItems,
+            List<String> removeLineIds,
+            Map<String, Object> buyerIdentity,
+            List<Map<String, Object>> deliveryAddressesToAdd,
+            List<Map<String, Object>> deliveryAddressesToReplace,
+            List<Map<String, Object>> selectedDeliveryOptions,
+            List<String> discountCodes,
+            List<String> giftCardCodes,
+            String note
+    ) {
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        put(arguments, "cart_id", cartId);
+        put(arguments, "add_items", addItems);
+        put(arguments, "update_items", updateItems);
+        put(arguments, "remove_line_ids", removeLineIds);
+        put(arguments, "buyer_identity", buyerIdentity);
+        put(arguments, "delivery_addresses_to_add", legacyDeliveryAddresses(deliveryAddressesToAdd));
+        put(arguments, "delivery_addresses_to_replace", legacyDeliveryAddresses(deliveryAddressesToReplace));
+        put(arguments, "selected_delivery_options", legacySelectedDeliveryOptions(selectedDeliveryOptions));
+        put(arguments, "discount_codes", discountCodes);
+        put(arguments, "gift_card_codes", giftCardCodes);
+        put(arguments, "note", note);
+        return arguments;
+    }
+
+    private List<Map<String, Object>> legacyDeliveryAddresses(List<Map<String, Object>> deliveryAddresses) {
+        return safeNonNullList(deliveryAddresses).stream()
+                .map(this::legacyDeliveryAddress)
+                .filter(map -> !map.isEmpty())
+                .toList();
+    }
+
+    private Map<String, Object> legacyDeliveryAddress(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> existingAddress = mapValue(source.get("delivery_address"));
+        if (!existingAddress.isEmpty()) {
+            return source;
+        }
+
+        Map<String, Object> address = new LinkedHashMap<>();
+        put(address, "first_name", firstValue(source, "first_name", "firstName"));
+        put(address, "last_name", firstValue(source, "last_name", "lastName"));
+        put(address, "phone", firstValue(source, "phone", "phone_number"));
+        put(address, "address1", firstValue(source, "address1", "street_address"));
+        put(address, "address2", firstValue(source, "address2", "extended_address"));
+        put(address, "city", firstValue(source, "city", "address_locality"));
+        put(address, "province_code", firstValue(source, "province_code", "province", "address_region"));
+        put(address, "zip", firstValue(source, "zip", "postal_code"));
+        put(address, "country_code", firstValue(source, "country_code", "country", "address_country"));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        put(result, "selected", firstValue(source, "selected"));
+        put(result, "delivery_address", address);
+        return result;
+    }
+
+    private List<Map<String, Object>> legacySelectedDeliveryOptions(List<Map<String, Object>> selectedDeliveryOptions) {
+        return safeNonNullList(selectedDeliveryOptions).stream()
+                .map(this::legacySelectedDeliveryOption)
+                .filter(map -> !map.isEmpty())
+                .toList();
+    }
+
+    private Map<String, Object> legacySelectedDeliveryOption(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        put(result, "group_id", firstValue(source, "group_id", "delivery_group_id", "id"));
+        put(result, "option_handle", firstValue(source, "option_handle", "delivery_option_handle", "selected_option_id"));
+        return result;
+    }
+
+    private Object firstValue(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> mapValue(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            return Map.of();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        source.forEach((key, mapValue) -> {
+            if (key != null) {
+                result.put(key.toString(), mapValue);
+            }
+        });
+        return result;
+    }
+
+    private void put(Map<String, Object> destination, String key, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String text && text.isBlank()) {
+            return;
+        }
+        if (value instanceof Collection<?> values && values.isEmpty()) {
+            return;
+        }
+        if (value instanceof Map<?, ?> values && values.isEmpty()) {
+            return;
+        }
+        destination.put(key, value);
     }
 
     private UcpCartResponse parseCartResponse(

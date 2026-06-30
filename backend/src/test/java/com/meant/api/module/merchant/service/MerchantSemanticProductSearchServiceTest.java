@@ -143,7 +143,7 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.merchants().getFirst().error()).contains("plugin exploded");
         assertThat(result.merchants().getLast().productCount()).isEqualTo(1);
         assertThat(result.products()).extracting("productId").containsExactly("runner");
-        assertThat(streamedProductIds).containsExactly("runner:null", "runner:runner-selected");
+        assertThat(streamedProductIds).containsExactly("runner:runner-variant", "runner:runner-selected");
     }
 
     @Test
@@ -162,7 +162,7 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.products()).hasSize(1);
         assertThat(result.products().getFirst().productId()).isEqualTo("runner");
         assertThat(result.products().getFirst().detailError()).contains("details unavailable");
-        assertThat(result.products().getFirst().selectedVariantId()).isNull();
+        assertThat(result.products().getFirst().selectedVariantId()).isEqualTo("runner-variant");
     }
 
     @Test
@@ -184,7 +184,7 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(streamedProducts).hasSize(2);
         assertThat(streamedProducts.getFirst()).satisfies(product -> {
             assertThat(product.productId()).isEqualTo("runner");
-            assertThat(product.selectedVariantId()).isNull();
+            assertThat(product.selectedVariantId()).isEqualTo("runner-variant");
             assertThat(product.detailDescription()).isNull();
         });
         assertThat(streamedProducts.getLast()).satisfies(product -> {

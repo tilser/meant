@@ -55,19 +55,20 @@ class MerchantCartPluginDispatchServiceTest {
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"create_cart\"")))
-                .andExpect(content().string(containsString("\"add_items\"")))
+                .andExpect(content().string(containsString("\"cart\"")))
+                .andExpect(content().string(containsString("\"line_items\"")))
                 .andRespond(withSuccess(mcpResponse(cartResponse("gid://shopify/Cart/1")),
                         MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"update_cart\"")))
-                .andExpect(content().string(containsString("\"cart_id\":\"gid://shopify/Cart/1\"")))
+                .andExpect(content().string(containsString("\"id\":\"gid://shopify/Cart/1\"")))
                 .andRespond(withSuccess(mcpResponse(cartResponse("gid://shopify/Cart/1")),
                         MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"cancel_cart\"")))
-                .andExpect(content().string(containsString("\"cart_id\":\"gid://shopify/Cart/1\"")))
+                .andExpect(content().string(containsString("\"id\":\"gid://shopify/Cart/1\"")))
                 .andRespond(withSuccess(mcpResponse("""
                         {"cart_id":"gid://shopify/Cart/1","status":"canceled","canceled":true}
                         """), MediaType.APPLICATION_JSON));

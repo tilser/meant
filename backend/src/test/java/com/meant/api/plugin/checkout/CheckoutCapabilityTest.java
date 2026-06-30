@@ -38,7 +38,7 @@ class CheckoutCapabilityTest {
                 NegotiatedCapabilities.none()
         ));
 
-        assertThat(arguments.cartId()).isEqualTo("gid://shopify/Cart/1");
+        assertThat(arguments.checkout().cartId()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
         assertThat(response.resolvedCheckout().cartId()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.resolvedCheckout().continueUrl()).isEqualTo("https://merchant.example/continue");
