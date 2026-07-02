@@ -135,11 +135,18 @@ export function offerCartable(offer: Offer): boolean {
   )
 }
 
-function parseCartAmount(value?: string | null): number | null {
-  if (!value) {
+function parseCartAmount(value?: string | number | null): number | null {
+  if (value === null || value === undefined) {
     return null
   }
-  const amount = Number(value)
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return null
+  }
+  const amount = Number(trimmed)
   return Number.isFinite(amount) ? amount : null
 }
 
@@ -213,7 +220,8 @@ export function cartSnapshotSavings(
   }
   const subtotal = snapshot.subtotalAmount ?? fallbackSubtotal
   const total = snapshot.totalAmount ?? fallbackTotal
-  return Math.max(subtotal - total, 0)
+  const deliveryFee = Math.max(0, fallbackTotal - fallbackSubtotal)
+  return Math.max(subtotal + deliveryFee - total, 0)
 }
 
 export function cartSnapshotTotal(
