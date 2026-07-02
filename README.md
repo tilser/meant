@@ -152,3 +152,26 @@ Initial API endpoints:
 cd backend && mvn test
 cd frontend && bun run build
 ```
+
+## Continuous Integration
+
+GitHub Actions runs CI on every pull request and on pushes to `main`.
+
+Reproduce the backend job locally:
+
+```sh
+cd backend
+mvn verify
+```
+
+`mvn verify` runs both unit tests and the Testcontainers-backed integration tests named `*IT`.
+
+Reproduce the frontend job locally:
+
+```sh
+cd frontend
+bun install --frozen-lockfile
+bun test
+npm run typecheck
+npm run build
+```

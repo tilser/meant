@@ -418,7 +418,7 @@ class CartControllerIT extends PostgresIntegrationTest {
                                     new UcpCartResponse.Money("14.95", "USD")
                             ),
                             1,
-                            "https://merchant.example/checkout/" + sequence,
+                            null,
                             null,
                             List.of(),
                             List.of(),

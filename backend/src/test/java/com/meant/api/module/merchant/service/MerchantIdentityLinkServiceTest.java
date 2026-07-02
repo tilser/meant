@@ -17,9 +17,18 @@ import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantIdentityLink;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.exception.MerchantIdentityLinkException;
+import com.meant.api.module.merchant.repository.MerchantCapabilityExtensionRepository;
+import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
+import com.meant.api.module.merchant.repository.MerchantCapabilityRequirementRepository;
+import com.meant.api.module.merchant.repository.MerchantCategoryRepository;
 import com.meant.api.module.merchant.repository.MerchantIdentityLinkRepository;
+import com.meant.api.module.merchant.repository.MerchantMcpToolsListRepository;
+import com.meant.api.module.merchant.repository.MerchantPaymentHandlerRepository;
+import com.meant.api.module.merchant.repository.MerchantPopularSearchRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
+import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingRepository;
+import com.meant.api.module.merchant.repository.MerchantServiceRepository;
 import com.meant.api.module.merchant.service.command.CompleteMerchantIdentityAuthorizationCommand;
 import com.meant.api.module.merchant.service.command.RevokeMerchantIdentityLinkCommand;
 import com.meant.api.module.merchant.service.command.StartMerchantIdentityAuthorizationCommand;
@@ -64,6 +73,33 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
     private MerchantIdentityLinkRepository merchantIdentityLinkRepository;
 
     @Autowired
+    private MerchantCapabilityExtensionRepository merchantCapabilityExtensionRepository;
+
+    @Autowired
+    private MerchantCapabilityRequirementRepository merchantCapabilityRequirementRepository;
+
+    @Autowired
+    private MerchantCapabilityRepository merchantCapabilityRepository;
+
+    @Autowired
+    private MerchantCategoryRepository merchantCategoryRepository;
+
+    @Autowired
+    private MerchantMcpToolsListRepository merchantMcpToolsListRepository;
+
+    @Autowired
+    private MerchantPaymentHandlerRepository merchantPaymentHandlerRepository;
+
+    @Autowired
+    private MerchantPopularSearchRepository merchantPopularSearchRepository;
+
+    @Autowired
+    private MerchantRetrievalEmbeddingRepository merchantRetrievalEmbeddingRepository;
+
+    @Autowired
+    private MerchantServiceRepository merchantServiceRepository;
+
+    @Autowired
     private MerchantRepository merchantRepository;
 
     @Autowired
@@ -90,6 +126,15 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
 
     private void deleteTestData() {
         merchantIdentityLinkRepository.deleteAllInBatch();
+        merchantCapabilityExtensionRepository.deleteAllInBatch();
+        merchantCapabilityRequirementRepository.deleteAllInBatch();
+        merchantCapabilityRepository.deleteAllInBatch();
+        merchantCategoryRepository.deleteAllInBatch();
+        merchantMcpToolsListRepository.deleteAllInBatch();
+        merchantPaymentHandlerRepository.deleteAllInBatch();
+        merchantPopularSearchRepository.deleteAllInBatch();
+        merchantRetrievalEmbeddingRepository.deleteAllInBatch();
+        merchantServiceRepository.deleteAllInBatch();
         merchantRepository.deleteAllInBatch();
         merchantRawRepository.deleteAllInBatch();
     }
