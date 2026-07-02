@@ -1,175 +1,191 @@
-# Frontend test plan — zadání pro Codex
+# Frontend Test Plan - Codex Assignment
 
-Cíl: pokrýt testy logiku, kde tichá regrese = uživatel se zasekne nebo přijde
-o data. Priorita je **stale-cart recovery** (právě opravená, zatím netestovaná)
-a **error-handling boundary** v `apiClient`, pak postupně zbytek pure logiky v
-`utils.ts`.
+Goal: cover logic where a silent regression would leave the user stuck or cause
+data loss. The priority is **stale-cart recovery** (recently fixed but not yet
+tested) and the **error-handling boundary** in `apiClient`, then the remaining
+pure logic in `utils.ts`.
 
-## Prostředí (důležité — drž se toho)
+## Environment (important - follow this)
 
-- **Runner: Bun built-in** (`bun test`). Existující test
-  `src/features/meant/utils.test.ts` importuje `import { describe, expect, test } from 'bun:test'`.
-  Nepřidávej vitest/jest/RTL — nejsou v projektu a nechceme novou test
-  infrastrukturu.
-- Přidej do `package.json` script `"test": "bun test"`, ať to běží jednotně a
-  jde to zapojit do CI.
-- **React komponenty netestujeme** (RTL/jsdom v projektu nejsou). Veškerá logika
-  k testování musí být čistá funkce. Kde dnes žije jako closure uvnitř
-  `MeantApp.tsx`, je nutný malý **extract-and-export refactor** (viz níže) —
-  refactor je součást zadání, ne vedlejší efekt.
-- Žádné síťové volání v testech. Kde je potřeba `fetch`/`updateCart`, předávej
-  závislost jako parametr nebo mockuj na úrovni modulu.
+- **Runner: Bun built-in** (`bun test`). The existing test
+  `src/features/meant/utils.test.ts` imports `import { describe, expect, test } from 'bun:test'`.
+  Do not add Vitest, Jest, or RTL. They are not in the project, and we do not
+  want new test infrastructure.
+- Add a `"test": "bun test"` script to `package.json` so tests run consistently
+  and can be wired into CI.
+- **Do not test React components**. RTL/jsdom are not in the project. All logic
+  under test must be a pure function. Where logic currently lives as a closure
+  inside `MeantApp.tsx`, do a small **extract-and-export refactor** (see below).
+  The refactor is part of the assignment, not an incidental side effect.
+- No network calls in tests. Where `fetch` or `updateCart` is needed, pass the
+  dependency as a parameter or mock it at the module level.
 
 ---
 
-## Blok 1 — apiClient error boundary (NEJVYŠŠÍ PRIORITA)
+## Block 1 - apiClient Error Boundary (highest priority)
 
-Soubor: `src/lib/apiClient.ts`. Tady vznikla minulá tichá chyba (FE matchoval na
-text chyby, který backend scrubuje). Testy to musí zafixovat napevno.
+File: `src/lib/apiClient.ts`. This is where the previous silent bug happened:
+the frontend matched on error text that the backend scrubs. Tests must lock this
+down.
 
-### 1A. `parseErrorResponse` → typed `ApiError`
-`parseErrorResponse` je dnes **private**. Exportuj ji (nebo přesuň do
-`src/lib/apiError.ts` spolu s `ApiError` a reexportuj). Pak testuj:
+### 1A. `parseErrorResponse` -> typed `ApiError`
 
-- [ ] **Status se propisuje**: ProblemDetail body se statusem 404 → vrácená
-  `ApiError` má `status === 404`.
-- [ ] **`code` se propisuje**: body `{ code: "not_found", detail: "..." }` →
-  `error.code === "not_found"`.
-- [ ] **`detail` má přednost před `title`/`message`** při skládání `message`
-  (zachovat existující prioritu `detail || message || title || fallback`).
-- [ ] **Fallback při ne-JSON těle**: response, jejíž `.json()` hodí → vrátí
-  `ApiError(fallback, status, null)`, nikdy nezahučí.
-- [ ] **Chybějící `code`**: body bez `code` → `error.code === null` (ne crash,
-  ne `undefined` přetékající jinam).
-- [ ] `ApiError instanceof Error === true` (regrese: ostatní handlery čtou
-  `error.message`).
+`parseErrorResponse` is currently **private**. Export it, or move it to
+`src/lib/apiError.ts` together with `ApiError` and re-export it. Then test:
+
+- [ ] **Status is preserved**: a ProblemDetail body with status 404 returns an
+  `ApiError` with `status === 404`.
+- [ ] **`code` is preserved**: body `{ code: "not_found", detail: "..." }`
+  yields `error.code === "not_found"`.
+- [ ] **`detail` takes priority over `title`/`message`** when building
+  `message` (keep the existing priority: `detail || message || title || fallback`).
+- [ ] **Fallback for a non-JSON body**: a response whose `.json()` throws
+  returns `ApiError(fallback, status, null)` and never crashes.
+- [ ] **Missing `code`**: body without `code` yields `error.code === null`
+  (no crash, no leaking `undefined` downstream).
+- [ ] `ApiError instanceof Error === true` (regression guard: other handlers
+  read `error.message`).
 
 ### 1B. `parseJsonResponse`
-- [ ] **2xx**: vrátí naparsované tělo jako `T`.
-- [ ] **ne-2xx hází `ApiError`** (ne plain `Error`), s korektním `status`.
-- [ ] Hozená chyba nese `message` z `detail`, ne fallback, když `detail` existuje.
 
-> Pozn.: `parseJsonResponse` bere `Response`. V Bunu jde sestavit
-> `new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })`
-> — žádný mock fetch netřeba.
+- [ ] **2xx**: returns the parsed body as `T`.
+- [ ] **Non-2xx throws `ApiError`** (not plain `Error`) with the correct
+  `status`.
+- [ ] The thrown error carries `message` from `detail`, not the fallback, when
+  `detail` exists.
 
----
-
-## Blok 2 — Stale-cart recovery (VYSOKÁ PRIORITA, právě opravené)
-
-Logika je v `MeantApp.tsx` jako closures (`isCartNotFoundError`,
-`recreateMerchantCart`, `cartAddItemsForMerchant`, `clearMerchantCartState`) a
-v pure helperech (`mergeCartSnapshot`, `cartMerchantKey`). Closures sahají na
-React state, takže nejsou přímo testovatelné.
-
-### Prerequisite refactor (součást zadání)
-Vytáhni čistou, na Reactu nezávislou jádrovou logiku do `utils.ts` (nebo nového
-`cartRecovery.ts`) a exportuj:
-
-1. `isCartNotFoundError(error: unknown): boolean` — přesuň beze změny chování
-   (dnes: `error instanceof ApiError && (error.status === 404 || error.code === 'not_found')`).
-2. `cartRebuildItems(items, merchantKey)` — čistá verze logiky z
-   `cartAddItemsForMerchant` / `recreateMerchantCart`: z položek daného
-   merchanta vyrob `{ productVariantId, quantity }[]`, vyfiltruj bez
-   `productVariantId`, `quantity = max(qty, 1)`.
-3. `mergeCartSnapshot` a `cartMerchantKey` už pure jsou — jen je exportuj.
-
-Closures v `MeantApp` pak ať volají tyhle exportované funkce (žádná duplicitní
-logika).
-
-### Testy: `isCartNotFoundError`
-- [ ] `ApiError` se `status: 404` → **true**.
-- [ ] `ApiError` s `code: "not_found"` a jiným statusem → **true**.
-- [ ] `ApiError` se `status: 400` / `code: "bad_request"` → **false**.
-- [ ] Plain `new Error("cart not found")` → **false** (regrese: NESMÍ se znovu
-  spoléhat na text! Tohle je přesně ta díra z minula).
-- [ ] `undefined` / `null` / `{}` → **false**, nehází.
-
-### Testy: `cartRebuildItems`
-- [ ] Vybere jen položky daného `merchantKey`.
-- [ ] Vynechá položky bez `productVariantId`.
-- [ ] `qty: 0` nebo záporné → `quantity: 1` (clamp).
-- [ ] Zachová správné `qty` u validních položek (regrese pro `updateQty`
-  recovery: rebuild musí nést aktuální množství).
-- [ ] Prázdný vstup pro merchanta → `[]` (volající pak ví, že není co
-  obnovovat).
-
-### Testy: `mergeCartSnapshot`
-- [ ] Aktualizuje jen položky odpovídajícího `merchantKey`, ostatní nechá beze
-  změny.
-- [ ] `cartId`/`continueUrl`/`checkoutUrl` ze snapshotu přepíšou staré hodnoty;
-  když snapshot pole nemá (`undefined`), padne se na původní hodnotu položky.
-- [ ] `qty` se vezme z `line.quantity` snapshotu, jinak zůstane `item.qty`.
-- [ ] `syncing`/`syncError` se po merge vždy vynulují.
-- [ ] `deliveryGroups`: null prvky se vyfiltrují; prázdný snapshot zachová
-  původní groups, ne `undefined`.
+> Note: `parseJsonResponse` takes a `Response`. In Bun, build one with
+> `new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })`.
+> No fetch mock is needed.
 
 ---
 
-## Blok 3 — Checkout handoff URL (STŘEDNÍ priorita)
+## Block 2 - Stale-Cart Recovery (high priority, recently fixed)
 
-Helper `firstUrl` v `MeantApp.tsx` (private) — exportuj do `utils.ts`. Pohání
-volbu mezi `continueUrl` a `checkoutUrl` (commit „use merchant checkout handoff
-URL").
+The logic currently lives in `MeantApp.tsx` as closures
+(`isCartNotFoundError`, `recreateMerchantCart`, `cartAddItemsForMerchant`,
+`clearMerchantCartState`) and in pure helpers (`mergeCartSnapshot`,
+`cartMerchantKey`). The closures touch React state, so they are not directly
+testable.
 
-### Testy: `firstUrl`
-- [ ] Vrátí první neprázdnou hodnotu v pořadí argumentů.
-- [ ] Přeskočí `null`, `undefined`, prázdný řetězec, a string složený jen z
+### Prerequisite refactor (part of the assignment)
+
+Extract the pure, React-independent core logic into `utils.ts` or a new
+`cartRecovery.ts`, and export:
+
+1. `isCartNotFoundError(error: unknown): boolean` - move it without changing
+   behavior. Today the logic is
+   `error instanceof ApiError && (error.status === 404 || error.code === 'not_found')`.
+2. `cartRebuildItems(items, merchantKey)` - a pure version of the logic from
+   `cartAddItemsForMerchant` / `recreateMerchantCart`: from items for the given
+   merchant, produce `{ productVariantId, quantity }[]`, filter out items
+   without `productVariantId`, and set `quantity = max(qty, 1)`.
+3. `mergeCartSnapshot` and `cartMerchantKey` are already pure. Just export them.
+
+The closures in `MeantApp` should then call these exported functions. Do not
+duplicate the logic.
+
+### Tests: `isCartNotFoundError`
+
+- [ ] `ApiError` with `status: 404` -> **true**.
+- [ ] `ApiError` with `code: "not_found"` and another status -> **true**.
+- [ ] `ApiError` with `status: 400` / `code: "bad_request"` -> **false**.
+- [ ] Plain `new Error("cart not found")` -> **false** (regression guard: do
+  not rely on text again; that was the previous bug).
+- [ ] `undefined` / `null` / `{}` -> **false**, no throw.
+
+### Tests: `cartRebuildItems`
+
+- [ ] Selects only items for the given `merchantKey`.
+- [ ] Skips items without `productVariantId`.
+- [ ] `qty: 0` or negative values become `quantity: 1` (clamp).
+- [ ] Preserves the correct `qty` for valid items (regression guard for
+  `updateQty` recovery: rebuild must carry the current quantity).
+- [ ] Empty input for a merchant returns `[]` so the caller knows there is
+  nothing to restore.
+
+### Tests: `mergeCartSnapshot`
+
+- [ ] Updates only items matching the `merchantKey`; leaves the others
+  unchanged.
+- [ ] `cartId`/`continueUrl`/`checkoutUrl` from the snapshot overwrite old
+  values. If the snapshot field is missing (`undefined`), fall back to the
+  original item value.
+- [ ] `qty` comes from `line.quantity` in the snapshot; otherwise `item.qty`
+  remains unchanged.
+- [ ] `syncing`/`syncError` are always cleared after merge.
+- [ ] `deliveryGroups`: null entries are filtered out. An empty snapshot keeps
+  the previous groups instead of becoming `undefined`.
+
+---
+
+## Block 3 - Checkout Handoff URL (medium priority)
+
+Helper `firstUrl` in `MeantApp.tsx` is private. Export it to `utils.ts`. It
+drives the choice between `continueUrl` and `checkoutUrl` from the "use merchant
+checkout handoff URL" change.
+
+### Tests: `firstUrl`
+
+- [ ] Returns the first non-empty value in argument order.
+- [ ] Skips `null`, `undefined`, an empty string, and strings containing only
   whitespace.
-- [ ] Vrácenou hodnotu **trimuje**.
-- [ ] Vše prázdné → `null`.
+- [ ] Trims the returned value.
+- [ ] Everything empty -> `null`.
 
-> Pokud se rozhodneš testovat i preferenci `continueUrl` před `checkoutUrl` v
-> checkout flow, je nutné vytáhnout výběrovou logiku z `checkout()` do čisté
-> funkce `resolveHandoffUrl(profile, payload)`. Volitelné — flag to v PR, ať se
-> rozhodne, jestli to stojí za extract.
+> If you decide to also test preference for `continueUrl` over `checkoutUrl` in
+> the checkout flow, extract that selection logic from `checkout()` into a pure
+> `resolveHandoffUrl(profile, payload)` function. This is optional. Flag it in
+> the PR so we can decide whether the extract is worth it.
 
 ---
 
-## Blok 4 — Pure logika v `utils.ts` (PRŮBĚŽNĚ, nižší priorita)
+## Block 4 - Pure Logic in `utils.ts` (ongoing, lower priority)
 
-`utils.ts` má 33 exportovaných čistých funkcí, testované jsou 3
-(`cartGroups`, `cartDeliveryOptions`, `displayProductCategoryValue`). Doplnit
-testy pro ty, kde chyba mění nákupní rozhodnutí nebo peníze:
+`utils.ts` has 33 exported pure functions, and 3 are currently tested
+(`cartGroups`, `cartDeliveryOptions`, `displayProductCategoryValue`). Add tests
+for functions where a bug changes a shopping decision or money:
 
-- [ ] **`bestOffer`** — vybere nejlevnější dostupnou nabídku pro dané lokality;
-  remízy; žádná dostupná nabídka.
-- [ ] **`bestCode`** — výběr nejlepšího slevového/dárkového kódu.
-- [ ] **`productPriceFrom`** / **`productMerchantCount`** — agregace přes
-  nabídky, hraniční případy (0 nabídek).
-- [ ] **`canMerchantShip`** / **`productsForLocation`** — filtrování podle
-  doručitelnosti do lokality.
-- [ ] **`productsForPreferences`** — filtrování podle preferencí (pozitivní i
-  negativní polarita).
-- [ ] **`productMatchesClothingFit`** / **`productsForClothingFit`** — men /
+- [ ] **`bestOffer`** - selects the cheapest available offer for the given
+  locations; ties; no available offer.
+- [ ] **`bestCode`** - selects the best discount/gift-card code.
+- [ ] **`productPriceFrom`** / **`productMerchantCount`** - aggregation across
+  offers, including boundary cases such as 0 offers.
+- [ ] **`canMerchantShip`** / **`productsForLocation`** - filtering by
+  deliverability to a location.
+- [ ] **`productsForPreferences`** - filtering by preferences, positive and
+  negative polarity.
+- [ ] **`productMatchesClothingFit`** / **`productsForClothingFit`** - men /
   women / other.
-- [ ] **`computeSmartAlerts`** — generování upozornění (lepší cena, kód, …).
-- [ ] **`cartLines`** — skládání řádků košíku z položek.
-- [ ] **`orderTotal`** — součet objednávky (peníze → ověřit, že nesčítá float
-  chybně; ideálně přes minor units).
-- [ ] **`createOrder`** — mapování `CheckoutPayload` → `Order`.
-- [ ] **`deriveFilters`** / **`resolveAsk`** / **`resolveReply`** — parsování
-  textu na filtry/odpovědi (deterministická část).
-- [ ] **`readStorage`/`writeStorage`** — round-trip, fallback při rozbitém JSON
-  v localStorage (nesmí zhodit appku).
-- [ ] **`money`** — formátování (měna, desetinná místa, záporné).
-- [ ] **`listJoin`** / **`prefLabel`** — drobné, ale levné na pokrytí.
+- [ ] **`computeSmartAlerts`** - alert generation such as better price, code,
+  and similar cases.
+- [ ] **`cartLines`** - builds cart lines from items.
+- [ ] **`orderTotal`** - order total calculation. Because this is money, verify
+  it does not accumulate floating-point error; prefer minor units.
+- [ ] **`createOrder`** - maps `CheckoutPayload` to `Order`.
+- [ ] **`deriveFilters`** / **`resolveAsk`** / **`resolveReply`** -
+  deterministic text parsing into filters/replies.
+- [ ] **`readStorage`/`writeStorage`** - round-trip and fallback when
+  localStorage contains broken JSON; must not crash the app.
+- [ ] **`money`** - formatting for currency, decimal places, and negative
+  values.
+- [ ] **`listJoin`** / **`prefLabel`** - small but cheap to cover.
 
 ---
 
-## Co NEtestovat
+## What Not To Test
 
-- Rendering komponent `MeantApp`, routy, supabase auth — bez RTL/jsdom mimo
-  rozsah.
-- Skutečná HTTP volání na backend.
-- `schema.d.ts` (generované) a `routeTree.gen.ts` (generované).
+- Rendering `MeantApp`, routes, or Supabase auth. Without RTL/jsdom, these are
+  out of scope.
+- Real HTTP calls to the backend.
+- `schema.d.ts` (generated) and `routeTree.gen.ts` (generated).
 
-## Akceptační kritéria
+## Acceptance Criteria
 
-- `bun test` projde zeleně, včetně stávajícího `utils.test.ts`.
-- `npm run typecheck` a `npm run build` zůstanou čisté (refactory nesmí rozbít
-  importy).
-- Žádná logika se nezduplikuje: closures v `MeantApp` po extractu volají
-  exportované funkce, ne svoji kopii.
-- Každý extract = čistá funkce bez závislosti na React state / `window` (kromě
-  `readStorage`/`writeStorage`, kde se `localStorage` mockuje).
+- `bun test` passes, including the existing `utils.test.ts`.
+- `npm run typecheck` and `npm run build` remain clean; refactors must not break
+  imports.
+- No duplicated logic: after extraction, closures in `MeantApp` call exported
+  functions instead of carrying their own copies.
+- Every extract is a pure function without React state / `window` dependencies,
+  except `readStorage`/`writeStorage`, where `localStorage` is mocked.
