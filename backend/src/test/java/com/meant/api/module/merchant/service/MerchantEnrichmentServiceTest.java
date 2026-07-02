@@ -285,7 +285,8 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
                                 new UcpCapabilityRequires(
                                         new UcpVersionRange("2026-01-01", "2026-12-31"),
                                         Map.of("dev.ucp.shopping.cart", new UcpVersionRange("1.0.0", "2.0.0"))
-                                )
+                                ),
+                                null
                         )
                 )),
                 Map.of("com.google.pay", List.of(

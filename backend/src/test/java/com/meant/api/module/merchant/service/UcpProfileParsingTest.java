@@ -53,6 +53,11 @@ class UcpProfileParsingTest {
                             "capabilities": {
                               "dev.ucp.shopping.cart": {"min": "1.0.0", "max": "2.0.0"}
                             }
+                          },
+                          "config": {
+                            "scopes": {
+                              "dev.ucp.shopping.checkout:manage": {}
+                            }
                           }
                         }
                       ]
@@ -85,6 +90,8 @@ class UcpProfileParsingTest {
                 .containsExactly("dev.ucp.shopping.cart");
         assertThat(profile.capabilities().get("dev.ucp.shopping.checkout").getFirst().requires().protocol().min())
                 .isEqualTo("2026-01-01");
+        assertThat(profile.capabilities().get("dev.ucp.shopping.checkout").getFirst().config())
+                .containsKey("scopes");
         assertThat(profile.paymentHandlers().get("com.google.pay").getFirst().schema().url())
                 .isEqualTo("https://pay.example/schema");
     }

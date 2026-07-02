@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -14,6 +15,7 @@ public record UcpCapabilityDefinition(
         @JsonProperty("extends")
         @JsonDeserialize(using = UcpStringListDeserializer.class)
         List<String> extendsCapabilities,
-        UcpCapabilityRequires requires
+        UcpCapabilityRequires requires,
+        Map<String, Object> config
 ) {
 }

@@ -75,6 +75,7 @@ public class MerchantProfileHashService {
         append(builder, resourceUrl(capability.spec()));
         append(builder, resourceUrl(capability.schema()));
         appendValues(builder, sorted(capability.extendsCapabilities()));
+        append(builder, stableConfig(capability.config()));
         if (capability.requires() != null) {
             appendRange(builder, capability.requires().protocol());
             safeMap(capability.requires().capabilities()).entrySet().stream()
@@ -135,6 +136,20 @@ public class MerchantProfileHashService {
 
     private String stableText(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private String stableConfig(Map<String, Object> config) {
+        if (config == null || config.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        config.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    builder.append(entry.getKey()).append('=');
+                    builder.append(stableText(entry.getValue())).append(';');
+                });
+        return builder.toString();
     }
 
     private void append(StringBuilder builder, Object value) {

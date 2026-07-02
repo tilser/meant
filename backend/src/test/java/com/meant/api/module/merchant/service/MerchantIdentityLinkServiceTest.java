@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -40,6 +41,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -52,6 +54,7 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000040");
     private static final String METADATA_URL = "https://merchant.example/.well-known/oauth-authorization-server";
+    private static final String OIDC_METADATA_URL = "https://merchant.example/.well-known/openid-configuration";
     private static final String TOKEN_URL = "https://merchant.example/oauth/token";
 
     @Autowired
@@ -114,13 +117,32 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
                 .contains("response_type=code")
                 .contains("client_id=meant-test")
                 .contains("code_challenge_method=S256")
-                .contains("scope=dev.ucp.shopping.order:read%20dev.ucp.shopping.account:manage");
+                .contains("scope=dev.ucp.shopping.order:read")
+                .doesNotContain("dev.ucp.shopping.account:manage")
+                .doesNotContain("dev.ucp.shopping.loyalty:read");
+        assertThat(result.scopes()).containsExactly("dev.ucp.shopping.order:read");
         assertThat(result.state()).isNotBlank();
         MerchantIdentityLink link = merchantIdentityLinkRepository.findByUserIdAndMerchantId(USER_ID, merchant.getId())
                 .orElseThrow();
         assertThat(link.getStatus()).isEqualTo(MerchantIdentityLinkStatus.PENDING);
         assertThat(link.getStateHash()).doesNotContain(result.state());
         assertThat(link.getCodeVerifierCiphertext()).startsWith("v1:");
+        server.verify();
+    }
+
+    @Test
+    void startAuthorizationFallsBackToOidcDiscoveryOnlyAfterPrimaryNotFound() {
+        Merchant merchant = saveMerchant(true);
+        server.expect(requestTo(METADATA_URL))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+        expectOidcMetadata();
+
+        MerchantIdentityAuthorizationResult result = service.startAuthorization(
+                new StartMerchantIdentityAuthorizationCommand(USER_ID, merchant.getId()));
+
+        assertThat(result.authorizationUrl()).startsWith("https://merchant.example/oauth/authorize?");
+        assertThat(result.scopes()).containsExactly("dev.ucp.shopping.order:read");
         server.verify();
     }
 
@@ -148,6 +170,24 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
         assertThat(link.getAccessTokenCiphertext()).doesNotContain("access-token");
         assertThat(link.getRefreshTokenCiphertext()).doesNotContain("refresh-token");
         assertThat(link.getExpiresAt()).isAfter(Instant.now());
+        server.verify();
+    }
+
+    @Test
+    void completeAuthorizationRejectsMissingIssuer() {
+        Merchant merchant = saveMerchant(true);
+        expectMetadata();
+        MerchantIdentityAuthorizationResult authorization = service.startAuthorization(
+                new StartMerchantIdentityAuthorizationCommand(USER_ID, merchant.getId()));
+
+        assertThatThrownBy(() -> service.completeAuthorization(
+                new CompleteMerchantIdentityAuthorizationCommand(
+                        USER_ID,
+                        authorization.state(),
+                        "authorization-code",
+                        null)))
+                .isInstanceOf(MerchantIdentityLinkException.class)
+                .hasMessageContaining("missing issuer");
         server.verify();
     }
 
@@ -216,7 +256,17 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
     private void expectMetadata() {
         server.expect(requestTo(METADATA_URL))
                 .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
+                .andRespond(withSuccess(metadataJson(), MediaType.APPLICATION_JSON));
+    }
+
+    private void expectOidcMetadata() {
+        server.expect(requestTo(OIDC_METADATA_URL))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(metadataJson(), MediaType.APPLICATION_JSON));
+    }
+
+    private String metadataJson() {
+        return """
                         {
                           "issuer": "https://merchant.example",
                           "authorization_endpoint": "https://merchant.example/oauth/authorize",
@@ -226,9 +276,12 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
                             "dev.ucp.shopping.order:read",
                             "dev.ucp.shopping.account:manage",
                             "dev.ucp.shopping.loyalty:read"
-                          ]
+                          ],
+                          "code_challenge_methods_supported": ["S256"],
+                          "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
+                          "authorization_response_iss_parameter_supported": true
                         }
-                        """, MediaType.APPLICATION_JSON));
+                        """;
     }
 
     private void expectTokenExchange(String accessToken, String refreshToken, long expiresIn) {
@@ -331,10 +384,40 @@ class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
                 .targetAudience("Everyone")
                 .profileQuestion("Question")
                 .profileAnswerRaw("Answer")
+                .profileRaw(ucpProfileRaw())
                 .active(true)
                 .lastProfiledAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .createdAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .updatedAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build());
+    }
+
+    private String ucpProfileRaw() {
+        return """
+                {
+                  "version": "2026-04-08",
+                  "capabilities": {
+                    "dev.ucp.common.identity_linking": [
+                      {
+                        "version": "Working Draft",
+                        "config": {
+                          "scopes": {
+                            "dev.ucp.shopping.order:read": {},
+                            "dev.ucp.shopping.account:manage": {},
+                            "dev.ucp.shopping.loyalty:read": {},
+                            "dev.ucp.shopping.checkout:manage": {}
+                          }
+                        }
+                      }
+                    ],
+                    "dev.ucp.shopping.order": [
+                      {"version": "Working Draft"}
+                    ],
+                    "dev.ucp.shopping.checkout": [
+                      {"version": "Working Draft"}
+                    ]
+                  }
+                }
+                """;
     }
 }
