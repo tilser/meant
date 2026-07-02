@@ -3,6 +3,9 @@ package com.meant.api.plugin.checkout.update;
 import com.meant.api.plugin.checkout.common.dto.CheckoutCapabilityMetadata;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.support.CheckoutPluginJson;
+import com.meant.api.plugin.checkout.extension.buyerconsent.BuyerConsentExtensionSupport;
+import com.meant.api.plugin.checkout.extension.discount.DiscountExtensionSupport;
+import com.meant.api.plugin.checkout.extension.fulfillment.FulfillmentExtensionSupport;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutArguments;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
@@ -11,7 +14,6 @@ import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import java.util.List;
-import java.util.Map;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -44,20 +46,15 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
     ) {
         return new UpdateCheckoutArguments(
                 request.checkoutId(),
-                request.buyer(),
+                BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent()),
                 request.email(),
-                fulfillment(request.shippingAddress())
+                FulfillmentExtensionSupport.fulfillment(request.shippingAddress(), request.fulfillment()),
+                DiscountExtensionSupport.discountCodes(request.discountCodes())
         );
     }
 
     @Override
     public UcpCheckoutResponse parseResponse(UcpToolResponse response) {
         return CheckoutPluginJson.parse(objectMapper, response, UcpCheckoutResponse.class);
-    }
-
-    private UpdateCheckoutArguments.Fulfillment fulfillment(Map<String, Object> shippingAddress) {
-        return shippingAddress == null || shippingAddress.isEmpty()
-                ? null
-                : new UpdateCheckoutArguments.Fulfillment(shippingAddress);
     }
 }

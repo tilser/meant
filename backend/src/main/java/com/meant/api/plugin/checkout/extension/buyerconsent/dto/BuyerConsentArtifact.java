@@ -1,4 +1,4 @@
-package com.meant.api.plugin.checkout.buyerconsent.dto;
+package com.meant.api.plugin.checkout.extension.buyerconsent.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;

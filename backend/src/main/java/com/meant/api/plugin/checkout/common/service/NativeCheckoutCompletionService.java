@@ -1,7 +1,7 @@
 package com.meant.api.plugin.checkout.common.service;
 
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
-import com.meant.api.plugin.checkout.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
@@ -21,6 +21,7 @@ import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutResult;
 import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
 import com.meant.api.plugin.checkout.complete.CompleteCheckoutCapability;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
+import com.meant.api.plugin.checkout.extension.ap2mandate.Ap2MandateExtensionSupport;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.signing.Ap2MandateException;
 import com.meant.api.plugin.signing.Ap2MandateService;
@@ -55,7 +56,7 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class NativeCheckoutCompletionService {
 
-    private static final CapabilityId AP2_MANDATE = CapabilityId.of("dev.ucp.shopping.ap2_mandate");
+    private static final CapabilityId AP2_MANDATE = Ap2MandateExtensionSupport.ID;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private static final String UCP_AGENT_HEADER = "UCP-Agent";
@@ -580,7 +581,7 @@ public class NativeCheckoutCompletionService {
     }
 
     private boolean ap2Required(NativeCheckoutCompletionCommand command, UcpSession session) {
-        return command.ap2SecurityLock() || session.activeCapabilities().supports(AP2_MANDATE);
+        return command.ap2SecurityLock() || Ap2MandateExtensionSupport.active(session.activeCapabilities());
     }
 
     private String checkoutMandate(

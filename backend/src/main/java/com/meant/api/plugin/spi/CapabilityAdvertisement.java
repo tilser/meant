@@ -3,7 +3,9 @@ package com.meant.api.plugin.spi;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -15,7 +17,9 @@ public record CapabilityAdvertisement(
         @JsonProperty("protocol_versions") ProtocolVersions protocolVersions,
         Requirements requires,
         URI spec,
-        URI schema
+        URI schema,
+        @JsonProperty("extends") List<CapabilityId> extendsCapabilities,
+        Map<String, Object> config
 ) {
 
     public CapabilityAdvertisement {
@@ -26,6 +30,21 @@ public record CapabilityAdvertisement(
         requires = requires == null ? Requirements.none() : requires;
         Objects.requireNonNull(spec, "spec must not be null");
         Objects.requireNonNull(schema, "schema must not be null");
+        extendsCapabilities = extendsCapabilities == null ? List.of() : List.copyOf(extendsCapabilities);
+        config = config == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(config));
+    }
+
+    public CapabilityAdvertisement(
+            CapabilityId id,
+            String version,
+            List<String> tools,
+            boolean required,
+            ProtocolVersions protocolVersions,
+            Requirements requires,
+            URI spec,
+            URI schema
+    ) {
+        this(id, version, tools, required, protocolVersions, requires, spec, schema, List.of(), Map.of());
     }
 
     public static CapabilityAdvertisement required(
@@ -44,7 +63,9 @@ public record CapabilityAdvertisement(
                 ProtocolVersions.exact(protocolVersion),
                 Requirements.none(),
                 spec,
-                schema
+                schema,
+                List.of(),
+                Map.of()
         );
     }
 
@@ -64,7 +85,9 @@ public record CapabilityAdvertisement(
                 ProtocolVersions.exact(protocolVersion),
                 Requirements.none(),
                 spec,
-                schema
+                schema,
+                List.of(),
+                Map.of()
         );
     }
 

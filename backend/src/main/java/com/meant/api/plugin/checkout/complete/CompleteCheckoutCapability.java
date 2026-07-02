@@ -5,6 +5,7 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.support.CheckoutPluginJson;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutArguments;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
+import com.meant.api.plugin.checkout.extension.ap2mandate.Ap2MandateExtensionSupport;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -48,9 +49,7 @@ public class CompleteCheckoutCapability implements UcpCapability<CompleteCheckou
         return new CompleteCheckoutArguments(
                 request.checkoutId(),
                 new CompleteCheckoutArguments.Payment(request.paymentInstruments()),
-                hasText(request.checkoutMandate())
-                        ? new CompleteCheckoutArguments.Ap2(request.checkoutMandate().trim())
-                        : null,
+                Ap2MandateExtensionSupport.completeRequest(request.checkoutMandate()),
                 request.signals()
         );
     }
@@ -60,7 +59,4 @@ public class CompleteCheckoutCapability implements UcpCapability<CompleteCheckou
         return CheckoutPluginJson.parse(objectMapper, response, UcpCheckoutResponse.class);
     }
 
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
 }

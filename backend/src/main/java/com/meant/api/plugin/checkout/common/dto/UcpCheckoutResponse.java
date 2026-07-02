@@ -3,6 +3,9 @@ package com.meant.api.plugin.checkout.common.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.meant.api.plugin.checkout.extension.ap2mandate.dto.Ap2CheckoutData;
+import com.meant.api.plugin.checkout.extension.discount.dto.CheckoutDiscounts;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,15 @@ public record UcpCheckoutResponse(
         @JsonProperty("expires_at")
         @JsonAlias({"expiresAt", "expiration", "expiration_time"})
         Instant expiresAt,
+        String currency,
+        @JsonProperty("line_items")
+        @JsonAlias("lineItems")
+        List<Map<String, Object>> lineItems,
+        List<Map<String, Object>> totals,
+        Map<String, Object> buyer,
+        CheckoutDiscounts discounts,
+        CheckoutFulfillment fulfillment,
+        Ap2CheckoutData ap2,
         List<CheckoutMessage> messages,
         List<CheckoutError> errors
 ) {
@@ -59,8 +71,13 @@ public record UcpCheckoutResponse(
                 createdAt,
                 updatedAt,
                 expiresAt,
-                null,
-                null,
+                currency,
+                lineItems,
+                totals,
+                buyer,
+                discounts,
+                fulfillment,
+                ap2,
                 List.of()
         );
     }
@@ -91,8 +108,15 @@ public record UcpCheckoutResponse(
             @JsonProperty("expires_at")
             @JsonAlias({"expiresAt", "expiration", "expiration_time"})
             Instant expiresAt,
+            String currency,
+            @JsonProperty("line_items")
+            @JsonAlias("lineItems")
+            List<Map<String, Object>> lineItems,
+            List<Map<String, Object>> totals,
             Map<String, Object> buyer,
-            Map<String, Object> fulfillment,
+            CheckoutDiscounts discounts,
+            CheckoutFulfillment fulfillment,
+            Ap2CheckoutData ap2,
             List<CheckoutMessage> messages
     ) {
     }

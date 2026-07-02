@@ -1,6 +1,6 @@
 package com.meant.api.plugin.checkout.common.service;
 
-import com.meant.api.plugin.checkout.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.common.entity.BuyerConsent;
 import com.meant.api.plugin.checkout.common.exception.UcpCheckoutSafetyException;
 import com.meant.api.plugin.checkout.common.repository.BuyerConsentRepository;

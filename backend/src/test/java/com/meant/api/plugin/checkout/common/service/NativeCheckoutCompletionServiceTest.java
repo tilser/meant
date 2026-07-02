@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
-import com.meant.api.plugin.checkout.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;

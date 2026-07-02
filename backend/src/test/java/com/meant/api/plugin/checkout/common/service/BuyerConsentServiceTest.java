@@ -2,7 +2,7 @@ package com.meant.api.plugin.checkout.common.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.plugin.checkout.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.common.entity.BuyerConsent;
 import com.meant.api.plugin.checkout.common.repository.BuyerConsentRepository;
 import com.meant.api.plugin.checkout.common.service.command.CreateBuyerConsentCommand;

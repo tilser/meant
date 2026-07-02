@@ -5,6 +5,9 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.support.CheckoutPluginJson;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutArguments;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
+import com.meant.api.plugin.checkout.extension.buyerconsent.BuyerConsentExtensionSupport;
+import com.meant.api.plugin.checkout.extension.discount.DiscountExtensionSupport;
+import com.meant.api.plugin.checkout.extension.fulfillment.FulfillmentExtensionSupport;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -49,7 +52,10 @@ public class CreateCheckoutCapability implements UcpCapability<CreateCheckoutReq
                                 new CreateCheckoutArguments.Item(item.productVariantId()),
                                 item.quantity()
                         ))
-                        .toList()
+                        .toList(),
+                BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent()),
+                DiscountExtensionSupport.discountCodes(request.discountCodes()),
+                FulfillmentExtensionSupport.fulfillment(null, request.fulfillment())
         ));
     }
 
