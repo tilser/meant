@@ -1,4 +1,6 @@
 import {
+  type Dispatch,
+  type SetStateAction,
   useEffect,
   useRef,
 } from 'react'
@@ -37,13 +39,19 @@ import {
   selectedDeliveryOptionsForCart,
 } from './utils'
 
+function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
+  return typeof action === 'function'
+    ? (action as (previous: T) => T)(current)
+    : action
+}
+
 export function useCartController(products: readonly Product[]) {
-  const [cart, setCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
-  const [cartSnapshots, setCartSnapshots] = useStoredState<Record<string, MerchantCartSnapshot>>(
+  const [cart, setStoredCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
+  const [cartSnapshots, setStoredCartSnapshots] = useStoredState<Record<string, MerchantCartSnapshot>>(
     'meant.cartSnapshots',
     {},
   )
-  const cartRef = useRef<readonly CartItem[]>(cart)
+  const cartRef = useRef<CartItem[]>(cart)
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
 
   useEffect(() => {
@@ -54,22 +62,26 @@ export function useCartController(products: readonly Product[]) {
     cartSnapshotsRef.current = cartSnapshots
   }, [cartSnapshots])
 
+  const setCart: Dispatch<SetStateAction<CartItem[]>> = (action) => {
+    const next = resolveSetStateAction(action, cartRef.current)
+    cartRef.current = next
+    setStoredCart(next)
+  }
+
+  const setCartSnapshots: Dispatch<SetStateAction<Record<string, MerchantCartSnapshot>>> = (action) => {
+    const next = resolveSetStateAction(action, cartSnapshotsRef.current)
+    cartSnapshotsRef.current = next
+    setStoredCartSnapshots(next)
+  }
+
   const updateStoredCart = (updater: (current: CartItem[]) => CartItem[]) => {
-    setCart((current) => {
-      const next = updater(current)
-      cartRef.current = next
-      return next
-    })
+    setCart(updater)
   }
 
   const updateStoredCartSnapshots = (
     updater: (current: Record<string, MerchantCartSnapshot>) => Record<string, MerchantCartSnapshot>,
   ) => {
-    setCartSnapshots((current) => {
-      const next = updater(current)
-      cartSnapshotsRef.current = next
-      return next
-    })
+    setCartSnapshots(updater)
   }
 
   const storeCartSnapshot = (merchantKey: string, merchant: string, snapshot: CartProfile) => {
@@ -165,9 +177,6 @@ export function useCartController(products: readonly Product[]) {
 
     const merchantKey = cartMerchantKey(offer)
     const existingGroup = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
-    const existingItem = cartRef.current.find((item) =>
-      item.id === product.id && cartMerchantKey(item) === merchantKey,
-    )
 
     updateStoredCart((current) => {
       const existing = current.find((item) =>
@@ -242,25 +251,25 @@ export function useCartController(products: readonly Product[]) {
       storeCartSnapshot(merchantKey, offer.merchant, snapshot)
       return true
     } catch {
-      const expectedQty = existingItem ? existingItem.qty + 1 : 1
-      updateStoredCart((current) => {
-        if (!existingItem) {
-          return current.filter((item) => {
-            const matches = item.id === product.id && cartMerchantKey(item) === merchantKey
-            return !(matches && item.qty === expectedQty)
-          })
-        }
-        return current.map((item) =>
-          item.id === product.id && cartMerchantKey(item) === merchantKey && item.qty === expectedQty
-            ? {
-                ...item,
-                qty: existingItem.qty,
-                syncing: false,
-                syncError: 'Could not add this item to the merchant cart.',
-              }
-            : item,
-        )
-      })
+      updateStoredCart((current) =>
+        current.flatMap((item) => {
+          if (item.id !== product.id || cartMerchantKey(item) !== merchantKey) {
+            return [item]
+          }
+
+          const qty = item.qty - 1
+          if (qty <= 0) {
+            return []
+          }
+
+          return [{
+            ...item,
+            qty,
+            syncing: false,
+            syncError: 'Could not add this item to the merchant cart.',
+          }]
+        }),
+      )
       return false
     }
   }
