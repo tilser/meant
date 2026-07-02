@@ -242,12 +242,16 @@ export function useCartController(products: readonly Product[]) {
       storeCartSnapshot(merchantKey, offer.merchant, snapshot)
       return true
     } catch {
+      const expectedQty = existingItem ? existingItem.qty + 1 : 1
       updateStoredCart((current) => {
         if (!existingItem) {
-          return current.filter((item) => !(item.id === product.id && cartMerchantKey(item) === merchantKey))
+          return current.filter((item) => {
+            const matches = item.id === product.id && cartMerchantKey(item) === merchantKey
+            return !(matches && item.qty === expectedQty)
+          })
         }
         return current.map((item) =>
-          item.id === product.id && cartMerchantKey(item) === merchantKey
+          item.id === product.id && cartMerchantKey(item) === merchantKey && item.qty === expectedQty
             ? {
                 ...item,
                 qty: existingItem.qty,
@@ -308,14 +312,24 @@ export function useCartController(products: readonly Product[]) {
           clearMerchantCartState(merchantKey)
           return
         }
-        updateStoredCart((current) => [
-          ...current,
-          {
-            ...item,
-            syncing: false,
-            syncError: 'Could not remove this item from the merchant cart.',
-          },
-        ])
+        updateStoredCart((current) => {
+          const exists = current.some((candidate) => cartItemMatches(candidate, id, merchant))
+          if (exists) {
+            return current.map((candidate) =>
+              cartItemMatches(candidate, id, merchant)
+                ? { ...candidate, syncError: 'Could not remove this item from the merchant cart.' }
+                : candidate,
+            )
+          }
+          return [
+            ...current,
+            {
+              ...item,
+              syncing: false,
+              syncError: 'Could not remove this item from the merchant cart.',
+            },
+          ]
+        })
       })
   }
 
