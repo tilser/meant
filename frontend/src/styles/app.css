@@ -1,5 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
 
 :root {
   --bg: #f6f7f8;
@@ -18,9 +18,9 @@
   --tint: #ffffff;
   --glass: color-mix(in srgb, #ffffff 80%, transparent);
   --knob: #ffffff;
-  --serif: "Newsreader", Georgia, serif;
-  --sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: 'Newsreader', Georgia, serif;
+  --sans: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --motion-fast: 90ms;
   --motion-quick: 140ms;
   --motion-medium: 220ms;
@@ -36,7 +36,7 @@
   text-rendering: optimizeLegibility;
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   --bg: #0f1115;
   --surface: #181a1f;
   --ink: #f0f2f4;
@@ -118,7 +118,9 @@ button:disabled {
   border: 0;
   background: transparent;
   padding: 0;
-  transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .mt-brand:active {
@@ -169,7 +171,9 @@ button:disabled {
   opacity: 0;
   transform: scaleX(0.32);
   transform-origin: center;
-  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-medium) var(--ease-spring);
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    transform var(--motion-medium) var(--ease-spring);
 }
 
 .mt-nav-item:hover {
@@ -278,12 +282,16 @@ button:disabled {
   border-radius: 50%;
   background: transparent;
   padding: 0;
-  transition: box-shadow var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-avatar:hover,
 .mt-avatar.on {
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-line);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent-line);
 }
 
 .mt-avatar:active {
@@ -371,7 +379,9 @@ button:disabled {
   text-decoration: underline;
   text-underline-offset: 3px;
   white-space: nowrap;
-  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-profile-edit:hover {
@@ -436,7 +446,9 @@ button:disabled {
   border-radius: 16px;
   background: var(--surface);
   padding: 8px 8px 8px 16px;
-  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.03), 0 12px 30px -18px rgba(20, 24, 28, 0.18);
+  box-shadow:
+    0 1px 2px rgba(20, 24, 28, 0.03),
+    0 12px 30px -18px rgba(20, 24, 28, 0.18);
   transform-origin: center;
   transition:
     border-color var(--motion-medium) var(--ease-out),
@@ -455,13 +467,12 @@ button:disabled {
   content: '';
   position: absolute;
   inset: -1px;
-  background:
-    linear-gradient(
-      110deg,
-      transparent 0%,
-      color-mix(in srgb, var(--accent) 9%, transparent) 42%,
-      transparent 72%
-    );
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 9%, transparent) 42%,
+    transparent 72%
+  );
   opacity: 0;
   transform: translateX(-70%);
   pointer-events: none;
@@ -510,7 +521,9 @@ button:disabled {
   );
   opacity: 0.34;
   transform: scale(0.72);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .mt-search-spark::after {
@@ -532,7 +545,9 @@ button:disabled {
   position: relative;
   z-index: 1;
   transform-origin: center;
-  transition: filter 180ms ease, transform 180ms ease;
+  transition:
+    filter 180ms ease,
+    transform 180ms ease;
 }
 
 .mt-ask-spark {
@@ -559,7 +574,9 @@ button:disabled {
   );
   opacity: 0.36;
   transform: scale(0.72);
-  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-quick) var(--ease-out);
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    transform var(--motion-quick) var(--ease-out);
 }
 
 .mt-ask-spark::after {
@@ -577,7 +594,9 @@ button:disabled {
   position: relative;
   z-index: 1;
   transform-origin: center;
-  transition: filter var(--motion-quick) var(--ease-out), transform var(--motion-quick) var(--ease-out);
+  transition:
+    filter var(--motion-quick) var(--ease-out),
+    transform var(--motion-quick) var(--ease-out);
 }
 
 .mt-search:focus-within .mt-search-spark::before {
@@ -919,7 +938,7 @@ button:disabled {
   font-weight: 700;
 }
 
-[data-theme="dark"] .mt-restock-band-count {
+[data-theme='dark'] .mt-restock-band-count {
   color: #78d0b9;
 }
 
@@ -1073,7 +1092,9 @@ button:disabled {
   border-radius: 10px;
   background: var(--surface);
   padding: 0 10px;
-  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out);
 }
 
 .mt-scope-search:focus-within {
@@ -1118,7 +1139,9 @@ button:disabled {
   color: var(--ink);
   padding: 9px 11px;
   text-align: left;
-  transition: background var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-scope-opt:hover {
@@ -1279,7 +1302,9 @@ button:disabled {
   text-decoration: underline;
   text-underline-offset: 3px;
   white-space: nowrap;
-  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-reply-clear:hover {
@@ -1329,12 +1354,7 @@ button:disabled {
   right: 10px;
   top: 50%;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--accent-line),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, var(--accent-line), transparent);
   transform: translateY(-50%);
 }
 
@@ -1710,7 +1730,7 @@ button:disabled {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
 }
 
-.mt-card[data-reordering="true"] {
+.mt-card[data-reordering='true'] {
   will-change: transform;
 }
 
@@ -1735,11 +1755,15 @@ button:disabled {
 
 .mt-card-live-curating,
 .mt-card-live-enriched {
-  animation: mt-card-in var(--motion-slow) var(--ease-out) both, mt-soft-glow 760ms var(--ease-out) both;
+  animation:
+    mt-card-in var(--motion-slow) var(--ease-out) both,
+    mt-soft-glow 760ms var(--ease-out) both;
 }
 
 .mt-card-live-curated {
-  animation: mt-card-in var(--motion-slow) var(--ease-out) both, mt-curator-settle 620ms var(--ease-out) both;
+  animation:
+    mt-card-in var(--motion-slow) var(--ease-out) both,
+    mt-curator-settle 620ms var(--ease-out) both;
 }
 
 .mt-card:hover {
@@ -1770,7 +1794,11 @@ button:disabled {
 .mt-ph-stripes {
   position: absolute;
   inset: 0;
-  background-image: repeating-linear-gradient(-45deg, rgba(22, 24, 28, 0.035) 0 1px, transparent 1px 11px);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(22, 24, 28, 0.035) 0 1px,
+    transparent 1px 11px
+  );
 }
 
 .mt-ph-label {
@@ -2037,7 +2065,7 @@ button:disabled {
   color: #20715f;
 }
 
-[data-theme="dark"] .mt-inv-signal.restock {
+[data-theme='dark'] .mt-inv-signal.restock {
   color: #78d0b9;
 }
 
@@ -2119,7 +2147,10 @@ button:disabled {
   font-size: 13px;
   line-height: 1.5;
   opacity: 0;
-  transition: max-height 0.35s ease, opacity 0.3s ease, padding-top 0.35s ease;
+  transition:
+    max-height 0.35s ease,
+    opacity 0.3s ease,
+    padding-top 0.35s ease;
 }
 
 .mt-card-note-live {
@@ -2803,7 +2834,9 @@ button:disabled {
   color: var(--ink);
   padding: 9px 10px;
   text-align: left;
-  transition: background var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-cmp-opt:hover {
@@ -3036,7 +3069,9 @@ button:disabled {
   font-weight: 600;
   box-shadow: 0 16px 36px -12px rgba(18, 20, 24, 0.65);
   cursor: pointer;
-  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-quick) var(--ease-out);
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    transform var(--motion-quick) var(--ease-out);
 }
 
 .mt-modal-nav:hover:not(:disabled) {
@@ -3152,7 +3187,10 @@ button:disabled {
   color: var(--ink);
   cursor: pointer;
   padding: 0;
-  transition: background var(--motion-quick) var(--ease-out), color var(--motion-quick) var(--ease-out), opacity var(--motion-quick) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    opacity var(--motion-quick) var(--ease-out);
 }
 
 .mt-modal-thumb-page:hover:not(:disabled),
@@ -3370,12 +3408,12 @@ button:disabled {
 }
 
 .mt-list-pro li::before {
-  content: "+";
+  content: '+';
   color: var(--accent);
 }
 
 .mt-list-con li::before {
-  content: "-";
+  content: '-';
   color: var(--faint);
 }
 
@@ -3664,7 +3702,9 @@ button:disabled {
 }
 
 .mt-msg-streaming .mt-msg-av {
-  animation: mt-msg-avatar-in var(--motion-medium) var(--ease-spring) both, mt-soft-glow 1.8s ease-in-out infinite;
+  animation:
+    mt-msg-avatar-in var(--motion-medium) var(--ease-spring) both,
+    mt-soft-glow 1.8s ease-in-out infinite;
 }
 
 .mt-msg-stack {
@@ -3699,12 +3739,11 @@ button:disabled {
 
 .mt-msg-ai .mt-msg-bubble-streaming {
   border-color: var(--accent-line);
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--accent) 4%, var(--surface)),
-      var(--surface) 58%
-    );
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 4%, var(--surface)),
+    var(--surface) 58%
+  );
   box-shadow: 0 10px 24px -22px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
@@ -4230,7 +4269,9 @@ button:disabled {
   padding: 14px 16px;
   outline: 0;
   resize: vertical;
-  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out);
 }
 
 .mt-describe:focus,
@@ -4289,7 +4330,9 @@ button:disabled {
   gap: 24px;
   border-bottom: 1px solid var(--line-soft);
   padding: 17px 22px;
-  transition: background var(--motion-quick) var(--ease-out), opacity var(--motion-quick) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    opacity var(--motion-quick) var(--ease-out);
 }
 
 .mt-pref-row:hover {
@@ -4519,7 +4562,9 @@ button:disabled {
   background: var(--bg);
   color: var(--muted);
   padding: 0 10px;
-  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out);
 }
 
 .mt-pref-search:focus-within {
@@ -5156,7 +5201,9 @@ button:disabled {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
-  transition: box-shadow var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-cart-pop-detail:hover {
@@ -5252,7 +5299,9 @@ button:disabled {
   line-height: 1.25;
   padding: 10px 14px;
   text-align: center;
-  transition: opacity var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-alert-fix:hover {
@@ -5381,7 +5430,9 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 2px;
-  transition: border-color var(--motion-quick) var(--ease-out), box-shadow var(--motion-quick) var(--ease-out);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-quick) var(--ease-out);
 }
 
 .mt-qty:focus-within {
@@ -5398,7 +5449,10 @@ button:disabled {
   border-radius: 7px;
   background: transparent;
   color: var(--ink-soft);
-  transition: background var(--motion-quick) var(--ease-out), color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-qty button:not(:disabled):hover {
@@ -5499,7 +5553,9 @@ button:disabled {
 
 .mt-delivery-address {
   display: grid;
-  grid-template-columns: minmax(116px, 1.1fr) minmax(116px, 1fr) minmax(106px, 0.85fr) minmax(90px, 0.75fr) auto;
+  grid-template-columns:
+    minmax(116px, 1.1fr) minmax(116px, 1fr) minmax(106px, 0.85fr) minmax(90px, 0.75fr)
+    auto;
   gap: 10px;
   align-items: end;
 }
@@ -6048,7 +6104,9 @@ button:disabled {
   background: transparent;
   color: var(--ink);
   text-align: left;
-  transition: background var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-order-item:hover {
@@ -6293,7 +6351,10 @@ button:disabled {
   font-weight: 500;
   padding: 9px 11px;
   text-align: left;
-  transition: background var(--motion-quick) var(--ease-out), color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-acctmenu-item:hover {
@@ -6344,7 +6405,9 @@ button:disabled {
   padding: 0;
   text-decoration: underline;
   text-underline-offset: 3px;
-  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-acct-removebtn:hover {
@@ -6461,7 +6524,11 @@ button:disabled {
   justify-content: space-between;
   overflow: hidden;
   border-right: 1px solid var(--line);
-  background: radial-gradient(125% 90% at 0 0, color-mix(in srgb, #2453c4 11%, var(--bg)) 0%, var(--bg) 58%);
+  background: radial-gradient(
+    125% 90% at 0 0,
+    color-mix(in srgb, #2453c4 11%, var(--bg)) 0%,
+    var(--bg) 58%
+  );
   padding: 48px 56px;
 }
 
@@ -6563,7 +6630,9 @@ button:disabled {
   font-size: 11px;
   text-decoration: underline;
   text-underline-offset: 3px;
-  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-auth-forgot:hover,
@@ -6585,7 +6654,10 @@ button:disabled {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
-  transition: box-shadow var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out), opacity var(--motion-quick) var(--ease-out);
+  transition:
+    box-shadow var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-quick) var(--ease-out);
 }
 
 .mt-auth-primary:not(:disabled):hover {
@@ -6610,7 +6682,9 @@ button:disabled {
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
-  transition: color var(--motion-quick) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .mt-auth-toggle button:hover {
@@ -7382,8 +7456,8 @@ button:disabled {
   .mt-topbar {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "brand actions"
-      "nav nav";
+      'brand actions'
+      'nav nav';
     height: auto;
     row-gap: 9px;
     padding: 10px 14px 8px;

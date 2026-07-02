@@ -1,7 +1,4 @@
-import type {
-  CartDeliveryGroup,
-  CartDeliveryOption,
-} from '../types'
+import type { CartDeliveryGroup, CartDeliveryOption } from '../types'
 
 export type AppliedCartCodeType = 'DISCOUNT' | 'GIFT_CARD'
 

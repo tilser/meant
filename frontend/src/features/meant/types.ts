@@ -6,14 +6,7 @@ export type ProductId = string
 export type PortType = 'usb-c' | 'usb-a' | 'hdmi'
 
 export type View =
-  | 'discover'
-  | 'saved'
-  | 'compare'
-  | 'inventory'
-  | 'preferences'
-  | 'cart'
-  | 'orders'
-  | 'account'
+  'discover' | 'saved' | 'compare' | 'inventory' | 'preferences' | 'cart' | 'orders' | 'account'
 
 export type Theme = 'light' | 'dark'
 export type AuthMode = 'signin' | 'signup' | 'reset'

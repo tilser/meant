@@ -1,11 +1,4 @@
-import {
-  type Dispatch,
-  type SetStateAction,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 
 import { readStorage, writeStorage } from '../utils'
 
@@ -16,9 +9,7 @@ interface StoredValue<T> {
 }
 
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
-  return typeof action === 'function'
-    ? (action as (previous: T) => T)(current)
-    : action
+  return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
 }
 
 export function useStoredState<T>(
@@ -49,9 +40,8 @@ export function useStoredState<T>(
   const setValue: Dispatch<SetStateAction<T>> = useCallback((action) => {
     setStored((previous) => {
       const currentKey = keyRef.current
-      const previousValue = previous.key === currentKey
-        ? previous.value
-        : readStorage(currentKey, fallbackRef.current)
+      const previousValue =
+        previous.key === currentKey ? previous.value : readStorage(currentKey, fallbackRef.current)
 
       return {
         hydrated: true,

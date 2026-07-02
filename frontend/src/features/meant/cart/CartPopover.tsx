@@ -1,11 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { CartIcon, CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
-import type {
-  CartItem,
-  Product,
-  ProductId,
-} from '../types'
+import type { CartItem, Product, ProductId } from '../types'
 import {
   cartGroups,
   cartLines,
@@ -15,11 +11,7 @@ import {
   normalizedMerchantName,
 } from '../utils'
 import type { MerchantCartSnapshot } from './types'
-import {
-  cartSnapshotSavings,
-  cartSnapshotSubtotal,
-  cartSnapshotTotal,
-} from './utils'
+import { cartSnapshotSavings, cartSnapshotSubtotal, cartSnapshotTotal } from './utils'
 
 export function CartPopover({
   cart,
@@ -92,7 +84,9 @@ export function CartPopover({
   const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
   const groups = cartGroups(lines, false)
   const groupSummaries = groups.map((group) => {
-    const merchantKey = group.items[0] ? cartMerchantKey(group.items[0]) : normalizedMerchantName(group.merchant)
+    const merchantKey = group.items[0]
+      ? cartMerchantKey(group.items[0])
+      : normalizedMerchantName(group.merchant)
     const snapshot = cartSnapshots[merchantKey]
     const fallbackTotal = group.subtotal + group.delivery
     return {
@@ -104,7 +98,10 @@ export function CartPopover({
     }
   })
   const discountTotal = groupSummaries.reduce((sum, summary) => sum + summary.savings, 0)
-  const codeCount = groupSummaries.reduce((sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0), 0)
+  const codeCount = groupSummaries.reduce(
+    (sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0),
+    0,
+  )
   const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
 
@@ -120,7 +117,9 @@ export function CartPopover({
       </div>
       <div className="mt-cart-pop-signals">
         <div className={`mt-cart-sig ${warnCount > 0 ? 'mt-cart-sig-warn' : 'mt-cart-sig-good'}`}>
-          {warnCount > 0 ? `${warnCount} issue${warnCount === 1 ? '' : 's'} to review` : 'All compatible'}
+          {warnCount > 0
+            ? `${warnCount} issue${warnCount === 1 ? '' : 's'} to review`
+            : 'All compatible'}
         </div>
         <div className={`mt-cart-sig ${codeCount > 0 ? 'mt-cart-sig-good' : 'mt-cart-sig-muted'}`}>
           <SparkMark size={13} />

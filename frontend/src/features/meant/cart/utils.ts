@@ -13,13 +13,11 @@ import {
   money,
   selectedCartDeliveryOption,
 } from '../utils'
-import type {
-  AppliedCartCode,
-  DeliveryAddressDraft,
-  MerchantCartSnapshot,
-} from './types'
+import type { AppliedCartCode, DeliveryAddressDraft, MerchantCartSnapshot } from './types'
 
-export function emptyDeliveryAddressDraft(locations: readonly UserLocation[]): DeliveryAddressDraft {
+export function emptyDeliveryAddressDraft(
+  locations: readonly UserLocation[],
+): DeliveryAddressDraft {
   const location = locations[0]
   return {
     countryCode: location?.code ?? 'US',
@@ -69,14 +67,19 @@ export function selectedDeliveryOptionsForCart(
   selectedGroup: CartDeliveryGroup,
   selectedOption: CartDeliveryOption,
 ): Record<string, unknown>[] {
-  const groups = (cart.find((item) => cartMerchantKey(item) === merchantKey)?.deliveryGroups ?? [])
-    .filter((group): group is CartDeliveryGroup => Boolean(group))
+  const groups = (
+    cart.find((item) => cartMerchantKey(item) === merchantKey)?.deliveryGroups ?? []
+  ).filter((group): group is CartDeliveryGroup => Boolean(group))
   const selectionGroups = groups.length > 0 ? groups : [selectedGroup]
   return selectionGroups
-    .map((group) => selectedDeliveryOptionArguments(
-      group,
-      sameDeliveryGroup(group, selectedGroup) ? selectedOption : selectedCartDeliveryOption(group),
-    ))
+    .map((group) =>
+      selectedDeliveryOptionArguments(
+        group,
+        sameDeliveryGroup(group, selectedGroup)
+          ? selectedOption
+          : selectedCartDeliveryOption(group),
+      ),
+    )
     .filter((selection): selection is Record<string, unknown> => Boolean(selection))
 }
 
@@ -99,10 +102,19 @@ export function deliveryOptionTitle(option: CartDeliveryOption): string {
 }
 
 export function deliveryOptionSpeed(option: CartDeliveryOption): string | null {
-  return option.deliveryEstimate || option.estimatedDeliveryTime || option.description || option.estimatedDeliveryAt || null
+  return (
+    option.deliveryEstimate ||
+    option.estimatedDeliveryTime ||
+    option.description ||
+    option.estimatedDeliveryAt ||
+    null
+  )
 }
 
-export function deliveryOptionCost(option: CartDeliveryOption, fallbackCurrency?: string | null): string {
+export function deliveryOptionCost(
+  option: CartDeliveryOption,
+  fallbackCurrency?: string | null,
+): string {
   const amount = cartDeliveryOptionAmount(option)
   if (amount === null) {
     return 'Cost at checkout'
@@ -119,12 +131,16 @@ export function deliveryGroupSummary(
     .map((group) => selectedCartDeliveryOption(group))
     .filter((option): option is CartDeliveryOption => Boolean(option))
   if (selected.length === 0) {
-    return fallbackAmount === 0 ? 'Free delivery' : `${formatCartAmount(fallbackAmount, fallbackCurrency)} delivery`
+    return fallbackAmount === 0
+      ? 'Free delivery'
+      : `${formatCartAmount(fallbackAmount, fallbackCurrency)} delivery`
   }
-  return selected.map((option) => {
-    const speed = deliveryOptionSpeed(option)
-    return `${deliveryOptionTitle(option)} · ${deliveryOptionCost(option, fallbackCurrency)}${speed ? ` · ${speed}` : ''}`
-  }).join(' + ')
+  return selected
+    .map((option) => {
+      const speed = deliveryOptionSpeed(option)
+      return `${deliveryOptionTitle(option)} · ${deliveryOptionCost(option, fallbackCurrency)}${speed ? ` · ${speed}` : ''}`
+    })
+    .join(' + ')
 }
 
 export function offerCartable(offer: Offer): boolean {
@@ -173,9 +189,8 @@ export function cartSnapshotFromProfile(
       .map((code): AppliedCartCode => {
         const type = code.type === 'GIFT_CARD' ? 'GIFT_CARD' : 'DISCOUNT'
         const displayCode = code.code?.trim() || null
-        const transportCode = type === 'GIFT_CARD' && looksLikeGiftCardSuffix(displayCode)
-          ? null
-          : displayCode
+        const transportCode =
+          type === 'GIFT_CARD' && looksLikeGiftCardSuffix(displayCode) ? null : displayCode
         return {
           type,
           code: transportCode,
@@ -214,7 +229,10 @@ export function cartSnapshotSavings(
   if (!snapshot) {
     return 0
   }
-  const codeSavings = snapshot.appliedCodes.reduce((sum, code) => sum + Math.abs(code.amount ?? 0), 0)
+  const codeSavings = snapshot.appliedCodes.reduce(
+    (sum, code) => sum + Math.abs(code.amount ?? 0),
+    0,
+  )
   if (codeSavings > 0) {
     return codeSavings
   }

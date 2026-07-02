@@ -9,7 +9,10 @@ interface ViewHeadProps {
   right?: ReactNode
 }
 
-export function SparkMark({ size = 16, color = 'var(--accent)' }: Readonly<{
+export function SparkMark({
+  size = 16,
+  color = 'var(--accent)',
+}: Readonly<{
   size?: number
   color?: string
 }>) {
@@ -69,21 +72,18 @@ export function Placeholder({
   )
 }
 
-export function ProductArtwork({ product, label, imageUrl }: Readonly<{
+export function ProductArtwork({
+  product,
+  label,
+  imageUrl,
+}: Readonly<{
   product: Product
   label: string
   imageUrl?: string | null
 }>) {
   const artworkUrl = imageUrl ?? product.imageUrl
   if (artworkUrl) {
-    return (
-      <img
-        className="mt-product-img"
-        src={artworkUrl}
-        alt=""
-        loading="lazy"
-      />
-    )
+    return <img className="mt-product-img" src={artworkUrl} alt="" loading="lazy" />
   }
   return <Placeholder label={label} tone={product.tone} />
 }

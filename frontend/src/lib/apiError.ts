@@ -19,7 +19,7 @@ export async function parseJsonResponse<T>(response: Response, message: string):
 
 export async function parseErrorResponse(response: Response, fallback: string): Promise<ApiError> {
   try {
-    const payload = await response.json() as {
+    const payload = (await response.json()) as {
       detail?: unknown
       title?: unknown
       message?: unknown

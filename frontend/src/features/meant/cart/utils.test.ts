@@ -2,10 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { CartProfile } from '../../../lib/apiClient'
 import type { MerchantCartSnapshot } from './types'
-import {
-  cartSnapshotFromProfile,
-  cartSnapshotSavings,
-} from './utils'
+import { cartSnapshotFromProfile, cartSnapshotSavings } from './utils'
 
 function merchantSnapshot(overrides: Partial<MerchantCartSnapshot>): MerchantCartSnapshot {
   return {

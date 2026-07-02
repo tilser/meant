@@ -1,10 +1,4 @@
-import {
-  CORE_PREFERENCE_IDS,
-  DISCOUNTS,
-  MERCHANTS,
-  PRODUCTS,
-  REPLIES,
-} from './data'
+import { CORE_PREFERENCE_IDS, DISCOUNTS, MERCHANTS, PRODUCTS, REPLIES } from './data'
 import { ApiError } from '../../lib/apiError'
 import type { CartProfile } from '../../lib/apiClient'
 import type {
@@ -48,10 +42,7 @@ export function productsByIds(ids: readonly ProductId[]): Product[] {
   return ids.map((id) => productById(id))
 }
 
-export function prefLabel(
-  preferences: readonly Preference[],
-  id: PreferenceId,
-): string {
+export function prefLabel(preferences: readonly Preference[], id: PreferenceId): string {
   return preferences.find((preference) => preference.id === id)?.label ?? id
 }
 
@@ -65,13 +56,7 @@ export function listJoin(values: readonly string[]): string {
   return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`
 }
 
-const HIDDEN_PRODUCT_CATEGORY_VALUES = new Set([
-  'n/a',
-  'na',
-  'none',
-  'not available',
-  'unknown',
-])
+const HIDDEN_PRODUCT_CATEGORY_VALUES = new Set(['n/a', 'na', 'none', 'not available', 'unknown'])
 
 export function displayProductCategoryValue(value: string | null | undefined): string | null {
   const trimmed = value?.trim()
@@ -98,7 +83,11 @@ export function cartMerchantKey(input: {
   merchantId?: string | null
   merchantDomain?: string | null
 }): string {
-  return input.merchantId || normalizedMerchantName(input.merchantDomain) || normalizedMerchantName(input.merchant)
+  return (
+    input.merchantId ||
+    normalizedMerchantName(input.merchantDomain) ||
+    normalizedMerchantName(input.merchant)
+  )
 }
 
 export function firstUrl(...urls: Array<string | null | undefined>): string | null {
@@ -121,10 +110,7 @@ export function cartRebuildItems(
     }))
 }
 
-export function canMerchantShip(
-  merchant: string,
-  locations: DeliveryLocations,
-): boolean {
+export function canMerchantShip(merchant: string, locations: DeliveryLocations): boolean {
   if (locations.length === 0) {
     return true
   }
@@ -133,8 +119,7 @@ export function canMerchantShip(
     return true
   }
   return locations.some((location) => {
-    const shipsToCountry =
-      coverage.ships === 'global' || coverage.ships.includes(location.code)
+    const shipsToCountry = coverage.ships === 'global' || coverage.ships.includes(location.code)
     if (!shipsToCountry) {
       return false
     }
@@ -145,10 +130,7 @@ export function canMerchantShip(
   })
 }
 
-export function productMatchesClothingFit(
-  product: Product,
-  clothingFit: ClothingFit,
-): boolean {
+export function productMatchesClothingFit(product: Product, clothingFit: ClothingFit): boolean {
   if (clothingFit === 'none' || !product.audiences || product.audiences.length === 0) {
     return true
   }
@@ -162,13 +144,8 @@ export function productsForClothingFit(
   return products.filter((product) => productMatchesClothingFit(product, clothingFit))
 }
 
-export function availableOffers(
-  product: Product,
-  locations: DeliveryLocations,
-): Offer[] {
-  return product.offers.filter((offer) =>
-    canMerchantShip(offer.merchant, locations),
-  )
+export function availableOffers(product: Product, locations: DeliveryLocations): Offer[] {
+  return product.offers.filter((offer) => canMerchantShip(offer.merchant, locations))
 }
 
 export function productsForLocation(
@@ -199,19 +176,13 @@ function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>)
   return product.satisfies.filter((id) => activeIds.has(id)).length
 }
 
-export function productPriceFrom(
-  product: Product,
-  locations: DeliveryLocations,
-): number {
+export function productPriceFrom(product: Product, locations: DeliveryLocations): number {
   const offers = availableOffers(product, locations)
   const prices = offers.map((offer) => offer.price)
   return prices.length > 0 ? Math.min(...prices) : product.priceFrom
 }
 
-export function productMerchantCount(
-  product: Product,
-  locations: DeliveryLocations,
-): number {
+export function productMerchantCount(product: Product, locations: DeliveryLocations): number {
   const offers = availableOffers(product, locations)
   return offers.length > 0 ? offers.length : product.merchants
 }
@@ -244,8 +215,7 @@ const filterMatchers: ReadonlyArray<{
   { id: 'organic', pattern: /organic/ },
   {
     id: 'natural-materials',
-    pattern:
-      /natural (material|fabric|fibre|fiber)|\b(cotton|wool|linen|merino|silk)\b/,
+    pattern: /natural (material|fabric|fibre|fiber)|\b(cotton|wool|linen|merino|silk)\b/,
   },
   {
     id: 'no-polyester',
@@ -254,8 +224,7 @@ const filterMatchers: ReadonlyArray<{
   },
   {
     id: 'highly-rated',
-    pattern:
-      /review|well[- ]?rated|highly[- ]?rated|good ratings?|top[- ]?rated|popular/,
+    pattern: /review|well[- ]?rated|highly[- ]?rated|good ratings?|top[- ]?rated|popular/,
   },
   {
     id: 'sustainable-brands',
@@ -267,8 +236,7 @@ const filterMatchers: ReadonlyArray<{
   },
   {
     id: 'low-sugar',
-    pattern:
-      /low[- ]?sugar|less sugar|no added sugar|sugar[- ]?free|reduce sugar/,
+    pattern: /low[- ]?sugar|less sugar|no added sugar|sugar[- ]?free|reduce sugar/,
   },
 ]
 
@@ -365,9 +333,7 @@ export function resolveAsk(
     }
 
     if (/deliver|ship|arrive|how fast|when can/.test(normalized)) {
-      const fastest = [...product.offers].sort((a, b) =>
-        a.delivery.localeCompare(b.delivery),
-      )[0]
+      const fastest = [...product.offers].sort((a, b) => a.delivery.localeCompare(b.delivery))[0]
       return `Fastest option is ${fastest.merchant}: ${fastest.delivery.toLowerCase()}.`
     }
 
@@ -408,18 +374,14 @@ export function resolveAsk(
   return 'Everything I show is already filtered to your profile. Ask me anything specific and I will point you to the right match.'
 }
 
-export function cartLines(
-  cart: readonly CartItem[],
-  products: readonly Product[],
-): CartLine[] {
+export function cartLines(cart: readonly CartItem[], products: readonly Product[]): CartLine[] {
   return cart.flatMap((item) => {
     const product = products.find((candidate) => candidate.id === item.id)
     if (!product) {
       return []
     }
     const offer =
-      product.offers.find((candidate) => candidate.merchant === item.merchant) ??
-      product.offers[0]
+      product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
     return [
       {
         ...item,
@@ -450,8 +412,9 @@ export function mergeCartSnapshot(
   merchantKey: string,
   snapshot: CartProfile,
 ): CartItem[] {
-  const snapshotDeliveryGroups = (snapshot.deliveryGroups as readonly (CartDeliveryGroup | null | undefined)[] | undefined)
-    ?.filter((group): group is CartDeliveryGroup => Boolean(group))
+  const snapshotDeliveryGroups = (
+    snapshot.deliveryGroups as readonly (CartDeliveryGroup | null | undefined)[] | undefined
+  )?.filter((group): group is CartDeliveryGroup => Boolean(group))
   return cart.map((item) => {
     if (cartMerchantKey(item) !== merchantKey) {
       return item
@@ -472,9 +435,10 @@ export function mergeCartSnapshot(
       cartTotalAmount: snapshot.totalAmount ?? item.cartTotalAmount,
       cartSubtotalAmount: snapshot.subtotalAmount ?? item.cartSubtotalAmount,
       cartCurrency: snapshot.currency ?? item.cartCurrency,
-      deliveryGroups: snapshotDeliveryGroups && snapshotDeliveryGroups.length > 0
-        ? snapshotDeliveryGroups
-        : item.deliveryGroups ?? [],
+      deliveryGroups:
+        snapshotDeliveryGroups && snapshotDeliveryGroups.length > 0
+          ? snapshotDeliveryGroups
+          : (item.deliveryGroups ?? []),
       qty: line?.quantity ?? item.qty,
       syncing: false,
       syncError: null,
@@ -497,13 +461,9 @@ export function computeSmartAlerts(
   products: readonly Product[],
 ): SmartAlert[] {
   const provided = new Set<string>()
-  lines.forEach((line) =>
-    line.product.provides?.forEach((port) => provided.add(port)),
-  )
+  lines.forEach((line) => line.product.provides?.forEach((port) => provided.add(port)))
 
-  const host = lines.find(
-    (line) => line.product.provides?.length && !line.product.needs,
-  )
+  const host = lines.find((line) => line.product.provides?.length && !line.product.needs)
 
   const alerts = lines.flatMap((line): SmartAlert[] => {
     const need = line.product.needs
@@ -556,9 +516,7 @@ export function computeSmartAlerts(
     return []
   })
 
-  return alerts.sort((a, b) =>
-    (a.kind === 'warn' ? 0 : 1) - (b.kind === 'warn' ? 0 : 1),
-  )
+  return alerts.sort((a, b) => (a.kind === 'warn' ? 0 : 1) - (b.kind === 'warn' ? 0 : 1))
 }
 
 export interface DiscountResult {
@@ -573,7 +531,7 @@ export function bestCode(
 ): DiscountResult | null {
   let best: DiscountResult | null = null
   for (const code of codes ?? []) {
-    let save = 0
+    let save: number
     if (code.type === 'percent') {
       save = code.min && subtotal < code.min ? 0 : (subtotal * code.value) / 100
     } else if (code.type === 'fixed') {
@@ -605,10 +563,7 @@ export interface CartGroup {
   itemDiscount: number
 }
 
-export function cartGroups(
-  lines: readonly CartLine[],
-  scanning: boolean,
-): CartGroup[] {
+export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartGroup[] {
   const groups = new Map<string, CartLine[]>()
   lines.forEach((line) => {
     const existing = groups.get(line.merchant) ?? []
@@ -621,19 +576,27 @@ export function cartGroups(
     const remoteTotal = firstCartAmount(items, (item) => item.cartTotalAmount)
     const subtotal = remoteSubtotal ?? localSubtotal
     const deliveryGroups = firstDeliveryGroups(items)
-    const deliveryGroupsWithOptions = deliveryGroups.filter((group) => cartDeliveryOptions(group).length > 0)
+    const deliveryGroupsWithOptions = deliveryGroups.filter(
+      (group) => cartDeliveryOptions(group).length > 0,
+    )
     const selectedDeliveryCost = selectedDeliveryGroupsCost(deliveryGroups)
-    const inferredDelivery = remoteTotal !== null && remoteSubtotal !== null
-      ? Math.max(0, remoteTotal - remoteSubtotal)
-      : null
+    const inferredDelivery =
+      remoteTotal !== null && remoteSubtotal !== null
+        ? Math.max(0, remoteTotal - remoteSubtotal)
+        : null
     const deliveryRaw = selectedDeliveryCost ?? inferredDelivery ?? (subtotal >= 50 ? 0 : 4.99)
     const found = scanning ? null : bestCode(DISCOUNTS[merchant], subtotal, deliveryRaw)
     const itemDiscount = found && found.code.type !== 'shipping' ? found.save : 0
     const deliveryDiscount = found && found.code.type === 'shipping' ? deliveryRaw : 0
     const delivery = found && found.code.type === 'shipping' ? 0 : deliveryRaw
-    const total = Math.max(0, (remoteTotal ?? subtotal + deliveryRaw) - itemDiscount - deliveryDiscount)
+    const total = Math.max(
+      0,
+      (remoteTotal ?? subtotal + deliveryRaw) - itemDiscount - deliveryDiscount,
+    )
     const hasDeliveryOptions = deliveryGroupsWithOptions.length > 0
-    const hasSelectedDelivery = deliveryGroupsWithOptions.every((group) => Boolean(selectedCartDeliveryOption(group)))
+    const hasSelectedDelivery = deliveryGroupsWithOptions.every((group) =>
+      Boolean(selectedCartDeliveryOption(group)),
+    )
     return {
       merchant,
       items,
@@ -667,7 +630,9 @@ function firstCartAmount(
 
 function firstDeliveryGroups(items: readonly CartLine[]): readonly CartDeliveryGroup[] {
   for (const item of items) {
-    const deliveryGroups = (item.deliveryGroups ?? []).filter((group): group is CartDeliveryGroup => Boolean(group))
+    const deliveryGroups = (item.deliveryGroups ?? []).filter((group): group is CartDeliveryGroup =>
+      Boolean(group),
+    )
     if (deliveryGroups.length > 0) {
       return deliveryGroups
     }
@@ -700,7 +665,9 @@ export function selectedCartDeliveryOption(group: CartDeliveryGroup): CartDelive
 }
 
 export function cartDeliveryOptions(group: CartDeliveryGroup): readonly CartDeliveryOption[] {
-  return (group.deliveryOptions ?? []).filter((option): option is CartDeliveryOption => Boolean(option))
+  return (group.deliveryOptions ?? []).filter((option): option is CartDeliveryOption =>
+    Boolean(option),
+  )
 }
 
 export function cartDeliveryOptionAmount(option?: CartDeliveryOption | null): number | null {
@@ -729,8 +696,7 @@ export function orderTotal(order: Order): number {
   const total = order.items.reduce((sum, item) => {
     const product = productById(item.id)
     const offer =
-      product.offers.find((candidate) => candidate.merchant === item.merchant) ??
-      product.offers[0]
+      product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
     return sum + offer.price * item.qty
   }, 0)
   return total - order.saved

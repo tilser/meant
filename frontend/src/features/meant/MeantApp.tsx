@@ -138,7 +138,6 @@ import {
   displayProductCategoryValue,
   firstUrl,
   formatOrderDate,
-  listJoin,
   money,
   normalizedMerchantName,
   prefLabel,
@@ -197,45 +196,44 @@ const EMPTY_TASTE_PROFILE: UserTasteProfile = {
 
 const MODAL_THUMBNAIL_PAGE_SIZE = 8
 
-const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> =
-  {
-    discover: {
-      label: 'Your feed',
-      suggestions: [
-        "What's the best value here?",
-        'Find me something healthy',
-        'Help me pick clothing',
-      ],
-    },
-    saved: {
-      label: 'Your saved items',
-      suggestions: ['Compare my saved items', 'Best value in my list?'],
-    },
-    compare: {
-      label: 'Comparing products',
-      suggestions: ['Which one is better for me?', 'Cheaper of these?'],
-    },
-    inventory: {
-      label: 'Your inventory',
-      suggestions: ['What should I restock?', 'What complements this?'],
-    },
-    preferences: {
-      label: 'Your profile',
-      suggestions: ['What should I add?', 'Suggest products for these filters'],
-    },
-    cart: {
-      label: 'Your cart',
-      suggestions: ['Is everything compatible?', 'Find me more codes'],
-    },
-    orders: {
-      label: 'Your orders',
-      suggestions: ["Where's my latest order?", 'What did I buy last month?'],
-    },
-    account: {
-      label: 'Your account',
-      suggestions: ['Where are my saved items?', 'How do I change preferences?'],
-    },
-  }
+const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> = {
+  discover: {
+    label: 'Your feed',
+    suggestions: [
+      "What's the best value here?",
+      'Find me something healthy',
+      'Help me pick clothing',
+    ],
+  },
+  saved: {
+    label: 'Your saved items',
+    suggestions: ['Compare my saved items', 'Best value in my list?'],
+  },
+  compare: {
+    label: 'Comparing products',
+    suggestions: ['Which one is better for me?', 'Cheaper of these?'],
+  },
+  inventory: {
+    label: 'Your inventory',
+    suggestions: ['What should I restock?', 'What complements this?'],
+  },
+  preferences: {
+    label: 'Your profile',
+    suggestions: ['What should I add?', 'Suggest products for these filters'],
+  },
+  cart: {
+    label: 'Your cart',
+    suggestions: ['Is everything compatible?', 'Find me more codes'],
+  },
+  orders: {
+    label: 'Your orders',
+    suggestions: ["Where's my latest order?", 'What did I buy last month?'],
+  },
+  account: {
+    label: 'Your account',
+    suggestions: ['Where are my saved items?', 'How do I change preferences?'],
+  },
+}
 
 const ASK_PANEL_DEFAULT_SIZE: AskPanelSize = { width: 460, height: 620 }
 const ASK_PANEL_MIN_WIDTH = 360
@@ -300,7 +298,12 @@ const STARTER_SEARCHES: readonly SearchSuggestion[] = [
   },
 ]
 
-const INVENTORY_CATEGORIES: readonly UserInventoryCategory[] = ['APPAREL', 'PANTRY', 'HOME', 'OTHER']
+const INVENTORY_CATEGORIES: readonly UserInventoryCategory[] = [
+  'APPAREL',
+  'PANTRY',
+  'HOME',
+  'OTHER',
+]
 
 const INVENTORY_CATEGORY_LABELS: Readonly<Record<UserInventoryCategory, string>> = {
   APPAREL: 'Wardrobe',
@@ -327,8 +330,10 @@ const DEFAULT_GREETING = 'Good afternoon'
 const DEFAULT_BUDGET = 120
 const SEARCH_SUGGESTION_COUNT = 4
 const PRODUCT_SEARCH_PAGE_SIZE = 20
-const NO_CONFIRMED_PREFERENCE_TAKE = 'No preference matches are confirmed yet; review the details and offers.'
-const SEARCH_RELEVANCE_TAKE = 'This looks relevant to your search based on the available product details.'
+const NO_CONFIRMED_PREFERENCE_TAKE =
+  'No preference matches are confirmed yet; review the details and offers.'
+const SEARCH_RELEVANCE_TAKE =
+  'This looks relevant to your search based on the available product details.'
 const PRODUCT_RESULT_SORT_LABELS: Readonly<Record<ProductResultSortMode, string>> = {
   match: 'Best match',
   'price-asc': 'Price: low to high',
@@ -384,15 +389,15 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function normalizedAskPanelSize(size: AskPanelSize | null | undefined): AskPanelSize {
-  const candidate = size && typeof size === 'object'
-    ? size as Partial<AskPanelSize>
-    : {}
-  const width = typeof candidate.width === 'number' && Number.isFinite(candidate.width)
-    ? candidate.width
-    : ASK_PANEL_DEFAULT_SIZE.width
-  const height = typeof candidate.height === 'number' && Number.isFinite(candidate.height)
-    ? candidate.height
-    : ASK_PANEL_DEFAULT_SIZE.height
+  const candidate = size && typeof size === 'object' ? (size as Partial<AskPanelSize>) : {}
+  const width =
+    typeof candidate.width === 'number' && Number.isFinite(candidate.width)
+      ? candidate.width
+      : ASK_PANEL_DEFAULT_SIZE.width
+  const height =
+    typeof candidate.height === 'number' && Number.isFinite(candidate.height)
+      ? candidate.height
+      : ASK_PANEL_DEFAULT_SIZE.height
   return {
     width: Math.round(clampNumber(width, ASK_PANEL_MIN_WIDTH, ASK_PANEL_MAX_WIDTH)),
     height: Math.round(clampNumber(height, ASK_PANEL_MIN_HEIGHT, ASK_PANEL_MAX_HEIGHT)),
@@ -402,7 +407,10 @@ function normalizedAskPanelSize(size: AskPanelSize | null | undefined): AskPanel
 function askPanelViewportMax(): AskPanelSize {
   return {
     width: Math.min(ASK_PANEL_MAX_WIDTH, Math.max(ASK_PANEL_MIN_WIDTH, window.innerWidth - 40)),
-    height: Math.min(ASK_PANEL_MAX_HEIGHT, Math.max(ASK_PANEL_MIN_HEIGHT, window.innerHeight - 118)),
+    height: Math.min(
+      ASK_PANEL_MAX_HEIGHT,
+      Math.max(ASK_PANEL_MIN_HEIGHT, window.innerHeight - 118),
+    ),
   }
 }
 
@@ -426,11 +434,14 @@ function useChangePulse(value: number, duration = 440): boolean {
     }, duration)
   }, [duration, value])
 
-  useEffect(() => () => {
-    if (timeoutRef.current !== null) {
-      window.clearTimeout(timeoutRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current)
+      }
+    },
+    [],
+  )
 
   return pulse
 }
@@ -530,7 +541,12 @@ function applySettingsPayload(
 }
 
 function stripHtml(value: string | null | undefined): string {
-  return value?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+  return (
+    value
+      ?.replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() ?? ''
+  )
 }
 
 function parsePriceAmount(value: string | number | null | undefined): number | null {
@@ -558,9 +574,12 @@ function normalizeLocalizedPriceAmount(value: string): string {
   const lastComma = unsigned.lastIndexOf(',')
 
   if (lastDot !== -1 && lastComma !== -1) {
-    return sign + (lastComma > lastDot
-      ? unsigned.replace(/\./g, '').replace(',', '.')
-      : unsigned.replace(/,/g, ''))
+    return (
+      sign +
+      (lastComma > lastDot
+        ? unsigned.replace(/\./g, '').replace(',', '.')
+        : unsigned.replace(/,/g, ''))
+    )
   }
   if (lastComma !== -1) {
     return sign + normalizeSingleSeparatorPriceAmount(unsigned, ',')
@@ -576,7 +595,9 @@ function normalizeSingleSeparatorPriceAmount(value: string, separator: ',' | '.'
   const lastSeparator = value.lastIndexOf(separator)
   const separatorPattern = separator === ',' ? /,/g : /\./g
   if (firstSeparator !== lastSeparator) {
-    return hasGroupedThousandsPriceAmount(value, separator) ? value.replace(separatorPattern, '') : ''
+    return hasGroupedThousandsPriceAmount(value, separator)
+      ? value.replace(separatorPattern, '')
+      : ''
   }
   const fractionalDigits = value.length - lastSeparator - 1
   if (separator === ',' && fractionalDigits === 3 && lastSeparator <= 3) {
@@ -618,7 +639,10 @@ function searchProductPrice(product: UserProductSearchProductProfile): number {
   )
 }
 
-function searchProductListPrice(product: UserProductSearchProductProfile, currentPrice: number): number | null {
+function searchProductListPrice(
+  product: UserProductSearchProductProfile,
+  currentPrice: number,
+): number | null {
   const listPrice = parsePriceAmount(product.listPriceAmount)
   if (listPrice === null || listPrice <= currentPrice) {
     return null
@@ -640,11 +664,7 @@ function searchProductMedia(product: UserProductSearchProductProfile): ProductMe
       }
     })
     .filter((item): item is ProductMedia => item !== null)
-  const fallback = [
-    product.selectedVariantImageUrl,
-    product.detailImageUrl,
-    product.imageUrl,
-  ]
+  const fallback = [product.selectedVariantImageUrl, product.detailImageUrl, product.imageUrl]
     .filter((url): url is string => Boolean(url))
     .map((url) => ({ type: 'image', url, altText: product.selectedVariantImageAltText }))
 
@@ -658,7 +678,9 @@ function searchProductMedia(product: UserProductSearchProductProfile): ProductMe
   })
 }
 
-function searchProductCatalogCategories(product: UserProductSearchProductProfile): ProductCatalogCategory[] {
+function searchProductCatalogCategories(
+  product: UserProductSearchProductProfile,
+): ProductCatalogCategory[] {
   return (product.categories ?? [])
     .filter((category) => Boolean(displayProductCategoryValue(category.value)))
     .map((category) => ({
@@ -682,7 +704,9 @@ function searchProductStringValues(values: readonly string[] | null | undefined)
     })
 }
 
-function searchProductAttributes(product: UserProductSearchProductProfile): ProductCatalogAttribute[] {
+function searchProductAttributes(
+  product: UserProductSearchProductProfile,
+): ProductCatalogAttribute[] {
   return (product.attributes ?? [])
     .filter((attribute) => Boolean(attribute.name) && Boolean(attribute.value))
     .map((attribute) => ({
@@ -691,13 +715,13 @@ function searchProductAttributes(product: UserProductSearchProductProfile): Prod
     }))
 }
 
-function productOptionsFromProfiles(options: readonly ProductOptionProfile[] | null | undefined): ProductOption[] {
+function productOptionsFromProfiles(
+  options: readonly ProductOptionProfile[] | null | undefined,
+): ProductOption[] {
   return (options ?? [])
     .map((option): ProductOption | null => {
       const name = option.name?.trim()
-      const values = (option.values ?? [])
-        .map((value) => value.trim())
-        .filter(Boolean)
+      const values = (option.values ?? []).map((value) => value.trim()).filter(Boolean)
       if (!name || values.length === 0) {
         return null
       }
@@ -746,10 +770,7 @@ function mediaFromMerchantDetails(details: MerchantProductDetailsProfile | null)
       return { type: 'image', url: image.url, altText: image.altText }
     })
     .filter((item): item is ProductMedia => item !== null)
-  const fallbacks = [
-    details.selectedVariantImageUrl,
-    details.imageUrl,
-  ]
+  const fallbacks = [details.selectedVariantImageUrl, details.imageUrl]
     .filter((url): url is string => Boolean(url))
     .map((url) => ({ type: 'image', url, altText: details.selectedVariantImageAltText }))
 
@@ -804,10 +825,7 @@ function searchProductCategory(
 
 function toneForSearchProduct(product: UserProductSearchProductProfile): string {
   const tones = ['#e7ebef', '#eaede6', '#eceae7', '#eee9ed', '#e9ede8']
-  const code = Array.from(product.productKey).reduce(
-    (sum, char) => sum + char.charCodeAt(0),
-    0,
-  )
+  const code = Array.from(product.productKey).reduce((sum, char) => sum + char.charCodeAt(0), 0)
   return tones[code % tones.length] ?? tones[0]
 }
 
@@ -840,10 +858,11 @@ function productFromSearchResult(
     brand,
     category: searchProductCategory(product, preferences),
     tone: toneForSearchProduct(product),
-    imageUrl: media.find((item) => item.type.toLowerCase() === 'image')?.url
-      || product.imageUrl
-      || product.detailImageUrl
-      || product.selectedVariantImageUrl,
+    imageUrl:
+      media.find((item) => item.type.toLowerCase() === 'image')?.url ||
+      product.imageUrl ||
+      product.detailImageUrl ||
+      product.selectedVariantImageUrl,
     productUrl: product.url,
     remote: true,
     match: product.matchScore,
@@ -873,16 +892,18 @@ function productFromSearchResult(
       {
         merchant: brand,
         price,
-        delivery: product.available === false || product.selectedVariantAvailable === false
-          ? 'Availability unclear'
-          : 'Available from merchant',
+        delivery:
+          product.available === false || product.selectedVariantAvailable === false
+            ? 'Availability unclear'
+            : 'Available from merchant',
         merchantId: product.merchantId,
         merchantDomain: product.merchantDomain,
         productVariantId: product.selectedVariantId,
         variantTitle: product.selectedVariantTitle,
-        available: product.available === false || product.selectedVariantAvailable === false
-          ? false
-          : product.selectedVariantAvailable,
+        available:
+          product.available === false || product.selectedVariantAvailable === false
+            ? false
+            : product.selectedVariantAvailable,
       },
     ],
     inventoryRelationship: product.inventoryRelationship,
@@ -894,10 +915,11 @@ function productFromSearchResult(
   return productWithCuratedFields(baseProduct, preferences)
 }
 
-function preferenceLabels(ids: readonly PreferenceId[], preferences: readonly Preference[]): string[] {
-  return ids
-    .map((id) => prefLabel(preferences, id))
-    .filter(Boolean)
+function preferenceLabels(
+  ids: readonly PreferenceId[],
+  preferences: readonly Preference[],
+): string[] {
+  return ids.map((id) => prefLabel(preferences, id)).filter(Boolean)
 }
 
 function lowerLabel(label: string): string {
@@ -914,7 +936,7 @@ function humanList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
 }
 
-function preferenceTarget(label: string): { kind: 'prefer' | 'avoid', text: string } | null {
+function preferenceTarget(label: string): { kind: 'prefer' | 'avoid'; text: string } | null {
   const normalized = lowerLabel(label).replace(/\s+/g, ' ')
   if (!normalized) {
     return null
@@ -938,13 +960,11 @@ function preferenceSummary(labels: readonly string[]): string {
   const targets = labels
     .slice(0, 3)
     .map(preferenceTarget)
-    .filter((target): target is { kind: 'prefer' | 'avoid', text: string } => Boolean(target?.text))
+    .filter((target): target is { kind: 'prefer' | 'avoid'; text: string } => Boolean(target?.text))
   const preferred = targets
     .filter((target) => target.kind === 'prefer')
     .map((target) => target.text)
-  const avoided = targets
-    .filter((target) => target.kind === 'avoid')
-    .map((target) => target.text)
+  const avoided = targets.filter((target) => target.kind === 'avoid').map((target) => target.text)
   const parts = [
     preferred.length > 0 ? `for ${humanList(preferred)}` : '',
     avoided.length > 0 ? `to avoid ${humanList(avoided)}` : '',
@@ -954,10 +974,13 @@ function preferenceSummary(labels: readonly string[]): string {
 }
 
 function productPreferenceFacts(product: Product): string[] {
-  return Array.from(new Set([
-    ...(product.materials ?? []),
-    ...(product.certifications ?? []),
-  ].map((fact) => fact.trim()).filter(Boolean)))
+  return Array.from(
+    new Set(
+      [...(product.materials ?? []), ...(product.certifications ?? [])]
+        .map((fact) => fact.trim())
+        .filter(Boolean),
+    ),
+  )
 }
 
 function factMatchesPreference(fact: string, preference: string): boolean {
@@ -1015,10 +1038,13 @@ function productCuratedTake(product: Product, preferences: readonly Preference[]
 }
 
 function productCuratedAdvantages(product: Product, preferences: readonly Preference[]): string[] {
-  const advantages = preferenceLabels(product.satisfies, preferences)
-    .map((label) => `Matches ${preferenceSummary([label])}`)
+  const advantages = preferenceLabels(product.satisfies, preferences).map(
+    (label) => `Matches ${preferenceSummary([label])}`,
+  )
   if (product.review.score !== null && product.review.count > 0) {
-    advantages.push(`Rated ${product.review.score.toFixed(1)} out of 5 from ${product.review.count.toLocaleString()} reviews`)
+    advantages.push(
+      `Rated ${product.review.score.toFixed(1)} out of 5 from ${product.review.count.toLocaleString()} reviews`,
+    )
   }
   product.certifications?.slice(0, 2).forEach((certification) => {
     advantages.push(`Product details list ${certification}`)
@@ -1027,16 +1053,19 @@ function productCuratedAdvantages(product: Product, preferences: readonly Prefer
     advantages.push(`Product details list ${product.materials[0]}`)
   }
   if (advantages.length === 0) {
-    advantages.push(product.agentStage === 'candidate'
-      ? 'Checking this against your preferences'
-      : 'No confirmed preference advantages yet')
+    advantages.push(
+      product.agentStage === 'candidate'
+        ? 'Checking this against your preferences'
+        : 'No confirmed preference advantages yet',
+    )
   }
   return Array.from(new Set(advantages))
 }
 
 function productCuratedTradeoffs(product: Product, preferences: readonly Preference[]): string[] {
-  const tradeoffs = preferenceLabels(product.misses, preferences)
-    .map((label) => `May not fit ${preferenceSummary([label])}`)
+  const tradeoffs = preferenceLabels(product.misses, preferences).map(
+    (label) => `May not fit ${preferenceSummary([label])}`,
+  )
   if (product.inventoryRelationship === 'DUPLICATE') {
     tradeoffs.push(`Similar to ${product.inventoryItemName ?? 'something you already own'}`)
   }
@@ -1169,8 +1198,9 @@ function savedProductFromProfile(
     cons: product.cons,
     review: product.review,
     offers: product.offers,
-    needs: product.needs ? product.needs as Product['needs'] : undefined,
-    provides: (product.provides?.length ?? 0) > 0 ? product.provides as Product['provides'] : undefined,
+    needs: product.needs ? (product.needs as Product['needs']) : undefined,
+    provides:
+      (product.provides?.length ?? 0) > 0 ? (product.provides as Product['provides']) : undefined,
   }
   return productWithCuratedFields(snapshot, preferences)
 }
@@ -1277,9 +1307,11 @@ function upsertInventorySnapshot(
   item: UserInventoryItemProfile,
 ): UserInventoryItemProfile[] {
   const existing = items.some((candidate) => candidate.id === item.id)
-    ? items.map((candidate) => candidate.id === item.id ? item : candidate)
+    ? items.map((candidate) => (candidate.id === item.id ? item : candidate))
     : [item, ...items]
-  return [...existing].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+  return [...existing].sort(
+    (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+  )
 }
 
 function optionalText(value: string): string | undefined {
@@ -1493,14 +1525,12 @@ function upsertProductSnapshot(products: Product[], product: Product): Product[]
   if (existingIndex < 0) {
     return [product, ...products]
   }
-  return products.map((candidate, index) => index === existingIndex ? product : candidate)
+  return products.map((candidate, index) => (index === existingIndex ? product : candidate))
 }
 
 function productSnapshotsForIds(products: Product[], ids: readonly ProductId[]): Product[] {
   const byId = new Map(products.map((product) => [product.id, product] as const))
-  return ids
-    .map((id) => byId.get(id))
-    .filter((product): product is Product => Boolean(product))
+  return ids.map((id) => byId.get(id)).filter((product): product is Product => Boolean(product))
 }
 
 function appendProductSnapshots(products: Product[], nextProducts: readonly Product[]): Product[] {
@@ -1528,7 +1558,9 @@ function productSearchAgentName(agent: string | null | undefined): string {
   if (!agent) {
     return 'Search agent'
   }
-  return PRODUCT_SEARCH_AGENT_NAMES[agent] ?? `${agent.charAt(0).toUpperCase()}${agent.slice(1)} agent`
+  return (
+    PRODUCT_SEARCH_AGENT_NAMES[agent] ?? `${agent.charAt(0).toUpperCase()}${agent.slice(1)} agent`
+  )
 }
 
 function upsertAgentActivity(
@@ -1548,7 +1580,7 @@ function upsertAgentActivity(
   if (existing < 0) {
     return [...activities, next]
   }
-  return activities.map((activity, index) => index === existing ? next : activity)
+  return activities.map((activity, index) => (index === existing ? next : activity))
 }
 
 function advanceAgentActivity(
@@ -1560,24 +1592,24 @@ function advanceAgentActivity(
     activities.map((activity) =>
       activity.agent !== agent && activity.state === 'active'
         ? { ...activity, state: 'done' }
-        : activity
+        : activity,
     ),
     event,
   )
 }
 
 function merchantNameSet(merchant: MerchantProfile): ReadonlySet<string> {
-  return new Set([
-    normalizedMerchantName(merchant.name),
-    normalizedMerchantName(merchant.domain),
-  ].filter(Boolean))
+  return new Set(
+    [normalizedMerchantName(merchant.name), normalizedMerchantName(merchant.domain)].filter(
+      Boolean,
+    ),
+  )
 }
 
 function merchantPrimarySearchValues(merchant: MerchantProfile): string[] {
-  return [
-    normalizedMerchantName(merchant.name),
-    normalizedMerchantName(merchant.domain),
-  ].filter(Boolean)
+  return [normalizedMerchantName(merchant.name), normalizedMerchantName(merchant.domain)].filter(
+    Boolean,
+  )
 }
 
 function merchantSearchValues(merchant: MerchantProfile): string[] {
@@ -1635,10 +1667,11 @@ function orderedMerchantMatches(
 
 function productForMerchant(product: Product, merchant: MerchantProfile): Product | null {
   const merchantNames = merchantNameSet(merchant)
-  const offers = product.offers.filter((offer) =>
-    offer.merchantId === merchant.id ||
-    merchantNames.has(normalizedMerchantName(offer.merchantDomain)) ||
-    merchantNames.has(normalizedMerchantName(offer.merchant)),
+  const offers = product.offers.filter(
+    (offer) =>
+      offer.merchantId === merchant.id ||
+      merchantNames.has(normalizedMerchantName(offer.merchantDomain)) ||
+      merchantNames.has(normalizedMerchantName(offer.merchant)),
   )
   if (offers.length > 0) {
     return {
@@ -1663,14 +1696,21 @@ function productSearchFields(
   preferences: readonly Preference[],
   deliveryLocations: readonly UserLocation[],
 ): string[] {
-  const preferenceMatches = [...product.satisfies, ...product.misses]
-    .map((id) => prefLabel(preferences, id))
-  const catalogAttributes = (product.catalogAttributes ?? [])
-    .flatMap((attribute) => [attribute.name, attribute.value])
-  const selectedOptions = (product.selectedOptions ?? [])
-    .flatMap((option) => [option.name, option.value])
-  const detailOptions = (product.detailOptions ?? [])
-    .flatMap((option) => [option.name, ...option.values])
+  const preferenceMatches = [...product.satisfies, ...product.misses].map((id) =>
+    prefLabel(preferences, id),
+  )
+  const catalogAttributes = (product.catalogAttributes ?? []).flatMap((attribute) => [
+    attribute.name,
+    attribute.value,
+  ])
+  const selectedOptions = (product.selectedOptions ?? []).flatMap((option) => [
+    option.name,
+    option.value,
+  ])
+  const detailOptions = (product.detailOptions ?? []).flatMap((option) => [
+    option.name,
+    ...option.values,
+  ])
   const offers = product.offers.flatMap((offer) => [
     offer.merchant,
     offer.merchantDomain ?? '',
@@ -1713,11 +1753,9 @@ function productMatchesTextSearch(
   if (tokens.length === 0) {
     return true
   }
-  const haystack = normalizedProductSearchText(productSearchFields(
-    product,
-    preferences,
-    deliveryLocations,
-  ).join(' '))
+  const haystack = normalizedProductSearchText(
+    productSearchFields(product, preferences, deliveryLocations).join(' '),
+  )
   return tokens.every((token) => haystack.includes(token))
 }
 
@@ -1749,7 +1787,9 @@ function visibleProductResults(
 ): Product[] {
   return products
     .map((product, index) => ({ product, index }))
-    .filter(({ product }) => productMatchesTextSearch(product, searchText, preferences, deliveryLocations))
+    .filter(({ product }) =>
+      productMatchesTextSearch(product, searchText, preferences, deliveryLocations),
+    )
     .sort((left, right) => {
       const sortResult = (() => {
         switch (sortMode) {
@@ -1853,7 +1893,9 @@ function ProductSearchLoading({
       aria-label={label}
     >
       <div className="mt-search-loader" aria-hidden="true">
-        <span className="mt-search-loader-spark"><SparkMark size={14} /></span>
+        <span className="mt-search-loader-spark">
+          <SparkMark size={14} />
+        </span>
         <span className="mt-search-loader-dot" />
         <span className="mt-search-loader-dot" />
         <span className="mt-search-loader-dot" />
@@ -1861,14 +1903,18 @@ function ProductSearchLoading({
       <span className="mt-search-loading-text">
         {label}
         <span className="mt-search-loading-dots" aria-hidden="true">
-          <span>.</span><span>.</span><span>.</span>
+          <span>.</span>
+          <span>.</span>
+          <span>.</span>
         </span>
       </span>
     </div>
   )
 }
 
-function AgentActivityPanel({ activities }: Readonly<{
+function AgentActivityPanel({
+  activities,
+}: Readonly<{
   activities: readonly AgentActivity[]
 }>) {
   if (activities.length === 0) {
@@ -1877,10 +1923,7 @@ function AgentActivityPanel({ activities }: Readonly<{
   return (
     <div className="mt-agent-rail" aria-live="polite">
       {activities.slice(-5).map((activity) => (
-        <div
-          className={`mt-agent-step ${activity.state}`}
-          key={activity.agent}
-        >
+        <div className={`mt-agent-step ${activity.state}`} key={activity.agent}>
           <span className="mt-agent-orb" aria-hidden>
             <SparkMark size={11} />
           </span>
@@ -1949,7 +1992,10 @@ function HeartIcon({ filled }: Readonly<{ filled: boolean }>) {
   )
 }
 
-function ChevronIcon({ direction, size = 18 }: Readonly<{ direction: 'left' | 'right'; size?: number }>) {
+function ChevronIcon({
+  direction,
+  size = 18,
+}: Readonly<{ direction: 'left' | 'right'; size?: number }>) {
   return (
     <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
       <path
@@ -2016,19 +2062,17 @@ function SearchIcon({ size = 16 }: Readonly<{ size?: number }>) {
   )
 }
 
-function Avatar({ user, size = 38 }: Readonly<{
+function Avatar({
+  user,
+  size = 38,
+}: Readonly<{
   user: UserAccount
   size?: number
 }>) {
   const initial = (user.name.trim().charAt(0) || 'M').toUpperCase()
   if (user.avatar) {
     return (
-      <img
-        className="mt-ava-img"
-        src={user.avatar}
-        alt=""
-        style={{ width: size, height: size }}
-      />
+      <img className="mt-ava-img" src={user.avatar} alt="" style={{ width: size, height: size }} />
     )
   }
   return (
@@ -2114,7 +2158,9 @@ function InventorySignalBadge({
     return null
   }
   return (
-    <span className={`mt-inv-signal ${compact ? 'compact' : ''} ${product.inventoryRelationship?.toLowerCase()}`}>
+    <span
+      className={`mt-inv-signal ${compact ? 'compact' : ''} ${product.inventoryRelationship?.toLowerCase()}`}
+    >
       <span className="mt-inv-signal-dot" />
       {label}
       {!compact && product.inventoryItemName ? (
@@ -2290,9 +2336,7 @@ function AskThread({
             ) : null}
             <div className="mt-msg-stack">
               <div className={`mt-msg-bubble ${streaming ? 'mt-msg-bubble-streaming' : ''}`}>
-                {message.role === 'ai'
-                  ? renderAssistantMessageContent(message)
-                  : message.text}
+                {message.role === 'ai' ? renderAssistantMessageContent(message) : message.text}
               </div>
               {message.products && message.products.length > 0 ? (
                 <div className="mt-msg-products">
@@ -2352,11 +2396,14 @@ function AskComposer({
     }
   }, [autoFocus])
 
-  useEffect(() => () => {
-    if (sentPulseTimeoutRef.current !== null) {
-      window.clearTimeout(sentPulseTimeoutRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (sentPulseTimeoutRef.current !== null) {
+        window.clearTimeout(sentPulseTimeoutRef.current)
+      }
+    },
+    [],
+  )
 
   const send = (text?: string) => {
     if (disabled) {
@@ -2456,12 +2503,17 @@ function FloatingAsk({
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [conversationHistory, setConversationHistory] = useState<UserAssistantConversationSummaryProfile[]>([])
+  const [conversationHistory, setConversationHistory] = useState<
+    UserAssistantConversationSummaryProfile[]
+  >([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [panelSize, setPanelSize] = useStoredState<AskPanelSize>('meant.askPanelSize', ASK_PANEL_DEFAULT_SIZE)
+  const [panelSize, setPanelSize] = useStoredState<AskPanelSize>(
+    'meant.askPanelSize',
+    ASK_PANEL_DEFAULT_SIZE,
+  )
   const resizeCleanupRef = useRef<(() => void) | null>(null)
   const assistantAbortRef = useRef<AbortController | null>(null)
   const historyAbortRef = useRef<AbortController | null>(null)
@@ -2482,85 +2534,94 @@ function FloatingAsk({
     }
   }, [])
 
-  const restoreConversation = useCallback((conversation: UserAssistantConversationProfile) => {
-    setConversationId(conversation.conversationId)
-    setMessages(messagesFromAssistantConversation(conversation, preferences))
-    const summary = assistantConversationSummary(conversation)
-    if (summary) {
-      setConversationHistory((current) => upsertAssistantConversationSummary(current, summary))
-    }
-  }, [preferences])
-
-  const loadConversationHistory = useCallback((restoreLatest: boolean) => {
-    historyAbortRef.current?.abort()
-    const controller = new AbortController()
-    historyAbortRef.current = controller
-    setHistoryLoading(true)
-
-    const run = async () => {
-      const history = await getAssistantConversations({ signal: controller.signal })
-      if (controller.signal.aborted || !mountedRef.current) {
-        return
+  const restoreConversation = useCallback(
+    (conversation: UserAssistantConversationProfile) => {
+      setConversationId(conversation.conversationId)
+      setMessages(messagesFromAssistantConversation(conversation, preferences))
+      const summary = assistantConversationSummary(conversation)
+      if (summary) {
+        setConversationHistory((current) => upsertAssistantConversationSummary(current, summary))
       }
-      setConversationHistory(history)
-      setHistoryLoaded(true)
+    },
+    [preferences],
+  )
 
-      if (restoreLatest) {
-        const latest = history[0]
-        if (!latest) {
-          setConversationId(null)
-          setMessages([])
+  const loadConversationHistory = useCallback(
+    (restoreLatest: boolean) => {
+      historyAbortRef.current?.abort()
+      const controller = new AbortController()
+      historyAbortRef.current = controller
+      setHistoryLoading(true)
+
+      const run = async () => {
+        const history = await getAssistantConversations({ signal: controller.signal })
+        if (controller.signal.aborted || !mountedRef.current) {
           return
         }
-        const conversation = await getAssistantConversation(latest.conversationId, {
-          signal: controller.signal,
+        setConversationHistory(history)
+        setHistoryLoaded(true)
+
+        if (restoreLatest) {
+          const latest = history[0]
+          if (!latest) {
+            setConversationId(null)
+            setMessages([])
+            return
+          }
+          const conversation = await getAssistantConversation(latest.conversationId, {
+            signal: controller.signal,
+          })
+          if (controller.signal.aborted || !mountedRef.current) {
+            return
+          }
+          restoreConversation(conversation)
+        }
+      }
+
+      run()
+        .catch(() => {
+          if (mountedRef.current && !controller.signal.aborted) {
+            setHistoryLoaded(true)
+          }
         })
-        if (controller.signal.aborted || !mountedRef.current) {
-          return
-        }
-        restoreConversation(conversation)
-      }
-    }
+        .finally(() => {
+          if (historyAbortRef.current === controller) {
+            historyAbortRef.current = null
+          }
+          if (mountedRef.current && !controller.signal.aborted) {
+            setHistoryLoading(false)
+          }
+        })
+    },
+    [restoreConversation],
+  )
 
-    run()
-      .catch(() => {
-        if (mountedRef.current && !controller.signal.aborted) {
-          setHistoryLoaded(true)
-        }
-      })
-      .finally(() => {
-        if (historyAbortRef.current === controller) {
-          historyAbortRef.current = null
-        }
-        if (mountedRef.current && !controller.signal.aborted) {
-          setHistoryLoading(false)
-        }
-      })
-  }, [restoreConversation])
+  const loadConversation = useCallback(
+    (nextConversationId: string) => {
+      historyAbortRef.current?.abort()
+      const controller = new AbortController()
+      historyAbortRef.current = controller
+      setHistoryLoading(true)
 
-  const loadConversation = useCallback((nextConversationId: string) => {
-    historyAbortRef.current?.abort()
-    const controller = new AbortController()
-    historyAbortRef.current = controller
-    setHistoryLoading(true)
-
-    getAssistantConversation(nextConversationId, { signal: controller.signal })
-      .then((conversation) => {
-        if (controller.signal.aborted || !mountedRef.current) {
-          return
-        }
-        restoreConversation(conversation)
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (historyAbortRef.current === controller) {
-          historyAbortRef.current = null
-        }
-        if (mountedRef.current && !controller.signal.aborted) {
-          setHistoryLoading(false)
-        }
-      })
-  }, [restoreConversation])
+      getAssistantConversation(nextConversationId, { signal: controller.signal })
+        .then((conversation) => {
+          if (controller.signal.aborted || !mountedRef.current) {
+            return
+          }
+          restoreConversation(conversation)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (historyAbortRef.current === controller) {
+            historyAbortRef.current = null
+          }
+          if (mountedRef.current && !controller.signal.aborted) {
+            setHistoryLoading(false)
+          }
+        })
+    },
+    [restoreConversation],
+  )
 
   useEffect(() => {
     if (open && !historyLoaded) {
@@ -2585,8 +2646,16 @@ function FloatingAsk({
     const onMove = (moveEvent: PointerEvent) => {
       const maxSize = askPanelViewportMax()
       setPanelSize({
-        width: clampNumber(startSize.width + startX - moveEvent.clientX, ASK_PANEL_MIN_WIDTH, maxSize.width),
-        height: clampNumber(startSize.height + startY - moveEvent.clientY, ASK_PANEL_MIN_HEIGHT, maxSize.height),
+        width: clampNumber(
+          startSize.width + startX - moveEvent.clientX,
+          ASK_PANEL_MIN_WIDTH,
+          maxSize.width,
+        ),
+        height: clampNumber(
+          startSize.height + startY - moveEvent.clientY,
+          ASK_PANEL_MIN_HEIGHT,
+          maxSize.height,
+        ),
       })
     }
     cleanup = () => {
@@ -2747,16 +2816,17 @@ function FloatingAsk({
           if (event.conversationId) {
             const metadataConversationId = event.conversationId
             const normalizedTitle = question.replace(/\s+/g, ' ').trim()
-            const title = normalizedTitle.length > 80
-              ? `${normalizedTitle.slice(0, 77)}...`
-              : normalizedTitle
+            const title =
+              normalizedTitle.length > 80 ? `${normalizedTitle.slice(0, 77)}...` : normalizedTitle
             const timestamp = new Date().toISOString()
-            setConversationHistory((current) => upsertAssistantConversationSummary(current, {
-              conversationId: metadataConversationId,
-              title,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            }))
+            setConversationHistory((current) =>
+              upsertAssistantConversationSummary(current, {
+                conversationId: metadataConversationId,
+                title,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              }),
+            )
           }
         },
         onDelta: (text) => {
@@ -2834,7 +2904,9 @@ function FloatingAsk({
   }
 
   return (
-    <div className={`mt-fab-wrap ${open ? 'open' : ''} ${loading ? 'busy' : ''} ${hidden ? 'mt-fab-wrap-hidden' : ''}`}>
+    <div
+      className={`mt-fab-wrap ${open ? 'open' : ''} ${loading ? 'busy' : ''} ${hidden ? 'mt-fab-wrap-hidden' : ''}`}
+    >
       {open ? (
         <div
           className={`mt-askpanel ${loading ? 'mt-askpanel-thinking' : ''}`}
@@ -2892,28 +2964,28 @@ function FloatingAsk({
                 <div className="mt-ask-history-empty">
                   {historyLoading ? 'Loading chats...' : 'No chats yet.'}
                 </div>
-              ) : conversationHistory.map((conversation) => (
-                <button
-                  key={conversation.conversationId}
-                  className={`mt-ask-history-row ${conversation.conversationId === conversationId ? 'active' : ''}`}
-                  type="button"
-                  role="option"
-                  aria-selected={conversation.conversationId === conversationId}
-                  onClick={() => selectConversation(conversation.conversationId)}
-                  disabled={loading || historyLoading}
-                >
-                  <span className="mt-ask-history-title">{conversation.title}</span>
-                  <span className="mt-mono mt-ask-history-date">
-                    {askConversationDateLabel(conversation.updatedAt)}
-                  </span>
-                </button>
-              ))}
+              ) : (
+                conversationHistory.map((conversation) => (
+                  <button
+                    key={conversation.conversationId}
+                    className={`mt-ask-history-row ${conversation.conversationId === conversationId ? 'active' : ''}`}
+                    type="button"
+                    role="option"
+                    aria-selected={conversation.conversationId === conversationId}
+                    onClick={() => selectConversation(conversation.conversationId)}
+                    disabled={loading || historyLoading}
+                  >
+                    <span className="mt-ask-history-title">{conversation.title}</span>
+                    <span className="mt-mono mt-ask-history-date">
+                      {askConversationDateLabel(conversation.updatedAt)}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           ) : null}
           {messages.length === 0 ? (
-            <p className="mt-askpanel-hint">
-              Ask anything. I already know your preferences.
-            </p>
+            <p className="mt-askpanel-hint">Ask anything. I already know your preferences.</p>
           ) : null}
           <AskThread messages={messages} onProductOpen={onProductOpen} />
           <AskComposer
@@ -2933,13 +3005,22 @@ function FloatingAsk({
         aria-label={open ? 'Close Ask Meant' : 'Open Ask Meant'}
         aria-expanded={open}
       >
-        {open ? <CloseIcon size={18} /> : <><SparkMark size={16} color="#fff" /> <span>Ask Meant</span></>}
+        {open ? (
+          <CloseIcon size={18} />
+        ) : (
+          <>
+            <SparkMark size={16} color="#fff" /> <span>Ask Meant</span>
+          </>
+        )}
       </button>
     </div>
   )
 }
 
-function productWasPrice(product: Product, deliveryLocations: readonly UserLocation[]): number | null {
+function productWasPrice(
+  product: Product,
+  deliveryLocations: readonly UserLocation[],
+): number | null {
   const price = productPriceFrom(product, deliveryLocations)
   if (product.listPrice === null || product.listPrice === undefined || product.listPrice <= price) {
     return null
@@ -2961,8 +3042,7 @@ function ProductPriceLine({
 
   return (
     <span className={className}>
-      <span className="mt-mono mt-card-from">from</span>{' '}
-      <span>{money(price)}</span>
+      <span className="mt-mono mt-card-from">from</span> <span>{money(price)}</span>
       {wasPrice ? <span className="mt-was-price">{money(wasPrice)}</span> : null}
     </span>
   )
@@ -3081,11 +3161,14 @@ function ProductGrid({
   savePendingSet,
   onToggleSave,
   onDismiss,
-}: Readonly<{
-  products: readonly Product[]
-  deliveryLocations: readonly UserLocation[]
-  preferences: readonly Preference[]
-} & ProductOpenProps & ProductSaveProps>) {
+}: Readonly<
+  {
+    products: readonly Product[]
+    deliveryLocations: readonly UserLocation[]
+    preferences: readonly Preference[]
+  } & ProductOpenProps &
+    ProductSaveProps
+>) {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const positionsRef = useRef<Map<ProductId, DOMRect>>(new Map())
   const timeoutsRef = useRef<number[]>([])
@@ -3104,8 +3187,9 @@ function ProductGrid({
       rafsRef.current = []
     }
     const resetCards = () => {
-      Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
-        .forEach(resetProductCardAnimation)
+      Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]')).forEach(
+        resetProductCardAnimation,
+      )
     }
 
     clearAnimationWork()
@@ -3202,12 +3286,15 @@ function ProductCard({
   savePendingSet,
   onToggleSave,
   onDismiss,
-}: Readonly<{
-  product: Product
-  index: number
-  deliveryLocations: readonly UserLocation[]
-  preferences: readonly Preference[]
-} & ProductOpenProps & ProductSaveProps>) {
+}: Readonly<
+  {
+    product: Product
+    index: number
+    deliveryLocations: readonly UserLocation[]
+    preferences: readonly Preference[]
+  } & ProductOpenProps &
+    ProductSaveProps
+>) {
   const open = () => onOpen(product)
   const savePending = savePendingSet.has(product.id)
   const catalogBadges = catalogBadgeLabels(product).slice(0, 3)
@@ -3242,7 +3329,9 @@ function ProductCard({
         <button
           className={`mt-save ${savedSet.has(product.id) ? 'on' : ''}`}
           type="button"
-          aria-label={savePending ? 'Saving' : savedSet.has(product.id) ? 'Remove from saved' : 'Save'}
+          aria-label={
+            savePending ? 'Saving' : savedSet.has(product.id) ? 'Remove from saved' : 'Save'
+          }
           disabled={savePending}
           onClick={(event) => {
             event.stopPropagation()
@@ -3272,26 +3361,18 @@ function ProductCard({
         <div className="mt-card-name">{product.name}</div>
         <div className="mt-chips">
           {product.satisfies.slice(0, 3).map((id) => (
-            <PrefChip
-              key={id}
-              label={prefLabel(preferences, id)}
-              variant="lit"
-              small
-            />
+            <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" small />
           ))}
           {product.misses.map((id) => (
-            <PrefChip
-              key={id}
-              label={prefLabel(preferences, id)}
-              variant="missed"
-              small
-            />
+            <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" small />
           ))}
         </div>
         {catalogBadges.length > 0 || product.detailError ? (
           <div className="mt-catalog-pills">
             {catalogBadges.map((label) => (
-              <span className="mt-catalog-pill" key={label}>{label}</span>
+              <span className="mt-catalog-pill" key={label}>
+                {label}
+              </span>
             ))}
             {product.detailError ? (
               <span className="mt-catalog-pill mt-catalog-pill-warning">Details unavailable</span>
@@ -3309,7 +3390,9 @@ function ProductCard({
           </span>
         </div>
         <ProductReviewSummary product={product} />
-        <div className={`mt-card-note ${product.agentStage === 'candidate' ? 'mt-card-note-live' : ''}`}>
+        <div
+          className={`mt-card-note ${product.agentStage === 'candidate' ? 'mt-card-note-live' : ''}`}
+        >
           <span className="mt-note-key">Why it is meant for you</span>
           {curatedFields.note}
         </div>
@@ -3350,11 +3433,14 @@ function ChatHero({
   const submittedTimeoutRef = useRef<number | null>(null)
   const hasSearchText = value.trim().length > 0
 
-  useEffect(() => () => {
-    if (submittedTimeoutRef.current !== null) {
-      window.clearTimeout(submittedTimeoutRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (submittedTimeoutRef.current !== null) {
+        window.clearTimeout(submittedTimeoutRef.current)
+      }
+    },
+    [],
+  )
 
   const submit = (text?: string) => {
     if (loading) {
@@ -3559,44 +3645,44 @@ function MerchantScope({
               />
             </label>
             <div className="mt-scope-list" role="listbox">
-            <button
-              className={`mt-scope-opt ${selectedMerchant ? '' : 'on'}`}
-              type="button"
-              role="option"
-              aria-selected={!selectedMerchant}
-              onClick={() => {
-                onMerchant(null)
-                setOpen(false)
-              }}
-            >
-              <span className="mt-scope-opt-name">All merchants</span>
-              <span className="mt-mono mt-scope-opt-count">{totalProductCount}</span>
-            </button>
-            <div className="mt-scope-sep" />
-            {filteredMerchants.map((merchant) => (
               <button
-                key={merchant.id}
-                className={`mt-scope-opt ${selectedMerchant?.id === merchant.id ? 'on' : ''}`}
+                className={`mt-scope-opt ${selectedMerchant ? '' : 'on'}`}
                 type="button"
                 role="option"
-                aria-selected={selectedMerchant?.id === merchant.id}
+                aria-selected={!selectedMerchant}
                 onClick={() => {
-                  onMerchant(merchant)
+                  onMerchant(null)
                   setOpen(false)
                 }}
               >
-                <span className="mt-scope-opt-main">
-                  <span className="mt-scope-opt-name">{merchant.name}</span>
-                  <span className="mt-mono mt-scope-opt-domain">{merchant.domain}</span>
-                </span>
-                <span className="mt-mono mt-scope-opt-count">
-                  {merchantCounts.get(merchant.id) ?? 0}
-                </span>
+                <span className="mt-scope-opt-name">All merchants</span>
+                <span className="mt-mono mt-scope-opt-count">{totalProductCount}</span>
               </button>
-            ))}
-            {filteredMerchants.length === 0 ? (
-              <div className="mt-scope-empty mt-mono">No merchants found</div>
-            ) : null}
+              <div className="mt-scope-sep" />
+              {filteredMerchants.map((merchant) => (
+                <button
+                  key={merchant.id}
+                  className={`mt-scope-opt ${selectedMerchant?.id === merchant.id ? 'on' : ''}`}
+                  type="button"
+                  role="option"
+                  aria-selected={selectedMerchant?.id === merchant.id}
+                  onClick={() => {
+                    onMerchant(merchant)
+                    setOpen(false)
+                  }}
+                >
+                  <span className="mt-scope-opt-main">
+                    <span className="mt-scope-opt-name">{merchant.name}</span>
+                    <span className="mt-mono mt-scope-opt-domain">{merchant.domain}</span>
+                  </span>
+                  <span className="mt-mono mt-scope-opt-count">
+                    {merchantCounts.get(merchant.id) ?? 0}
+                  </span>
+                </button>
+              ))}
+              {filteredMerchants.length === 0 ? (
+                <div className="mt-scope-empty mt-mono">No merchants found</div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -3640,9 +3726,7 @@ function SearchSuggestionPanel({
           >
             <span className="mt-starter-main">
               <span className="mt-starter-label">{search.label}</span>
-              {search.detail ? (
-                <span className="mt-starter-detail">{search.detail}</span>
-              ) : null}
+              {search.detail ? <span className="mt-starter-detail">{search.detail}</span> : null}
             </span>
             <span className="mt-starter-arrow" aria-hidden>
               <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
@@ -3730,37 +3814,40 @@ function FeedView({
   savePendingSet,
   onToggleSave,
   onDismiss,
-}: Readonly<{
-  profile: typeof PROFILE
-  greeting: string
-  products: readonly Product[]
-  restockItems: readonly UserInventoryItemProfile[]
-  hiddenByShip: number
-  discoveryLoading: boolean
-  discoveryError: string | null
-  popularSearches: readonly SearchSuggestion[]
-  popularSearchesLoading: boolean
-  agentActivities: readonly AgentActivity[]
-  deliveryLocations: readonly UserLocation[]
-  prompts: readonly string[]
-  reply: string | null
-  query: string
-  loading: boolean
-  loadingMore: boolean
-  hasMore: boolean
-  error: string | null
-  preferences: readonly Preference[]
-  merchants: readonly MerchantProfile[]
-  selectedMerchant: MerchantProfile | null
-  merchantCounts: ReadonlyMap<string, number>
-  totalProductCount: number
-  merchantsLoading: boolean
-  merchantsError: string | null
-  onSubmit: (query: string) => void
-  onLoadMore: () => void
-  onClear: () => void
-  onMerchant: (merchant: MerchantProfile | null) => void
-} & ProductOpenProps & ProductSaveProps>) {
+}: Readonly<
+  {
+    profile: typeof PROFILE
+    greeting: string
+    products: readonly Product[]
+    restockItems: readonly UserInventoryItemProfile[]
+    hiddenByShip: number
+    discoveryLoading: boolean
+    discoveryError: string | null
+    popularSearches: readonly SearchSuggestion[]
+    popularSearchesLoading: boolean
+    agentActivities: readonly AgentActivity[]
+    deliveryLocations: readonly UserLocation[]
+    prompts: readonly string[]
+    reply: string | null
+    query: string
+    loading: boolean
+    loadingMore: boolean
+    hasMore: boolean
+    error: string | null
+    preferences: readonly Preference[]
+    merchants: readonly MerchantProfile[]
+    selectedMerchant: MerchantProfile | null
+    merchantCounts: ReadonlyMap<string, number>
+    totalProductCount: number
+    merchantsLoading: boolean
+    merchantsError: string | null
+    onSubmit: (query: string) => void
+    onLoadMore: () => void
+    onClear: () => void
+    onMerchant: (merchant: MerchantProfile | null) => void
+  } & ProductOpenProps &
+    ProductSaveProps
+>) {
   const merchantName = selectedMerchant?.name
   const searchActive = Boolean(query || loading || error)
   const preSearch = !searchActive
@@ -3768,10 +3855,24 @@ function FeedView({
   const [productSortMode, setProductSortMode] = useState<ProductResultSortMode>('match')
   const resultToolsVisible = !preSearch && products.length > 0
   const visibleProducts = useMemo(
-    () => resultToolsVisible
-      ? visibleProductResults(products, preferences, deliveryLocations, productFilterText, productSortMode)
-      : [...products],
-    [deliveryLocations, preferences, productFilterText, productSortMode, products, resultToolsVisible],
+    () =>
+      resultToolsVisible
+        ? visibleProductResults(
+            products,
+            preferences,
+            deliveryLocations,
+            productFilterText,
+            productSortMode,
+          )
+        : [...products],
+    [
+      deliveryLocations,
+      preferences,
+      productFilterText,
+      productSortMode,
+      products,
+      resultToolsVisible,
+    ],
   )
   const filterActive = productFilterText.trim().length > 0
   const shownProductCount = resultToolsVisible ? visibleProducts.length : products.length
@@ -3780,31 +3881,41 @@ function FeedView({
     : `${shownProductCount}`
   const sortLabel = PRODUCT_RESULT_SORT_LABELS[productSortMode].toLowerCase()
   const title = query
-    ? merchantName ? `Your matches on ${merchantName}` : 'Your matches'
-    : merchantName ? `Your context on ${merchantName}` : 'Your saved and recent products'
+    ? merchantName
+      ? `Your matches on ${merchantName}`
+      : 'Your matches'
+    : merchantName
+      ? `Your context on ${merchantName}`
+      : 'Your saved and recent products'
   const count = loading
-    ? products.length > 0 ? `${countPrefix} found · agents working` : 'Searching stores'
+    ? products.length > 0
+      ? `${countPrefix} found · agents working`
+      : 'Searching stores'
     : preSearch
       ? discoveryLoading
         ? 'Loading your context'
         : `${products.length} from your context`
       : loadingMore
         ? `${countPrefix} shown · loading more`
-      : merchantName
-        ? `${countPrefix} on ${merchantName} · sorted by ${sortLabel}`
-        : `${countPrefix} shown · sorted by ${sortLabel}`
+        : merchantName
+          ? `${countPrefix} on ${merchantName} · sorted by ${sortLabel}`
+          : `${countPrefix} shown · sorted by ${sortLabel}`
   const waitingForPopularSearches = popularSearchesLoading && popularSearches.length === 0
   const suggestionSearches = waitingForPopularSearches
     ? []
-    : popularSearches.length > 0 ? popularSearches : STARTER_SEARCHES
-  const suggestionTitle = popularSearches.length > 0 || waitingForPopularSearches
-    ? 'What others search for'
-    : 'Try a starter search'
-  const suggestionNote = popularSearches.length > 0
-    ? 'Popular searches from the last 24 hours'
-    : waitingForPopularSearches
-      ? 'Loading popular searches'
-      : 'Searches run across supported merchants'
+    : popularSearches.length > 0
+      ? popularSearches
+      : STARTER_SEARCHES
+  const suggestionTitle =
+    popularSearches.length > 0 || waitingForPopularSearches
+      ? 'What others search for'
+      : 'Try a starter search'
+  const suggestionNote =
+    popularSearches.length > 0
+      ? 'Popular searches from the last 24 hours'
+      : waitingForPopularSearches
+        ? 'Loading popular searches'
+        : 'Searches run across supported merchants'
   const showAgentActivity = !preSearch && agentActivities.length > 0
 
   useEffect(() => {
@@ -3848,11 +3959,7 @@ function FeedView({
           </button>
         </div>
       ) : null}
-      {error ? (
-        <div className="mt-search-state mt-search-state-error">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="mt-search-state mt-search-state-error">{error}</div> : null}
       {preSearch ? (
         <SearchSuggestionPanel
           title={suggestionTitle}
@@ -3864,9 +3971,7 @@ function FeedView({
         />
       ) : null}
       {preSearch && discoveryError ? (
-        <div className="mt-search-state mt-search-state-error">
-          {discoveryError}
-        </div>
+        <div className="mt-search-state mt-search-state-error">{discoveryError}</div>
       ) : null}
       {preSearch && restockItems.length > 0 ? (
         <RestockNudges items={restockItems} onSubmit={onSubmit} />
@@ -3889,7 +3994,8 @@ function FeedView({
         </div>
       ) : null}
       {showAgentActivity ? <AgentActivityPanel activities={agentActivities} /> : null}
-      {(loading && products.length === 0) || (preSearch && discoveryLoading && products.length === 0) ? (
+      {(loading && products.length === 0) ||
+      (preSearch && discoveryLoading && products.length === 0) ? (
         <ProductSearchLoading
           label={loading ? undefined : 'Loading your saved and recent products'}
         />
@@ -3919,9 +4025,13 @@ function FeedView({
             />
           ) : (
             <div className="mt-empty mt-empty-inline">
-              <div className="mt-empty-mark"><SearchIcon /></div>
+              <div className="mt-empty-mark">
+                <SearchIcon />
+              </div>
               <h3 className="mt-empty-title">No products match these filters</h3>
-              <p className="mt-empty-sub">Change the text search or sort mode to see the found products again.</p>
+              <p className="mt-empty-sub">
+                Change the text search or sort mode to see the found products again.
+              </p>
               <button className="mt-empty-btn ghost" type="button" onClick={resetResultTools}>
                 Reset filters
               </button>
@@ -3943,9 +4053,13 @@ function FeedView({
         </>
       ) : merchantName ? (
         <div className="mt-empty">
-          <div className="mt-empty-mark"><MerchantIcon /></div>
+          <div className="mt-empty-mark">
+            <MerchantIcon />
+          </div>
           <h3 className="mt-empty-title">
-            {preSearch ? `No saved or recent products on ${merchantName}` : `Nothing here on ${merchantName}`}
+            {preSearch
+              ? `No saved or recent products on ${merchantName}`
+              : `Nothing here on ${merchantName}`}
           </h3>
           <p className="mt-empty-sub">
             {preSearch
@@ -4046,34 +4160,44 @@ function ProductModal({
     const controller = new AbortController()
     setDetailLoadState('loading')
     setDetailLoadError(null)
-    const language = typeof window === 'undefined'
-      ? null
-      : window.navigator.language.split('-')[0] || null
+    const language =
+      typeof window === 'undefined' ? null : window.navigator.language.split('-')[0] || null
     getMerchantProductDetails({
       merchantId: product.merchantId,
       productId: product.merchantProductId,
       addressCountry: deliveryCountryCode,
       language,
       signal: controller.signal,
-    }).then((details) => {
-      setMerchantDetails(details)
-      setDetailLoadState('loaded')
-    }).catch(() => {
-      if (controller.signal.aborted) {
-        return
-      }
-      setMerchantDetails(null)
-      setDetailLoadState('error')
-      setDetailLoadError('Latest product details are unavailable right now.')
     })
+      .then((details) => {
+        setMerchantDetails(details)
+        setDetailLoadState('loaded')
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return
+        }
+        setMerchantDetails(null)
+        setDetailLoadState('error')
+        setDetailLoadError('Latest product details are unavailable right now.')
+      })
     return () => controller.abort()
-  }, [deliveryCountryCode, product?.id, product?.merchantId, product?.merchantProductId, product?.remote])
+  }, [
+    deliveryCountryCode,
+    product?.id,
+    product?.merchantId,
+    product?.merchantProductId,
+    product?.remote,
+  ])
 
-  useEffect(() => () => {
-    if (addedTimeoutRef.current !== null) {
-      window.clearTimeout(addedTimeoutRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (addedTimeoutRef.current !== null) {
+        window.clearTimeout(addedTimeoutRef.current)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!product) {
@@ -4136,18 +4260,19 @@ function ProductModal({
   const selectedMedia = selectedMediaUrl
     ? modalMedia.find((item) => item.url === selectedMediaUrl)
     : null
-  const selectedImageUrl = selectedMedia?.type.toLowerCase() === 'image'
-    ? selectedMedia.url
-    : null
-  const modalImageUrl = selectedImageUrl
-    ?? merchantDetails?.selectedVariantImageUrl
-    ?? merchantDetails?.imageUrl
-    ?? product.imageUrl
+  const selectedImageUrl = selectedMedia?.type.toLowerCase() === 'image' ? selectedMedia.url : null
+  const modalImageUrl =
+    selectedImageUrl ??
+    merchantDetails?.selectedVariantImageUrl ??
+    merchantDetails?.imageUrl ??
+    product.imageUrl
   const curatorTake = productCuratedTake(product, preferences)
   const curatorAdvantages = productCuratedAdvantages(product, preferences)
   const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
   const hasPreferenceMatches = product.satisfies.length > 0 || product.misses.length > 0
-  const detailDescription = stripHtml(merchantDetails?.description || product.detailDescription || '')
+  const detailDescription = stripHtml(
+    merchantDetails?.description || product.detailDescription || '',
+  )
   const detailOptions = merchantDetails
     ? productOptionsFromProfiles(merchantDetails.options)
     : [...(product.detailOptions ?? [])]
@@ -4166,9 +4291,10 @@ function ProductModal({
     !detailDescription &&
     detailOptions.length === 0 &&
     selectedOptions.length === 0
-  const reviewInsight = product.review.count > 0
-    ? product.review.insight || 'Rating data is available; no review-summary agent has run yet.'
-    : 'No review data available from this catalog result.'
+  const reviewInsight =
+    product.review.count > 0
+      ? product.review.insight || 'Rating data is available; no review-summary agent has run yet.'
+      : 'No review data available from this catalog result.'
   const showThumbnailPage = (nextPage: number) => {
     const page = Math.max(0, Math.min(nextPage, thumbnailPageCount - 1))
     const pageMedia = modalMedia.slice(
@@ -4345,7 +4471,11 @@ function ProductModal({
                         key={`${item.type}-${item.url}`}
                         type="button"
                         disabled={!isImage}
-                        aria-label={isImage ? `Show image ${imageIndex} for ${product.name}` : `${item.type} media`}
+                        aria-label={
+                          isImage
+                            ? `Show image ${imageIndex} for ${product.name}`
+                            : `${item.type} media`
+                        }
                         aria-pressed={isImage ? isSelected : undefined}
                         onClick={() => setSelectedMediaUrl(item.url)}
                       >
@@ -4371,7 +4501,9 @@ function ProductModal({
                 ) : null}
               </div>
             ) : null}
-            <div className="mt-mono mt-card-brand">{product.brand} · {product.category}</div>
+            <div className="mt-mono mt-card-brand">
+              {product.brand} · {product.category}
+            </div>
             <h2 className="mt-modal-name">{product.name}</h2>
             <div className="mt-modal-price-row">
               <ProductPriceLine
@@ -4409,13 +4541,13 @@ function ProductModal({
               >
                 <span>{addButtonLabel}</span>
                 {!addDisabled && !added ? (
-                  <kbd className="mt-act-key" aria-hidden>↵</kbd>
+                  <kbd className="mt-act-key" aria-hidden>
+                    ↵
+                  </kbd>
                 ) : null}
               </button>
             </div>
-            {addError ? (
-              <div className="mt-cart-inline-error">{addError}</div>
-            ) : null}
+            {addError ? <div className="mt-cart-inline-error">{addError}</div> : null}
             {!canAddToCart && !addError ? (
               <div className="mt-cart-inline-error muted">
                 This offer is not available for merchant checkout.
@@ -4433,7 +4565,9 @@ function ProductModal({
               <section className="mt-block">
                 <div className="mt-block-label mt-mono">About this product</div>
                 {showProductDetailLoading ? (
-                  <p className="mt-product-detail-muted mt-mono">Loading latest product details...</p>
+                  <p className="mt-product-detail-muted mt-mono">
+                    Loading latest product details...
+                  </p>
                 ) : null}
                 {detailDescription ? (
                   <p className="mt-product-detail-description">{detailDescription}</p>
@@ -4441,7 +4575,10 @@ function ProductModal({
                 {selectedOptions.length > 0 ? (
                   <div className="mt-product-detail-facts">
                     {selectedOptions.map((option) => (
-                      <span className="mt-product-detail-fact" key={`${option.name}-${option.value}`}>
+                      <span
+                        className="mt-product-detail-fact"
+                        key={`${option.name}-${option.value}`}
+                      >
                         <span className="mt-mono">{option.name}</span>
                         {option.value}
                       </span>
@@ -4483,7 +4620,9 @@ function ProductModal({
                   ))}
                 </div>
               ) : (
-                <div className="mt-mono mt-pref-empty-inline">No confirmed preference matches yet</div>
+                <div className="mt-mono mt-pref-empty-inline">
+                  No confirmed preference matches yet
+                </div>
               )}
             </section>
 
@@ -4683,7 +4822,12 @@ function TopBar({
 
   return (
     <div className="mt-topbar">
-      <button className="mt-brand" type="button" onClick={() => onNav('discover')} aria-label="Meant home">
+      <button
+        className="mt-brand"
+        type="button"
+        onClick={() => onNav('discover')}
+        aria-label="Meant home"
+      >
         <img className="mt-brand-logo" src="/assets/meant-logo.png" alt="Meant" />
       </button>
       <nav className="mt-nav" aria-label="Primary">
@@ -4701,7 +4845,9 @@ function TopBar({
           >
             {label}
             {key === 'saved' && savedCount > 0 ? (
-              <span className={`mt-mono mt-nav-count${savedBump ? ' bump' : ''}`}>{savedCount}</span>
+              <span className={`mt-mono mt-nav-count${savedBump ? ' bump' : ''}`}>
+                {savedCount}
+              </span>
             ) : null}
           </button>
         ))}
@@ -4758,12 +4904,7 @@ function TopBar({
             <Avatar user={user} size={38} />
           </button>
           {accountMenu ? (
-            <AccountMenu
-              user={user}
-              onNav={onNav}
-              onClose={onCloseAccount}
-              onSignOut={onSignOut}
-            />
+            <AccountMenu user={user} onNav={onNav} onClose={onCloseAccount} onSignOut={onSignOut} />
           ) : null}
         </div>
       </div>
@@ -4863,11 +5004,14 @@ function SavedView({
   savePendingSet,
   onOpen,
   onToggleSave,
-}: Readonly<{
-  products: readonly Product[]
-  deliveryLocations: readonly UserLocation[]
-  preferences: readonly Preference[]
-} & ProductOpenProps & ProductSaveProps>) {
+}: Readonly<
+  {
+    products: readonly Product[]
+    deliveryLocations: readonly UserLocation[]
+    preferences: readonly Preference[]
+  } & ProductOpenProps &
+    ProductSaveProps
+>) {
   return (
     <main className="mt-feed mt-view">
       <ViewHead
@@ -4923,24 +5067,31 @@ function InventoryView({
   onRefresh: () => void
   onAddItem: (input: UserInventoryItemInput) => Promise<UserInventoryItemProfile>
   onAddPhotoItem: (input: UserInventoryPhotoInput) => Promise<UserInventoryItemProfile>
-  onUpdateItem: (itemId: string, input: UserInventoryItemUpdateInput) => Promise<UserInventoryItemProfile>
+  onUpdateItem: (
+    itemId: string,
+    input: UserInventoryItemUpdateInput,
+  ) => Promise<UserInventoryItemProfile>
   onDeleteItem: (itemId: string) => Promise<void>
   onExport: () => Promise<void>
 }>) {
   const [categoryFilter, setCategoryFilter] = useState<UserInventoryCategory | 'ALL'>('ALL')
   const [restockOnly, setRestockOnly] = useState(false)
   const [manualForm, setManualForm] = useState<InventoryFormState>(() => initialInventoryForm())
-  const [photoForm, setPhotoForm] = useState<InventoryFormState>(() => initialInventoryForm('OTHER'))
+  const [photoForm, setPhotoForm] = useState<InventoryFormState>(() =>
+    initialInventoryForm('OTHER'),
+  )
   const [saving, setSaving] = useState<'manual' | 'photo' | null>(null)
   const [photoProcessing, setPhotoProcessing] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const filteredItems = useMemo(
-    () => items.filter((item) =>
-      (categoryFilter === 'ALL' || item.category === categoryFilter) &&
-      (!restockOnly || item.restockEnabled),
-    ),
+    () =>
+      items.filter(
+        (item) =>
+          (categoryFilter === 'ALL' || item.category === categoryFilter) &&
+          (!restockOnly || item.restockEnabled),
+      ),
     [categoryFilter, items, restockOnly],
   )
   const pantryCount = items.filter((item) => item.category === 'PANTRY').length
@@ -4996,7 +5147,10 @@ function InventoryView({
     setNotice(null)
     try {
       const photoUrl = await fileToInventoryPhotoUrl(file)
-      const fileName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim()
+      const fileName = file.name
+        .replace(/\.[^.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .trim()
       setPhotoForm((current) => ({
         ...current,
         photoUrl,
@@ -5032,16 +5186,26 @@ function InventoryView({
       <ViewHead
         eyebrow="Owned items"
         title="Inventory"
-        right={(
+        right={
           <div className="mt-inv-head-actions">
-            <button className="mt-empty-btn ghost" type="button" onClick={onRefresh} disabled={loading}>
+            <button
+              className="mt-empty-btn ghost"
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+            >
               Refresh
             </button>
-            <button className="mt-empty-btn" type="button" onClick={() => void exportItems()} disabled={exporting}>
+            <button
+              className="mt-empty-btn"
+              type="button"
+              onClick={() => void exportItems()}
+              disabled={exporting}
+            >
               {exporting ? 'Exporting' : 'Export data'}
             </button>
           </div>
-        )}
+        }
       />
 
       <div className="mt-inv-stats">
@@ -5118,7 +5282,11 @@ function InventoryView({
       ) : (
         <EmptyState
           title={items.length === 0 ? 'No owned items yet' : 'No items match this filter'}
-          sub={items.length === 0 ? 'Manual entries, photo adds, and Meant purchases will appear here.' : 'Change the category or restock filter.'}
+          sub={
+            items.length === 0
+              ? 'Manual entries, photo adds, and Meant purchases will appear here.'
+              : 'Change the category or restock filter.'
+          }
           mark={<SparkMark />}
         />
       )}
@@ -5150,26 +5318,74 @@ function InventoryManualFormPanel({
     <form className="mt-inv-panel" onSubmit={onSubmit}>
       <div className="mt-inv-panel-head">
         <h2 className="mt-inv-panel-title">Manual add</h2>
-        <button className="mt-act mt-act-primary" type="submit" disabled={!form.name.trim() || pending}>
+        <button
+          className="mt-act mt-act-primary"
+          type="submit"
+          disabled={!form.name.trim() || pending}
+        >
           {pending ? 'Adding' : 'Add item'}
         </button>
       </div>
       <div className="mt-inv-form-grid">
-        <InventoryTextField label="Name" value={form.name} onChange={(name) => onChange((current) => ({ ...current, name }))} required />
-        <InventoryTextField label="Brand" value={form.brand} onChange={(brand) => onChange((current) => ({ ...current, brand }))} />
-        <InventoryCategoryField value={form.category} onChange={(category) => onChange((current) => ({
-          ...current,
-          category,
-          consumable: category === 'PANTRY' ? true : current.consumable,
-        }))} />
-        <InventoryTextField label="Quantity" type="number" value={form.quantity} onChange={(quantity) => onChange((current) => ({ ...current, quantity }))} min="1" />
-        <InventoryTextField label="Unit" value={form.unit} onChange={(unit) => onChange((current) => ({ ...current, unit }))} />
-        <InventoryTextField label="Location" value={form.location} onChange={(location) => onChange((current) => ({ ...current, location }))} />
+        <InventoryTextField
+          label="Name"
+          value={form.name}
+          onChange={(name) => onChange((current) => ({ ...current, name }))}
+          required
+        />
+        <InventoryTextField
+          label="Brand"
+          value={form.brand}
+          onChange={(brand) => onChange((current) => ({ ...current, brand }))}
+        />
+        <InventoryCategoryField
+          value={form.category}
+          onChange={(category) =>
+            onChange((current) => ({
+              ...current,
+              category,
+              consumable: category === 'PANTRY' ? true : current.consumable,
+            }))
+          }
+        />
+        <InventoryTextField
+          label="Quantity"
+          type="number"
+          value={form.quantity}
+          onChange={(quantity) => onChange((current) => ({ ...current, quantity }))}
+          min="1"
+        />
+        <InventoryTextField
+          label="Unit"
+          value={form.unit}
+          onChange={(unit) => onChange((current) => ({ ...current, unit }))}
+        />
+        <InventoryTextField
+          label="Location"
+          value={form.location}
+          onChange={(location) => onChange((current) => ({ ...current, location }))}
+        />
       </div>
-      <InventoryTextField label="Image URL" value={form.imageUrl} onChange={(imageUrl) => onChange((current) => ({ ...current, imageUrl }))} />
-      <InventoryTextField label="Product URL" value={form.productUrl} onChange={(productUrl) => onChange((current) => ({ ...current, productUrl }))} />
-      <InventoryTextArea label="Attributes" value={form.attributes} onChange={(attributes) => onChange((current) => ({ ...current, attributes }))} />
-      <InventoryTextArea label="Notes" value={form.notes} onChange={(notes) => onChange((current) => ({ ...current, notes }))} />
+      <InventoryTextField
+        label="Image URL"
+        value={form.imageUrl}
+        onChange={(imageUrl) => onChange((current) => ({ ...current, imageUrl }))}
+      />
+      <InventoryTextField
+        label="Product URL"
+        value={form.productUrl}
+        onChange={(productUrl) => onChange((current) => ({ ...current, productUrl }))}
+      />
+      <InventoryTextArea
+        label="Attributes"
+        value={form.attributes}
+        onChange={(attributes) => onChange((current) => ({ ...current, attributes }))}
+      />
+      <InventoryTextArea
+        label="Notes"
+        value={form.notes}
+        onChange={(notes) => onChange((current) => ({ ...current, notes }))}
+      />
       <InventoryRestockFields form={form} onChange={onChange} />
     </form>
   )
@@ -5211,19 +5427,44 @@ function InventoryPhotoFormPanel({
           <img src={form.photoUrl} alt="" />
         </div>
       ) : (
-        <div className="mt-inv-photo-empty mt-mono">{processing ? 'Processing photo' : 'No photo selected'}</div>
+        <div className="mt-inv-photo-empty mt-mono">
+          {processing ? 'Processing photo' : 'No photo selected'}
+        </div>
       )}
       <div className="mt-inv-form-grid">
-        <InventoryTextField label="Name" value={form.name} onChange={(name) => onChange((current) => ({ ...current, name }))} />
-        <InventoryTextField label="Brand" value={form.brand} onChange={(brand) => onChange((current) => ({ ...current, brand }))} />
-        <InventoryCategoryField value={form.category} onChange={(category) => onChange((current) => ({
-          ...current,
-          category,
-          consumable: category === 'PANTRY' ? true : current.consumable,
-        }))} />
-        <InventoryTextField label="Quantity" type="number" value={form.quantity} onChange={(quantity) => onChange((current) => ({ ...current, quantity }))} min="1" />
+        <InventoryTextField
+          label="Name"
+          value={form.name}
+          onChange={(name) => onChange((current) => ({ ...current, name }))}
+        />
+        <InventoryTextField
+          label="Brand"
+          value={form.brand}
+          onChange={(brand) => onChange((current) => ({ ...current, brand }))}
+        />
+        <InventoryCategoryField
+          value={form.category}
+          onChange={(category) =>
+            onChange((current) => ({
+              ...current,
+              category,
+              consumable: category === 'PANTRY' ? true : current.consumable,
+            }))
+          }
+        />
+        <InventoryTextField
+          label="Quantity"
+          type="number"
+          value={form.quantity}
+          onChange={(quantity) => onChange((current) => ({ ...current, quantity }))}
+          min="1"
+        />
       </div>
-      <InventoryTextArea label="Notes" value={form.notes} onChange={(notes) => onChange((current) => ({ ...current, notes }))} />
+      <InventoryTextArea
+        label="Notes"
+        value={form.notes}
+        onChange={(notes) => onChange((current) => ({ ...current, notes }))}
+      />
       <InventoryRestockFields form={form} onChange={onChange} />
     </form>
   )
@@ -5235,7 +5476,10 @@ function InventoryItemCard({
   onDelete,
 }: Readonly<{
   item: UserInventoryItemProfile
-  onUpdate: (itemId: string, input: UserInventoryItemUpdateInput) => Promise<UserInventoryItemProfile>
+  onUpdate: (
+    itemId: string,
+    input: UserInventoryItemUpdateInput,
+  ) => Promise<UserInventoryItemProfile>
   onDelete: (itemId: string) => Promise<void>
 }>) {
   const [editing, setEditing] = useState(false)
@@ -5300,15 +5544,26 @@ function InventoryItemCard({
       <div className="mt-inv-main">
         <div className="mt-inv-item-top">
           <div>
-            <div className="mt-mono mt-inv-source">{inventorySourceLabel(item.source)} · {inventoryCategoryLabel(item.category)}</div>
+            <div className="mt-mono mt-inv-source">
+              {inventorySourceLabel(item.source)} · {inventoryCategoryLabel(item.category)}
+            </div>
             <h3 className="mt-inv-name">{item.name}</h3>
             {item.brand ? <div className="mt-inv-brand">{item.brand}</div> : null}
           </div>
           <div className="mt-inv-actions">
-            <button className="mt-act mt-act-ghost" type="button" onClick={() => setEditing((current) => !current)}>
+            <button
+              className="mt-act mt-act-ghost"
+              type="button"
+              onClick={() => setEditing((current) => !current)}
+            >
               {editing ? 'Cancel' : 'Edit'}
             </button>
-            <button className="mt-act mt-act-ghost danger" type="button" onClick={() => void remove()} disabled={deleting}>
+            <button
+              className="mt-act mt-act-ghost danger"
+              type="button"
+              onClick={() => void remove()}
+              disabled={deleting}
+            >
               {confirmDelete ? 'Confirm delete' : deleting ? 'Deleting' : 'Delete'}
             </button>
           </div>
@@ -5317,22 +5572,62 @@ function InventoryItemCard({
         {editing ? (
           <form className="mt-inv-edit" onSubmit={save}>
             <div className="mt-inv-form-grid">
-              <InventoryTextField label="Name" value={form.name} onChange={(name) => setForm((current) => ({ ...current, name }))} required />
-              <InventoryTextField label="Brand" value={form.brand} onChange={(brand) => setForm((current) => ({ ...current, brand }))} />
-              <InventoryCategoryField value={form.category} onChange={(category) => setForm((current) => ({
-                ...current,
-                category,
-                consumable: category === 'PANTRY' ? true : current.consumable,
-              }))} />
-              <InventoryTextField label="Quantity" type="number" value={form.quantity} onChange={(quantity) => setForm((current) => ({ ...current, quantity }))} min="1" />
-              <InventoryTextField label="Unit" value={form.unit} onChange={(unit) => setForm((current) => ({ ...current, unit }))} />
-              <InventoryTextField label="Location" value={form.location} onChange={(location) => setForm((current) => ({ ...current, location }))} />
+              <InventoryTextField
+                label="Name"
+                value={form.name}
+                onChange={(name) => setForm((current) => ({ ...current, name }))}
+                required
+              />
+              <InventoryTextField
+                label="Brand"
+                value={form.brand}
+                onChange={(brand) => setForm((current) => ({ ...current, brand }))}
+              />
+              <InventoryCategoryField
+                value={form.category}
+                onChange={(category) =>
+                  setForm((current) => ({
+                    ...current,
+                    category,
+                    consumable: category === 'PANTRY' ? true : current.consumable,
+                  }))
+                }
+              />
+              <InventoryTextField
+                label="Quantity"
+                type="number"
+                value={form.quantity}
+                onChange={(quantity) => setForm((current) => ({ ...current, quantity }))}
+                min="1"
+              />
+              <InventoryTextField
+                label="Unit"
+                value={form.unit}
+                onChange={(unit) => setForm((current) => ({ ...current, unit }))}
+              />
+              <InventoryTextField
+                label="Location"
+                value={form.location}
+                onChange={(location) => setForm((current) => ({ ...current, location }))}
+              />
             </div>
-            <InventoryTextArea label="Attributes" value={form.attributes} onChange={(attributes) => setForm((current) => ({ ...current, attributes }))} />
-            <InventoryTextArea label="Notes" value={form.notes} onChange={(notes) => setForm((current) => ({ ...current, notes }))} />
+            <InventoryTextArea
+              label="Attributes"
+              value={form.attributes}
+              onChange={(attributes) => setForm((current) => ({ ...current, attributes }))}
+            />
+            <InventoryTextArea
+              label="Notes"
+              value={form.notes}
+              onChange={(notes) => setForm((current) => ({ ...current, notes }))}
+            />
             <InventoryRestockFields form={form} onChange={setForm} />
             <div className="mt-inv-save-row">
-              <button className="mt-act mt-act-primary" type="submit" disabled={!form.name.trim() || saving}>
+              <button
+                className="mt-act mt-act-primary"
+                type="submit"
+                disabled={!form.name.trim() || saving}
+              >
                 {saving ? 'Saving' : 'Save changes'}
               </button>
             </div>
@@ -5340,9 +5635,16 @@ function InventoryItemCard({
         ) : (
           <>
             <div className="mt-inv-meta">
-              <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
+              <span>
+                {item.quantity}
+                {item.unit ? ` ${item.unit}` : ''}
+              </span>
               {item.location ? <span>{item.location}</span> : null}
-              {item.restockEnabled ? <span>Restock{item.restockThreshold !== null ? ` at ${item.restockThreshold}` : ''}</span> : null}
+              {item.restockEnabled ? (
+                <span>
+                  Restock{item.restockThreshold !== null ? ` at ${item.restockThreshold}` : ''}
+                </span>
+              ) : null}
               {purchasedAt ? <span>Bought {purchasedAt}</span> : null}
               {updatedAt ? <span>Updated {updatedAt}</span> : null}
             </div>
@@ -5429,7 +5731,9 @@ function InventoryCategoryField({
         onChange={(event) => onChange(event.target.value as UserInventoryCategory)}
       >
         {INVENTORY_CATEGORIES.map((category) => (
-          <option key={category} value={category}>{inventoryCategoryLabel(category)}</option>
+          <option key={category} value={category}>
+            {inventoryCategoryLabel(category)}
+          </option>
         ))}
       </select>
     </label>
@@ -5449,7 +5753,9 @@ function InventoryRestockFields({
         <input
           type="checkbox"
           checked={form.consumable}
-          onChange={(event) => onChange((current) => ({ ...current, consumable: event.target.checked }))}
+          onChange={(event) =>
+            onChange((current) => ({ ...current, consumable: event.target.checked }))
+          }
         />
         <span>Consumable</span>
       </label>
@@ -5457,11 +5763,13 @@ function InventoryRestockFields({
         <input
           type="checkbox"
           checked={form.restockEnabled}
-          onChange={(event) => onChange((current) => ({
-            ...current,
-            restockEnabled: event.target.checked,
-            consumable: event.target.checked ? true : current.consumable,
-          }))}
+          onChange={(event) =>
+            onChange((current) => ({
+              ...current,
+              restockEnabled: event.target.checked,
+              consumable: event.target.checked ? true : current.consumable,
+            }))
+          }
         />
         <span>Restock</span>
       </label>
@@ -5473,7 +5781,9 @@ function InventoryRestockFields({
           min="0"
           value={form.restockThreshold}
           disabled={!form.restockEnabled}
-          onChange={(event) => onChange((current) => ({ ...current, restockThreshold: event.target.value }))}
+          onChange={(event) =>
+            onChange((current) => ({ ...current, restockThreshold: event.target.value }))
+          }
         />
       </label>
     </div>
@@ -5510,14 +5820,17 @@ function CompareView({
     gridTemplateColumns: `180px repeat(${compareColumnCount}, minmax(180px, 240px))`,
   }
   const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
-  const bestPrice = enough ? Math.min(...items.map((product) => productPriceFrom(product, deliveryLocations))) : null
+  const bestPrice = enough
+    ? Math.min(...items.map((product) => productPriceFrom(product, deliveryLocations)))
+    : null
   const bestMerchantCount = enough
     ? Math.max(...items.map((product) => productMerchantCount(product, deliveryLocations)))
     : null
   const winner = enough
-    ? [...items].sort((left, right) =>
-        right.match - left.match ||
-        productPriceFrom(left, deliveryLocations) - productPriceFrom(right, deliveryLocations),
+    ? [...items].sort(
+        (left, right) =>
+          right.match - left.match ||
+          productPriceFrom(left, deliveryLocations) - productPriceFrom(right, deliveryLocations),
       )[0]
     : null
   const comparisonPreferenceIds = preferences
@@ -5545,9 +5858,7 @@ function CompareView({
       ) : null}
       <div className="mt-cmp">
         <div className="mt-cmp-grid mt-cmp-headrow" style={gridStyle}>
-          <div className="mt-cmp-rowlabel mt-cmp-corner mt-mono">
-            {items.length} of 4
-          </div>
+          <div className="mt-cmp-rowlabel mt-cmp-corner mt-mono">{items.length} of 4</div>
           {items.map((product, index) => (
             <CompareSlot
               key={product.id}
@@ -5580,7 +5891,8 @@ function CompareView({
               cells={items.map((product) => ({
                 key: product.id,
                 value: money(productPriceFrom(product, deliveryLocations)),
-                win: bestPrice !== null && productPriceFrom(product, deliveryLocations) === bestPrice,
+                win:
+                  bestPrice !== null && productPriceFrom(product, deliveryLocations) === bestPrice,
               }))}
               addSpacer={showAdd}
             />
@@ -5590,7 +5902,9 @@ function CompareView({
               cells={items.map((product) => ({
                 key: product.id,
                 value: `${productMerchantCount(product, deliveryLocations)}`,
-                win: bestMerchantCount !== null && productMerchantCount(product, deliveryLocations) === bestMerchantCount,
+                win:
+                  bestMerchantCount !== null &&
+                  productMerchantCount(product, deliveryLocations) === bestMerchantCount,
               }))}
               addSpacer={showAdd}
             />
@@ -5606,7 +5920,9 @@ function CompareView({
                         </span>
                       ) : null}
                       <span className="mt-mono mt-cmp-sub">
-                        {product.review.score !== null ? `${product.review.score.toFixed(1)} · ` : ''}
+                        {product.review.score !== null
+                          ? `${product.review.score.toFixed(1)} · `
+                          : ''}
                         {product.review.count.toLocaleString()}
                         {product.review.score === null ? ' reviews' : ''}
                       </span>
@@ -5628,10 +5944,10 @@ function CompareView({
               {showAdd ? <div className="mt-cmp-cell mt-cmp-addspacer" /> : null}
             </div>
             <div className="mt-cmp-grid mt-cmp-section" style={gridStyle}>
-              <div className="mt-cmp-rowlabel mt-cmp-seclabel mt-mono">
-                Your preferences
-              </div>
-              {items.map((product) => <div key={product.id} />)}
+              <div className="mt-cmp-rowlabel mt-cmp-seclabel mt-mono">Your preferences</div>
+              {items.map((product) => (
+                <div key={product.id} />
+              ))}
               {showAdd ? <div /> : null}
             </div>
             {comparisonPreferenceIds.map((id) => (
@@ -5668,8 +5984,9 @@ function CompareView({
         )}
       </div>
       <p className="mt-cmp-footnote">
-        Add products to Compare from a product detail page with Add to compare. Once a product is in compare,
-        In compare opens this page. The Add a saved product control only lists products you have saved.
+        Add products to Compare from a product detail page with Add to compare. Once a product is in
+        compare, In compare opens this page. The Add a saved product control only lists products you
+        have saved.
       </p>
     </main>
   )
@@ -5881,10 +6198,13 @@ function preferenceCategory(preference: Preference): string {
 }
 
 function preferenceCategoryLabel(category: string): string {
-  return PREFERENCE_CATEGORY_LABELS[category] ?? category
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+  return (
+    PREFERENCE_CATEGORY_LABELS[category] ??
+    category
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  )
 }
 
 function preferenceSortValue(preference: Preference): number {
@@ -5892,9 +6212,10 @@ function preferenceSortValue(preference: Preference): number {
 }
 
 function sortPreferences(preferences: readonly Preference[]): Preference[] {
-  return [...preferences].sort((left, right) =>
-    preferenceSortValue(left) - preferenceSortValue(right) ||
-    left.label.localeCompare(right.label),
+  return [...preferences].sort(
+    (left, right) =>
+      preferenceSortValue(left) - preferenceSortValue(right) ||
+      left.label.localeCompare(right.label),
   )
 }
 
@@ -5906,8 +6227,7 @@ function preferenceMatchesSearch(preference: Preference, searchText: string): bo
     preference.category,
     preference.polarity,
     category,
-  ]
-    .some((value) => typeof value === 'string' && value.toLowerCase().includes(searchText))
+  ].some((value) => typeof value === 'string' && value.toLowerCase().includes(searchText))
 }
 
 function preferenceGroupsFor(
@@ -5971,13 +6291,18 @@ function PreferencesView({
   const [preferenceSearch, setPreferenceSearch] = useState('')
   const enabled = sortPreferences(allPrefs.filter((preference) => prefsOn.has(preference.id)))
   const preferenceSearchText = preferenceSearch.trim().toLowerCase()
-  const activeGroup = PREFERENCE_GROUPS.find((group) => group.id === activePreferenceGroup) ?? PREFERENCE_GROUPS[0]
+  const activeGroup =
+    PREFERENCE_GROUPS.find((group) => group.id === activePreferenceGroup) ?? PREFERENCE_GROUPS[0]
   const visiblePreferences = useMemo(() => {
     if (preferenceSearchText) {
-      return sortPreferences(allPrefs.filter((preference) => preferenceMatchesSearch(preference, preferenceSearchText)))
+      return sortPreferences(
+        allPrefs.filter((preference) => preferenceMatchesSearch(preference, preferenceSearchText)),
+      )
     }
     const activeCategories = new Set(activeGroup.categories)
-    return sortPreferences(allPrefs.filter((preference) => activeCategories.has(preferenceCategory(preference))))
+    return sortPreferences(
+      allPrefs.filter((preference) => activeCategories.has(preferenceCategory(preference))),
+    )
   }, [activeGroup, allPrefs, preferenceSearchText])
   const visiblePreferenceGroups = useMemo(
     () => preferenceGroupsFor(visiblePreferences),
@@ -6017,7 +6342,11 @@ function PreferencesView({
         eyebrow={`${profile.name}'s profile`}
         title="What matters to you"
         sub="Start from prepared filters, describe it in your own words, or import your preferences from another AI."
-        right={<button className="mt-act mt-act-primary mt-prefs-done" type="button" onClick={onDone}>Done</button>}
+        right={
+          <button className="mt-act mt-act-primary mt-prefs-done" type="button" onClick={onDone}>
+            Done
+          </button>
+        }
       />
 
       <section className="mt-prefs-section">
@@ -6025,7 +6354,8 @@ function PreferencesView({
           <div>
             <h3 className="mt-sectitle">Where it ships</h3>
             <p className="mt-secsub">
-              Leave shipping unrestricted, or add every place you want merchants to be able to deliver.
+              Leave shipping unrestricted, or add every place you want merchants to be able to
+              deliver.
             </p>
           </div>
           <span className="mt-mono mt-sec-count">
@@ -6260,26 +6590,41 @@ function PreferencesView({
           <div>
             <h3 className="mt-sectitle">Bring your profile from another AI</h3>
             <p className="mt-secsub">
-              Already chat with ChatGPT or Claude? Ask it about you, then paste its answer here to build filters.
+              Already chat with ChatGPT or Claude? Ask it about you, then paste its answer here to
+              build filters.
             </p>
           </div>
         </div>
         <div className="mt-sync-pane">
           <div className="mt-sync-block">
             <div className="mt-sync-row">
-              <div className="mt-sync-label"><span className="mt-step-num">1</span> Ask your assistant about you</div>
-              <button className={`mt-act mt-act-ghost mt-copy ${copied ? 'done' : ''}`} type="button" onClick={copyQuestion}>
+              <div className="mt-sync-label">
+                <span className="mt-step-num">1</span> Ask your assistant about you
+              </div>
+              <button
+                className={`mt-act mt-act-ghost mt-copy ${copied ? 'done' : ''}`}
+                type="button"
+                onClick={copyQuestion}
+              >
                 {copied ? 'Copied' : 'Copy question'}
               </button>
             </div>
             <p className="mt-sync-desc">
-              Paste this into another AI. It should reply with what it knows about your shopping preferences.
+              Paste this into another AI. It should reply with what it knows about your shopping
+              preferences.
             </p>
-            <textarea className="mt-prompt-text mt-mono" readOnly value={IMPORT_ASK} onFocus={(event) => event.currentTarget.select()} />
+            <textarea
+              className="mt-prompt-text mt-mono"
+              readOnly
+              value={IMPORT_ASK}
+              onFocus={(event) => event.currentTarget.select()}
+            />
           </div>
           <div className="mt-sync-block">
             <div className="mt-sync-row">
-              <div className="mt-sync-label"><span className="mt-step-num">2</span> Paste its answer back</div>
+              <div className="mt-sync-label">
+                <span className="mt-step-num">2</span> Paste its answer back
+              </div>
             </div>
             <textarea
               className="mt-describe"
@@ -6335,7 +6680,8 @@ function LearnedTasteSection({
         <div>
           <h3 className="mt-sectitle">Learned from behavior</h3>
           <p className="mt-secsub">
-            Saves, purchases, dismissals, and repeat searches tune ranking without changing explicit filters.
+            Saves, purchases, dismissals, and repeat searches tune ranking without changing explicit
+            filters.
           </p>
         </div>
         <span className="mt-mono mt-sec-count">{visibleSignals.length} signals</span>
@@ -6379,7 +6725,8 @@ function LearnedTasteSection({
                 <div>
                   <div className="mt-learned-label">{signal.label}</div>
                   <div className="mt-learned-meta">
-                    {tasteSignalTypeLabel(signal.signalType)} · {tasteSignalWeightLabel(signal.weight)}
+                    {tasteSignalTypeLabel(signal.signalType)} ·{' '}
+                    {tasteSignalWeightLabel(signal.weight)}
                   </div>
                 </div>
                 <div className="mt-learned-actions">
@@ -6403,9 +6750,7 @@ function LearnedTasteSection({
           })}
         </div>
       ) : (
-        <div className="mt-pref-empty">
-          Meant has not learned enough from your behavior yet.
-        </div>
+        <div className="mt-pref-empty">Meant has not learned enough from your behavior yet.</div>
       )}
     </section>
   )
@@ -6481,11 +6826,18 @@ function LocationSection({
               className="mt-active-chip"
               key={`${location.code}:${location.city}`}
               type="button"
-              onClick={() => onSet(locations.filter((candidate) =>
-                candidate.code !== location.code || candidate.city !== location.city
-              ))}
+              onClick={() =>
+                onSet(
+                  locations.filter(
+                    (candidate) =>
+                      candidate.code !== location.code || candidate.city !== location.city,
+                  ),
+                )
+              }
             >
-              <span>{location.city}, {location.country}</span>
+              <span>
+                {location.city}, {location.country}
+              </span>
               <CloseIcon size={12} />
             </button>
           ))}
@@ -6531,7 +6883,12 @@ function LocationSection({
             </label>
           </div>
           <div className="mt-describe-actions">
-            <button className="mt-act mt-act-primary" type="button" onClick={save} disabled={!code || !city}>
+            <button
+              className="mt-act mt-act-primary"
+              type="button"
+              onClick={save}
+              disabled={!code || !city}
+            >
               Add location
             </button>
             <button
@@ -6635,7 +6992,12 @@ function OrdersView({
             Showing {start + 1}-{Math.min(start + pageSize, orders.length)} of {orders.length}
           </span>
           <div className="mt-pager-ctrls">
-            <button className="mt-pager-btn" type="button" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+            <button
+              className="mt-pager-btn"
+              type="button"
+              disabled={safePage === 0}
+              onClick={() => setPage(safePage - 1)}
+            >
               Prev
             </button>
             {Array.from({ length: pageCount }).map((_, index) => (
@@ -6649,7 +7011,12 @@ function OrdersView({
                 {index + 1}
               </button>
             ))}
-            <button className="mt-pager-btn" type="button" disabled={safePage === pageCount - 1} onClick={() => setPage(safePage + 1)}>
+            <button
+              className="mt-pager-btn"
+              type="button"
+              disabled={safePage === pageCount - 1}
+              onClick={() => setPage(safePage + 1)}
+            >
               Next
             </button>
           </div>
@@ -6661,7 +7028,8 @@ function OrdersView({
 
 function orderLineUnitPrice(item: CartItem, product?: Product): number {
   if (product) {
-    const offer = product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+    const offer =
+      product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
     return offer ? offer.price : 0
   }
   const unitAmount = parseOrderAmount(item.unitPriceAmount)
@@ -6715,9 +7083,7 @@ function OrderCard({
     product: products.find((product) => product.id === item.id),
   }))
   const total = lines.reduce((sum, { item, product }) => sum + orderLineTotal(item, product), 0)
-  const matched = Array.from(
-    new Set(lines.flatMap((line) => line.product?.satisfies ?? [])),
-  )
+  const matched = Array.from(new Set(lines.flatMap((line) => line.product?.satisfies ?? [])))
 
   return (
     <div className={`mt-order ${flash ? 'flash' : ''}`}>
@@ -6729,7 +7095,9 @@ function OrderCard({
           </span>
         </div>
         <div className="mt-order-head-r">
-          <span className={`mt-order-status mt-order-status-${order.status.toLowerCase().replace(/\s+/g, '-')}`}>
+          <span
+            className={`mt-order-status mt-order-status-${order.status.toLowerCase().replace(/\s+/g, '-')}`}
+          >
             <span className="mt-order-status-dot" /> {order.status}
           </span>
           <span className="mt-order-total">{money(total)}</span>
@@ -6756,7 +7124,9 @@ function OrderCard({
                 ) : item.imageUrl ? (
                   <img className="mt-order-item-img" src={item.imageUrl} alt={productName} />
                 ) : (
-                  <div className="mt-order-item-fallback mt-mono">{productName.slice(0, 2).toUpperCase()}</div>
+                  <div className="mt-order-item-fallback mt-mono">
+                    {productName.slice(0, 2).toUpperCase()}
+                  </div>
                 )}
               </div>
               <div className="mt-order-item-info">
@@ -6848,7 +7218,9 @@ function AccountView({
   const preview: UserAccount = { name, email: user.email, avatar, avatarPath }
   const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
   const hasProfilePicture = Boolean(avatar || avatarPath)
-  const identityLinksByMerchant = new Map(merchantIdentityLinks.map((link) => [link.merchantId, link]))
+  const identityLinksByMerchant = new Map(
+    merchantIdentityLinks.map((link) => [link.merchantId, link]),
+  )
   const linkableMerchants = merchants.filter((merchant) => merchant.supportsIdentityLinking)
 
   useEffect(() => {
@@ -6912,7 +7284,8 @@ function AccountView({
 
       if (nextName !== user.name) {
         const profile = await updateProfile({ firstName, surname })
-        savedName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
+        savedName =
+          [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
         savedEmail = profile.email || user.email
         onSave({ ...user, name: savedName, email: savedEmail })
         setName(savedName)
@@ -6937,7 +7310,12 @@ function AccountView({
         void deleteProfilePictureFile(user.avatarPath)
       }
 
-      onSave({ name: savedName, email: savedEmail, avatar: savedAvatar, avatarPath: savedAvatarPath })
+      onSave({
+        name: savedName,
+        email: savedEmail,
+        avatar: savedAvatar,
+        avatarPath: savedAvatarPath,
+      })
       setName(savedName)
       setAvatar(savedAvatar)
       setAvatarPath(savedAvatarPath)
@@ -6959,7 +7337,11 @@ function AccountView({
         eyebrow="Account"
         title="Your account"
         sub="Your name and photo are how you show up across Meant. This is separate from your shopping preferences."
-        right={<button className="mt-act mt-act-primary mt-prefs-done" type="button" onClick={onDone}>Done</button>}
+        right={
+          <button className="mt-act mt-act-primary mt-prefs-done" type="button" onClick={onDone}>
+            Done
+          </button>
+        }
       />
       <div className="mt-acct-card">
         <div className="mt-acct-idrow">
@@ -6967,7 +7349,11 @@ function AccountView({
             <Avatar user={preview} size={84} />
           </div>
           <div className="mt-acct-photo-actions">
-            <button className="mt-acct-uploadbtn" type="button" onClick={() => fileRef.current?.click()}>
+            <button
+              className="mt-acct-uploadbtn"
+              type="button"
+              onClick={() => fileRef.current?.click()}
+            >
               {hasProfilePicture ? 'Change photo' : 'Upload photo'}
             </button>
             {hasProfilePicture ? (
@@ -6984,19 +7370,33 @@ function AccountView({
                 Remove
               </button>
             ) : null}
-            <div className="mt-acct-photo-hint">JPG, PNG, or WebP up to 5 MB. A square image works best.</div>
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile} hidden />
+            <div className="mt-acct-photo-hint">
+              JPG, PNG, or WebP up to 5 MB. A square image works best.
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={onFile}
+              hidden
+            />
           </div>
         </div>
         <div className="mt-acct-fields">
           <label className="mt-field">
             <span className="mt-field-label mt-mono">Full name</span>
-            <input className="mt-input" value={name} onChange={(event) => setName(event.target.value)} />
+            <input
+              className="mt-input"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </label>
           <label className="mt-field">
             <span className="mt-field-label mt-mono">Email</span>
             <input className="mt-input" type="email" value={user.email} readOnly disabled />
-            <span className="mt-field-hint">Your email is your sign-in identity and can't be changed here.</span>
+            <span className="mt-field-hint">
+              Your email is your sign-in identity and can't be changed here.
+            </span>
           </label>
         </div>
         <div className="mt-acct-save-row">
@@ -7027,12 +7427,17 @@ function AccountView({
           <div>
             <div className="mt-acct-link-t">Connected stores</div>
             <div className="mt-acct-link-s">
-              Link supported merchant accounts so Meant can use scoped order, account, and loyalty access.
+              Link supported merchant accounts so Meant can use scoped order, account, and loyalty
+              access.
             </div>
           </div>
-          {merchantIdentityLinksLoading ? <span className="mt-mono mt-acct-link-status">Loading</span> : null}
+          {merchantIdentityLinksLoading ? (
+            <span className="mt-mono mt-acct-link-status">Loading</span>
+          ) : null}
         </div>
-        {merchantIdentityLinksError ? <div className="mt-acct-save-error">{merchantIdentityLinksError}</div> : null}
+        {merchantIdentityLinksError ? (
+          <div className="mt-acct-save-error">{merchantIdentityLinksError}</div>
+        ) : null}
         {linkableMerchants.length > 0 ? (
           <div className="mt-acct-store-list">
             {linkableMerchants.map((merchant) => {
@@ -7043,15 +7448,28 @@ function AccountView({
                   <div>
                     <div className="mt-acct-store-name">{merchant.name}</div>
                     <div className="mt-mono mt-acct-store-meta">
-                      {merchant.domain} · {connected ? 'Connected' : link?.status === 'PENDING' ? 'Pending consent' : 'Not connected'}
+                      {merchant.domain} ·{' '}
+                      {connected
+                        ? 'Connected'
+                        : link?.status === 'PENDING'
+                          ? 'Pending consent'
+                          : 'Not connected'}
                     </div>
                   </div>
                   {connected ? (
-                    <button className="mt-acct-removebtn" type="button" onClick={() => onRevokeMerchant(merchant.id)}>
+                    <button
+                      className="mt-acct-removebtn"
+                      type="button"
+                      onClick={() => onRevokeMerchant(merchant.id)}
+                    >
                       Revoke
                     </button>
                   ) : (
-                    <button className="mt-acct-uploadbtn" type="button" onClick={() => onConnectMerchant(merchant)}>
+                    <button
+                      className="mt-acct-uploadbtn"
+                      type="button"
+                      onClick={() => onConnectMerchant(merchant)}
+                    >
                       Connect
                     </button>
                   )}
@@ -7060,13 +7478,17 @@ function AccountView({
             })}
           </div>
         ) : merchantIdentityLinksLoading ? null : (
-          <div className="mt-acct-empty">No listed merchants currently advertise identity linking.</div>
+          <div className="mt-acct-empty">
+            No listed merchants currently advertise identity linking.
+          </div>
         )}
       </section>
       <div className="mt-acct-danger">
         <div>
           <div className="mt-acct-link-t">Sign out</div>
-          <div className="mt-acct-link-s">You will need your email and password to sign back in.</div>
+          <div className="mt-acct-link-s">
+            You will need your email and password to sign back in.
+          </div>
         </div>
         <button className="mt-acct-signout" type="button" onClick={onSignOut}>
           Sign out
@@ -7078,10 +7500,19 @@ function AccountView({
 
 const GoogleGlyph = (
   <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true">
-    <path d="M17.6 9.2c0-.6-.05-1.18-.16-1.74H9v3.3h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.64-3.88 2.64-6.54z" fill="#4285F4" />
-    <path d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" fill="#34A853" />
+    <path
+      d="M17.6 9.2c0-.6-.05-1.18-.16-1.74H9v3.3h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.64-3.88 2.64-6.54z"
+      fill="#4285F4"
+    />
+    <path
+      d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"
+      fill="#34A853"
+    />
     <path d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" fill="#FBBC05" />
-    <path d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" fill="#EA4335" />
+    <path
+      d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
+      fill="#EA4335"
+    />
   </svg>
 )
 
@@ -7141,7 +7572,11 @@ function AuthScreen({
               setSent(true)
             }}
           >
-            <button className="mt-reset-back mt-mono" type="button" onClick={() => onMode('signin')}>
+            <button
+              className="mt-reset-back mt-mono"
+              type="button"
+              onClick={() => onMode('signin')}
+            >
               Back to sign in
             </button>
             <div className="mt-mono mt-auth-eyebrow">Password reset</div>
@@ -7151,9 +7586,16 @@ function AuthScreen({
             </p>
             <label className="mt-field">
               <span className="mt-field-label mt-mono">Email</span>
-              <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <input
+                className="mt-input"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
             </label>
-            {sent ? <div className="mt-reset-ok mt-mono">Check your inbox for a reset link.</div> : null}
+            {sent ? (
+              <div className="mt-reset-ok mt-mono">Check your inbox for a reset link.</div>
+            ) : null}
             {error ? <div className="mt-auth-error mt-mono">{error}</div> : null}
             <button className="mt-auth-primary" type="submit" disabled={!email.trim() || pending}>
               {pending ? 'Sending…' : 'Send reset link'}
@@ -7204,10 +7646,16 @@ function AuthScreen({
       <AuthBrand />
       <main className="mt-auth-panel">
         <form className="mt-auth-card" onSubmit={submit}>
-          <div className="mt-mono mt-auth-eyebrow">{signup ? 'Create your account' : 'Welcome back'}</div>
-          <h2 className="mt-auth-title">{signup ? 'Start shopping the way you mean it.' : 'Sign in to Meant.'}</h2>
+          <div className="mt-mono mt-auth-eyebrow">
+            {signup ? 'Create your account' : 'Welcome back'}
+          </div>
+          <h2 className="mt-auth-title">
+            {signup ? 'Start shopping the way you mean it.' : 'Sign in to Meant.'}
+          </h2>
           <p className="mt-auth-sub">
-            {signup ? 'Set up your profile once and Meant applies it across supported stores.' : 'Pick up right where you left off.'}
+            {signup
+              ? 'Set up your profile once and Meant applies it across supported stores.'
+              : 'Pick up right where you left off.'}
           </p>
           <div className="mt-auth-social">
             <button
@@ -7227,23 +7675,43 @@ function AuthScreen({
               {AppleGlyph} Continue with Apple
             </button>
           </div>
-          <div className="mt-auth-div"><span>or with email</span></div>
+          <div className="mt-auth-div">
+            <span>or with email</span>
+          </div>
           {signup ? (
             <label className="mt-field">
               <span className="mt-field-label mt-mono">Full name</span>
-              <input className="mt-input" value={name} onChange={(event) => setName(event.target.value)} />
+              <input
+                className="mt-input"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
             </label>
           ) : null}
           <label className="mt-field">
             <span className="mt-field-label mt-mono">Email</span>
-            <input className="mt-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            <input
+              className="mt-input"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
           </label>
           <label className="mt-field">
             <span className="mt-field-label mt-mono">Password</span>
-            <input className="mt-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <input
+              className="mt-input"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
           </label>
           {!signup ? (
-            <button className="mt-auth-forgot mt-mono" type="button" onClick={() => onMode('reset')}>
+            <button
+              className="mt-auth-forgot mt-mono"
+              type="button"
+              onClick={() => onMode('reset')}
+            >
               Forgot password?
             </button>
           ) : null}
@@ -7279,11 +7747,14 @@ function AuthBrand() {
           Everything here is <em>meant</em> for you.
         </h1>
         <p className="mt-auth-brand-sub">
-          One account for supported stores. Meant learns what matters to you and quietly filters out the rest.
+          One account for supported stores. Meant learns what matters to you and quietly filters out
+          the rest.
         </p>
         <div className="mt-auth-pills">
           {['Organic', 'Natural materials', 'Strong reviews', 'Sustainable brands'].map((pill) => (
-            <span className="mt-auth-pill" key={pill}>{pill}</span>
+            <span className="mt-auth-pill" key={pill}>
+              {pill}
+            </span>
           ))}
         </div>
       </div>
@@ -7319,22 +7790,34 @@ export function MeantApp() {
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantsError, setMerchantsError] = useState<string | null>(null)
-  const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>([])
+  const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>(
+    [],
+  )
   const [merchantIdentityLinksLoading, setMerchantIdentityLinksLoading] = useState(false)
   const [merchantIdentityLinksError, setMerchantIdentityLinksError] = useState<string | null>(null)
   const [inventoryItems, setInventoryItems] = useState<UserInventoryItemProfile[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
-  const [selectedMerchantId, setSelectedMerchantId] = useStoredState<string | null>('meant.merchant', null)
+  const [selectedMerchantId, setSelectedMerchantId] = useStoredState<string | null>(
+    'meant.merchant',
+    null,
+  )
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
   const [savedProducts, setSavedProducts] = useState<Product[]>([])
   const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
-  const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [...DEFAULT_COMPARE])
-  const [compareProducts, setCompareProducts] = useStoredState<Product[]>('meant.compareProducts', [])
+  const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [
+    ...DEFAULT_COMPARE,
+  ])
+  const [compareProducts, setCompareProducts] = useStoredState<Product[]>(
+    'meant.compareProducts',
+    [],
+  )
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
-  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [...DEFAULT_PREFERENCE_IDS])
+  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [
+    ...DEFAULT_PREFERENCE_IDS,
+  ])
   const [tasteProfile, setTasteProfile] = useState<UserTasteProfile>(EMPTY_TASTE_PROFILE)
   const [budget, setBudget] = useStoredState<number | null>('meant.budget', DEFAULT_BUDGET)
   const [deliveryLocations, setDeliveryLocations] = useStoredState<UserLocation[]>(
@@ -7343,7 +7826,9 @@ export function MeantApp() {
   )
   const [clothingFit, setClothingFit] = useStoredState<ClothingFit>('meant.clothingFit', 'none')
   const [checkoutMerchant, setCheckoutMerchant] = useState<string | null>(null)
-  const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(null)
+  const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(
+    null,
+  )
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersError, setOrdersError] = useState<string | null>(null)
@@ -7389,7 +7874,13 @@ export function MeantApp() {
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
   const allKnownProducts = useMemo(() => {
     const seen = new Set<ProductId>()
-    return [...searchResults, ...remoteProducts, ...savedProducts, ...PRODUCTS, ...compareProducts].filter((product) => {
+    return [
+      ...searchResults,
+      ...remoteProducts,
+      ...savedProducts,
+      ...PRODUCTS,
+      ...compareProducts,
+    ].filter((product) => {
       if (seen.has(product.id)) {
         return false
       }
@@ -7398,9 +7889,10 @@ export function MeantApp() {
     })
   }, [compareProducts, remoteProducts, savedProducts, searchResults])
   const allKnownProductsMap = useMemo(
-    () => new Map<ProductId, Product>(
-      allKnownProducts.map((product) => [product.id, product] as const),
-    ),
+    () =>
+      new Map<ProductId, Product>(
+        allKnownProducts.map((product) => [product.id, product] as const),
+      ),
     [allKnownProducts],
   )
   const {
@@ -7418,9 +7910,10 @@ export function MeantApp() {
     updateDeliveryOption,
   } = useCartController(allKnownProducts)
   const savedListProducts = useMemo(
-    () => savedIds
-      .map((id) => allKnownProductsMap.get(id))
-      .filter((product): product is Product => Boolean(product)),
+    () =>
+      savedIds
+        .map((id) => allKnownProductsMap.get(id))
+        .filter((product): product is Product => Boolean(product)),
     [allKnownProductsMap, savedIds],
   )
   const discoveryProducts = useMemo(() => {
@@ -7605,67 +8098,73 @@ export function MeantApp() {
   // (which replace `session` hourly) don't trigger a redundant re-fetch.
   const userId = session?.user?.id
   const userEmail = session?.user?.email
-  const loadInventory = useCallback(async (options?: { silent?: boolean }) => {
-    if (!userId) {
-      setInventoryItems([])
+  const loadInventory = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!userId) {
+        setInventoryItems([])
+        setInventoryError(null)
+        return
+      }
+      const requestId = inventoryRequestRef.current + 1
+      inventoryRequestRef.current = requestId
+      if (!options?.silent) {
+        setInventoryLoading(true)
+      }
       setInventoryError(null)
-      return
-    }
-    const requestId = inventoryRequestRef.current + 1
-    inventoryRequestRef.current = requestId
-    if (!options?.silent) {
-      setInventoryLoading(true)
-    }
-    setInventoryError(null)
-    try {
-      const items = await getUserInventoryItems()
-      if (inventoryRequestRef.current !== requestId) {
-        return
+      try {
+        const items = await getUserInventoryItems()
+        if (inventoryRequestRef.current !== requestId) {
+          return
+        }
+        setInventoryItems(items)
+      } catch {
+        if (inventoryRequestRef.current !== requestId) {
+          return
+        }
+        setInventoryError('Could not load inventory')
+      } finally {
+        if (inventoryRequestRef.current === requestId && !options?.silent) {
+          setInventoryLoading(false)
+        }
       }
-      setInventoryItems(items)
-    } catch {
-      if (inventoryRequestRef.current !== requestId) {
-        return
-      }
-      setInventoryError('Could not load inventory')
-    } finally {
-      if (inventoryRequestRef.current === requestId && !options?.silent) {
-        setInventoryLoading(false)
-      }
-    }
-  }, [userId])
+    },
+    [userId],
+  )
 
-  const loadOrders = useCallback(async (options?: { silent?: boolean }) => {
-    if (!userId) {
-      setOrders([])
-      setOrdersError(null)
-      setOrdersLoading(false)
-      return
-    }
-    const requestId = ordersRequestRef.current + 1
-    ordersRequestRef.current = requestId
-    if (!options?.silent) {
-      setOrdersLoading(true)
-    }
-    setOrdersError(null)
-    try {
-      const result = await getOrders()
-      if (ordersRequestRef.current !== requestId) {
-        return
-      }
-      setOrders(result.map(orderFromProfile))
-    } catch {
-      if (ordersRequestRef.current !== requestId) {
-        return
-      }
-      setOrdersError('Could not load orders')
-      setOrders([])
-    } finally {
-      if (ordersRequestRef.current === requestId && !options?.silent) {
+  const loadOrders = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!userId) {
+        setOrders([])
+        setOrdersError(null)
         setOrdersLoading(false)
+        return
       }
-    }
-  }, [userId])
+      const requestId = ordersRequestRef.current + 1
+      ordersRequestRef.current = requestId
+      if (!options?.silent) {
+        setOrdersLoading(true)
+      }
+      setOrdersError(null)
+      try {
+        const result = await getOrders()
+        if (ordersRequestRef.current !== requestId) {
+          return
+        }
+        setOrders(result.map(orderFromProfile))
+      } catch {
+        if (ordersRequestRef.current !== requestId) {
+          return
+        }
+        setOrdersError('Could not load orders')
+        setOrders([])
+      } finally {
+        if (ordersRequestRef.current === requestId && !options?.silent) {
+          setOrdersLoading(false)
+        }
+      }
+    },
+    [userId],
+  )
 
   useEffect(() => {
     if (!authed) {
@@ -7741,7 +8240,14 @@ export function MeantApp() {
     getUserSettings()
       .then((settings) => {
         if (!active) return
-        applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit)
+        applySettingsPayload(
+          settings,
+          setAvailablePrefs,
+          setPrefsOn,
+          setBudget,
+          setDeliveryLocations,
+          setClothingFit,
+        )
       })
       .catch(() => {
         if (!active) return
@@ -7900,19 +8406,23 @@ export function MeantApp() {
       void removeSavedProduct(product.id)
         .catch(() => {
           setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
-          setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
+          setSavedIds((current) =>
+            current.includes(product.id) ? current : [product.id, ...current],
+          )
         })
         .finally(() => endSaveOperation(product.id))
       return
     }
 
     setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
-    setSavedIds((current) => current.includes(product.id) ? current : [product.id, ...current])
+    setSavedIds((current) => (current.includes(product.id) ? current : [product.id, ...current]))
     void saveUserProduct(savedProductInput(product, allPreferencesRef.current))
       .then((savedProduct) => {
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         setSavedProducts((current) => upsertProductSnapshot(current, snapshot))
-        setSavedIds((current) => current.includes(snapshot.id) ? current : [snapshot.id, ...current])
+        setSavedIds((current) =>
+          current.includes(snapshot.id) ? current : [snapshot.id, ...current],
+        )
         void refreshTasteProfile()
       })
       .catch(() => {
@@ -7951,7 +8461,9 @@ export function MeantApp() {
     const current = [...compareIdsRef.current]
     const next = current.includes(product.id)
       ? current
-      : current.length < 4 ? [...current, product.id] : [...current.slice(1), product.id]
+      : current.length < 4
+        ? [...current, product.id]
+        : [...current.slice(1), product.id]
 
     commitCompareProducts(next, product)
   }
@@ -7980,7 +8492,14 @@ export function MeantApp() {
   }
 
   const applySavedSettings = (settings: UserSettingsProfile) => {
-    applySettingsPayload(settings, setAvailablePrefs, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit)
+    applySettingsPayload(
+      settings,
+      setAvailablePrefs,
+      setPrefsOn,
+      setBudget,
+      setDeliveryLocations,
+      setClothingFit,
+    )
   }
 
   const refreshTasteProfile = useCallback(async () => {
@@ -8020,11 +8539,10 @@ export function MeantApp() {
   }
 
   const acceptTasteSuggestion = (filterId: string) => {
-    void acceptUserTasteSuggestion(filterId)
-      .then((settings) => {
-        applySavedSettings(settings)
-        void refreshTasteProfile()
-      })
+    void acceptUserTasteSuggestion(filterId).then((settings) => {
+      applySavedSettings(settings)
+      void refreshTasteProfile()
+    })
   }
 
   const rejectTasteSuggestion = (filterId: string) => {
@@ -8041,16 +8559,14 @@ export function MeantApp() {
     setTasteProfile((current) => ({
       ...current,
       signals: current.signals.map((signal) =>
-        signal.id === signalId
-          ? { ...signal, status: disabled ? 'DISABLED' : 'ACTIVE' }
-          : signal,
+        signal.id === signalId ? { ...signal, status: disabled ? 'DISABLED' : 'ACTIVE' } : signal,
       ),
     }))
     void updateUserTasteSignal({ signalId, disabled })
       .then((updated) => {
         setTasteProfile((current) => ({
           ...current,
-          signals: current.signals.map((signal) => signal.id === updated.id ? updated : signal),
+          signals: current.signals.map((signal) => (signal.id === updated.id ? updated : signal)),
         }))
       })
       .catch(() => refreshTasteProfile())
@@ -8061,8 +8577,7 @@ export function MeantApp() {
       ...current,
       signals: current.signals.filter((signal) => signal.id !== signalId),
     }))
-    void removeUserTasteSignal(signalId)
-      .catch(() => refreshTasteProfile())
+    void removeUserTasteSignal(signalId).catch(() => refreshTasteProfile())
   }
 
   const addInventoryItem = async (input: UserInventoryItemInput) => {
@@ -8112,8 +8627,8 @@ export function MeantApp() {
     const append = options?.append === true
     const offset = options?.offset ?? 0
     const merchantId = append
-      ? options?.merchantId ?? searchMerchantId
-      : selectedMerchant?.id ?? null
+      ? (options?.merchantId ?? searchMerchantId)
+      : (selectedMerchant?.id ?? null)
     const merchantAtSubmit = merchants.find((merchant) => merchant.id === merchantId) ?? null
     const requestId = searchRequestRef.current + 1
     searchRequestRef.current = requestId
@@ -8169,83 +8684,94 @@ export function MeantApp() {
         return [...products]
       }
       return appendProductSnapshots(
-        current.filter((product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating'),
+        current.filter(
+          (product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating',
+        ),
         products,
       )
     }
     try {
-      await streamUserProductSearch({
-        query: submittedQuery,
-        merchantId,
-        offset,
-        limit: PRODUCT_SEARCH_PAGE_SIZE,
-        signal: controller.signal,
-      }, {
-        onPhase: (event) => {
-          if (searchRequestRef.current !== requestId) {
-            return
-          }
-          setProductSearchActivities((current) => advanceAgentActivity(current, event))
+      await streamUserProductSearch(
+        {
+          query: submittedQuery,
+          merchantId,
+          offset,
+          limit: PRODUCT_SEARCH_PAGE_SIZE,
+          signal: controller.signal,
         },
-        onProduct: (event) => {
-          upsertStreamProduct(event, 'candidate')
-        },
-        onProductUpdate: (event) => {
-          upsertStreamProduct(event, event.agent === 'discovery' ? 'enriched' : 'curating')
-        },
-        onRankUpdate: (event) => {
-          if (searchRequestRef.current !== requestId) {
-            return
-          }
-          const products = orderedStreamProducts(event, 'curated')
-          noteFinalStreamProducts(products)
-          setSearchResults((current) => finalStreamProducts(current, products))
-          setRemoteProducts((current) => appendProductSnapshots(current, products))
-          setProductSearchActivities((current) => upsertAgentActivity(current, event))
-        },
-        onDone: (event) => {
-          if (searchRequestRef.current !== requestId) {
-            return
-          }
-          const products = orderedStreamProducts(event, 'curated')
-          const displayedCount = noteFinalStreamProducts(products)
-          setSearchResults((current) => finalStreamProducts(current, products))
-          setRemoteProducts((current) => appendProductSnapshots(current, products))
-          setSearchHasMore(Boolean(event.hasMore))
-          setSearchNextOffset(event.nextOffset)
-          setSearchMerchantId(merchantId)
-          setProductSearchActivities((current) =>
-            upsertAgentActivity(
-              current.map((activity) => ({ ...activity, state: 'done' })),
-              event,
-              'done',
-            ),
-          )
-          if (append) {
-            setReply(
-              displayedCount > 0
-                ? `Loaded ${displayedCount} more match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
-                : `No more matches found for "${submittedQuery}".`,
+        {
+          onPhase: (event) => {
+            if (searchRequestRef.current !== requestId) {
+              return
+            }
+            setProductSearchActivities((current) => advanceAgentActivity(current, event))
+          },
+          onProduct: (event) => {
+            upsertStreamProduct(event, 'candidate')
+          },
+          onProductUpdate: (event) => {
+            upsertStreamProduct(event, event.agent === 'discovery' ? 'enriched' : 'curating')
+          },
+          onRankUpdate: (event) => {
+            if (searchRequestRef.current !== requestId) {
+              return
+            }
+            const products = orderedStreamProducts(event, 'curated')
+            noteFinalStreamProducts(products)
+            setSearchResults((current) => finalStreamProducts(current, products))
+            setRemoteProducts((current) => appendProductSnapshots(current, products))
+            setProductSearchActivities((current) => upsertAgentActivity(current, event))
+          },
+          onDone: (event) => {
+            if (searchRequestRef.current !== requestId) {
+              return
+            }
+            const products = orderedStreamProducts(event, 'curated')
+            const displayedCount = noteFinalStreamProducts(products)
+            setSearchResults((current) => finalStreamProducts(current, products))
+            setRemoteProducts((current) => appendProductSnapshots(current, products))
+            setSearchHasMore(Boolean(event.hasMore))
+            setSearchNextOffset(event.nextOffset)
+            setSearchMerchantId(merchantId)
+            setProductSearchActivities((current) =>
+              upsertAgentActivity(
+                current.map((activity) => ({ ...activity, state: 'done' })),
+                event,
+                'done',
+              ),
             )
-          } else {
-            setReply(
-              event.cached
-                ? `Showing ${displayedCount} cached match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
-                : `Found ${displayedCount} match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
+            if (append) {
+              setReply(
+                displayedCount > 0
+                  ? `Loaded ${displayedCount} more match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
+                  : `No more matches found for "${submittedQuery}".`,
+              )
+            } else {
+              setReply(
+                event.cached
+                  ? `Showing ${displayedCount} cached match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
+                  : `Found ${displayedCount} match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
+              )
+            }
+          },
+          onError: (message) => {
+            if (searchRequestRef.current !== requestId) {
+              return
+            }
+            setSearchError(message)
+            setProductSearchActivities((current) =>
+              upsertAgentActivity(
+                current,
+                {
+                  agent: 'search',
+                  label: message,
+                },
+                'error',
+              ),
             )
-          }
+          },
         },
-        onError: (message) => {
-          if (searchRequestRef.current !== requestId) {
-            return
-          }
-          setSearchError(message)
-          setProductSearchActivities((current) => upsertAgentActivity(current, {
-            agent: 'search',
-            label: message,
-          }, 'error'))
-        },
-      })
+      )
     } catch {
       if (searchRequestRef.current !== requestId) {
         return
@@ -8278,7 +8804,13 @@ export function MeantApp() {
   }
 
   const loadMoreSearchResults = () => {
-    if (!query || !searchHasMore || searchNextOffset === null || searchLoading || searchLoadingMore) {
+    if (
+      !query ||
+      !searchHasMore ||
+      searchNextOffset === null ||
+      searchLoading ||
+      searchLoadingMore
+    ) {
       return
     }
     void runProductSearch(query, {
@@ -8293,7 +8825,9 @@ export function MeantApp() {
     searchAbortRef.current = null
     setView('discover')
     setQuery(sourceQuery)
-    setReply(`Ask Meant found ${products.length} match${products.length === 1 ? '' : 'es'} for "${sourceQuery}".`)
+    setReply(
+      `Ask Meant found ${products.length} match${products.length === 1 ? '' : 'es'} for "${sourceQuery}".`,
+    )
     setSearchError(null)
     setSearchLoading(false)
     setSearchLoadingMore(false)
@@ -8399,9 +8933,7 @@ export function MeantApp() {
             preferences={allPreferences}
             savedSet={savedSet}
             savePendingSet={savePendingSet}
-            onOpen={(product) =>
-              openProduct(product, savedListProducts)
-            }
+            onOpen={(product) => openProduct(product, savedListProducts)}
             onToggleSave={toggleSave}
           />
         )
@@ -8697,7 +9229,9 @@ export function MeantApp() {
         onAddProductToCart={addProductOfferToCart}
         hidden={Boolean(activeProduct)}
       />
-      <span className="mt-cart-count-debug" aria-hidden>{cartCount}</span>
+      <span className="mt-cart-count-debug" aria-hidden>
+        {cartCount}
+      </span>
     </div>
   )
 }

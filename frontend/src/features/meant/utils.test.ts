@@ -78,7 +78,11 @@ function option(handle: string, amount: string, selected: boolean): CartDelivery
   }
 }
 
-function group(id: string, options: readonly CartDeliveryOption[], selected?: CartDeliveryOption): CartDeliveryGroup {
+function group(
+  id: string,
+  options: readonly CartDeliveryOption[],
+  selected?: CartDeliveryOption,
+): CartDeliveryGroup {
   return {
     id,
     deliveryOptions: options,
@@ -135,20 +139,32 @@ describe('formatting and lookup utilities', () => {
 
   test('finds products by id and rejects unknown ids', () => {
     expect(productById('cereal').name).toBe('Sprouted Oat & Almond Cereal')
-    expect(productsByIds(['cereal', 'tee']).map((candidate) => candidate.id)).toEqual(['cereal', 'tee'])
+    expect(productsByIds(['cereal', 'tee']).map((candidate) => candidate.id)).toEqual([
+      'cereal',
+      'tee',
+    ])
     expect(() => productById('missing')).toThrow('Unknown product id: missing')
   })
 
   test('normalizes merchant identity and builds stable cart keys', () => {
     expect(normalizedMerchantName(' Whole Foods ')).toBe('whole foods')
-    expect(cartMerchantKey({ merchant: 'Whole Foods', merchantId: 'merchant-1', merchantDomain: 'whole.test' }))
-      .toBe('merchant-1')
-    expect(cartMerchantKey({ merchant: 'Whole Foods', merchantDomain: ' whole.test ' })).toBe('whole.test')
+    expect(
+      cartMerchantKey({
+        merchant: 'Whole Foods',
+        merchantId: 'merchant-1',
+        merchantDomain: 'whole.test',
+      }),
+    ).toBe('merchant-1')
+    expect(cartMerchantKey({ merchant: 'Whole Foods', merchantDomain: ' whole.test ' })).toBe(
+      'whole.test',
+    )
     expect(cartMerchantKey({ merchant: 'Whole Foods' })).toBe('whole foods')
   })
 
   test('firstUrl returns the first non-empty trimmed URL', () => {
-    expect(firstUrl(null, undefined, '', '   ', ' https://checkout.example/cart ')).toBe('https://checkout.example/cart')
+    expect(firstUrl(null, undefined, '', '   ', ' https://checkout.example/cart ')).toBe(
+      'https://checkout.example/cart',
+    )
     expect(firstUrl('', ' \t ')).toBeNull()
   })
 
@@ -165,10 +181,16 @@ describe('formatting and lookup utilities', () => {
 
 describe('shopping decision utilities', () => {
   test('checks merchant shipping coverage by country and city', () => {
-    expect(canMerchantShip('Unknown Merchant', [{ country: 'France', code: 'FR', city: 'Paris' }])).toBe(true)
+    expect(
+      canMerchantShip('Unknown Merchant', [{ country: 'France', code: 'FR', city: 'Paris' }]),
+    ).toBe(true)
     expect(canMerchantShip('Whole Foods', [])).toBe(true)
-    expect(canMerchantShip('Whole Foods', [{ country: 'United States', code: 'US', city: 'Seattle' }])).toBe(true)
-    expect(canMerchantShip('Whole Foods', [{ country: 'United States', code: 'US', city: 'Miami' }])).toBe(false)
+    expect(
+      canMerchantShip('Whole Foods', [{ country: 'United States', code: 'US', city: 'Seattle' }]),
+    ).toBe(true)
+    expect(
+      canMerchantShip('Whole Foods', [{ country: 'United States', code: 'US', city: 'Miami' }]),
+    ).toBe(false)
   })
 
   test('filters offers and products for delivery location', () => {
@@ -180,7 +202,9 @@ describe('shopping decision utilities', () => {
     })
 
     expect(availableOffers(cereal, uk).map((offer) => offer.merchant)).toEqual(['iHerb'])
-    expect(productsForLocation([cereal, usOnly], uk).map((candidate) => candidate.id)).toEqual(['cereal'])
+    expect(productsForLocation([cereal, usOnly], uk).map((candidate) => candidate.id)).toEqual([
+      'cereal',
+    ])
   })
 
   test('filters and sorts products by preferences', () => {
@@ -188,8 +212,12 @@ describe('shopping decision utilities', () => {
       ['natural-materials', 'no-polyester'].includes(preference.id),
     )
 
-    expect(productsForPreferences([productById('runners'), productById('sweater'), productById('tee')], activePreferences)
-      .map((candidate) => candidate.id)).toEqual(['tee', 'sweater'])
+    expect(
+      productsForPreferences(
+        [productById('runners'), productById('sweater'), productById('tee')],
+        activePreferences,
+      ).map((candidate) => candidate.id),
+    ).toEqual(['tee', 'sweater'])
     expect(productsForPreferences([productById('runners')], [])).toEqual([productById('runners')])
   })
 
@@ -198,8 +226,11 @@ describe('shopping decision utilities', () => {
     expect(productMatchesClothingFit(productById('sweater'), 'men')).toBe(false)
     expect(productMatchesClothingFit(productById('tee'), 'men')).toBe(true)
     expect(productMatchesClothingFit(productById('cereal'), 'men')).toBe(true)
-    expect(productsForClothingFit([productById('sweater'), productById('tee')], 'men').map((candidate) => candidate.id))
-      .toEqual(['tee'])
+    expect(
+      productsForClothingFit([productById('sweater'), productById('tee')], 'men').map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(['tee'])
   })
 
   test('uses shippable offers for price, merchant count, and best offer', () => {
@@ -212,14 +243,21 @@ describe('shopping decision utilities', () => {
   })
 
   test('chooses the strongest discount code only when it saves money', () => {
-    expect(bestCode([
-      { code: 'P20', label: '20%', type: 'percent', value: 20 },
-      { code: 'F12', label: '$12', type: 'fixed', value: 12 },
-      { code: 'SHIP', label: 'Ship', type: 'shipping', value: 0 },
-    ], 100, 5)).toEqual({ code: { code: 'P20', label: '20%', type: 'percent', value: 20 }, save: 20 })
+    expect(
+      bestCode(
+        [
+          { code: 'P20', label: '20%', type: 'percent', value: 20 },
+          { code: 'F12', label: '$12', type: 'fixed', value: 12 },
+          { code: 'SHIP', label: 'Ship', type: 'shipping', value: 0 },
+        ],
+        100,
+        5,
+      ),
+    ).toEqual({ code: { code: 'P20', label: '20%', type: 'percent', value: 20 }, save: 20 })
 
-    expect(bestCode([{ code: 'P20', label: '20%', type: 'percent', value: 20, min: 200 }], 100, 5))
-      .toBeNull()
+    expect(
+      bestCode([{ code: 'P20', label: '20%', type: 'percent', value: 20, min: 200 }], 100, 5),
+    ).toBeNull()
   })
 })
 
@@ -245,12 +283,15 @@ describe('assistant and preference utilities', () => {
   })
 
   test('answers product and global ask prompts', () => {
-    expect(resolveAsk('Is this a good match for me?', productById('tee'), PREFERENCES))
-      .toContain("It's a 94% match")
-    expect(resolveAsk('What is the price?', productById('tee'), PREFERENCES))
-      .toContain('Best price is $38.00 at Field & Loom')
-    expect(resolveAsk('compare these', null, PREFERENCES))
-      .toBe('Open Compare and I will line products up against every preference you care about.')
+    expect(resolveAsk('Is this a good match for me?', productById('tee'), PREFERENCES)).toContain(
+      "It's a 94% match",
+    )
+    expect(resolveAsk('What is the price?', productById('tee'), PREFERENCES)).toContain(
+      'Best price is $38.00 at Field & Loom',
+    )
+    expect(resolveAsk('compare these', null, PREFERENCES)).toBe(
+      'Open Compare and I will line products up against every preference you care about.',
+    )
   })
 })
 
@@ -267,9 +308,27 @@ describe('cart recovery helpers', () => {
 
   test('builds merchant cart rebuild items from cart state', () => {
     const items: CartItem[] = [
-      { id: 'cereal', merchant: 'Whole Foods', merchantId: 'merchant-1', qty: 2, productVariantId: 'variant-1' },
-      { id: 'oil', merchant: 'Whole Foods', merchantId: 'merchant-1', qty: 0, productVariantId: 'variant-2' },
-      { id: 'tee', merchant: 'Field & Loom', merchantId: 'merchant-2', qty: 3, productVariantId: 'variant-3' },
+      {
+        id: 'cereal',
+        merchant: 'Whole Foods',
+        merchantId: 'merchant-1',
+        qty: 2,
+        productVariantId: 'variant-1',
+      },
+      {
+        id: 'oil',
+        merchant: 'Whole Foods',
+        merchantId: 'merchant-1',
+        qty: 0,
+        productVariantId: 'variant-2',
+      },
+      {
+        id: 'tee',
+        merchant: 'Field & Loom',
+        merchantId: 'merchant-2',
+        qty: 3,
+        productVariantId: 'variant-3',
+      },
       { id: 'missing', merchant: 'Whole Foods', merchantId: 'merchant-1', qty: 4 },
     ]
 
@@ -318,13 +377,15 @@ describe('cart recovery helpers', () => {
       subtotalAmount: '20.00',
       currency: 'USD',
       deliveryGroups: [null, newGroup],
-      lines: [{
-        cartLineId: 'line-new',
-        remoteCartLineId: 'remote-line-new',
-        productVariantId: 'variant-1',
-        variantTitle: 'Large',
-        quantity: 5,
-      }],
+      lines: [
+        {
+          cartLineId: 'line-new',
+          remoteCartLineId: 'remote-line-new',
+          productVariantId: 'variant-1',
+          variantTitle: 'Large',
+          quantity: 5,
+        },
+      ],
     } as unknown as CartProfile
 
     const merged = mergeCartSnapshot(cart, 'merchant-1', snapshot)
@@ -353,19 +414,21 @@ describe('cart recovery helpers', () => {
 
   test('falls back to existing item data when snapshot fields are absent', () => {
     const oldGroup = group('old', [option('old-standard', '4.00', true)])
-    const cart: CartItem[] = [{
-      id: 'cereal',
-      merchant: 'Whole Foods',
-      merchantId: 'merchant-1',
-      qty: 2,
-      productVariantId: 'variant-1',
-      cartId: 'old-cart',
-      checkoutUrl: 'https://old.example/checkout',
-      continueUrl: 'https://old.example/continue',
-      deliveryGroups: [oldGroup],
-      syncing: true,
-      syncError: 'stale',
-    }]
+    const cart: CartItem[] = [
+      {
+        id: 'cereal',
+        merchant: 'Whole Foods',
+        merchantId: 'merchant-1',
+        qty: 2,
+        productVariantId: 'variant-1',
+        cartId: 'old-cart',
+        checkoutUrl: 'https://old.example/checkout',
+        continueUrl: 'https://old.example/continue',
+        deliveryGroups: [oldGroup],
+        syncing: true,
+        syncError: 'stale',
+      },
+    ]
     const merged = mergeCartSnapshot(cart, 'merchant-1', {
       lines: [{ productVariantId: 'variant-1' }],
       deliveryGroups: [],
@@ -385,10 +448,13 @@ describe('cart recovery helpers', () => {
 
 describe('cart and order utilities', () => {
   test('maps cart items to product-backed cart lines and skips unknown products', () => {
-    const lines = cartLines([
-      { id: 'cereal', merchant: 'Whole Foods', qty: 2 },
-      { id: 'missing', merchant: 'Nowhere', qty: 1 },
-    ], PRODUCTS)
+    const lines = cartLines(
+      [
+        { id: 'cereal', merchant: 'Whole Foods', qty: 2 },
+        { id: 'missing', merchant: 'Nowhere', qty: 1 },
+      ],
+      PRODUCTS,
+    )
 
     expect(lines).toHaveLength(1)
     expect(lines[0]).toMatchObject({
@@ -417,25 +483,30 @@ describe('cart and order utilities', () => {
   })
 
   test('computes smart alerts for compatible accessories', () => {
-    const lines = cartLines([
-      { id: 'laptop', merchant: 'Lumen Store', qty: 1 },
-      { id: 'adapter', merchant: 'Lumen Store', qty: 1 },
-      { id: 'drive', merchant: 'Hold Store', qty: 1 },
-    ], PRODUCTS)
+    const lines = cartLines(
+      [
+        { id: 'laptop', merchant: 'Lumen Store', qty: 1 },
+        { id: 'adapter', merchant: 'Lumen Store', qty: 1 },
+        { id: 'drive', merchant: 'Hold Store', qty: 1 },
+      ],
+      PRODUCTS,
+    )
 
     expect(computeSmartAlerts(lines, PRODUCTS).some((alert) => alert.kind === 'good')).toBe(true)
   })
 
   test('calculates order totals and creates processing orders from checkout payloads', () => {
-    expect(orderTotal({
-      id: 'MNT-1',
-      date: '2026-06-01',
-      status: 'Delivered',
-      statusNote: '',
-      items: [{ id: 'cereal', merchant: 'Whole Foods', qty: 2 }],
-      saved: 1.48,
-      savedNote: '',
-    })).toBe(13.32)
+    expect(
+      orderTotal({
+        id: 'MNT-1',
+        date: '2026-06-01',
+        status: 'Delivered',
+        statusNote: '',
+        items: [{ id: 'cereal', merchant: 'Whole Foods', qty: 2 }],
+        saved: 1.48,
+        savedNote: '',
+      }),
+    ).toBe(13.32)
 
     const order = createOrder({
       items: [{ id: 'tee', merchant: 'Field & Loom', qty: 1 }],
@@ -484,12 +555,10 @@ describe('cart delivery groups', () => {
     const selected = option('standard', '5.00', true)
     const unselected = option('express', '8.00', false)
 
-    const [cartGroup] = cartGroups([
-      line([
-        group('shipment-1', [selected], selected),
-        group('shipment-2', [unselected]),
-      ]),
-    ], false)
+    const [cartGroup] = cartGroups(
+      [line([group('shipment-1', [selected], selected), group('shipment-2', [unselected])])],
+      false,
+    )
 
     expect(cartGroup.hasDeliveryOptions).toBe(true)
     expect(cartGroup.hasSelectedDelivery).toBe(false)
@@ -500,12 +569,10 @@ describe('cart delivery groups', () => {
     const standard = option('standard', '5.00', true)
     const economy = option('economy', '3.00', true)
 
-    const [cartGroup] = cartGroups([
-      line([
-        group('shipment-1', [standard], standard),
-        group('shipment-2', [economy], economy),
-      ]),
-    ], false)
+    const [cartGroup] = cartGroups(
+      [line([group('shipment-1', [standard], standard), group('shipment-2', [economy], economy)])],
+      false,
+    )
 
     expect(cartGroup.hasSelectedDelivery).toBe(true)
     expect(cartGroup.deliveryRaw).toBe(8)
@@ -515,12 +582,10 @@ describe('cart delivery groups', () => {
   test('does not require selection for shipment groups without delivery options', () => {
     const standard = option('standard', '5.00', true)
 
-    const [cartGroup] = cartGroups([
-      line([
-        group('shipment-1', []),
-        group('shipment-2', [standard], standard),
-      ]),
-    ], false)
+    const [cartGroup] = cartGroups(
+      [line([group('shipment-1', []), group('shipment-2', [standard], standard)])],
+      false,
+    )
 
     expect(cartGroup.hasSelectedDelivery).toBe(true)
     expect(cartGroup.deliveryRaw).toBe(5)
@@ -542,7 +607,9 @@ describe('cart delivery groups', () => {
 
     expect(selectedCartDeliveryOption(deliveryGroup)).toBe(explicit)
     expect(cartDeliveryOptionAmount(explicit)).toBe(12.5)
-    expect(cartDeliveryOptionAmount({ cost: { amount: 'not-a-number', currency: 'USD' } })).toBeNull()
+    expect(
+      cartDeliveryOptionAmount({ cost: { amount: 'not-a-number', currency: 'USD' } }),
+    ).toBeNull()
   })
 })
 

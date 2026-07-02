@@ -171,12 +171,7 @@ export interface UserProductSearchProfile {
 }
 
 export type UserProductSearchStreamEventType =
-  | 'phase'
-  | 'product'
-  | 'product_update'
-  | 'rank_update'
-  | 'done'
-  | 'error'
+  'phase' | 'product' | 'product_update' | 'rank_update' | 'done' | 'error'
 
 export interface UserProductSearchStreamEventProfile {
   type: UserProductSearchStreamEventType
@@ -211,7 +206,8 @@ export interface UserProductSearchSuggestionsProfile {
 
 export type UserTasteBehaviorType = 'SAVE' | 'PURCHASE' | 'DISMISS'
 export type UserTasteSignalStatus = 'ACTIVE' | 'DISABLED'
-export type UserTasteSignalType = 'FILTER' | 'BRAND' | 'CATEGORY' | 'MATERIAL' | 'CERTIFICATION' | 'QUERY'
+export type UserTasteSignalType =
+  'FILTER' | 'BRAND' | 'CATEGORY' | 'MATERIAL' | 'CERTIFICATION' | 'QUERY'
 export type UserTasteSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
 
 export interface UserTasteSignalProfile {
@@ -447,10 +443,7 @@ export interface OrderProfile {
 export type UserInventoryCategory = 'APPAREL' | 'PANTRY' | 'HOME' | 'OTHER'
 export type UserInventorySource = 'MANUAL' | 'PHOTO' | 'MEANT_PURCHASE'
 export type UserInventoryRecommendationRelationship =
-  | 'NONE'
-  | 'DUPLICATE'
-  | 'COMPLEMENT'
-  | 'RESTOCK'
+  'NONE' | 'DUPLICATE' | 'COMPLEMENT' | 'RESTOCK'
 
 export interface UserInventoryItemProfile {
   id: string
@@ -603,7 +596,9 @@ export async function removeProfilePicture(): Promise<UserProfile> {
   return parseJsonResponse<UserProfile>(response, 'Failed to remove profile picture')
 }
 
-export async function getProfilePictureUrl(profilePicturePath?: string | null): Promise<string | null> {
+export async function getProfilePictureUrl(
+  profilePicturePath?: string | null,
+): Promise<string | null> {
   if (!profilePicturePath) {
     return null
   }
@@ -616,19 +611,20 @@ export async function getProfilePictureUrl(profilePicturePath?: string | null): 
   return data.signedUrl
 }
 
-export async function uploadProfilePictureFile(userId: string, file: File): Promise<{
+export async function uploadProfilePictureFile(
+  userId: string,
+  file: File,
+): Promise<{
   path: string
   signedUrl: string | null
 }> {
   const extension = profilePictureExtension(file)
   const path = `${userId}/${randomUuid()}.${extension}`
-  const { data, error } = await supabase.storage
-    .from(PROFILE_PICTURE_BUCKET)
-    .upload(path, file, {
-      cacheControl: '3600',
-      contentType: file.type,
-      upsert: false,
-    })
+  const { data, error } = await supabase.storage.from(PROFILE_PICTURE_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type,
+    upsert: false,
+  })
   if (error) {
     throw new Error('Failed to upload profile picture')
   }
@@ -642,9 +638,7 @@ export async function deleteProfilePictureFile(profilePicturePath?: string | nul
   if (!profilePicturePath) {
     return
   }
-  await supabase.storage
-    .from(PROFILE_PICTURE_BUCKET)
-    .remove([profilePicturePath])
+  await supabase.storage.from(PROFILE_PICTURE_BUCKET).remove([profilePicturePath])
 }
 
 function profilePictureExtension(file: File): 'jpg' | 'png' | 'webp' {
@@ -665,10 +659,12 @@ function randomUuid(): string {
     const bytes = crypto.getRandomValues(new Uint8Array(16))
     bytes[6] = (bytes[6] & 0x0f) | 0x40
     bytes[8] = (bytes[8] & 0x3f) | 0x80
-    return [...bytes].map((byte, index) => {
-      const value = byte.toString(16).padStart(2, '0')
-      return [4, 6, 8, 10].includes(index) ? `-${value}` : value
-    }).join('')
+    return [...bytes]
+      .map((byte, index) => {
+        const value = byte.toString(16).padStart(2, '0')
+        return [4, 6, 8, 10].includes(index) ? `-${value}` : value
+      })
+      .join('')
   }
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (candidate) => {
     const random = Math.floor(Math.random() * 16)
@@ -694,17 +690,26 @@ export async function getMerchantIdentityLinks(): Promise<MerchantIdentityLinkPr
   const response = await fetch(`${API_URL}/api/merchants/identity-links`, {
     headers: await authHeaders(),
   })
-  return parseJsonResponse<MerchantIdentityLinkProfile[]>(response, 'Failed to load merchant account connections')
+  return parseJsonResponse<MerchantIdentityLinkProfile[]>(
+    response,
+    'Failed to load merchant account connections',
+  )
 }
 
 export async function startMerchantIdentityAuthorization(
   merchantId: string,
 ): Promise<MerchantIdentityAuthorizationProfile> {
-  const response = await fetch(`${API_URL}/api/merchants/${merchantId}/identity-link/authorization`, {
-    method: 'POST',
-    headers: await authHeaders(),
-  })
-  return parseJsonResponse<MerchantIdentityAuthorizationProfile>(response, 'Failed to start merchant account linking')
+  const response = await fetch(
+    `${API_URL}/api/merchants/${merchantId}/identity-link/authorization`,
+    {
+      method: 'POST',
+      headers: await authHeaders(),
+    },
+  )
+  return parseJsonResponse<MerchantIdentityAuthorizationProfile>(
+    response,
+    'Failed to start merchant account linking',
+  )
 }
 
 export async function completeMerchantIdentityAuthorization(input: {
@@ -724,7 +729,10 @@ export async function completeMerchantIdentityAuthorization(input: {
       issuer: input.issuer ?? undefined,
     }),
   })
-  return parseJsonResponse<MerchantIdentityLinkProfile>(response, 'Failed to complete merchant account linking')
+  return parseJsonResponse<MerchantIdentityLinkProfile>(
+    response,
+    'Failed to complete merchant account linking',
+  )
 }
 
 export async function revokeMerchantIdentityLink(merchantId: string): Promise<void> {
@@ -856,7 +864,10 @@ export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile
   const response = await fetch(`${API_URL}/api/users/me/product-discovery`, {
     headers: await authHeaders(),
   })
-  return parseJsonResponse<UserProductDiscoveryProfile>(response, 'Failed to load product discovery')
+  return parseJsonResponse<UserProductDiscoveryProfile>(
+    response,
+    'Failed to load product discovery',
+  )
 }
 
 export async function getMerchantProductDetails(input: {
@@ -881,7 +892,10 @@ export async function getMerchantProductDetails(input: {
       signal: input.signal,
     },
   )
-  return parseJsonResponse<MerchantProductDetailsProfile>(response, 'Failed to load product details')
+  return parseJsonResponse<MerchantProductDetailsProfile>(
+    response,
+    'Failed to load product details',
+  )
 }
 
 export async function getUserInventoryItems(input?: {
@@ -951,14 +965,17 @@ export async function updateUserInventoryItem(input: {
   itemId: string
   item: UserInventoryItemUpdateInput
 }): Promise<UserInventoryItemProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/inventory/${encodeURIComponent(input.itemId)}`, {
-    method: 'PATCH',
-    headers: {
-      ...(await authHeaders()),
-      'Content-Type': 'application/json',
+  const response = await fetch(
+    `${API_URL}/api/users/me/inventory/${encodeURIComponent(input.itemId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input.item),
     },
-    body: JSON.stringify(input.item),
-  })
+  )
   return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to update inventory item')
 }
 
@@ -976,7 +993,10 @@ export async function getPopularProductSearches(): Promise<UserPopularProductSea
   const response = await fetch(`${API_URL}/api/users/me/popular-product-searches`, {
     headers: await authHeaders(),
   })
-  return parseJsonResponse<UserPopularProductSearchProfile[]>(response, 'Failed to load popular searches')
+  return parseJsonResponse<UserPopularProductSearchProfile[]>(
+    response,
+    'Failed to load popular searches',
+  )
 }
 
 export async function getLatestAssistantConversation(options?: {
@@ -1089,13 +1109,18 @@ export async function getSavedProducts(input?: {
     search.set('limit', String(input.limit))
   }
   const query = search.toString()
-  const response = await fetch(`${API_URL}/api/users/me/saved-products${query ? `?${query}` : ''}`, {
-    headers: await authHeaders(),
-  })
+  const response = await fetch(
+    `${API_URL}/api/users/me/saved-products${query ? `?${query}` : ''}`,
+    {
+      headers: await authHeaders(),
+    },
+  )
   return parseJsonResponse<UserSavedProductProfile[]>(response, 'Failed to load saved products')
 }
 
-export async function saveUserProduct(input: SaveUserProductInput): Promise<UserSavedProductProfile> {
+export async function saveUserProduct(
+  input: SaveUserProductInput,
+): Promise<UserSavedProductProfile> {
   const response = await fetch(`${API_URL}/api/users/me/saved-products`, {
     method: 'POST',
     headers: {
@@ -1145,43 +1170,55 @@ export async function updateUserTasteSignal(input: {
   weight?: number
   disabled?: boolean
 }): Promise<UserTasteSignalProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(input.signalId)}`, {
-    method: 'PATCH',
-    headers: {
-      ...(await authHeaders()),
-      'Content-Type': 'application/json',
+  const response = await fetch(
+    `${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(input.signalId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        weight: input.weight,
+        disabled: input.disabled,
+      }),
     },
-    body: JSON.stringify({
-      weight: input.weight,
-      disabled: input.disabled,
-    }),
-  })
+  )
   return parseJsonResponse<UserTasteSignalProfile>(response, 'Failed to update taste signal')
 }
 
 export async function removeUserTasteSignal(signalId: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(signalId)}`, {
-    method: 'DELETE',
-    headers: await authHeaders(),
-  })
+  const response = await fetch(
+    `${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(signalId)}`,
+    {
+      method: 'DELETE',
+      headers: await authHeaders(),
+    },
+  )
   if (!response.ok) {
     throw new Error('Failed to remove taste signal')
   }
 }
 
 export async function acceptUserTasteSuggestion(filterId: string): Promise<UserSettingsProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:accept`, {
-    method: 'POST',
-    headers: await authHeaders(),
-  })
+  const response = await fetch(
+    `${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:accept`,
+    {
+      method: 'POST',
+      headers: await authHeaders(),
+    },
+  )
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to accept taste suggestion')
 }
 
 export async function rejectUserTasteSuggestion(filterId: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:reject`, {
-    method: 'POST',
-    headers: await authHeaders(),
-  })
+  const response = await fetch(
+    `${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:reject`,
+    {
+      method: 'POST',
+      headers: await authHeaders(),
+    },
+  )
   if (!response.ok) {
     throw new Error('Failed to reject taste suggestion')
   }
@@ -1264,9 +1301,12 @@ export async function getCartCheckout(input: {
   }
   const query = search.toString()
   const suffix = query ? `?${query}` : ''
-  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout${suffix}`, {
-    headers: await authHeaders(),
-  })
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout${suffix}`,
+    {
+      headers: await authHeaders(),
+    },
+  )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
 }
 
@@ -1278,10 +1318,7 @@ export async function getOrders(): Promise<OrderProfile[]> {
   return parseJsonResponse<OrderProfile[]>(response, 'Failed to load orders')
 }
 
-function handleAssistantStreamEvent(
-  rawEvent: string,
-  handlers: UserAssistantStreamHandlers,
-) {
+function handleAssistantStreamEvent(rawEvent: string, handlers: UserAssistantStreamHandlers) {
   const data = streamEventData(rawEvent)
 
   if (!data) {

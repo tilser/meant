@@ -1,0 +1,8 @@
+dist
+.output
+.tanstack
+.vinxi
+.nitro
+node_modules
+src/api/schema.d.ts
+src/routeTree.gen.ts

@@ -1,29 +1,10 @@
-import {
-  type Dispatch,
-  type SetStateAction,
-  useEffect,
-  useRef,
-} from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react'
 
-import {
-  createCart,
-  updateCart,
-  type CartProfile,
-} from '../../../lib/apiClient'
+import { createCart, updateCart, type CartProfile } from '../../../lib/apiClient'
 import { DEFAULT_CART } from '../data'
 import { useStoredState } from '../shared/storage'
-import type {
-  CartItem,
-  Offer,
-  Product,
-  ProductId,
-} from '../types'
-import {
-  cartMerchantKey,
-  cartRebuildItems,
-  isCartNotFoundError,
-  mergeCartSnapshot,
-} from '../utils'
+import type { CartItem, Offer, Product, ProductId } from '../types'
+import { cartMerchantKey, cartRebuildItems, isCartNotFoundError, mergeCartSnapshot } from '../utils'
 import type {
   AppliedCartCodeType,
   ApplyCartCodeInput,
@@ -40,17 +21,14 @@ import {
 } from './utils'
 
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
-  return typeof action === 'function'
-    ? (action as (previous: T) => T)(current)
-    : action
+  return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
 }
 
 export function useCartController(products: readonly Product[]) {
   const [cart, setStoredCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
-  const [cartSnapshots, setStoredCartSnapshots] = useStoredState<Record<string, MerchantCartSnapshot>>(
-    'meant.cartSnapshots',
-    {},
-  )
+  const [cartSnapshots, setStoredCartSnapshots] = useStoredState<
+    Record<string, MerchantCartSnapshot>
+  >('meant.cartSnapshots', {})
   const cartRef = useRef<CartItem[]>(cart)
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
 
@@ -68,7 +46,9 @@ export function useCartController(products: readonly Product[]) {
     setStoredCart(next)
   }
 
-  const setCartSnapshots: Dispatch<SetStateAction<Record<string, MerchantCartSnapshot>>> = (action) => {
+  const setCartSnapshots: Dispatch<SetStateAction<Record<string, MerchantCartSnapshot>>> = (
+    action,
+  ) => {
     const next = resolveSetStateAction(action, cartSnapshotsRef.current)
     cartSnapshotsRef.current = next
     setStoredCartSnapshots(next)
@@ -79,7 +59,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const updateStoredCartSnapshots = (
-    updater: (current: Record<string, MerchantCartSnapshot>) => Record<string, MerchantCartSnapshot>,
+    updater: (
+      current: Record<string, MerchantCartSnapshot>,
+    ) => Record<string, MerchantCartSnapshot>,
   ) => {
     setCartSnapshots(updater)
   }
@@ -162,7 +144,7 @@ export function useCartController(products: readonly Product[]) {
     patch: Pick<CartItem, 'syncing' | 'syncError'>,
   ) => {
     updateStoredCart((current) =>
-      current.map((item) => cartMerchantKey(item) === merchantKey ? { ...item, ...patch } : item),
+      current.map((item) => (cartMerchantKey(item) === merchantKey ? { ...item, ...patch } : item)),
     )
   }
 
@@ -179,8 +161,8 @@ export function useCartController(products: readonly Product[]) {
     const existingGroup = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
 
     updateStoredCart((current) => {
-      const existing = current.find((item) =>
-        item.id === product.id && cartMerchantKey(item) === merchantKey,
+      const existing = current.find(
+        (item) => item.id === product.id && cartMerchantKey(item) === merchantKey,
       )
       if (existing) {
         return current.map((item) =>
@@ -262,12 +244,14 @@ export function useCartController(products: readonly Product[]) {
             return []
           }
 
-          return [{
-            ...item,
-            qty,
-            syncing: false,
-            syncError: 'Could not add this item to the merchant cart.',
-          }]
+          return [
+            {
+              ...item,
+              qty,
+              syncing: false,
+              syncError: 'Could not add this item to the merchant cart.',
+            },
+          ]
         }),
       )
       return false
@@ -286,9 +270,7 @@ export function useCartController(products: readonly Product[]) {
       const existing = current.find((item) => item.id === id && item.merchant === merchant)
       if (existing) {
         return current.map((item) =>
-          item.id === id && item.merchant === merchant
-            ? { ...item, qty: item.qty + 1 }
-            : item,
+          item.id === id && item.merchant === merchant ? { ...item, qty: item.qty + 1 } : item,
         )
       }
       return [...current, { id, merchant, qty: 1 }]
@@ -301,7 +283,9 @@ export function useCartController(products: readonly Product[]) {
       return
     }
     const merchantKey = cartMerchantKey(item)
-    updateStoredCart((current) => current.filter((candidate) => !cartItemMatches(candidate, id, merchant)))
+    updateStoredCart((current) =>
+      current.filter((candidate) => !cartItemMatches(candidate, id, merchant)),
+    )
 
     if (!item.cartId || (!item.cartLineId && !item.remoteCartLineId)) {
       return
@@ -406,14 +390,18 @@ export function useCartController(products: readonly Product[]) {
     snapshot: MerchantCartSnapshot | undefined,
     type: AppliedCartCodeType,
   ): string[] => {
-    return Array.from(new Set(
-      (snapshot?.appliedCodes ?? [])
-        .filter((code) => code.type === type && code.code)
-        .map((code) => code.code as string),
-    ))
+    return Array.from(
+      new Set(
+        (snapshot?.appliedCodes ?? [])
+          .filter((code) => code.type === type && code.code)
+          .map((code) => code.code as string),
+      ),
+    )
   }
 
-  const applyCartCode = async (input: ApplyCartCodeInput): Promise<{ ok: boolean; message?: string }> => {
+  const applyCartCode = async (
+    input: ApplyCartCodeInput,
+  ): Promise<{ ok: boolean; message?: string }> => {
     const code = input.code.trim()
     if (!code) {
       return { ok: false, message: 'Enter a code first.' }
@@ -460,14 +448,20 @@ export function useCartController(products: readonly Product[]) {
     }
   }
 
-  const removeCartCode = async (input: RemoveCartCodeInput): Promise<{ ok: boolean; message?: string }> => {
+  const removeCartCode = async (
+    input: RemoveCartCodeInput,
+  ): Promise<{ ok: boolean; message?: string }> => {
     const codeToRemove = input.code.code
     if (!codeToRemove) {
-      return { ok: false, message: 'The merchant did not return a removable code for this adjustment.' }
+      return {
+        ok: false,
+        message: 'The merchant did not return a removable code for this adjustment.',
+      }
     }
     const snapshot = cartSnapshotsRef.current[input.merchantKey]
-    const remainingCodes = appliedCodesForType(snapshot, input.code.type)
-      .filter((code) => code !== codeToRemove)
+    const remainingCodes = appliedCodesForType(snapshot, input.code.type).filter(
+      (code) => code !== codeToRemove,
+    )
 
     try {
       let cartId = input.cartId
@@ -503,7 +497,8 @@ export function useCartController(products: readonly Product[]) {
     } catch (error) {
       return {
         ok: false,
-        message: error instanceof Error ? error.message : 'The merchant could not remove this code.',
+        message:
+          error instanceof Error ? error.message : 'The merchant could not remove this code.',
       }
     }
   }

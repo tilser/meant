@@ -1,9 +1,4 @@
-import {
-  HeadContent,
-  Outlet,
-  Scripts,
-  createRootRoute,
-} from '@tanstack/react-router'
+import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import type { ReactNode } from 'react'
 
