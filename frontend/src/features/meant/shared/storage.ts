@@ -14,18 +14,18 @@ export function useStoredState<T>(
 ): readonly [T, Dispatch<SetStateAction<T>>] {
   const fallbackRef = useRef(fallback)
   const [value, setValue] = useState<T>(fallback)
-  const [hydrated, setHydrated] = useState(false)
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null)
 
   useEffect(() => {
     setValue(readStorage(key, fallbackRef.current))
-    setHydrated(true)
+    setHydratedKey(key)
   }, [key])
 
   useEffect(() => {
-    if (hydrated) {
+    if (hydratedKey === key) {
       writeStorage(key, value)
     }
-  }, [hydrated, key, value])
+  }, [hydratedKey, key, value])
 
   return [value, setValue] as const
 }

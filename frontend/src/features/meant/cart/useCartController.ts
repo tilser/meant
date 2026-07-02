@@ -215,12 +215,11 @@ export function useCartController(products: readonly Product[]) {
     })
 
     try {
-      const currentGroup = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
       let snapshot: CartProfile
       try {
-        snapshot = currentGroup?.cartId
+        snapshot = existingGroup?.cartId
           ? await updateCart({
-              cartId: currentGroup.cartId,
+              cartId: existingGroup.cartId,
               addItems: [{ productVariantId, quantity: 1 }],
             })
           : await createCart({
@@ -229,7 +228,7 @@ export function useCartController(products: readonly Product[]) {
               addItems: [{ productVariantId, quantity: 1 }],
             })
       } catch (error) {
-        if (!currentGroup?.cartId || !isCartNotFoundError(error)) {
+        if (!existingGroup?.cartId || !isCartNotFoundError(error)) {
           throw error
         }
         clearMerchantCartState(merchantKey)
@@ -367,7 +366,7 @@ export function useCartController(products: readonly Product[]) {
         }
         updateStoredCart((current) =>
           current.map((candidate) =>
-            cartItemMatches(candidate, id, merchant)
+            cartItemMatches(candidate, id, merchant) && candidate.qty === qty
               ? {
                   ...candidate,
                   qty: item.qty,
