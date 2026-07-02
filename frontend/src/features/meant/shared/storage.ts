@@ -13,6 +13,7 @@ export function useStoredState<T>(
   fallback: T,
 ): readonly [T, Dispatch<SetStateAction<T>>] {
   const fallbackRef = useRef(fallback)
+  fallbackRef.current = fallback
   const [value, setValue] = useState<T>(fallback)
   const [hydratedKey, setHydratedKey] = useState<string | null>(null)
 

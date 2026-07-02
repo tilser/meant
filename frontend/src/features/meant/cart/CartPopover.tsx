@@ -120,7 +120,7 @@ export function CartPopover({
       </div>
       <div className="mt-cart-pop-signals">
         <div className={`mt-cart-sig ${warnCount > 0 ? 'mt-cart-sig-warn' : 'mt-cart-sig-good'}`}>
-          {warnCount > 0 ? `${warnCount} issue to review` : 'All compatible'}
+          {warnCount > 0 ? `${warnCount} issue${warnCount === 1 ? '' : 's'} to review` : 'All compatible'}
         </div>
         <div className={`mt-cart-sig ${codeCount > 0 ? 'mt-cart-sig-good' : 'mt-cart-sig-muted'}`}>
           <SparkMark size={13} />

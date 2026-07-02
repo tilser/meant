@@ -764,7 +764,7 @@ export function CartView({
             ) : null}
             {warnCount > 0 ? (
               <div className="mt-sum-warn">
-                <span className="mt-sum-warn-dot" /> {warnCount} compatibility issue to review above
+                <span className="mt-sum-warn-dot" /> {warnCount} compatibility issue{warnCount === 1 ? '' : 's'} to review above
               </div>
             ) : null}
             <div className="mt-sum-handoff">
