@@ -25,7 +25,30 @@ public class ReviewController {
 
     private final ReviewService reviewService;
 
-    @GetMapping("/merchants/{merchantId}/products/{productId}")
+    @GetMapping("/merchants/{merchantId}/products")
+    @Operation(
+            summary = "Get product reviews",
+            description = "Returns normalized product reviews from the discovered merchant review provider."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Product reviews",
+            content = @Content(schema = @Schema(implementation = ProductReviewsResponse.class))
+    )
+    public ProductReviewsResponse getProductReviewsByQueryParam(
+            @Parameter(description = "Merchant UUID.", required = true)
+            @PathVariable UUID merchantId,
+            @Parameter(description = "Remote product id.", required = true)
+            @RequestParam String productId,
+            @Parameter(description = "Maximum reviews to return. Defaults to provider configuration when omitted.")
+            @RequestParam(required = false) Integer limit,
+            @Parameter(description = "Review pagination offset.")
+            @RequestParam(defaultValue = "0") Integer offset
+    ) {
+        return getProductReviewsResponse(merchantId, productId, limit, offset);
+    }
+
+    @GetMapping("/merchants/{merchantId}/products/{*productId}")
     @Operation(
             summary = "Get product reviews",
             description = "Returns normalized product reviews from the discovered merchant review provider."
@@ -45,11 +68,27 @@ public class ReviewController {
             @Parameter(description = "Review pagination offset.")
             @RequestParam(defaultValue = "0") Integer offset
     ) {
+        return getProductReviewsResponse(merchantId, stripLeadingSlash(productId), limit, offset);
+    }
+
+    private ProductReviewsResponse getProductReviewsResponse(
+            UUID merchantId,
+            String productId,
+            Integer limit,
+            Integer offset
+    ) {
         return ProductReviewsResponse.from(reviewService.getProductReviews(new GetProductReviewsQuery(
                 merchantId,
                 productId,
                 limit,
                 offset
         )));
+    }
+
+    private String stripLeadingSlash(String productId) {
+        if (productId == null || !productId.startsWith("/")) {
+            return productId;
+        }
+        return productId.substring(1);
     }
 }

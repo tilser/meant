@@ -13,13 +13,21 @@ public class ReviewProductIdNormalizer {
         }
         String trimmed = productId.trim();
         if (!trimmed.startsWith(SHOPIFY_PRODUCT_GID_PREFIX)) {
-            return trimmed;
+            return trimTrailingSlashes(trimmed);
         }
         String numericId = trimmed.substring(SHOPIFY_PRODUCT_GID_PREFIX.length());
         int queryStart = numericId.indexOf('?');
         if (queryStart >= 0) {
             numericId = numericId.substring(0, queryStart);
         }
-        return numericId;
+        return trimTrailingSlashes(numericId);
+    }
+
+    private String trimTrailingSlashes(String value) {
+        String trimmed = value;
+        while (trimmed.endsWith("/") && trimmed.length() > 1) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 }

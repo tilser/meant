@@ -5,6 +5,7 @@ import com.meant.api.module.review.properties.KlaviyoReviewProperties;
 import com.meant.api.module.review.service.dto.ProductReviewsResult;
 import java.net.URI;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -20,6 +21,7 @@ public class KlaviyoReviewClient {
     private final KlaviyoReviewProperties properties;
     private final KlaviyoReviewResponseMapper responseMapper;
 
+    @Autowired
     public KlaviyoReviewClient(
             RestClient.Builder restClientBuilder,
             KlaviyoReviewProperties properties,

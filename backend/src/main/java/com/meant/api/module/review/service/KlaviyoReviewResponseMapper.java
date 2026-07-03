@@ -84,13 +84,20 @@ public class KlaviyoReviewResponseMapper {
 
     private String author(JsonNode review) {
         JsonNode author = first(review, "author", "customer", "reviewer");
-        if (author != null && author.isObject()) {
-            String name = text(author, "name", "display_name", "displayName");
-            if (hasText(name)) {
-                return name;
+        if (author != null) {
+            if (author.isObject()) {
+                String name = text(author, "name", "display_name", "displayName");
+                if (hasText(name)) {
+                    return name;
+                }
+            } else if (!author.isObject() && !author.isArray()) {
+                String name = author.asText();
+                if (hasText(name)) {
+                    return name;
+                }
             }
         }
-        return text(review, "author", "name", "customer_name", "customerName", "reviewer_name", "reviewerName");
+        return text(review, "name", "customer_name", "customerName", "reviewer_name", "reviewerName");
     }
 
     private JsonNode first(JsonNode node, String... names) {

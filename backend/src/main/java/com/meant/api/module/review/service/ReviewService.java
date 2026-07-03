@@ -72,6 +72,7 @@ public class ReviewService {
         }
 
         ReviewCacheKey cacheKey = new ReviewCacheKey(
+                query.merchantId(),
                 provider.getProvider(),
                 provider.getProviderKey(),
                 productId,
@@ -101,6 +102,7 @@ public class ReviewService {
     }
 
     private record ReviewCacheKey(
+            java.util.UUID merchantId,
             ReviewProviderType provider,
             String providerKey,
             String productId,

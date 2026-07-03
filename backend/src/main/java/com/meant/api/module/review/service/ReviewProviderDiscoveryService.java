@@ -30,7 +30,11 @@ public class ReviewProviderDiscoveryService {
 
     public void discoverProviders(@NotNull @Valid DiscoverReviewProvidersCommand command) {
         Instant now = Instant.now();
-        List<ReviewProviderDiscoveryCandidate> candidates = candidateRepository.findCandidates(now, command.batchSize());
+        List<ReviewProviderDiscoveryCandidate> candidates = candidateRepository.claimCandidates(
+                now,
+                now.plus(properties.retryDelay()),
+                command.batchSize()
+        );
         for (ReviewProviderDiscoveryCandidate candidate : candidates) {
             discoverProvider(candidate);
         }

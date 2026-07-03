@@ -91,7 +91,7 @@ class ReviewProviderDiscoveryServiceTest {
         }
 
         @Override
-        public List<ReviewProviderDiscoveryCandidate> findCandidates(Instant now, int limit) {
+        public List<ReviewProviderDiscoveryCandidate> claimCandidates(Instant now, Instant claimExpiresAt, int limit) {
             return candidates;
         }
     }

@@ -56,7 +56,7 @@ class KlaviyoReviewClientTest {
         assertThat(result.reviewCount()).isEqualTo(123);
         assertThat(result.hasMore()).isTrue();
         assertThat(result.cached()).isFalse();
-        assertThat(result.reviews()).hasSize(2);
+        assertThat(result.reviews()).hasSize(3);
         assertThat(result.reviews().getFirst().author()).isEqualTo("Jane Doe");
         assertThat(result.reviews().getFirst().rating()).isEqualTo(5);
         assertThat(result.reviews().getFirst().content()).isEqualTo("Great fit.");
@@ -66,6 +66,7 @@ class KlaviyoReviewClientTest {
         assertThat(result.reviews().getFirst().variantTitle()).isEqualTo("White / XS");
         assertThat(result.reviews().get(1).content()).isNull();
         assertThat(result.reviews().get(1).rating()).isEqualTo(4);
+        assertThat(result.reviews().get(2).author()).isEqualTo("Root Fallback");
         server.verify();
     }
 
@@ -96,6 +97,17 @@ class KlaviyoReviewClientTest {
                       "content": null,
                       "verified_buyer": false,
                       "created_at": "2026-01-03"
+                    },
+                    {
+                      "id": "review-3",
+                      "author": {
+                        "email": "fallback@example.com"
+                      },
+                      "customer_name": "Root Fallback",
+                      "rating": 5,
+                      "content": "Fallback author.",
+                      "verified": 1,
+                      "created_at": "2026-01-04"
                     }
                   ],
                   "product": {
