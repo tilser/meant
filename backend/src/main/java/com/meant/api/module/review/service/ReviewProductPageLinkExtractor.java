@@ -34,13 +34,17 @@ public class ReviewProductPageLinkExtractor {
         }
         String href = rawHref.trim()
                 .replace("&amp;", "&");
-        URI resolved = storefrontBaseUri.resolve(href);
-        if (!"https".equalsIgnoreCase(resolved.getScheme())) {
+        try {
+            URI resolved = storefrontBaseUri.resolve(href);
+            if (!"https".equalsIgnoreCase(resolved.getScheme())) {
+                return Optional.empty();
+            }
+            if (resolved.getHost() == null || !resolved.getHost().equalsIgnoreCase(storefrontBaseUri.getHost())) {
+                return Optional.empty();
+            }
+            return Optional.of(resolved);
+        } catch (IllegalArgumentException exception) {
             return Optional.empty();
         }
-        if (resolved.getHost() == null || !resolved.getHost().equalsIgnoreCase(storefrontBaseUri.getHost())) {
-            return Optional.empty();
-        }
-        return Optional.of(resolved);
     }
 }

@@ -32,7 +32,7 @@ public class ReviewProviderDiscoveryService {
         Instant now = Instant.now();
         List<ReviewProviderDiscoveryCandidate> candidates = candidateRepository.claimCandidates(
                 now,
-                now.plus(properties.retryDelay()),
+                now.plus(properties.claimDuration()),
                 command.batchSize()
         );
         for (ReviewProviderDiscoveryCandidate candidate : candidates) {

@@ -26,6 +26,9 @@ public record ReviewProviderDiscoveryProperties(
         Integer storefrontMaxBytes,
 
         @NotNull
+        Duration claimDuration,
+
+        @NotNull
         Duration retryDelay,
 
         @NotNull
@@ -40,6 +43,11 @@ public record ReviewProviderDiscoveryProperties(
     @AssertTrue(message = "storefrontTimeout must be positive")
     public boolean isStorefrontTimeoutPositive() {
         return isPositive(storefrontTimeout);
+    }
+
+    @AssertTrue(message = "claimDuration must be positive")
+    public boolean isClaimDurationPositive() {
+        return isPositive(claimDuration);
     }
 
     @AssertTrue(message = "retryDelay must be positive")

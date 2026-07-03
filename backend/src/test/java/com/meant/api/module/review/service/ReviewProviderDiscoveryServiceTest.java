@@ -28,6 +28,7 @@ class ReviewProviderDiscoveryServiceTest {
             Duration.ofHours(1),
             Duration.ofSeconds(5),
             2 * 1024 * 1024,
+            Duration.ofMinutes(10),
             Duration.ofDays(1),
             Duration.ofDays(14)
     );
@@ -76,6 +77,22 @@ class ReviewProviderDiscoveryServiceTest {
         assertThat(persistenceService.detection.providerKey()).isEqualTo("J5feSG");
     }
 
+    @Test
+    void claimsCandidatesWithClaimDurationInsteadOfRetryDelay() {
+        ReviewProviderDiscoveryCandidate candidate = candidate();
+        candidateRepository.candidates = List.of(candidate);
+        storefrontClient.documents.add(new StorefrontDocument(
+                "https://merchant.example/",
+                "<html>No review provider here.</html>"
+        ));
+
+        discoveryService.discoverProviders(new DiscoverReviewProvidersCommand(1));
+
+        assertThat(candidateRepository.claimExpiresAt)
+                .isBefore(candidateRepository.now.plus(properties.retryDelay()))
+                .isEqualTo(candidateRepository.now.plus(properties.claimDuration()));
+    }
+
     private ReviewProviderDiscoveryCandidate candidate() {
         return new ReviewProviderDiscoveryCandidate(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
@@ -86,6 +103,8 @@ class ReviewProviderDiscoveryServiceTest {
     private static class FakeCandidateRepository extends ReviewProviderDiscoveryCandidateRepository {
 
         private List<ReviewProviderDiscoveryCandidate> candidates = List.of();
+        private Instant now;
+        private Instant claimExpiresAt;
 
         private FakeCandidateRepository() {
             super(null);
@@ -93,6 +112,8 @@ class ReviewProviderDiscoveryServiceTest {
 
         @Override
         public List<ReviewProviderDiscoveryCandidate> claimCandidates(Instant now, Instant claimExpiresAt, int limit) {
+            this.now = now;
+            this.claimExpiresAt = claimExpiresAt;
             return candidates;
         }
     }
