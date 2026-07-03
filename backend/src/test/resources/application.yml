@@ -83,6 +83,7 @@ review:
     batch-size: 50
     fixed-delay: 1h
     storefront-timeout: 5s
+    storefront-max-bytes: 2097152
     retry-delay: 1d
     not-found-recheck-delay: 14d
   cache:

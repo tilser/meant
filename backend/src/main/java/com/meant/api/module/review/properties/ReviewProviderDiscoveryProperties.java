@@ -22,6 +22,10 @@ public record ReviewProviderDiscoveryProperties(
         Duration storefrontTimeout,
 
         @NotNull
+        @Positive
+        Integer storefrontMaxBytes,
+
+        @NotNull
         Duration retryDelay,
 
         @NotNull

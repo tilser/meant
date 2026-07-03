@@ -82,19 +82,18 @@ public class ReviewService {
                 FILTER,
                 MEDIA
         );
-        ProductReviewsResult cachedResult = cache.getIfPresent(cacheKey);
-        if (cachedResult != null) {
-            return cachedResult.withCached(true);
-        }
-        ProductReviewsResult result = klaviyoReviewClient.fetchReviews(
-                query.merchantId(),
-                productId,
-                provider.getProviderKey(),
-                limit,
-                offset
-        ).withCached(false);
-        cache.put(cacheKey, result);
-        return result;
+        boolean[] loaded = {false};
+        ProductReviewsResult result = cache.get(cacheKey, _ -> {
+            loaded[0] = true;
+            return klaviyoReviewClient.fetchReviews(
+                    query.merchantId(),
+                    productId,
+                    provider.getProviderKey(),
+                    limit,
+                    offset
+            ).withCached(false);
+        });
+        return loaded[0] ? result : result.withCached(true);
     }
 
     private boolean hasText(String value) {

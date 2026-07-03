@@ -27,6 +27,7 @@ class ReviewProviderDiscoveryServiceTest {
             10,
             Duration.ofHours(1),
             Duration.ofSeconds(5),
+            2 * 1024 * 1024,
             Duration.ofDays(1),
             Duration.ofDays(14)
     );

@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -78,45 +77,42 @@ public class ReviewProviderDiscoveryCandidateRepository {
             return true;
         }
 
-        try {
-            jdbcTemplate.update("""
-                    insert into review_provider (
-                        id,
-                        merchant_id,
-                        merchant_domain,
-                        provider,
-                        status,
-                        provider_key,
-                        product_id_type,
-                        source_url,
-                        evidence,
-                        last_checked_at,
-                        next_check_at,
-                        error_message,
-                        created_at,
-                        updated_at
-                    )
-                    values (
-                        :id,
-                        :merchantId,
-                        :merchantDomain,
-                        'UNKNOWN',
-                        'FAILED_RETRYABLE',
-                        null,
-                        'UNKNOWN',
-                        null,
-                        null,
-                        null,
-                        :claimExpiresAt,
-                        null,
-                        :now,
-                        :now
-                    )
-                    """, parameters(candidate, now, claimExpiresAt).addValue("id", UUID.randomUUID()));
-            return true;
-        } catch (DuplicateKeyException exception) {
-            return false;
-        }
+        int inserted = jdbcTemplate.update("""
+                insert into review_provider (
+                    id,
+                    merchant_id,
+                    merchant_domain,
+                    provider,
+                    status,
+                    provider_key,
+                    product_id_type,
+                    source_url,
+                    evidence,
+                    last_checked_at,
+                    next_check_at,
+                    error_message,
+                    created_at,
+                    updated_at
+                )
+                values (
+                    :id,
+                    :merchantId,
+                    :merchantDomain,
+                    'UNKNOWN',
+                    'FAILED_RETRYABLE',
+                    null,
+                    'UNKNOWN',
+                    null,
+                    null,
+                    null,
+                    :claimExpiresAt,
+                    null,
+                    :now,
+                    :now
+                )
+                on conflict (merchant_id) do nothing
+                """, parameters(candidate, now, claimExpiresAt).addValue("id", UUID.randomUUID()));
+        return inserted > 0;
     }
 
     private MapSqlParameterSource parameters(
