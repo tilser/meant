@@ -110,15 +110,16 @@ public class ReviewProvider {
 
     public void markRetryableFailure(String merchantDomain, String errorMessage, Instant checkedAt, Instant nextCheckAt) {
         this.merchantDomain = merchantDomain;
-        this.provider = ReviewProviderType.UNKNOWN;
         this.status = ReviewProviderStatus.FAILED_RETRYABLE;
-        this.providerKey = null;
-        this.productIdType = ReviewProductIdType.UNKNOWN;
-        this.sourceUrl = null;
-        this.evidence = null;
         this.lastCheckedAt = checkedAt;
         this.nextCheckAt = nextCheckAt;
         this.errorMessage = errorMessage;
         this.updatedAt = checkedAt;
+        if (this.provider == null) {
+            this.provider = ReviewProviderType.UNKNOWN;
+        }
+        if (this.productIdType == null) {
+            this.productIdType = ReviewProductIdType.UNKNOWN;
+        }
     }
 }

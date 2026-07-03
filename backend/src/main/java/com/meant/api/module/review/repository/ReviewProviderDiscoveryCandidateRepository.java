@@ -60,12 +60,7 @@ public class ReviewProviderDiscoveryCandidateRepository {
         int updated = jdbcTemplate.update("""
                 update review_provider
                 set merchant_domain = :merchantDomain,
-                    provider = 'UNKNOWN',
                     status = 'FAILED_RETRYABLE',
-                    provider_key = null,
-                    product_id_type = 'UNKNOWN',
-                    source_url = null,
-                    evidence = null,
                     next_check_at = :claimExpiresAt,
                     error_message = null,
                     updated_at = :now

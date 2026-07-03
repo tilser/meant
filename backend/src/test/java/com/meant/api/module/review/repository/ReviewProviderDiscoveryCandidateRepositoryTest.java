@@ -37,6 +37,30 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
         assertThat(jdbcTemplate.updateSql.get(1)).contains("on conflict (merchant_id) do nothing");
     }
 
+    @Test
+    void claimCandidatesPreservesExistingProviderConfigurationDuringClaimLease() {
+        ReviewProviderDiscoveryCandidate candidate = new ReviewProviderDiscoveryCandidate(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "merchant.example"
+        );
+        CapturingJdbcTemplate jdbcTemplate = new CapturingJdbcTemplate(candidate);
+        ReviewProviderDiscoveryCandidateRepository repository =
+                new ReviewProviderDiscoveryCandidateRepository(jdbcTemplate);
+
+        repository.claimCandidates(
+                Instant.parse("2026-07-03T12:00:00Z"),
+                Instant.parse("2026-07-03T12:05:00Z"),
+                10
+        );
+
+        assertThat(jdbcTemplate.updateSql.getFirst())
+                .doesNotContain("provider = 'UNKNOWN'")
+                .doesNotContain("provider_key = null")
+                .doesNotContain("product_id_type = 'UNKNOWN'")
+                .doesNotContain("source_url = null")
+                .doesNotContain("evidence = null");
+    }
+
     private static class CapturingJdbcTemplate extends NamedParameterJdbcTemplate {
 
         private final ReviewProviderDiscoveryCandidate candidate;

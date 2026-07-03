@@ -60,9 +60,7 @@ public class ReviewService {
                     "Review provider has not been discovered for this merchant."
             );
         }
-        if (provider.getStatus() != ReviewProviderStatus.DETECTED
-                || provider.getProvider() != ReviewProviderType.KLAVIYO
-                || !hasText(provider.getProviderKey())) {
+        if (!hasFetchableKlaviyoProvider(provider)) {
             return ProductReviewsResult.unsupported(
                     query.merchantId(),
                     productId,
@@ -94,6 +92,13 @@ public class ReviewService {
             ).withCached(false);
         });
         return loaded[0] ? result : result.withCached(true);
+    }
+
+    private boolean hasFetchableKlaviyoProvider(ReviewProvider provider) {
+        return (provider.getStatus() == ReviewProviderStatus.DETECTED
+                || provider.getStatus() == ReviewProviderStatus.FAILED_RETRYABLE)
+                && provider.getProvider() == ReviewProviderType.KLAVIYO
+                && hasText(provider.getProviderKey());
     }
 
     private boolean hasText(String value) {

@@ -33,6 +33,37 @@ class ReviewOutboundUrlValidatorTest {
     }
 
     @Test
+    void blocksNat64AddressWithEmbeddedPrivateIpv4Address() {
+        ReviewOutboundUrlValidator validator = ReviewOutboundUrlValidator.withResolver(
+                _ -> List.of(InetAddress.getByAddress(new byte[]{
+                        0x00, 0x64, (byte) 0xff, (byte) 0x9b,
+                        0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00,
+                        0x0a, 0x00, 0x00, 0x01
+                }))
+        );
+
+        assertThatThrownBy(() -> validator.validateOutboundUrl(URI.create("https://merchant.example/")))
+                .isInstanceOf(ReviewException.class)
+                .hasMessageContaining("non-public address");
+    }
+
+    @Test
+    void allowsNat64AddressWithEmbeddedPublicIpv4Address() {
+        ReviewOutboundUrlValidator validator = ReviewOutboundUrlValidator.withResolver(
+                _ -> List.of(InetAddress.getByAddress(new byte[]{
+                        0x00, 0x64, (byte) 0xff, (byte) 0x9b,
+                        0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00,
+                        0x5d, (byte) 0xb8, (byte) 0xd8, 0x22
+                }))
+        );
+
+        assertThatCode(() -> validator.validateOutboundUrl(URI.create("https://merchant.example/")))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void blocksNonHttpsUrl() {
         ReviewOutboundUrlValidator validator = ReviewOutboundUrlValidator.withResolver(
                 _ -> List.of(InetAddress.getByName("93.184.216.34"))

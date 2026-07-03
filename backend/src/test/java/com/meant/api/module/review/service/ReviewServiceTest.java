@@ -24,7 +24,7 @@ class ReviewServiceTest {
     @Test
     void returnsCachedResultAfterAtomicCacheLoad() {
         UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        ReviewProviderRepository repository = repositoryReturning(provider(merchantId));
+        ReviewProviderRepository repository = repositoryReturning(provider(merchantId, ReviewProviderStatus.DETECTED));
         CapturingKlaviyoReviewClient client = new CapturingKlaviyoReviewClient();
         ReviewService service = new ReviewService(
                 repository,
@@ -43,6 +43,30 @@ class ReviewServiceTest {
         assertThat(client.fetchCount).isEqualTo(1);
     }
 
+    @Test
+    void fetchesReviewsFromLastKnownProviderDuringRetryableDiscoveryFailure() {
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        ReviewProviderRepository repository = repositoryReturning(
+                provider(merchantId, ReviewProviderStatus.FAILED_RETRYABLE)
+        );
+        CapturingKlaviyoReviewClient client = new CapturingKlaviyoReviewClient();
+        ReviewService service = new ReviewService(
+                repository,
+                client,
+                new KlaviyoReviewProperties("https://reviews.example", 20),
+                new ReviewCacheProperties(Duration.ofHours(1), 100L),
+                new ReviewProductIdNormalizer()
+        );
+
+        ProductReviewsResult result = service.getProductReviews(
+                new GetProductReviewsQuery(merchantId, "123", null, null)
+        );
+
+        assertThat(result.supported()).isTrue();
+        assertThat(client.fetchCount).isEqualTo(1);
+        assertThat(client.providerKey).isEqualTo("company-1");
+    }
+
     private ReviewProviderRepository repositoryReturning(ReviewProvider provider) {
         return (ReviewProviderRepository) Proxy.newProxyInstance(
                 ReviewProviderRepository.class.getClassLoader(),
@@ -56,13 +80,13 @@ class ReviewServiceTest {
         );
     }
 
-    private ReviewProvider provider(UUID merchantId) {
+    private ReviewProvider provider(UUID merchantId, ReviewProviderStatus status) {
         Instant now = Instant.parse("2026-07-03T12:00:00Z");
         return ReviewProvider.builder()
                 .merchantId(merchantId)
                 .merchantDomain("merchant.example")
                 .provider(ReviewProviderType.KLAVIYO)
-                .status(ReviewProviderStatus.DETECTED)
+                .status(status)
                 .providerKey("company-1")
                 .productIdType(ReviewProductIdType.SHOPIFY_NUMERIC_ID)
                 .createdAt(now)
@@ -73,6 +97,7 @@ class ReviewServiceTest {
     private static class CapturingKlaviyoReviewClient extends KlaviyoReviewClient {
 
         private int fetchCount;
+        private String providerKey;
 
         private CapturingKlaviyoReviewClient() {
             super(
@@ -91,6 +116,7 @@ class ReviewServiceTest {
                 int offset
         ) {
             fetchCount++;
+            this.providerKey = providerKey;
             return new ProductReviewsResult(
                     merchantId,
                     productId,

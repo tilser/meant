@@ -120,6 +120,7 @@ public class ReviewOutboundUrlValidator {
         return isIpv4MappedAddress(address)
                 || isIpv4CompatibleAddress(address)
                 || isBlocked6to4Address(address)
+                || isBlockedNat64Address(address)
                 || (first & 0xfe) == 0xfc
                 || first == 0xfe && (second & 0xc0) == 0x80
                 || first == 0xff
@@ -159,6 +160,14 @@ public class ReviewOutboundUrlValidator {
         return unsigned(address[0]) == 0x20
                 && unsigned(address[1]) == 0x02
                 && isBlockedIpv4(Arrays.copyOfRange(address, 2, 6));
+    }
+
+    private boolean isBlockedNat64Address(byte[] address) {
+        return unsigned(address[0]) == 0x00
+                && unsigned(address[1]) == 0x64
+                && unsigned(address[2]) == 0xff
+                && unsigned(address[3]) == 0x9b
+                && isBlockedIpv4(Arrays.copyOfRange(address, 12, 16));
     }
 
     private String normalizeHost(String host) {
