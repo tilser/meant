@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-review-provider" author="codex">
+        <createTable tableName="review_provider">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_domain" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider_key" type="text"/>
+            <column name="product_id_type" type="text"/>
+            <column name="source_url" type="text"/>
+            <column name="evidence" type="text"/>
+            <column name="last_checked_at" type="timestamp with time zone"/>
+            <column name="next_check_at" type="timestamp with time zone"/>
+            <column name="error_message" type="text"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="review_provider"
+                baseColumnNames="merchant_id"
+                constraintName="fk_review_provider_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="review_provider"
+                columnNames="merchant_id"
+                constraintName="uk_review_provider_merchant"/>
+        <createIndex tableName="review_provider" indexName="idx_review_provider_status_next_check_at">
+            <column name="status"/>
+            <column name="next_check_at"/>
+        </createIndex>
+        <createIndex tableName="review_provider" indexName="idx_review_provider_merchant_domain">
+            <column name="merchant_domain"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

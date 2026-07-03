@@ -78,6 +78,21 @@ discount:
     openrouter-model: openai/gpt-5.2:online
     web-max-results: 8
 
+review:
+  provider-discovery:
+    batch-size: 50
+    fixed-delay: 1h
+    storefront-timeout: 5s
+    retry-delay: 1d
+    not-found-recheck-delay: 14d
+  cache:
+    ttl: 6h
+    maximum-size: 10000
+  providers:
+    klaviyo:
+      reviews-base-url: https://fast.a.klaviyo.com/reviews/api
+      default-limit: 20
+
 ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1
