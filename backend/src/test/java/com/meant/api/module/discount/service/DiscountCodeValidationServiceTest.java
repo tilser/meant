@@ -63,9 +63,11 @@ class DiscountCodeValidationServiceTest {
 
         var rateLimited = service.validate(merchant, command, candidate("RATE_LIMITED"), now);
         var timedOut = service.validate(merchant, command, candidate("TIMEOUT"), now);
+        var unknownFailure = service.validate(merchant, command, candidate("UNKNOWN_FAILURE"), now);
 
         assertThat(rateLimited.status()).isEqualTo(DiscountCodeStatus.FAILED_RETRYABLE);
         assertThat(timedOut.status()).isEqualTo(DiscountCodeStatus.FAILED_RETRYABLE);
+        assertThat(unknownFailure.status()).isEqualTo(DiscountCodeStatus.FAILED_RETRYABLE);
     }
 
     @Test
@@ -186,6 +188,9 @@ class DiscountCodeValidationServiceTest {
             }
             if ("TIMEOUT".equals(code)) {
                 throw new StatusCartException(HttpStatus.REQUEST_TIMEOUT);
+            }
+            if ("UNKNOWN_FAILURE".equals(code)) {
+                throw new StatusCartException(null);
             }
             if ("BOOM".equals(code)) {
                 throw new IllegalStateException("Unexpected transport failure");

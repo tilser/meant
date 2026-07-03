@@ -10,13 +10,13 @@ import com.meant.api.module.discount.service.dto.DiscountCodeCacheResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeCandidateEvaluation;
 import com.meant.api.module.discount.service.dto.DiscountCodeCandidateSource;
 import com.meant.api.module.discount.service.dto.DiscountCodeResult;
+import com.meant.api.module.discount.service.dto.DiscountCodeSearchCacheResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeSearchResult;
 import com.meant.api.module.discount.service.dto.DiscountMerchant;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,16 +49,10 @@ public class DiscountCodeSearchService {
                     cacheHit.codes()
             );
         }
-        DiscountCodeCacheResult emptySearchCache = persistenceService.findFreshSearch(merchant.id(), now).orElse(null);
-        if (emptySearchCache != null) {
-            return new DiscountCodeSearchResult(
-                    merchant.id(),
-                    merchant.domain(),
-                    true,
-                    emptySearchCache.searchedAt(),
-                    emptySearchCache.expiresAt(),
-                    List.of()
-            );
+        DiscountCodeSearchCacheResult searchCache = persistenceService.findFreshSearch(merchant.id(), now).orElse(null);
+        DiscountCodeSearchResult cachedSearchResult = cachedSearchResult(merchant, searchCache);
+        if (cachedSearchResult != null) {
+            return cachedSearchResult;
         }
 
         List<DiscountCodeCandidateSource> candidates = discoverCandidates(merchant, command, now);
@@ -142,9 +136,10 @@ public class DiscountCodeSearchService {
     }
 
     private List<String> normalizedCodes(List<DiscountCodeCandidateSource> candidates) {
-        LinkedHashMap<String, String> codes = new LinkedHashMap<>();
-        candidates.forEach(candidate -> codes.putIfAbsent(key(candidate.code()), key(candidate.code())));
-        return List.copyOf(codes.values());
+        return candidates.stream()
+                .map(candidate -> key(candidate.code()))
+                .distinct()
+                .toList();
     }
 
     private List<DiscountCodeResult> validResults(List<DiscountCodeCandidateEvaluation> evaluations) {
@@ -160,6 +155,29 @@ public class DiscountCodeSearchService {
                 .map(DiscountCodeCandidateEvaluation::expiresAt)
                 .min(Instant::compareTo)
                 .orElse(now.plus(properties.failedCacheTtl()));
+    }
+
+    private DiscountCodeSearchResult cachedSearchResult(
+            DiscountMerchant merchant,
+            DiscountCodeSearchCacheResult searchCache
+    ) {
+        if (searchCache == null) {
+            return null;
+        }
+        return switch (searchCache.status()) {
+            case COMPLETED, NO_CODES_FOUND -> new DiscountCodeSearchResult(
+                    merchant.id(),
+                    merchant.domain(),
+                    true,
+                    searchCache.searchedAt(),
+                    searchCache.expiresAt(),
+                    List.of()
+            );
+            case FAILED_RETRYABLE, FAILED_PERMANENT -> throw DiscountCodeException.upstream(
+                    "Discount code search is temporarily unavailable.",
+                    null
+            );
+        };
     }
 
     private String key(String code) {

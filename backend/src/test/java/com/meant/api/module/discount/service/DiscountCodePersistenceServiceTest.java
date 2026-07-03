@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.module.discount.constant.DiscountCodeSearchStatus;
 import com.meant.api.module.discount.entity.DiscountCodeSearch;
 import com.meant.api.module.discount.repository.DiscountCodeSearchRepository;
+import com.meant.api.module.discount.service.dto.DiscountCodeSearchCacheResult;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.Optional;
@@ -14,14 +15,26 @@ import org.junit.jupiter.api.Test;
 class DiscountCodePersistenceServiceTest {
 
     @Test
-    void freshSearchReturnsOnlySuccessfulEmptySearchStatuses() {
-        assertThat(findFreshSearch(DiscountCodeSearchStatus.COMPLETED)).isPresent();
-        assertThat(findFreshSearch(DiscountCodeSearchStatus.NO_CODES_FOUND)).isPresent();
-        assertThat(findFreshSearch(DiscountCodeSearchStatus.FAILED_RETRYABLE)).isEmpty();
-        assertThat(findFreshSearch(DiscountCodeSearchStatus.FAILED_PERMANENT)).isEmpty();
+    void freshSearchPreservesSearchStatus() {
+        assertThat(findFreshSearch(DiscountCodeSearchStatus.COMPLETED))
+                .get()
+                .extracting(DiscountCodeSearchCacheResult::status)
+                .isEqualTo(DiscountCodeSearchStatus.COMPLETED);
+        assertThat(findFreshSearch(DiscountCodeSearchStatus.NO_CODES_FOUND))
+                .get()
+                .extracting(DiscountCodeSearchCacheResult::status)
+                .isEqualTo(DiscountCodeSearchStatus.NO_CODES_FOUND);
+        assertThat(findFreshSearch(DiscountCodeSearchStatus.FAILED_RETRYABLE))
+                .get()
+                .extracting(DiscountCodeSearchCacheResult::status)
+                .isEqualTo(DiscountCodeSearchStatus.FAILED_RETRYABLE);
+        assertThat(findFreshSearch(DiscountCodeSearchStatus.FAILED_PERMANENT))
+                .get()
+                .extracting(DiscountCodeSearchCacheResult::status)
+                .isEqualTo(DiscountCodeSearchStatus.FAILED_PERMANENT);
     }
 
-    private Optional<?> findFreshSearch(DiscountCodeSearchStatus status) {
+    private Optional<DiscountCodeSearchCacheResult> findFreshSearch(DiscountCodeSearchStatus status) {
         UUID merchantId = UUID.randomUUID();
         Instant now = Instant.parse("2026-07-03T10:00:00Z");
         Instant searchedAt = Instant.parse("2026-07-03T09:00:00Z");

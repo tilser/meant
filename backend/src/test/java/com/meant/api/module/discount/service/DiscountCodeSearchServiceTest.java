@@ -1,9 +1,11 @@
 package com.meant.api.module.discount.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.discount.constant.DiscountCodeSearchStatus;
 import com.meant.api.module.discount.constant.DiscountCodeStatus;
+import com.meant.api.module.discount.exception.DiscountCodeException;
 import com.meant.api.module.discount.properties.DiscountCodeSearchProperties;
 import com.meant.api.module.discount.service.command.SearchDiscountCodesCommand;
 import com.meant.api.module.discount.service.dto.CachedDiscountCodeCandidate;
@@ -11,6 +13,7 @@ import com.meant.api.module.discount.service.dto.DiscountCodeCacheResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeCandidateEvaluation;
 import com.meant.api.module.discount.service.dto.DiscountCodeCandidateSource;
 import com.meant.api.module.discount.service.dto.DiscountCodeResult;
+import com.meant.api.module.discount.service.dto.DiscountCodeSearchCacheResult;
 import com.meant.api.module.discount.service.dto.DiscountMerchant;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,10 +69,11 @@ class DiscountCodeSearchServiceTest {
     void freshEmptySearchReturnsCachedEmptyResultWithoutOpenRouter() {
         UUID merchantId = UUID.randomUUID();
         DiscountMerchant merchant = merchant(merchantId);
-        DiscountCodeCacheResult emptySearchCache = new DiscountCodeCacheResult(
+        DiscountCodeSearchCacheResult emptySearchCache = new DiscountCodeSearchCacheResult(
+                DiscountCodeSearchStatus.NO_CODES_FOUND,
                 Instant.parse("2026-07-03T10:00:00Z"),
                 Instant.parse("2026-07-03T11:00:00Z"),
-                List.of()
+                null
         );
         FakeMerchantLookupService merchantLookupService = new FakeMerchantLookupService(merchant);
         FakePersistenceService persistenceService = new FakePersistenceService(null, emptySearchCache);
@@ -88,6 +92,36 @@ class DiscountCodeSearchServiceTest {
         assertThat(result.cached()).isTrue();
         assertThat(result.codes()).isEmpty();
         assertThat(result.searchedAt()).isEqualTo(Instant.parse("2026-07-03T10:00:00Z"));
+        assertThat(webSearchService.called).isFalse();
+        assertThat(validationService.called).isFalse();
+        assertThat(persistenceService.saveCalled).isFalse();
+    }
+
+    @Test
+    void freshFailedSearchThrowsWithoutCallingOpenRouter() {
+        UUID merchantId = UUID.randomUUID();
+        DiscountMerchant merchant = merchant(merchantId);
+        DiscountCodeSearchCacheResult failedSearchCache = new DiscountCodeSearchCacheResult(
+                DiscountCodeSearchStatus.FAILED_RETRYABLE,
+                Instant.parse("2026-07-03T10:00:00Z"),
+                Instant.parse("2026-07-03T11:00:00Z"),
+                "OpenRouter failed"
+        );
+        FakeMerchantLookupService merchantLookupService = new FakeMerchantLookupService(merchant);
+        FakePersistenceService persistenceService = new FakePersistenceService(null, failedSearchCache);
+        FakeWebSearchService webSearchService = new FakeWebSearchService();
+        FakeValidationService validationService = new FakeValidationService();
+        DiscountCodeSearchService service = new DiscountCodeSearchService(
+                merchantLookupService,
+                persistenceService,
+                webSearchService,
+                validationService,
+                properties()
+        );
+
+        assertThatThrownBy(() -> service.search(command(merchantId)))
+                .isInstanceOf(DiscountCodeException.class);
+
         assertThat(webSearchService.called).isFalse();
         assertThat(validationService.called).isFalse();
         assertThat(persistenceService.saveCalled).isFalse();
@@ -146,10 +180,10 @@ class DiscountCodeSearchServiceTest {
     private static class FakePersistenceService extends DiscountCodePersistenceService {
 
         private final DiscountCodeCacheResult cacheResult;
-        private final DiscountCodeCacheResult freshSearchResult;
+        private final DiscountCodeSearchCacheResult freshSearchResult;
         private boolean saveCalled;
 
-        FakePersistenceService(DiscountCodeCacheResult cacheResult, DiscountCodeCacheResult freshSearchResult) {
+        FakePersistenceService(DiscountCodeCacheResult cacheResult, DiscountCodeSearchCacheResult freshSearchResult) {
             super(null, null, null);
             this.cacheResult = cacheResult;
             this.freshSearchResult = freshSearchResult;
@@ -161,7 +195,7 @@ class DiscountCodeSearchServiceTest {
         }
 
         @Override
-        public Optional<DiscountCodeCacheResult> findFreshSearch(UUID merchantId, Instant now) {
+        public Optional<DiscountCodeSearchCacheResult> findFreshSearch(UUID merchantId, Instant now) {
             return Optional.ofNullable(freshSearchResult);
         }
 

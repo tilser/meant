@@ -11,10 +11,12 @@ import com.meant.api.module.discount.service.dto.DiscountCodeCacheResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeCandidateEvaluation;
 import com.meant.api.module.discount.service.dto.DiscountCodeCandidateSource;
 import com.meant.api.module.discount.service.dto.DiscountCodeResult;
+import com.meant.api.module.discount.service.dto.DiscountCodeSearchCacheResult;
 import com.meant.api.module.discount.service.dto.DiscountMerchant;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,11 +60,14 @@ public class DiscountCodePersistenceService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<DiscountCodeCacheResult> findFreshSearch(UUID merchantId, Instant now) {
+    public Optional<DiscountCodeSearchCacheResult> findFreshSearch(UUID merchantId, Instant now) {
         return searchRepository.findFirstByMerchant_IdAndExpiresAtAfterOrderBySearchedAtDesc(merchantId, now)
-                .filter(search -> search.getStatus() == DiscountCodeSearchStatus.COMPLETED
-                        || search.getStatus() == DiscountCodeSearchStatus.NO_CODES_FOUND)
-                .map(search -> new DiscountCodeCacheResult(search.getSearchedAt(), search.getExpiresAt(), List.of()));
+                .map(search -> new DiscountCodeSearchCacheResult(
+                        search.getStatus(),
+                        search.getSearchedAt(),
+                        search.getExpiresAt(),
+                        search.getErrorMessage()
+                ));
     }
 
     @Transactional(readOnly = true)
@@ -116,10 +121,12 @@ public class DiscountCodePersistenceService {
                 .updatedAt(now)
                 .build());
 
+        List<DiscountCodeCandidate> candidates = new ArrayList<>();
         for (int index = 0; index < evaluations.size(); index++) {
             DiscountCodeCandidateEvaluation evaluation = evaluations.get(index);
-            candidateRepository.save(toEntity(search, merchantReference, evaluation, index, now));
+            candidates.add(toEntity(search, merchantReference, evaluation, index, now));
         }
+        candidateRepository.saveAll(candidates);
     }
 
     private DiscountCodeCandidate toEntity(

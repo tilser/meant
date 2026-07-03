@@ -119,7 +119,7 @@ public class DiscountCodeValidationService {
     }
 
     private boolean retryable(HttpStatusCode status) {
-        return status != null && (status.is5xxServerError() || status.value() == 408 || status.value() == 429);
+        return status == null || status.is5xxServerError() || status.value() == 408 || status.value() == 429;
     }
 
     private String validationMessage(DiscountCodeStatus status, CartException exception) {
