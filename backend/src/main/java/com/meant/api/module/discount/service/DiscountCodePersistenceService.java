@@ -60,6 +60,8 @@ public class DiscountCodePersistenceService {
     @Transactional(readOnly = true)
     public Optional<DiscountCodeCacheResult> findFreshSearch(UUID merchantId, Instant now) {
         return searchRepository.findFirstByMerchant_IdAndExpiresAtAfterOrderBySearchedAtDesc(merchantId, now)
+                .filter(search -> search.getStatus() == DiscountCodeSearchStatus.COMPLETED
+                        || search.getStatus() == DiscountCodeSearchStatus.NO_CODES_FOUND)
                 .map(search -> new DiscountCodeCacheResult(search.getSearchedAt(), search.getExpiresAt(), List.of()));
     }
 

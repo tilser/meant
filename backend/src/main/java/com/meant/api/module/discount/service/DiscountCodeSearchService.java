@@ -92,7 +92,7 @@ public class DiscountCodeSearchService {
                 merchant.domain(),
                 false,
                 now,
-                responseExpiresAt(evaluations, expiresAt),
+                expiresAt,
                 validResults(evaluations)
         );
     }
@@ -160,16 +160,6 @@ public class DiscountCodeSearchService {
                 .map(DiscountCodeCandidateEvaluation::expiresAt)
                 .min(Instant::compareTo)
                 .orElse(now.plus(properties.failedCacheTtl()));
-    }
-
-    private Instant responseExpiresAt(
-            List<DiscountCodeCandidateEvaluation> evaluations,
-            Instant fallback
-    ) {
-        return validResults(evaluations).stream()
-                .map(DiscountCodeResult::expiresAt)
-                .min(Instant::compareTo)
-                .orElse(fallback);
     }
 
     private String key(String code) {

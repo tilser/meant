@@ -73,6 +73,9 @@ public class DiscountCodeValidationService {
             return evaluation(candidate, status, validationMessage(status, exception), now);
         } catch (MerchantMcpToolException exception) {
             return evaluation(candidate, DiscountCodeStatus.FAILED_RETRYABLE, TEMPORARY_FAILURE_MESSAGE, now);
+        } catch (RuntimeException exception) {
+            log.error("Unexpected error validating discount code candidate: {}", candidate.code(), exception);
+            return evaluation(candidate, DiscountCodeStatus.FAILED_RETRYABLE, TEMPORARY_FAILURE_MESSAGE, now);
         } finally {
             cancelTemporaryCart(provider, session, result);
         }
@@ -116,7 +119,7 @@ public class DiscountCodeValidationService {
     }
 
     private boolean retryable(HttpStatusCode status) {
-        return status != null && status.is5xxServerError();
+        return status != null && (status.is5xxServerError() || status.value() == 408 || status.value() == 429);
     }
 
     private String validationMessage(DiscountCodeStatus status, CartException exception) {
@@ -164,6 +167,9 @@ public class DiscountCodeValidationService {
             merchantCartPluginDispatchService.cancelCart(provider, new CancelCartRequest(cartId), session);
         } catch (CartException | MerchantMcpToolException exception) {
             log.warn("Could not cancel temporary discount validation cart merchantId={} cartId={}",
+                    provider.merchantId(), cartId, exception);
+        } catch (RuntimeException exception) {
+            log.warn("Unexpected error canceling temporary discount validation cart merchantId={} cartId={}",
                     provider.merchantId(), cartId, exception);
         }
     }

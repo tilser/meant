@@ -4,7 +4,10 @@ import com.meant.api.module.discount.exception.DiscountCodeException;
 import com.meant.api.module.discount.service.dto.DiscountMerchant;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,7 +28,10 @@ public class DiscountMerchantLookupService {
         }
         String normalizedDomain = normalizeDomain(merchantDomain);
         if (normalizedDomain != null) {
-            return merchantRepository.findByDomain(normalizedDomain)
+            return domainCandidates(normalizedDomain).stream()
+                    .map(merchantRepository::findByDomain)
+                    .flatMap(Optional::stream)
+                    .findFirst()
                     .map(this::toResult)
                     .orElseThrow(() -> DiscountCodeException.notFound("Merchant not found: " + normalizedDomain));
         }
@@ -55,5 +61,16 @@ public class DiscountMerchantLookupService {
         }
         int slashIndex = normalized.indexOf('/');
         return slashIndex < 0 ? normalized : normalized.substring(0, slashIndex);
+    }
+
+    private Set<String> domainCandidates(String normalizedDomain) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        candidates.add(normalizedDomain);
+        if (normalizedDomain.startsWith("www.")) {
+            candidates.add(normalizedDomain.substring("www.".length()));
+        } else {
+            candidates.add("www." + normalizedDomain);
+        }
+        return candidates;
     }
 }

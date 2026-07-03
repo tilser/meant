@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 
 class DiscountCodeValidationServiceTest {
 
@@ -45,6 +47,45 @@ class DiscountCodeValidationServiceTest {
         assertThat(rejected.status()).isEqualTo(DiscountCodeStatus.INVALID);
         assertThat(nextAccepted.status()).isEqualTo(DiscountCodeStatus.VALID);
         assertThat(merchantCartPluginDispatchService.canceledCartIds).containsExactly("cart-1", "cart-2");
+    }
+
+    @Test
+    void retryableHttpFailuresAreNotCachedAsInvalid() {
+        FakeMerchantCartPluginDispatchService merchantCartPluginDispatchService =
+                new FakeMerchantCartPluginDispatchService();
+        DiscountCodeValidationService service = new DiscountCodeValidationService(
+                merchantCartPluginDispatchService,
+                new DiscountCodeExpiryService(properties())
+        );
+        DiscountMerchant merchant = merchant();
+        SearchDiscountCodesCommand command = command(merchant.id());
+        Instant now = Instant.parse("2026-07-03T10:00:00Z");
+
+        var rateLimited = service.validate(merchant, command, candidate("RATE_LIMITED"), now);
+        var timedOut = service.validate(merchant, command, candidate("TIMEOUT"), now);
+
+        assertThat(rateLimited.status()).isEqualTo(DiscountCodeStatus.FAILED_RETRYABLE);
+        assertThat(timedOut.status()).isEqualTo(DiscountCodeStatus.FAILED_RETRYABLE);
+    }
+
+    @Test
+    void unexpectedCandidateFailureDoesNotStopNextCandidate() {
+        FakeMerchantCartPluginDispatchService merchantCartPluginDispatchService =
+                new FakeMerchantCartPluginDispatchService();
+        DiscountCodeValidationService service = new DiscountCodeValidationService(
+                merchantCartPluginDispatchService,
+                new DiscountCodeExpiryService(properties())
+        );
+        DiscountMerchant merchant = merchant();
+        SearchDiscountCodesCommand command = command(merchant.id());
+        Instant now = Instant.parse("2026-07-03T10:00:00Z");
+
+        var failed = service.validate(merchant, command, candidate("BOOM"), now);
+        var nextAccepted = service.validate(merchant, command, candidate("NEXT10"), now);
+
+        assertThat(failed.status()).isEqualTo(DiscountCodeStatus.FAILED_RETRYABLE);
+        assertThat(nextAccepted.status()).isEqualTo(DiscountCodeStatus.VALID);
+        assertThat(merchantCartPluginDispatchService.canceledCartIds).containsExactly("cart-2");
     }
 
     private UcpCartToolResult cartResult(String cartId, String code) {
@@ -140,6 +181,15 @@ class DiscountCodeValidationServiceTest {
             if ("BADCODE".equals(code)) {
                 throw CartException.rejected("Discount code BADCODE was not accepted by the merchant.");
             }
+            if ("RATE_LIMITED".equals(code)) {
+                throw new StatusCartException(HttpStatus.TOO_MANY_REQUESTS);
+            }
+            if ("TIMEOUT".equals(code)) {
+                throw new StatusCartException(HttpStatus.REQUEST_TIMEOUT);
+            }
+            if ("BOOM".equals(code)) {
+                throw new IllegalStateException("Unexpected transport failure");
+            }
             return cartResult("NEXT10".equals(code) ? "cart-2" : "cart-1", code);
         }
 
@@ -151,6 +201,21 @@ class DiscountCodeValidationServiceTest {
         ) {
             canceledCartIds.add(request.cartId());
             return null;
+        }
+    }
+
+    private static class StatusCartException extends CartException {
+
+        private final HttpStatusCode status;
+
+        private StatusCartException(HttpStatusCode status) {
+            super("Cart request failed");
+            this.status = status;
+        }
+
+        @Override
+        public HttpStatusCode getStatus() {
+            return status;
         }
     }
 }
