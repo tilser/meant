@@ -11,6 +11,7 @@ public record OpenRouterChatRequest(
         Double temperature,
         @JsonProperty("response_format")
         OpenRouterResponseFormat responseFormat,
+        List<OpenRouterPlugin> plugins,
         Boolean stream
 ) {
 
@@ -20,6 +21,26 @@ public record OpenRouterChatRequest(
             Double temperature,
             OpenRouterResponseFormat responseFormat
     ) {
-        this(model, messages, temperature, responseFormat, false);
+        this(model, messages, temperature, responseFormat, null, false);
+    }
+
+    public OpenRouterChatRequest(
+            String model,
+            List<OpenRouterChatMessage> messages,
+            Double temperature,
+            OpenRouterResponseFormat responseFormat,
+            Boolean stream
+    ) {
+        this(model, messages, temperature, responseFormat, null, stream);
+    }
+
+    public OpenRouterChatRequest(
+            String model,
+            List<OpenRouterChatMessage> messages,
+            Double temperature,
+            OpenRouterResponseFormat responseFormat,
+            List<OpenRouterPlugin> plugins
+    ) {
+        this(model, messages, temperature, responseFormat, plugins, false);
     }
 }

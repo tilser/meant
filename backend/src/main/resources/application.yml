@@ -90,6 +90,8 @@ app:
           path: /api/carts/{cartId}
         - method: GET
           path: /api/carts/{cartId}/checkout
+        - method: POST
+          path: /api/discounts/search
 
 ucp:
   agent:
@@ -104,6 +106,15 @@ ucp:
 order:
   webhook:
     shopify-secret: ${ORDER_SHOPIFY_WEBHOOK_SECRET:}
+
+discount:
+  code-search:
+    candidate-cache-ttl: ${DISCOUNT_CODE_SEARCH_CANDIDATE_CACHE_TTL:48h}
+    invalid-cache-ttl: ${DISCOUNT_CODE_SEARCH_INVALID_CACHE_TTL:12h}
+    failed-cache-ttl: ${DISCOUNT_CODE_SEARCH_FAILED_CACHE_TTL:1h}
+    max-candidates: ${DISCOUNT_CODE_SEARCH_MAX_CANDIDATES:10}
+    openrouter-model: ${DISCOUNT_CODE_SEARCH_OPENROUTER_MODEL:openai/gpt-5.2:online}
+    web-max-results: ${DISCOUNT_CODE_SEARCH_WEB_MAX_RESULTS:8}
 
 ai:
   openrouter:

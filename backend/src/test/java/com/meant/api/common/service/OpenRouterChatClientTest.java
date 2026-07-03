@@ -9,7 +9,10 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
+import com.meant.api.common.service.dto.OpenRouterChatMessage;
+import com.meant.api.common.service.dto.OpenRouterChatRequest;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.common.service.dto.OpenRouterPlugin;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -22,9 +25,47 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(OutputCaptureExtension.class)
 class OpenRouterChatClientTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void chatRequestSerializesWebSearchPlugins() throws Exception {
+        OpenRouterChatRequest request = new OpenRouterChatRequest(
+                "test-model",
+                List.of(new OpenRouterChatMessage("user", "Find codes")),
+                0.0,
+                null,
+                List.of(new OpenRouterPlugin("web", 8))
+        );
+
+        String json = objectMapper.writeValueAsString(request);
+
+        assertThat(json)
+                .contains("\"plugins\":[{\"id\":\"web\",\"max_results\":8}]")
+                .contains("\"model\":\"test-model\"")
+                .doesNotContain("response_format");
+    }
+
+    @Test
+    void chatRequestWithoutPluginsKeepsExistingSerializationShape() throws Exception {
+        OpenRouterChatRequest request = new OpenRouterChatRequest(
+                "test-model",
+                List.of(new OpenRouterChatMessage("user", "Hello")),
+                0.0,
+                null
+        );
+
+        String json = objectMapper.writeValueAsString(request);
+
+        assertThat(json)
+                .contains("\"model\":\"test-model\"")
+                .contains("\"stream\":false")
+                .doesNotContain("\"plugins\"");
+    }
 
     @Test
     void completeJsonLogsRedactedHttpFailureDiagnostics(CapturedOutput output) {

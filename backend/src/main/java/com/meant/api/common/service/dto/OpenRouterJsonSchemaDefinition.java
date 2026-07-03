@@ -70,6 +70,19 @@ public record OpenRouterJsonSchemaDefinition(
         );
     }
 
+    public static OpenRouterJsonSchemaDefinition number() {
+        return new OpenRouterJsonSchemaDefinition(
+                "number",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
     public static OpenRouterJsonSchemaDefinition stringEnum(List<String> values) {
         return new OpenRouterJsonSchemaDefinition(
                 "string",

@@ -7,6 +7,7 @@ import com.meant.api.common.service.dto.OpenRouterChatRequest;
 import com.meant.api.common.service.dto.OpenRouterChatResponse;
 import com.meant.api.common.service.dto.OpenRouterJsonSchema;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.common.service.dto.OpenRouterPlugin;
 import com.meant.api.common.service.dto.OpenRouterResponseFormat;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -54,6 +55,17 @@ public class OpenRouterChatClient {
             String schemaName,
             OpenRouterJsonSchemaDefinition schema
     ) {
+        return completeJson(model, systemPrompt, userPrompt, schemaName, schema, null);
+    }
+
+    public String completeJson(
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            OpenRouterJsonSchemaDefinition schema,
+            List<OpenRouterPlugin> plugins
+    ) {
         if (openRouterProperties.apiKey().isBlank()) {
             throw new OpenRouterException("OpenRouter API key is not configured");
         }
@@ -68,7 +80,8 @@ public class OpenRouterChatClient {
                 new OpenRouterResponseFormat(
                         "json_schema",
                         new OpenRouterJsonSchema(schemaName, true, schema)
-                )
+                ),
+                plugins
         );
 
         try {
