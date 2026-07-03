@@ -58,6 +58,12 @@ public class DiscountCodePersistenceService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<DiscountCodeCacheResult> findFreshSearch(UUID merchantId, Instant now) {
+        return searchRepository.findFirstByMerchant_IdAndExpiresAtAfterOrderBySearchedAtDesc(merchantId, now)
+                .map(search -> new DiscountCodeCacheResult(search.getSearchedAt(), search.getExpiresAt(), List.of()));
+    }
+
+    @Transactional(readOnly = true)
     public Map<String, CachedDiscountCodeCandidate> findFreshNonValidCandidates(
             UUID merchantId,
             Collection<String> normalizedCodes,

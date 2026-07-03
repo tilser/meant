@@ -49,6 +49,17 @@ public class DiscountCodeSearchService {
                     cacheHit.codes()
             );
         }
+        DiscountCodeCacheResult emptySearchCache = persistenceService.findFreshSearch(merchant.id(), now).orElse(null);
+        if (emptySearchCache != null) {
+            return new DiscountCodeSearchResult(
+                    merchant.id(),
+                    merchant.domain(),
+                    true,
+                    emptySearchCache.searchedAt(),
+                    emptySearchCache.expiresAt(),
+                    List.of()
+            );
+        }
 
         List<DiscountCodeCandidateSource> candidates = discoverCandidates(merchant, command, now);
         if (candidates.isEmpty()) {

@@ -142,6 +142,9 @@ public class DiscountCodeValidationService {
     }
 
     private boolean matches(String normalizedSubmittedCode, UcpCartResponse.AppliedCode appliedCode) {
+        if (appliedCode == null) {
+            return false;
+        }
         String code = appliedCode.code();
         return code != null
                 && code.toLowerCase(Locale.ROOT).equals(normalizedSubmittedCode)

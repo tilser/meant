@@ -42,7 +42,7 @@ class DiscountCodeSearchServiceTest {
                 Instant.parse("2026-07-03T10:00:00Z"),
                 Instant.parse("2026-07-05T10:00:00Z"),
                 List.of(code)
-        ));
+        ), null);
         FakeWebSearchService webSearchService = new FakeWebSearchService();
         FakeValidationService validationService = new FakeValidationService();
         DiscountCodeSearchService service = new DiscountCodeSearchService(
@@ -57,6 +57,37 @@ class DiscountCodeSearchServiceTest {
 
         assertThat(result.cached()).isTrue();
         assertThat(result.codes()).containsExactly(code);
+        assertThat(webSearchService.called).isFalse();
+        assertThat(validationService.called).isFalse();
+        assertThat(persistenceService.saveCalled).isFalse();
+    }
+
+    @Test
+    void freshEmptySearchReturnsCachedEmptyResultWithoutOpenRouter() {
+        UUID merchantId = UUID.randomUUID();
+        DiscountMerchant merchant = merchant(merchantId);
+        DiscountCodeCacheResult emptySearchCache = new DiscountCodeCacheResult(
+                Instant.parse("2026-07-03T10:00:00Z"),
+                Instant.parse("2026-07-03T11:00:00Z"),
+                List.of()
+        );
+        FakeMerchantLookupService merchantLookupService = new FakeMerchantLookupService(merchant);
+        FakePersistenceService persistenceService = new FakePersistenceService(null, emptySearchCache);
+        FakeWebSearchService webSearchService = new FakeWebSearchService();
+        FakeValidationService validationService = new FakeValidationService();
+        DiscountCodeSearchService service = new DiscountCodeSearchService(
+                merchantLookupService,
+                persistenceService,
+                webSearchService,
+                validationService,
+                properties()
+        );
+
+        var result = service.search(command(merchantId));
+
+        assertThat(result.cached()).isTrue();
+        assertThat(result.codes()).isEmpty();
+        assertThat(result.searchedAt()).isEqualTo(Instant.parse("2026-07-03T10:00:00Z"));
         assertThat(webSearchService.called).isFalse();
         assertThat(validationService.called).isFalse();
         assertThat(persistenceService.saveCalled).isFalse();
@@ -115,16 +146,23 @@ class DiscountCodeSearchServiceTest {
     private static class FakePersistenceService extends DiscountCodePersistenceService {
 
         private final DiscountCodeCacheResult cacheResult;
+        private final DiscountCodeCacheResult freshSearchResult;
         private boolean saveCalled;
 
-        FakePersistenceService(DiscountCodeCacheResult cacheResult) {
+        FakePersistenceService(DiscountCodeCacheResult cacheResult, DiscountCodeCacheResult freshSearchResult) {
             super(null, null, null);
             this.cacheResult = cacheResult;
+            this.freshSearchResult = freshSearchResult;
         }
 
         @Override
         public Optional<DiscountCodeCacheResult> findFreshValidCodes(UUID merchantId, Instant now) {
-            return Optional.of(cacheResult);
+            return Optional.ofNullable(cacheResult);
+        }
+
+        @Override
+        public Optional<DiscountCodeCacheResult> findFreshSearch(UUID merchantId, Instant now) {
+            return Optional.ofNullable(freshSearchResult);
         }
 
         @Override
