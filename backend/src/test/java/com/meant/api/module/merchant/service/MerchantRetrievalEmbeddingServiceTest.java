@@ -155,6 +155,18 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void generateRetrievalEmbeddingsBatchesMultipleMerchantInputs() {
+        saveMerchantWithRetrievalContent("shoe-store.example", "Shoes", "running shoes");
+        saveMerchantWithRetrievalContent("home-store.example", "Home", "kitchen table");
+
+        merchantRetrievalEmbeddingService.generateRetrievalEmbeddings(new GenerateMerchantRetrievalEmbeddingsCommand(10));
+
+        assertThat(voyageEmbeddingClient.documentCalls).isEqualTo(1);
+        assertThat(voyageEmbeddingClient.documentBatchSizes).containsExactly(2);
+        assertThat(merchantRetrievalEmbeddingRepository.findAll()).hasSize(2);
+    }
+
+    @Test
     void semanticSearchReturnsNearestMerchantCandidates() {
         saveMerchantWithRetrievalContent("shoe-store.example", "Shoes", "running shoes");
         saveMerchantWithRetrievalContent("home-store.example", "Home", "kitchen table");
@@ -254,6 +266,7 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
 
         private final int dimension;
         private int documentCalls;
+        private final List<Integer> documentBatchSizes = new ArrayList<>();
 
         FakeVoyageEmbeddingClient(MerchantEmbeddingProperties merchantEmbeddingProperties) {
             super(RestClient.builder(), merchantEmbeddingProperties);
@@ -263,6 +276,7 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
         @Override
         public List<List<Double>> embedDocuments(List<String> texts) {
             documentCalls++;
+            documentBatchSizes.add(texts.size());
             return texts.stream()
                     .map(this::embeddingForText)
                     .toList();
@@ -275,6 +289,7 @@ class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
 
         private void reset() {
             documentCalls = 0;
+            documentBatchSizes.clear();
         }
 
         private List<Double> embeddingForText(String text) {

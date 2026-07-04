@@ -25,8 +25,7 @@ public class UcpMerchantImportPersistenceService {
         Set<String> seenDomains = verifiedMerchants.stream()
                 .map(MerchantRaw::getDomain)
                 .collect(Collectors.toSet());
-        Map<String, MerchantRaw> existingByDomain = merchantRawRepository.findByDomainIn(seenDomains).stream()
-                .collect(Collectors.toMap(MerchantRaw::getDomain, Function.identity()));
+        Map<String, MerchantRaw> existingByDomain = findExistingMerchants(seenDomains);
 
         List<MerchantRaw> merchantsToSave = verifiedMerchants.stream()
                 .map(importedMerchant -> mergeImportedMerchant(
@@ -36,15 +35,25 @@ public class UcpMerchantImportPersistenceService {
                 .toList();
 
         merchantRawRepository.saveAll(merchantsToSave);
-        List<String> inactiveDomains = merchantRawRepository.findAll().stream()
-                .filter(merchantRaw -> !seenDomains.contains(merchantRaw.getDomain()))
-                .peek(MerchantRaw::markInactive)
-                .map(MerchantRaw::getDomain)
-                .toList();
-        if (!inactiveDomains.isEmpty()) {
-            merchantRepository.findByDomainIn(inactiveDomains)
-                    .forEach(merchant -> merchant.markInactive(fetchedAt));
+        markMissingMerchantsInactive(seenDomains, fetchedAt);
+    }
+
+    private Map<String, MerchantRaw> findExistingMerchants(Set<String> seenDomains) {
+        if (seenDomains.isEmpty()) {
+            return Map.of();
         }
+        return merchantRawRepository.findByDomainIn(seenDomains).stream()
+                .collect(Collectors.toMap(MerchantRaw::getDomain, Function.identity()));
+    }
+
+    private void markMissingMerchantsInactive(Set<String> seenDomains, Instant fetchedAt) {
+        if (seenDomains.isEmpty()) {
+            merchantRawRepository.markAllActiveInactive();
+            merchantRepository.markAllActiveInactive(fetchedAt);
+            return;
+        }
+        merchantRawRepository.markInactiveByDomainNotIn(seenDomains);
+        merchantRepository.markInactiveByDomainNotIn(seenDomains, fetchedAt);
     }
 
     private MerchantRaw mergeImportedMerchant(MerchantRaw importedMerchant, MerchantRaw existingMerchant) {

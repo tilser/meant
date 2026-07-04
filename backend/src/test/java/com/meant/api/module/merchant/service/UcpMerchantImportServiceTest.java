@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.CrawlingProperties;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
+import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
 import java.time.Instant;
@@ -30,10 +32,14 @@ class UcpMerchantImportServiceTest extends PostgresIntegrationTest {
     private MerchantRawRepository repository;
 
     @Autowired
+    private MerchantRepository merchantRepository;
+
+    @Autowired
     private FakeUcpDatasetClient datasetClient;
 
     @BeforeEach
     void setUp() {
+        merchantRepository.deleteAllInBatch();
         repository.deleteAllInBatch();
         datasetClient.rows = List.of();
         datasetClient.exception = null;
@@ -133,6 +139,22 @@ class UcpMerchantImportServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void importMerchantsMarksProfiledMerchantsMissingFromLatestImportInactive() {
+        MerchantRaw existingMerchant = repository.save(existingMerchant());
+        merchantRepository.save(profiledMerchant(existingMerchant));
+        datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"));
+
+        service.importMerchants();
+
+        MerchantRaw oldMerchantRaw = repository.findByDomain("existing.example").orElseThrow();
+        Merchant oldMerchant = merchantRepository.findByDomain("existing.example").orElseThrow();
+        assertThat(oldMerchantRaw.isActive()).isFalse();
+        assertThat(oldMerchantRaw.getProcessingStatus()).isEqualTo("INACTIVE");
+        assertThat(oldMerchant.isActive()).isFalse();
+        assertThat(oldMerchant.getUpdatedAt()).isAfter(Instant.parse("2026-04-02T09:00:15Z"));
+    }
+
+    @Test
     void importMerchantsDeduplicatesVerifiedRowsByDomain() {
         datasetClient.rows = List.of(
                 datasetRow(1, "duplicate.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
@@ -187,6 +209,26 @@ class UcpMerchantImportServiceTest extends PostgresIntegrationTest {
                 .sourceHash("existing-source-hash")
                 .active(true)
                 .lastSeenAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .build();
+    }
+
+    private Merchant profiledMerchant(MerchantRaw merchantRaw) {
+        return Merchant.builder()
+                .merchantRaw(merchantRaw)
+                .domain(merchantRaw.getDomain())
+                .ucpUrl(merchantRaw.getUcpUrl())
+                .ucpVersion(merchantRaw.getUcpVersion())
+                .profileHash("existing-profile-hash")
+                .name("Existing")
+                .description("Existing description")
+                .about("Existing about")
+                .targetAudience("Existing audience")
+                .profileQuestion("Tell me about your store?")
+                .profileAnswerRaw("Existing profile answer")
+                .active(true)
+                .lastProfiledAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .createdAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .updatedAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build();
     }
 

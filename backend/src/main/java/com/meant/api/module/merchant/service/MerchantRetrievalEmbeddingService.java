@@ -1,11 +1,11 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.Merchant;
-import com.meant.api.module.merchant.entity.MerchantRetrievalEmbedding;
 import com.meant.api.module.merchant.exception.MerchantEmbeddingException;
 import com.meant.api.module.merchant.properties.MerchantEmbeddingProperties;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingRepository;
+import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingRepository.MerchantRetrievalEmbeddingSummary;
 import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingVectorRepository;
 import com.meant.api.module.merchant.service.command.GenerateMerchantRetrievalEmbeddingsCommand;
 import jakarta.validation.Valid;
@@ -15,10 +15,14 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -40,17 +44,25 @@ public class MerchantRetrievalEmbeddingService {
                 merchantEmbeddingProperties.model(),
                 command.batchSize()
         );
+        List<UUID> merchantIds = merchants.stream()
+                .map(Merchant::getId)
+                .toList();
+        Map<UUID, Optional<String>> retrievalContentByMerchantId = merchantRetrievalContentBuilder.buildAll(merchants);
+        Map<UUID, MerchantRetrievalEmbeddingSummary> embeddingsByMerchantId = currentEmbeddingsByMerchantId(merchantIds);
         List<EmbeddingWorkItem> workItems = new ArrayList<>();
 
         for (Merchant merchant : merchants) {
-            Optional<String> retrievalContent = merchantRetrievalContentBuilder.build(merchant);
+            Optional<String> retrievalContent = retrievalContentByMerchantId.getOrDefault(
+                    merchant.getId(),
+                    Optional.empty()
+            );
             if (retrievalContent.isEmpty()) {
                 merchantRetrievalEmbeddingVectorRepository.deactivate(merchant.getId(), Instant.now());
                 continue;
             }
 
             String retrievalContentHash = hash(retrievalContent.get());
-            if (embeddingIsCurrent(merchant.getId(), retrievalContentHash)) {
+            if (embeddingIsCurrent(embeddingsByMerchantId.get(merchant.getId()), retrievalContentHash)) {
                 continue;
             }
             workItems.add(new EmbeddingWorkItem(merchant.getId(), retrievalContent.get(), retrievalContentHash));
@@ -64,13 +76,19 @@ public class MerchantRetrievalEmbeddingService {
         }
     }
 
-    private boolean embeddingIsCurrent(UUID merchantId, String retrievalContentHash) {
-        return merchantRetrievalEmbeddingRepository.findByMerchantId(merchantId)
-                .filter(MerchantRetrievalEmbedding::isActive)
-                .filter(embedding -> merchantEmbeddingProperties.model().equals(embedding.getEmbeddingModel()))
-                .map(MerchantRetrievalEmbedding::getRetrievalContentHash)
-                .filter(retrievalContentHash::equals)
-                .isPresent();
+    private Map<UUID, MerchantRetrievalEmbeddingSummary> currentEmbeddingsByMerchantId(Collection<UUID> merchantIds) {
+        if (merchantIds.isEmpty()) {
+            return Map.of();
+        }
+        return merchantRetrievalEmbeddingRepository.findSummariesByMerchantIdIn(merchantIds).stream()
+                .collect(Collectors.toMap(MerchantRetrievalEmbeddingSummary::getMerchantId, Function.identity()));
+    }
+
+    private boolean embeddingIsCurrent(MerchantRetrievalEmbeddingSummary embedding, String retrievalContentHash) {
+        return embedding != null
+                && embedding.isActive()
+                && merchantEmbeddingProperties.model().equals(embedding.getEmbeddingModel())
+                && retrievalContentHash.equals(embedding.getRetrievalContentHash());
     }
 
     private void persistEmbeddings(List<EmbeddingWorkItem> workItems, List<List<Double>> embeddings) {

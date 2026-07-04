@@ -1,13 +1,16 @@
 package com.meant.api.module.merchant.repository;
 
 import com.meant.api.module.merchant.entity.Merchant;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
 
@@ -19,6 +22,25 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
 
     @EntityGraph(attributePaths = "merchantRaw")
     List<Merchant> findByActiveTrueOrderByNameAsc();
+
+    @Modifying
+    @Query("""
+            update Merchant merchant
+            set merchant.active = false,
+                merchant.updatedAt = :updatedAt
+            where merchant.active = true
+            """)
+    int markAllActiveInactive(@Param("updatedAt") Instant updatedAt);
+
+    @Modifying
+    @Query("""
+            update Merchant merchant
+            set merchant.active = false,
+                merchant.updatedAt = :updatedAt
+            where merchant.active = true
+              and merchant.domain not in :domains
+            """)
+    int markInactiveByDomainNotIn(@Param("domains") Collection<String> domains, @Param("updatedAt") Instant updatedAt);
 
     @Query(value = """
             select merchant.*
