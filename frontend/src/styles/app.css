@@ -10711,6 +10711,12 @@ body.shelf-open .mt-shelf-tab {
   font-weight: 400;
 }
 
+.mt-shelf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .mt-shelf-find {
   display: inline-flex;
   align-items: center;

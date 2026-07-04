@@ -264,6 +264,10 @@ interface ProductDetailChatRequest {
   question: string
 }
 
+type DiscoverFindRequest =
+  | { id: string; kind: 'message'; messageId: string }
+  | { id: string; kind: 'product'; productId: ProductId }
+
 interface AssistantProductAction {
   product: Product
   shouldAddToCart: boolean
@@ -2869,6 +2873,7 @@ function ShelfCard({
   onRemove,
   onToggleCollapse,
   onFind,
+  onFindProduct,
   onOpenProduct,
 }: Readonly<{
   item: ShelfItem
@@ -2876,6 +2881,7 @@ function ShelfCard({
   onRemove: (uid: string) => void
   onToggleCollapse: (uid: string) => void
   onFind: (messageId: string) => void
+  onFindProduct: (productId: ProductId) => void
   onOpenProduct: (product: Product) => void
 }>) {
   const [dusting, setDusting] = useState(false)
@@ -2952,15 +2958,24 @@ function ShelfCard({
                   </span>
                 </span>
               </button>
-              {product ? (
+              <div className="mt-shelf-actions">
+                {product ? (
+                  <button
+                    className="mt-shelf-find"
+                    type="button"
+                    onClick={() => onOpenProduct(product)}
+                  >
+                    <OpenIcon /> Open product
+                  </button>
+                ) : null}
                 <button
                   className="mt-shelf-find"
                   type="button"
-                  onClick={() => onOpenProduct(product)}
+                  onClick={() => onFindProduct(item.productId)}
                 >
-                  <OpenIcon /> Open product
+                  <SearchIcon size={12} /> Find in chat
                 </button>
-              ) : null}
+              </div>
             </>
           )}
         </div>
@@ -3016,6 +3031,7 @@ function Shelf({
   onClear,
   onToggleCollapse,
   onFind,
+  onFindProduct,
   onOpenProduct,
 }: Readonly<{
   open: boolean
@@ -3028,6 +3044,7 @@ function Shelf({
   onClear: () => void
   onToggleCollapse: (uid: string) => void
   onFind: (messageId: string) => void
+  onFindProduct: (productId: ProductId) => void
   onOpenProduct: (product: Product) => void
 }>) {
   const [over, setOver] = useState(false)
@@ -3190,6 +3207,7 @@ function Shelf({
                   onRemove={onRemove}
                   onToggleCollapse={onToggleCollapse}
                   onFind={onFind}
+                  onFindProduct={onFindProduct}
                   onOpenProduct={onOpenProduct}
                 />
               ))}
@@ -4323,6 +4341,34 @@ function discoverBlockPrimaryProduct(block: DiscoverChatBlock): Product | null {
     return block.products[block.pickIndex] ?? block.products[0] ?? null
   }
   return null
+}
+
+function discoverBlockHasProduct(block: DiscoverChatBlock, productId: ProductId): boolean {
+  if (block.type === 'products' || block.type === 'saved' || block.type === 'minicompare') {
+    return block.products.some((product) => product.id === productId)
+  }
+  if (block.type === 'similar') {
+    return (
+      block.product.id === productId || block.products.some((product) => product.id === productId)
+    )
+  }
+  if (block.type === 'cart') {
+    return (
+      block.lines.some((line) => line.id === productId) ||
+      Boolean(block.products?.some((product) => product.id === productId))
+    )
+  }
+  if (
+    block.type === 'reviews' ||
+    block.type === 'code' ||
+    block.type === 'decision' ||
+    block.type === 'watch' ||
+    block.type === 'friendvote' ||
+    block.type === 'added'
+  ) {
+    return block.product.id === productId
+  }
+  return false
 }
 
 function discoverThreadFocusProduct(
@@ -6465,6 +6511,7 @@ function ChatDiscoverView({
   shelf,
   shelfFlashMessageId,
   productDetailChatRequest,
+  discoverFindRequest,
   savedSet,
   savePendingSet,
   onSubmit,
@@ -6487,6 +6534,7 @@ function ChatDiscoverView({
   onShelfAddMessage,
   onShelfAddProduct,
   onProductDetailChatRequestHandled,
+  onFlashMessage,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
@@ -6514,6 +6562,7 @@ function ChatDiscoverView({
   shelf: readonly ShelfItem[]
   shelfFlashMessageId: string | null
   productDetailChatRequest: ProductDetailChatRequest | null
+  discoverFindRequest: DiscoverFindRequest | null
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   onSubmit: (query: string) => void
@@ -6536,6 +6585,7 @@ function ChatDiscoverView({
   onShelfAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
   onShelfAddProduct: (snapshot: ShelfProductSnapshot) => void
   onProductDetailChatRequestHandled: (requestId: string) => void
+  onFlashMessage: (messageId: string) => void
 }>) {
   const [threads, setThreads] = useStoredState<DiscoverChatThread[]>(
     'meant.discoverChatThreads',
@@ -6561,7 +6611,7 @@ function ChatDiscoverView({
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
   const previousMessageCountRef = useRef(messages.length)
   const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
-  const suppressNextMessageScrollRef = useRef<string | null>(null)
+  const handledDiscoverFindRequestRef = useRef<string | null>(null)
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds])
   const shelfMessageSet = useMemo(
@@ -6612,6 +6662,51 @@ function ChatDiscoverView({
   )
 
   useEffect(() => {
+    if (!discoverFindRequest || handledDiscoverFindRequestRef.current === discoverFindRequest.id) {
+      return
+    }
+    handledDiscoverFindRequestRef.current = discoverFindRequest.id
+
+    const orderedThreads = [...threads].sort((left, right) => {
+      if (left.id === activeThreadIdSafe) {
+        return -1
+      }
+      if (right.id === activeThreadIdSafe) {
+        return 1
+      }
+      return (right.updatedAt ?? 0) - (left.updatedAt ?? 0)
+    })
+    for (const thread of orderedThreads) {
+      for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+        const message = thread.messages[index]
+        const matchesRequest =
+          discoverFindRequest.kind === 'message'
+            ? message.id === discoverFindRequest.messageId
+            : message.productContext?.id === discoverFindRequest.productId ||
+              Boolean(
+                message.blocks?.some((block) =>
+                  discoverBlockHasProduct(block, discoverFindRequest.productId),
+                ),
+              )
+        if (!matchesRequest) {
+          continue
+        }
+        setActiveThreadId(thread.id)
+        window.setTimeout(() => {
+          const element = document.querySelector(`[data-mid="${CSS.escape(message.id)}"]`)
+          if (!(element instanceof HTMLElement)) {
+            return
+          }
+          const top = window.scrollY + element.getBoundingClientRect().top - 150
+          window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+          onFlashMessage(message.id)
+        }, 160)
+        return
+      }
+    }
+  }, [activeThreadIdSafe, discoverFindRequest, onFlashMessage, setActiveThreadId, threads])
+
+  useEffect(() => {
     if (threads.some((thread) => !thread.createdAt || !thread.updatedAt)) {
       setThreads((current) => normalizeDiscoverChatThreads(current))
     }
@@ -6631,14 +6726,7 @@ function ChatDiscoverView({
     if (activeThreadChanged) {
       scrollChatToBottom()
     } else if (messageCountIncreased) {
-      if (suppressNextMessageScrollRef.current === activeThreadIdSafe) {
-        suppressNextMessageScrollRef.current = null
-      } else {
-        scrollChatToBottom()
-      }
-    }
-    if (!messageCountIncreased && suppressNextMessageScrollRef.current !== activeThreadIdSafe) {
-      suppressNextMessageScrollRef.current = null
+      scrollChatToBottom()
     }
     previousMessageCountRef.current = messages.length
     previousActiveThreadIdRef.current = activeThreadIdSafe
@@ -7046,7 +7134,6 @@ function ChatDiscoverView({
     if (!compareBlock) {
       return
     }
-    suppressNextMessageScrollRef.current = null
     appendMessagePair('Compare these here.', [
       { type: 'text', text: 'I lined them up here so you can decide without leaving the chat.' },
       compareBlock,
@@ -7091,36 +7178,6 @@ function ChatDiscoverView({
       ? pinnedIds.filter((id) => id !== product.id)
       : [...pinnedIds, product.id].slice(-4)
     setPinnedIds(nextIds)
-    if (wasPinned) {
-      return
-    }
-    suppressNextMessageScrollRef.current = activeThreadIdSafe
-    const nextProducts = nextIds
-      .map((id) =>
-        id === product.id ? product : displayProducts.find((candidate) => candidate.id === id),
-      )
-      .filter((candidate): candidate is Product => Boolean(candidate))
-    const compareBlock = createMiniCompareBlock(nextProducts, deliveryLocations)
-    appendMessagesToActiveThread(
-      [
-        {
-          id: nextDiscoverChatMessageId(),
-          role: 'ai',
-          blocks: compareBlock
-            ? [
-                { type: 'system', text: `Pinned ${product.name}. Here is the tray comparison.` },
-                compareBlock,
-              ]
-            : [
-                {
-                  type: 'system',
-                  text: `Pinned ${product.name}. Pin one more product to compare inside the chat.`,
-                },
-              ],
-        },
-      ],
-      { focusProductId: product.id },
-    )
   }
 
   const toggleWatch = (product: Product) => {
@@ -11217,6 +11274,7 @@ export function MeantApp() {
   const [shelf, setShelf] = useStoredState<ShelfItem[]>('meant.shelf', [])
   const [shelfOpen, setShelfOpen] = useState(false)
   const [shelfFlashMessageId, setShelfFlashMessageId] = useState<string | null>(null)
+  const [discoverFindRequest, setDiscoverFindRequest] = useState<DiscoverFindRequest | null>(null)
   const [productDetailChatRequest, setProductDetailChatRequest] =
     useState<ProductDetailChatRequest | null>(null)
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
@@ -11836,19 +11894,31 @@ export function MeantApp() {
     [setShelf],
   )
 
+  const flashShelfMessage = useCallback((messageId: string) => {
+    setShelfFlashMessageId(messageId)
+    window.setTimeout(() => setShelfFlashMessageId(null), 2200)
+  }, [])
+
   const findShelfMessage = useCallback(
     (messageId: string) => {
       nav('discover')
-      window.setTimeout(() => {
-        const element = document.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)
-        if (!(element instanceof HTMLElement)) {
-          return
-        }
-        const top = window.scrollY + element.getBoundingClientRect().top - 150
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-        setShelfFlashMessageId(messageId)
-        window.setTimeout(() => setShelfFlashMessageId(null), 2200)
-      }, 120)
+      setDiscoverFindRequest({
+        id: `shelf-find-message-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        kind: 'message',
+        messageId,
+      })
+    },
+    [nav],
+  )
+
+  const findShelfProduct = useCallback(
+    (productId: ProductId) => {
+      nav('discover')
+      setDiscoverFindRequest({
+        id: `shelf-find-product-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        kind: 'product',
+        productId,
+      })
     },
     [nav],
   )
@@ -12586,6 +12656,7 @@ export function MeantApp() {
             orders={orders}
             shelf={shelf}
             shelfFlashMessageId={shelfFlashMessageId}
+            discoverFindRequest={discoverFindRequest}
             productDetailChatRequest={productDetailChatRequest}
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
@@ -12629,6 +12700,7 @@ export function MeantApp() {
             onProductDetailChatRequestHandled={(requestId) => {
               setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
             }}
+            onFlashMessage={flashShelfMessage}
           />
         )
     }
@@ -12759,6 +12831,7 @@ export function MeantApp() {
         onClear={() => setShelf([])}
         onToggleCollapse={toggleShelfItemCollapse}
         onFind={findShelfMessage}
+        onFindProduct={findShelfProduct}
         onOpenProduct={(product) => openProduct(product, [product])}
       />
       <span className="mt-cart-count-debug" aria-hidden>
