@@ -16,8 +16,35 @@ import { DiscoverProductBatch } from './DiscoverProductBatch'
 import { InlineCartBlock } from './blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
-import type { DiscoverChatBlock } from './types'
+import type { DiscoverChatBlock, FoundDiscountCode } from './types'
 import { cartItemsWithFallback, productsWithFallback } from './utils'
+
+function discountCodeSourceHost(sourceUrl: string | null | undefined): string | null {
+  if (!sourceUrl) {
+    return null
+  }
+  try {
+    return new URL(sourceUrl).hostname.replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}
+
+function discountCodeEntries(block: Extract<DiscoverChatBlock, { type: 'code' }>) {
+  if (block.codes?.length) {
+    return block.codes
+  }
+  if (!block.code) {
+    return []
+  }
+  return [
+    {
+      code: block.code,
+      title: block.saved ? `Estimated ${money(block.saved)} savings` : null,
+      validationMessage: null,
+    },
+  ] satisfies FoundDiscountCode[]
+}
 
 export function DiscoverChatBlockView({
   block,
@@ -125,35 +152,80 @@ export function DiscoverChatBlockView({
   }
   if (block.type === 'code') {
     const offer = bestOffer(block.product, deliveryLocations)
+    const codes = discountCodeEntries(block)
+    const status = block.status ?? (codes.length > 0 ? 'found' : 'empty')
+    const backendResult = block.codes !== undefined
+    const merchant = block.merchant ?? offer.merchant
+    const saved = typeof block.saved === 'number' && block.saved > 0 ? block.saved : null
+    const statusLabel =
+      status === 'error'
+        ? 'Search unavailable'
+        : codes.length > 0
+          ? `${codes.length} ${backendResult ? 'valid ' : ''}code${codes.length === 1 ? '' : 's'}${block.cached ? ' · cached' : ''}`
+          : 'No accepted code'
     return (
       <div className="mt-ct-block mt-ct-code">
         <div className="mt-ct-block-head">
-          <div className="mt-mono mt-ct-block-key">Discount found · {offer.merchant}</div>
-          <span className="mt-ct-code-save mt-mono">Mocked code · save {money(block.saved)}</span>
+          <div className="mt-mono mt-ct-block-key">Discount check · {merchant}</div>
+          <span className="mt-ct-code-save mt-mono">{statusLabel}</span>
         </div>
-        <div className="mt-ct-code-row">
-          <span className="mt-code">
-            <span className="mt-code-val mt-mono">{block.code}</span>
-            <span className="mt-code-act mt-mono">mock</span>
-          </span>
-          <div className="mt-ct-code-detail">
-            <div className="mt-ct-code-label">A mocked coupon agent found this candidate.</div>
-            <div className="mt-ct-code-price">
-              <span className="mt-ct-code-was">{money(offer.price)}</span>
-              <span className="mt-ct-code-now">
-                {money(Math.max(0, offer.price - block.saved))}
-              </span>
-              <span className="mt-mono mt-ct-code-deliv">{offer.delivery}</span>
+        {codes.length > 0 ? (
+          <>
+            <div className="mt-ct-code-list">
+              {codes.map((code) => {
+                const sourceHost = discountCodeSourceHost(code.sourceUrl)
+                const detail =
+                  code.description ||
+                  code.title ||
+                  code.validationMessage ||
+                  'Accepted by the merchant cart.'
+                return (
+                  <div className="mt-ct-code-row" key={code.code}>
+                    <span className="mt-code">
+                      <span className="mt-code-val mt-mono">{code.code}</span>
+                      <span className="mt-code-act mt-mono">
+                        {backendResult ? 'valid' : 'code'}
+                      </span>
+                    </span>
+                    <div className="mt-ct-code-detail">
+                      <div className="mt-ct-code-label">{detail}</div>
+                      {saved ? (
+                        <div className="mt-ct-code-price">
+                          <span className="mt-ct-code-was">{money(offer.price)}</span>
+                          <span className="mt-ct-code-now">
+                            {money(Math.max(0, offer.price - saved))}
+                          </span>
+                          <span className="mt-mono mt-ct-code-deliv">{offer.delivery}</span>
+                        </div>
+                      ) : (
+                        <div className="mt-ct-code-meta mt-mono">
+                          {code.restrictions ? <span>{code.restrictions}</span> : null}
+                          {sourceHost && code.sourceUrl ? (
+                            <a href={code.sourceUrl} target="_blank" rel="noreferrer">
+                              {sourceHost}
+                            </a>
+                          ) : null}
+                          {code.validationMessage ? <span>{code.validationMessage}</span> : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
+            <button
+              className="mt-ct-addbtn solid"
+              type="button"
+              onClick={() => onAddCart(block.product)}
+            >
+              <CartIcon /> Add
+            </button>
+          </>
+        ) : (
+          <div className={`mt-ct-code-empty ${status === 'error' ? 'error' : ''}`}>
+            {block.message ?? `No accepted discount code found for ${merchant}.`}
           </div>
-          <button
-            className="mt-ct-addbtn solid"
-            type="button"
-            onClick={() => onAddCart(block.product)}
-          >
-            <CartIcon /> Add
-          </button>
-        </div>
+        )}
       </div>
     )
   }

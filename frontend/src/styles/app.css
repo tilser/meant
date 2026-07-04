@@ -901,6 +901,12 @@
   gap: 14px;
 }
 
+.mt-ct-code-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .mt-ct-code-detail {
   min-width: 180px;
   flex: 1;
@@ -935,6 +941,36 @@
 .mt-ct-code-deliv {
   color: var(--muted);
   font-size: 10.5px;
+}
+
+.mt-ct-code-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.mt-ct-code-meta a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.mt-ct-code-empty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 11px 12px;
+}
+
+.mt-ct-code-empty.error {
+  border-color: color-mix(in srgb, var(--danger, #d4543a) 28%, var(--line));
+  color: var(--danger, #d4543a);
 }
 
 .mt-ct-decision {

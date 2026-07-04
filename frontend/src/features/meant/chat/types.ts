@@ -6,11 +6,35 @@ export interface MiniCompareRow {
   winnerIndex: number
 }
 
+export interface FoundDiscountCode {
+  code: string
+  title?: string | null
+  description?: string | null
+  sourceUrl?: string | null
+  confidence?: number | null
+  restrictions?: string | null
+  validUntil?: string | null
+  expiresAt?: string | null
+  validationMessage?: string | null
+}
+
 export type DiscoverChatBlock =
   | { type: 'text'; text: string }
   | { type: 'products'; products: readonly Product[]; query?: string }
   | { type: 'reviews'; product: Product }
-  | { type: 'code'; product: Product; code: string; saved: number }
+  | {
+      type: 'code'
+      product: Product
+      code?: string
+      saved?: number
+      merchant?: string
+      codes?: readonly FoundDiscountCode[]
+      cached?: boolean
+      searchedAt?: string | null
+      expiresAt?: string | null
+      status?: 'found' | 'empty' | 'error'
+      message?: string
+    }
   | { type: 'similar'; product: Product; products: readonly Product[] }
   | { type: 'decision'; product: Product; runnerUp: Product | null }
   | { type: 'watch'; product: Product; price: number; merchant: string }
@@ -43,6 +67,7 @@ export interface DiscoverChatMessage {
   text?: string
   blocks?: readonly DiscoverChatBlock[]
   pending?: boolean
+  pendingText?: string
   query?: string
   productContext?: Product
 }

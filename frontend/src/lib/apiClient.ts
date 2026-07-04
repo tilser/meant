@@ -427,6 +427,27 @@ export type CartProfile = components['schemas']['CartResponse']
 export type CartDeliveryGroupProfile = NonNullable<CartProfile['deliveryGroups']>[number]
 export type CheckoutProfile = components['schemas']['CheckoutResponse']
 
+export interface DiscountCodeProfile {
+  code: string
+  title: string | null
+  description: string | null
+  sourceUrl: string | null
+  confidence: number | null
+  restrictions: string | null
+  validUntil: string | null
+  expiresAt: string | null
+  validationMessage: string | null
+}
+
+export interface DiscountCodeSearchProfile {
+  merchantId: string
+  merchantDomain: string
+  cached: boolean
+  searchedAt: string
+  expiresAt: string
+  codes: DiscountCodeProfile[]
+}
+
 export interface OrderLineProfile {
   id: string
   productKey: string | null
@@ -558,6 +579,53 @@ export interface CartAddItemInput {
 }
 
 export type CartToolMapInput = Record<string, unknown>
+
+export interface SearchDiscountCodesInput {
+  merchantId?: string | null
+  merchantDomain?: string | null
+  items: readonly CartAddItemInput[]
+  buyerIdentity?: {
+    email?: string | null
+    phoneNumber?: string | null
+    firstName?: string | null
+    lastName?: string | null
+    countryCode?: string | null
+  } | null
+  deliveryAddressesToAdd?: readonly {
+    id?: string | null
+    selected?: boolean | null
+    firstName?: string | null
+    lastName?: string | null
+    phoneNumber?: string | null
+    streetAddress?: string | null
+    extendedAddress?: string | null
+    city?: string | null
+    provinceCode?: string | null
+    postalCode?: string | null
+    countryCode?: string | null
+  }[]
+  deliveryAddressesToReplace?: readonly {
+    id?: string | null
+    selected?: boolean | null
+    firstName?: string | null
+    lastName?: string | null
+    phoneNumber?: string | null
+    streetAddress?: string | null
+    extendedAddress?: string | null
+    city?: string | null
+    provinceCode?: string | null
+    postalCode?: string | null
+    countryCode?: string | null
+  }[]
+  selectedDeliveryOptions?: readonly {
+    id?: string | null
+    groupId?: string | null
+    deliveryGroupId?: string | null
+    optionHandle?: string | null
+    deliveryOptionHandle?: string | null
+    selectedOptionId?: string | null
+  }[]
+}
 
 /** Injects the current Supabase access token as a Bearer header on every request. */
 const authMiddleware: Middleware = {
@@ -1359,6 +1427,28 @@ export async function getCartCheckout(input: {
     },
   )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
+}
+
+export async function searchDiscountCodes(
+  input: SearchDiscountCodesInput,
+): Promise<DiscountCodeSearchProfile> {
+  const response = await fetch(`${API_URL}/api/discounts/search`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      merchantId: input.merchantId ?? undefined,
+      merchantDomain: input.merchantDomain ?? undefined,
+      items: input.items,
+      buyerIdentity: input.buyerIdentity ?? undefined,
+      deliveryAddressesToAdd: input.deliveryAddressesToAdd,
+      deliveryAddressesToReplace: input.deliveryAddressesToReplace,
+      selectedDeliveryOptions: input.selectedDeliveryOptions,
+    }),
+  })
+  return parseJsonResponse<DiscountCodeSearchProfile>(response, 'Failed to find discount codes')
 }
 
 export async function getOrders(): Promise<OrderProfile[]> {

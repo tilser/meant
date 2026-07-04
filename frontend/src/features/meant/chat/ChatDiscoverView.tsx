@@ -8,7 +8,12 @@ import {
   useState,
 } from 'react'
 
-import type { MerchantProfile } from '../../../lib/apiClient'
+import {
+  getMerchantProductDetails,
+  searchDiscountCodes,
+  type DiscountCodeProfile,
+  type MerchantProfile,
+} from '../../../lib/apiClient'
 import { PRODUCTS, PROFILE } from '../data'
 import type {
   CartItem,
@@ -532,6 +537,61 @@ function discoverThreadFocusProduct(
   }
   return null
 }
+
+function isDiscountCodeQuestion(question: string): boolean {
+  return /\bcode\b|\bcoupon\b|\bdiscount\b|\bpromo\b|\bdeal\b|\bcheaper\b|\bsave\b/.test(
+    question.toLowerCase(),
+  )
+}
+
+function foundDiscountCodeFromProfile(code: DiscountCodeProfile) {
+  return {
+    code: code.code,
+    title: code.title,
+    description: code.description,
+    sourceUrl: code.sourceUrl,
+    confidence: code.confidence,
+    restrictions: code.restrictions,
+    validUntil: code.validUntil,
+    expiresAt: code.expiresAt,
+    validationMessage: code.validationMessage,
+  }
+}
+
+function browserLanguage(): string | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  return window.navigator.language.split('-')[0] || null
+}
+
+function sameOfferMerchant(left: Offer, right: Offer): boolean {
+  if (left.merchantId && right.merchantId) {
+    return left.merchantId === right.merchantId
+  }
+  const leftDomain = normalizedMerchantName(left.merchantDomain)
+  const rightDomain = normalizedMerchantName(right.merchantDomain)
+  if (leftDomain && rightDomain) {
+    return leftDomain === rightDomain
+  }
+  return normalizedMerchantName(left.merchant) === normalizedMerchantName(right.merchant)
+}
+
+function productWithDiscountOffer(product: Product, offer: Offer): Product {
+  let replaced = false
+  const offers = product.offers.map((candidate) => {
+    if (!sameOfferMerchant(candidate, offer)) {
+      return candidate
+    }
+    replaced = true
+    return { ...candidate, ...offer }
+  })
+  return {
+    ...product,
+    offers: replaced ? offers : [offer, ...product.offers],
+  }
+}
+
 function shelfProductSnapshot(product: Product): ShelfProductSnapshot {
   return {
     productId: product.id,
@@ -660,13 +720,6 @@ function productDetailChatBlocks(
       { type: 'reviews', product },
     ]
   }
-  if (/\bcode\b|\bcoupon\b|\bdiscount\b|\bpromo\b|\bdeal\b|\bcheaper\b|\bsave\b/.test(lower)) {
-    const discount = chatDiscountForProduct(product)
-    return [
-      { type: 'text', text: `I checked ${product.name} for a better price path.` },
-      { type: 'code', product, code: discount.code, saved: discount.saved },
-    ]
-  }
   if (
     /\bsimilar\b|\balternative\b|\blike this\b|\bother option\b|\binstead\b|\bcompare\b/.test(lower)
   ) {
@@ -685,13 +738,6 @@ function productDetailChatBlocks(
     ]
   }
   return [{ type: 'text', text: resolveAsk(question, product, preferences) }]
-}
-
-function chatDiscountForProduct(product: Product): { code: string; saved: number } {
-  const best = product.offers[0]
-  const base = best?.price ?? product.priceFrom
-  const code = product.category.toLowerCase().includes('clothing') ? 'MEANT15' : 'MEANT10'
-  return { code, saved: Math.max(1, Math.round(base * (code === 'MEANT15' ? 0.15 : 0.1))) }
 }
 
 function similarChatProducts(product: Product, products: readonly Product[]): readonly Product[] {
@@ -1139,8 +1185,215 @@ export function ChatDiscoverView({
     )
   }
 
+  const discountOfferForProduct = useCallback(
+    (product: Product): Offer | null => {
+      if (product.offers.length === 0) {
+        return null
+      }
+      const preferred = bestOffer(product, deliveryLocations)
+      if (offerCartable(preferred)) {
+        return preferred
+      }
+      return product.offers.find(offerCartable) ?? null
+    },
+    [deliveryLocations],
+  )
+
+  const resolveDiscountSearchContext = useCallback(
+    async (
+      product: Product,
+      location: UserLocation | undefined,
+    ): Promise<
+      | { ok: true; product: Product; offer: Offer; productVariantId: string }
+      | { ok: false; offer: Offer | null; message: string }
+    > => {
+      const offer = discountOfferForProduct(product)
+      if (!offer) {
+        return {
+          ok: false,
+          offer: null,
+          message: 'Discount search needs a cartable merchant offer for this item.',
+        }
+      }
+
+      const directVariantId = offer.productVariantId?.trim()
+      if (directVariantId && offerCartable(offer)) {
+        return { ok: true, product, offer, productVariantId: directVariantId }
+      }
+
+      const merchantId = offer.merchantId ?? product.merchantId ?? null
+      const merchantDomain = offer.merchantDomain ?? product.merchantDomain ?? null
+      const merchantProductId = product.merchantProductId?.trim()
+      if (!merchantId || !merchantProductId) {
+        return {
+          ok: false,
+          offer,
+          message: 'Discount search needs merchant product details to resolve a checkout variant.',
+        }
+      }
+
+      const details = await getMerchantProductDetails({
+        merchantId,
+        productId: merchantProductId,
+        addressCountry: location?.code,
+        language: browserLanguage(),
+      })
+      const resolvedVariantId = details.selectedVariantId?.trim()
+      const resolvedOffer: Offer = {
+        ...offer,
+        merchantId,
+        merchantDomain,
+        productVariantId: resolvedVariantId,
+        variantTitle: details.selectedVariantTitle ?? offer.variantTitle,
+        available: details.selectedVariantAvailable ?? offer.available,
+      }
+      if (!resolvedVariantId || !offerCartable(resolvedOffer)) {
+        return {
+          ok: false,
+          offer: resolvedOffer,
+          message: 'Merchant product details did not return an available checkout variant.',
+        }
+      }
+      return {
+        ok: true,
+        product: productWithDiscountOffer(product, resolvedOffer),
+        offer: resolvedOffer,
+        productVariantId: resolvedVariantId,
+      }
+    },
+    [discountOfferForProduct],
+  )
+
+  const updateDiscountCodeMessage = useCallback(
+    (threadId: string, messageId: string, blocks: readonly DiscoverChatBlock[]) => {
+      updateThreadMessages(threadId, (current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                pending: false,
+                blocks,
+              }
+            : message,
+        ),
+      )
+      scrollChatToBottom()
+    },
+    [scrollChatToBottom, updateThreadMessages],
+  )
+
+  const appendDiscountCodeSearch = useCallback(
+    (product: Product, question = `Find a code for ${product.name}.`) => {
+      const threadId = activeThreadIdSafe
+      const aiId = nextDiscoverChatMessageId()
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'you',
+            text: question,
+            productContext: product,
+          },
+          {
+            id: aiId,
+            role: 'ai',
+            pending: true,
+            pendingText: 'Meant is searching for discount codes. It can take few minutes.',
+            blocks: [],
+          },
+        ],
+        { titleSeed: question, focusProductId: product.id },
+      )
+
+      const primaryLocation = deliveryLocations[0]
+      const initialOffer = discountOfferForProduct(product)
+      const search = async () => {
+        const context = await resolveDiscountSearchContext(product, primaryLocation)
+        if (!context.ok) {
+          updateDiscountCodeMessage(threadId, aiId, [
+            {
+              type: 'code',
+              product,
+              merchant: context.offer?.merchant,
+              status: 'error',
+              message: context.message,
+            },
+          ])
+          return
+        }
+
+        const result = await searchDiscountCodes({
+          merchantId: context.offer.merchantId,
+          merchantDomain: context.offer.merchantDomain,
+          items: [{ productVariantId: context.productVariantId, quantity: 1 }],
+          buyerIdentity: primaryLocation ? { countryCode: primaryLocation.code } : undefined,
+          deliveryAddressesToAdd: primaryLocation
+            ? [
+                {
+                  city: primaryLocation.city,
+                  countryCode: primaryLocation.code,
+                },
+              ]
+            : undefined,
+        })
+        const codes = result.codes.map(foundDiscountCodeFromProfile)
+        updateDiscountCodeMessage(threadId, aiId, [
+          {
+            type: 'text',
+            text:
+              codes.length > 0
+                ? `${codes.length} validated code${codes.length === 1 ? '' : 's'} accepted by ${context.offer.merchant}.`
+                : `No valid code was accepted by ${context.offer.merchant} for this item right now.`,
+          },
+          {
+            type: 'code',
+            product: context.product,
+            merchant: context.offer.merchant,
+            codes,
+            code: codes[0]?.code,
+            cached: result.cached,
+            searchedAt: result.searchedAt,
+            expiresAt: result.expiresAt,
+            status: codes.length > 0 ? 'found' : 'empty',
+            message:
+              codes.length === 0
+                ? `No valid code accepted by ${context.offer.merchant} for this item right now.`
+                : undefined,
+          },
+        ])
+      }
+
+      void search().catch((error: unknown) => {
+        updateDiscountCodeMessage(threadId, aiId, [
+          {
+            type: 'code',
+            product,
+            merchant: initialOffer?.merchant,
+            status: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Discount code search is unavailable right now.',
+          },
+        ])
+      })
+    },
+    [
+      activeThreadIdSafe,
+      appendMessagesToActiveThread,
+      deliveryLocations,
+      discountOfferForProduct,
+      resolveDiscountSearchContext,
+      updateDiscountCodeMessage,
+    ],
+  )
+
   const appendProductDetailQuestion = useCallback(
     (product: Product, question: string, requestProducts: readonly Product[]) => {
+      if (isDiscountCodeQuestion(question)) {
+        appendDiscountCodeSearch(product, question)
+        return
+      }
       appendMessagesToActiveThread(
         [
           {
@@ -1158,7 +1411,7 @@ export function ChatDiscoverView({
         { titleSeed: question, focusProductId: product.id },
       )
     },
-    [appendMessagesToActiveThread, preferences],
+    [appendDiscountCodeSearch, appendMessagesToActiveThread, preferences],
   )
 
   useEffect(() => {
@@ -1364,6 +1617,24 @@ export function ChatDiscoverView({
       )
       return
     }
+    if (isDiscountCodeQuestion(normalized)) {
+      const targetProduct =
+        discoverThreadFocusProduct(activeThread, knownProductsById) ??
+        currentCartLines[0]?.product ??
+        displayProducts[0] ??
+        null
+      if (targetProduct) {
+        appendDiscountCodeSearch(targetProduct, normalized)
+      } else {
+        appendMessagePair(normalized, [
+          {
+            type: 'system',
+            text: 'Open a product first so I can search codes against a merchant cart.',
+          },
+        ])
+      }
+      return
+    }
     if (/\bcart\b|\bbasket\b/.test(lower) && !/\badd\b/.test(lower)) {
       appendMessagePair(normalized, [
         {
@@ -1466,14 +1737,7 @@ export function ChatDiscoverView({
       return
     }
     if (kind === 'code') {
-      const discount = chatDiscountForProduct(product)
-      appendMessagePair(`Find a code for ${product.name}.`, [
-        {
-          type: 'text',
-          text: 'Coupon hunting is mocked for now, but the block shape is ready for a backend agent.',
-        },
-        { type: 'code', product, code: discount.code, saved: discount.saved },
-      ])
+      appendDiscountCodeSearch(product)
       return
     }
     if (kind === 'similar') {

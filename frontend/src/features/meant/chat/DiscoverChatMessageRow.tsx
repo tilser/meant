@@ -382,7 +382,7 @@ export function DiscoverChatMessageRow({
             {message.pending ? (
               <div className="mt-ct-system">
                 <span className="mt-scan-pulse" />
-                Meant is checking merchants and ranking matches.
+                {message.pendingText ?? 'Meant is checking merchants and ranking matches.'}
               </div>
             ) : null}
           </div>
