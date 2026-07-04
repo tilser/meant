@@ -214,6 +214,9 @@ public class CartPersistenceService {
     }
 
     private void validateWritableCart(Cart cart, UUID userId) {
+        if (cart == null) {
+            throw CartException.notFound("Cart not found");
+        }
         if (!Objects.equals(cart.getUserId(), userId) || !cart.isActive()) {
             throw CartException.notFound("Cart not found: " + cart.getId());
         }

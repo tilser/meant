@@ -62,6 +62,7 @@ class CartServiceTest {
     private FakeCartDispatchService cartDispatchService;
     private FakeCheckoutDispatchService checkoutDispatchService;
     private FakeUserInventoryService userInventoryService;
+    private CartPersistenceService cartPersistenceService;
     private CartService cartService;
     private Merchant merchant;
 
@@ -72,7 +73,7 @@ class CartServiceTest {
         cartDispatchService = new FakeCartDispatchService();
         checkoutDispatchService = new FakeCheckoutDispatchService();
         userInventoryService = new FakeUserInventoryService();
-        CartPersistenceService cartPersistenceService = new CartPersistenceService(
+        cartPersistenceService = new CartPersistenceService(
                 cartRepository.proxy(),
                 new ObjectMapper()
         );
@@ -557,6 +558,19 @@ class CartServiceTest {
                         .isEqualTo(HttpStatus.NOT_FOUND));
         assertThat(cartDispatchService.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
+    }
+
+    @Test
+    void checkoutHandoffSaveWithMissingCartReturnsNotFound() {
+        assertThatThrownBy(() -> cartPersistenceService.saveCheckoutHandoff(
+                (Cart) null,
+                USER_ID,
+                checkoutDispatchService.checkoutToolResult
+        ))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart not found")
+                .satisfies(exception -> assertThat(((CartException) exception).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     @Test
