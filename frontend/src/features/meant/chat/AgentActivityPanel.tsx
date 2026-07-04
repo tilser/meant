@@ -27,7 +27,10 @@ export function AgentActivityPanel({
   return (
     <div className="mt-agent-rail" aria-live="polite">
       {activities.slice(-5).map((activity) => (
-        <div className={`mt-agent-step ${activity.state}`} key={activity.agent}>
+        <div
+          className={`mt-agent-step ${activity.state}`}
+          key={`${activity.agent}-${activity.updatedAt}`}
+        >
           <span className="mt-agent-orb" aria-hidden>
             <SparkMark size={11} />
           </span>

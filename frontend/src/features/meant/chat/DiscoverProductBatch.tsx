@@ -186,6 +186,8 @@ export function DiscoverProductBatch({
   const [page, setPage] = useState(0)
   const [phoneIndex, setPhoneIndex] = useState(0)
   const carouselRef = useRef<HTMLDivElement | null>(null)
+  const phoneScrollFrameRef = useRef<number | null>(null)
+  const phoneStrideRef = useRef(0)
   const pageSize = isPhone ? Math.max(products.length, 1) : 4
   const pageCount = Math.max(1, Math.ceil(products.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
@@ -204,18 +206,16 @@ export function DiscoverProductBatch({
   }
   const syncPhoneCarouselIndex = () => {
     const scroller = carouselRef.current
-    const first = scroller?.firstElementChild
-    if (!isPhone || !scroller || !(first instanceof HTMLElement)) {
+    const stride = phoneStrideRef.current
+    if (!isPhone || !scroller || stride <= 0 || phoneScrollFrameRef.current !== null) {
       return
     }
-    const gap = Number.parseFloat(window.getComputedStyle(scroller).columnGap || '0') || 0
-    const stride = first.offsetWidth + gap
-    if (stride <= 0) {
-      return
-    }
-    setPhoneIndex(
-      Math.min(products.length - 1, Math.max(0, Math.round(scroller.scrollLeft / stride))),
-    )
+    phoneScrollFrameRef.current = window.requestAnimationFrame(() => {
+      phoneScrollFrameRef.current = null
+      setPhoneIndex(
+        Math.min(products.length - 1, Math.max(0, Math.round(scroller.scrollLeft / stride))),
+      )
+    })
   }
   const renderPager = () =>
     many ? (
@@ -277,6 +277,37 @@ export function DiscoverProductBatch({
     carouselRef.current?.scrollTo({ left: 0 })
   }, [isPhone, query, products])
 
+  useEffect(() => {
+    if (!isPhone) {
+      phoneStrideRef.current = 0
+      return
+    }
+    const updatePhoneStride = () => {
+      const scroller = carouselRef.current
+      const first = scroller?.firstElementChild
+      if (!(scroller instanceof HTMLElement) || !(first instanceof HTMLElement)) {
+        phoneStrideRef.current = 0
+        return
+      }
+      const gap = Number.parseFloat(window.getComputedStyle(scroller).columnGap || '0') || 0
+      phoneStrideRef.current = first.offsetWidth + gap
+    }
+    updatePhoneStride()
+    window.addEventListener('resize', updatePhoneStride)
+    return () => {
+      window.removeEventListener('resize', updatePhoneStride)
+    }
+  }, [isPhone, products.length])
+
+  useEffect(
+    () => () => {
+      if (phoneScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(phoneScrollFrameRef.current)
+      }
+    },
+    [],
+  )
+
   if (products.length === 0) {
     return null
   }
@@ -297,7 +328,7 @@ export function DiscoverProductBatch({
         ref={carouselRef}
         className={`mt-ct-grid${isPhone ? ' phone-swipe' : ''}`}
         aria-label={isPhone ? 'Swipe through products' : undefined}
-        onScroll={syncPhoneCarouselIndex}
+        onScroll={isPhone ? syncPhoneCarouselIndex : undefined}
       >
         {pageProducts.map((product, index) => (
           <DiscoverChatProduct

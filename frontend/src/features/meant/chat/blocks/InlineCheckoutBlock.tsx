@@ -18,7 +18,7 @@ export function InlineCheckoutBlock({
   onOpenOrders: () => void
 }>) {
   const [payingMerchant, setPayingMerchant] = useState<string | null>(null)
-  const [placedMerchant, setPlacedMerchant] = useState<string | null>(null)
+  const [placedMerchants, setPlacedMerchants] = useState<ReadonlySet<string>>(() => new Set())
   const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(
     null,
   )
@@ -28,8 +28,10 @@ export function InlineCheckoutBlock({
   const total = groups.reduce((sum, group) => sum + group.total, 0)
 
   const payGroup = async (group: (typeof groups)[number]) => {
+    if (placedMerchants.has(group.merchant)) {
+      return
+    }
     setPayingMerchant(group.merchant)
-    setPlacedMerchant(null)
     setCheckoutError(null)
     try {
       await onCheckout({
@@ -40,7 +42,7 @@ export function InlineCheckoutBlock({
         checkoutUrl: firstUrl(...group.items.map((item) => item.checkoutUrl)),
         continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
       })
-      setPlacedMerchant(group.merchant)
+      setPlacedMerchants((current) => new Set(current).add(group.merchant))
     } catch {
       setCheckoutError({
         merchant: group.merchant,
@@ -101,12 +103,12 @@ export function InlineCheckoutBlock({
                 <button
                   className="mt-ct-cobtn"
                   type="button"
-                  disabled={payingMerchant !== null}
+                  disabled={payingMerchant !== null || placedMerchants.has(group.merchant)}
                   onClick={() => void payGroup(group)}
                 >
                   {payingMerchant === group.merchant
                     ? 'Placing order'
-                    : placedMerchant === group.merchant
+                    : placedMerchants.has(group.merchant)
                       ? 'Order placed'
                       : `Pay ${money(group.total)} with Meant`}
                 </button>
@@ -118,7 +120,9 @@ export function InlineCheckoutBlock({
         <div className="mt-ct-checkout-empty">
           <SparkMark size={13} />
           <span>
-            {placedMerchant ? `Order placed with ${placedMerchant}.` : 'Your cart is empty.'}
+            {placedMerchants.size > 0
+              ? `Order placed with ${Array.from(placedMerchants).join(', ')}.`
+              : 'Your cart is empty.'}
           </span>
           <button className="mt-ct-mini-full" type="button" onClick={onOpenOrders}>
             Open orders
