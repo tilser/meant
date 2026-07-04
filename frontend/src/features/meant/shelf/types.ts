@@ -1,5 +1,7 @@
 import type { ProductId } from '../types'
 
+export const SHELF_DRAG_MIME = 'application/x-meant-shelf'
+
 export interface ShelfThumb {
   name: string
   tone: string

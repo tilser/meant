@@ -172,6 +172,23 @@ export function isRenderableSearchProduct(product: Product): boolean {
   return product.agentStage !== 'candidate'
 }
 
+export function searchProductReviewInsight(
+  candidate: boolean,
+  ratingScore: number | null,
+  reviewCount: number,
+): string {
+  if (candidate) {
+    return 'Review signals pending.'
+  }
+  if (reviewCount <= 0) {
+    return 'No review data available from this catalog result.'
+  }
+  if (ratingScore === null) {
+    return 'Review count is available, but no rating summary has been fetched yet.'
+  }
+  return 'Rating data is available; no review-summary agent has run yet.'
+}
+
 function productCopyLine(product: Product): string {
   const merchant = product.offers[0]?.merchant ?? `${product.merchants} merchants`
   return `${product.name} - ${money(product.priceFrom)} - ${merchant}`
