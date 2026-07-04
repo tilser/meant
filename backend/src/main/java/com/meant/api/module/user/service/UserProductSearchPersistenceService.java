@@ -217,10 +217,21 @@ public class UserProductSearchPersistenceService {
                 .toList();
         List<UserProductRecommendationExplanation> savedEntities =
                 userProductRecommendationExplanationRepository.saveAll(entities);
+        Map<ProductExplanationKey, UserProductRecommendationExplanationResult> explanationsByProduct = explanations.stream()
+                .collect(Collectors.toMap(
+                        explanation -> new ProductExplanationKey(explanation.productKey(), explanation.productHash()),
+                        explanation -> explanation,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
         List<UserProductRecommendationFilterMatch> filterMatches = new ArrayList<>();
-        for (int index = 0; index < explanations.size(); index++) {
-            UserProductRecommendationExplanationResult explanation = explanations.get(index);
-            UserProductRecommendationExplanation entity = savedEntities.get(index);
+        for (UserProductRecommendationExplanation entity : savedEntities) {
+            UserProductRecommendationExplanationResult explanation = explanationsByProduct.get(
+                    new ProductExplanationKey(entity.getProductKey(), entity.getProductHash())
+            );
+            if (explanation == null) {
+                continue;
+            }
             filterMatches.addAll(filterMatches(
                     entity.getId(),
                     explanation.matchedFilterIds(),
@@ -570,9 +581,10 @@ public class UserProductSearchPersistenceService {
                                 promptVersion,
                                 expectedProductHashes.keySet()
                         ).stream()
-                        .filter(explanation -> expectedProductHashes
-                                .getOrDefault(explanation.getProductKey(), "")
-                                .equals(explanation.getProductHash()))
+                        .filter(explanation -> matchesExpectedProductHash(
+                                expectedProductHashes.get(explanation.getProductKey()),
+                                explanation.getProductHash()
+                        ))
                         .toList();
         if (explanations.isEmpty()) {
             return Map.of();
@@ -622,12 +634,13 @@ public class UserProductSearchPersistenceService {
                                 promptVersion,
                                 productKeys
                         ).stream()
-                        .filter(explanation -> expectedProductHashes
-                                .getOrDefault(new RecentExplanationKey(
+                        .filter(explanation -> matchesExpectedProductHash(
+                                expectedProductHashes.get(new RecentExplanationKey(
                                         explanation.getNormalizedQuery(),
                                         explanation.getProductKey()
-                                ), "")
-                                .equals(explanation.getProductHash()))
+                                )),
+                                explanation.getProductHash()
+                        ))
                         .toList();
         if (explanations.isEmpty()) {
             return Map.of();
@@ -654,6 +667,10 @@ public class UserProductSearchPersistenceService {
         } catch (IllegalArgumentException exception) {
             return UserInventoryRecommendationRelationship.NONE;
         }
+    }
+
+    private boolean matchesExpectedProductHash(String expectedProductHash, String actualProductHash) {
+        return expectedProductHash != null && expectedProductHash.equals(actualProductHash);
     }
 
     private Map<UUID, List<UserProductRecommendationFilterMatch>> filterMatches(
@@ -695,6 +712,9 @@ public class UserProductSearchPersistenceService {
             String matchType,
             Instant now
     ) {
+        if (filterIds == null || filterIds.isEmpty()) {
+            return List.of();
+        }
         List<UserProductRecommendationFilterMatch> matches = new ArrayList<>();
         for (int index = 0; index < filterIds.size(); index++) {
             matches.add(UserProductRecommendationFilterMatch.create(
@@ -720,5 +740,8 @@ public class UserProductSearchPersistenceService {
     }
 
     private record RecentExplanationKey(String normalizedQuery, String productKey) {
+    }
+
+    private record ProductExplanationKey(String productKey, String productHash) {
     }
 }
