@@ -14,7 +14,9 @@ function assistantMessageFromProfile(
   return {
     role: message.role === 'assistant' ? 'ai' : 'you',
     text: message.content,
-    products: message.products.map((product) => productFromSearchResult(product, preferences)),
+    products: (message.products ?? []).map((product) =>
+      productFromSearchResult(product, preferences),
+    ),
   }
 }
 
@@ -22,7 +24,9 @@ export function messagesFromAssistantConversation(
   conversation: UserAssistantConversationProfile,
   preferences: readonly Preference[],
 ): Message[] {
-  return conversation.messages.map((message) => assistantMessageFromProfile(message, preferences))
+  return (conversation.messages ?? []).map((message) =>
+    assistantMessageFromProfile(message, preferences),
+  )
 }
 
 export function assistantConversationSummary(
@@ -44,8 +48,12 @@ export function upsertAssistantConversationSummary(
   history: readonly UserAssistantConversationSummaryProfile[],
   summary: UserAssistantConversationSummaryProfile,
 ): UserAssistantConversationSummaryProfile[] {
+  const existing = history.find(
+    (conversation) => conversation.conversationId === summary.conversationId,
+  )
+  const finalSummary = existing ? { ...summary, createdAt: existing.createdAt } : summary
   return [
-    summary,
+    finalSummary,
     ...history.filter((conversation) => conversation.conversationId !== summary.conversationId),
   ].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
 }

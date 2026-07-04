@@ -162,11 +162,12 @@ export function ProductModal({
       return
     }
     const onKey = (event: globalThis.KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      const typing =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
-        target?.isContentEditable === true
+      const target = event.target instanceof HTMLElement ? event.target : null
+      const isInteractive = Boolean(
+        target?.closest(
+          'input, textarea, select, button, a, [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="textbox"]',
+        ) ?? target?.isContentEditable,
+      )
       if (zoomImageUrl) {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -178,7 +179,7 @@ export function ProductModal({
         onClose()
         return
       }
-      if (typing) {
+      if (isInteractive) {
         return
       }
       if (event.key === 'ArrowRight' && canNext) {
