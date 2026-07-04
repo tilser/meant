@@ -65,18 +65,95 @@
   backdrop-filter: saturate(1.3) blur(12px);
 }
 
+.mt-ct-tabs-strip {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+}
+
+.mt-ct-tabs-strip::before,
+.mt-ct-tabs-strip::after {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 7px;
+  width: 24px;
+  pointer-events: none;
+  content: '';
+  opacity: 0;
+  transition: opacity var(--motion-quick) var(--ease-out);
+}
+
+.mt-ct-tabs-strip::before {
+  left: 36px;
+  background: linear-gradient(90deg, var(--bg), transparent);
+}
+
+.mt-ct-tabs-strip::after {
+  right: 36px;
+  background: linear-gradient(270deg, var(--bg), transparent);
+}
+
+.mt-ct-tabs-strip.can-left::before,
+.mt-ct-tabs-strip.can-right::after {
+  opacity: 0.9;
+}
+
+.mt-ct-tabs-arrow {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  width: 32px;
+  height: 36px;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    opacity var(--motion-quick) var(--ease-out);
+}
+
+.mt-ct-tabs-strip:not(.overflowing) .mt-ct-tabs-arrow {
+  display: none;
+}
+
+.mt-ct-tabs-arrow:not(:disabled):hover {
+  border-color: var(--faint);
+  color: var(--ink);
+}
+
+.mt-ct-tabs-arrow:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
 .mt-ct-tabs-scroll {
   display: flex;
   gap: 8px;
   min-width: 0;
   flex: 1;
   overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  padding-bottom: 7px;
+  scroll-behavior: smooth;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
 }
 
 .mt-ct-tabs-scroll::-webkit-scrollbar {
-  height: 0;
+  height: 4px;
+}
+
+.mt-ct-tabs-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--line);
 }
 
 .mt-ct-tab,
@@ -176,8 +253,129 @@
   color: var(--ink);
 }
 
+.mt-ct-tabtool.on {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
 .mt-ct-tabtool svg {
   color: var(--muted);
+}
+
+.mt-ct-history-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mt-ct-history-badge {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.mt-ct-history-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 28;
+  width: min(360px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 22px 60px -28px rgba(20, 24, 28, 0.42);
+  animation: mt-panel-in var(--motion-medium) var(--ease-out) both;
+}
+
+.mt-ct-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.mt-ct-history-head span:last-child {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.mt-ct-history-list {
+  display: grid;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.mt-ct-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 62px;
+  align-items: center;
+  padding: 10px 9px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  transition:
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out);
+}
+
+.mt-ct-history-row:hover,
+.mt-ct-history-row.active {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.mt-ct-history-main,
+.mt-ct-history-meta {
+  display: grid;
+  min-width: 0;
+}
+
+.mt-ct-history-title {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-ct-history-preview {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-ct-history-meta {
+  justify-items: end;
+  gap: 4px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .mt-ct-tab-edit {
@@ -288,6 +486,10 @@
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0;
+}
+
+.mt-ct-batch-foot-sp {
+  flex: 1;
 }
 
 .mt-ct-pager {
@@ -1389,6 +1591,34 @@
   .mt-ct-dock {
     margin-inline: -18px;
     padding-inline: 18px;
+  }
+
+  .mt-ct-tabs {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .mt-ct-tabs-strip {
+    min-width: 100%;
+    order: 2;
+  }
+
+  .mt-ct-tabs-strip::before {
+    left: 36px;
+  }
+
+  .mt-ct-tabs-strip::after {
+    right: 36px;
+  }
+
+  .mt-ct-tabs-right {
+    width: 100%;
+    justify-content: flex-end;
+    order: 1;
+  }
+
+  .mt-ct-history-pop {
+    right: -92px;
   }
 
   .mt-ct-empty-prompts {
@@ -9831,6 +10061,9 @@ button:disabled {
 
 .mt-dust-inner {
   position: relative;
+  transition:
+    opacity var(--motion-quick) var(--ease-out),
+    transform var(--motion-quick) var(--ease-out);
 }
 
 .mt-dustwrap.dusting .mt-dust-inner {
@@ -9914,14 +10147,40 @@ button:disabled {
   background: var(--accent-tint);
 }
 
-.mt-ct-you-bubble,
+.mt-tool-copy.done {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.mt-ct-msg[draggable='true'] .mt-dust-inner {
+  cursor: grab;
+}
+
+.mt-ct-msg[draggable='true']:active .mt-dust-inner {
+  cursor: grabbing;
+}
+
+.mt-tool-shelf {
+  cursor: grab;
+}
+
 .mt-ct-prod {
   cursor: grab;
 }
 
-.mt-ct-you-bubble:active,
+.mt-tool-shelf:active,
 .mt-ct-prod:active {
   cursor: grabbing;
+}
+
+.mt-ct-you-bubble,
+.mt-ct-meant-body,
+.mt-ct-intro,
+.mt-ct-review-sum,
+.mt-ct-system {
+  cursor: grab;
+  user-select: none;
 }
 
 .mt-ct-attach-chip {

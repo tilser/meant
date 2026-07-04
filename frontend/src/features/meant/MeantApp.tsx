@@ -210,6 +210,8 @@ interface DiscoverChatThread {
   messages: readonly DiscoverChatMessage[]
   named?: boolean
   focusProductId?: ProductId
+  createdAt?: number
+  updatedAt?: number
 }
 
 interface ShelfThumb {
@@ -1995,6 +1997,28 @@ function ShareIcon({ size = 14 }: Readonly<{ size?: number }>) {
   )
 }
 
+function CopyIcon({ size = 14 }: Readonly<{ size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" aria-hidden>
+      <rect
+        x="6.2"
+        y="5.1"
+        width="8"
+        height="9.6"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M4 11.9H3.8A1.8 1.8 0 0 1 2 10.1V4a1.8 1.8 0 0 1 1.8-1.8h5A1.8 1.8 0 0 1 10.6 4v.2"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function SearchIcon({ size = 16 }: Readonly<{ size?: number }>) {
   return (
     <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
@@ -2552,16 +2576,22 @@ function DustWrap({
   side,
   onGone,
   onSetAside,
+  onShelfDragStart,
+  onCopy,
   saved,
 }: Readonly<{
   children: ReactNode
   side: 'you' | 'meant'
   onGone: () => void
   onSetAside?: (sourceElement: HTMLElement) => void
+  onShelfDragStart?: (event: ReactDragEvent<HTMLElement>) => void
+  onCopy?: () => void
   saved: boolean
 }>) {
   const [dusting, setDusting] = useState(false)
+  const [copied, setCopied] = useState(false)
   const idRef = useRef<string>('')
+  const copiedTimerRef = useRef<number | null>(null)
   const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null)
   const blurRef = useRef<SVGFEGaussianBlurElement | null>(null)
 
@@ -2595,6 +2625,24 @@ function DustWrap({
     return () => window.cancelAnimationFrame(frame)
   }, [dusting, onGone])
 
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current)
+      }
+    },
+    [],
+  )
+
+  const copy = () => {
+    onCopy?.()
+    setCopied(true)
+    if (copiedTimerRef.current !== null) {
+      window.clearTimeout(copiedTimerRef.current)
+    }
+    copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1400)
+  }
+
   return (
     <div className={`mt-dustwrap side-${side} ${dusting ? 'dusting' : ''}`}>
       <div
@@ -2609,11 +2657,27 @@ function DustWrap({
             <button
               className={`mt-msg-tool mt-tool-shelf ${saved ? 'on' : ''}`}
               type="button"
+              draggable={Boolean(onShelfDragStart)}
               onClick={(event) => onSetAside(event.currentTarget)}
+              onDragStart={onShelfDragStart}
+              onDragEnd={() => document.body.classList.remove('mt-dragging')}
               aria-label={saved ? 'On your shelf' : 'Set aside on shelf'}
-              title={saved ? 'On your shelf' : 'Set aside on your shelf'}
+              title={saved ? 'On your shelf' : 'Click or drag to set aside'}
             >
               <BookmarkIcon filled={saved} size={12} />
+            </button>
+          ) : null}
+          {onCopy ? (
+            <button
+              className={`mt-msg-tool mt-tool-copy ${copied ? 'done' : ''}`}
+              type="button"
+              draggable={false}
+              onClick={copy}
+              onDragStart={(event) => event.stopPropagation()}
+              aria-label={copied ? 'Copied message' : 'Copy message'}
+              title={copied ? 'Copied' : 'Copy message'}
+            >
+              <CopyIcon size={12} />
             </button>
           ) : null}
           <button
@@ -4187,17 +4251,35 @@ function createDiscoverChatThread(
   messages: readonly DiscoverChatMessage[] = [],
   title = DEFAULT_DISCOVER_CHAT_TITLE,
 ): DiscoverChatThread {
+  const now = Date.now()
   return {
     id: nextDiscoverChatThreadId(),
     title,
     messages,
+    createdAt: now,
+    updatedAt: now,
   }
+}
+
+function normalizeDiscoverChatThreads(
+  threads: readonly DiscoverChatThread[],
+): DiscoverChatThread[] {
+  const now = Date.now()
+  return threads.map((thread, index) => {
+    const fallbackTime = now - (threads.length - index) * 1000
+    const createdAt = thread.createdAt ?? fallbackTime
+    return {
+      ...thread,
+      createdAt,
+      updatedAt: thread.updatedAt ?? createdAt,
+    }
+  })
 }
 
 function initialDiscoverChatThreads(): DiscoverChatThread[] {
   const storedThreads = readStorage<DiscoverChatThread[] | null>('meant.discoverChatThreads', null)
   if (storedThreads?.length) {
-    return storedThreads
+    return normalizeDiscoverChatThreads(storedThreads)
   }
   const legacyMessages = readStorage<DiscoverChatMessage[]>('meant.discoverChatMessages', [])
   return [
@@ -4553,6 +4635,95 @@ function productsWithFallback(
   })
 }
 
+function isRenderableSearchProduct(product: Product): boolean {
+  return product.agentStage !== 'candidate'
+}
+
+function productCopyLine(product: Product): string {
+  const merchant = product.offers[0]?.merchant ?? `${product.merchants} merchants`
+  return `${product.name} - ${money(product.priceFrom)} - ${merchant}`
+}
+
+function discoverBlockCopyText(block: DiscoverChatBlock): string {
+  if (block.type === 'text' || block.type === 'system') {
+    return block.text
+  }
+  if (block.type === 'products') {
+    return [
+      block.query ? `Products for "${block.query}":` : 'Products:',
+      ...block.products.map(productCopyLine),
+    ].join('\n')
+  }
+  if (block.type === 'reviews') {
+    return `${block.product.name} reviews: ${block.product.review.insight}`
+  }
+  if (block.type === 'code') {
+    return `${block.product.name} code: ${block.code} saves ${money(block.saved)}`
+  }
+  if (block.type === 'similar') {
+    return [`Similar to ${block.product.name}:`, ...block.products.map(productCopyLine)].join('\n')
+  }
+  if (block.type === 'decision') {
+    return `Pick: ${productCopyLine(block.product)}`
+  }
+  if (block.type === 'watch') {
+    return `Watching ${block.product.name}: ${money(block.price)} at ${block.merchant}`
+  }
+  if (block.type === 'friendvote') {
+    return `${block.person} voted ${block.vote} on ${block.product.name}: ${block.note}`
+  }
+  if (block.type === 'added') {
+    return `Added ${block.product.name} to cart from ${block.merchant}.`
+  }
+  if (block.type === 'saved') {
+    return ['Saved products:', ...block.products.map(productCopyLine)].join('\n')
+  }
+  if (block.type === 'orders') {
+    return `${block.orders.length} recent ${block.orders.length === 1 ? 'order' : 'orders'}`
+  }
+  if (block.type === 'prefs') {
+    return ['Preferences:', ...block.preferences.map((preference) => preference.label)].join('\n')
+  }
+  if (block.type === 'cart') {
+    return [
+      'Cart:',
+      ...block.lines.map(
+        (line) =>
+          `${line.qty} x ${line.id}${line.variantTitle ? ` (${line.variantTitle})` : ''} - ${line.merchant}`,
+      ),
+    ].join('\n')
+  }
+  if (block.type === 'checkout') {
+    return `Checkout across ${block.merchantCount} ${block.merchantCount === 1 ? 'merchant' : 'merchants'}`
+  }
+  return [
+    'Compare:',
+    ...block.products.map((product, index) =>
+      index === block.pickIndex ? `${productCopyLine(product)} (pick)` : productCopyLine(product),
+    ),
+  ].join('\n')
+}
+
+function discoverChatMessageCopyText(message: DiscoverChatMessage): string {
+  const parts = [
+    message.productContext ? `About ${message.productContext.name}` : '',
+    message.text ?? '',
+    ...(message.blocks?.map(discoverBlockCopyText) ?? []),
+  ]
+  return parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function copyTextToClipboard(value: string): void {
+  const text = value.trim()
+  if (!text || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+    return
+  }
+  void navigator.clipboard.writeText(text).catch(() => undefined)
+}
+
 function DiscoverChatProduct({
   product,
   index,
@@ -4744,6 +4915,33 @@ function DiscoverProductBatch({
   const pageCount = Math.max(1, Math.ceil(products.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
   const pageProducts = products.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
+  const many = products.length > pageSize
+  const renderPager = () =>
+    many ? (
+      <div className="mt-ct-pager">
+        <button
+          className="mt-ct-pager-btn"
+          type="button"
+          disabled={currentPage === 0}
+          aria-label="Previous products"
+          onClick={() => setPage((value) => Math.max(0, value - 1))}
+        >
+          <ChevronIcon direction="left" size={15} />
+        </button>
+        <span className="mt-mono mt-ct-pager-of">
+          {currentPage + 1}/{pageCount}
+        </span>
+        <button
+          className="mt-ct-pager-btn"
+          type="button"
+          disabled={currentPage >= pageCount - 1}
+          aria-label="Next products"
+          onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
+        >
+          <ChevronIcon direction="right" size={15} />
+        </button>
+      </div>
+    ) : null
 
   useEffect(() => setPage(0), [query, products])
 
@@ -4760,31 +4958,7 @@ function DiscoverProductBatch({
             ? ` · ${currentPage * pageSize + 1}-${Math.min((currentPage + 1) * pageSize, products.length)}`
             : ''}
         </div>
-        {pageCount > 1 ? (
-          <div className="mt-ct-pager">
-            <button
-              className="mt-ct-pager-btn"
-              type="button"
-              disabled={currentPage === 0}
-              aria-label="Previous products"
-              onClick={() => setPage((value) => Math.max(0, value - 1))}
-            >
-              <ChevronIcon direction="left" size={15} />
-            </button>
-            <span className="mt-mono mt-ct-pager-of">
-              {currentPage + 1}/{pageCount}
-            </span>
-            <button
-              className="mt-ct-pager-btn"
-              type="button"
-              disabled={currentPage >= pageCount - 1}
-              aria-label="Next products"
-              onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
-            >
-              <ChevronIcon direction="right" size={15} />
-            </button>
-          </div>
-        ) : null}
+        {renderPager()}
       </div>
       <div className="mt-ct-grid">
         {pageProducts.map((product, index) => (
@@ -4823,6 +4997,8 @@ function DiscoverProductBatch({
             Compare here
           </button>
         ) : null}
+        {many ? <span className="mt-ct-batch-foot-sp" /> : null}
+        {renderPager()}
       </div>
     </div>
   )
@@ -5690,6 +5866,8 @@ function DiscoverChatMessageRow({
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
+  const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
+
   if (message.role === 'you') {
     return (
       <div
@@ -5703,6 +5881,8 @@ function DiscoverChatMessageRow({
           side="you"
           onGone={() => onDelete(message.id)}
           onSetAside={(sourceElement) => onShelfAddMessage(message, sourceElement)}
+          onShelfDragStart={(event) => onDragMessage(event, message)}
+          onCopy={copyMessage}
           saved={onShelf}
         >
           <div className="mt-ct-you-bubble">
@@ -5728,6 +5908,8 @@ function DiscoverChatMessageRow({
         side="meant"
         onGone={() => onDelete(message.id)}
         onSetAside={(sourceElement) => onShelfAddMessage(message, sourceElement)}
+        onShelfDragStart={(event) => onDragMessage(event, message)}
+        onCopy={copyMessage}
         saved={onShelf}
       >
         <div className="mt-ct-meant-inner">
@@ -5856,6 +6038,91 @@ function DiscoverShareSheet({
   )
 }
 
+function compactChatHistoryText(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (!normalized) {
+    return ''
+  }
+  return normalized.length > 82 ? `${normalized.slice(0, 79)}...` : normalized
+}
+
+function discoverBlockPreview(block: DiscoverChatBlock): string {
+  if (block.type === 'text' || block.type === 'system') {
+    return block.text
+  }
+  if (block.type === 'products') {
+    return block.query
+      ? `${block.products.length} products for "${block.query}"`
+      : `${block.products.length} products`
+  }
+  if (block.type === 'cart') {
+    return `${block.lines.length} cart ${block.lines.length === 1 ? 'item' : 'items'}`
+  }
+  if (block.type === 'checkout') {
+    return `Checkout across ${block.merchantCount} ${block.merchantCount === 1 ? 'merchant' : 'merchants'}`
+  }
+  if (block.type === 'minicompare') {
+    return `Compare ${block.products.length} products`
+  }
+  if (block.type === 'saved') {
+    return `${block.products.length} saved ${block.products.length === 1 ? 'item' : 'items'}`
+  }
+  if (block.type === 'orders') {
+    return `${block.orders.length} recent ${block.orders.length === 1 ? 'order' : 'orders'}`
+  }
+  if (block.type === 'prefs') {
+    return `${block.preferences.length} active preferences`
+  }
+  return 'Product follow-up'
+}
+
+function discoverMessagePreview(message: DiscoverChatMessage): string {
+  if (message.text) {
+    return message.text
+  }
+  const block = message.blocks?.find((candidate) =>
+    compactChatHistoryText(discoverBlockPreview(candidate)),
+  )
+  return block ? discoverBlockPreview(block) : ''
+}
+
+function discoverThreadPreview(thread: DiscoverChatThread): string {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const preview = compactChatHistoryText(discoverMessagePreview(thread.messages[index]))
+    if (preview) {
+      return preview
+    }
+  }
+  return 'No messages yet'
+}
+
+function discoverThreadTime(thread: DiscoverChatThread): number | null {
+  return thread.updatedAt ?? thread.createdAt ?? null
+}
+
+function discoverThreadTimeLabel(thread: DiscoverChatThread): string {
+  const timestamp = discoverThreadTime(thread)
+  if (!timestamp) {
+    return 'Saved'
+  }
+  const date = new Date(timestamp)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  if (date.toDateString() === today.toDateString()) {
+    return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
+  }
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday'
+  }
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date)
+}
+
+function discoverThreadMessageCount(thread: DiscoverChatThread): string {
+  const count = thread.messages.length
+  return `${count} ${count === 1 ? 'message' : 'messages'}`
+}
+
 function DiscoverThreadTabs({
   threads,
   activeId,
@@ -5879,6 +6146,46 @@ function DiscoverThreadTabs({
   const [draft, setDraft] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [tabsOverflow, setTabsOverflow] = useState(false)
+  const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false)
+  const [canScrollTabsRight, setCanScrollTabsRight] = useState(false)
+  const tabsScrollRef = useRef<HTMLDivElement | null>(null)
+  const historyRef = useRef<HTMLDivElement | null>(null)
+  const historyThreads = useMemo(
+    () =>
+      threads
+        .map((thread, index) => ({ thread, index, time: discoverThreadTime(thread) ?? 0 }))
+        .sort((left, right) => right.time - left.time || left.index - right.index)
+        .map(({ thread }) => thread),
+    [threads],
+  )
+
+  const updateTabsScrollState = useCallback(() => {
+    const element = tabsScrollRef.current
+    if (!element) {
+      setTabsOverflow(false)
+      setCanScrollTabsLeft(false)
+      setCanScrollTabsRight(false)
+      return
+    }
+    const overflow = element.scrollWidth > element.clientWidth + 1
+    const maxLeft = Math.max(0, element.scrollWidth - element.clientWidth)
+    setTabsOverflow(overflow)
+    setCanScrollTabsLeft(overflow && element.scrollLeft > 2)
+    setCanScrollTabsRight(overflow && element.scrollLeft < maxLeft - 2)
+  }, [])
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    const element = tabsScrollRef.current
+    if (!element) {
+      return
+    }
+    element.scrollBy({
+      left: (direction === 'left' ? -1 : 1) * Math.max(220, element.clientWidth * 0.72),
+      behavior: 'smooth',
+    })
+  }
 
   const beginEdit = (thread: DiscoverChatThread) => {
     setEditingId(thread.id)
@@ -5906,85 +6213,167 @@ function DiscoverThreadTabs({
     setOverId(null)
   }
 
+  useEffect(() => {
+    updateTabsScrollState()
+    const element = tabsScrollRef.current
+    if (!element) {
+      return undefined
+    }
+    const resizeObserver = new ResizeObserver(updateTabsScrollState)
+    resizeObserver.observe(element)
+    return () => resizeObserver.disconnect()
+  }, [threads, updateTabsScrollState])
+
+  useEffect(() => {
+    const activeTab = tabsScrollRef.current?.querySelector<HTMLElement>(
+      '[data-active-thread="true"]',
+    )
+    activeTab?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    window.requestAnimationFrame(updateTabsScrollState)
+  }, [activeId, updateTabsScrollState])
+
+  useEffect(() => {
+    if (!historyOpen) {
+      return undefined
+    }
+    const onDown = (event: MouseEvent) => {
+      if (!historyRef.current?.contains(event.target as Node)) {
+        setHistoryOpen(false)
+      }
+    }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setHistoryOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [historyOpen])
+
   return (
     <div className="mt-ct-tabs">
-      <div className="mt-ct-tabs-scroll">
-        {threads.map((thread) => (
-          <div
-            key={thread.id}
-            draggable={editingId !== thread.id}
-            className={`mt-ct-tab ${thread.id === activeId ? 'on' : ''} ${
-              dragId === thread.id ? 'dragging' : ''
-            } ${overId === thread.id ? 'over' : ''}`}
-            onClick={() => onSelect(thread.id)}
-            onDragStart={(event) => {
-              setDragId(thread.id)
-              event.dataTransfer.effectAllowed = 'move'
-              event.dataTransfer.setData('text/plain', 'tab')
-            }}
-            onDragOver={(event) => {
-              event.preventDefault()
-              if (dragId && overId !== thread.id) {
-                setOverId(thread.id)
-              }
-            }}
-            onDrop={(event) => {
-              event.preventDefault()
-              dropThread(thread.id)
-            }}
-            onDragEnd={() => {
-              setDragId(null)
-              setOverId(null)
-            }}
-            title="Drag to reorder your chats"
-          >
-            <SparkMark
-              size={11}
-              color={thread.id === activeId ? 'var(--accent)' : 'var(--faint)'}
-            />
-            {editingId === thread.id ? (
-              <input
-                className="mt-ct-tab-edit"
-                autoFocus
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onClick={(event) => event.stopPropagation()}
-                onBlur={commitEdit}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitEdit()
-                  }
-                  if (event.key === 'Escape') {
-                    setEditingId(null)
-                  }
-                }}
-              />
-            ) : (
-              <span
-                className="mt-ct-tab-title"
-                title="Double-click to rename this mission"
-                onDoubleClick={(event) => {
-                  event.stopPropagation()
-                  beginEdit(thread)
-                }}
-              >
-                {thread.title}
-              </span>
-            )}
-            <button
-              className="mt-ct-tab-x"
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onClose(thread.id)
+      <div
+        className={`mt-ct-tabs-strip ${tabsOverflow ? 'overflowing' : ''} ${
+          canScrollTabsLeft ? 'can-left' : ''
+        } ${canScrollTabsRight ? 'can-right' : ''}`}
+      >
+        <button
+          className="mt-ct-tabs-arrow left"
+          type="button"
+          disabled={!canScrollTabsLeft}
+          onClick={() => scrollTabs('left')}
+          aria-label="Previous chats"
+          title="Previous chats"
+        >
+          <ChevronIcon direction="left" size={15} />
+        </button>
+        <div
+          className="mt-ct-tabs-scroll"
+          ref={tabsScrollRef}
+          onScroll={updateTabsScrollState}
+          onWheel={(event) => {
+            const element = tabsScrollRef.current
+            if (!element || !tabsOverflow || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+              return
+            }
+            event.preventDefault()
+            element.scrollLeft += event.deltaY
+            updateTabsScrollState()
+          }}
+        >
+          {threads.map((thread) => (
+            <div
+              key={thread.id}
+              data-thread-id={thread.id}
+              data-active-thread={thread.id === activeId ? 'true' : undefined}
+              draggable={editingId !== thread.id}
+              className={`mt-ct-tab ${thread.id === activeId ? 'on' : ''} ${
+                dragId === thread.id ? 'dragging' : ''
+              } ${overId === thread.id ? 'over' : ''}`}
+              onClick={() => onSelect(thread.id)}
+              onDragStart={(event) => {
+                setDragId(thread.id)
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', 'tab')
               }}
-              aria-label="Close chat"
-              title={threads.length > 1 ? 'Close this chat' : 'Close chat - back to start'}
+              onDragOver={(event) => {
+                event.preventDefault()
+                if (dragId && overId !== thread.id) {
+                  setOverId(thread.id)
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                dropThread(thread.id)
+              }}
+              onDragEnd={() => {
+                setDragId(null)
+                setOverId(null)
+              }}
+              title="Drag to reorder your chats"
             >
-              <CloseIcon size={11} />
-            </button>
-          </div>
-        ))}
+              <SparkMark
+                size={11}
+                color={thread.id === activeId ? 'var(--accent)' : 'var(--faint)'}
+              />
+              {editingId === thread.id ? (
+                <input
+                  className="mt-ct-tab-edit"
+                  autoFocus
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onBlur={commitEdit}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      commitEdit()
+                    }
+                    if (event.key === 'Escape') {
+                      setEditingId(null)
+                    }
+                  }}
+                />
+              ) : (
+                <span
+                  className="mt-ct-tab-title"
+                  title="Double-click to rename this mission"
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    beginEdit(thread)
+                  }}
+                >
+                  {thread.title}
+                </span>
+              )}
+              <button
+                className="mt-ct-tab-x"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onClose(thread.id)
+                }}
+                aria-label="Close chat"
+                title={threads.length > 1 ? 'Close this chat' : 'Close chat - back to start'}
+              >
+                <CloseIcon size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          className="mt-ct-tabs-arrow right"
+          type="button"
+          disabled={!canScrollTabsRight}
+          onClick={() => scrollTabs('right')}
+          aria-label="Next chats"
+          title="Next chats"
+        >
+          <ChevronIcon direction="right" size={15} />
+        </button>
       </div>
       <div className="mt-ct-tabs-right">
         <button
@@ -5996,6 +6385,50 @@ function DiscoverThreadTabs({
           <ShareIcon />
           Share
         </button>
+        <div className="mt-ct-history-wrap" ref={historyRef}>
+          <button
+            className={`mt-ct-tabtool ${historyOpen ? 'on' : ''}`}
+            type="button"
+            onClick={() => setHistoryOpen((current) => !current)}
+            aria-expanded={historyOpen}
+            aria-haspopup="dialog"
+            title="Open chat history"
+          >
+            <HistoryIcon size={15} />
+            History
+            <span className="mt-ct-history-badge">{threads.length}</span>
+          </button>
+          {historyOpen ? (
+            <div className="mt-ct-history-pop" role="dialog" aria-label="Chat history">
+              <div className="mt-ct-history-head">
+                <span>Chat history</span>
+                <span>{threads.length} saved</span>
+              </div>
+              <div className="mt-ct-history-list">
+                {historyThreads.map((thread) => (
+                  <button
+                    key={thread.id}
+                    className={`mt-ct-history-row ${thread.id === activeId ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      onSelect(thread.id)
+                      setHistoryOpen(false)
+                    }}
+                  >
+                    <span className="mt-ct-history-main">
+                      <span className="mt-ct-history-title">{thread.title}</span>
+                      <span className="mt-ct-history-preview">{discoverThreadPreview(thread)}</span>
+                    </span>
+                    <span className="mt-ct-history-meta">
+                      <span>{discoverThreadTimeLabel(thread)}</span>
+                      <span>{discoverThreadMessageCount(thread)}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
         <button className="mt-ct-newtab" type="button" onClick={onNew}>
           <PlusIcon />
           New chat
@@ -6174,9 +6607,15 @@ function ChatDiscoverView({
     .filter((product): product is Product => Boolean(product))
   const currentCartLines = cartLines(cart, cartProducts)
   const activeSearchProducts = useMemo(
-    () => (query ? displayProducts : []),
-    [displayProducts, query],
+    () => (query ? products.filter(isRenderableSearchProduct) : []),
+    [products, query],
   )
+
+  useEffect(() => {
+    if (threads.some((thread) => !thread.createdAt || !thread.updatedAt)) {
+      setThreads((current) => normalizeDiscoverChatThreads(current))
+    }
+  }, [setThreads, threads])
 
   const scrollChatToBottom = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -6225,10 +6664,11 @@ function ChatDiscoverView({
 
   const updateThreadMessages = useCallback(
     (threadId: string, action: SetStateAction<readonly DiscoverChatMessage[]>) => {
+      const now = Date.now()
       setThreads((current) =>
         current.map((thread) =>
           thread.id === threadId
-            ? { ...thread, messages: resolveStateAction(action, thread.messages) }
+            ? { ...thread, messages: resolveStateAction(action, thread.messages), updatedAt: now }
             : thread,
         ),
       )
@@ -6248,6 +6688,7 @@ function ChatDiscoverView({
       nextMessages: readonly DiscoverChatMessage[],
       options: { titleSeed?: string; focusProductId?: ProductId } = {},
     ) => {
+      const now = Date.now()
       setThreads((current) =>
         current.map((thread) => {
           if (thread.id !== activeThreadIdSafe) {
@@ -6259,6 +6700,7 @@ function ChatDiscoverView({
             title: shouldTitle ? deriveDiscoverChatTitle(options.titleSeed ?? '') : thread.title,
             focusProductId: options.focusProductId ?? thread.focusProductId,
             messages: [...thread.messages, ...nextMessages],
+            updatedAt: now,
           }
         }),
       )
@@ -6279,7 +6721,7 @@ function ChatDiscoverView({
           ? 'Live product search is unavailable, so I mocked a starter shortlist from the demo catalog.'
           : (reply ??
             (activeSearchProducts.length > 0
-              ? `I found ${activeSearchProducts.length} candidate${activeSearchProducts.length === 1 ? '' : 's'} so far.`
+              ? `I found ${activeSearchProducts.length} match${activeSearchProducts.length === 1 ? '' : 'es'} so far.`
               : 'Searching across supported merchants...'))
         return {
           ...message,
@@ -6755,9 +7197,10 @@ function ChatDiscoverView({
   }
 
   const renameThread = (threadId: string, title: string) => {
+    const now = Date.now()
     setThreads((current) =>
       current.map((thread) =>
-        thread.id === threadId ? { ...thread, title, named: true } : thread,
+        thread.id === threadId ? { ...thread, title, named: true, updatedAt: now } : thread,
       ),
     )
   }
@@ -11686,9 +12129,11 @@ export function MeantApp() {
         return
       }
       const product = productFromSearchResult(event.product, allPreferences, stage)
-      streamedProductIds.add(product.id)
-      setSearchResults((current) => appendProductSnapshots(current, [product]))
-      setRemoteProducts((current) => appendProductSnapshots(current, [product]))
+      if (isRenderableSearchProduct(product)) {
+        streamedProductIds.add(product.id)
+        setSearchResults((current) => appendProductSnapshots(current, [product]))
+        setRemoteProducts((current) => appendProductSnapshots(current, [product]))
+      }
       setProductSearchActivities((current) => upsertAgentActivity(current, event))
     }
     const orderedStreamProducts = (
