@@ -837,6 +837,7 @@ export function ChatDiscoverView({
   const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
   const didInitialScrollRef = useRef(false)
   const handledDiscoverFindRequestRef = useRef<string | null>(null)
+  const scheduledChatTimersRef = useRef<number[]>([])
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds])
   const shelfMessageSet = useMemo(
@@ -861,6 +862,15 @@ export function ChatDiscoverView({
       ),
     [shelf],
   )
+  const scheduleChatTimer = useCallback((callback: () => void, delay: number) => {
+    const timer = window.setTimeout(() => {
+      scheduledChatTimersRef.current = scheduledChatTimersRef.current.filter(
+        (candidate) => candidate !== timer,
+      )
+      callback()
+    }, delay)
+    scheduledChatTimersRef.current = [...scheduledChatTimersRef.current, timer]
+  }, [])
   const displayProducts = useMemo(() => {
     if (products.length > 0) {
       return products
@@ -988,6 +998,16 @@ export function ChatDiscoverView({
     previousMessageCountRef.current = messages.length
     previousActiveThreadIdRef.current = activeThreadIdSafe
   }, [activeThreadIdSafe, messages.length, scrollChatToBottom])
+
+  useEffect(
+    () => () => {
+      for (const timer of scheduledChatTimersRef.current) {
+        window.clearTimeout(timer)
+      }
+      scheduledChatTimersRef.current = []
+    },
+    [],
+  )
 
   useEffect(() => {
     if (threads.length === 0) {
@@ -1527,7 +1547,7 @@ export function ChatDiscoverView({
         { focusProductId: product.id },
       )
       const watchThreadId = activeThreadIdSafe
-      window.setTimeout(() => {
+      scheduleChatTimer(() => {
         const offer = bestOffer(product, deliveryLocations)
         updateThreadMessages(watchThreadId, (current) => [
           ...current,
@@ -1645,7 +1665,7 @@ export function ChatDiscoverView({
       'Yes, get it. Looks exactly like your style.',
       'Do it - best value of the bunch, honestly.',
     ]
-    window.setTimeout(() => {
+    scheduleChatTimer(() => {
       updateThreadMessages(sharedThreadId, (current) => [
         ...current,
         {
