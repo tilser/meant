@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -31,8 +33,8 @@ public class OrderPersistenceService {
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
-    public List<MerchantOrder> listOrders(UUID userId) {
-        return orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(userId);
+    public Slice<MerchantOrder> listOrders(UUID userId, Pageable pageable) {
+        return orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(userId, pageable);
     }
 
     @Transactional(readOnly = true)

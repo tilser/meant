@@ -67,7 +67,7 @@ public class CartService {
         UcpSession session = UcpSession.start();
         UcpCartToolResult result = merchantCartPluginDispatchService.createCart(provider, request, session);
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
-                null,
+                (UUID) null,
                 command.userId(),
                 provider,
                 result,
@@ -87,7 +87,7 @@ public class CartService {
                 new GetCartRequest(cart.getRemoteCartId()),
                 session
         );
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart.getId(), query.userId(), provider, result));
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart, query.userId(), provider, result));
     }
 
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
@@ -97,7 +97,7 @@ public class CartService {
         UcpSession session = session(cart);
         UcpCartToolResult result = merchantCartPluginDispatchService.updateCart(provider, request, session);
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
-                cart.getId(),
+                cart,
                 command.userId(),
                 provider,
                 result,
@@ -132,7 +132,7 @@ public class CartService {
                 ),
                 session
         );
-        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart.getId(), query.userId(), result);
+        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart, query.userId(), result);
         importCartInventory(refreshedCart);
         return new CheckoutResult(
                 refreshedCart.getId(),
@@ -230,7 +230,7 @@ public class CartService {
                 new CreateCheckoutRequest(cart.getRemoteCartId()),
                 session(cart)
         );
-        return cartPersistenceService.saveCheckoutHandoff(cart.getId(), userId, result);
+        return cartPersistenceService.saveCheckoutHandoff(cart, userId, result);
     }
 
     private NativeCheckoutCompletionCommand nativeCompletionCommand(CompleteCheckoutCommand command) {

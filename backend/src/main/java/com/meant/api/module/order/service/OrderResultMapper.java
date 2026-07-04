@@ -4,6 +4,7 @@ import com.meant.api.module.order.constant.OrderState;
 import com.meant.api.module.order.entity.MerchantOrder;
 import com.meant.api.module.order.entity.MerchantOrderLine;
 import com.meant.api.module.order.service.dto.OrderLineResult;
+import com.meant.api.module.order.service.dto.OrderSummaryResult;
 import com.meant.api.module.order.service.dto.OrderResult;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -36,6 +37,29 @@ public class OrderResultMapper {
                         .sorted(Comparator.comparing(MerchantOrderLine::getPosition))
                         .map(line -> lineResult(order, line))
                         .toList(),
+                order.getCreatedAt(),
+                order.getUpdatedAt()
+        );
+    }
+
+    public OrderSummaryResult summaryFrom(MerchantOrder order) {
+        return new OrderSummaryResult(
+                order.getId(),
+                order.getMerchantId(),
+                order.getMerchantDomain(),
+                order.getMerchantName(),
+                order.getRemoteOrderId(),
+                displayId(order),
+                order.getOrderNumber(),
+                order.getState(),
+                order.getState().displayStatus(),
+                statusNote(order),
+                date(order),
+                order.getTotalAmount(),
+                order.getSubtotalAmount(),
+                order.getCurrency(),
+                order.getTotalQuantity(),
+                order.getOrderStatusUrl(),
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );

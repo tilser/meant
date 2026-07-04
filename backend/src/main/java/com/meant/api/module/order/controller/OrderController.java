@@ -1,5 +1,7 @@
 package com.meant.api.module.order.controller;
 
+import com.meant.api.module.order.constant.OrderListPagination;
+import com.meant.api.module.order.controller.response.OrderListResponse;
 import com.meant.api.module.order.controller.response.OrderResponse;
 import com.meant.api.module.order.service.OrderService;
 import com.meant.api.module.order.service.query.GetOrderQuery;
@@ -12,7 +14,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -36,14 +37,22 @@ public class OrderController {
     @Operation(summary = "List orders", description = "Returns stored merchant order state for the authenticated user.")
     @ApiResponse(
             responseCode = "200",
-            description = "Stored merchant orders",
-            content = @Content(schema = @Schema(implementation = OrderResponse.class))
+            description = "Stored merchant order summaries",
+            content = @Content(schema = @Schema(implementation = OrderListResponse.class))
     )
-    public List<OrderResponse> list(@AuthenticationPrincipal Jwt jwt) {
+    public OrderListResponse list(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Zero-based page number.")
+            @RequestParam(required = false) Integer page,
+            @Parameter(description = "Maximum number of order summaries to return.")
+            @RequestParam(required = false) Integer limit
+    ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        return orderService.list(new ListOrdersQuery(authenticatedUser.id())).stream()
-                .map(OrderResponse::from)
-                .toList();
+        return OrderListResponse.from(orderService.list(new ListOrdersQuery(
+                authenticatedUser.id(),
+                pageValue(page),
+                limitValue(limit)
+        )));
     }
 
     @GetMapping("/{orderId}")
@@ -69,5 +78,16 @@ public class OrderController {
 
     private AuthenticatedUser authenticatedUser(Jwt jwt) {
         return AuthenticatedUser.fromJwt(jwt);
+    }
+
+    private int pageValue(Integer page) {
+        return page == null ? OrderListPagination.DEFAULT_PAGE : Math.max(OrderListPagination.DEFAULT_PAGE, page);
+    }
+
+    private int limitValue(Integer limit) {
+        if (limit == null) {
+            return OrderListPagination.DEFAULT_LIMIT;
+        }
+        return Math.max(1, Math.min(limit, OrderListPagination.MAX_LIMIT));
     }
 }

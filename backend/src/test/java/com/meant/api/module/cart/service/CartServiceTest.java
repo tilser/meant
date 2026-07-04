@@ -264,6 +264,7 @@ class CartServiceTest {
         assertThat(cartDispatchService.getCount).isEqualTo(1);
         assertThat(cartDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
         assertThat(cartRepository.saveCount).isEqualTo(1);
+        assertThat(cartRepository.findWithLinesCount).isEqualTo(1);
     }
 
     @Test
@@ -295,6 +296,7 @@ class CartServiceTest {
         assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().productVariantId())
                 .isEqualTo("gid://shopify/ProductVariant/1");
         assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().quantity()).isZero();
+        assertThat(cartRepository.findWithLinesCount).isEqualTo(1);
     }
 
     @Test
@@ -418,6 +420,7 @@ class CartServiceTest {
         assertThat(checkoutDispatchService.createCount).isEqualTo(1);
         assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
         assertThat(cartDispatchService.getCount).isZero();
+        assertThat(cartRepository.findWithLinesCount).isEqualTo(1);
         assertImportedCandle();
     }
 
@@ -1013,6 +1016,7 @@ class CartServiceTest {
 
         private final Map<UUID, Cart> carts = new HashMap<>();
         private int saveCount;
+        private int findWithLinesCount;
 
         void save(Cart cart) {
             carts.put(cart.getId(), cart);
@@ -1024,6 +1028,7 @@ class CartServiceTest {
                     new Class<?>[]{CartRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
                         case "findWithLinesByIdAndUserId" -> {
+                            findWithLinesCount++;
                             Cart cart = carts.get(args[0]);
                             yield cart == null || !cart.getUserId().equals(args[1]) || !cart.isActive()
                                     ? Optional.empty()

@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
@@ -54,6 +55,11 @@ public class CartPersistenceService {
     }
 
     @Transactional
+    public Cart saveSnapshot(Cart cart, UUID userId, MerchantCartProvider provider, UcpCartToolResult result) {
+        return saveSnapshot(cart, userId, provider, result, null);
+    }
+
+    @Transactional
     public Cart saveSnapshot(
             UUID cartId,
             UUID userId,
@@ -61,22 +67,42 @@ public class CartPersistenceService {
             UcpCartToolResult result,
             List<String> submittedGiftCardCodes
     ) {
+        return saveSnapshot(
+                cartId == null ? null : findCart(cartId, userId),
+                userId,
+                provider,
+                result,
+                submittedGiftCardCodes
+        );
+    }
+
+    @Transactional
+    public Cart saveSnapshot(
+            Cart cart,
+            UUID userId,
+            MerchantCartProvider provider,
+            UcpCartToolResult result,
+            List<String> submittedGiftCardCodes
+    ) {
         UcpCartResponse.Cart remoteCart = result.response().cart();
         Instant now = Instant.now();
-        Cart cart = cartId == null
+        Cart persistedCart = cart == null
                 ? Cart.builder()
                         .userId(userId)
                         .merchantId(provider.merchantId())
                         .merchantDomain(provider.domain())
                         .createdAt(now)
                         .build()
-                : findCart(cartId, userId);
-        cart.assignProvider(provider.merchantId(), provider.domain());
+                : cart;
+        if (cart != null) {
+            validateWritableCart(persistedCart, userId);
+        }
+        persistedCart.assignProvider(provider.merchantId(), provider.domain());
         String remoteCartId = required(remoteCart.id(), "Remote cart id is required");
         UcpCartResponse.Money totalAmount = remoteCart.cost() == null ? null : remoteCart.cost().totalAmount();
         UcpCartResponse.Money subtotalAmount = remoteCart.cost() == null ? null : remoteCart.cost().subtotalAmount();
         String currency = currency(totalAmount, subtotalAmount);
-        cart.replaceSnapshot(
+        persistedCart.replaceSnapshot(
                 result.endpoint(),
                 remoteCartId,
                 hash(remoteCartId),
@@ -93,21 +119,26 @@ public class CartPersistenceService {
                 remoteCart.expiresAt(),
                 now
         );
-        cart.replaceLines(safeNonNullList(remoteCart.lines()).stream()
+        persistedCart.replaceLines(safeNonNullList(remoteCart.lines()).stream()
                 .map(line -> toCartLine(line, now))
                 .toList());
-        cart.replaceAppliedCodes(toAppliedCodes(
+        persistedCart.replaceAppliedCodes(toAppliedCodes(
                 remoteCart,
                 currency,
                 submittedGiftCardCodes,
-                cart.getAppliedCodes()
+                persistedCart.getAppliedCodes()
         ));
-        return cartRepository.save(cart);
+        return cartRepository.save(persistedCart);
     }
 
     @Transactional
     public Cart saveCheckoutHandoff(UUID cartId, UUID userId, UcpCheckoutToolResult result) {
-        Cart cart = findCart(cartId, userId);
+        return saveCheckoutHandoff(findCart(cartId, userId), userId, result);
+    }
+
+    @Transactional
+    public Cart saveCheckoutHandoff(Cart cart, UUID userId, UcpCheckoutToolResult result) {
+        validateWritableCart(cart, userId);
         UcpCheckoutResponse.Checkout checkout = result.response().resolvedCheckout();
         if (checkout == null) {
             throw CartException.upstream("UCP checkout response did not contain checkout");
@@ -180,6 +211,15 @@ public class CartPersistenceService {
                     .build());
         }
         return appliedCodes;
+    }
+
+    private void validateWritableCart(Cart cart, UUID userId) {
+        if (!Objects.equals(cart.getUserId(), userId) || !cart.isActive()) {
+            throw CartException.notFound("Cart not found: " + cart.getId());
+        }
+        if (cart.getExpiresAt() != null && !cart.getExpiresAt().isAfter(Instant.now())) {
+            throw CartException.notFound("Cart expired: " + cart.getId());
+        }
     }
 
     private void addAppliedCodeValues(

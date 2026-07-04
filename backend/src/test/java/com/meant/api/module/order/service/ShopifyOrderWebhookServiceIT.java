@@ -13,6 +13,7 @@ import com.meant.api.module.order.entity.MerchantOrder;
 import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.order.repository.MerchantOrderRepository;
 import com.meant.api.module.order.service.command.ReceiveShopifyOrderWebhookCommand;
+import com.meant.api.module.order.service.query.GetOrderQuery;
 import com.meant.api.module.order.service.query.ListOrdersQuery;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.repository.UserRepository;
@@ -26,6 +27,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 
 @SpringBootTest
@@ -63,16 +65,22 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
         receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "fulfilled", false));
         receive(merchant, orderBody(remoteOrderId, "#1001", user.getEmail(), "paid", "unfulfilled", true));
 
-        List<MerchantOrder> orders = orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(userId);
+        List<MerchantOrder> orders = orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(
+                userId,
+                PageRequest.of(0, 10)
+        ).getContent();
         assertThat(orders).hasSize(1);
-        MerchantOrder order = orders.getFirst();
+        MerchantOrder order = orderRepository.findByIdAndUserId(orders.getFirst().getId(), userId).orElseThrow();
         assertThat(order.getState()).isEqualTo(OrderState.DELIVERED);
         assertThat(order.getRemoteOrderId()).isEqualTo(remoteOrderId);
         assertThat(order.getCustomerEmail()).isEqualTo(user.getEmail());
         assertThat(order.getLines()).hasSize(2);
         assertThat(order.getLines()).extracting("position")
                 .containsExactlyInAnyOrder(0, 1);
-        assertThat(orderService.list(new ListOrdersQuery(userId)).getFirst().lines())
+        assertThat(orderService.list(new ListOrdersQuery(userId, 0, 20)).orders())
+                .extracting("displayId")
+                .containsExactly("#1001");
+        assertThat(orderService.get(new GetOrderQuery(order.getId(), userId, false)).lines())
                 .extracting("productTitle")
                 .containsExactly("Diffuser", "Candle");
     }
@@ -96,7 +104,8 @@ class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
                 .satisfies(exception -> assertThat(((OrderException) exception).getStatus())
                         .isEqualTo(HttpStatus.FORBIDDEN));
 
-        assertThat(orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(userId)).isEmpty();
+        assertThat(orderRepository.findByUserIdOrderByPlacedAtDescCreatedAtDesc(userId, PageRequest.of(0, 10)))
+                .isEmpty();
     }
 
     private void receive(Merchant merchant, String body) {

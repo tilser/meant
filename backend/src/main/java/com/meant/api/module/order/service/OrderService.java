@@ -1,5 +1,6 @@
 package com.meant.api.module.order.service;
 
+import com.meant.api.module.order.constant.OrderListPagination;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.MerchantIdentityLinkService;
@@ -8,6 +9,7 @@ import com.meant.api.module.merchant.service.dto.MerchantIdentityAccessTokenResu
 import com.meant.api.module.merchant.service.query.GetMerchantIdentityAccessTokenQuery;
 import com.meant.api.module.order.entity.MerchantOrder;
 import com.meant.api.module.order.exception.OrderException;
+import com.meant.api.module.order.service.dto.OrderListResult;
 import com.meant.api.module.order.service.dto.OrderResult;
 import com.meant.api.module.order.service.query.GetOrderQuery;
 import com.meant.api.module.order.service.query.ListOrdersQuery;
@@ -17,8 +19,9 @@ import com.meant.api.plugin.order.get.dto.GetOrderRequest;
 import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -33,10 +36,20 @@ public class OrderService {
     private final MerchantRepository merchantRepository;
     private final OrderResultMapper orderResultMapper;
 
-    public List<OrderResult> list(@NotNull @Valid ListOrdersQuery query) {
-        return orderPersistenceService.listOrders(query.userId()).stream()
-                .map(orderResultMapper::from)
-                .toList();
+    public OrderListResult list(@NotNull @Valid ListOrdersQuery query) {
+        PageRequest pageRequest = PageRequest.of(
+                query.page(),
+                Math.min(query.limit(), OrderListPagination.MAX_LIMIT)
+        );
+        Slice<MerchantOrder> orders = orderPersistenceService.listOrders(query.userId(), pageRequest);
+        return new OrderListResult(
+                orders.getContent().stream()
+                        .map(orderResultMapper::summaryFrom)
+                        .toList(),
+                orders.getNumber(),
+                orders.getSize(),
+                orders.hasNext()
+        );
     }
 
     public OrderResult get(@NotNull @Valid GetOrderQuery query) {
