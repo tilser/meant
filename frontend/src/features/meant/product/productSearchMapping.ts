@@ -12,12 +12,10 @@ import { displayProductCategoryValue } from '../utils'
 import { productWithCuratedFields } from './productCuration'
 
 function stripHtml(value: string | null | undefined): string {
-  return (
-    value
-      ?.replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim() ?? ''
-  )
+  return (value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function parsePriceAmount(value: string | number | null | undefined): number | null {

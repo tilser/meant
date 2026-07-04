@@ -486,9 +486,10 @@ export function computeSmartAlerts(
           kind: 'warn',
           title: 'Connection mismatch',
           body: host
-            ? `Your ${host.product.name} only has ${host.product.provides
-                ?.map(portLabel)
-                .join(' / ')}, but the ${line.product.name} connects over ${portLabel(need)}.`
+            ? `Your ${host.product.name} only has ${
+                (host.product.provides ?? []).map(portLabel).join(' / ') ||
+                'no listed compatible ports'
+              }, but the ${line.product.name} connects over ${portLabel(need)}.`
             : `The ${line.product.name} needs a ${portLabel(need)} connection.`,
           fix: adapter
             ? {

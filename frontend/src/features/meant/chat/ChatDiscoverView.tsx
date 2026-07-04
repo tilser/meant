@@ -940,7 +940,7 @@ export function ChatDiscoverView({
           continue
         }
         setActiveThreadId(thread.id)
-        window.setTimeout(() => {
+        const timeoutId = window.setTimeout(() => {
           const element = document.querySelector(`[data-mid="${CSS.escape(message.id)}"]`)
           if (!(element instanceof HTMLElement)) {
             return
@@ -949,7 +949,9 @@ export function ChatDiscoverView({
           window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
           onFlashMessage(message.id)
         }, 160)
-        return
+        return () => {
+          window.clearTimeout(timeoutId)
+        }
       }
     }
   }, [activeThreadIdSafe, discoverFindRequest, onFlashMessage, setActiveThreadId, threads])

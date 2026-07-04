@@ -176,8 +176,8 @@ function productArtworkUrl(product: Product): string | null {
   return (
     product.media
       ?.filter((item) => item.type?.toLowerCase() === 'image')
-      .map((item) => item.url?.trim() ?? '')
-      .find(Boolean) ?? null
+      ?.map((item) => item.url?.trim() ?? '')
+      ?.find(Boolean) ?? null
   )
 }
 

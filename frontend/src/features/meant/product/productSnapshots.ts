@@ -9,8 +9,8 @@ function firstProductMediaImage(media?: readonly ProductMedia[]): string | null 
   return (
     media
       ?.filter((item) => item.type?.toLowerCase() === 'image')
-      .map((item) => nonEmptyImageUrl(item.url))
-      .find((url): url is string => Boolean(url)) ?? null
+      ?.map((item) => nonEmptyImageUrl(item.url))
+      ?.find((url): url is string => Boolean(url)) ?? null
   )
 }
 

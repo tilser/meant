@@ -38,12 +38,10 @@ type ProductDetailLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 const MODAL_THUMBNAIL_PAGE_SIZE = 8
 
 function stripHtml(value: string | null | undefined): string {
-  return (
-    value
-      ?.replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim() ?? ''
-  )
+  return (value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function ProductModal({

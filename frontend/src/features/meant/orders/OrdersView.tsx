@@ -158,7 +158,11 @@ function parseOrderAmount(value?: string | number | null): number | null {
   if (!trimmed) {
     return null
   }
-  const amount = Number(trimmed)
+  const normalized = trimmed.replace(/[^0-9.-]/g, '')
+  if (!normalized || normalized === '-' || normalized === '.' || normalized === '-.') {
+    return null
+  }
+  const amount = Number(normalized)
   return Number.isFinite(amount) ? amount : null
 }
 

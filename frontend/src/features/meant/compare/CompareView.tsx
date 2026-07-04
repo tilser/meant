@@ -26,7 +26,11 @@ export function CompareView({
   onOpen: (product: Product, products: readonly Product[]) => void
 }>) {
   const items = compareIds
-    .map((id) => products.find((product) => product.id === id))
+    .map(
+      (id) =>
+        products.find((product) => product.id === id) ??
+        savedProducts.find((product) => product.id === id),
+    )
     .filter((product): product is Product => Boolean(product))
   const selectedIds = items.map((product) => product.id)
   const showAdd = items.length < 4
