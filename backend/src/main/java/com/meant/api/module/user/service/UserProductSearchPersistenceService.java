@@ -215,11 +215,12 @@ public class UserProductSearchPersistenceService {
                         now
                 ))
                 .toList();
-        userProductRecommendationExplanationRepository.saveAll(entities);
+        List<UserProductRecommendationExplanation> savedEntities =
+                userProductRecommendationExplanationRepository.saveAll(entities);
         List<UserProductRecommendationFilterMatch> filterMatches = new ArrayList<>();
         for (int index = 0; index < explanations.size(); index++) {
             UserProductRecommendationExplanationResult explanation = explanations.get(index);
-            UserProductRecommendationExplanation entity = entities.get(index);
+            UserProductRecommendationExplanation entity = savedEntities.get(index);
             filterMatches.addAll(filterMatches(
                     entity.getId(),
                     explanation.matchedFilterIds(),
