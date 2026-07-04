@@ -835,6 +835,7 @@ export function ChatDiscoverView({
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
   const previousMessageCountRef = useRef(messages.length)
   const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
+  const didInitialScrollRef = useRef(false)
   const handledDiscoverFindRequestRef = useRef<string | null>(null)
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds])
@@ -955,18 +956,31 @@ export function ChatDiscoverView({
     }
   }, [archivedThreads, setArchivedThreads])
 
-  const scrollChatToBottom = useCallback(() => {
+  const scrollChatToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const scroll = () => {
+      chatBottomRef.current?.scrollIntoView({ behavior, block: 'end' })
+    }
     window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-      })
+      scroll()
+      window.requestAnimationFrame(scroll)
+      window.setTimeout(scroll, 120)
+      window.setTimeout(scroll, 360)
     })
   }, [])
 
   useEffect(() => {
+    if (!didInitialScrollRef.current) {
+      didInitialScrollRef.current = true
+      if (messages.length > 0) {
+        scrollChatToBottom('auto')
+      }
+      previousMessageCountRef.current = messages.length
+      previousActiveThreadIdRef.current = activeThreadIdSafe
+      return
+    }
     const messageCountIncreased = messages.length > previousMessageCountRef.current
     const activeThreadChanged = activeThreadIdSafe !== previousActiveThreadIdRef.current
-    if (activeThreadChanged) {
+    if (activeThreadChanged && messages.length > 0) {
       scrollChatToBottom()
     } else if (messageCountIncreased) {
       scrollChatToBottom()
