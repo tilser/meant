@@ -5138,8 +5138,8 @@ function InlineCartBlock({
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
-  onQty: (id: ProductId, merchant: string, qty: number) => void
-  onRemove: (id: ProductId, merchant: string) => void
+  onQty: (id: ProductId, merchant: string, qty: number, nextCart: readonly CartItem[]) => void
+  onRemove: (id: ProductId, merchant: string, nextCart: readonly CartItem[]) => void
   onAddCart: (product: Product) => void
   onOpenCart: () => void
   onCheckoutHere: () => void
@@ -5151,6 +5151,14 @@ function InlineCartBlock({
   const saved = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
   const total = groups.reduce((sum, group) => sum + group.total, 0)
   const productById = new Map(products.map((product) => [product.id, product]))
+  const cartAfterQty = (target: CartItem, qty: number) =>
+    qty <= 0
+      ? lines.filter((line) => cartItemIdentity(line) !== cartItemIdentity(target))
+      : lines.map((line) =>
+          cartItemIdentity(line) === cartItemIdentity(target) ? { ...line, qty } : line,
+        )
+  const cartAfterRemove = (target: CartItem) =>
+    lines.filter((line) => cartItemIdentity(line) !== cartItemIdentity(target))
 
   return (
     <div className="mt-ct-block mt-ct-cart">
@@ -5205,8 +5213,9 @@ function InlineCartBlock({
                   <button
                     type="button"
                     aria-label="Decrease quantity"
-                    disabled={line.qty <= 1}
-                    onClick={() => onQty(line.id, line.merchant, line.qty - 1)}
+                    onClick={() =>
+                      onQty(line.id, line.merchant, line.qty - 1, cartAfterQty(line, line.qty - 1))
+                    }
                   >
                     -
                   </button>
@@ -5214,7 +5223,9 @@ function InlineCartBlock({
                   <button
                     type="button"
                     aria-label="Increase quantity"
-                    onClick={() => onQty(line.id, line.merchant, line.qty + 1)}
+                    onClick={() =>
+                      onQty(line.id, line.merchant, line.qty + 1, cartAfterQty(line, line.qty + 1))
+                    }
                   >
                     +
                   </button>
@@ -5224,7 +5235,7 @@ function InlineCartBlock({
                   className="mt-ct-cart-remove"
                   type="button"
                   aria-label={`Remove ${line.product.name}`}
-                  onClick={() => onRemove(line.id, line.merchant)}
+                  onClick={() => onRemove(line.id, line.merchant, cartAfterRemove(line))}
                 >
                   <CloseIcon size={12} />
                 </button>
@@ -5402,6 +5413,7 @@ function DiscoverChatBlockView({
   onOpenPrefs,
   onOpenCart,
   onReviewCartHere,
+  onRestoreCartLine,
   onCartQty,
   onCartRemove,
   onCheckout,
@@ -5433,8 +5445,9 @@ function DiscoverChatBlockView({
   onOpenPrefs: () => void
   onOpenCart: () => void
   onReviewCartHere: (lines?: readonly CartItem[], products?: readonly Product[]) => void
-  onCartQty: (id: ProductId, merchant: string, qty: number) => void
-  onCartRemove: (id: ProductId, merchant: string) => void
+  onRestoreCartLine: (product: Product, merchant: string, price?: number) => void
+  onCartQty: (id: ProductId, merchant: string, qty: number, nextCart: readonly CartItem[]) => void
+  onCartRemove: (id: ProductId, merchant: string, nextCart: readonly CartItem[]) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   onCheckoutHere: () => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
@@ -5695,6 +5708,9 @@ function DiscoverChatBlockView({
               const liveLine = cart.find(
                 (item) => item.id === block.product.id && item.merchant === block.merchant,
               )
+              if (!liveLine) {
+                onRestoreCartLine(block.product, block.merchant, addedPrice)
+              }
               onReviewCartHere(
                 [
                   liveLine ?? {
@@ -5865,6 +5881,7 @@ function DiscoverChatMessageRow({
   onOpenPrefs,
   onOpenCart,
   onReviewCartHere,
+  onRestoreCartLine,
   onCartQty,
   onCartRemove,
   onCheckout,
@@ -5901,8 +5918,22 @@ function DiscoverChatMessageRow({
   onOpenPrefs: () => void
   onOpenCart: () => void
   onReviewCartHere: (lines?: readonly CartItem[], products?: readonly Product[]) => void
-  onCartQty: (id: ProductId, merchant: string, qty: number) => void
-  onCartRemove: (id: ProductId, merchant: string) => void
+  onRestoreCartLine: (product: Product, merchant: string, price?: number) => void
+  onCartQty: (
+    messageId: string,
+    blockIndex: number,
+    id: ProductId,
+    merchant: string,
+    qty: number,
+    nextCart: readonly CartItem[],
+  ) => void
+  onCartRemove: (
+    messageId: string,
+    blockIndex: number,
+    id: ProductId,
+    merchant: string,
+    nextCart: readonly CartItem[],
+  ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   onCheckoutHere: () => void
   onDelete: (messageId: string) => void
@@ -5990,8 +6021,13 @@ function DiscoverChatMessageRow({
                 onOpenPrefs={onOpenPrefs}
                 onOpenCart={onOpenCart}
                 onReviewCartHere={onReviewCartHere}
-                onCartQty={onCartQty}
-                onCartRemove={onCartRemove}
+                onRestoreCartLine={onRestoreCartLine}
+                onCartQty={(id, merchant, qty, nextCart) =>
+                  onCartQty(message.id, index, id, merchant, qty, nextCart)
+                }
+                onCartRemove={(id, merchant, nextCart) =>
+                  onCartRemove(message.id, index, id, merchant, nextCart)
+                }
                 onCheckout={onCheckout}
                 onCheckoutHere={onCheckoutHere}
                 onShelfAddProduct={onShelfAddProduct}
@@ -6898,6 +6934,56 @@ function ChatDiscoverView({
     }
   }
 
+  const updateChatCartBlock = useCallback(
+    (messageId: string, blockIndex: number, nextCart: readonly CartItem[]) => {
+      updateThreadMessages(activeThreadIdSafe, (current) =>
+        current.flatMap((message) => {
+          if (message.id !== messageId) {
+            return [message]
+          }
+          const blocks = [...(message.blocks ?? [])]
+          const block = blocks[blockIndex]
+          if (!block || block.type !== 'cart') {
+            return [message]
+          }
+          if (nextCart.length === 0) {
+            const nextBlocks = blocks.filter((_, index) => index !== blockIndex)
+            const hasVisibleBlocks = nextBlocks.some(
+              (nextBlock) => nextBlock.type !== 'text' && nextBlock.type !== 'system',
+            )
+            return hasVisibleBlocks ? [{ ...message, blocks: nextBlocks }] : []
+          }
+          blocks[blockIndex] = { ...block, lines: nextCart }
+          return [{ ...message, blocks }]
+        }),
+      )
+    },
+    [activeThreadIdSafe, updateThreadMessages],
+  )
+
+  const updateChatCartQty = (
+    messageId: string,
+    blockIndex: number,
+    id: ProductId,
+    merchant: string,
+    qty: number,
+    nextCart: readonly CartItem[],
+  ) => {
+    onCartQty(id, merchant, qty)
+    updateChatCartBlock(messageId, blockIndex, nextCart)
+  }
+
+  const removeChatCartLine = (
+    messageId: string,
+    blockIndex: number,
+    id: ProductId,
+    merchant: string,
+    nextCart: readonly CartItem[],
+  ) => {
+    onCartRemove(id, merchant)
+    updateChatCartBlock(messageId, blockIndex, nextCart)
+  }
+
   const addMessageToShelf = (message: DiscoverChatMessage, sourceElement: HTMLElement) => {
     if (!shelfMessageSet.has(message.id)) {
       flyToShelf(sourceElement, message.role === 'you' ? 'var(--accent)' : 'var(--accent-tint)')
@@ -7077,6 +7163,30 @@ function ChatDiscoverView({
         },
       ],
       { focusProductId: product.id },
+    )
+  }
+
+  const restoreCartLineFromReview = async (product: Product, merchant: string, price?: number) => {
+    if (cart.some((item) => item.id === product.id && item.merchant === merchant)) {
+      return
+    }
+    const merchantOffer = product.offers.find((offer) => offer.merchant === merchant)
+    if (merchantOffer && offerCartable(merchantOffer)) {
+      const added = await onAddProductToCart(product, merchantOffer)
+      if (added) {
+        return
+      }
+      onFallbackAddToCart(product, merchantOffer)
+      return
+    }
+    onFallbackAddToCart(
+      product,
+      merchantOffer ?? {
+        merchant,
+        price: price ?? productPriceFrom(product, deliveryLocations),
+        delivery: 'Available from merchant',
+        available: true,
+      },
     )
   }
 
@@ -7343,8 +7453,10 @@ function ChatDiscoverView({
     onOpenPrefs,
     onOpenCart,
     onReviewCartHere: showCartReviewHere,
-    onCartQty,
-    onCartRemove,
+    onRestoreCartLine: (product: Product, merchant: string, price?: number) =>
+      void restoreCartLineFromReview(product, merchant, price),
+    onCartQty: updateChatCartQty,
+    onCartRemove: removeChatCartLine,
     onCheckout,
     onCheckoutHere: showCheckoutHere,
     onDelete: deleteMessage,
