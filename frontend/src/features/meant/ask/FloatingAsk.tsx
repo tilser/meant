@@ -170,7 +170,7 @@ export function FloatingAsk({
       run()
         .catch(() => {
           if (mountedRef.current && !controller.signal.aborted) {
-            setHistoryLoaded(true)
+            setHistoryLoaded(false)
           }
         })
         .finally(() => {

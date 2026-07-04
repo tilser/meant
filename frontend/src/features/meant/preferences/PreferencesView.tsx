@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { UserTasteProfile } from '../../../lib/apiClient'
 import { LOCATIONS } from '../data'
@@ -63,6 +63,7 @@ export function PreferencesView({
   const [parsing, setParsing] = useState(false)
   const [activePreferenceGroup, setActivePreferenceGroup] = useState<PreferenceGroupId>('interests')
   const [preferenceSearch, setPreferenceSearch] = useState('')
+  const copiedTimeoutRef = useRef<number | null>(null)
   const enabled = sortPreferences(allPrefs.filter((preference) => prefsOn.has(preference.id)))
   const preferenceSearchText = preferenceSearch.trim().toLowerCase()
   const activeGroup =
@@ -84,10 +85,24 @@ export function PreferencesView({
   )
   const finiteBudget = budget ?? DEFAULT_BUDGET
 
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current !== null) {
+        window.clearTimeout(copiedTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const copyQuestion = () => {
     const done = () => {
+      if (copiedTimeoutRef.current !== null) {
+        window.clearTimeout(copiedTimeoutRef.current)
+      }
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1600)
+      copiedTimeoutRef.current = window.setTimeout(() => {
+        copiedTimeoutRef.current = null
+        setCopied(false)
+      }, 1600)
     }
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(IMPORT_ASK).then(done, done)

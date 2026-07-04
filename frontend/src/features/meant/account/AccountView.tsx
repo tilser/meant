@@ -67,7 +67,7 @@ export function AccountView({
   const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
   const hasProfilePicture = Boolean(avatar || avatarPath)
   const identityLinksByMerchant = new Map(
-    (merchantIdentityLinks ?? []).map((link) => [link.merchantId, link]),
+    (merchantIdentityLinks ?? []).map((link) => [link.merchantId, link] as const),
   )
   const linkableMerchants = merchants.filter((merchant) => merchant.supportsIdentityLinking)
 
