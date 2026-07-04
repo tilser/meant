@@ -14,6 +14,10 @@ export function flyToShelf(fromElement: HTMLElement | null, tone?: string | null
   ghost.style.top = `${from.top + from.height / 2 - 15}px`
   ghost.style.background = tone || 'var(--accent)'
   document.body.appendChild(ghost)
+  if (typeof ghost.animate !== 'function') {
+    ghost.remove()
+    return
+  }
   const tx = to.left + to.width / 2 - (from.left + from.width / 2)
   const ty = to.top + to.height / 2 - (from.top + from.height / 2)
   const animation = ghost.animate(
@@ -44,6 +48,10 @@ export function flyMessageToChat(fromElement: HTMLElement | null, text: string) 
   ghost.style.top = `${from.top}px`
   ghost.style.maxWidth = `${Math.min(from.width, 360)}px`
   document.body.appendChild(ghost)
+  if (typeof ghost.animate !== 'function') {
+    ghost.remove()
+    return
+  }
   const tx = window.innerWidth / 2 - (from.left + from.width / 2)
   const ty = window.innerHeight - 118 - from.top
   const animation = ghost.animate(

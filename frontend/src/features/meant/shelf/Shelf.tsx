@@ -55,9 +55,13 @@ function parseShelfDragPayload(dataTransfer: DataTransfer): ShelfDragPayload | n
     return null
   }
   try {
-    const parsed = JSON.parse(raw) as ShelfDragPayload
-    if (parsed.kind === 'message' || parsed.kind === 'product') {
-      return parsed
+    const parsed = JSON.parse(raw) as Partial<ShelfDragPayload> | null
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed.kind === 'message' || parsed.kind === 'product')
+    ) {
+      return parsed as ShelfDragPayload
     }
   } catch {
     return null

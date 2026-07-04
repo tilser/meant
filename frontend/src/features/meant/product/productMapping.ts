@@ -73,7 +73,7 @@ export function mergeProductMedia(
 ): ProductMedia[] {
   const seen = new Set<string>()
   return [...mediaFromMerchantDetails(details), ...(product.media ?? [])].filter((item) => {
-    const key = `${item.type.toLowerCase()}|${item.url}`
+    const key = `${item.type?.toLowerCase() ?? 'media'}|${item.url}`
     if (seen.has(key)) {
       return false
     }

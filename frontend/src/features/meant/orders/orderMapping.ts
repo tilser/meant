@@ -7,7 +7,7 @@ export function orderFromProfile(profile: OrderProfile): Order {
     date: profile.date,
     status: profile.status as OrderStatus,
     statusNote: profile.statusNote,
-    items: profile.lines.map((line) => ({
+    items: (profile.lines ?? []).map((line) => ({
       id: line.productKey || line.productId || line.id,
       merchant: line.merchantName || profile.merchantName || profile.merchantDomain,
       qty: line.quantity ?? 0,

@@ -140,7 +140,7 @@ function searchProductMedia(product: UserProductSearchProductProfile): ProductMe
     .map((url) => ({ type: 'image', url, altText: product.selectedVariantImageAltText }))
 
   return [...fromApi, ...fallback].filter((item) => {
-    const key = `${item.type.toLowerCase()}|${item.url}`
+    const key = `${item.type?.toLowerCase() ?? 'media'}|${item.url}`
     if (seen.has(key)) {
       return false
     }
@@ -255,7 +255,7 @@ export function productFromSearchResult(
     category: searchProductCategory(product, preferences),
     tone: toneForSearchProduct(product),
     imageUrl:
-      media.find((item) => item.type.toLowerCase() === 'image')?.url ||
+      media.find((item) => item.type?.toLowerCase() === 'image')?.url ||
       product.imageUrl ||
       product.detailImageUrl ||
       product.selectedVariantImageUrl,

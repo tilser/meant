@@ -7,7 +7,7 @@ export function Avatar({
   user: UserAccount
   size?: number
 }>) {
-  const initial = (user.name.trim().charAt(0) || 'M').toUpperCase()
+  const initial = ((user.name ?? '').trim().charAt(0) || 'M').toUpperCase()
   if (user.avatar) {
     return (
       <img className="mt-ava-img" src={user.avatar} alt="" style={{ width: size, height: size }} />

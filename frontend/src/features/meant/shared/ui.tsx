@@ -85,7 +85,7 @@ export function ProductArtwork({
     imageUrl?.trim() ||
     product.imageUrl?.trim() ||
     product.media
-      ?.filter((item) => item.type.toLowerCase() === 'image')
+      ?.filter((item) => item.type?.toLowerCase() === 'image')
       .map((item) => item.url?.trim() ?? '')
       .find(Boolean)
   if (artworkUrl) {

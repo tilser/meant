@@ -218,7 +218,7 @@ export function ProductModal({
   const selectedMedia = selectedMediaUrl
     ? modalMedia.find((item) => item.url === selectedMediaUrl)
     : null
-  const selectedImageUrl = selectedMedia?.type.toLowerCase() === 'image' ? selectedMedia.url : null
+  const selectedImageUrl = selectedMedia?.type?.toLowerCase() === 'image' ? selectedMedia.url : null
   const modalImageUrl =
     selectedImageUrl ??
     merchantDetails?.selectedVariantImageUrl ??
@@ -259,7 +259,7 @@ export function ProductModal({
       page * MODAL_THUMBNAIL_PAGE_SIZE,
       page * MODAL_THUMBNAIL_PAGE_SIZE + MODAL_THUMBNAIL_PAGE_SIZE,
     )
-    const firstImage = pageMedia.find((item) => item.type.toLowerCase() === 'image')
+    const firstImage = pageMedia.find((item) => item.type?.toLowerCase() === 'image')
     setThumbnailPage(page)
     if (firstImage) {
       setSelectedMediaUrl(firstImage.url)
@@ -427,7 +427,7 @@ export function ProductModal({
                 ) : null}
                 <div className="mt-modal-thumbs">
                   {visibleModalMedia.map((item, index) => {
-                    const isImage = item.type.toLowerCase() === 'image'
+                    const isImage = item.type?.toLowerCase() === 'image'
                     const isSelected = isImage && item.url === modalImageUrl
                     const imageIndex = thumbnailStart + index + 1
                     return (

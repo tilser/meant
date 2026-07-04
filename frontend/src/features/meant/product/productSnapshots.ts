@@ -8,7 +8,7 @@ function nonEmptyImageUrl(value?: string | null): string | null {
 function firstProductMediaImage(media?: readonly ProductMedia[]): string | null {
   return (
     media
-      ?.filter((item) => item.type.toLowerCase() === 'image')
+      ?.filter((item) => item.type?.toLowerCase() === 'image')
       .map((item) => nonEmptyImageUrl(item.url))
       .find((url): url is string => Boolean(url)) ?? null
   )
@@ -25,7 +25,7 @@ function mergeProductMediaSnapshots(
     if (!url) {
       continue
     }
-    const key = `${item.type.toLowerCase()}|${url}`
+    const key = `${item.type?.toLowerCase() ?? 'media'}|${url}`
     if (seen.has(key)) {
       continue
     }
