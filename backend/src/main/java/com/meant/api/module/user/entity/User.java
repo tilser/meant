@@ -50,9 +50,9 @@ public class User {
     private Instant updatedAt;
 
     /**
-     * Refreshes the email only when it actually changed. This matters because the email is refreshed
-     * on every {@code GET /api/users/me} (upsert-on-read); without the guard Hibernate would flush a
-     * redundant {@code UPDATE} on every read request.
+     * Refreshes the email only when it actually changed. This matters because identity claims may be
+     * checked while resolving the local profile; without the guard Hibernate would flush a redundant
+     * {@code UPDATE} on unchanged reads.
      */
     public void updateEmail(String email, Instant now) {
         if (!Objects.equals(this.email, email)) {

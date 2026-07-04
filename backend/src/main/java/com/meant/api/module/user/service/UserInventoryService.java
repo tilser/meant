@@ -15,7 +15,7 @@ import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCom
 import com.meant.api.module.user.service.command.DeleteUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryExportResult;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryPhotoRecognitionResult;
@@ -76,11 +76,11 @@ public class UserInventoryService {
 
     @Transactional
     public List<UserInventoryItemResult> list(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid ListUserInventoryItemsQuery query
     ) {
-        validateUser(upsertCommand, query.userId(), "Inventory user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, query.userId(), "Inventory user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         return inventoryItems(query).stream()
                 .map(this::toResult)
                 .toList();
@@ -88,11 +88,11 @@ public class UserInventoryService {
 
     @Transactional
     public UserInventoryExportResult export(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid ExportUserInventoryQuery query
     ) {
-        validateUser(upsertCommand, query.userId(), "Inventory export user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, query.userId(), "Inventory export user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         return new UserInventoryExportResult(
                 Instant.now(),
                 userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(query.userId()).stream()
@@ -103,11 +103,11 @@ public class UserInventoryService {
 
     @Transactional
     public UserInventoryItemResult create(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid CreateUserInventoryItemCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Inventory item user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Inventory item user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         validateInventoryQuota(command.userId());
         Instant now = Instant.now();
         UserInventoryItem item = UserInventoryItem.create(command.userId(), snapshot(command), now);
@@ -116,11 +116,11 @@ public class UserInventoryService {
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public UserInventoryItemResult createFromPhoto(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid CreateUserInventoryPhotoItemCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Inventory photo user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Inventory photo user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         validateInventoryQuota(command.userId());
         Optional<UserInventoryPhotoRecognitionResult> recognition =
                 userInventoryPhotoRecognitionService.recognize(command);
@@ -131,11 +131,11 @@ public class UserInventoryService {
 
     @Transactional
     public UserInventoryItemResult update(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid UpdateUserInventoryItemCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Inventory item user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Inventory item user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         UserInventoryItem item = userInventoryItemRepository
                 .findByIdAndUserId(command.itemId(), command.userId())
                 .orElseThrow(() -> UserException.notFound("Inventory item not found: " + command.itemId()));
@@ -146,11 +146,11 @@ public class UserInventoryService {
 
     @Transactional
     public void delete(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid DeleteUserInventoryItemCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Inventory item user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Inventory item user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         long deleted = userInventoryItemRepository.deleteByIdAndUserId(command.itemId(), command.userId());
         if (deleted == 0) {
             throw UserException.notFound("Inventory item not found: " + command.itemId());
@@ -532,8 +532,8 @@ public class UserInventoryService {
         return List.copyOf(attributes);
     }
 
-    private void validateUser(UpsertUserCommand upsertCommand, UUID userId, String message) {
-        if (!upsertCommand.id().equals(userId)) {
+    private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId, String message) {
+        if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden(message);
         }
     }

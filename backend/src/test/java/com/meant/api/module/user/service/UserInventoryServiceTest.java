@@ -18,7 +18,7 @@ import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCom
 import com.meant.api.module.user.service.command.DeleteUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryPhotoRecognitionResult;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
@@ -63,7 +63,7 @@ class UserInventoryServiceTest {
 
     @Test
     void createListsExportsAndDeletesManualInventoryItems() {
-        UserInventoryItemResult item = service.create(upsertCommand(), new CreateUserInventoryItemCommand(
+        UserInventoryItemResult item = service.create(profileCommand(), new CreateUserInventoryItemCommand(
                 USER_ID,
                 UserInventorySource.MANUAL,
                 null,
@@ -91,19 +91,19 @@ class UserInventoryServiceTest {
         assertThat(item.quantity()).isEqualTo(2);
 
         List<UserInventoryItemResult> listed = service.list(
-                upsertCommand(),
+                profileCommand(),
                 listQuery(UserInventoryCategory.APPAREL, false)
         );
         assertThat(listed).singleElement()
                 .extracting(UserInventoryItemResult::name)
                 .isEqualTo("Heavyweight Organic Cotton Tee");
 
-        assertThat(service.export(upsertCommand(), new ExportUserInventoryQuery(USER_ID)).items())
+        assertThat(service.export(profileCommand(), new ExportUserInventoryQuery(USER_ID)).items())
                 .hasSize(1);
 
-        service.delete(upsertCommand(), new DeleteUserInventoryItemCommand(USER_ID, item.id()));
+        service.delete(profileCommand(), new DeleteUserInventoryItemCommand(USER_ID, item.id()));
 
-        assertThat(service.list(upsertCommand(), listQuery(null, false)))
+        assertThat(service.list(profileCommand(), listQuery(null, false)))
                 .isEmpty();
     }
 
@@ -119,7 +119,7 @@ class UserInventoryServiceTest {
         ));
 
         UserInventoryItemResult item = service.createFromPhoto(
-                upsertCommand(),
+                profileCommand(),
                 new CreateUserInventoryPhotoItemCommand(
                         USER_ID,
                         "data:image/jpeg;base64,abc",
@@ -148,7 +148,7 @@ class UserInventoryServiceTest {
 
     @Test
     void updateCanClearOptionalTextFields() {
-        UserInventoryItemResult created = service.create(upsertCommand(), new CreateUserInventoryItemCommand(
+        UserInventoryItemResult created = service.create(profileCommand(), new CreateUserInventoryItemCommand(
                 USER_ID,
                 UserInventorySource.MANUAL,
                 null,
@@ -171,7 +171,7 @@ class UserInventoryServiceTest {
                 null
         ));
 
-        UserInventoryItemResult updated = service.update(upsertCommand(), new UpdateUserInventoryItemCommand(
+        UserInventoryItemResult updated = service.update(profileCommand(), new UpdateUserInventoryItemCommand(
                 USER_ID,
                 created.id(),
                 " ",
@@ -206,11 +206,11 @@ class UserInventoryServiceTest {
 
     @Test
     void listCanFilterRestockEnabledPantryItems() {
-        service.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
-        service.create(upsertCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
+        service.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(profileCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
 
         List<UserInventoryItemResult> restocks = service.list(
-                upsertCommand(),
+                profileCommand(),
                 listQuery(null, true)
         );
 
@@ -246,7 +246,7 @@ class UserInventoryServiceTest {
         ))));
 
         List<UserInventoryItemResult> items = service.list(
-                upsertCommand(),
+                profileCommand(),
                 listQuery(null, false)
         );
 
@@ -298,7 +298,7 @@ class UserInventoryServiceTest {
         )));
 
         List<UserInventoryItemResult> items = service.list(
-                upsertCommand(),
+                profileCommand(),
                 listQuery(null, false)
         );
 
@@ -317,7 +317,7 @@ class UserInventoryServiceTest {
     void inventoryProfileHashUsesRepositorySignature() {
         assertThat(service.inventoryProfileHash(USER_ID)).isEqualTo("inventory:none");
 
-        service.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
 
         assertThat(service.inventoryProfileHash(USER_ID))
                 .startsWith("inventory:1:")
@@ -326,16 +326,16 @@ class UserInventoryServiceTest {
 
     @Test
     void listAppliesPageAndLimitAtRepositoryBoundary() {
-        service.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
-        service.create(upsertCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
-        service.create(upsertCommand(), manualItem("Countertop Brewer", UserInventoryCategory.HOME, false));
+        service.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(profileCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
+        service.create(profileCommand(), manualItem("Countertop Brewer", UserInventoryCategory.HOME, false));
 
         List<UserInventoryItemResult> firstPage = service.list(
-                upsertCommand(),
+                profileCommand(),
                 new ListUserInventoryItemsQuery(USER_ID, null, false, 0, 2)
         );
         List<UserInventoryItemResult> secondPage = service.list(
-                upsertCommand(),
+                profileCommand(),
                 new ListUserInventoryItemsQuery(USER_ID, null, false, 1, 2)
         );
 
@@ -353,10 +353,10 @@ class UserInventoryServiceTest {
                 new ObjectMapper()
         );
 
-        quotaService.create(upsertCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        quotaService.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
 
         assertThatThrownBy(() -> quotaService.create(
-                        upsertCommand(),
+                        profileCommand(),
                         manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false)))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining("Inventory item quota exceeded");
@@ -364,12 +364,12 @@ class UserInventoryServiceTest {
 
     @Test
     void recommendationSignalsClassifyRestocksDuplicatesComplementsAndNone() {
-        UserInventoryItemResult oil = service.create(upsertCommand(), manualItem(
+        UserInventoryItemResult oil = service.create(profileCommand(), manualItem(
                 "Cold-Pressed Extra Virgin Olive Oil",
                 UserInventoryCategory.PANTRY,
                 true
         ));
-        service.create(upsertCommand(), manualItem(
+        service.create(profileCommand(), manualItem(
                 "Heavyweight Organic Cotton Tee",
                 UserInventoryCategory.APPAREL,
                 false
@@ -424,8 +424,8 @@ class UserInventoryServiceTest {
         );
     }
 
-    private UpsertUserCommand upsertCommand() {
-        return new UpsertUserCommand(USER_ID, "inventory@example.com", "Inventory", "User");
+    private EnsureUserProfileCommand profileCommand() {
+        return new EnsureUserProfileCommand(USER_ID, "inventory@example.com", "Inventory", "User");
     }
 
     private ListUserInventoryItemsQuery listQuery(UserInventoryCategory category, boolean restockOnly) {
@@ -501,7 +501,7 @@ class UserInventoryServiceTest {
         }
 
         @Override
-        public User upsert(UpsertUserCommand command) {
+        public User ensureProfile(EnsureUserProfileCommand command) {
             return null;
         }
     }

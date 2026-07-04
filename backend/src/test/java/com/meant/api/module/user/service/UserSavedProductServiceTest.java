@@ -9,7 +9,7 @@ import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import java.lang.reflect.Proxy;
@@ -43,16 +43,16 @@ class UserSavedProductServiceTest {
 
     @Test
     void listAppliesPageAndLimitAtRepositoryBoundary() {
-        service.save(upsertCommand(), product("merchant.example:one", "One"));
-        service.save(upsertCommand(), product("merchant.example:two", "Two"));
-        service.save(upsertCommand(), product("merchant.example:three", "Three"));
+        service.save(profileCommand(), product("merchant.example:one", "One"));
+        service.save(profileCommand(), product("merchant.example:two", "Two"));
+        service.save(profileCommand(), product("merchant.example:three", "Three"));
 
         List<UserSavedProductResult> firstPage = service.list(
-                upsertCommand(),
+                profileCommand(),
                 new ListSavedProductsQuery(USER_ID, 0, 2)
         );
         List<UserSavedProductResult> secondPage = service.list(
-                upsertCommand(),
+                profileCommand(),
                 new ListSavedProductsQuery(USER_ID, 1, 2)
         );
 
@@ -70,14 +70,14 @@ class UserSavedProductServiceTest {
                 new ObjectMapper()
         );
 
-        quotaService.save(upsertCommand(), product("merchant.example:one", "One"));
+        quotaService.save(profileCommand(), product("merchant.example:one", "One"));
         UserSavedProductResult refreshed = quotaService.save(
-                upsertCommand(),
+                profileCommand(),
                 product("merchant.example:one", "Updated One")
         );
 
         assertThat(refreshed.name()).isEqualTo("Updated One");
-        assertThatThrownBy(() -> quotaService.save(upsertCommand(), product("merchant.example:two", "Two")))
+        assertThatThrownBy(() -> quotaService.save(profileCommand(), product("merchant.example:two", "Two")))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining("Saved product quota exceeded");
     }
@@ -118,8 +118,8 @@ class UserSavedProductServiceTest {
         );
     }
 
-    private UpsertUserCommand upsertCommand() {
-        return new UpsertUserCommand(USER_ID, "saved@example.com", "Saved", "User");
+    private EnsureUserProfileCommand profileCommand() {
+        return new EnsureUserProfileCommand(USER_ID, "saved@example.com", "Saved", "User");
     }
 
     private UserCollectionProperties collectionProperties(int savedProductQuota) {
@@ -137,7 +137,7 @@ class UserSavedProductServiceTest {
         }
 
         @Override
-        public User upsert(UpsertUserCommand command) {
+        public User ensureProfile(EnsureUserProfileCommand command) {
             return null;
         }
     }

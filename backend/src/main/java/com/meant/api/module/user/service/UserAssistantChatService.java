@@ -16,7 +16,7 @@ import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserAssistantMessageRepository;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.SendUserAssistantMessageCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserAssistantConversationResult;
 import com.meant.api.module.user.service.dto.UserAssistantConversationSummaryResult;
@@ -96,11 +96,11 @@ public class UserAssistantChatService {
 
     @Transactional
     public UserAssistantConversationResult latest(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid GetLatestUserAssistantConversationQuery query
     ) {
-        validateUser(upsertCommand, query.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, query.userId());
+        userService.ensureProfile(profileCommand);
         return conversationRepository.findFirstByUserIdOrderByUpdatedAtDesc(query.userId())
                 .map(conversation -> conversationResult(conversation, query.userId()))
                 .orElseGet(() -> new UserAssistantConversationResult(null, null, null, null, List.of()));
@@ -108,11 +108,11 @@ public class UserAssistantChatService {
 
     @Transactional
     public List<UserAssistantConversationSummaryResult> list(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid ListUserAssistantConversationsQuery query
     ) {
-        validateUser(upsertCommand, query.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, query.userId());
+        userService.ensureProfile(profileCommand);
         return conversationRepository.findByUserIdOrderByUpdatedAtDesc(
                         query.userId(),
                         PageRequest.of(0, query.limit()))
@@ -123,11 +123,11 @@ public class UserAssistantChatService {
 
     @Transactional
     public UserAssistantConversationResult get(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid GetUserAssistantConversationQuery query
     ) {
-        validateUser(upsertCommand, query.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, query.userId());
+        userService.ensureProfile(profileCommand);
         UserAssistantConversation conversation = conversationRepository
                 .findByIdAndUserId(query.conversationId(), query.userId())
                 .orElseThrow(() -> UserException.notFound("Assistant conversation not found"));
@@ -135,12 +135,12 @@ public class UserAssistantChatService {
     }
 
     public void stream(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SendUserAssistantMessageCommand command,
             Consumer<UserAssistantStreamEvent> eventConsumer
     ) {
-        validateUser(upsertCommand, command.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId());
+        userService.ensureProfile(profileCommand);
 
         Instant now = Instant.now();
         String userMessage = command.message().trim();
@@ -158,10 +158,10 @@ public class UserAssistantChatService {
         ));
         eventConsumer.accept(UserAssistantStreamEvent.metadata(conversation.getId()));
 
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         List<UserAssistantMessage> history = promptHistory(conversation.getId(), command.userId());
         AssistantRoute route = route(userMessage, settings, command.pageContext());
-        UserAssistantToolContext toolContext = toolContext(upsertCommand, command, route);
+        UserAssistantToolContext toolContext = toolContext(profileCommand, command, route);
         if (route.isSearch() && shouldAnswerFromSavedProducts(userMessage, command.pageContext())) {
             route = route.asAnswer();
         }
@@ -171,7 +171,7 @@ public class UserAssistantChatService {
         if (route.isSearch()) {
             try {
                 UserProductSearchResult searchResult = userProductSearchService.search(
-                        upsertCommand,
+                        profileCommand,
                         new SearchUserProductsCommand(command.userId(), route.searchQuery(), null)
                 );
                 products = searchResult.products().stream()
@@ -213,8 +213,8 @@ public class UserAssistantChatService {
         ));
     }
 
-    private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
-        if (!upsertCommand.id().equals(userId)) {
+    private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {
+        if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden("Assistant user does not match authenticated user");
         }
     }
@@ -330,7 +330,7 @@ public class UserAssistantChatService {
     }
 
     private UserAssistantToolContext toolContext(
-            UpsertUserCommand upsertCommand,
+            EnsureUserProfileCommand profileCommand,
             SendUserAssistantMessageCommand command,
             AssistantRoute route
     ) {
@@ -339,7 +339,7 @@ public class UserAssistantChatService {
         }
         try {
             return new UserAssistantToolContext(userSavedProductService.list(
-                    upsertCommand,
+                    profileCommand,
                     new ListSavedProductsQuery(
                             command.userId(),
                             0,

@@ -8,7 +8,7 @@ import com.meant.api.module.user.constant.UserProductDiscoverySortField;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductDiscoveryResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
@@ -51,14 +51,14 @@ public class UserProductDiscoveryService {
     private final OpenRouterProperties openRouterProperties;
 
     public UserProductDiscoveryResult get(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid GetUserProductDiscoveryQuery query
     ) {
-        validateUser(upsertCommand, query.userId());
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        validateUser(profileCommand, query.userId());
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         String profileHash = userProductSearchHashService.profileHash(settings);
         List<UserSavedProductResult> savedProducts = userSavedProductService.list(
-                upsertCommand,
+                profileCommand,
                 new ListSavedProductsQuery(
                         query.userId(),
                         0,
@@ -90,8 +90,8 @@ public class UserProductDiscoveryService {
                 sortedRecentProducts(recentProducts, query.sortBy(), query.sortDirection()));
     }
 
-    private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
-        if (!upsertCommand.id().equals(userId)) {
+    private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {
+        if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden("Product discovery user does not match authenticated user");
         }
     }

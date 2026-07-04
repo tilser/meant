@@ -16,9 +16,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /**
      * Atomically inserts the profile or, if it already exists, refreshes its email — leaving the
      * user-edited names untouched. Performed as a single {@code INSERT ... ON CONFLICT} so concurrent
-     * upsert-on-read requests never collide on the unique constraint (which a Java-side
-     * find-then-insert would, poisoning the transaction). {@code updated_at} only advances when the
-     * email actually changes, mirroring the entity's dirty-check guard so reads stay write-free.
+     * first requests never collide on the unique constraint. {@code updated_at} only advances when
+     * the email actually changes, mirroring the entity's dirty-check guard so reads stay write-free.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -29,7 +28,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                     updated_at = CASE WHEN users.email IS DISTINCT FROM EXCLUDED.email
                                       THEN EXCLUDED.updated_at ELSE users.updated_at END
             """, nativeQuery = true)
-    void upsertFromIdentity(
+    void insertOrRefreshFromIdentity(
             @Param("id") UUID id,
             @Param("email") String email,
             @Param("firstName") String firstName,

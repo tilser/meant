@@ -16,7 +16,7 @@ import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserAssistantMessageRepository;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.SendUserAssistantMessageCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserAssistantConversationResult;
 import com.meant.api.module.user.service.dto.UserAssistantConversationSummaryResult;
 import com.meant.api.module.user.service.dto.UserAssistantMessageResult;
@@ -88,7 +88,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         openRouterChatClient.streamChunks = List.of("Use your ", "saved list first.");
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "What should I do?"), events::add);
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "What should I do?"), events::add);
 
         assertThat(events).extracting(UserAssistantStreamEvent::type)
                 .containsExactly("metadata", "delta", "delta", "done");
@@ -126,7 +126,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find me a tee"), events::add);
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find me a tee"), events::add);
 
         assertThat(FakeUserProductSearchService.lastCommand.query()).isEqualTo("organic cotton tee");
         assertThat(events.getLast().products()).containsExactly(product);
@@ -155,7 +155,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find me a tee"), events::add);
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find me a tee"), events::add);
 
         assertThat(FakeUserProductSearchService.lastCommand.query()).isEqualTo("organic cotton tee");
         assertThat(events.getLast().products()).containsExactly(product);
@@ -170,7 +170,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         openRouterChatClient.streamChunks = List.of("From your saved list, start with the strongest match.");
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(
+        userAssistantChatService.stream(profileCommand(userId), command(
                 userId,
                 null,
                 "what is the best from products I have in saved?"
@@ -195,7 +195,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(
+        userAssistantChatService.stream(profileCommand(userId), command(
                 userId,
                 null,
                 "what is the best from products I have in saved?"
@@ -283,7 +283,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(
+        userAssistantChatService.stream(profileCommand(userId), command(
                 userId,
                 null,
                 "find a product from products I have saved. " + injectedInstruction,
@@ -346,7 +346,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find organic socks"), events::add);
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find organic socks"), events::add);
 
         assertThat(openRouterChatClient.streamMessages.get(1).content())
                 .contains("Organic Cotton Socks")
@@ -376,7 +376,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find organic socks"), events::add);
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find organic socks"), events::add);
 
         String productLine = openRouterChatClient.streamMessages.get(1).content().lines()
                 .filter(line -> line.contains("; why "))
@@ -414,7 +414,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         openRouterChatClient.streamChunks = List.of("Use the visible context.");
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(
+        userAssistantChatService.stream(profileCommand(userId), command(
                 userId,
                 conversation.getId(),
                 "What should I do next?"
@@ -452,7 +452,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
 
         List<UserAssistantStreamEvent> events = new ArrayList<>();
-        userAssistantChatService.stream(upsertCommand(userId), command(userId, null, "Find organic cotton clothes"), events::add);
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find organic cotton clothes"), events::add);
 
         assertThat(events.getLast().text())
                 .contains("Heavyweight Organic Cotton Tee, Linen Overshirt")
@@ -488,7 +488,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         ));
 
         UserAssistantConversationResult result = userAssistantChatService.latest(
-                upsertCommand(userId),
+                profileCommand(userId),
                 new GetLatestUserAssistantConversationQuery(userId));
 
         assertThat(result.conversationId()).isEqualTo(conversation.getId());
@@ -515,7 +515,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
                 now.plusSeconds(120)));
 
         List<UserAssistantConversationSummaryResult> result = userAssistantChatService.list(
-                upsertCommand(userId),
+                profileCommand(userId),
                 new ListUserAssistantConversationsQuery(userId, 20));
 
         assertThat(result).extracting(UserAssistantConversationSummaryResult::conversationId)
@@ -542,7 +542,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         ));
 
         UserAssistantConversationResult result = userAssistantChatService.get(
-                upsertCommand(userId),
+                profileCommand(userId),
                 new GetUserAssistantConversationQuery(userId, conversation.getId()));
 
         assertThat(result.conversationId()).isEqualTo(conversation.getId());
@@ -579,8 +579,8 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         );
     }
 
-    private UpsertUserCommand upsertCommand(UUID userId) {
-        return new UpsertUserCommand(userId, userId + "@example.com", "Mara", null);
+    private EnsureUserProfileCommand profileCommand(UUID userId) {
+        return new EnsureUserProfileCommand(userId, userId + "@example.com", "Mara", null);
     }
 
     private UserProductSearchProductResult product() {
@@ -776,7 +776,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
 
         @Override
         public UserProductSearchResult search(
-                UpsertUserCommand upsertCommand,
+                EnsureUserProfileCommand profileCommand,
                 SearchUserProductsCommand command
         ) {
             lastCommand = command;
@@ -800,7 +800,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
 
         @Override
         public List<UserSavedProductResult> list(
-                UpsertUserCommand upsertCommand,
+                EnsureUserProfileCommand profileCommand,
                 ListSavedProductsQuery query
         ) {
             lastQuery = query;

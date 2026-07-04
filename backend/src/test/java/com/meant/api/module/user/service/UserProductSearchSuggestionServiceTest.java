@@ -6,7 +6,7 @@ import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchSuggestionsResult;
@@ -36,7 +36,7 @@ class UserProductSearchSuggestionServiceTest {
                 """;
         UserProductSearchSuggestionService service = service(openRouterChatClient);
 
-        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+        UserProductSearchSuggestionsResult result = service.generate(profileCommand());
 
         assertThat(openRouterChatClient.model).isEqualTo("cheap-query-model");
         assertThat(openRouterChatClient.userPrompt)
@@ -71,7 +71,7 @@ class UserProductSearchSuggestionServiceTest {
                 """;
         UserProductSearchSuggestionService service = service(openRouterChatClient);
 
-        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+        UserProductSearchSuggestionsResult result = service.generate(profileCommand());
 
         assertThat(result.suggestions()).containsExactly(
                 "Find me fragrance-free skincare",
@@ -95,8 +95,8 @@ class UserProductSearchSuggestionServiceTest {
                 """;
         UserProductSearchSuggestionService service = service(openRouterChatClient);
 
-        UserProductSearchSuggestionsResult first = service.generate(upsertCommand());
-        UserProductSearchSuggestionsResult second = service.generate(upsertCommand());
+        UserProductSearchSuggestionsResult first = service.generate(profileCommand());
+        UserProductSearchSuggestionsResult second = service.generate(profileCommand());
 
         assertThat(openRouterChatClient.calledCount).isEqualTo(2);
         assertThat(first.suggestions()).hasSize(4);
@@ -110,7 +110,7 @@ class UserProductSearchSuggestionServiceTest {
         openRouterChatClient.response = " ";
         UserProductSearchSuggestionService service = service(openRouterChatClient);
 
-        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+        UserProductSearchSuggestionsResult result = service.generate(profileCommand());
 
         assertThat(result.suggestions()).hasSize(4);
         assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal");
@@ -132,7 +132,7 @@ class UserProductSearchSuggestionServiceTest {
         };
         UserProductSearchSuggestionService service = service(openRouterChatClient);
 
-        UserProductSearchSuggestionsResult result = service.generate(upsertCommand());
+        UserProductSearchSuggestionsResult result = service.generate(profileCommand());
 
         assertThat(result.suggestions()).hasSize(4);
         assertThat(result.suggestions()).contains("Find me a healthy breakfast cereal");
@@ -155,8 +155,8 @@ class UserProductSearchSuggestionServiceTest {
         );
     }
 
-    private UpsertUserCommand upsertCommand() {
-        return new UpsertUserCommand(
+    private EnsureUserProfileCommand profileCommand() {
+        return new EnsureUserProfileCommand(
                 UUID.randomUUID(),
                 "ada@example.com",
                 "Ada",
@@ -203,7 +203,7 @@ class UserProductSearchSuggestionServiceTest {
         }
 
         @Override
-        public UserSettingsResult get(UpsertUserCommand upsertCommand) {
+        public UserSettingsResult get(EnsureUserProfileCommand profileCommand) {
             ShoppingFilterResult organic = new ShoppingFilterResult(
                     "organic",
                     "Organic",

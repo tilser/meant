@@ -13,7 +13,7 @@ import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import com.meant.api.module.user.repository.UserSettingsRepository;
 import com.meant.api.module.user.repository.UserShoppingFilterRepository;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -47,22 +47,22 @@ public class UserSettingsService {
     private final ShoppingFilterRepository shoppingFilterRepository;
 
     @Transactional
-    public UserSettingsResult get(@NotNull @Valid UpsertUserCommand upsertCommand) {
-        userService.upsert(upsertCommand);
+    public UserSettingsResult get(@NotNull @Valid EnsureUserProfileCommand profileCommand) {
+        userService.ensureProfile(profileCommand);
         Instant now = Instant.now();
-        UserSettings settings = findOrCreateSettings(upsertCommand.id(), now);
+        UserSettings settings = findOrCreateSettings(profileCommand.id(), now);
         return result(settings, List.of(), List.of());
     }
 
     @Transactional
     public UserSettingsResult update(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid UpdateUserSettingsCommand command
     ) {
-        if (!upsertCommand.id().equals(command.id())) {
+        if (!profileCommand.id().equals(command.id())) {
             throw UserException.forbidden("Settings user does not match authenticated user");
         }
-        userService.upsert(upsertCommand);
+        userService.ensureProfile(profileCommand);
         Instant now = Instant.now();
         UserSettings settings = findOrCreateSettings(command.id(), now);
         if (command.budgetUnlimited()) {

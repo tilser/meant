@@ -16,7 +16,7 @@ import com.meant.api.module.user.service.command.RecordUserTasteBehaviorCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UpdateUserTasteSignalCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
@@ -69,25 +69,25 @@ public class UserTasteProfileService {
 
     @Transactional
     public UserTasteProfileResult get(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid GetUserTasteProfileQuery query
     ) {
-        validateUser(upsertCommand, query.userId(), "Taste profile user does not match authenticated user");
-        userService.upsert(upsertCommand);
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        validateUser(profileCommand, query.userId(), "Taste profile user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         return profile(query.userId(), settings);
     }
 
     @Transactional
     public UserTasteProfileResult recordBehavior(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid RecordUserTasteBehaviorCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Taste behavior user does not match authenticated user");
-        validateUser(upsertCommand, command.product().userId(), "Taste behavior product user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Taste behavior user does not match authenticated user");
+        validateUser(profileCommand, command.product().userId(), "Taste behavior product user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         recordProductSignals(command.userId(), command.behavior(), command.product(), Instant.now());
-        return profile(command.userId(), userSettingsService.get(upsertCommand));
+        return profile(command.userId(), userSettingsService.get(profileCommand));
     }
 
     @Transactional
@@ -122,11 +122,11 @@ public class UserTasteProfileService {
 
     @Transactional
     public UserTasteSignalResult updateSignal(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid UpdateUserTasteSignalCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Taste signal user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Taste signal user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         UserTasteSignal signal = userTasteSignalRepository.findById(command.signalId())
                 .filter(candidate -> candidate.getUserId().equals(command.userId()))
                 .orElseThrow(() -> new UserException("Unknown taste signal " + command.signalId()));
@@ -139,32 +139,32 @@ public class UserTasteProfileService {
 
     @Transactional
     public void removeSignal(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             UUID userId,
             UUID signalId
     ) {
-        validateUser(upsertCommand, userId, "Taste signal user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, userId, "Taste signal user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         userTasteSignalRepository.deleteByUserIdAndId(userId, signalId);
     }
 
     @Transactional
     public UserSettingsResult acceptSuggestion(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid AcceptUserTasteSuggestionCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Taste suggestion user does not match authenticated user");
+        validateUser(profileCommand, command.userId(), "Taste suggestion user does not match authenticated user");
         if (!shoppingFilterRepository.existsById(command.filterId())) {
             throw new UserException("Unknown filter " + command.filterId());
         }
-        userService.upsert(upsertCommand);
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        userService.ensureProfile(profileCommand);
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         Set<String> activeFilterIds = settings.filters().stream()
                 .map(ShoppingFilterResult::id)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         activeFilterIds.add(command.filterId());
         UserSettingsResult updated = userSettingsService.update(
-                upsertCommand,
+                profileCommand,
                 new UpdateUserSettingsCommand(
                         command.userId(),
                         null,
@@ -185,11 +185,11 @@ public class UserTasteProfileService {
 
     @Transactional
     public void rejectSuggestion(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid AcceptUserTasteSuggestionCommand command
     ) {
-        validateUser(upsertCommand, command.userId(), "Taste suggestion user does not match authenticated user");
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId(), "Taste suggestion user does not match authenticated user");
+        userService.ensureProfile(profileCommand);
         Instant now = Instant.now();
         userTasteSignalRepository.findByUserIdAndSuggestedFilterId(command.userId(), command.filterId())
                 .forEach(signal -> userTasteSignalRepository.save(signal.rejectSuggestion(now)));
@@ -387,8 +387,8 @@ public class UserTasteProfileService {
         }
     }
 
-    private void validateUser(UpsertUserCommand upsertCommand, UUID userId, String message) {
-        if (!upsertCommand.id().equals(userId)) {
+    private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId, String message) {
+        if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden(message);
         }
     }

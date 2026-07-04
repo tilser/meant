@@ -34,7 +34,7 @@ import com.meant.api.module.user.repository.UserProductSearchResultItemRepositor
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserProductSearchHashService;
 import com.meant.api.module.user.service.UserSettingsService;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.nio.charset.StandardCharsets;
@@ -808,8 +808,8 @@ class UserControllerIT extends PostgresIntegrationTest {
     void productDiscoveryReturnsRecentSearchProductsFromUserCache() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
-        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
         String productKey = "merchant.example:tee";
@@ -867,8 +867,8 @@ class UserControllerIT extends PostgresIntegrationTest {
     void productDiscoverySearchesAndSortsRecentProducts() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
-        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
 
@@ -953,8 +953,8 @@ class UserControllerIT extends PostgresIntegrationTest {
     void productDiscoverySearchKeepsRecentProductWhenSavedTwinIsFilteredOut() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
-        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
         String productKey = "merchant.example:organic-tee";
@@ -1048,8 +1048,8 @@ class UserControllerIT extends PostgresIntegrationTest {
     void productDiscoverySortsRecentProductsWithMissingRatingLastInBothDirections() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
-        UpsertUserCommand upsertCommand = new UpsertUserCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
 
@@ -1106,7 +1106,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         for (int index = 0; index < 3; index++) {
             UUID userId = UUID.randomUUID();
             String email = userId + "@example.com";
-            userSettingsService.get(new UpsertUserCommand(userId, email, "User", String.valueOf(index)));
+            userSettingsService.get(new EnsureUserProfileCommand(userId, email, "User", String.valueOf(index)));
             userProductSearchEventRepository.save(UserProductSearchEvent.from(
                     userId,
                     null,
@@ -1118,7 +1118,7 @@ class UserControllerIT extends PostgresIntegrationTest {
             ));
         }
         UUID scopedUserId = UUID.randomUUID();
-        userSettingsService.get(new UpsertUserCommand(scopedUserId, scopedUserId + "@example.com", "Scoped", "User"));
+        userSettingsService.get(new EnsureUserProfileCommand(scopedUserId, scopedUserId + "@example.com", "Scoped", "User"));
         userProductSearchEventRepository.save(UserProductSearchEvent.from(
                 scopedUserId,
                 UUID.randomUUID(),
@@ -1152,7 +1152,7 @@ class UserControllerIT extends PostgresIntegrationTest {
 
         // Seed more conversations than the server-side cap so an oversized page request can be observed
         // to return a bounded slice rather than every row (MEA-27 — OWASP API4 Unrestricted Resource
-        // Consumption). The endpoint upserts the user on read, so no users row is required up front.
+        // Consumption). The endpoint ensures the user profile on read, so no users row is required up front.
         Instant now = Instant.now();
         int seeded = MAX_CONVERSATION_LIMIT_FIXTURE + 5;
         for (int i = 0; i < seeded; i++) {

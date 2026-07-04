@@ -6,9 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.query.GetUserQuery;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
@@ -31,10 +31,11 @@ class UserServiceTest {
     }
 
     @Test
-    void upsertCreatesUserOnFirstSight() {
+    void ensureProfileCreatesUserOnFirstSight() {
         UUID id = UUID.randomUUID();
 
-        User created = userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        User created = userService.ensureProfile(
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         assertThat(created.getId()).isEqualTo(id);
         assertThat(created.getEmail()).isEqualTo("ada@example.com");
@@ -46,11 +47,12 @@ class UserServiceTest {
     }
 
     @Test
-    void upsertRefreshesEmailButPreservesProfileOnSecondCall() {
+    void ensureProfileRefreshesEmailButPreservesProfileOnSecondCall() {
         UUID id = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
-        User updated = userService.upsert(new UpsertUserCommand(id, "ada@new.com", "ShouldBeIgnored", "Ignored"));
+        User updated = userService.ensureProfile(
+                new EnsureUserProfileCommand(id, "ada@new.com", "ShouldBeIgnored", "Ignored"));
 
         assertThat(updated.getEmail()).isEqualTo("ada@new.com");
         assertThat(updated.getFirstName()).isEqualTo("Ada");
@@ -62,10 +64,10 @@ class UserServiceTest {
     @Test
     void updateProfileMutatesNamesOnExistingUser() {
         UUID id = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         User updated = userService.updateProfile(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
                 new UpdateUserProfileCommand(id, "Augusta", "Byron"));
 
         assertThat(updated.getFirstName()).isEqualTo("Augusta");
@@ -79,7 +81,7 @@ class UserServiceTest {
         UUID id = UUID.randomUUID();
 
         User created = userService.updateProfile(
-                new UpsertUserCommand(id, "grace@example.com", "Grace", "Hopper"),
+                new EnsureUserProfileCommand(id, "grace@example.com", "Grace", "Hopper"),
                 new UpdateUserProfileCommand(id, "Grace", "Murray Hopper"));
 
         assertThat(created.getId()).isEqualTo(id);
@@ -91,11 +93,11 @@ class UserServiceTest {
     @Test
     void updateProfilePictureStoresOwnedObjectPath() {
         UUID id = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
         String profilePicturePath = id + "/avatar.webp";
 
         User updated = userService.updateProfilePicture(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
                 new UpdateUserProfilePictureCommand(id, profilePicturePath));
 
         assertThat(updated.getProfilePicturePath()).isEqualTo(profilePicturePath);
@@ -106,10 +108,10 @@ class UserServiceTest {
     void updateProfilePictureRejectsOtherUserPath() {
         UUID id = UUID.randomUUID();
         UUID otherUserId = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         assertThatThrownBy(() -> userService.updateProfilePicture(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
                 new UpdateUserProfilePictureCommand(id, otherUserId + "/avatar.webp")))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining("Profile picture path");
@@ -118,10 +120,10 @@ class UserServiceTest {
     @Test
     void updateProfilePictureRejectsNullObjectPath() {
         UUID id = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         assertThatThrownBy(() -> userService.updateProfilePicture(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
                 new UpdateUserProfilePictureCommand(id, null)))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining("Profile picture path");
@@ -130,10 +132,10 @@ class UserServiceTest {
     @Test
     void updateProfilePictureRejectsNestedOrUnsupportedObjectPath() {
         UUID id = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         assertThatThrownBy(() -> userService.updateProfilePicture(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
                 new UpdateUserProfilePictureCommand(id, id + "/nested/avatar.gif")))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining("Profile picture path");
@@ -143,27 +145,28 @@ class UserServiceTest {
     void removeProfilePictureClearsObjectPath() {
         UUID id = UUID.randomUUID();
         userService.updateProfilePicture(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
                 new UpdateUserProfilePictureCommand(id, id + "/avatar.webp"));
 
         User updated = userService.removeProfilePicture(
-                new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         assertThat(updated.getProfilePicturePath()).isNull();
         assertThat(userRepository.insertCount).isEqualTo(1);
     }
 
     @Test
-    void upsertOnUnchangedEmailSkipsTheWrite() {
+    void ensureProfileOnUnchangedEmailSkipsTheWrite() {
         UUID id = UUID.randomUUID();
-        userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
-        int writesAfterCreate = userRepository.upsertCallCount;
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        int writesAfterCreate = userRepository.identityWriteCount;
 
-        // Same identity, same email: the common upsert-on-read case must not issue a write.
-        User reread = userService.upsert(new UpsertUserCommand(id, "ada@example.com", "Ada", "Lovelace"));
+        // Same identity, same email: the common profile resolution case must not issue a write.
+        User reread = userService.ensureProfile(
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         assertThat(reread.getEmail()).isEqualTo("ada@example.com");
-        assertThat(userRepository.upsertCallCount).isEqualTo(writesAfterCreate);
+        assertThat(userRepository.identityWriteCount).isEqualTo(writesAfterCreate);
     }
 
     @Test
@@ -179,7 +182,7 @@ class UserServiceTest {
 
         private final Map<UUID, User> usersById = new HashMap<>();
         private int insertCount;
-        private int upsertCallCount;
+        private int identityWriteCount;
 
         UserRepository proxy() {
             return (UserRepository) Proxy.newProxyInstance(
@@ -192,8 +195,8 @@ class UserServiceTest {
                                 .findFirst();
                         // Mirrors the native INSERT ... ON CONFLICT: insert with names, or on conflict
                         // refresh only the email (names preserved) and advance updatedAt iff it changed.
-                        case "upsertFromIdentity" -> {
-                            upsertCallCount++;
+                        case "insertOrRefreshFromIdentity" -> {
+                            identityWriteCount++;
                             UUID id = (UUID) args[0];
                             String email = (String) args[1];
                             String firstName = (String) args[2];

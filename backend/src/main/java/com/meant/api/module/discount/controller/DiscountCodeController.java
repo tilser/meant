@@ -49,7 +49,7 @@ public class DiscountCodeController {
             @Valid @RequestBody SearchDiscountCodesRequest request
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        userService.upsert(UserCommandMapper.toUpsertCommand(authenticatedUser));
+        userService.ensureProfile(UserCommandMapper.toEnsureProfileCommand(authenticatedUser));
         return DiscountCodeSearchResponse.from(discountCodeSearchService.search(toCommand(authenticatedUser.id(), request)));
     }
 

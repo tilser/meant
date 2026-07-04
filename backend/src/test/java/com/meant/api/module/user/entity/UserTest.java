@@ -27,7 +27,7 @@ class UserTest {
 
         user.updateEmail("ada@example.com", Instant.parse("2025-01-01T00:00:00Z"));
 
-        // updatedAt must not advance: this keeps upsert-on-read from flushing a redundant UPDATE.
+        // updatedAt must not advance: unchanged profile resolution should remain write-free.
         assertThat(user.getUpdatedAt()).isEqualTo(before);
     }
 

@@ -3,9 +3,9 @@ package com.meant.api.module.user.service;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
 import com.meant.api.module.user.service.query.GetUserQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -33,8 +33,8 @@ public class UserService {
      * in Supabase) while profile names are preserved so user edits are not clobbered.
      */
     @Transactional
-    public User upsert(@NotNull @Valid UpsertUserCommand command) {
-        return upsertInternal(command, Instant.now());
+    public User ensureProfile(@NotNull @Valid EnsureUserProfileCommand command) {
+        return ensureProfileInternal(command, Instant.now());
     }
 
     @Transactional(readOnly = true)
@@ -43,54 +43,53 @@ public class UserService {
     }
 
     /**
-     * Ensures the profile exists (upsert from the JWT identity) and applies the user's name edits in a
-     * single transaction. A client may PATCH before ever calling GET /me, so the row must be created
-     * here if missing; combining both steps keeps the operation atomic and avoids a second roundtrip.
+     * Ensures the profile exists from the JWT identity and applies the user's name edits in a single
+     * transaction. A client may PATCH before ever calling GET /me, so the row must be created here if
+     * missing; combining both steps keeps the operation atomic and avoids a second roundtrip.
      */
     @Transactional
     public User updateProfile(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid UpdateUserProfileCommand updateCommand) {
         Instant now = Instant.now();
-        User user = upsertInternal(upsertCommand, now);
+        User user = ensureProfileInternal(profileCommand, now);
         user.updateProfile(updateCommand.firstName(), updateCommand.surname(), now);
         return user;
     }
 
     @Transactional
     public User updateProfilePicture(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid UpdateUserProfilePictureCommand updateCommand) {
-        if (!upsertCommand.id().equals(updateCommand.id())) {
+        if (!profileCommand.id().equals(updateCommand.id())) {
             throw UserException.forbidden("Cannot update another user's profile picture");
         }
         Instant now = Instant.now();
-        User user = upsertInternal(upsertCommand, now);
+        User user = ensureProfileInternal(profileCommand, now);
         String profilePicturePath = normalizeProfilePicturePath(updateCommand.id(), updateCommand.profilePicturePath());
         user.updateProfilePicture(profilePicturePath, now);
         return user;
     }
 
     @Transactional
-    public User removeProfilePicture(@NotNull @Valid UpsertUserCommand upsertCommand) {
+    public User removeProfilePicture(@NotNull @Valid EnsureUserProfileCommand profileCommand) {
         Instant now = Instant.now();
-        User user = upsertInternal(upsertCommand, now);
+        User user = ensureProfileInternal(profileCommand, now);
         user.updateProfilePicture(null, now);
         return user;
     }
 
     /**
-     * Resolves the managed profile entity, writing only when necessary. Since this runs on every
-     * read ({@code GET /api/users/me}), the common case — an existing row whose email is unchanged —
-     * is served by a pure read, avoiding the row lock and WAL of an unconditional write. Only when the
-     * row is missing or the email changed do we fall through to the conflict-safe native upsert, which
-     * handles the concurrent-first-request insert race atomically (no rollback-marking exception).
+     * Resolves the managed profile entity, writing only when necessary. The common case, an existing
+     * row whose email is unchanged, is served by a pure read. Only when the row is missing or the
+     * email changed do we use the conflict-safe native insert/update to handle concurrent first
+     * requests without a unique-constraint rollback.
      */
-    private User upsertInternal(UpsertUserCommand command, Instant now) {
+    private User ensureProfileInternal(EnsureUserProfileCommand command, Instant now) {
         return userRepository.findById(command.id())
                 .filter(existing -> existing.getEmail().equals(command.email()))
                 .orElseGet(() -> {
-                    userRepository.upsertFromIdentity(
+                    userRepository.insertOrRefreshFromIdentity(
                             command.id(),
                             command.email(),
                             command.firstName(),

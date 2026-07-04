@@ -13,7 +13,7 @@ import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.user.service.UserService;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -64,7 +64,7 @@ public class CartController {
             @Valid @RequestBody CartCreateRequest request
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        userService.upsert(toUpsertCommand(authenticatedUser));
+        userService.ensureProfile(toEnsureProfileCommand(authenticatedUser));
         return CartResponse.from(cartService.create(CartCommandMapper.toCommand(authenticatedUser.id(), request)));
     }
 
@@ -198,8 +198,8 @@ public class CartController {
         return AuthenticatedUser.fromJwt(jwt);
     }
 
-    private UpsertUserCommand toUpsertCommand(AuthenticatedUser authenticatedUser) {
-        return new UpsertUserCommand(
+    private EnsureUserProfileCommand toEnsureProfileCommand(AuthenticatedUser authenticatedUser) {
+        return new EnsureUserProfileCommand(
                 authenticatedUser.id(),
                 authenticatedUser.email(),
                 authenticatedUser.firstName(),

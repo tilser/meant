@@ -139,7 +139,7 @@ public class UserController {
     @Operation(
             summary = "Get current user",
             description = "Returns the profile of the authenticated user, creating it from the Supabase "
-                    + "JWT on first call (upsert-on-read)."
+                    + "JWT on first call."
     )
     @ApiResponse(
             responseCode = "200",
@@ -148,7 +148,7 @@ public class UserController {
     )
     public UserResponse me(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        return UserResponse.from(userService.upsert(UserCommandMapper.toUpsertCommand(authenticatedUser)));
+        return UserResponse.from(userService.ensureProfile(UserCommandMapper.toEnsureProfileCommand(authenticatedUser)));
     }
 
     @PatchMapping("/me")
@@ -166,10 +166,10 @@ public class UserController {
             @Valid @RequestBody UpdateUserProfileRequest request
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        // Upsert-from-JWT and the name edit run in a single service transaction (the row may not exist
-        // yet if a client PATCHes before ever calling GET /me).
+        // Profile provisioning and the name edit run in a single service transaction (the row may not
+        // exist yet if a client PATCHes before ever calling GET /me).
         return UserResponse.from(userService.updateProfile(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
     }
 
@@ -189,7 +189,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserResponse.from(userService.updateProfilePicture(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
     }
 
@@ -206,7 +206,7 @@ public class UserController {
     public UserResponse removeProfilePicture(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserResponse.from(userService.removeProfilePicture(
-                UserCommandMapper.toUpsertCommand(authenticatedUser)));
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser)));
     }
 
     @GetMapping("/me/settings")
@@ -222,7 +222,7 @@ public class UserController {
     public UserSettingsResponse settings(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserSettingsResponse.from(userSettingsService.get(
-                UserCommandMapper.toUpsertCommand(authenticatedUser)));
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser)));
     }
 
     @PatchMapping("/me/settings")
@@ -243,7 +243,7 @@ public class UserController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         ParsedUserPreferenceFilters parsedFilters = parseFilters(authenticatedUser, request);
         return UserSettingsResponse.from(userSettingsService.update(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toUpdateSettingsCommand(authenticatedUser.id(), request, parsedFilters)));
     }
 
@@ -260,7 +260,7 @@ public class UserController {
     public UserTasteProfileResponse tasteProfile(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserTasteProfileResponse.from(userTasteProfileService.get(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new GetUserTasteProfileQuery(authenticatedUser.id())));
     }
 
@@ -280,7 +280,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserTasteProfileResponse.from(userTasteProfileService.recordBehavior(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toRecordUserTasteBehaviorCommand(authenticatedUser.id(), request)));
     }
 
@@ -301,7 +301,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserTasteSignalResponse.from(userTasteProfileService.updateSignal(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toUpdateUserTasteSignalCommand(authenticatedUser.id(), signalId, request)));
     }
 
@@ -315,7 +315,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         userTasteProfileService.removeSignal(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 authenticatedUser.id(),
                 signalId);
     }
@@ -336,7 +336,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserSettingsResponse.from(userTasteProfileService.acceptSuggestion(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new AcceptUserTasteSuggestionCommand(authenticatedUser.id(), filterId)));
     }
 
@@ -350,7 +350,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         userTasteProfileService.rejectSuggestion(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new AcceptUserTasteSuggestionCommand(authenticatedUser.id(), filterId));
     }
 
@@ -372,7 +372,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserProductSearchResponse.from(userProductSearchService.search(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new SearchUserProductsCommand(
                         authenticatedUser.id(),
                         request.query(),
@@ -412,7 +412,7 @@ public class UserController {
                 command.merchantId()
         );
         session.start(() -> userProductSearchService.stream(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 command,
                 event -> session.send(UserProductSearchStreamEventResponse.from(event))
         ));
@@ -433,7 +433,7 @@ public class UserController {
     public UserProductSearchSuggestionsResponse productSearchSuggestions(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserProductSearchSuggestionsResponse.from(userProductSearchSuggestionService.generate(
-                UserCommandMapper.toUpsertCommand(authenticatedUser)));
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser)));
     }
 
     @GetMapping("/me/inventory")
@@ -455,7 +455,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return userInventoryService.list(
-                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                         new ListUserInventoryItemsQuery(
                                 authenticatedUser.id(),
                                 category,
@@ -483,7 +483,7 @@ public class UserController {
     public UserInventoryExportResponse exportInventory(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserInventoryExportResponse.from(userInventoryService.export(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new ExportUserInventoryQuery(authenticatedUser.id())));
     }
 
@@ -503,7 +503,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserInventoryItemResponse.from(userInventoryService.create(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toCreateInventoryItemCommand(authenticatedUser.id(), request)));
     }
 
@@ -524,7 +524,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserInventoryItemResponse.from(userInventoryService.createFromPhoto(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toCreateInventoryPhotoItemCommand(authenticatedUser.id(), request)));
     }
 
@@ -545,7 +545,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserInventoryItemResponse.from(userInventoryService.update(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toUpdateInventoryItemCommand(authenticatedUser.id(), itemId, request)));
     }
 
@@ -562,7 +562,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         userInventoryService.delete(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new DeleteUserInventoryItemCommand(authenticatedUser.id(), itemId));
     }
 
@@ -586,7 +586,7 @@ public class UserController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         UserProductDiscoverySortField sortField = productDiscoverySortField(sortBy);
         return UserProductDiscoveryResponse.from(userProductDiscoveryService.get(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new GetUserProductDiscoveryQuery(
                         authenticatedUser.id(),
                         blankToNull(search),
@@ -627,7 +627,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return userAssistantChatService.list(
-                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                         new ListUserAssistantConversationsQuery(authenticatedUser.id(), clampConversationLimit(limit)))
                 .stream()
                 .map(UserAssistantConversationSummaryResponse::from)
@@ -647,7 +647,7 @@ public class UserController {
     public UserAssistantConversationResponse latestAssistantConversation(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserAssistantConversationResponse.from(userAssistantChatService.latest(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new GetLatestUserAssistantConversationQuery(authenticatedUser.id())));
     }
 
@@ -667,7 +667,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserAssistantConversationResponse.from(userAssistantChatService.get(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new GetUserAssistantConversationQuery(authenticatedUser.id(), conversationId)));
     }
 
@@ -691,7 +691,7 @@ public class UserController {
         return outputStream -> {
             try {
                 userAssistantChatService.stream(
-                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                         command,
                         event -> writeAssistantEvent(outputStream, UserAssistantStreamEventResponse.from(event))
                 );
@@ -722,7 +722,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return userSavedProductService.list(
-                        UserCommandMapper.toUpsertCommand(authenticatedUser),
+                        UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                         new ListSavedProductsQuery(
                                 authenticatedUser.id(),
                                 pageValue(page),
@@ -751,7 +751,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserSavedProductResponse.from(userSavedProductService.save(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toSaveUserProductCommand(authenticatedUser.id(), request)));
     }
 
@@ -768,7 +768,7 @@ public class UserController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         userSavedProductService.remove(
-                UserCommandMapper.toUpsertCommand(authenticatedUser),
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new RemoveSavedProductCommand(authenticatedUser.id(), productKey));
     }
 

@@ -20,7 +20,7 @@ import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UpdateUserTasteSignalCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
@@ -34,8 +34,8 @@ public final class UserCommandMapper {
     private UserCommandMapper() {
     }
 
-    public static UpsertUserCommand toUpsertCommand(AuthenticatedUser authenticatedUser) {
-        return new UpsertUserCommand(
+    public static EnsureUserProfileCommand toEnsureProfileCommand(AuthenticatedUser authenticatedUser) {
+        return new EnsureUserProfileCommand(
                 authenticatedUser.id(),
                 authenticatedUser.email(),
                 authenticatedUser.firstName(),

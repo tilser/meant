@@ -4,7 +4,7 @@ import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchSuggestionsResult;
@@ -60,7 +60,7 @@ public class UserProductSearchSuggestionService {
     private final OpenRouterProperties openRouterProperties;
     private final ObjectMapper objectMapper;
 
-    public UserProductSearchSuggestionsResult generate(@NotNull @Valid UpsertUserCommand command) {
+    public UserProductSearchSuggestionsResult generate(@NotNull @Valid EnsureUserProfileCommand command) {
         UserSettingsResult settings = userSettingsService.get(command);
         try {
             String response = openRouterChatClient.completeJson(

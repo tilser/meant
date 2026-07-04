@@ -11,7 +11,7 @@ import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.CurateUserProductSearchCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchCuratorResult;
@@ -56,16 +56,16 @@ public class UserProductSearchService {
     private final OpenRouterProperties openRouterProperties;
 
     public UserProductSearchResult search(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SearchUserProductsCommand command
     ) {
-        if (!upsertCommand.id().equals(command.userId())) {
+        if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product search user does not match authenticated user");
         }
 
         String query = command.query().trim();
         UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         UserProductSearchCatalogInput catalogInput =
                 userProductSearchCatalogInputBuilder.build(
@@ -134,11 +134,11 @@ public class UserProductSearchService {
     }
 
     public void stream(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SearchUserProductsCommand command,
             @NotNull Consumer<UserProductSearchStreamEvent> eventConsumer
     ) {
-        if (!upsertCommand.id().equals(command.userId())) {
+        if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product search user does not match authenticated user");
         }
 
@@ -153,7 +153,7 @@ public class UserProductSearchService {
                 UserProductSearchAgent.DISCOVERY.getValue(),
                 "Loading your shopping context"
         ));
-        UserSettingsResult settings = userSettingsService.get(upsertCommand);
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
         UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         UserProductSearchCatalogInput catalogInput =
                 userProductSearchCatalogInputBuilder.build(

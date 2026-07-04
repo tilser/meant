@@ -9,7 +9,7 @@ import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
-import com.meant.api.module.user.service.command.UpsertUserCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import jakarta.validation.Valid;
@@ -44,11 +44,11 @@ public class UserSavedProductService {
 
     @Transactional
     public List<UserSavedProductResult> list(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid ListSavedProductsQuery query
     ) {
-        validateUser(upsertCommand, query.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, query.userId());
+        userService.ensureProfile(profileCommand);
         return userSavedProductRepository.findByUserIdOrderByCreatedAtDesc(
                         query.userId(),
                         PageRequest.of(query.page(), boundedLimit(
@@ -61,11 +61,11 @@ public class UserSavedProductService {
 
     @Transactional
     public UserSavedProductResult save(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SaveUserProductCommand command
     ) {
-        validateUser(upsertCommand, command.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId());
+        userService.ensureProfile(profileCommand);
         Instant now = Instant.now();
         SavedProductSnapshot snapshot = snapshot(command);
         UserSavedProduct savedProduct = userSavedProductRepository
@@ -93,11 +93,11 @@ public class UserSavedProductService {
 
     @Transactional
     public void remove(
-            @NotNull @Valid UpsertUserCommand upsertCommand,
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid RemoveSavedProductCommand command
     ) {
-        validateUser(upsertCommand, command.userId());
-        userService.upsert(upsertCommand);
+        validateUser(profileCommand, command.userId());
+        userService.ensureProfile(profileCommand);
         userSavedProductRepository.deleteByUserIdAndProductKey(command.userId(), command.productKey());
     }
 
@@ -172,8 +172,8 @@ public class UserSavedProductService {
         );
     }
 
-    private void validateUser(UpsertUserCommand upsertCommand, UUID userId) {
-        if (!upsertCommand.id().equals(userId)) {
+    private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {
+        if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden("Saved product user does not match authenticated user");
         }
     }
