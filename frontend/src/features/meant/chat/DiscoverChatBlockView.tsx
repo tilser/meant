@@ -10,13 +10,14 @@ import type {
 } from '../types'
 import { bestOffer, formatOrderDate, money, productPriceFrom } from '../utils'
 import { productCuratedTake } from '../product/productCuration'
+import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
 import { CartIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import { DiscoverProductBatch } from './DiscoverProductBatch'
 import { InlineCartBlock } from './blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
 import type { DiscoverChatBlock } from './types'
-import { cartItemsWithFallback, productsWithFallback, searchProductReviewInsight } from './utils'
+import { cartItemsWithFallback, productsWithFallback } from './utils'
 
 export function DiscoverChatBlockView({
   block,
@@ -120,31 +121,7 @@ export function DiscoverChatBlockView({
     )
   }
   if (block.type === 'reviews') {
-    const score = block.product.review.score
-    return (
-      <div className="mt-ct-block">
-        <div className="mt-ct-block-head">
-          <div className="mt-mono mt-ct-block-key">Reviews · {block.product.name}</div>
-          <div className="mt-reviews-score">
-            {score !== null ? (
-              <span className="mt-stars">{'★'.repeat(Math.round(score))}</span>
-            ) : null}
-            <span className="mt-mono">
-              {score !== null ? `${score.toFixed(1)} · ` : ''}
-              {block.product.review.count.toLocaleString()}
-            </span>
-          </div>
-        </div>
-        <p className="mt-ct-review-sum">
-          {block.product.review.insight ||
-            searchProductReviewInsight(
-              block.product.agentStage === 'candidate',
-              block.product.review.score,
-              block.product.review.count,
-            )}
-        </p>
-      </div>
-    )
+    return <ProductReviewsPanel product={block.product} mode="chat" />
   }
   if (block.type === 'code') {
     const offer = bestOffer(block.product, deliveryLocations)

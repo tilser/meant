@@ -36,16 +36,56 @@ class ReviewProviderDetectionServiceTest {
                         <div id="kl_reviews"></div>
                         """
         );
-        ReviewProviderDetectionResult metafieldReviews = detectionService.detect(
+        ReviewProviderDetectionResult clientReviews = detectionService.detect(
                 "https://merchant.example/products/b",
                 """
                         <script>{"accountID":"J5feSG"}</script>
-                        <script>window.MetafieldReviews = [];</script>
+                        <div data-route="reviews/api/client_reviews"></div>
                         """
         );
 
         assertThat(klReviews.provider()).isEqualTo(ReviewProviderType.KLAVIYO);
-        assertThat(metafieldReviews.provider()).isEqualTo(ReviewProviderType.KLAVIYO);
+        assertThat(clientReviews.provider()).isEqualTo(ReviewProviderType.KLAVIYO);
+    }
+
+    @Test
+    void detectsYotpoBeforeKlaviyoMarketing() {
+        ReviewProviderDetectionResult result = detectionService.detect(
+                "https://culturekings.com/products/tee",
+                """
+                        <script async src="https://static.klaviyo.com/onsite/js/RYyrrE/klaviyo.js?company_id=RYyrrE"></script>
+                        <script>
+                          var MetafieldReviews = {};
+                          var MetafieldYotpoRating = "5.0";
+                          var MetafieldYotpoCount = "4";
+                          window.klaviyoReviewsProductDesignMode = false;
+                        </script>
+                        <script type="text/plain">
+                          (function e(){var e=document.createElement("script");e.src="//staticw2.yotpo.com/BbbH23pfMsuacT2NMxfTdJSEECWZEUxUlY5kyl5t/widget.js";})();
+                        </script>
+                        """
+        );
+
+        assertThat(result.provider()).isEqualTo(ReviewProviderType.YOTPO);
+        assertThat(result.status()).isEqualTo(ReviewProviderStatus.DETECTED);
+        assertThat(result.providerKey()).isEqualTo("BbbH23pfMsuacT2NMxfTdJSEECWZEUxUlY5kyl5t");
+        assertThat(result.evidence()).contains("staticw2.yotpo.com");
+    }
+
+    @Test
+    void doesNotClassifyGenericKlaviyoOnsiteReviewTrackingAsKlaviyoReviews() {
+        ReviewProviderDetectionResult result = detectionService.detect(
+                "https://merchant.example",
+                """
+                        <script async src="https://static.klaviyo.com/onsite/js/RYyrrE/klaviyo.js?company_id=RYyrrE"></script>
+                        <script>
+                          var MetafieldReviews = {};
+                          window.klaviyoReviewsProductDesignMode = false;
+                        </script>
+                        """
+        );
+
+        assertThat(result.provider()).isEqualTo(ReviewProviderType.NONE);
     }
 
     @Test

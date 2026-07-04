@@ -132,6 +132,9 @@ review:
     klaviyo:
       reviews-base-url: ${REVIEW_KLAVIYO_REVIEWS_BASE_URL:https://fast.a.klaviyo.com/reviews/api}
       default-limit: ${REVIEW_KLAVIYO_DEFAULT_LIMIT:20}
+    yotpo:
+      reviews-base-url: ${REVIEW_YOTPO_REVIEWS_BASE_URL:https://api-cdn.yotpo.com/v1/widget}
+      default-limit: ${REVIEW_YOTPO_DEFAULT_LIMIT:20}
 
 ai:
   openrouter:

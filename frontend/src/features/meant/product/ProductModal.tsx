@@ -32,6 +32,7 @@ import {
   productOptionsFromProfiles,
   productSelectedOptionsFromProfiles,
 } from './productMapping'
+import { ProductReviewsPanel } from './ProductReviewsPanel'
 
 type ProductDetailLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 
@@ -248,10 +249,6 @@ export function ProductModal({
     !detailDescription &&
     detailOptions.length === 0 &&
     selectedOptions.length === 0
-  const reviewInsight =
-    product.review.count > 0
-      ? product.review.insight || 'Rating data is available; no review-summary agent has run yet.'
-      : 'No review data available from this catalog result.'
   const showThumbnailPage = (nextPage: number) => {
     const page = Math.max(0, Math.min(nextPage, thumbnailPageCount - 1))
     const pageMedia = modalMedia.slice(
@@ -611,28 +608,7 @@ export function ProductModal({
               </div>
             </section>
 
-            <section className="mt-block">
-              <div className="mt-reviews-head">
-                <div className="mt-block-label mt-mono">From the reviews</div>
-                {product.review.count > 0 ? (
-                  <div className="mt-reviews-score">
-                    {product.review.score !== null ? (
-                      <span className="mt-stars">
-                        {'★'.repeat(Math.round(product.review.score))}
-                      </span>
-                    ) : null}
-                    <span className="mt-mono">
-                      {product.review.score !== null ? `${product.review.score.toFixed(1)} · ` : ''}
-                      {product.review.count.toLocaleString()}
-                      {product.review.score === null ? ' reviews' : ''}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="mt-mono mt-reviews-empty">No review data</span>
-                )}
-              </div>
-              <p className="mt-reviews-insight">{reviewInsight}</p>
-            </section>
+            <ProductReviewsPanel product={product} />
 
             <section className="mt-block">
               <div className="mt-block-label mt-mono">Available offers</div>

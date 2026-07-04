@@ -5624,6 +5624,96 @@ button:disabled {
   line-height: 1.55;
 }
 
+.mt-review-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.mt-review-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.mt-review-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mt-review-author {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.mt-review-rating {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.mt-review-content {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.mt-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.mt-review-meta span:not(:last-child)::after {
+  margin-left: 8px;
+  color: var(--line-strong);
+  content: '/';
+}
+
+.mt-review-page-error {
+  margin: 10px 0 0;
+  color: var(--cart-warn);
+  font-size: 11px;
+}
+
+.mt-review-more {
+  align-self: flex-start;
+  margin-top: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out);
+}
+
+.mt-review-more:not(:disabled):hover {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.mt-review-more:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .mt-product-detail-description {
   margin: 0;
   color: var(--ink-soft);
@@ -9807,6 +9897,12 @@ button:disabled {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .mt-review-row-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .mt-result-tools {

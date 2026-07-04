@@ -28,6 +28,21 @@ public record ReviewProviderDetectionResult(
         );
     }
 
+    public static ReviewProviderDetectionResult yotpo(
+            String providerKey,
+            String sourceUrl,
+            String evidence
+    ) {
+        return new ReviewProviderDetectionResult(
+                ReviewProviderType.YOTPO,
+                ReviewProviderStatus.DETECTED,
+                providerKey,
+                ReviewProductIdType.SHOPIFY_NUMERIC_ID,
+                sourceUrl,
+                evidence
+        );
+    }
+
     public static ReviewProviderDetectionResult notFound() {
         return new ReviewProviderDetectionResult(
                 ReviewProviderType.NONE,

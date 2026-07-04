@@ -7,11 +7,13 @@ import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.entity.ReviewProvider;
 import com.meant.api.module.review.properties.KlaviyoReviewProperties;
 import com.meant.api.module.review.properties.ReviewCacheProperties;
+import com.meant.api.module.review.properties.YotpoReviewProperties;
 import com.meant.api.module.review.repository.ReviewProviderRepository;
 import com.meant.api.module.review.service.dto.ProductReviewsResult;
 import com.meant.api.module.review.service.query.GetProductReviewsQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -26,20 +28,26 @@ public class ReviewService {
 
     private final ReviewProviderRepository reviewProviderRepository;
     private final KlaviyoReviewClient klaviyoReviewClient;
+    private final YotpoReviewClient yotpoReviewClient;
     private final KlaviyoReviewProperties klaviyoReviewProperties;
+    private final YotpoReviewProperties yotpoReviewProperties;
     private final ReviewProductIdNormalizer productIdNormalizer;
     private final Cache<ReviewCacheKey, ProductReviewsResult> cache;
 
     public ReviewService(
             ReviewProviderRepository reviewProviderRepository,
             KlaviyoReviewClient klaviyoReviewClient,
+            YotpoReviewClient yotpoReviewClient,
             KlaviyoReviewProperties klaviyoReviewProperties,
+            YotpoReviewProperties yotpoReviewProperties,
             ReviewCacheProperties reviewCacheProperties,
             ReviewProductIdNormalizer productIdNormalizer
     ) {
         this.reviewProviderRepository = reviewProviderRepository;
         this.klaviyoReviewClient = klaviyoReviewClient;
+        this.yotpoReviewClient = yotpoReviewClient;
         this.klaviyoReviewProperties = klaviyoReviewProperties;
+        this.yotpoReviewProperties = yotpoReviewProperties;
         this.productIdNormalizer = productIdNormalizer;
         this.cache = Caffeine.newBuilder()
                 .expireAfterWrite(reviewCacheProperties.ttl())
@@ -49,7 +57,6 @@ public class ReviewService {
 
     public ProductReviewsResult getProductReviews(@NotNull @Valid GetProductReviewsQuery query) {
         String productId = productIdNormalizer.normalize(query.productId());
-        int limit = query.limit() == null ? klaviyoReviewProperties.defaultLimit() : query.limit();
         int offset = query.offset() == null ? DEFAULT_OFFSET : query.offset();
         ReviewProvider provider = reviewProviderRepository.findByMerchantId(query.merchantId()).orElse(null);
         if (provider == null) {
@@ -60,7 +67,7 @@ public class ReviewService {
                     "Review provider has not been discovered for this merchant."
             );
         }
-        if (!hasFetchableKlaviyoProvider(provider)) {
+        if (!hasFetchableProvider(provider)) {
             return ProductReviewsResult.unsupported(
                     query.merchantId(),
                     productId,
@@ -69,6 +76,7 @@ public class ReviewService {
             );
         }
 
+        int limit = query.limit() == null ? defaultLimit(provider) : query.limit();
         ReviewCacheKey cacheKey = new ReviewCacheKey(
                 query.merchantId(),
                 provider.getProvider(),
@@ -83,22 +91,55 @@ public class ReviewService {
         boolean[] loaded = {false};
         ProductReviewsResult result = cache.get(cacheKey, _ -> {
             loaded[0] = true;
-            return klaviyoReviewClient.fetchReviews(
-                    query.merchantId(),
-                    productId,
-                    provider.getProviderKey(),
-                    limit,
-                    offset
-            ).withCached(false);
+            return fetchReviews(query.merchantId(), productId, provider, limit, offset).withCached(false);
         });
         return loaded[0] ? result : result.withCached(true);
     }
 
-    private boolean hasFetchableKlaviyoProvider(ReviewProvider provider) {
+    private ProductReviewsResult fetchReviews(
+            UUID merchantId,
+            String productId,
+            ReviewProvider provider,
+            int limit,
+            int offset
+    ) {
+        return switch (provider.getProvider()) {
+            case KLAVIYO -> klaviyoReviewClient.fetchReviews(
+                    merchantId,
+                    productId,
+                    provider.getProviderKey(),
+                    limit,
+                    offset
+            );
+            case YOTPO -> yotpoReviewClient.fetchReviews(
+                    merchantId,
+                    productId,
+                    provider.getProviderKey(),
+                    limit,
+                    offset
+            );
+            case UNKNOWN, NONE -> ProductReviewsResult.unsupported(
+                    merchantId,
+                    productId,
+                    provider.getProvider(),
+                    "Merchant reviews are not available from a supported provider."
+            );
+        };
+    }
+
+    private boolean hasFetchableProvider(ReviewProvider provider) {
         return (provider.getStatus() == ReviewProviderStatus.DETECTED
                 || provider.getStatus() == ReviewProviderStatus.FAILED_RETRYABLE)
-                && provider.getProvider() == ReviewProviderType.KLAVIYO
+                && (provider.getProvider() == ReviewProviderType.KLAVIYO
+                || provider.getProvider() == ReviewProviderType.YOTPO)
                 && hasText(provider.getProviderKey());
+    }
+
+    private int defaultLimit(ReviewProvider provider) {
+        if (provider.getProvider() == ReviewProviderType.YOTPO) {
+            return yotpoReviewProperties.defaultLimit();
+        }
+        return klaviyoReviewProperties.defaultLimit();
     }
 
     private boolean hasText(String value) {
@@ -106,7 +147,7 @@ public class ReviewService {
     }
 
     private record ReviewCacheKey(
-            java.util.UUID merchantId,
+            UUID merchantId,
             ReviewProviderType provider,
             String providerKey,
             String productId,

@@ -8,6 +8,7 @@ import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.entity.ReviewProvider;
 import com.meant.api.module.review.properties.KlaviyoReviewProperties;
 import com.meant.api.module.review.properties.ReviewCacheProperties;
+import com.meant.api.module.review.properties.YotpoReviewProperties;
 import com.meant.api.module.review.repository.ReviewProviderRepository;
 import com.meant.api.module.review.service.dto.ProductReviewsResult;
 import com.meant.api.module.review.service.query.GetProductReviewsQuery;
@@ -29,7 +30,9 @@ class ReviewServiceTest {
         ReviewService service = new ReviewService(
                 repository,
                 client,
+                null,
                 new KlaviyoReviewProperties("https://reviews.example", 20),
+                new YotpoReviewProperties("https://yotpo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
                 new ReviewProductIdNormalizer()
         );
@@ -53,7 +56,9 @@ class ReviewServiceTest {
         ReviewService service = new ReviewService(
                 repository,
                 client,
+                null,
                 new KlaviyoReviewProperties("https://reviews.example", 20),
+                new YotpoReviewProperties("https://yotpo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
                 new ReviewProductIdNormalizer()
         );
@@ -65,6 +70,36 @@ class ReviewServiceTest {
         assertThat(result.supported()).isTrue();
         assertThat(client.fetchCount).isEqualTo(1);
         assertThat(client.providerKey).isEqualTo("company-1");
+    }
+
+    @Test
+    void fetchesReviewsFromYotpoProvider() {
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        ReviewProviderRepository repository = repositoryReturning(
+                provider(merchantId, ReviewProviderType.YOTPO, ReviewProviderStatus.DETECTED, "yotpo-store")
+        );
+        CapturingYotpoReviewClient client = new CapturingYotpoReviewClient();
+        ReviewService service = new ReviewService(
+                repository,
+                null,
+                client,
+                new KlaviyoReviewProperties("https://reviews.example", 20),
+                new YotpoReviewProperties("https://yotpo.example", 5),
+                new ReviewCacheProperties(Duration.ofHours(1), 100L),
+                new ReviewProductIdNormalizer()
+        );
+
+        ProductReviewsResult result = service.getProductReviews(
+                new GetProductReviewsQuery(merchantId, "gid://shopify/Product/7365959123057", null, null)
+        );
+
+        assertThat(result.supported()).isTrue();
+        assertThat(result.provider()).isEqualTo(ReviewProviderType.YOTPO);
+        assertThat(client.fetchCount).isEqualTo(1);
+        assertThat(client.productId).isEqualTo("7365959123057");
+        assertThat(client.providerKey).isEqualTo("yotpo-store");
+        assertThat(client.limit).isEqualTo(5);
+        assertThat(client.offset).isZero();
     }
 
     private ReviewProviderRepository repositoryReturning(ReviewProvider provider) {
@@ -81,13 +116,22 @@ class ReviewServiceTest {
     }
 
     private ReviewProvider provider(UUID merchantId, ReviewProviderStatus status) {
+        return provider(merchantId, ReviewProviderType.KLAVIYO, status, "company-1");
+    }
+
+    private ReviewProvider provider(
+            UUID merchantId,
+            ReviewProviderType providerType,
+            ReviewProviderStatus status,
+            String providerKey
+    ) {
         Instant now = Instant.parse("2026-07-03T12:00:00Z");
         return ReviewProvider.builder()
                 .merchantId(merchantId)
                 .merchantDomain("merchant.example")
-                .provider(ReviewProviderType.KLAVIYO)
+                .provider(providerType)
                 .status(status)
-                .providerKey("company-1")
+                .providerKey(providerKey)
                 .productIdType(ReviewProductIdType.SHOPIFY_NUMERIC_ID)
                 .createdAt(now)
                 .updatedAt(now)
@@ -123,6 +167,50 @@ class ReviewServiceTest {
                     ReviewProviderType.KLAVIYO,
                     4.5,
                     1,
+                    false,
+                    List.of(),
+                    false,
+                    true,
+                    null
+            );
+        }
+    }
+
+    private static class CapturingYotpoReviewClient extends YotpoReviewClient {
+
+        private int fetchCount;
+        private String productId;
+        private String providerKey;
+        private int limit;
+        private int offset;
+
+        private CapturingYotpoReviewClient() {
+            super(
+                    org.springframework.web.client.RestClient.builder().build(),
+                    new YotpoReviewProperties("https://yotpo.example", 20),
+                    null
+            );
+        }
+
+        @Override
+        public ProductReviewsResult fetchReviews(
+                UUID merchantId,
+                String productId,
+                String providerKey,
+                int limit,
+                int offset
+        ) {
+            fetchCount++;
+            this.productId = productId;
+            this.providerKey = providerKey;
+            this.limit = limit;
+            this.offset = offset;
+            return new ProductReviewsResult(
+                    merchantId,
+                    productId,
+                    ReviewProviderType.YOTPO,
+                    5.0,
+                    5,
                     false,
                     List.of(),
                     false,

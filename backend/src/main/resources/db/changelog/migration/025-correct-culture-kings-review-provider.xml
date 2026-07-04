@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-correct-culture-kings-review-provider" author="codex">
+        <update tableName="review_provider">
+            <column name="provider" value="YOTPO"/>
+            <column name="provider_key" value="BbbH23pfMsuacT2NMxfTdJSEECWZEUxUlY5kyl5t"/>
+            <column name="product_id_type" value="SHOPIFY_NUMERIC_ID"/>
+            <column name="source_url" value="https://culturekings.com/"/>
+            <column name="evidence" value="staticw2.yotpo.com/BbbH23pfMsuacT2NMxfTdJSEECWZEUxUlY5kyl5t/widget.js"/>
+            <column name="error_message" valueComputed="NULL"/>
+            <column name="updated_at" valueComputed="CURRENT_TIMESTAMP"/>
+            <where>merchant_domain = 'culturekings.com' and provider = 'KLAVIYO' and provider_key = 'RYyrrE'</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

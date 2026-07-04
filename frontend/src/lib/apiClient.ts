@@ -158,6 +158,32 @@ export interface MerchantProductDetailsProfile {
   selectedOptions: ProductSelectedOptionProfile[]
 }
 
+export type ProductReviewProviderProfile = 'KLAVIYO' | 'YOTPO' | 'UNKNOWN' | 'NONE'
+
+export interface ProductReviewProfile {
+  externalId: string | null
+  author: string | null
+  rating: number | null
+  content: string | null
+  verified: boolean | null
+  createdAt: string | null
+  variantId: string | null
+  variantTitle: string | null
+}
+
+export interface ProductReviewsProfile {
+  merchantId: string
+  productId: string
+  provider: ProductReviewProviderProfile
+  rating: number | null
+  reviewCount: number
+  hasMore: boolean
+  reviews: ProductReviewProfile[]
+  cached: boolean
+  supported: boolean
+  message: string | null
+}
+
 export interface UserProductSearchProfile {
   query: string
   normalizedQuery: string
@@ -896,6 +922,31 @@ export async function getMerchantProductDetails(input: {
     response,
     'Failed to load product details',
   )
+}
+
+export async function getProductReviews(input: {
+  merchantId: string
+  productId: string
+  limit?: number
+  offset?: number
+  signal?: AbortSignal
+}): Promise<ProductReviewsProfile> {
+  const search = new URLSearchParams({ productId: input.productId })
+  if (input.limit !== undefined) {
+    search.set('limit', String(input.limit))
+  }
+  if (input.offset !== undefined) {
+    search.set('offset', String(input.offset))
+  }
+  const response = await fetch(
+    `${API_URL}/api/reviews/merchants/${encodeURIComponent(input.merchantId)}/products?${search.toString()}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(),
+      signal: input.signal,
+    },
+  )
+  return parseJsonResponse<ProductReviewsProfile>(response, 'Failed to load product reviews')
 }
 
 export async function getUserInventoryItems(input?: {
