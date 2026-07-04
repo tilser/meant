@@ -2,7 +2,9 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type Dispatch,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
+  Fragment,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -130,7 +132,10 @@ import {
   IMPORT_ASK,
   availableOffers,
   bestOffer,
+  cartGroups,
   cartLines,
+  computeSmartAlerts,
+  createOrder,
   displayProductCategoryValue,
   firstUrl,
   formatOrderDate,
@@ -152,6 +157,12 @@ interface Message {
   pending?: boolean
 }
 
+interface MiniCompareRow {
+  label: string
+  values: readonly string[]
+  winnerIndex: number
+}
+
 type DiscoverChatBlock =
   | { type: 'text'; text: string }
   | { type: 'products'; products: readonly Product[]; query?: string }
@@ -160,12 +171,27 @@ type DiscoverChatBlock =
   | { type: 'similar'; product: Product; products: readonly Product[] }
   | { type: 'decision'; product: Product; runnerUp: Product | null }
   | { type: 'watch'; product: Product; price: number; merchant: string }
-  | { type: 'added'; product: Product; merchant: string; synced: boolean }
+  | { type: 'friendvote'; person: string; product: Product; vote: 'up' | 'down'; note: string }
+  | {
+      type: 'added'
+      product: Product
+      merchant: string
+      synced: boolean
+      price?: number
+      count?: number
+      code?: string
+    }
   | { type: 'saved'; products: readonly Product[] }
   | { type: 'orders'; orders: readonly Order[] }
   | { type: 'prefs'; preferences: readonly Preference[] }
-  | { type: 'cart'; lines: readonly CartItem[] }
+  | { type: 'cart'; lines: readonly CartItem[]; products?: readonly Product[] }
   | { type: 'checkout'; merchantCount: number }
+  | {
+      type: 'minicompare'
+      products: readonly Product[]
+      rows: readonly MiniCompareRow[]
+      pickIndex: number
+    }
   | { type: 'system'; text: string }
 
 interface DiscoverChatMessage {
@@ -175,6 +201,65 @@ interface DiscoverChatMessage {
   blocks?: readonly DiscoverChatBlock[]
   pending?: boolean
   query?: string
+  productContext?: Product
+}
+
+interface DiscoverChatThread {
+  id: string
+  title: string
+  messages: readonly DiscoverChatMessage[]
+  named?: boolean
+  focusProductId?: ProductId
+}
+
+interface ShelfThumb {
+  name: string
+  tone: string
+  imageUrl?: string | null
+}
+
+interface ShelfMessageSnapshot {
+  side: 'you' | 'meant'
+  title: string
+  text: string
+  thumbs: readonly ShelfThumb[]
+}
+
+interface ShelfProductSnapshot {
+  productId: ProductId
+  name: string
+  brand: string
+  category: string
+  tone: string
+  priceFrom: number
+  merchants: number
+  imageUrl?: string | null
+}
+
+type ShelfItem =
+  | {
+      uid: string
+      kind: 'message'
+      messageId: string
+      collapsed: boolean
+      snapshot: ShelfMessageSnapshot
+    }
+  | {
+      uid: string
+      kind: 'product'
+      productId: ProductId
+      collapsed: boolean
+      snapshot: ShelfProductSnapshot
+    }
+
+type ShelfDragPayload =
+  | { kind: 'message'; messageId: string; snapshot: ShelfMessageSnapshot }
+  | { kind: 'product'; snapshot: ShelfProductSnapshot }
+
+interface ProductDetailChatRequest {
+  id: string
+  product: Product
+  question: string
 }
 
 interface AssistantProductAction {
@@ -215,6 +300,9 @@ const EMPTY_TASTE_PROFILE: UserTasteProfile = {
 }
 
 const MODAL_THUMBNAIL_PAGE_SIZE = 8
+const SHELF_MIN_WIDTH = 300
+const SHELF_MAX_WIDTH = 720
+const SHELF_DRAG_MIME = 'application/x-meant-shelf'
 
 const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> = {
   discover: {
@@ -1896,6 +1984,17 @@ function PlusIcon({ size = 16 }: Readonly<{ size?: number }>) {
   )
 }
 
+function ShareIcon({ size = 14 }: Readonly<{ size?: number }>) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" aria-hidden>
+      <circle cx="4.5" cy="9" r="1.9" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="13.5" cy="4.5" r="1.9" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="13.5" cy="13.5" r="1.9" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M6.2 8 11.8 5.3M6.2 10l5.6 2.7" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  )
+}
+
 function SearchIcon({ size = 16 }: Readonly<{ size?: number }>) {
   return (
     <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
@@ -1909,6 +2008,122 @@ function SearchIcon({ size = 16 }: Readonly<{ size?: number }>) {
       />
     </svg>
   )
+}
+
+function BookmarkIcon({
+  filled = false,
+  size = 14,
+}: Readonly<{
+  filled?: boolean
+  size?: number
+}>) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill={filled ? 'currentColor' : 'none'}
+      aria-hidden
+    >
+      <path
+        d="M4 2h8v12l-4-2.8L4 14V2z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function CollapseIcon({ collapsed }: Readonly<{ collapsed: boolean }>) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d={collapsed ? 'M4 6l4 4 4-4' : 'M4 10l4-4 4 4'}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function OpenIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M5.5 3.5h7v7M12 4 4 12"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function flyToShelf(fromElement: HTMLElement | null, tone?: string | null) {
+  if (!fromElement || typeof document === 'undefined') {
+    return
+  }
+  const shelf = document.querySelector('.mt-shelf.open') ?? document.querySelector('.mt-shelf-tab')
+  if (!(shelf instanceof HTMLElement)) {
+    return
+  }
+  const from = fromElement.getBoundingClientRect()
+  const to = shelf.getBoundingClientRect()
+  const ghost = document.createElement('div')
+  ghost.className = 'mt-fly-ghost'
+  ghost.style.left = `${from.left + from.width / 2 - 15}px`
+  ghost.style.top = `${from.top + from.height / 2 - 15}px`
+  ghost.style.background = tone || 'var(--accent)'
+  document.body.appendChild(ghost)
+  const tx = to.left + to.width / 2 - (from.left + from.width / 2)
+  const ty = to.top + to.height / 2 - (from.top + from.height / 2)
+  const animation = ghost.animate(
+    [
+      { transform: 'translate(0, 0) scale(1)', opacity: 1, borderRadius: '9px' },
+      {
+        transform: `translate(${tx * 0.5}px, ${ty * 0.5 - 46}px) scale(.78)`,
+        opacity: 1,
+        borderRadius: '11px',
+        offset: 0.6,
+      },
+      { transform: `translate(${tx}px, ${ty}px) scale(.2)`, opacity: 0, borderRadius: '50%' },
+    ],
+    { duration: 640, easing: 'cubic-bezier(.5,0,.2,1)' },
+  )
+  animation.onfinish = () => ghost.remove()
+}
+
+function flyMessageToChat(fromElement: HTMLElement | null, text: string) {
+  if (!fromElement || typeof document === 'undefined') {
+    return
+  }
+  const from = fromElement.getBoundingClientRect()
+  const ghost = document.createElement('div')
+  ghost.className = 'mt-fly-msg'
+  ghost.textContent = text.length > 64 ? `${text.slice(0, 62)}...` : text
+  ghost.style.left = `${from.left}px`
+  ghost.style.top = `${from.top}px`
+  ghost.style.maxWidth = `${Math.min(from.width, 360)}px`
+  document.body.appendChild(ghost)
+  const tx = window.innerWidth / 2 - (from.left + from.width / 2)
+  const ty = window.innerHeight - 118 - from.top
+  const animation = ghost.animate(
+    [
+      { transform: 'translate(0, 0) scale(1)', opacity: 0.96 },
+      {
+        transform: `translate(${tx * 0.35}px, ${ty * 0.55}px) scale(.94)`,
+        opacity: 1,
+        offset: 0.5,
+      },
+      { transform: `translate(${tx}px, ${ty}px) scale(.7)`, opacity: 0 },
+    ],
+    { duration: 680, easing: 'cubic-bezier(.5,0,.2,1)' },
+  )
+  animation.onfinish = () => ghost.remove()
 }
 
 function Avatar({
@@ -2327,6 +2542,599 @@ function AskComposer({
         </button>
       </form>
     </div>
+  )
+}
+
+let dustSequence = 0
+
+function DustWrap({
+  children,
+  side,
+  onGone,
+  onSetAside,
+  saved,
+}: Readonly<{
+  children: ReactNode
+  side: 'you' | 'meant'
+  onGone: () => void
+  onSetAside?: (sourceElement: HTMLElement) => void
+  saved: boolean
+}>) {
+  const [dusting, setDusting] = useState(false)
+  const idRef = useRef<string>('')
+  const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null)
+  const blurRef = useRef<SVGFEGaussianBlurElement | null>(null)
+
+  if (!idRef.current) {
+    dustSequence += 1
+    idRef.current = `mtdust-${dustSequence}`
+  }
+
+  useEffect(() => {
+    if (!dusting) {
+      return undefined
+    }
+    let frame = 0
+    let startedAt = 0
+    const duration = 1050
+    const step = (time: number) => {
+      if (!startedAt) {
+        startedAt = time
+      }
+      const progress = Math.min(1, (time - startedAt) / duration)
+      const eased = progress * progress
+      displacementRef.current?.setAttribute('scale', (eased * 140).toFixed(1))
+      blurRef.current?.setAttribute('stdDeviation', (eased * 1.8).toFixed(2))
+      if (progress < 1) {
+        frame = window.requestAnimationFrame(step)
+        return
+      }
+      window.setTimeout(onGone, 20)
+    }
+    frame = window.requestAnimationFrame(step)
+    return () => window.cancelAnimationFrame(frame)
+  }, [dusting, onGone])
+
+  return (
+    <div className={`mt-dustwrap side-${side} ${dusting ? 'dusting' : ''}`}>
+      <div
+        className="mt-dust-inner"
+        style={dusting ? { filter: `url(#${idRef.current})` } : undefined}
+      >
+        {children}
+      </div>
+      {!dusting ? (
+        <div className={`mt-msg-tools side-${side}`}>
+          {onSetAside ? (
+            <button
+              className={`mt-msg-tool mt-tool-shelf ${saved ? 'on' : ''}`}
+              type="button"
+              onClick={(event) => onSetAside(event.currentTarget)}
+              aria-label={saved ? 'On your shelf' : 'Set aside on shelf'}
+              title={saved ? 'On your shelf' : 'Set aside on your shelf'}
+            >
+              <BookmarkIcon filled={saved} size={12} />
+            </button>
+          ) : null}
+          <button
+            className="mt-msg-tool mt-tool-del"
+            type="button"
+            onClick={() => setDusting(true)}
+            aria-label="Delete message"
+            title="Delete message"
+          >
+            <CloseIcon size={12} />
+          </button>
+        </div>
+      ) : null}
+      {dusting ? (
+        <svg className="mt-dust-svg" aria-hidden="true" width="0" height="0">
+          <defs>
+            <filter
+              id={idRef.current}
+              x="-40%"
+              y="-40%"
+              width="180%"
+              height="180%"
+              colorInterpolationFilters="sRGB"
+            >
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.7"
+                numOctaves="2"
+                seed={dustSequence}
+                result="n"
+              />
+              <feDisplacementMap
+                ref={displacementRef}
+                in="SourceGraphic"
+                in2="n"
+                scale="0"
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="d"
+              />
+              <feGaussianBlur ref={blurRef} in="d" stdDeviation="0" />
+            </filter>
+          </defs>
+        </svg>
+      ) : null}
+    </div>
+  )
+}
+
+function DustingContainer({
+  children,
+  dusting,
+  className,
+  onGone,
+}: Readonly<{
+  children: ReactNode
+  dusting: boolean
+  className?: string
+  onGone: () => void
+}>) {
+  const idRef = useRef<string>('')
+  const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null)
+  const blurRef = useRef<SVGFEGaussianBlurElement | null>(null)
+
+  if (!idRef.current) {
+    dustSequence += 1
+    idRef.current = `mtdust-solo-${dustSequence}`
+  }
+
+  useEffect(() => {
+    if (!dusting) {
+      return undefined
+    }
+    let frame = 0
+    let startedAt = 0
+    const duration = 1050
+    const step = (time: number) => {
+      if (!startedAt) {
+        startedAt = time
+      }
+      const progress = Math.min(1, (time - startedAt) / duration)
+      const eased = progress * progress
+      displacementRef.current?.setAttribute('scale', (eased * 140).toFixed(1))
+      blurRef.current?.setAttribute('stdDeviation', (eased * 1.8).toFixed(2))
+      if (progress < 1) {
+        frame = window.requestAnimationFrame(step)
+        return
+      }
+      window.setTimeout(onGone, 20)
+    }
+    frame = window.requestAnimationFrame(step)
+    return () => window.cancelAnimationFrame(frame)
+  }, [dusting, onGone])
+
+  return (
+    <div
+      className={`${className ?? ''} ${dusting ? 'mt-dusting-solo' : ''}`.trim() || undefined}
+      style={dusting ? { filter: `url(#${idRef.current})` } : undefined}
+    >
+      {children}
+      {dusting ? (
+        <svg className="mt-dust-svg" aria-hidden="true" width="0" height="0">
+          <defs>
+            <filter
+              id={idRef.current}
+              x="-40%"
+              y="-40%"
+              width="180%"
+              height="180%"
+              colorInterpolationFilters="sRGB"
+            >
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.7"
+                numOctaves="2"
+                seed={dustSequence}
+                result="n"
+              />
+              <feDisplacementMap
+                ref={displacementRef}
+                in="SourceGraphic"
+                in2="n"
+                scale="0"
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="d"
+              />
+              <feGaussianBlur ref={blurRef} in="d" stdDeviation="0" />
+            </filter>
+          </defs>
+        </svg>
+      ) : null}
+    </div>
+  )
+}
+
+function ProductContextChip({ product }: Readonly<{ product: Product }>) {
+  return (
+    <span className="mt-ct-attach-chip product">
+      <span className="mt-ct-attach-thumb solid" style={{ background: product.tone }}>
+        {product.imageUrl ? (
+          <img className="mt-product-img" src={product.imageUrl} alt="" loading="lazy" />
+        ) : null}
+      </span>
+      <span className="mt-ct-attach-label">Re: {product.name}</span>
+    </span>
+  )
+}
+
+function ShelfThumbs({ thumbs }: Readonly<{ thumbs: readonly ShelfThumb[] }>) {
+  if (thumbs.length === 0) {
+    return null
+  }
+  return (
+    <div className="mt-shelf-thumbs">
+      {thumbs.map((thumb) => (
+        <span
+          key={`${thumb.name}-${thumb.tone}`}
+          className="mt-shelf-thumb"
+          title={thumb.name}
+          style={{ background: thumb.tone }}
+        >
+          {thumb.imageUrl ? <img src={thumb.imageUrl} alt="" loading="lazy" /> : null}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function parseShelfDragPayload(dataTransfer: DataTransfer): ShelfDragPayload | null {
+  const raw = dataTransfer.getData(SHELF_DRAG_MIME)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as ShelfDragPayload
+    if (parsed.kind === 'message' || parsed.kind === 'product') {
+      return parsed
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function ShelfCard({
+  item,
+  product,
+  onRemove,
+  onToggleCollapse,
+  onFind,
+  onOpenProduct,
+}: Readonly<{
+  item: ShelfItem
+  product?: Product | null
+  onRemove: (uid: string) => void
+  onToggleCollapse: (uid: string) => void
+  onFind: (messageId: string) => void
+  onOpenProduct: (product: Product) => void
+}>) {
+  const [dusting, setDusting] = useState(false)
+  const tools = (
+    <div className="mt-shelf-card-tools">
+      <button
+        type="button"
+        onClick={() => onToggleCollapse(item.uid)}
+        title={item.collapsed ? 'Expand' : 'Minimize'}
+        aria-label={item.collapsed ? 'Expand shelf item' : 'Minimize shelf item'}
+      >
+        <CollapseIcon collapsed={item.collapsed} />
+      </button>
+      <button
+        type="button"
+        onClick={() => setDusting(true)}
+        title="Remove from shelf"
+        aria-label="Remove from shelf"
+      >
+        <CloseIcon size={11} />
+      </button>
+    </div>
+  )
+
+  if (item.kind === 'product') {
+    const snapshot = item.snapshot
+    const title = product?.name ?? snapshot.name
+    const thumbUrl = product?.imageUrl ?? snapshot.imageUrl
+    const tone = product?.tone ?? snapshot.tone
+    return (
+      <DustingContainer dusting={dusting} onGone={() => onRemove(item.uid)}>
+        <div className="mt-shelf-card product">
+          <div className="mt-shelf-card-head">
+            <span className="mt-shelf-kind mt-mono">Product</span>
+            {tools}
+          </div>
+          {item.collapsed ? (
+            <button
+              className="mt-shelf-collapsed"
+              type="button"
+              onClick={() => onToggleCollapse(item.uid)}
+            >
+              <span className="mt-shelf-thumb" style={{ background: tone }}>
+                {thumbUrl ? <img src={thumbUrl} alt="" loading="lazy" /> : null}
+              </span>
+              <span className="mt-shelf-collapsed-name">{title}</span>
+            </button>
+          ) : (
+            <>
+              <button
+                className="mt-shelf-prod"
+                type="button"
+                onClick={() => {
+                  if (product) {
+                    onOpenProduct(product)
+                  }
+                }}
+                disabled={!product}
+              >
+                <span className="mt-shelf-prod-thumb" style={{ background: tone }}>
+                  {thumbUrl ? <img src={thumbUrl} alt="" loading="lazy" /> : null}
+                </span>
+                <span className="mt-shelf-prod-info">
+                  <span className="mt-mono mt-shelf-prod-brand">
+                    {product?.brand ?? snapshot.brand}
+                  </span>
+                  <span className="mt-shelf-prod-name">{title}</span>
+                  <span className="mt-shelf-prod-price">
+                    {money(product?.priceFrom ?? snapshot.priceFrom)}
+                    <span className="mt-shelf-prod-from">
+                      {' '}
+                      from {product?.merchants ?? snapshot.merchants} stores
+                    </span>
+                  </span>
+                </span>
+              </button>
+              {product ? (
+                <button
+                  className="mt-shelf-find"
+                  type="button"
+                  onClick={() => onOpenProduct(product)}
+                >
+                  <OpenIcon /> Open product
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
+      </DustingContainer>
+    )
+  }
+
+  const snapshot = item.snapshot
+  return (
+    <DustingContainer dusting={dusting} onGone={() => onRemove(item.uid)}>
+      <div className={`mt-shelf-card ${snapshot.side}`}>
+        <div className="mt-shelf-card-head">
+          <span className="mt-shelf-kind mt-mono">{snapshot.title}</span>
+          {tools}
+        </div>
+        {item.collapsed ? (
+          <button
+            className="mt-shelf-collapsed"
+            type="button"
+            onClick={() => onToggleCollapse(item.uid)}
+          >
+            {snapshot.thumbs[0] ? (
+              <span className="mt-shelf-thumb" style={{ background: snapshot.thumbs[0].tone }}>
+                {snapshot.thumbs[0].imageUrl ? (
+                  <img src={snapshot.thumbs[0].imageUrl} alt="" loading="lazy" />
+                ) : null}
+              </span>
+            ) : null}
+            <span className="mt-shelf-collapsed-name">{snapshot.text || snapshot.title}</span>
+          </button>
+        ) : (
+          <>
+            {snapshot.text ? <p className="mt-shelf-text">{snapshot.text}</p> : null}
+            <ShelfThumbs thumbs={snapshot.thumbs} />
+          </>
+        )}
+        <button className="mt-shelf-find" type="button" onClick={() => onFind(item.messageId)}>
+          <SearchIcon size={12} /> Find in chat
+        </button>
+      </div>
+    </DustingContainer>
+  )
+}
+
+function Shelf({
+  open,
+  items,
+  productsById,
+  onToggle,
+  onAddMessage,
+  onAddProduct,
+  onRemove,
+  onClear,
+  onToggleCollapse,
+  onFind,
+  onOpenProduct,
+}: Readonly<{
+  open: boolean
+  items: readonly ShelfItem[]
+  productsById: ReadonlyMap<ProductId, Product>
+  onToggle: () => void
+  onAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
+  onAddProduct: (snapshot: ShelfProductSnapshot) => void
+  onRemove: (uid: string) => void
+  onClear: () => void
+  onToggleCollapse: (uid: string) => void
+  onFind: (messageId: string) => void
+  onOpenProduct: (product: Product) => void
+}>) {
+  const [over, setOver] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [width, setWidth] = useStoredState('meant.shelfW', 340)
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+  const safeWidth = clampNumber(width, SHELF_MIN_WIDTH, SHELF_MAX_WIDTH)
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--shelf-w', `${safeWidth}px`)
+  }, [safeWidth])
+
+  useEffect(() => {
+    document.body.classList.toggle('shelf-open', open)
+    return () => document.body.classList.remove('shelf-open')
+  }, [open])
+
+  useEffect(
+    () => () => {
+      resizeCleanupRef.current?.()
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (items.length === 0 && clearing) {
+      setClearing(false)
+    }
+  }, [clearing, items.length])
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return
+    }
+    event.preventDefault()
+    resizeCleanupRef.current?.()
+    document.body.classList.add('mt-shelf-resizing')
+    const move = (moveEvent: PointerEvent) => {
+      setWidth(clampNumber(window.innerWidth - moveEvent.clientX, SHELF_MIN_WIDTH, SHELF_MAX_WIDTH))
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
+      document.body.classList.remove('mt-shelf-resizing')
+      resizeCleanupRef.current = null
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', cleanup, { once: true })
+    window.addEventListener('pointercancel', cleanup, { once: true })
+    resizeCleanupRef.current = cleanup
+  }
+
+  const drop = (event: ReactDragEvent<HTMLElement>) => {
+    event.preventDefault()
+    setOver(false)
+    document.body.classList.remove('mt-dragging')
+    const payload = parseShelfDragPayload(event.dataTransfer)
+    if (!payload) {
+      return
+    }
+    if (payload.kind === 'message') {
+      onAddMessage(payload)
+      return
+    }
+    onAddProduct(payload.snapshot)
+  }
+
+  return (
+    <>
+      <button
+        className="mt-shelf-tab"
+        type="button"
+        onClick={onToggle}
+        title="Your shelf - messages and products you set aside"
+        aria-label={open ? 'Hide shelf' : 'Show shelf'}
+        aria-expanded={open}
+      >
+        <BookmarkIcon filled={items.length > 0} size={15} />
+        {items.length > 0 ? (
+          <span className="mt-shelf-tab-count mt-mono">{items.length}</span>
+        ) : null}
+      </button>
+      <aside
+        className={`mt-shelf ${open ? 'open' : ''} ${over ? 'over' : ''}`}
+        style={{ width: `${safeWidth}px` }}
+        onDragOver={(event) => {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'copy'
+          setOver(true)
+        }}
+        onDragLeave={(event) => {
+          const nextTarget = event.relatedTarget
+          if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+            setOver(false)
+          }
+        }}
+        onDrop={drop}
+      >
+        <div
+          className="mt-shelf-resize"
+          onPointerDown={startResize}
+          title="Drag to resize the shelf"
+        >
+          <span />
+        </div>
+        <div className="mt-shelf-head">
+          <div className="mt-shelf-title-wrap">
+            <span className="mt-shelf-title">Shelf</span>
+            <span className="mt-mono mt-shelf-sub">Set aside · spans all chats</span>
+          </div>
+          <div className="mt-shelf-head-tools">
+            {items.length > 0 ? (
+              <button
+                className="mt-shelf-clear"
+                type="button"
+                onClick={() => setClearing(true)}
+                disabled={clearing}
+              >
+                Clear
+              </button>
+            ) : null}
+            <button
+              className="mt-shelf-close"
+              type="button"
+              onClick={onToggle}
+              title="Hide shelf"
+              aria-label="Hide shelf"
+            >
+              <ChevronIcon direction="right" size={14} />
+            </button>
+          </div>
+        </div>
+        <div className="mt-shelf-body">
+          {items.length === 0 ? (
+            <div className="mt-shelf-empty">
+              <span className="mt-shelf-empty-mark">
+                <BookmarkIcon size={22} />
+              </span>
+              <p className="mt-shelf-empty-title">Nothing set aside yet</p>
+              <p className="mt-shelf-empty-sub">
+                Drag any message or product over here, or tap the bookmark on hover, to keep it
+                handy and jump back later.
+              </p>
+            </div>
+          ) : (
+            <DustingContainer
+              className="mt-shelf-clear-region"
+              dusting={clearing}
+              onGone={() => {
+                setClearing(false)
+                onClear()
+              }}
+            >
+              {items.map((item) => (
+                <ShelfCard
+                  key={item.uid}
+                  item={item}
+                  product={item.kind === 'product' ? productsById.get(item.productId) : null}
+                  onRemove={onRemove}
+                  onToggleCollapse={onToggleCollapse}
+                  onFind={onFind}
+                  onOpenProduct={onOpenProduct}
+                />
+              ))}
+              <div className="mt-shelf-dropzone">Drop here to set aside</div>
+            </DustingContainer>
+          )}
+        </div>
+      </aside>
+    </>
   )
 }
 
@@ -3359,6 +4167,265 @@ const nextDiscoverChatMessageId = () => {
   return `discover-chat-${discoverChatMessageSequence}`
 }
 
+let discoverChatThreadSequence = 0
+const nextDiscoverChatThreadId = () => {
+  discoverChatThreadSequence += 1
+  return `discover-thread-${Date.now().toString(36)}-${discoverChatThreadSequence}`
+}
+
+const DEFAULT_DISCOVER_CHAT_TITLE = 'New chat'
+
+function deriveDiscoverChatTitle(text: string): string {
+  const normalized = text.trim().replace(/\s+/g, ' ')
+  if (!normalized) {
+    return DEFAULT_DISCOVER_CHAT_TITLE
+  }
+  return normalized.length > 24 ? `${normalized.slice(0, 22)}...` : normalized
+}
+
+function createDiscoverChatThread(
+  messages: readonly DiscoverChatMessage[] = [],
+  title = DEFAULT_DISCOVER_CHAT_TITLE,
+): DiscoverChatThread {
+  return {
+    id: nextDiscoverChatThreadId(),
+    title,
+    messages,
+  }
+}
+
+function initialDiscoverChatThreads(): DiscoverChatThread[] {
+  const storedThreads = readStorage<DiscoverChatThread[] | null>('meant.discoverChatThreads', null)
+  if (storedThreads?.length) {
+    return storedThreads
+  }
+  const legacyMessages = readStorage<DiscoverChatMessage[]>('meant.discoverChatMessages', [])
+  return [
+    createDiscoverChatThread(
+      legacyMessages,
+      legacyMessages.length > 0 ? 'Shopping agent' : DEFAULT_DISCOVER_CHAT_TITLE,
+    ),
+  ]
+}
+
+function resolveStateAction<T>(action: SetStateAction<T>, current: T): T {
+  return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
+}
+
+function discoverBlockPrimaryProduct(block: DiscoverChatBlock): Product | null {
+  if (block.type === 'products') {
+    return block.products[0] ?? null
+  }
+  if (block.type === 'similar') {
+    return block.products[0] ?? block.product
+  }
+  if (block.type === 'decision') {
+    return block.product
+  }
+  if (
+    block.type === 'reviews' ||
+    block.type === 'code' ||
+    block.type === 'watch' ||
+    block.type === 'friendvote' ||
+    block.type === 'added'
+  ) {
+    return block.product
+  }
+  if (block.type === 'saved') {
+    return block.products[0] ?? null
+  }
+  if (block.type === 'cart') {
+    return block.products?.[0] ?? null
+  }
+  if (block.type === 'minicompare') {
+    return block.products[block.pickIndex] ?? block.products[0] ?? null
+  }
+  return null
+}
+
+function discoverThreadFocusProduct(
+  thread: DiscoverChatThread,
+  productsById: ReadonlyMap<ProductId, Product>,
+): Product | null {
+  if (thread.focusProductId) {
+    const focused = productsById.get(thread.focusProductId)
+    if (focused) {
+      return focused
+    }
+  }
+  for (const message of [...thread.messages].reverse()) {
+    for (const block of [...(message.blocks ?? [])].reverse()) {
+      const product = discoverBlockPrimaryProduct(block)
+      if (product) {
+        return product
+      }
+    }
+    if (message.productContext) {
+      return message.productContext
+    }
+  }
+  return null
+}
+
+const nextShelfUid = () =>
+  `shelf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+
+function shelfProductSnapshot(product: Product): ShelfProductSnapshot {
+  return {
+    productId: product.id,
+    name: product.name,
+    brand: product.brand,
+    category: product.category,
+    tone: product.tone,
+    priceFrom: product.priceFrom,
+    merchants: product.merchants,
+    imageUrl: product.imageUrl,
+  }
+}
+
+function shelfThumbForProduct(product: Product): ShelfThumb {
+  return {
+    name: product.name,
+    tone: product.tone,
+    imageUrl: product.imageUrl,
+  }
+}
+
+function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapshot {
+  if (message.role === 'you') {
+    return {
+      side: 'you',
+      title: message.productContext ? 'You asked about' : 'Your message',
+      text: message.text ?? message.productContext?.name ?? '',
+      thumbs: message.productContext ? [shelfThumbForProduct(message.productContext)] : [],
+    }
+  }
+
+  let text = message.text ?? ''
+  let title = 'Meant'
+  const products: Product[] = []
+
+  for (const block of message.blocks ?? []) {
+    if ((block.type === 'text' || block.type === 'system') && !text) {
+      text = block.text
+    }
+    if (block.type === 'products') {
+      title = `${block.products.length} match${block.products.length === 1 ? '' : 'es'}`
+      products.push(...block.products)
+    }
+    if (block.type === 'similar') {
+      title = 'Similar picks'
+      products.push(block.product, ...block.products)
+    }
+    if (block.type === 'reviews') {
+      title = 'Reviews'
+      products.push(block.product)
+    }
+    if (block.type === 'code') {
+      title = 'Discount code'
+      products.push(block.product)
+    }
+    if (block.type === 'decision') {
+      title = "Meant's pick"
+      products.push(block.product)
+      if (block.runnerUp) {
+        products.push(block.runnerUp)
+      }
+    }
+    if (block.type === 'watch') {
+      title = 'Price watch'
+      products.push(block.product)
+    }
+    if (block.type === 'friendvote') {
+      title = `${block.person} weighed in`
+      text = block.note
+      products.push(block.product)
+    }
+    if (block.type === 'added') {
+      title = 'Added to cart'
+      products.push(block.product)
+    }
+    if (block.type === 'saved') {
+      title = 'Saved items'
+      products.push(...block.products)
+    }
+    if (block.type === 'orders') {
+      title = 'Orders'
+    }
+    if (block.type === 'prefs') {
+      title = 'Preferences'
+    }
+    if (block.type === 'cart') {
+      title = 'Your cart'
+    }
+    if (block.type === 'checkout') {
+      title = 'Checkout'
+    }
+  }
+
+  const seen = new Set<ProductId>()
+  const thumbs = products
+    .filter((product) => {
+      if (seen.has(product.id)) {
+        return false
+      }
+      seen.add(product.id)
+      return true
+    })
+    .slice(0, 6)
+    .map(shelfThumbForProduct)
+
+  return {
+    side: 'meant',
+    title,
+    text,
+    thumbs,
+  }
+}
+
+function productDetailChatBlocks(
+  question: string,
+  product: Product,
+  products: readonly Product[],
+  preferences: readonly Preference[],
+): readonly DiscoverChatBlock[] {
+  const lower = question.toLowerCase()
+  if (/\breviews?\b|\bratings?\b|\bpeople say\b|\bfeedback\b/.test(lower)) {
+    return [
+      {
+        type: 'text',
+        text: `Here is what I can tell from the current product data for ${product.name}.`,
+      },
+      { type: 'reviews', product },
+    ]
+  }
+  if (/\bcode\b|\bcoupon\b|\bdiscount\b|\bpromo\b|\bdeal\b|\bcheaper\b|\bsave\b/.test(lower)) {
+    const discount = chatDiscountForProduct(product)
+    return [
+      { type: 'text', text: `I checked ${product.name} for a better price path.` },
+      { type: 'code', product, code: discount.code, saved: discount.saved },
+    ]
+  }
+  if (
+    /\bsimilar\b|\balternative\b|\blike this\b|\bother option\b|\binstead\b|\bcompare\b/.test(lower)
+  ) {
+    return [
+      {
+        type: 'text',
+        text: `Close matches to ${product.name}, filtered through the products already loaded here.`,
+      },
+      { type: 'similar', product, products: similarChatProducts(product, products) },
+    ]
+  }
+  if (/\bmatch\b|\bpreferences?\b|\bfit\b|\bmeant\b/.test(lower)) {
+    return [
+      { type: 'text', text: resolveAsk(question, product, preferences) },
+      { type: 'decision', product, runnerUp: similarChatProducts(product, products)[0] ?? null },
+    ]
+  }
+  return [{ type: 'text', text: resolveAsk(question, product, preferences) }]
+}
+
 function chatDiscountForProduct(product: Product): { code: string; saved: number } {
   const best = product.offers[0]
   const base = best?.price ?? product.priceFrom
@@ -3376,6 +4443,116 @@ function similarChatProducts(product: Product, products: readonly Product[]): re
   return (sameCategory.length > 0 ? sameCategory : fallback).slice(0, 4)
 }
 
+function winningIndex(values: readonly number[], higherIsBetter: boolean): number {
+  return values.reduce((bestIndex, value, index) => {
+    const bestValue = values[bestIndex] ?? value
+    return higherIsBetter
+      ? value > bestValue
+        ? index
+        : bestIndex
+      : value < bestValue
+        ? index
+        : bestIndex
+  }, 0)
+}
+
+function createMiniCompareBlock(
+  products: readonly Product[],
+  deliveryLocations: readonly UserLocation[],
+): Extract<DiscoverChatBlock, { type: 'minicompare' }> | null {
+  const nextProducts = products.slice(0, 4)
+  if (nextProducts.length < 2) {
+    return null
+  }
+
+  const prices = nextProducts.map((product) => productPriceFrom(product, deliveryLocations))
+  const reviews = nextProducts.map((product) => product.review.score ?? 0)
+  const fitGaps = nextProducts.map((product) => product.misses.length)
+  const rows: readonly MiniCompareRow[] = [
+    {
+      label: 'Match',
+      values: nextProducts.map((product) => `${product.match}%`),
+      winnerIndex: winningIndex(
+        nextProducts.map((product) => product.match),
+        true,
+      ),
+    },
+    {
+      label: 'From',
+      values: prices.map((price) => money(price)),
+      winnerIndex: winningIndex(prices, false),
+    },
+    {
+      label: 'Reviews',
+      values: nextProducts.map((product) =>
+        product.review.score === null
+          ? `${product.review.count.toLocaleString()} reviews`
+          : `${product.review.score.toFixed(1)} · ${product.review.count.toLocaleString()}`,
+      ),
+      winnerIndex: winningIndex(reviews, true),
+    },
+    {
+      label: 'Fit gaps',
+      values: fitGaps.map((misses) =>
+        misses === 0 ? 'None' : `${misses} gap${misses === 1 ? '' : 's'}`,
+      ),
+      winnerIndex: winningIndex(fitGaps, false),
+    },
+  ]
+  const winCounts = nextProducts.map((product, index) => ({
+    index,
+    wins: rows.filter((row) => row.winnerIndex === index).length,
+    match: product.match,
+  }))
+  const pickIndex = [...winCounts].sort(
+    (left, right) => right.wins - left.wins || right.match - left.match,
+  )[0].index
+
+  return { type: 'minicompare', products: nextProducts, rows, pickIndex }
+}
+
+function cartItemIdentity(item: Pick<CartItem, 'id' | 'merchant'>): string {
+  return `${item.id}:${item.merchant}`
+}
+
+function cartItemsWithFallback(
+  liveCart: readonly CartItem[],
+  fallbackCart: readonly CartItem[],
+): readonly CartItem[] {
+  if (fallbackCart.length === 0) {
+    return liveCart
+  }
+  const seen = new Set(liveCart.map(cartItemIdentity))
+  return [
+    ...liveCart,
+    ...fallbackCart.filter((item) => {
+      const key = cartItemIdentity(item)
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    }),
+  ]
+}
+
+function productsWithFallback(
+  fallbackProducts: readonly Product[] | undefined,
+  products: readonly Product[],
+): readonly Product[] {
+  if (!fallbackProducts?.length) {
+    return products
+  }
+  const seen = new Set<ProductId>()
+  return [...fallbackProducts, ...products].filter((product) => {
+    if (seen.has(product.id)) {
+      return false
+    }
+    seen.add(product.id)
+    return true
+  })
+}
+
 function DiscoverChatProduct({
   product,
   index,
@@ -3385,12 +4562,15 @@ function DiscoverChatProduct({
   savePendingSet,
   pinned,
   watched,
+  shelfed,
   onOpen,
   onToggleSave,
   onAddCart,
   onPin,
   onWatch,
   onDig,
+  onShelfAdd,
+  onDragProduct,
 }: Readonly<{
   product: Product
   index: number
@@ -3400,15 +4580,35 @@ function DiscoverChatProduct({
   savePendingSet: ReadonlySet<ProductId>
   pinned: boolean
   watched: boolean
+  shelfed: boolean
   onOpen: (product: Product) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
   onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onShelfAdd: (product: Product, sourceElement: HTMLElement) => void
+  onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
   return (
-    <div className="mt-ct-prod">
+    <div
+      className="mt-ct-prod"
+      draggable
+      onDragStart={(event) => onDragProduct(event, product)}
+      onDragEnd={() => document.body.classList.remove('mt-dragging')}
+    >
+      <button
+        className={`mt-ct-prod-shelf ${shelfed ? 'on' : ''}`}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onShelfAdd(product, event.currentTarget)
+        }}
+        aria-label={shelfed ? 'On your shelf' : 'Set aside on shelf'}
+        title={shelfed ? 'On your shelf' : 'Set aside on your shelf'}
+      >
+        <BookmarkIcon filled={shelfed} size={13} />
+      </button>
       <ProductCard
         product={product}
         index={index}
@@ -3420,36 +4620,77 @@ function DiscoverChatProduct({
         onToggleSave={onToggleSave}
       />
       <div className="mt-ct-actionrow">
-        <button className="mt-ct-addbtn" type="button" onClick={() => onAddCart(product)}>
+        <button
+          className="mt-ct-addbtn"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onAddCart(product)
+          }}
+        >
           <CartIcon /> Add to cart
         </button>
         <button
           className={`mt-ct-pinbtn ${pinned ? 'on' : ''}`}
           type="button"
-          onClick={() => onPin(product)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onPin(product)
+          }}
         >
           {pinned ? 'Pinned' : 'Pin'}
         </button>
         <button
           className={`mt-ct-watchbtn ${watched ? 'on' : ''}`}
           type="button"
-          onClick={() => onWatch(product)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onWatch(product)
+          }}
         >
           {watched ? 'Watching' : 'Watch'}
         </button>
       </div>
       <div className="mt-ct-askbar">
         <span className="mt-mono mt-ct-askbar-lead">Dig in</span>
-        <button className="mt-ct-askchip" type="button" onClick={() => onDig('reviews', product)}>
+        <button
+          className="mt-ct-askchip"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDig('reviews', product)
+          }}
+        >
           Reviews
         </button>
-        <button className="mt-ct-askchip" type="button" onClick={() => onDig('code', product)}>
+        <button
+          className="mt-ct-askchip"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDig('code', product)
+          }}
+        >
           Find a code
         </button>
-        <button className="mt-ct-askchip" type="button" onClick={() => onDig('similar', product)}>
+        <button
+          className="mt-ct-askchip"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDig('similar', product)
+          }}
+        >
           Similar
         </button>
-        <button className="mt-ct-askchip" type="button" onClick={() => onDig('resale', product)}>
+        <button
+          className="mt-ct-askchip"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDig('resale', product)
+          }}
+        >
           Second-hand
         </button>
       </div>
@@ -3466,6 +4707,7 @@ function DiscoverProductBatch({
   savePendingSet,
   pinnedSet,
   watchedSet,
+  shelfProductSet,
   onOpen,
   onToggleSave,
   onAddCart,
@@ -3474,6 +4716,8 @@ function DiscoverProductBatch({
   onDig,
   onJustPick,
   onCompareHere,
+  onShelfAddProduct,
+  onDragProduct,
 }: Readonly<{
   products: readonly Product[]
   query?: string
@@ -3483,6 +4727,7 @@ function DiscoverProductBatch({
   savePendingSet: ReadonlySet<ProductId>
   pinnedSet: ReadonlySet<ProductId>
   watchedSet: ReadonlySet<ProductId>
+  shelfProductSet: ReadonlySet<ProductId>
   onOpen: (product: Product, products?: readonly Product[]) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
@@ -3491,6 +4736,8 @@ function DiscoverProductBatch({
   onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
+  onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
+  onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
   const [page, setPage] = useState(0)
   const pageSize = 4
@@ -3551,12 +4798,15 @@ function DiscoverProductBatch({
             savePendingSet={savePendingSet}
             pinned={pinnedSet.has(product.id)}
             watched={watchedSet.has(product.id)}
+            shelfed={shelfProductSet.has(product.id)}
             onOpen={(nextProduct) => onOpen(nextProduct, products)}
             onToggleSave={onToggleSave}
             onAddCart={onAddCart}
             onPin={onPin}
             onWatch={onWatch}
             onDig={onDig}
+            onShelfAdd={onShelfAddProduct}
+            onDragProduct={onDragProduct}
           />
         ))}
       </div>
@@ -3578,14 +4828,344 @@ function DiscoverProductBatch({
   )
 }
 
+function InlineMiniCompareBlock({
+  block,
+  deliveryLocations,
+  onOpen,
+  onAddCart,
+  onOpenFullCompare,
+}: Readonly<{
+  block: Extract<DiscoverChatBlock, { type: 'minicompare' }>
+  deliveryLocations: readonly UserLocation[]
+  onOpen: (product: Product, products?: readonly Product[]) => void
+  onAddCart: (product: Product) => void
+  onOpenFullCompare: (products: readonly Product[]) => void
+}>) {
+  const pick = block.products[block.pickIndex] ?? block.products[0]
+  const gridStyle: CSSProperties = {
+    gridTemplateColumns: `92px repeat(${block.products.length}, minmax(0, 1fr))`,
+  }
+
+  return (
+    <div className="mt-ct-block mt-ct-mini">
+      <div className="mt-ct-block-head">
+        <div className="mt-mono mt-ct-block-key">Inline compare</div>
+        <span className="mt-ct-code-save mt-mono">{block.products.length} pinned</span>
+      </div>
+      <div className="mt-ct-mini-grid" style={gridStyle}>
+        <span className="mt-ct-mini-axis" />
+        {block.products.map((product, index) => (
+          <button
+            key={product.id}
+            className={`mt-ct-mini-prod ${index === block.pickIndex ? 'best' : ''}`}
+            type="button"
+            onClick={() => onOpen(product, block.products)}
+          >
+            <span className="mt-ct-mini-thumb">
+              <ProductArtwork product={product} label={product.category.toLowerCase()} />
+            </span>
+            <span className="mt-ct-mini-name">{product.name}</span>
+            <span className="mt-mono mt-ct-mini-price">
+              {money(productPriceFrom(product, deliveryLocations))}
+            </span>
+          </button>
+        ))}
+        {block.rows.map((row) => (
+          <Fragment key={row.label}>
+            <span className="mt-mono mt-ct-mini-label">{row.label}</span>
+            {row.values.map((value, index) => (
+              <span
+                key={`${row.label}-${block.products[index]?.id ?? index}`}
+                className={`mt-ct-mini-cell ${row.winnerIndex === index ? 'win' : ''}`}
+              >
+                {value}
+              </span>
+            ))}
+          </Fragment>
+        ))}
+      </div>
+      {pick ? (
+        <div className="mt-ct-mini-pick">
+          <span>
+            <b>{pick.name}</b> wins this quick pass on match, price, reviews, and fit gaps.
+          </span>
+          <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(pick)}>
+            <CartIcon /> Add pick
+          </button>
+        </div>
+      ) : null}
+      <button
+        className="mt-ct-mini-full"
+        type="button"
+        onClick={() => onOpenFullCompare(block.products)}
+      >
+        Open full compare
+      </button>
+    </div>
+  )
+}
+
+function InlineCartBlock({
+  cart,
+  products,
+  onQty,
+  onRemove,
+  onAddCart,
+  onOpenCart,
+  onCheckoutHere,
+}: Readonly<{
+  cart: readonly CartItem[]
+  products: readonly Product[]
+  onQty: (id: ProductId, merchant: string, qty: number) => void
+  onRemove: (id: ProductId, merchant: string) => void
+  onAddCart: (product: Product) => void
+  onOpenCart: () => void
+  onCheckoutHere: () => void
+}>) {
+  const lines = cartLines(cart, products)
+  const alerts = computeSmartAlerts(lines, products)
+  const groups = cartGroups(lines, false)
+  const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
+  const saved = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
+  const total = groups.reduce((sum, group) => sum + group.total, 0)
+  const productById = new Map(products.map((product) => [product.id, product]))
+
+  return (
+    <div className="mt-ct-block mt-ct-cart">
+      <div className="mt-ct-block-head">
+        <div className="mt-mono mt-ct-block-key">Cart in chat</div>
+        <span className="mt-ct-code-save mt-mono">
+          {itemCount} item{itemCount === 1 ? '' : 's'}
+        </span>
+      </div>
+      {alerts.length > 0 ? (
+        <div className="mt-ct-cart-signals">
+          {alerts.slice(0, 2).map((alert) => (
+            <div className={`mt-cart-sig mt-cart-sig-${alert.kind}`} key={alert.id}>
+              <b>{alert.title}</b>
+              <span>{alert.body}</span>
+              {alert.fix ? (
+                <button
+                  className="mt-ct-cart-fix"
+                  type="button"
+                  onClick={() => {
+                    const product = productById.get(alert.fix?.id ?? '')
+                    if (product) {
+                      onAddCart(product)
+                    }
+                  }}
+                >
+                  {alert.fix.label}
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {lines.length > 0 ? (
+        <div className="mt-ct-cart-list">
+          {lines.map((line) => (
+            <div className="mt-ct-cart-row" key={`${line.id}-${line.merchant}`}>
+              <button className="mt-ct-cart-media" type="button" onClick={() => onOpenCart()}>
+                <ProductArtwork
+                  product={line.product}
+                  label={line.product.category.toLowerCase()}
+                />
+              </button>
+              <div className="mt-ct-cart-info">
+                <div className="mt-ct-cart-name">{line.product.name}</div>
+                <div className="mt-mono mt-ct-cart-meta">
+                  {line.merchant} · {line.delivery}
+                </div>
+              </div>
+              <div className="mt-ct-cart-actions">
+                <div className="mt-qty" aria-label={`Quantity for ${line.product.name}`}>
+                  <button
+                    type="button"
+                    aria-label="Decrease quantity"
+                    disabled={line.qty <= 1}
+                    onClick={() => onQty(line.id, line.merchant, line.qty - 1)}
+                  >
+                    -
+                  </button>
+                  <span>{line.qty}</span>
+                  <button
+                    type="button"
+                    aria-label="Increase quantity"
+                    onClick={() => onQty(line.id, line.merchant, line.qty + 1)}
+                  >
+                    +
+                  </button>
+                </div>
+                <span className="mt-ct-cart-price">{money(line.price * line.qty)}</span>
+                <button
+                  className="mt-ct-cart-remove"
+                  type="button"
+                  aria-label={`Remove ${line.product.name}`}
+                  onClick={() => onRemove(line.id, line.merchant)}
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-ct-cart-empty">Your cart is empty.</p>
+      )}
+      <div className="mt-ct-cart-foot">
+        <div>
+          <span className="mt-mono mt-ct-cart-foot-label">
+            {groups.length} merchant{groups.length === 1 ? '' : 's'}
+          </span>
+          <strong>{money(total)}</strong>
+          {saved > 0 ? <span className="mt-ct-cart-save">Saved {money(saved)}</span> : null}
+        </div>
+        <div className="mt-ct-cart-foot-actions">
+          <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
+            Full cart
+          </button>
+          <button
+            className="mt-ct-cart-checkout"
+            type="button"
+            disabled={lines.length === 0}
+            onClick={onCheckoutHere}
+          >
+            Checkout here
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InlineCheckoutBlock({
+  cart,
+  products,
+  onCheckout,
+  onOpenCart,
+  onOpenOrders,
+}: Readonly<{
+  cart: readonly CartItem[]
+  products: readonly Product[]
+  onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  onOpenCart: () => void
+  onOpenOrders: () => void
+}>) {
+  const [payingMerchant, setPayingMerchant] = useState<string | null>(null)
+  const [placedMerchant, setPlacedMerchant] = useState<string | null>(null)
+  const lines = cartLines(cart, products)
+  const groups = cartGroups(lines, false)
+  const alerts = computeSmartAlerts(lines, products)
+  const total = groups.reduce((sum, group) => sum + group.total, 0)
+
+  const payGroup = async (group: (typeof groups)[number]) => {
+    setPayingMerchant(group.merchant)
+    setPlacedMerchant(null)
+    try {
+      await onCheckout({
+        merchant: group.merchant,
+        items: group.items,
+        saved: group.itemDiscount,
+        savedNote: group.found ? `${group.found.code.code} applied in chat` : 'Checked out in chat',
+        checkoutUrl: firstUrl(...group.items.map((item) => item.checkoutUrl)),
+        continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
+      })
+      setPlacedMerchant(group.merchant)
+    } finally {
+      setPayingMerchant(null)
+    }
+  }
+
+  return (
+    <div className="mt-ct-block mt-ct-checkout">
+      <div className="mt-ct-block-head">
+        <div className="mt-mono mt-ct-block-key">Checkout in chat</div>
+        <span className="mt-ct-code-save mt-mono">
+          {groups.length} merchant{groups.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      {groups.length > 0 ? (
+        <>
+          <div className="mt-ct-checkout-total">
+            <span>Total ready now</span>
+            <strong>{money(total)}</strong>
+          </div>
+          {alerts.some((alert) => alert.kind === 'warn') ? (
+            <div className="mt-ct-checkout-warn">
+              Review compatibility warnings before paying. You can still continue from here.
+            </div>
+          ) : null}
+          <div className="mt-ct-checkout-groups">
+            {groups.map((group) => (
+              <div className="mt-ct-cogroup" key={group.merchant}>
+                <div className="mt-ct-cogroup-head">
+                  <div>
+                    <div className="mt-ct-cogroup-name">{group.merchant}</div>
+                    <div className="mt-mono mt-ct-cogroup-meta">
+                      {group.items.reduce((sum, line) => sum + line.qty, 0)} items · Delivery{' '}
+                      {group.delivery === 0 ? 'free' : money(group.delivery)}
+                    </div>
+                  </div>
+                  <strong>{money(group.total)}</strong>
+                </div>
+                {group.found ? (
+                  <div className="mt-ct-cocode">
+                    <span className="mt-mono">{group.found.code.code}</span>
+                    saves {money(group.found.save)}
+                  </div>
+                ) : null}
+                <div className="mt-ct-coframe">
+                  <span>Payment</span>
+                  <span>Address</span>
+                  <span>Delivery</span>
+                  <span>Review</span>
+                </div>
+                <button
+                  className="mt-ct-cobtn"
+                  type="button"
+                  disabled={payingMerchant !== null}
+                  onClick={() => void payGroup(group)}
+                >
+                  {payingMerchant === group.merchant
+                    ? 'Placing order'
+                    : placedMerchant === group.merchant
+                      ? 'Order placed'
+                      : `Pay ${money(group.total)} with Meant`}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="mt-ct-checkout-empty">
+          <SparkMark size={13} />
+          <span>
+            {placedMerchant ? `Order placed with ${placedMerchant}.` : 'Your cart is empty.'}
+          </span>
+          <button className="mt-ct-mini-full" type="button" onClick={onOpenOrders}>
+            Open orders
+          </button>
+        </div>
+      )}
+      <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
+        Open full cart
+      </button>
+    </div>
+  )
+}
+
 function DiscoverChatBlockView({
   block,
   deliveryLocations,
   preferences,
+  cart,
+  cartProducts,
   savedSet,
   savePendingSet,
   pinnedSet,
   watchedSet,
+  shelfProductSet,
   onOpen,
   onToggleSave,
   onAddCart,
@@ -3594,18 +5174,29 @@ function DiscoverChatBlockView({
   onDig,
   onJustPick,
   onCompareHere,
+  onOpenFullCompare,
   onOpenSaved,
   onOpenOrders,
   onOpenPrefs,
   onOpenCart,
+  onReviewCartHere,
+  onCartQty,
+  onCartRemove,
+  onCheckout,
+  onCheckoutHere,
+  onShelfAddProduct,
+  onDragProduct,
 }: Readonly<{
   block: DiscoverChatBlock
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
+  cart: readonly CartItem[]
+  cartProducts: readonly Product[]
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   pinnedSet: ReadonlySet<ProductId>
   watchedSet: ReadonlySet<ProductId>
+  shelfProductSet: ReadonlySet<ProductId>
   onOpen: (product: Product, products?: readonly Product[]) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
@@ -3614,10 +5205,18 @@ function DiscoverChatBlockView({
   onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
+  onOpenFullCompare: (products: readonly Product[]) => void
   onOpenSaved: () => void
   onOpenOrders: () => void
   onOpenPrefs: () => void
   onOpenCart: () => void
+  onReviewCartHere: (lines?: readonly CartItem[], products?: readonly Product[]) => void
+  onCartQty: (id: ProductId, merchant: string, qty: number) => void
+  onCartRemove: (id: ProductId, merchant: string) => void
+  onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  onCheckoutHere: () => void
+  onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
+  onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
   if (block.type === 'text') {
     return <p className="mt-ct-intro">{block.text}</p>
@@ -3641,6 +5240,7 @@ function DiscoverChatBlockView({
         savePendingSet={savePendingSet}
         pinnedSet={pinnedSet}
         watchedSet={watchedSet}
+        shelfProductSet={shelfProductSet}
         onOpen={onOpen}
         onToggleSave={onToggleSave}
         onAddCart={onAddCart}
@@ -3649,6 +5249,8 @@ function DiscoverChatBlockView({
         onDig={onDig}
         onJustPick={onJustPick}
         onCompareHere={onCompareHere}
+        onShelfAddProduct={onShelfAddProduct}
+        onDragProduct={onDragProduct}
       />
     )
   }
@@ -3659,7 +5261,9 @@ function DiscoverChatBlockView({
         <div className="mt-ct-block-head">
           <div className="mt-mono mt-ct-block-key">Reviews · {block.product.name}</div>
           <div className="mt-reviews-score">
-            {score !== null ? <span className="mt-stars">{'★'.repeat(Math.round(score))}</span> : null}
+            {score !== null ? (
+              <span className="mt-stars">{'★'.repeat(Math.round(score))}</span>
+            ) : null}
             <span className="mt-mono">
               {score !== null ? `${score.toFixed(1)} · ` : ''}
               {block.product.review.count.toLocaleString()}
@@ -3694,11 +5298,17 @@ function DiscoverChatBlockView({
             <div className="mt-ct-code-label">A mocked coupon agent found this candidate.</div>
             <div className="mt-ct-code-price">
               <span className="mt-ct-code-was">{money(offer.price)}</span>
-              <span className="mt-ct-code-now">{money(Math.max(0, offer.price - block.saved))}</span>
+              <span className="mt-ct-code-now">
+                {money(Math.max(0, offer.price - block.saved))}
+              </span>
               <span className="mt-mono mt-ct-code-deliv">{offer.delivery}</span>
             </div>
           </div>
-          <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(block.product)}>
+          <button
+            className="mt-ct-addbtn solid"
+            type="button"
+            onClick={() => onAddCart(block.product)}
+          >
             <CartIcon /> Add
           </button>
         </div>
@@ -3719,6 +5329,7 @@ function DiscoverChatBlockView({
           savePendingSet={savePendingSet}
           pinnedSet={pinnedSet}
           watchedSet={watchedSet}
+          shelfProductSet={shelfProductSet}
           onOpen={onOpen}
           onToggleSave={onToggleSave}
           onAddCart={onAddCart}
@@ -3727,6 +5338,8 @@ function DiscoverChatBlockView({
           onDig={onDig}
           onJustPick={onJustPick}
           onCompareHere={onCompareHere}
+          onShelfAddProduct={onShelfAddProduct}
+          onDragProduct={onDragProduct}
         />
       </div>
     )
@@ -3738,13 +5351,11 @@ function DiscoverChatBlockView({
           <span className="mt-mono mt-ct-decision-key">
             <SparkMark size={12} /> Meant's pick
           </span>
-          <span className="mt-ct-decision-conf">{Math.max(76, block.product.match)}% confident</span>
+          <span className="mt-ct-decision-conf">
+            {Math.max(76, block.product.match)}% confident
+          </span>
         </div>
-        <button
-          className="mt-ct-decision-prod"
-          type="button"
-          onClick={() => onOpen(block.product)}
-        >
+        <button className="mt-ct-decision-prod" type="button" onClick={() => onOpen(block.product)}>
           <span className="mt-ct-decision-media">
             <ProductArtwork product={block.product} label={block.product.category.toLowerCase()} />
           </span>
@@ -3763,7 +5374,11 @@ function DiscoverChatBlockView({
           </div>
         ) : null}
         <div className="mt-ct-decision-actions">
-          <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(block.product)}>
+          <button
+            className="mt-ct-addbtn solid"
+            type="button"
+            onClick={() => onAddCart(block.product)}
+          >
             <CartIcon /> Add pick
           </button>
         </div>
@@ -3782,29 +5397,103 @@ function DiscoverChatBlockView({
             The <b>{block.product.name}</b> dropped to {money(block.price)} at {block.merchant}.
           </div>
         </div>
-        <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(block.product)}>
+        <button
+          className="mt-ct-addbtn solid"
+          type="button"
+          onClick={() => onAddCart(block.product)}
+        >
           Add
         </button>
       </div>
     )
   }
+  if (block.type === 'friendvote') {
+    return (
+      <div className="mt-ct-friend">
+        <span className="mt-ct-friend-av">{block.person.slice(0, 1)}</span>
+        <div className="mt-ct-friend-body">
+          <div className="mt-ct-friend-head">
+            <span>
+              <b>{block.person}</b> weighed in on your pick
+            </span>
+            <span className={`mt-ct-friend-vote ${block.vote}`}>
+              {block.vote === 'up' ? 'Yes, this one' : "I'd skip it"}
+            </span>
+          </div>
+          <p className="mt-ct-friend-quote">"{block.note}"</p>
+          <button className="mt-ct-friend-prod" type="button" onClick={() => onOpen(block.product)}>
+            <span className="mt-ct-friend-thumb">
+              <ProductArtwork
+                product={block.product}
+                label={block.product.category.toLowerCase()}
+              />
+            </span>
+            <span className="mt-ct-friend-name">{block.product.name}</span>
+          </button>
+          {block.vote === 'up' ? (
+            <button className="mt-ct-addbtn" type="button" onClick={() => onAddCart(block.product)}>
+              <CartIcon /> Add their pick
+            </button>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
   if (block.type === 'added') {
+    const addedPrice = block.price ?? productPriceFrom(block.product, deliveryLocations)
+    const addedCount = block.count ?? cart.reduce((sum, item) => sum + item.qty, 0)
     return (
       <div className="mt-ct-added">
         <span className="mt-ct-added-check">
-          <SparkMark size={13} color="var(--on-accent)" />
+          <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden>
+            <path
+              d="M3 7.3l2.6 2.6L11 4.2"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </span>
         <div className="mt-ct-added-body">
           <span className="mt-ct-added-name">
-            Added <b>{block.product.name}</b> to cart
+            Added <b>{block.product.name}</b> to your cart
           </span>
           <span className="mt-ct-added-meta">
-            {block.merchant} · {block.synced ? 'merchant cart syncing' : 'local mock cart'}
+            {money(addedPrice)} · {block.merchant}
+            {block.code ? ` · code ${block.code}` : ''} · {addedCount} in cart
           </span>
         </div>
-        <button className="mt-ct-added-go" type="button" onClick={onOpenCart}>
-          Review
-        </button>
+        <div className="mt-ct-added-actions">
+          <button
+            className="mt-ct-added-go"
+            type="button"
+            onClick={() => {
+              const liveLine = cart.find(
+                (item) => item.id === block.product.id && item.merchant === block.merchant,
+              )
+              onReviewCartHere(
+                [
+                  liveLine ?? {
+                    id: block.product.id,
+                    merchant: block.merchant,
+                    qty: 1,
+                    productTitle: block.product.name,
+                    imageUrl: block.product.imageUrl,
+                    unitPriceAmount: String(addedPrice),
+                  },
+                ],
+                [block.product],
+              )
+            }}
+          >
+            Review here
+          </button>
+          <button className="mt-ct-added-go ghost" type="button" onClick={onOpenCart}>
+            Open cart
+          </button>
+        </div>
       </div>
     )
   }
@@ -3894,49 +5583,36 @@ function DiscoverChatBlockView({
   }
   if (block.type === 'cart') {
     return (
-      <div className="mt-ct-block mt-ct-cart">
-        <div className="mt-ct-block-head">
-          <div className="mt-mono mt-ct-block-key">Your cart</div>
-          <span className="mt-ct-code-save mt-mono">
-            {block.lines.reduce((sum, item) => sum + item.qty, 0)} items
-          </span>
-        </div>
-        {block.lines.length > 0 ? (
-          <div className="mt-ct-mini2-list">
-            {block.lines.slice(0, 5).map((item) => (
-              <div className="mt-ct-mini2-row" key={`${item.id}-${item.merchant}`}>
-                <div className="mt-ct-mini2-info">
-                  <div className="mt-ct-mini2-title">{item.productTitle ?? item.id}</div>
-                  <div className="mt-mono mt-ct-mini2-meta">
-                    {item.qty} · {item.merchant}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-ct-cart-empty">Your cart is empty.</p>
-        )}
-        <button className="mt-ct-mini-full" type="button" onClick={onOpenCart}>
-          Open cart
-        </button>
-      </div>
+      <InlineCartBlock
+        cart={cartItemsWithFallback(cart, block.lines)}
+        products={productsWithFallback(block.products, cartProducts)}
+        onQty={onCartQty}
+        onRemove={onCartRemove}
+        onAddCart={onAddCart}
+        onOpenCart={onOpenCart}
+        onCheckoutHere={onCheckoutHere}
+      />
+    )
+  }
+  if (block.type === 'checkout') {
+    return (
+      <InlineCheckoutBlock
+        cart={cart}
+        products={cartProducts}
+        onCheckout={onCheckout}
+        onOpenCart={onOpenCart}
+        onOpenOrders={onOpenOrders}
+      />
     )
   }
   return (
-    <div className="mt-ct-block mt-ct-checkout">
-      <div className="mt-ct-block-head">
-        <div className="mt-mono mt-ct-block-key">Mock checkout</div>
-        <span className="mt-ct-code-save mt-mono">{block.merchantCount} merchants</span>
-      </div>
-      <p className="mt-ct-cart-empty">
-        Inline checkout is mocked until backend/payment support lands. The full cart still uses the
-        current merchant checkout flow.
-      </p>
-      <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
-        Open full cart
-      </button>
-    </div>
+    <InlineMiniCompareBlock
+      block={block}
+      deliveryLocations={deliveryLocations}
+      onOpen={onOpen}
+      onAddCart={onAddCart}
+      onOpenFullCompare={onOpenFullCompare}
+    />
   )
 }
 
@@ -3944,10 +5620,15 @@ function DiscoverChatMessageRow({
   message,
   deliveryLocations,
   preferences,
+  cart,
+  cartProducts,
   savedSet,
   savePendingSet,
   pinnedSet,
   watchedSet,
+  shelfMessageSet,
+  shelfProductSet,
+  flash,
   onOpen,
   onToggleSave,
   onAddCart,
@@ -3956,18 +5637,34 @@ function DiscoverChatMessageRow({
   onDig,
   onJustPick,
   onCompareHere,
+  onOpenFullCompare,
   onOpenSaved,
   onOpenOrders,
   onOpenPrefs,
   onOpenCart,
+  onReviewCartHere,
+  onCartQty,
+  onCartRemove,
+  onCheckout,
+  onCheckoutHere,
+  onDelete,
+  onShelfAddMessage,
+  onShelfAddProduct,
+  onDragMessage,
+  onDragProduct,
 }: Readonly<{
   message: DiscoverChatMessage
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
+  cart: readonly CartItem[]
+  cartProducts: readonly Product[]
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   pinnedSet: ReadonlySet<ProductId>
   watchedSet: ReadonlySet<ProductId>
+  shelfMessageSet: ReadonlySet<string>
+  shelfProductSet: ReadonlySet<ProductId>
+  flash: boolean
   onOpen: (product: Product, products?: readonly Product[]) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
@@ -3976,55 +5673,333 @@ function DiscoverChatMessageRow({
   onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
+  onOpenFullCompare: (products: readonly Product[]) => void
   onOpenSaved: () => void
   onOpenOrders: () => void
   onOpenPrefs: () => void
   onOpenCart: () => void
+  onReviewCartHere: (lines?: readonly CartItem[], products?: readonly Product[]) => void
+  onCartQty: (id: ProductId, merchant: string, qty: number) => void
+  onCartRemove: (id: ProductId, merchant: string) => void
+  onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  onCheckoutHere: () => void
+  onDelete: (messageId: string) => void
+  onShelfAddMessage: (message: DiscoverChatMessage, sourceElement: HTMLElement) => void
+  onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
+  onDragMessage: (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => void
+  onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
+  const onShelf = shelfMessageSet.has(message.id)
   if (message.role === 'you') {
     return (
-      <div className="mt-ct-msg mt-ct-you">
-        <div className="mt-ct-you-bubble">{message.text}</div>
+      <div
+        className={`mt-ct-msg mt-ct-you ${flash ? 'flash' : ''}`}
+        data-mid={message.id}
+        draggable
+        onDragStart={(event) => onDragMessage(event, message)}
+        onDragEnd={() => document.body.classList.remove('mt-dragging')}
+      >
+        <DustWrap
+          side="you"
+          onGone={() => onDelete(message.id)}
+          onSetAside={(sourceElement) => onShelfAddMessage(message, sourceElement)}
+          saved={onShelf}
+        >
+          <div className="mt-ct-you-bubble">
+            {message.productContext ? (
+              <ProductContextChip product={message.productContext} />
+            ) : null}
+            {message.text ? <span className="mt-ct-you-text">{message.text}</span> : null}
+          </div>
+        </DustWrap>
       </div>
     )
   }
 
   return (
-    <div className="mt-ct-msg mt-ct-meant">
-      <span className="mt-ct-av">
-        <SparkMark size={13} />
-      </span>
-      <div className="mt-ct-meant-body">
-        {message.blocks?.map((block, index) => (
-          <DiscoverChatBlockView
-            key={`${message.id}-${index}`}
-            block={block}
-            deliveryLocations={deliveryLocations}
-            preferences={preferences}
-            savedSet={savedSet}
-            savePendingSet={savePendingSet}
-            pinnedSet={pinnedSet}
-            watchedSet={watchedSet}
-            onOpen={onOpen}
-            onToggleSave={onToggleSave}
-            onAddCart={onAddCart}
-            onPin={onPin}
-            onWatch={onWatch}
-            onDig={onDig}
-            onJustPick={onJustPick}
-            onCompareHere={onCompareHere}
-            onOpenSaved={onOpenSaved}
-            onOpenOrders={onOpenOrders}
-            onOpenPrefs={onOpenPrefs}
-            onOpenCart={onOpenCart}
-          />
-        ))}
-        {message.pending ? (
-          <div className="mt-ct-system">
-            <span className="mt-scan-pulse" />
-            Meant is checking merchants and ranking matches.
+    <div
+      className={`mt-ct-msg mt-ct-meant ${flash ? 'flash' : ''}`}
+      data-mid={message.id}
+      draggable
+      onDragStart={(event) => onDragMessage(event, message)}
+      onDragEnd={() => document.body.classList.remove('mt-dragging')}
+    >
+      <DustWrap
+        side="meant"
+        onGone={() => onDelete(message.id)}
+        onSetAside={(sourceElement) => onShelfAddMessage(message, sourceElement)}
+        saved={onShelf}
+      >
+        <div className="mt-ct-meant-inner">
+          <span className="mt-ct-av">
+            <SparkMark size={13} />
+          </span>
+          <div className="mt-ct-meant-body">
+            {message.blocks?.map((block, index) => (
+              <DiscoverChatBlockView
+                key={`${message.id}-${index}`}
+                block={block}
+                deliveryLocations={deliveryLocations}
+                preferences={preferences}
+                cart={cart}
+                cartProducts={cartProducts}
+                savedSet={savedSet}
+                savePendingSet={savePendingSet}
+                pinnedSet={pinnedSet}
+                watchedSet={watchedSet}
+                shelfProductSet={shelfProductSet}
+                onOpen={onOpen}
+                onToggleSave={onToggleSave}
+                onAddCart={onAddCart}
+                onPin={onPin}
+                onWatch={onWatch}
+                onDig={onDig}
+                onJustPick={onJustPick}
+                onCompareHere={onCompareHere}
+                onOpenFullCompare={onOpenFullCompare}
+                onOpenSaved={onOpenSaved}
+                onOpenOrders={onOpenOrders}
+                onOpenPrefs={onOpenPrefs}
+                onOpenCart={onOpenCart}
+                onReviewCartHere={onReviewCartHere}
+                onCartQty={onCartQty}
+                onCartRemove={onCartRemove}
+                onCheckout={onCheckout}
+                onCheckoutHere={onCheckoutHere}
+                onShelfAddProduct={onShelfAddProduct}
+                onDragProduct={onDragProduct}
+              />
+            ))}
+            {message.pending ? (
+              <div className="mt-ct-system">
+                <span className="mt-scan-pulse" />
+                Meant is checking merchants and ranking matches.
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
+      </DustWrap>
+    </div>
+  )
+}
+
+function DiscoverShareSheet({
+  thread,
+  onClose,
+  onSend,
+}: Readonly<{
+  thread: DiscoverChatThread
+  onClose: () => void
+  onSend: (person: string) => void
+}>) {
+  const [copied, setCopied] = useState(false)
+  const slug = thread.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 14)
+  const link = `meant.app/s/${thread.id}-${slug || 'chat'}`
+  const people = [
+    { name: 'Alex', initial: 'A' },
+    { name: 'Sam', initial: 'S' },
+    { name: 'Jordan', initial: 'J' },
+  ]
+  const copy = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(link).catch(() => undefined)
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <div className="mt-modal-root open" role="dialog" aria-label="Share for a second opinion">
+      <button className="mt-modal-scrim" type="button" aria-label="Close" onClick={onClose} />
+      <div className="mt-ct-sharesheet">
+        <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
+          <CloseIcon size={14} />
+        </button>
+        <div className="mt-ct-share-eyebrow mt-mono">Second opinion</div>
+        <h3 className="mt-ct-share-title">Ask someone you trust</h3>
+        <p className="mt-ct-share-sub">
+          Send <b>"{thread.title}"</b> to a friend or partner. They can see your picks and vote
+          before you buy - no account, no sign-up.
+        </p>
+        <div className="mt-ct-share-linkrow">
+          <span className="mt-ct-share-link mt-mono">{link}</span>
+          <button
+            className={`mt-ct-share-copy ${copied ? 'done' : ''}`}
+            type="button"
+            onClick={copy}
+          >
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+        <div className="mt-ct-share-or">
+          <span>or send straight to</span>
+        </div>
+        <div className="mt-ct-share-people">
+          {people.map((person) => (
+            <button
+              key={person.name}
+              className="mt-ct-share-person"
+              type="button"
+              onClick={() => onSend(person.name)}
+            >
+              <span className="mt-ct-share-person-av">{person.initial}</span>
+              <span>{person.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DiscoverThreadTabs({
+  threads,
+  activeId,
+  onSelect,
+  onClose,
+  onNew,
+  onRename,
+  onShare,
+  onReorder,
+}: Readonly<{
+  threads: readonly DiscoverChatThread[]
+  activeId: string
+  onSelect: (threadId: string) => void
+  onClose: (threadId: string) => void
+  onNew: () => void
+  onRename: (threadId: string, title: string) => void
+  onShare: () => void
+  onReorder: (fromIndex: number, toIndex: number) => void
+}>) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
+
+  const beginEdit = (thread: DiscoverChatThread) => {
+    setEditingId(thread.id)
+    setDraft(thread.title)
+  }
+  const commitEdit = () => {
+    if (!editingId) {
+      return
+    }
+    onRename(editingId, draft.trim() || 'Untitled')
+    setEditingId(null)
+  }
+  const dropThread = (targetId: string) => {
+    if (!dragId || dragId === targetId) {
+      setDragId(null)
+      setOverId(null)
+      return
+    }
+    const from = threads.findIndex((thread) => thread.id === dragId)
+    const to = threads.findIndex((thread) => thread.id === targetId)
+    if (from >= 0 && to >= 0) {
+      onReorder(from, to)
+    }
+    setDragId(null)
+    setOverId(null)
+  }
+
+  return (
+    <div className="mt-ct-tabs">
+      <div className="mt-ct-tabs-scroll">
+        {threads.map((thread) => (
+          <div
+            key={thread.id}
+            draggable={editingId !== thread.id}
+            className={`mt-ct-tab ${thread.id === activeId ? 'on' : ''} ${
+              dragId === thread.id ? 'dragging' : ''
+            } ${overId === thread.id ? 'over' : ''}`}
+            onClick={() => onSelect(thread.id)}
+            onDragStart={(event) => {
+              setDragId(thread.id)
+              event.dataTransfer.effectAllowed = 'move'
+              event.dataTransfer.setData('text/plain', 'tab')
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              if (dragId && overId !== thread.id) {
+                setOverId(thread.id)
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              dropThread(thread.id)
+            }}
+            onDragEnd={() => {
+              setDragId(null)
+              setOverId(null)
+            }}
+            title="Drag to reorder your chats"
+          >
+            <SparkMark
+              size={11}
+              color={thread.id === activeId ? 'var(--accent)' : 'var(--faint)'}
+            />
+            {editingId === thread.id ? (
+              <input
+                className="mt-ct-tab-edit"
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                onBlur={commitEdit}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitEdit()
+                  }
+                  if (event.key === 'Escape') {
+                    setEditingId(null)
+                  }
+                }}
+              />
+            ) : (
+              <span
+                className="mt-ct-tab-title"
+                title="Double-click to rename this mission"
+                onDoubleClick={(event) => {
+                  event.stopPropagation()
+                  beginEdit(thread)
+                }}
+              >
+                {thread.title}
+              </span>
+            )}
+            <button
+              className="mt-ct-tab-x"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                onClose(thread.id)
+              }}
+              aria-label="Close chat"
+              title={threads.length > 1 ? 'Close this chat' : 'Close chat - back to start'}
+            >
+              <CloseIcon size={11} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-ct-tabs-right">
+        <button
+          className="mt-ct-tabtool"
+          type="button"
+          onClick={onShare}
+          title="Share this chat for a second opinion"
+        >
+          <ShareIcon />
+          Share
+        </button>
+        <button className="mt-ct-newtab" type="button" onClick={onNew}>
+          <PlusIcon />
+          New chat
+        </button>
       </div>
     </div>
   )
@@ -4052,7 +6027,11 @@ function ChatDiscoverView({
   merchantsLoading,
   savedProducts,
   cart,
+  cartProducts,
   orders,
+  shelf,
+  shelfFlashMessageId,
+  productDetailChatRequest,
   savedSet,
   savePendingSet,
   onSubmit,
@@ -4064,10 +6043,17 @@ function ChatDiscoverView({
   onAddProductToCart,
   onFallbackAddToCart,
   onCompareProducts,
+  onCartQty,
+  onCartRemove,
+  onCheckout,
   onOpenSaved,
   onOpenOrders,
   onOpenPrefs,
   onOpenCart,
+  onOpenShelf,
+  onShelfAddMessage,
+  onShelfAddProduct,
+  onProductDetailChatRequestHandled,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
@@ -4090,7 +6076,11 @@ function ChatDiscoverView({
   merchantsLoading: boolean
   savedProducts: readonly Product[]
   cart: readonly CartItem[]
+  cartProducts: readonly Product[]
   orders: readonly Order[]
+  shelf: readonly ShelfItem[]
+  shelfFlashMessageId: string | null
+  productDetailChatRequest: ProductDetailChatRequest | null
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   onSubmit: (query: string) => void
@@ -4102,17 +6092,67 @@ function ChatDiscoverView({
   onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   onFallbackAddToCart: (product: Product, offer: Offer) => void
   onCompareProducts: (products: readonly Product[]) => void
+  onCartQty: (id: ProductId, merchant: string, qty: number) => void
+  onCartRemove: (id: ProductId, merchant: string) => void
+  onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   onOpenSaved: () => void
   onOpenOrders: () => void
   onOpenPrefs: () => void
   onOpenCart: () => void
+  onOpenShelf: () => void
+  onShelfAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
+  onShelfAddProduct: (snapshot: ShelfProductSnapshot) => void
+  onProductDetailChatRequestHandled: (requestId: string) => void
 }>) {
-  const [messages, setMessages] = useState<DiscoverChatMessage[]>([])
-  const [activeSearchMessageId, setActiveSearchMessageId] = useState<string | null>(null)
+  const [threads, setThreads] = useStoredState<DiscoverChatThread[]>(
+    'meant.discoverChatThreads',
+    initialDiscoverChatThreads(),
+  )
+  const [activeThreadId, setActiveThreadId] = useStoredState<string>(
+    'meant.discoverActiveThreadId',
+    threads[0]?.id ?? DEFAULT_DISCOVER_CHAT_TITLE,
+  )
+  const fallbackThread = useMemo(() => createDiscoverChatThread(), [])
+  const activeThread =
+    threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? fallbackThread
+  const activeThreadIdSafe = activeThread.id
+  const messages = activeThread.messages
+  const [activeSearchTarget, setActiveSearchTarget] = useState<{
+    threadId: string
+    messageId: string
+  } | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
   const [pinnedIds, setPinnedIds] = useStoredState<ProductId[]>('meant.chatPinned', [])
+  const [trayClearing, setTrayClearing] = useState(false)
   const [watchedIds, setWatchedIds] = useState<ProductId[]>([])
+  const chatBottomRef = useRef<HTMLDivElement | null>(null)
+  const previousMessageCountRef = useRef(messages.length)
+  const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
+  const suppressNextMessageScrollRef = useRef<string | null>(null)
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds])
+  const shelfMessageSet = useMemo(
+    () =>
+      new Set(
+        shelf
+          .filter(
+            (item): item is Extract<ShelfItem, { kind: 'message' }> => item.kind === 'message',
+          )
+          .map((item) => item.messageId),
+      ),
+    [shelf],
+  )
+  const shelfProductSet = useMemo(
+    () =>
+      new Set(
+        shelf
+          .filter(
+            (item): item is Extract<ShelfItem, { kind: 'product' }> => item.kind === 'product',
+          )
+          .map((item) => item.productId),
+      ),
+    [shelf],
+  )
   const displayProducts = useMemo(() => {
     if (products.length > 0) {
       return products
@@ -4122,27 +6162,125 @@ function ChatDiscoverView({
     }
     return PRODUCTS.slice(0, 4)
   }, [products, savedProducts])
+  const knownProductsById = useMemo(() => {
+    const next = new Map<ProductId, Product>()
+    for (const product of [...PRODUCTS, ...savedProducts, ...cartProducts, ...displayProducts]) {
+      next.set(product.id, product)
+    }
+    return next
+  }, [cartProducts, displayProducts, savedProducts])
   const pinnedProducts = pinnedIds
     .map((id) => displayProducts.find((product) => product.id === id))
     .filter((product): product is Product => Boolean(product))
-  const currentCartLines = cartLines(cart, displayProducts)
-  const activeSearchProducts = useMemo(() => (query ? displayProducts : []), [displayProducts, query])
+  const currentCartLines = cartLines(cart, cartProducts)
+  const activeSearchProducts = useMemo(
+    () => (query ? displayProducts : []),
+    [displayProducts, query],
+  )
+
+  const scrollChatToBottom = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+      })
+    })
+  }, [])
 
   useEffect(() => {
-    if (!activeSearchMessageId) {
+    const messageCountIncreased = messages.length > previousMessageCountRef.current
+    const activeThreadChanged = activeThreadIdSafe !== previousActiveThreadIdRef.current
+    if (activeThreadChanged) {
+      scrollChatToBottom()
+    } else if (messageCountIncreased) {
+      if (suppressNextMessageScrollRef.current === activeThreadIdSafe) {
+        suppressNextMessageScrollRef.current = null
+      } else {
+        scrollChatToBottom()
+      }
+    }
+    if (!messageCountIncreased && suppressNextMessageScrollRef.current !== activeThreadIdSafe) {
+      suppressNextMessageScrollRef.current = null
+    }
+    previousMessageCountRef.current = messages.length
+    previousActiveThreadIdRef.current = activeThreadIdSafe
+  }, [activeThreadIdSafe, messages.length, scrollChatToBottom])
+
+  useEffect(() => {
+    if (threads.length === 0) {
+      const nextThread = createDiscoverChatThread()
+      setThreads([nextThread])
+      setActiveThreadId(nextThread.id)
       return
     }
-    setMessages((current) =>
+    if (!threads.some((thread) => thread.id === activeThreadId)) {
+      setActiveThreadId(threads[0].id)
+    }
+  }, [activeThreadId, setActiveThreadId, setThreads, threads])
+
+  useEffect(() => {
+    if (pinnedProducts.length === 0 && trayClearing) {
+      setTrayClearing(false)
+    }
+  }, [pinnedProducts.length, trayClearing])
+
+  const updateThreadMessages = useCallback(
+    (threadId: string, action: SetStateAction<readonly DiscoverChatMessage[]>) => {
+      setThreads((current) =>
+        current.map((thread) =>
+          thread.id === threadId
+            ? { ...thread, messages: resolveStateAction(action, thread.messages) }
+            : thread,
+        ),
+      )
+    },
+    [setThreads],
+  )
+
+  const setMessages = useCallback(
+    (action: SetStateAction<readonly DiscoverChatMessage[]>) => {
+      updateThreadMessages(activeThreadIdSafe, action)
+    },
+    [activeThreadIdSafe, updateThreadMessages],
+  )
+
+  const appendMessagesToActiveThread = useCallback(
+    (
+      nextMessages: readonly DiscoverChatMessage[],
+      options: { titleSeed?: string; focusProductId?: ProductId } = {},
+    ) => {
+      setThreads((current) =>
+        current.map((thread) => {
+          if (thread.id !== activeThreadIdSafe) {
+            return thread
+          }
+          const shouldTitle = thread.messages.length === 0 && !thread.named && options.titleSeed
+          return {
+            ...thread,
+            title: shouldTitle ? deriveDiscoverChatTitle(options.titleSeed ?? '') : thread.title,
+            focusProductId: options.focusProductId ?? thread.focusProductId,
+            messages: [...thread.messages, ...nextMessages],
+          }
+        }),
+      )
+    },
+    [activeThreadIdSafe, setThreads],
+  )
+
+  useEffect(() => {
+    if (!activeSearchTarget) {
+      return
+    }
+    updateThreadMessages(activeSearchTarget.threadId, (current) =>
       current.map((message) => {
-        if (message.id !== activeSearchMessageId) {
+        if (message.id !== activeSearchTarget.messageId) {
           return message
         }
         const statusText = error
           ? 'Live product search is unavailable, so I mocked a starter shortlist from the demo catalog.'
-          : reply ??
+          : (reply ??
             (activeSearchProducts.length > 0
               ? `I found ${activeSearchProducts.length} candidate${activeSearchProducts.length === 1 ? '' : 's'} so far.`
-              : 'Searching across supported merchants...')
+              : 'Searching across supported merchants...'))
         return {
           ...message,
           pending: loading || loadingMore,
@@ -4153,33 +6291,147 @@ function ChatDiscoverView({
         }
       }),
     )
+    scrollChatToBottom()
     if (!loading && !loadingMore && (reply || error)) {
-      setActiveSearchMessageId(null)
+      setActiveSearchTarget(null)
     }
-  }, [activeSearchMessageId, activeSearchProducts, error, loading, loadingMore, query, reply])
+  }, [
+    activeSearchTarget,
+    activeSearchProducts,
+    error,
+    loading,
+    loadingMore,
+    query,
+    reply,
+    scrollChatToBottom,
+    updateThreadMessages,
+  ])
 
   const appendMessagePair = (text: string, blocks: readonly DiscoverChatBlock[]) => {
-    setMessages((current) => [
-      ...current,
-      { id: nextDiscoverChatMessageId(), role: 'you', text },
-      { id: nextDiscoverChatMessageId(), role: 'ai', blocks },
-    ])
+    appendMessagesToActiveThread(
+      [
+        { id: nextDiscoverChatMessageId(), role: 'you', text },
+        { id: nextDiscoverChatMessageId(), role: 'ai', blocks },
+      ],
+      { titleSeed: text },
+    )
+  }
+
+  const appendProductDetailQuestion = useCallback(
+    (product: Product, question: string, requestProducts: readonly Product[]) => {
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'you',
+            text: question,
+            productContext: product,
+          },
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'ai',
+            blocks: productDetailChatBlocks(question, product, requestProducts, preferences),
+          },
+        ],
+        { titleSeed: question, focusProductId: product.id },
+      )
+    },
+    [appendMessagesToActiveThread, preferences],
+  )
+
+  useEffect(() => {
+    if (!productDetailChatRequest) {
+      return
+    }
+    const requestProducts = displayProducts.some(
+      (candidate) => candidate.id === productDetailChatRequest.product.id,
+    )
+      ? displayProducts
+      : [productDetailChatRequest.product, ...displayProducts]
+    appendProductDetailQuestion(
+      productDetailChatRequest.product,
+      productDetailChatRequest.question,
+      requestProducts,
+    )
+    onProductDetailChatRequestHandled(productDetailChatRequest.id)
+  }, [
+    appendProductDetailQuestion,
+    displayProducts,
+    onProductDetailChatRequestHandled,
+    productDetailChatRequest,
+  ])
+
+  const deleteMessage = (messageId: string) => {
+    setMessages((current) => current.filter((message) => message.id !== messageId))
+    if (activeSearchTarget?.messageId === messageId) {
+      setActiveSearchTarget(null)
+    }
+  }
+
+  const addMessageToShelf = (message: DiscoverChatMessage, sourceElement: HTMLElement) => {
+    if (!shelfMessageSet.has(message.id)) {
+      flyToShelf(sourceElement, message.role === 'you' ? 'var(--accent)' : 'var(--accent-tint)')
+    }
+    onShelfAddMessage({
+      kind: 'message',
+      messageId: message.id,
+      snapshot: shelfMessageSnapshot(message),
+    })
+    onOpenShelf()
+  }
+
+  const addProductToShelf = (product: Product, sourceElement: HTMLElement) => {
+    if (!shelfProductSet.has(product.id)) {
+      flyToShelf(sourceElement, product.tone)
+    }
+    onShelfAddProduct(shelfProductSnapshot(product))
+    onOpenShelf()
+  }
+
+  const dragMessage = (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(
+      SHELF_DRAG_MIME,
+      JSON.stringify({
+        kind: 'message',
+        messageId: message.id,
+        snapshot: shelfMessageSnapshot(message),
+      } satisfies ShelfDragPayload),
+    )
+    document.body.classList.add('mt-dragging')
+    onOpenShelf()
+  }
+
+  const dragProduct = (event: ReactDragEvent<HTMLElement>, product: Product) => {
+    event.stopPropagation()
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(
+      SHELF_DRAG_MIME,
+      JSON.stringify({
+        kind: 'product',
+        snapshot: shelfProductSnapshot(product),
+      } satisfies ShelfDragPayload),
+    )
+    document.body.classList.add('mt-dragging')
+    onOpenShelf()
   }
 
   const runSearchInChat = (text: string) => {
     const aiId = nextDiscoverChatMessageId()
-    setMessages((current) => [
-      ...current,
-      { id: nextDiscoverChatMessageId(), role: 'you', text },
-      {
-        id: aiId,
-        role: 'ai',
-        query: text,
-        pending: true,
-        blocks: [{ type: 'text', text: 'Searching across supported merchants...' }],
-      },
-    ])
-    setActiveSearchMessageId(aiId)
+    appendMessagesToActiveThread(
+      [
+        { id: nextDiscoverChatMessageId(), role: 'you', text },
+        {
+          id: aiId,
+          role: 'ai',
+          query: text,
+          pending: true,
+          blocks: [{ type: 'text', text: 'Searching across supported merchants...' }],
+        },
+      ],
+      { titleSeed: text },
+    )
+    setActiveSearchTarget({ threadId: activeThreadIdSafe, messageId: aiId })
     onSubmit(text)
   }
 
@@ -4191,7 +6443,10 @@ function ChatDiscoverView({
     const lower = normalized.toLowerCase()
     if (/\border history\b|\borders?\b|\bpurchases?\b/.test(lower)) {
       appendMessagePair(normalized, [
-        { type: 'text', text: 'Here are your recent orders. The full order view stays connected to the backend.' },
+        {
+          type: 'text',
+          text: 'Here are your recent orders. The full order view stays connected to the backend.',
+        },
         { type: 'orders', orders },
       ])
       return
@@ -4210,17 +6465,53 @@ function ChatDiscoverView({
       ])
       return
     }
+    if (/\bcompare\b|\bversus\b|\bvs\b|\bbetter\b/.test(lower)) {
+      const compareBlock = createMiniCompareBlock(
+        pinnedProducts.length >= 2 ? pinnedProducts : displayProducts,
+        deliveryLocations,
+      )
+      appendMessagePair(
+        normalized,
+        compareBlock
+          ? [
+              {
+                type: 'text',
+                text:
+                  pinnedProducts.length >= 2
+                    ? 'Here is the pinned comparison, without leaving the chat.'
+                    : 'Here is a quick comparison from the current shortlist.',
+              },
+              compareBlock,
+            ]
+          : [
+              {
+                type: 'system',
+                text: 'Pin at least two products or search for a shortlist before comparing.',
+              },
+            ],
+      )
+      return
+    }
     if (/\bcart\b|\bbasket\b/.test(lower) && !/\badd\b/.test(lower)) {
       appendMessagePair(normalized, [
-        { type: 'text', text: 'Here is your cart. The full cart keeps using the live merchant-cart integration.' },
+        {
+          type: 'text',
+          text: 'Here is your cart. You can adjust quantities, remove items, and start checkout right here.',
+        },
         { type: 'cart', lines: cart },
       ])
       return
     }
     if (/\bcheckout\b|\bpay\b|\bbuy\b/.test(lower)) {
       appendMessagePair(normalized, [
-        { type: 'text', text: 'Inline checkout is shown as a mock until the backend supports paying inside Meant.' },
-        { type: 'checkout', merchantCount: new Set(currentCartLines.map((line) => line.merchant)).size },
+        {
+          type: 'text',
+          text: 'Here is checkout inside the chat, grouped by merchant.',
+        },
+        {
+          type: 'checkout',
+          merchantCount: new Set(currentCartLines.map((line) => line.merchant)).size,
+        },
       ])
       return
     }
@@ -4238,20 +6529,34 @@ function ChatDiscoverView({
     } else {
       onFallbackAddToCart(product, offer)
     }
-    setMessages((current) => [
-      ...current,
-      {
-        id: nextDiscoverChatMessageId(),
-        role: 'ai',
-        blocks: [{ type: 'added', product, merchant: offer.merchant, synced }],
-      },
-    ])
+    appendMessagesToActiveThread(
+      [
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: [
+            {
+              type: 'added',
+              product,
+              merchant: offer.merchant,
+              synced,
+              price: offer.price,
+              count: cart.reduce((sum, item) => sum + item.qty, 0) + 1,
+            },
+          ],
+        },
+      ],
+      { focusProductId: product.id },
+    )
   }
 
   const digIntoProduct = (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => {
     if (kind === 'reviews') {
       appendMessagePair(`What do reviewers say about ${product.name}?`, [
-        { type: 'text', text: `Here is what I can tell from the current product data for ${product.name}.` },
+        {
+          type: 'text',
+          text: `Here is what I can tell from the current product data for ${product.name}.`,
+        },
         { type: 'reviews', product },
       ])
       return
@@ -4259,7 +6564,10 @@ function ChatDiscoverView({
     if (kind === 'code') {
       const discount = chatDiscountForProduct(product)
       appendMessagePair(`Find a code for ${product.name}.`, [
-        { type: 'text', text: 'Coupon hunting is mocked for now, but the block shape is ready for a backend agent.' },
+        {
+          type: 'text',
+          text: 'Coupon hunting is mocked for now, but the block shape is ready for a backend agent.',
+        },
         { type: 'code', product, code: discount.code, saved: discount.saved },
       ])
       return
@@ -4292,20 +6600,85 @@ function ChatDiscoverView({
   }
 
   const compareHere = (candidates: readonly Product[]) => {
-    const nextProducts = candidates.slice(0, 4)
-    if (nextProducts.length < 2) {
+    const compareBlock = createMiniCompareBlock(candidates, deliveryLocations)
+    if (!compareBlock) {
       return
     }
-    onCompareProducts(nextProducts)
+    suppressNextMessageScrollRef.current = null
+    appendMessagePair('Compare these here.', [
+      { type: 'text', text: 'I lined them up here so you can decide without leaving the chat.' },
+      compareBlock,
+    ])
+    scrollChatToBottom()
+  }
+
+  const showCheckoutHere = () => {
+    appendMessagePair('Checkout here.', [
+      { type: 'text', text: 'I grouped checkout by merchant and kept it inside the chat.' },
+      {
+        type: 'checkout',
+        merchantCount: new Set(currentCartLines.map((line) => line.merchant)).size,
+      },
+    ])
+  }
+
+  const showCartReviewHere = (
+    fallbackLines: readonly CartItem[] = [],
+    fallbackProducts: readonly Product[] = [],
+  ) => {
+    const reviewLines = cartItemsWithFallback(cart, fallbackLines)
+    appendMessagesToActiveThread([
+      {
+        id: nextDiscoverChatMessageId(),
+        role: 'ai',
+        blocks: [
+          {
+            type: 'text',
+            text: 'Here is the live cart review. You can adjust quantities, remove items, or continue to checkout here.',
+          },
+          { type: 'cart', lines: reviewLines, products: fallbackProducts },
+        ],
+      },
+    ])
+    scrollChatToBottom()
   }
 
   const togglePin = (product: Product) => {
-    setPinnedIds((current) => {
-      if (current.includes(product.id)) {
-        return current.filter((id) => id !== product.id)
-      }
-      return [...current, product.id].slice(-4)
-    })
+    const wasPinned = pinnedIds.includes(product.id)
+    const nextIds = wasPinned
+      ? pinnedIds.filter((id) => id !== product.id)
+      : [...pinnedIds, product.id].slice(-4)
+    setPinnedIds(nextIds)
+    if (wasPinned) {
+      return
+    }
+    suppressNextMessageScrollRef.current = activeThreadIdSafe
+    const nextProducts = nextIds
+      .map((id) =>
+        id === product.id ? product : displayProducts.find((candidate) => candidate.id === id),
+      )
+      .filter((candidate): candidate is Product => Boolean(candidate))
+    const compareBlock = createMiniCompareBlock(nextProducts, deliveryLocations)
+    appendMessagesToActiveThread(
+      [
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: compareBlock
+            ? [
+                { type: 'system', text: `Pinned ${product.name}. Here is the tray comparison.` },
+                compareBlock,
+              ]
+            : [
+                {
+                  type: 'system',
+                  text: `Pinned ${product.name}. Pin one more product to compare inside the chat.`,
+                },
+              ],
+        },
+      ],
+      { focusProductId: product.id },
+    )
   }
 
   const toggleWatch = (product: Product) => {
@@ -4314,22 +6687,25 @@ function ChatDiscoverView({
       watching ? current.filter((id) => id !== product.id) : [...current, product.id],
     )
     if (!watching) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: nextDiscoverChatMessageId(),
-          role: 'ai',
-          blocks: [
-            {
-              type: 'system',
-              text: `Watching ${product.name}. A mocked price-drop alert will land in this chat.`,
-            },
-          ],
-        },
-      ])
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'ai',
+            blocks: [
+              {
+                type: 'system',
+                text: `Watching ${product.name}. A mocked price-drop alert will land in this chat.`,
+              },
+            ],
+          },
+        ],
+        { focusProductId: product.id },
+      )
+      const watchThreadId = activeThreadIdSafe
       window.setTimeout(() => {
         const offer = bestOffer(product, deliveryLocations)
-        setMessages((current) => [
+        updateThreadMessages(watchThreadId, (current) => [
           ...current,
           {
             id: nextDiscoverChatMessageId(),
@@ -4348,10 +6724,98 @@ function ChatDiscoverView({
     }
   }
 
-  const startNewChat = () => {
-    setMessages([])
-    setActiveSearchMessageId(null)
+  const newThread = () => {
+    const nextThread = createDiscoverChatThread()
+    setThreads((current) => [...current, nextThread])
+    setActiveThreadId(nextThread.id)
+    setActiveSearchTarget(null)
     onClear()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const closeThread = (threadId: string) => {
+    const closingIndex = threads.findIndex((thread) => thread.id === threadId)
+    const nextThreads = threads.filter((thread) => thread.id !== threadId)
+    if (nextThreads.length === 0) {
+      const nextThread = createDiscoverChatThread()
+      setThreads([nextThread])
+      setActiveThreadId(nextThread.id)
+      setActiveSearchTarget(null)
+      onClear()
+      return
+    }
+    setThreads(nextThreads)
+    if (threadId === activeThreadIdSafe) {
+      const nextActive = nextThreads[Math.max(0, closingIndex - 1)] ?? nextThreads[0]
+      setActiveThreadId(nextActive.id)
+      setActiveSearchTarget((currentTarget) =>
+        currentTarget?.threadId === threadId ? null : currentTarget,
+      )
+    }
+  }
+
+  const renameThread = (threadId: string, title: string) => {
+    setThreads((current) =>
+      current.map((thread) =>
+        thread.id === threadId ? { ...thread, title, named: true } : thread,
+      ),
+    )
+  }
+
+  const reorderThreads = (fromIndex: number, toIndex: number) => {
+    setThreads((current) => {
+      const next = [...current]
+      const [moved] = next.splice(fromIndex, 1)
+      if (!moved) {
+        return current
+      }
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+  }
+
+  const shareThread = (person: string) => {
+    setShareOpen(false)
+    const sharedThreadId = activeThreadIdSafe
+    const sharedProduct = discoverThreadFocusProduct(activeThread, knownProductsById)
+    appendMessagesToActiveThread([
+      {
+        id: nextDiscoverChatMessageId(),
+        role: 'ai',
+        blocks: [
+          {
+            type: 'system',
+            text: `Shared this chat with ${person}. Their vote will land right here.`,
+          },
+        ],
+      },
+    ])
+    if (!sharedProduct) {
+      return
+    }
+    const notes = [
+      'This one. The reviews sold me - go for it.',
+      'Yes, get it. Looks exactly like your style.',
+      'Do it - best value of the bunch, honestly.',
+    ]
+    window.setTimeout(() => {
+      updateThreadMessages(sharedThreadId, (current) => [
+        ...current,
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: [
+            {
+              type: 'friendvote',
+              person,
+              product: sharedProduct,
+              vote: 'up',
+              note: notes[Math.floor(Math.random() * notes.length)] ?? notes[0],
+            },
+          ],
+        },
+      ])
+    }, 4200)
   }
 
   const messageBlockProps = {
@@ -4359,8 +6823,12 @@ function ChatDiscoverView({
     preferences,
     savedSet,
     savePendingSet,
+    cart,
+    cartProducts,
     pinnedSet,
     watchedSet,
+    shelfMessageSet,
+    shelfProductSet,
     onOpen,
     onToggleSave,
     onAddCart: (product: Product) => void addCartFromChat(product),
@@ -4369,15 +6837,27 @@ function ChatDiscoverView({
     onDig: digIntoProduct,
     onJustPick: chooseOne,
     onCompareHere: compareHere,
+    onOpenFullCompare: onCompareProducts,
     onOpenSaved,
     onOpenOrders,
     onOpenPrefs,
     onOpenCart,
+    onReviewCartHere: showCartReviewHere,
+    onCartQty,
+    onCartRemove,
+    onCheckout,
+    onCheckoutHere: showCheckoutHere,
+    onDelete: deleteMessage,
+    onShelfAddMessage: addMessageToShelf,
+    onShelfAddProduct: addProductToShelf,
+    onDragMessage: dragMessage,
+    onDragProduct: dragProduct,
   }
 
   const empty = messages.length === 0 && !query
+  const activeThreadSearchPending = activeSearchTarget?.threadId === activeThreadIdSafe
 
-  if (empty) {
+  if (empty && threads.length === 1) {
     return (
       <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
         <ChatHero
@@ -4400,19 +6880,16 @@ function ChatDiscoverView({
 
   return (
     <main className="mt-feed mt-ct-feed">
-      <div className="mt-ct-tabs">
-        <div className="mt-ct-tabs-scroll">
-          <button className="mt-ct-tab on" type="button">
-            <SparkMark size={11} />
-            <span className="mt-ct-tab-title">{query || 'Shopping agent'}</span>
-          </button>
-        </div>
-        <div className="mt-ct-tabs-right">
-          <button className="mt-ct-tabtool" type="button" onClick={startNewChat}>
-            New chat
-          </button>
-        </div>
-      </div>
+      <DiscoverThreadTabs
+        threads={threads}
+        activeId={activeThreadIdSafe}
+        onSelect={setActiveThreadId}
+        onClose={closeThread}
+        onNew={newThread}
+        onRename={renameThread}
+        onShare={() => setShareOpen(true)}
+        onReorder={reorderThreads}
+      />
       <div className="mt-ct-thread">
         <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
           <span className="mt-ct-av">
@@ -4420,20 +6897,49 @@ function ChatDiscoverView({
           </span>
           <div className="mt-ct-meant-body">
             <p className="mt-ct-intro">
-              I only surface products that fit your profile. I can also open your live cart,
-              orders, saved items, and preferences right here.
+              I only surface products that fit your profile. I can also open your live cart, orders,
+              saved items, and preferences right here.
             </p>
           </div>
         </div>
+        {empty ? (
+          <div className="mt-ct-empty-prompts">
+            {prompts.map((prompt) => (
+              <button
+                key={prompt}
+                className="mt-ct-suggchip"
+                type="button"
+                onClick={() => submit(prompt)}
+              >
+                {prompt}
+              </button>
+            ))}
+            <button
+              className="mt-ct-suggchip"
+              type="button"
+              onClick={() => chooseOne(displayProducts)}
+            >
+              <SparkMark size={11} />
+              Just pick for me
+            </button>
+          </div>
+        ) : null}
         {messages.map((message) => (
-          <DiscoverChatMessageRow key={message.id} message={message} {...messageBlockProps} />
+          <DiscoverChatMessageRow
+            key={message.id}
+            message={message}
+            flash={shelfFlashMessageId === message.id}
+            {...messageBlockProps}
+          />
         ))}
-        {error && !activeSearchMessageId ? (
+        {error && !activeThreadSearchPending ? (
           <div className="mt-ct-system">
             Live search is unavailable, so Meant is showing demo products for this chat.
           </div>
         ) : null}
-        {agentActivities.length > 0 && loading ? <AgentActivityPanel activities={agentActivities} /> : null}
+        {agentActivities.length > 0 && loading ? (
+          <AgentActivityPanel activities={agentActivities} />
+        ) : null}
         {hasMore ? (
           <div className="mt-load-more">
             <button
@@ -4456,10 +6962,25 @@ function ChatDiscoverView({
             </span>
           </div>
         ) : null}
+        <div ref={chatBottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
       </div>
+      {shareOpen ? (
+        <DiscoverShareSheet
+          thread={activeThread}
+          onClose={() => setShareOpen(false)}
+          onSend={shareThread}
+        />
+      ) : null}
 
       {pinnedProducts.length > 0 ? (
-        <div className="mt-ct-tray">
+        <DustingContainer
+          className="mt-ct-tray"
+          dusting={trayClearing}
+          onGone={() => {
+            setTrayClearing(false)
+            setPinnedIds([])
+          }}
+        >
           <span className="mt-mono mt-ct-tray-label">
             Compare tray
             <br />
@@ -4489,17 +7010,30 @@ function ChatDiscoverView({
             ) : null}
           </div>
           <button
+            className="mt-ct-tray-mini"
+            type="button"
+            disabled={pinnedProducts.length < 2 || trayClearing}
+            onClick={() => compareHere(pinnedProducts)}
+          >
+            Compare here
+          </button>
+          <button
             className="mt-ct-tray-go"
             type="button"
-            disabled={pinnedProducts.length < 2}
+            disabled={pinnedProducts.length < 2 || trayClearing}
             onClick={() => onCompareProducts(pinnedProducts)}
           >
             Full compare
           </button>
-          <button className="mt-ct-tray-clear" type="button" onClick={() => setPinnedIds([])}>
+          <button
+            className="mt-ct-tray-clear"
+            type="button"
+            onClick={() => setTrayClearing(true)}
+            disabled={trayClearing}
+          >
             Clear
           </button>
-        </div>
+        </DustingContainer>
       ) : null}
 
       <div className="mt-ct-dock">
@@ -4528,6 +7062,7 @@ function ProductModal({
   onToggleSave,
   onCompare,
   onAddToCart,
+  onAskInChat,
   canPrev,
   canNext,
   onPrev,
@@ -4543,6 +7078,7 @@ function ProductModal({
   onToggleSave: (product: Product) => void
   onCompare: (product: Product) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
+  onAskInChat?: (product: Product, question: string) => void
   canPrev: boolean
   canNext: boolean
   onPrev: () => void
@@ -4561,6 +7097,7 @@ function ProductModal({
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const modalDockRef = useRef<HTMLDivElement | null>(null)
   const deliveryCountryCode = deliveryLocations[0]?.code ?? null
 
   useEffect(() => {
@@ -4731,6 +7268,13 @@ function ProductModal({
     }
   }
   const ask = (question: string) => {
+    if (onAskInChat) {
+      const sourceElement =
+        modalDockRef.current?.querySelector<HTMLElement>('.mt-ask-bar') ?? modalDockRef.current
+      flyMessageToChat(sourceElement, question)
+      onAskInChat(product, question)
+      return
+    }
     setMessages((current) => [
       ...current,
       { role: 'you', text: question },
@@ -5113,7 +7657,7 @@ function ProductModal({
           </div>
         </div>
 
-        <div className="mt-modal-dock">
+        <div className="mt-modal-dock" ref={modalDockRef}>
           <AskThread messages={messages} />
           <AskComposer
             placeholder={`Ask Meant about ${product.name}...`}
@@ -5125,6 +7669,11 @@ function ProductModal({
             showChips={messages.length === 0}
             onAsk={ask}
           />
+          {onAskInChat ? (
+            <div className="mt-mono mt-modal-dock-hint">
+              Your question moves into the chat, where Meant answers in full.
+            </div>
+          ) : null}
         </div>
       </div>
       {zoomImageUrl ? (
@@ -8222,6 +10771,11 @@ export function MeantApp() {
   )
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
+  const [shelf, setShelf] = useStoredState<ShelfItem[]>('meant.shelf', [])
+  const [shelfOpen, setShelfOpen] = useState(false)
+  const [shelfFlashMessageId, setShelfFlashMessageId] = useState<string | null>(null)
+  const [productDetailChatRequest, setProductDetailChatRequest] =
+    useState<ProductDetailChatRequest | null>(null)
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
   const [savedProducts, setSavedProducts] = useState<Product[]>([])
   const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
@@ -8753,18 +11307,121 @@ export function MeantApp() {
       })
   }
 
-  const nav = (next: View) => {
-    setView(next)
-    setCartPeek(false)
-    setAccountMenu(false)
-    if (next === 'orders') {
-      void loadOrders({ silent: true })
-    }
-    if (next !== 'orders') {
-      setLastPlaced(null)
-    }
-    window.scrollTo({ top: 0 })
-  }
+  const nav = useCallback(
+    (next: View) => {
+      setView(next)
+      setCartPeek(false)
+      setAccountMenu(false)
+      if (next === 'orders') {
+        void loadOrders({ silent: true })
+      }
+      if (next !== 'orders') {
+        setLastPlaced(null)
+      }
+      window.scrollTo({ top: 0 })
+    },
+    [loadOrders],
+  )
+
+  const addMessageToShelf = useCallback(
+    (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => {
+      setShelf((current) => {
+        if (
+          current.some((item) => item.kind === 'message' && item.messageId === payload.messageId)
+        ) {
+          return current.map((item) =>
+            item.kind === 'message' && item.messageId === payload.messageId
+              ? { ...item, snapshot: payload.snapshot }
+              : item,
+          )
+        }
+        return [
+          ...current,
+          {
+            uid: nextShelfUid(),
+            kind: 'message',
+            messageId: payload.messageId,
+            collapsed: false,
+            snapshot: payload.snapshot,
+          },
+        ]
+      })
+    },
+    [setShelf],
+  )
+
+  const addProductToShelf = useCallback(
+    (snapshot: ShelfProductSnapshot) => {
+      setShelf((current) => {
+        if (
+          current.some((item) => item.kind === 'product' && item.productId === snapshot.productId)
+        ) {
+          return current.map((item) =>
+            item.kind === 'product' && item.productId === snapshot.productId
+              ? { ...item, snapshot }
+              : item,
+          )
+        }
+        return [
+          ...current,
+          {
+            uid: nextShelfUid(),
+            kind: 'product',
+            productId: snapshot.productId,
+            collapsed: false,
+            snapshot,
+          },
+        ]
+      })
+    },
+    [setShelf],
+  )
+
+  const removeShelfItem = useCallback(
+    (uid: string) => {
+      setShelf((current) => current.filter((item) => item.uid !== uid))
+    },
+    [setShelf],
+  )
+
+  const toggleShelfItemCollapse = useCallback(
+    (uid: string) => {
+      setShelf((current) =>
+        current.map((item) => (item.uid === uid ? { ...item, collapsed: !item.collapsed } : item)),
+      )
+    },
+    [setShelf],
+  )
+
+  const findShelfMessage = useCallback(
+    (messageId: string) => {
+      nav('discover')
+      window.setTimeout(() => {
+        const element = document.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)
+        if (!(element instanceof HTMLElement)) {
+          return
+        }
+        const top = window.scrollY + element.getBoundingClientRect().top - 150
+        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+        setShelfFlashMessageId(messageId)
+        window.setTimeout(() => setShelfFlashMessageId(null), 2200)
+      }, 120)
+    },
+    [nav],
+  )
+
+  const sendProductQuestionToDiscover = useCallback(
+    (product: Product, question: string) => {
+      setActiveProduct(null)
+      setProductDetailChatRequest({
+        id: `detail-chat-${Date.now().toString(36)}`,
+        product,
+        question,
+      })
+      nav('discover')
+    },
+    [nav],
+  )
 
   const beginSaveOperation = (id: ProductId) => {
     if (savePendingRef.current.has(id)) {
@@ -9302,6 +11959,20 @@ export function MeantApp() {
     }
   }
 
+  const checkoutInChat = async (payload: CheckoutPayload) => {
+    if (payload.items.length === 0) {
+      return
+    }
+    const order = createOrder(payload)
+    const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
+    setOrders((current) => [order, ...current])
+    setCart((current) =>
+      current.filter((item) => !checkoutItems.has(`${item.id}:${item.merchant}`)),
+    )
+    setCheckoutError(null)
+    setLastPlaced(order.id)
+  }
+
   const content = (() => {
     if (authLoading) {
       return <div className="mt-auth-loading" />
@@ -9466,7 +12137,11 @@ export function MeantApp() {
             merchantsLoading={merchantsLoading}
             savedProducts={savedListProducts}
             cart={cart}
+            cartProducts={allKnownProducts}
             orders={orders}
+            shelf={shelf}
+            shelfFlashMessageId={shelfFlashMessageId}
+            productDetailChatRequest={productDetailChatRequest}
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
             }}
@@ -9496,10 +12171,19 @@ export function MeantApp() {
             onAddProductToCart={addProductOfferToCart}
             onFallbackAddToCart={(product, offer) => addToCart(product.id, offer.merchant)}
             onCompareProducts={compareChatProducts}
+            onCartQty={updateQty}
+            onCartRemove={removeFromCart}
+            onCheckout={checkoutInChat}
             onOpenSaved={() => nav('saved')}
             onOpenOrders={() => nav('orders')}
             onOpenPrefs={() => nav('preferences')}
             onOpenCart={() => nav('cart')}
+            onOpenShelf={() => setShelfOpen(true)}
+            onShelfAddMessage={addMessageToShelf}
+            onShelfAddProduct={addProductToShelf}
+            onProductDetailChatRequestHandled={(requestId) => {
+              setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
+            }}
           />
         )
     }
@@ -9603,6 +12287,7 @@ export function MeantApp() {
         onToggleSave={toggleSave}
         onCompare={handleProductCompare}
         onAddToCart={addProductOfferToCart}
+        onAskInChat={sendProductQuestionToDiscover}
         canPrev={canNavPrev}
         canNext={canNavNext}
         onPrev={() => navigateProduct(-1)}
@@ -9617,6 +12302,19 @@ export function MeantApp() {
         onProductOpen={(product) => openProduct(product, [product])}
         onAddProductToCart={addProductOfferToCart}
         hidden={view === 'discover' || Boolean(activeProduct)}
+      />
+      <Shelf
+        open={shelfOpen}
+        items={shelf}
+        productsById={allKnownProductsMap}
+        onToggle={() => setShelfOpen((current) => !current)}
+        onAddMessage={addMessageToShelf}
+        onAddProduct={addProductToShelf}
+        onRemove={removeShelfItem}
+        onClear={() => setShelf([])}
+        onToggleCollapse={toggleShelfItemCollapse}
+        onFind={findShelfMessage}
+        onOpenProduct={(product) => openProduct(product, [product])}
       />
       <span className="mt-cart-count-debug" aria-hidden>
         {cartCount}
