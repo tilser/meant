@@ -168,8 +168,21 @@ export function productsWithFallback(
   })
 }
 
+function productArtworkUrl(product: Product): string | null {
+  const direct = product.imageUrl?.trim()
+  if (direct) {
+    return direct
+  }
+  return (
+    product.media
+      ?.filter((item) => item.type.toLowerCase() === 'image')
+      .map((item) => item.url.trim())
+      .find(Boolean) ?? null
+  )
+}
+
 export function isRenderableSearchProduct(product: Product): boolean {
-  return product.agentStage !== 'candidate'
+  return product.agentStage !== 'candidate' && Boolean(productArtworkUrl(product))
 }
 
 export function searchProductReviewInsight(

@@ -936,6 +936,61 @@ function upsertInventorySnapshot(
   )
 }
 
+function nonEmptyImageUrl(value?: string | null): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function firstProductMediaImage(media?: readonly ProductMedia[]): string | null {
+  return (
+    media
+      ?.filter((item) => item.type.toLowerCase() === 'image')
+      .map((item) => nonEmptyImageUrl(item.url))
+      .find((url): url is string => Boolean(url)) ?? null
+  )
+}
+
+function mergeProductMediaSnapshots(
+  existingMedia?: readonly ProductMedia[],
+  nextMedia?: readonly ProductMedia[],
+): ProductMedia[] {
+  const merged: ProductMedia[] = []
+  const seen = new Set<string>()
+  for (const item of [...(nextMedia ?? []), ...(existingMedia ?? [])]) {
+    const url = nonEmptyImageUrl(item.url)
+    if (!url) {
+      continue
+    }
+    const key = `${item.type.toLowerCase()}|${url}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    merged.push({ ...item, url })
+  }
+  return merged
+}
+
+function mergeProductSnapshot(existing: Product | undefined, product: Product): Product {
+  if (!existing) {
+    const imageUrl = nonEmptyImageUrl(product.imageUrl) ?? firstProductMediaImage(product.media)
+    return imageUrl && imageUrl !== product.imageUrl ? { ...product, imageUrl } : product
+  }
+
+  const media = mergeProductMediaSnapshots(existing.media, product.media)
+  const imageUrl =
+    nonEmptyImageUrl(product.imageUrl) ??
+    firstProductMediaImage(media) ??
+    nonEmptyImageUrl(existing.imageUrl) ??
+    firstProductMediaImage(existing.media)
+
+  return {
+    ...product,
+    imageUrl,
+    media: media.length > 0 ? media : product.media,
+  }
+}
+
 function optionalText(value: string): string | undefined {
   const trimmed = value.trim()
   return trimmed || undefined
@@ -1145,9 +1200,11 @@ function inventoryUpdateInputFromForm(form: InventoryFormState): UserInventoryIt
 function upsertProductSnapshot(products: Product[], product: Product): Product[] {
   const existingIndex = products.findIndex((candidate) => candidate.id === product.id)
   if (existingIndex < 0) {
-    return [product, ...products]
+    return [mergeProductSnapshot(undefined, product), ...products]
   }
-  return products.map((candidate, index) => (index === existingIndex ? product : candidate))
+  return products.map((candidate, index) =>
+    index === existingIndex ? mergeProductSnapshot(candidate, product) : candidate,
+  )
 }
 
 function productSnapshotsForIds(products: Product[], ids: readonly ProductId[]): Product[] {
@@ -1162,10 +1219,10 @@ function appendProductSnapshots(products: Product[], nextProducts: readonly Prod
     const index = indexes.get(product.id)
     if (index === undefined) {
       indexes.set(product.id, merged.length)
-      merged.push(product)
+      merged.push(mergeProductSnapshot(undefined, product))
       return
     }
-    merged[index] = product
+    merged[index] = mergeProductSnapshot(merged[index], product)
   })
   return merged
 }
@@ -5886,15 +5943,14 @@ export function MeantApp() {
       if (products.length === 0) {
         return current
       }
+      const currentById = new Map(current.map((product) => [product.id, product] as const))
+      const mergedProducts = products
+        .map((product) => mergeProductSnapshot(currentById.get(product.id), product))
+        .filter(isRenderableSearchProduct)
       if (!append) {
-        return [...products]
+        return mergedProducts
       }
-      return appendProductSnapshots(
-        current.filter(
-          (product) => product.agentStage !== 'candidate' && product.agentStage !== 'curating',
-        ),
-        products,
-      )
+      return appendProductSnapshots(current.filter(isRenderableSearchProduct), mergedProducts)
     }
     try {
       await streamUserProductSearch(
@@ -5925,7 +5981,9 @@ export function MeantApp() {
             const products = orderedStreamProducts(event, 'curated')
             noteFinalStreamProducts(products)
             setSearchResults((current) => finalStreamProducts(current, products))
-            setRemoteProducts((current) => appendProductSnapshots(current, products))
+            setRemoteProducts((current) =>
+              appendProductSnapshots(current, products).filter(isRenderableSearchProduct),
+            )
             setProductSearchActivities((current) => upsertAgentActivity(current, event))
           },
           onDone: (event) => {
@@ -5935,7 +5993,9 @@ export function MeantApp() {
             const products = orderedStreamProducts(event, 'curated')
             const displayedCount = noteFinalStreamProducts(products)
             setSearchResults((current) => finalStreamProducts(current, products))
-            setRemoteProducts((current) => appendProductSnapshots(current, products))
+            setRemoteProducts((current) =>
+              appendProductSnapshots(current, products).filter(isRenderableSearchProduct),
+            )
             setSearchHasMore(Boolean(event.hasMore))
             setSearchNextOffset(event.nextOffset)
             setSearchMerchantId(merchantId)
@@ -6027,12 +6087,13 @@ export function MeantApp() {
   }
 
   const applyAssistantProducts = (products: readonly Product[], sourceQuery: string) => {
+    const renderableProducts = products.filter(isRenderableSearchProduct)
     searchAbortRef.current?.abort()
     searchAbortRef.current = null
     setView('discover')
     setQuery(sourceQuery)
     setReply(
-      `Ask Meant found ${products.length} match${products.length === 1 ? '' : 'es'} for "${sourceQuery}".`,
+      `Ask Meant found ${renderableProducts.length} match${renderableProducts.length === 1 ? '' : 'es'} for "${sourceQuery}".`,
     )
     setSearchError(null)
     setSearchLoading(false)
@@ -6041,10 +6102,10 @@ export function MeantApp() {
     setSearchHasMore(false)
     setSearchNextOffset(null)
     setSearchMerchantId(null)
-    setSearchResults([...products])
+    setSearchResults([...renderableProducts])
     setRemoteProducts((current) => {
       const byId = new Map(current.map((product) => [product.id, product]))
-      products.forEach((product) => byId.set(product.id, product))
+      renderableProducts.forEach((product) => byId.set(product.id, product))
       return Array.from(byId.values())
     })
   }
