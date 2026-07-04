@@ -51,7 +51,6 @@ public class MerchantEnrichmentService {
     public void enrichMerchants(@NotNull @Valid EnrichMerchantsCommand command) {
         Instant retryBefore = Instant.now().minus(merchantEnrichmentProperties.retryDelay());
         List<MerchantRaw> merchantRows = merchantRawRepository.findUnprocessedActive(
-                FAILED_RETRYABLE,
                 retryBefore,
                 PageRequest.of(0, command.batchSize())
         );

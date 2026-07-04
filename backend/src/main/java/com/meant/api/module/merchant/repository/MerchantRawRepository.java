@@ -24,18 +24,14 @@ public interface MerchantRawRepository extends JpaRepository<MerchantRaw, UUID> 
             where merchantRaw.active = true
               and merchantRaw.processed = false
               and (
-                merchantRaw.processingStatus is null
-                or merchantRaw.processingStatus <> :retryableStatus
-                or merchantRaw.processedAt is null
+                merchantRaw.processedAt is null
                 or merchantRaw.processedAt <= :retryBefore
               )
             order by
-              case when merchantRaw.processedAt is null then 0 else 1 end,
-              merchantRaw.processedAt asc,
+              merchantRaw.processedAt asc nulls first,
               merchantRaw.fetchedAt asc
             """)
     List<MerchantRaw> findUnprocessedActive(
-            @Param("retryableStatus") String retryableStatus,
             @Param("retryBefore") Instant retryBefore,
             Pageable pageable
     );
