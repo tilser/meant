@@ -1,11 +1,14 @@
 package com.meant.api.module.merchant.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
 import com.meant.api.module.merchant.service.dto.StorePolicyFaqEntry;
 import com.meant.api.plugin.transport.client.UcpMcpClient;
@@ -15,6 +18,7 @@ import java.net.URI;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -76,6 +80,31 @@ class MerchantDomainMcpClientTest {
 
         assertThat(result.endpoint()).isEqualTo("https://merchant.example/api/mcp");
         assertThat(result.entry().answer()).contains("Description: Merchant");
+        server.verify();
+    }
+
+    @Test
+    void fetchStoreProfileDoesNotRetryWwwEndpointAfterRateLimit() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        ObjectMapper objectMapper = new ObjectMapper();
+        MerchantDomainMcpClient client = new MerchantDomainMcpClient(
+                restClientBuilder.build(),
+                objectMapper,
+                MerchantOutboundUrlValidator.withResolver(host -> List.of(InetAddress.getByName("93.184.216.34"))),
+                new UcpMcpClient(new AgentIdentity(
+                        URI.create("https://agent.example/.well-known/ucp-agent.json"),
+                        "2026-04-08",
+                        "agent-key-1"
+                ), objectMapper)
+        );
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> client.fetchStoreProfile("merchant.example"))
+                .isInstanceOf(MerchantEnrichmentException.class)
+                .hasMessageContaining("rate limited");
         server.verify();
     }
 }

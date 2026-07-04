@@ -204,6 +204,9 @@ public class MerchantMcpToolClient {
                      | MerchantOutboundUrlException
                      | UcpMcpException exception) {
                 failures.add(new MerchantMcpToolException(operation + " failed for " + endpoint, exception));
+                if (MerchantHttpFailureClassifier.isRateLimited(exception)) {
+                    break;
+                }
             }
         }
         throw mcpToolException(domain, operation, failures);

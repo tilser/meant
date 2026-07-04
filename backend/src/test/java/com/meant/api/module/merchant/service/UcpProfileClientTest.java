@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
@@ -13,6 +14,7 @@ import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
 import java.net.InetAddress;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -51,6 +53,20 @@ class UcpProfileClientTest {
         UcpProfile profile = client.fetchProfile("cupshe.com", "https://cupshe.com/.well-known/ucp");
 
         assertThat(profile.version()).isEqualTo("2026-04-08");
+        server.verify();
+    }
+
+    @Test
+    void fetchProfileDoesNotRetryVariantsAfterRateLimit() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        server.expect(once(), requestTo("https://reebok.com/.well-known/ucp"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        UcpProfileClient client = client(restClientBuilder, "93.184.216.34");
+
+        assertThatThrownBy(() -> client.fetchProfile("reebok.com", "https://reebok.com/.well-known/ucp"))
+                .isInstanceOf(MerchantEnrichmentException.class)
+                .hasMessageContaining("rate limited");
         server.verify();
     }
 

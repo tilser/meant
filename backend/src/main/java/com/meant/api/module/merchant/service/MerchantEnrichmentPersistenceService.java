@@ -155,9 +155,9 @@ public class MerchantEnrichmentPersistenceService {
     }
 
     @Transactional
-    public void markFailure(UUID merchantRawId, String status, String message) {
+    public void markFailure(UUID merchantRawId, String status, String message, Instant attemptedAt) {
         MerchantRaw merchantRaw = merchantRawRepository.findById(merchantRawId).orElseThrow();
-        merchantRaw.markProcessingFailure(status, message);
+        merchantRaw.markProcessingFailure(status, message, attemptedAt);
     }
 
     private void replaceChildren(Merchant merchant, UcpProfile ucpProfile, MerchantProfileData profileData) {

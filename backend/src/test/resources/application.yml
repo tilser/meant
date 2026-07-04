@@ -146,6 +146,7 @@ merchant:
   enrichment:
     batch-size: 25
     fixed-delay: 60000
+    retry-delay: 1d
   mcp-tool:
     connect-timeout-milliseconds: 5000
     read-timeout-milliseconds: 5000

@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.merchant.entity.MerchantRaw;
+import com.meant.api.module.merchant.properties.MerchantEnrichmentProperties;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.service.command.EnrichMerchantsCommand;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
@@ -45,9 +46,15 @@ public class MerchantEnrichmentService {
     private final MerchantMcpToolsListHashService merchantMcpToolsListHashService;
     private final AgentProfileHashProvider agentProfileHashProvider;
     private final MerchantEnrichmentPersistenceService merchantEnrichmentPersistenceService;
+    private final MerchantEnrichmentProperties merchantEnrichmentProperties;
 
     public void enrichMerchants(@NotNull @Valid EnrichMerchantsCommand command) {
-        List<MerchantRaw> merchantRows = merchantRawRepository.findUnprocessedActive(PageRequest.of(0, command.batchSize()));
+        Instant retryBefore = Instant.now().minus(merchantEnrichmentProperties.retryDelay());
+        List<MerchantRaw> merchantRows = merchantRawRepository.findUnprocessedActive(
+                FAILED_RETRYABLE,
+                retryBefore,
+                PageRequest.of(0, command.batchSize())
+        );
         merchantRows.forEach(this::enrichMerchant);
         log.info("Merchant enrichment completed. Attempted merchants: {}", merchantRows.size());
     }
@@ -137,7 +144,8 @@ public class MerchantEnrichmentService {
         merchantEnrichmentPersistenceService.markFailure(
                 merchantRawId,
                 FAILED_RETRYABLE,
-                truncate(exception.getMessage())
+                truncate(exception.getMessage()),
+                Instant.now()
         );
     }
 

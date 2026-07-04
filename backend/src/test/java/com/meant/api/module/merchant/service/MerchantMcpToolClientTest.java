@@ -4,24 +4,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
-import com.meant.api.plugin.transport.profile.AgentIdentity;
 import com.meant.api.plugin.transport.client.UcpMcpClient;
+import com.meant.api.plugin.transport.profile.AgentIdentity;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.InetAddress;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.hc.client5.http.config.Configurable;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -172,6 +180,38 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
+    void merchantHttpClientDoesNotAutomaticallyRetryRateLimitedResponses() throws IOException {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/api/mcp", exchange -> {
+            requests.incrementAndGet();
+            byte[] body = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(429, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        server.setExecutor(executor);
+        server.start();
+        try {
+            RestClient restClient = RestClient.builder()
+                    .requestFactory(new MerchantClientHttpRequestFactory(new AllowLocalhostMerchantOutboundUrlValidator()))
+                    .build();
+
+            assertThatThrownBy(() -> restClient.post()
+                    .uri("http://127.0.0.1:%d/api/mcp".formatted(server.getAddress().getPort()))
+                    .retrieve()
+                    .toBodilessEntity())
+                    .hasMessageContaining("429");
+
+            assertThat(requests).hasValue(1);
+        } finally {
+            server.stop(0);
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void fallsBackToAdvertisedEndpointWhenProfileEndpointFails() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
@@ -227,6 +267,35 @@ class MerchantMcpToolClientTest {
         server.verify();
     }
 
+    @Test
+    void doesNotFallbackToNextEndpointAfterRateLimit() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
+        server.expect(requestTo("https://advertised.example/profile-mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> client.callTool(
+                new MerchantSemanticSearchResult(
+                        UUID.randomUUID(),
+                        "advertised.example",
+                        "Merchant",
+                        "https://advertised.example/api/mcp",
+                        "https://advertised.example/profile-mcp",
+                        "Context",
+                        0.9d,
+                        0.8d,
+                        1
+                ),
+                "search_catalog",
+                Map.of("catalog", Map.of("query", "candle"))
+        ))
+                .isInstanceOf(MerchantMcpToolException.class)
+                .hasMessageContaining("failed for all endpoint candidates");
+        server.verify();
+    }
+
     private MerchantMcpToolClient client(RestClient restClient, String resolvedAddress) {
         return new MerchantMcpToolClient(
                 restClient,
@@ -252,5 +321,12 @@ class MerchantMcpToolClientTest {
         Object requestFactory = ReflectionTestUtils.getField(restClient, "clientRequestFactory");
         assertThat(requestFactory).isInstanceOf(SimpleClientHttpRequestFactory.class);
         return (SimpleClientHttpRequestFactory) requestFactory;
+    }
+
+    private static class AllowLocalhostMerchantOutboundUrlValidator extends MerchantOutboundUrlValidator {
+
+        @Override
+        void validatePublicAddresses(List<InetAddress> addresses) {
+        }
     }
 }

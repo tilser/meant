@@ -157,10 +157,9 @@ public class MerchantRaw {
         this.processingError = null;
     }
 
-    public void markProcessingFailure(String processingStatus, String processingError) {
-        // Keep processed false so failed merchants are eligible for the next enrichment retry.
+    public void markProcessingFailure(String processingStatus, String processingError, Instant processedAt) {
         this.processed = false;
-        this.processedAt = null;
+        this.processedAt = processedAt;
         this.processingStatus = processingStatus;
         this.processingError = processingError;
     }

@@ -80,6 +80,12 @@ public class UcpProfileClient {
             } catch (MerchantEnrichmentException exception) {
                 lastFailure = exception;
             } catch (RestClientException exception) {
+                if (MerchantHttpFailureClassifier.isRateLimited(exception)) {
+                    throw new MerchantEnrichmentException(
+                            "UCP profile fetch was rate limited for " + candidateUri,
+                            exception
+                    );
+                }
                 lastFailure = new MerchantEnrichmentException("Failed to fetch UCP profile response", exception);
             }
         }

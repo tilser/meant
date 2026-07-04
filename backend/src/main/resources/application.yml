@@ -182,8 +182,9 @@ merchant:
     excluded-domains:
       - ucpchecker.com
   enrichment:
-    batch-size: 500
-    fixed-delay: 60000
+    batch-size: ${MERCHANT_ENRICHMENT_BATCH_SIZE:50}
+    fixed-delay: ${MERCHANT_ENRICHMENT_FIXED_DELAY:60000}
+    retry-delay: ${MERCHANT_ENRICHMENT_RETRY_DELAY:1d}
   mcp-tool:
     connect-timeout-milliseconds: ${MERCHANT_MCP_TOOL_CONNECT_TIMEOUT_MILLISECONDS:5000}
     read-timeout-milliseconds: ${MERCHANT_MCP_TOOL_READ_TIMEOUT_MILLISECONDS:5000}

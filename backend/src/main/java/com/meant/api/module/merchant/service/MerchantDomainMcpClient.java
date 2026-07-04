@@ -88,6 +88,9 @@ public class MerchantDomainMcpClient {
                      | MerchantEnrichmentException
                      | MerchantOutboundUrlException
                      | UcpMcpException exception) {
+                if (MerchantHttpFailureClassifier.isRateLimited(exception)) {
+                    throw new MerchantEnrichmentException("MCP profile fetch was rate limited for " + endpoint, exception);
+                }
                 lastException = new MerchantEnrichmentException("MCP profile fetch failed for " + endpoint, exception);
             }
         }

@@ -31,6 +31,7 @@ import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.merchant.service.dto.UcpVersionRange;
 import com.meant.api.plugin.transport.profile.AgentProfileHashProvider;
 import jakarta.validation.ConstraintViolationException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -219,6 +220,34 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
                     assertThat(toolsList.getToolsListRaw()).contains("lookup_catalog");
                     assertThat(updatedMerchant.getProfileToolsListHash()).isEqualTo(toolsList.getToolsListHash());
                 });
+    }
+
+    @Test
+    void enrichMerchantsBacksOffRecentRetryableFailures() {
+        Instant now = Instant.now();
+        MerchantRaw newMerchant = merchantRaw("new.example");
+        MerchantRaw recentFailure = merchantRaw("recent-failure.example");
+        recentFailure.markProcessingFailure(
+                "FAILED_RETRYABLE",
+                "merchant returned 429",
+                now.minus(Duration.ofHours(1))
+        );
+        MerchantRaw staleFailure = merchantRaw("stale-failure.example");
+        staleFailure.markProcessingFailure(
+                "FAILED_RETRYABLE",
+                "merchant returned 429",
+                now.minus(Duration.ofDays(2))
+        );
+        merchantRawRepository.saveAll(List.of(newMerchant, recentFailure, staleFailure));
+
+        service.enrichMerchants(new EnrichMerchantsCommand(10));
+
+        assertThat(merchantRawRepository.findByDomain("new.example").orElseThrow().isProcessed()).isTrue();
+        assertThat(merchantRawRepository.findByDomain("stale-failure.example").orElseThrow().isProcessed()).isTrue();
+        MerchantRaw skippedFailure = merchantRawRepository.findByDomain("recent-failure.example").orElseThrow();
+        assertThat(skippedFailure.isProcessed()).isFalse();
+        assertThat(skippedFailure.getProcessingStatus()).isEqualTo("FAILED_RETRYABLE");
+        assertThat(skippedFailure.getProcessingError()).isEqualTo("merchant returned 429");
     }
 
     @Test

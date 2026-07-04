@@ -31,6 +31,7 @@ class MerchantClientHttpRequestFactory extends HttpComponentsClientHttpRequestFa
                         .build())
                 .setDefaultRequestConfig(requestConfig(connectTimeout, readTimeout))
                 .disableRedirectHandling()
+                .disableAutomaticRetries()
                 .build());
     }
 
