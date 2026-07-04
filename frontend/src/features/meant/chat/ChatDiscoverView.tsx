@@ -9,7 +9,6 @@ import {
 } from 'react'
 
 import {
-  getMerchantProductDetails,
   searchDiscountCodes,
   type DiscountCodeProfile,
   type MerchantProfile,
@@ -32,7 +31,8 @@ import {
   productPriceFrom,
   resolveAsk,
 } from '../utils'
-import { offerCartable } from '../cart/utils'
+import { resolveCartableOffer } from '../cart/cartOfferResolver'
+import { canResolveCartOffer, offerCartable } from '../cart/utils'
 import { AskComposer } from '../ask/AskComposer'
 import { flyToShelf } from '../shared/animations'
 import { DustingContainer } from '../shared/DustingContainer'
@@ -555,40 +555,6 @@ function foundDiscountCodeFromProfile(code: DiscountCodeProfile) {
     validUntil: code.validUntil,
     expiresAt: code.expiresAt,
     validationMessage: code.validationMessage,
-  }
-}
-
-function browserLanguage(): string | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-  return window.navigator.language.split('-')[0] || null
-}
-
-function sameOfferMerchant(left: Offer, right: Offer): boolean {
-  if (left.merchantId && right.merchantId) {
-    return left.merchantId === right.merchantId
-  }
-  const leftDomain = normalizedMerchantName(left.merchantDomain)
-  const rightDomain = normalizedMerchantName(right.merchantDomain)
-  if (leftDomain && rightDomain) {
-    return leftDomain === rightDomain
-  }
-  return normalizedMerchantName(left.merchant) === normalizedMerchantName(right.merchant)
-}
-
-function productWithDiscountOffer(product: Product, offer: Offer): Product {
-  let replaced = false
-  const offers = product.offers.map((candidate) => {
-    if (!sameOfferMerchant(candidate, offer)) {
-      return candidate
-    }
-    replaced = true
-    return { ...candidate, ...offer }
-  })
-  return {
-    ...product,
-    offers: replaced ? offers : [offer, ...product.offers],
   }
 }
 
@@ -1191,10 +1157,14 @@ export function ChatDiscoverView({
         return null
       }
       const preferred = bestOffer(product, deliveryLocations)
-      if (offerCartable(preferred)) {
+      if (offerCartable(preferred) || canResolveCartOffer(product, preferred)) {
         return preferred
       }
-      return product.offers.find(offerCartable) ?? null
+      return (
+        product.offers.find(offerCartable) ??
+        product.offers.find((offer) => canResolveCartOffer(product, offer)) ??
+        null
+      )
     },
     [deliveryLocations],
   )
@@ -1216,49 +1186,19 @@ export function ChatDiscoverView({
         }
       }
 
-      const directVariantId = offer.productVariantId?.trim()
-      if (directVariantId && offerCartable(offer)) {
-        return { ok: true, product, offer, productVariantId: directVariantId }
-      }
-
-      const merchantId = offer.merchantId ?? product.merchantId ?? null
-      const merchantDomain = offer.merchantDomain ?? product.merchantDomain ?? null
-      const merchantProductId = product.merchantProductId?.trim()
-      if (!merchantId || !merchantProductId) {
+      const resolved = await resolveCartableOffer({ product, offer, location })
+      if (!resolved.ok) {
         return {
           ok: false,
-          offer,
-          message: 'Discount search needs merchant product details to resolve a checkout variant.',
-        }
-      }
-
-      const details = await getMerchantProductDetails({
-        merchantId,
-        productId: merchantProductId,
-        addressCountry: location?.code,
-        language: browserLanguage(),
-      })
-      const resolvedVariantId = details.selectedVariantId?.trim()
-      const resolvedOffer: Offer = {
-        ...offer,
-        merchantId,
-        merchantDomain,
-        productVariantId: resolvedVariantId,
-        variantTitle: details.selectedVariantTitle ?? offer.variantTitle,
-        available: details.selectedVariantAvailable ?? offer.available,
-      }
-      if (!resolvedVariantId || !offerCartable(resolvedOffer)) {
-        return {
-          ok: false,
-          offer: resolvedOffer,
-          message: 'Merchant product details did not return an available checkout variant.',
+          offer: resolved.offer,
+          message: resolved.message,
         }
       }
       return {
         ok: true,
-        product: productWithDiscountOffer(product, resolvedOffer),
-        offer: resolvedOffer,
-        productVariantId: resolvedVariantId,
+        product: resolved.product,
+        offer: resolved.offer,
+        productVariantId: resolved.productVariantId,
       }
     },
     [discountOfferForProduct],
@@ -1663,7 +1603,7 @@ export function ChatDiscoverView({
 
   const addCartFromChat = async (product: Product) => {
     const offer = bestOffer(product, deliveryLocations)
-    const synced = offerCartable(offer)
+    const synced = offerCartable(offer) || canResolveCartOffer(product, offer)
     if (synced) {
       try {
         const added = await onAddProductToCart(product, offer)
@@ -1702,7 +1642,10 @@ export function ChatDiscoverView({
       return
     }
     const merchantOffer = product.offers.find((offer) => offer.merchant === merchant)
-    if (merchantOffer && offerCartable(merchantOffer)) {
+    if (
+      merchantOffer &&
+      (offerCartable(merchantOffer) || canResolveCartOffer(product, merchantOffer))
+    ) {
       try {
         const added = await onAddProductToCart(product, merchantOffer)
         if (added) {

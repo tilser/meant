@@ -7,7 +7,7 @@ import {
 import { AskComposer } from '../ask/AskComposer'
 import { AskThread } from '../ask/AskThread'
 import type { Message } from '../ask/types'
-import { offerCartable } from '../cart/utils'
+import { canResolveCartOffer, offerCartable } from '../cart/utils'
 import { InventorySignalBadge } from '../inventory/InventorySignalBadge'
 import { flyMessageToChat } from '../shared/animations'
 import { ChevronIcon, HeartIcon, MatchRing, PrefChip } from '../shared/icons'
@@ -276,7 +276,7 @@ export function ProductModal({
     ])
   }
   const selectedOffer = bestOffer(product, deliveryLocations)
-  const canAddToCart = offerCartable(selectedOffer)
+  const canAddToCart = offerCartable(selectedOffer) || canResolveCartOffer(product, selectedOffer)
   const addDisabled = adding || !canAddToCart
   const addButtonLabel = added
     ? 'Added to cart'

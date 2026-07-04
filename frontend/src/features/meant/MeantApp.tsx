@@ -23,6 +23,7 @@ import { AuthScreen } from './auth/AuthScreen'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
 import { CartView } from './cart/CartView'
+import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot } from './cart/types'
 import { useCartController } from './cart/useCartController'
 import { ChatDiscoverView } from './chat/ChatDiscoverView'
@@ -102,6 +103,7 @@ import type {
   CartItem,
   ClothingFit,
   CheckoutPayload,
+  Offer,
   Order,
   Preference,
   PreferenceId,
@@ -834,6 +836,24 @@ export function MeantApp() {
     updateDeliveryAddress,
     updateDeliveryOption,
   } = useCartController(allKnownProducts)
+  const addProductOfferToCartResolved = useCallback(
+    async (product: Product, offer: Offer): Promise<boolean> => {
+      try {
+        const resolved = await resolveCartableOffer({
+          product,
+          offer,
+          location: deliveryLocations[0],
+        })
+        if (!resolved.ok) {
+          return false
+        }
+        return addProductOfferToCart(resolved.product, resolved.offer)
+      } catch {
+        return false
+      }
+    },
+    [addProductOfferToCart, deliveryLocations],
+  )
   const savedListProducts = useMemo(
     () =>
       savedIds
@@ -2140,7 +2160,7 @@ export function MeantApp() {
             savedSet={savedSet}
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
-            onAddProductToCart={addProductOfferToCart}
+            onAddProductToCart={addProductOfferToCartResolved}
             onFallbackAddToCart={(product, offer) => addToCart(product.id, offer.merchant)}
             onCompareProducts={compareChatProducts}
             onCartQty={updateQty}
@@ -2259,7 +2279,7 @@ export function MeantApp() {
         onClose={() => setActiveProduct(null)}
         onToggleSave={toggleSave}
         onCompare={handleProductCompare}
-        onAddToCart={addProductOfferToCart}
+        onAddToCart={addProductOfferToCartResolved}
         onAskInChat={sendProductQuestionToDiscover}
         canPrev={canNavPrev}
         canNext={canNavNext}
@@ -2273,7 +2293,7 @@ export function MeantApp() {
         preferences={allPreferences}
         onProducts={applyAssistantProducts}
         onProductOpen={(product) => openProduct(product, [product])}
-        onAddProductToCart={addProductOfferToCart}
+        onAddProductToCart={addProductOfferToCartResolved}
         hidden={view === 'discover' || Boolean(activeProduct)}
       />
       <Shelf

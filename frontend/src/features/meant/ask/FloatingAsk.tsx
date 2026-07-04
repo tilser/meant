@@ -15,7 +15,7 @@ import {
   type UserAssistantConversationProfile,
   type UserAssistantConversationSummaryProfile,
 } from '../../../lib/apiClient'
-import { cartableOfferForProduct } from '../cart/utils'
+import { resolvableOfferForProduct } from '../cart/utils'
 import type { AssistantProductAction } from '../chat/types'
 import { HistoryIcon, PlusIcon } from '../shared/icons'
 import { CloseIcon, SparkMark } from '../shared/ui'
@@ -303,7 +303,7 @@ export function FloatingAsk({
     ])
 
     const run = async () => {
-      const offer = action.shouldAddToCart ? cartableOfferForProduct(action.product) : null
+      const offer = action.shouldAddToCart ? resolvableOfferForProduct(action.product) : null
       let added = false
       let addAttempted = false
 

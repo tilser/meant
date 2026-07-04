@@ -151,6 +151,14 @@ export function offerCartable(offer: Offer): boolean {
   )
 }
 
+export function canResolveCartOffer(product: Product, offer: Offer): boolean {
+  return Boolean(
+    offer.available !== false &&
+    (offer.merchantId || offer.merchantDomain || product.merchantId || product.merchantDomain) &&
+    product.merchantProductId,
+  )
+}
+
 function parseCartAmount(value?: string | number | null): number | null {
   if (value === null || value === undefined) {
     return null
@@ -258,4 +266,12 @@ export function cartSnapshotSubtotal(
 
 export function cartableOfferForProduct(product: Product): Offer | null {
   return product.offers.find(offerCartable) ?? null
+}
+
+export function resolvableOfferForProduct(product: Product): Offer | null {
+  return (
+    product.offers.find(offerCartable) ??
+    product.offers.find((offer) => canResolveCartOffer(product, offer)) ??
+    null
+  )
 }
