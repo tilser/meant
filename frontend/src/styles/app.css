@@ -268,6 +268,13 @@
   display: inline-flex;
 }
 
+.mt-ct-history-wrap > .mt-ct-tabtool {
+  min-height: 34px;
+  border-radius: 20px;
+  padding: 7px 13px;
+  font-weight: 500;
+}
+
 .mt-ct-history-badge {
   display: grid;
   min-width: 18px;
@@ -2419,6 +2426,7 @@ button:disabled {
 }
 
 .mt-hero {
+  position: relative;
   max-width: 720px;
   margin: 0 auto 52px;
   text-align: center;
@@ -3007,6 +3015,14 @@ button:disabled {
 }
 
 .mt-scope {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.mt-hero-context {
   display: flex;
   align-items: center;
   justify-content: center;

@@ -46,6 +46,7 @@ import { SHELF_DRAG_MIME } from '../shelf/types'
 import { AgentActivityPanel } from './AgentActivityPanel'
 import { DiscoverChatMessageRow } from './DiscoverChatMessageRow'
 import { DiscoverShareSheet } from './DiscoverShareSheet'
+import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
 import { DiscoverThreadTabs } from './DiscoverThreadTabs'
 import type {
   AgentActivity,
@@ -60,6 +61,7 @@ import {
   createDiscoverChatThread,
   createMiniCompareBlock,
   DEFAULT_DISCOVER_CHAT_TITLE,
+  discoverThreadTime,
   initialDiscoverChatThreads,
   isRenderableSearchProduct,
   normalizeDiscoverChatThreads,
@@ -124,6 +126,10 @@ function orderedMerchantMatches(
     .map((item) => item.merchant)
 }
 
+function hasDiscoverThreadHistory(thread: DiscoverChatThread): boolean {
+  return thread.messages.length > 0 || Boolean(thread.focusProductId) || thread.named === true
+}
+
 function ChatHero({
   profile,
   greeting,
@@ -136,7 +142,10 @@ function ChatHero({
   totalProductCount,
   merchantsLoading,
   merchantsError,
+  historyThreads,
+  activeThreadId,
   onMerchant,
+  onHistorySelect,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
@@ -149,7 +158,10 @@ function ChatHero({
   totalProductCount: number
   merchantsLoading: boolean
   merchantsError: string | null
+  historyThreads: readonly DiscoverChatThread[]
+  activeThreadId: string
   onMerchant: (merchant: MerchantProfile | null) => void
+  onHistorySelect: (threadId: string) => void
 }>) {
   const [value, setValue] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -226,15 +238,22 @@ function ChatHero({
           </svg>
         </button>
       </form>
-      <MerchantScope
-        merchants={merchants}
-        selectedMerchant={selectedMerchant}
-        merchantCounts={merchantCounts}
-        totalProductCount={totalProductCount}
-        loading={merchantsLoading}
-        error={merchantsError}
-        onMerchant={onMerchant}
-      />
+      <div className="mt-hero-context">
+        <MerchantScope
+          merchants={merchants}
+          selectedMerchant={selectedMerchant}
+          merchantCounts={merchantCounts}
+          totalProductCount={totalProductCount}
+          loading={merchantsLoading}
+          error={merchantsError}
+          onMerchant={onMerchant}
+        />
+        <DiscoverThreadHistoryButton
+          threads={historyThreads}
+          activeId={activeThreadId}
+          onSelect={onHistorySelect}
+        />
+      </div>
       <div className="mt-prompts">
         {prompts.map((prompt) => (
           <button
@@ -796,6 +815,10 @@ export function ChatDiscoverView({
     'meant.discoverActiveThreadId',
     threads[0]?.id ?? DEFAULT_DISCOVER_CHAT_TITLE,
   )
+  const [archivedThreads, setArchivedThreads] = useStoredState<DiscoverChatThread[]>(
+    'meant.discoverArchivedThreads',
+    [],
+  )
   const fallbackThread = useMemo(() => createDiscoverChatThread(), [])
   const activeThread =
     threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? fallbackThread
@@ -853,6 +876,19 @@ export function ChatDiscoverView({
     }
     return next
   }, [cartProducts, displayProducts, savedProducts])
+  const historyThreads = useMemo(() => {
+    const byId = new Map<string, DiscoverChatThread>()
+    for (const thread of [...threads, ...archivedThreads]) {
+      if (!hasDiscoverThreadHistory(thread)) {
+        continue
+      }
+      const current = byId.get(thread.id)
+      if (!current || (discoverThreadTime(thread) ?? 0) >= (discoverThreadTime(current) ?? 0)) {
+        byId.set(thread.id, thread)
+      }
+    }
+    return Array.from(byId.values())
+  }, [archivedThreads, threads])
   const pinnedProducts = pinnedIds
     .map((id) => displayProducts.find((product) => product.id === id))
     .filter((product): product is Product => Boolean(product))
@@ -912,6 +948,12 @@ export function ChatDiscoverView({
       setThreads((current) => normalizeDiscoverChatThreads(current))
     }
   }, [setThreads, threads])
+
+  useEffect(() => {
+    if (archivedThreads.some((thread) => !thread.createdAt || !thread.updatedAt)) {
+      setArchivedThreads((current) => normalizeDiscoverChatThreads(current))
+    }
+  }, [archivedThreads, setArchivedThreads])
 
   const scrollChatToBottom = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -1503,6 +1545,13 @@ export function ChatDiscoverView({
 
   const closeThread = (threadId: string) => {
     const closingIndex = threads.findIndex((thread) => thread.id === threadId)
+    const closingThread = threads[closingIndex]
+    if (closingThread && hasDiscoverThreadHistory(closingThread)) {
+      setArchivedThreads((current) => [
+        closingThread,
+        ...current.filter((thread) => thread.id !== closingThread.id),
+      ])
+    }
     const nextThreads = threads.filter((thread) => thread.id !== threadId)
     if (nextThreads.length === 0) {
       const nextThread = createDiscoverChatThread()
@@ -1520,6 +1569,21 @@ export function ChatDiscoverView({
         currentTarget?.threadId === threadId ? null : currentTarget,
       )
     }
+  }
+
+  const selectHistoryThread = (threadId: string) => {
+    if (threads.some((thread) => thread.id === threadId)) {
+      setActiveThreadId(threadId)
+      return
+    }
+    const archivedThread = archivedThreads.find((thread) => thread.id === threadId)
+    if (!archivedThread) {
+      return
+    }
+    setThreads((current) => [...current.filter((thread) => thread.id !== threadId), archivedThread])
+    setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
+    setActiveThreadId(threadId)
+    setActiveSearchTarget(null)
   }
 
   const renameThread = (threadId: string, title: string) => {
@@ -1643,7 +1707,10 @@ export function ChatDiscoverView({
           totalProductCount={totalProductCount}
           merchantsLoading={merchantsLoading}
           merchantsError={null}
+          historyThreads={historyThreads}
+          activeThreadId={activeThreadIdSafe}
           onMerchant={onMerchant}
+          onHistorySelect={selectHistoryThread}
         />
       </main>
     )
@@ -1654,12 +1721,13 @@ export function ChatDiscoverView({
       <DiscoverThreadTabs
         threads={threads}
         activeId={activeThreadIdSafe}
-        onSelect={setActiveThreadId}
+        onSelect={selectHistoryThread}
         onClose={closeThread}
         onNew={newThread}
         onRename={renameThread}
         onShare={() => setShareOpen(true)}
         onReorder={reorderThreads}
+        historyThreads={historyThreads}
       />
       <div className="mt-ct-thread">
         <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">

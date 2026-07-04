@@ -1,14 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { ChevronIcon, HistoryIcon, PlusIcon, ShareIcon } from '../shared/icons'
+import { ChevronIcon, PlusIcon, ShareIcon } from '../shared/icons'
 import { CloseIcon, SparkMark } from '../shared/ui'
+import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
 import type { DiscoverChatThread } from './types'
-import {
-  discoverThreadMessageCount,
-  discoverThreadPreview,
-  discoverThreadTime,
-  discoverThreadTimeLabel,
-} from './utils'
 
 export function DiscoverThreadTabs({
   threads,
@@ -19,6 +14,7 @@ export function DiscoverThreadTabs({
   onRename,
   onShare,
   onReorder,
+  historyThreads,
 }: Readonly<{
   threads: readonly DiscoverChatThread[]
   activeId: string
@@ -28,25 +24,16 @@ export function DiscoverThreadTabs({
   onRename: (threadId: string, title: string) => void
   onShare: () => void
   onReorder: (fromIndex: number, toIndex: number) => void
+  historyThreads?: readonly DiscoverChatThread[]
 }>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [tabsOverflow, setTabsOverflow] = useState(false)
   const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false)
   const [canScrollTabsRight, setCanScrollTabsRight] = useState(false)
   const tabsScrollRef = useRef<HTMLDivElement | null>(null)
-  const historyRef = useRef<HTMLDivElement | null>(null)
-  const historyThreads = useMemo(
-    () =>
-      threads
-        .map((thread, index) => ({ thread, index, time: discoverThreadTime(thread) ?? 0 }))
-        .sort((left, right) => right.time - left.time || left.index - right.index)
-        .map(({ thread }) => thread),
-    [threads],
-  )
 
   const updateTabsScrollState = useCallback(() => {
     const element = tabsScrollRef.current
@@ -118,28 +105,6 @@ export function DiscoverThreadTabs({
     activeTab?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
     window.requestAnimationFrame(updateTabsScrollState)
   }, [activeId, updateTabsScrollState])
-
-  useEffect(() => {
-    if (!historyOpen) {
-      return undefined
-    }
-    const onDown = (event: MouseEvent) => {
-      if (!historyRef.current?.contains(event.target as Node)) {
-        setHistoryOpen(false)
-      }
-    }
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setHistoryOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [historyOpen])
 
   return (
     <div className="mt-ct-tabs">
@@ -272,50 +237,11 @@ export function DiscoverThreadTabs({
           <ShareIcon />
           Share
         </button>
-        <div className="mt-ct-history-wrap" ref={historyRef}>
-          <button
-            className={`mt-ct-tabtool ${historyOpen ? 'on' : ''}`}
-            type="button"
-            onClick={() => setHistoryOpen((current) => !current)}
-            aria-expanded={historyOpen}
-            aria-haspopup="dialog"
-            title="Open chat history"
-          >
-            <HistoryIcon size={15} />
-            History
-            <span className="mt-ct-history-badge">{threads.length}</span>
-          </button>
-          {historyOpen ? (
-            <div className="mt-ct-history-pop" role="dialog" aria-label="Chat history">
-              <div className="mt-ct-history-head">
-                <span>Chat history</span>
-                <span>{threads.length} saved</span>
-              </div>
-              <div className="mt-ct-history-list">
-                {historyThreads.map((thread) => (
-                  <button
-                    key={thread.id}
-                    className={`mt-ct-history-row ${thread.id === activeId ? 'active' : ''}`}
-                    type="button"
-                    onClick={() => {
-                      onSelect(thread.id)
-                      setHistoryOpen(false)
-                    }}
-                  >
-                    <span className="mt-ct-history-main">
-                      <span className="mt-ct-history-title">{thread.title}</span>
-                      <span className="mt-ct-history-preview">{discoverThreadPreview(thread)}</span>
-                    </span>
-                    <span className="mt-ct-history-meta">
-                      <span>{discoverThreadTimeLabel(thread)}</span>
-                      <span>{discoverThreadMessageCount(thread)}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <DiscoverThreadHistoryButton
+          threads={historyThreads ?? threads}
+          activeId={activeId}
+          onSelect={onSelect}
+        />
         <button className="mt-ct-newtab" type="button" onClick={onNew}>
           <PlusIcon />
           New chat
