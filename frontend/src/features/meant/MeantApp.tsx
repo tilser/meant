@@ -4820,7 +4820,7 @@ function DiscoverChatProduct({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
   onShelfAdd: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
@@ -4917,16 +4917,6 @@ function DiscoverChatProduct({
         >
           Similar
         </button>
-        <button
-          className="mt-ct-askchip"
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            onDig('resale', product)
-          }}
-        >
-          Second-hand
-        </button>
       </div>
     </div>
   )
@@ -4967,7 +4957,7 @@ function DiscoverProductBatch({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
@@ -5519,7 +5509,7 @@ function DiscoverChatBlockView({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
   onOpenFullCompare: (products: readonly Product[]) => void
@@ -5992,7 +5982,7 @@ function DiscoverChatMessageRow({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
   onOpenFullCompare: (products: readonly Product[]) => void
@@ -7273,7 +7263,7 @@ function ChatDiscoverView({
     )
   }
 
-  const digIntoProduct = (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => {
+  const digIntoProduct = (kind: 'reviews' | 'code' | 'similar', product: Product) => {
     if (kind === 'reviews') {
       appendMessagePair(`What do reviewers say about ${product.name}?`, [
         {
@@ -7302,12 +7292,6 @@ function ChatDiscoverView({
       ])
       return
     }
-    appendMessagePair(`Can I find ${product.name} second-hand?`, [
-      {
-        type: 'system',
-        text: 'Second-hand and resale lookup is mocked until backend marketplace search exists.',
-      },
-    ])
   }
 
   const chooseOne = (candidates: readonly Product[]) => {
