@@ -46,6 +46,8 @@ public class UserProductDiscoveryService {
     private final UserSavedProductService userSavedProductService;
     private final UserProductSearchHashService userProductSearchHashService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
+    private final UserInventoryService userInventoryService;
+    private final UserTasteProfileService userTasteProfileService;
     private final UserProductSearchProperties userProductSearchProperties;
     private final UserCollectionProperties userCollectionProperties;
     private final OpenRouterProperties openRouterProperties;
@@ -56,7 +58,11 @@ public class UserProductDiscoveryService {
     ) {
         validateUser(profileCommand, query.userId());
         UserSettingsResult settings = userSettingsService.get(profileCommand);
-        String profileHash = userProductSearchHashService.profileHash(settings);
+        String profileHash = userProductSearchHashService.searchProfileHash(
+                settings,
+                userInventoryService.inventoryProfileHash(query.userId()),
+                userTasteProfileService.profile(query.userId(), settings).profileHash()
+        );
         List<UserSavedProductResult> savedProducts = userSavedProductService.list(
                 profileCommand,
                 new ListSavedProductsQuery(

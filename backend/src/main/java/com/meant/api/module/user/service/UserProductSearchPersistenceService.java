@@ -144,26 +144,42 @@ public class UserProductSearchPersistenceService {
                         now,
                         PageRequest.of(0, recentSearchLimit)
                 );
+        if (searches.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Integer> searchOrder = new LinkedHashMap<>();
+        Map<UUID, UserProductSearch> searchesById = new LinkedHashMap<>();
+        for (int index = 0; index < searches.size(); index++) {
+            UserProductSearch search = searches.get(index);
+            searchOrder.put(search.getId(), index);
+            searchesById.put(search.getId(), search);
+        }
+        Map<UUID, List<UserProductSearchResultItem>> itemsBySearchId = userProductSearchResultItemRepository
+                .findBySearchIdIn(searchOrder.keySet())
+                .stream()
+                .sorted(Comparator.comparingInt((UserProductSearchResultItem item) ->
+                                searchOrder.getOrDefault(item.getSearchId(), Integer.MAX_VALUE))
+                        .thenComparingInt(UserProductSearchResultItem::getRank))
+                .collect(Collectors.groupingBy(
+                        UserProductSearchResultItem::getSearchId,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+        Map<RecentExplanationKey, UserProductRecommendationExplanationResult> explanations =
+                loadRecentExplanations(userId, profileHash, model, promptVersion, searchesById, itemsBySearchId);
         Map<String, UserProductSearchProductResult> products = new LinkedHashMap<>();
         for (UserProductSearch search : searches) {
-            resultFromSearch(
-                            search,
-                            search.getQuery(),
-                            search.getNormalizedQuery(),
-                            profileHash,
-                            model,
-                            promptVersion,
-                            null,
-                            null,
-                            true,
-                            UserProductSearchPagination.DEFAULT_OFFSET,
-                            UserProductSearchPagination.MAX_RESULT_WINDOW
-                    )
-                    .ifPresent(result -> result.products().forEach(product -> {
-                        if (products.size() < productLimit) {
-                            products.putIfAbsent(product.productKey(), product);
-                        }
-                    }));
+            List<UserProductSearchResultItem> items = itemsBySearchId.getOrDefault(search.getId(), List.of());
+            List<UserProductSearchProductResult> recentProducts = visibleRankedProducts(
+                    productResults(items, explanationsForSearch(search, items, explanations)),
+                    null,
+                    null
+            );
+            recentProducts.forEach(product -> {
+                if (products.size() < productLimit) {
+                    products.putIfAbsent(product.productKey(), product);
+                }
+            });
             if (products.size() >= productLimit) {
                 break;
             }
@@ -183,24 +199,42 @@ public class UserProductSearchPersistenceService {
             List<UserProductRecommendationExplanationResult> explanations,
             Instant now
     ) {
-        for (UserProductRecommendationExplanationResult explanation : explanations) {
-            UserProductRecommendationExplanation entity = UserProductRecommendationExplanation.create(
-                    userId,
-                    normalizedQuery,
-                    profileHash,
-                    explanation.productKey(),
-                    explanation.productHash(),
-                    model,
-                    promptVersion,
-                    explanation.whyMeantForYou(),
-                    explanation.inventoryRelationship() == null ? null : explanation.inventoryRelationship().name(),
-                    explanation.inventoryItemId(),
-                    explanation.inventoryItemName(),
+        List<UserProductRecommendationExplanation> entities = explanations.stream()
+                .map(explanation -> UserProductRecommendationExplanation.create(
+                        userId,
+                        normalizedQuery,
+                        profileHash,
+                        explanation.productKey(),
+                        explanation.productHash(),
+                        model,
+                        promptVersion,
+                        explanation.whyMeantForYou(),
+                        explanation.inventoryRelationship() == null ? null : explanation.inventoryRelationship().name(),
+                        explanation.inventoryItemId(),
+                        explanation.inventoryItemName(),
+                        now
+                ))
+                .toList();
+        userProductRecommendationExplanationRepository.saveAll(entities);
+        List<UserProductRecommendationFilterMatch> filterMatches = new ArrayList<>();
+        for (int index = 0; index < explanations.size(); index++) {
+            UserProductRecommendationExplanationResult explanation = explanations.get(index);
+            UserProductRecommendationExplanation entity = entities.get(index);
+            filterMatches.addAll(filterMatches(
+                    entity.getId(),
+                    explanation.matchedFilterIds(),
+                    UserProductRecommendationFilterMatch.MATCHED,
                     now
-            );
-            userProductRecommendationExplanationRepository.save(entity);
-            saveFilterMatches(entity.getId(), explanation.matchedFilterIds(), UserProductRecommendationFilterMatch.MATCHED, now);
-            saveFilterMatches(entity.getId(), explanation.missedFilterIds(), UserProductRecommendationFilterMatch.MISSED, now);
+            ));
+            filterMatches.addAll(filterMatches(
+                    entity.getId(),
+                    explanation.missedFilterIds(),
+                    UserProductRecommendationFilterMatch.MISSED,
+                    now
+            ));
+        }
+        if (!filterMatches.isEmpty()) {
+            userProductRecommendationFilterMatchRepository.saveAll(filterMatches);
         }
 
         return loadExplanations(
@@ -442,6 +476,24 @@ public class UserProductSearchPersistenceService {
                 .toList();
     }
 
+    private Map<String, UserProductRecommendationExplanationResult> explanationsForSearch(
+            UserProductSearch search,
+            List<UserProductSearchResultItem> items,
+            Map<RecentExplanationKey, UserProductRecommendationExplanationResult> explanations
+    ) {
+        return items.stream()
+                .map(UserProductSearchResultItem::getProductKey)
+                .distinct()
+                .map(productKey -> explanations.get(new RecentExplanationKey(search.getNormalizedQuery(), productKey)))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(
+                        UserProductRecommendationExplanationResult::productKey,
+                        explanation -> explanation,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+    }
+
     private UserProductRecommendationExplanationResult explanationFor(
             UserProductSearchResultItem item,
             Map<String, UserProductRecommendationExplanationResult> explanations
@@ -524,32 +576,69 @@ public class UserProductSearchPersistenceService {
         if (explanations.isEmpty()) {
             return Map.of();
         }
-        Map<UUID, List<UserProductRecommendationFilterMatch>> matches = userProductRecommendationFilterMatchRepository
-                .findByExplanationIdInOrderByRankAsc(explanations.stream()
-                        .map(UserProductRecommendationExplanation::getId)
-                        .toList())
-                .stream()
-                .collect(Collectors.groupingBy(
-                        UserProductRecommendationFilterMatch::getExplanationId,
-                        LinkedHashMap::new,
-                        Collectors.toList()
-                ));
+        Map<UUID, List<UserProductRecommendationFilterMatch>> matches = filterMatches(explanations);
 
         return explanations.stream()
                 .collect(Collectors.toMap(
                         UserProductRecommendationExplanation::getProductKey,
-                        explanation -> new UserProductRecommendationExplanationResult(
-                                explanation.getProductKey(),
-                                explanation.getProductHash(),
-                                explanation.getWhyMeantForYou(),
-                                filterIds(matches.getOrDefault(explanation.getId(), List.of()),
-                                        UserProductRecommendationFilterMatch.MATCHED),
-                                filterIds(matches.getOrDefault(explanation.getId(), List.of()),
-                                        UserProductRecommendationFilterMatch.MISSED),
-                                inventoryRelationship(explanation.getInventoryRelationship()),
-                                explanation.getInventoryItemId(),
-                                explanation.getInventoryItemName()
+                        explanation -> explanationResult(explanation, matches),
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+    }
+
+    private Map<RecentExplanationKey, UserProductRecommendationExplanationResult> loadRecentExplanations(
+            UUID userId,
+            String profileHash,
+            String model,
+            String promptVersion,
+            Map<UUID, UserProductSearch> searchesById,
+            Map<UUID, List<UserProductSearchResultItem>> itemsBySearchId
+    ) {
+        Map<RecentExplanationKey, String> expectedProductHashes = new LinkedHashMap<>();
+        itemsBySearchId.forEach((searchId, items) -> {
+            UserProductSearch search = searchesById.get(searchId);
+            if (search == null) {
+                return;
+            }
+            items.forEach(item -> expectedProductHashes.putIfAbsent(
+                    new RecentExplanationKey(search.getNormalizedQuery(), item.getProductKey()),
+                    item.getProductHash()
+            ));
+        });
+        if (expectedProductHashes.isEmpty()) {
+            return Map.of();
+        }
+        Set<String> productKeys = expectedProductHashes.keySet().stream()
+                .map(RecentExplanationKey::productKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<UserProductRecommendationExplanation> explanations =
+                userProductRecommendationExplanationRepository
+                        .findByUserIdAndProfileHashAndModelAndPromptVersionAndProductKeyIn(
+                                userId,
+                                profileHash,
+                                model,
+                                promptVersion,
+                                productKeys
+                        ).stream()
+                        .filter(explanation -> expectedProductHashes
+                                .getOrDefault(new RecentExplanationKey(
+                                        explanation.getNormalizedQuery(),
+                                        explanation.getProductKey()
+                                ), "")
+                                .equals(explanation.getProductHash()))
+                        .toList();
+        if (explanations.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<UserProductRecommendationFilterMatch>> matches = filterMatches(explanations);
+        return explanations.stream()
+                .collect(Collectors.toMap(
+                        explanation -> new RecentExplanationKey(
+                                explanation.getNormalizedQuery(),
+                                explanation.getProductKey()
                         ),
+                        explanation -> explanationResult(explanation, matches),
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
@@ -566,14 +655,48 @@ public class UserProductSearchPersistenceService {
         }
     }
 
-    private void saveFilterMatches(
+    private Map<UUID, List<UserProductRecommendationFilterMatch>> filterMatches(
+            List<UserProductRecommendationExplanation> explanations
+    ) {
+        return userProductRecommendationFilterMatchRepository
+                .findByExplanationIdInOrderByRankAsc(explanations.stream()
+                        .map(UserProductRecommendationExplanation::getId)
+                        .toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        UserProductRecommendationFilterMatch::getExplanationId,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+    }
+
+    private UserProductRecommendationExplanationResult explanationResult(
+            UserProductRecommendationExplanation explanation,
+            Map<UUID, List<UserProductRecommendationFilterMatch>> matches
+    ) {
+        return new UserProductRecommendationExplanationResult(
+                explanation.getProductKey(),
+                explanation.getProductHash(),
+                explanation.getWhyMeantForYou(),
+                filterIds(matches.getOrDefault(explanation.getId(), List.of()),
+                        UserProductRecommendationFilterMatch.MATCHED),
+                filterIds(matches.getOrDefault(explanation.getId(), List.of()),
+                        UserProductRecommendationFilterMatch.MISSED),
+                inventoryRelationship(explanation.getInventoryRelationship()),
+                explanation.getInventoryItemId(),
+                explanation.getInventoryItemName()
+        );
+    }
+
+    private List<UserProductRecommendationFilterMatch> filterMatches(
             UUID explanationId,
             List<String> filterIds,
             String matchType,
             Instant now
     ) {
+        List<UserProductRecommendationFilterMatch> matches = new ArrayList<>();
         for (int index = 0; index < filterIds.size(); index++) {
-            userProductRecommendationFilterMatchRepository.save(UserProductRecommendationFilterMatch.create(
+            matches.add(UserProductRecommendationFilterMatch.create(
                     explanationId,
                     filterIds.get(index),
                     matchType,
@@ -581,6 +704,7 @@ public class UserProductSearchPersistenceService {
                     now
             ));
         }
+        return matches;
     }
 
     private List<String> filterIds(
@@ -592,5 +716,8 @@ public class UserProductSearchPersistenceService {
                 .sorted(Comparator.comparingInt(UserProductRecommendationFilterMatch::getRank))
                 .map(UserProductRecommendationFilterMatch::getFilterId)
                 .toList();
+    }
+
+    private record RecentExplanationKey(String normalizedQuery, String productKey) {
     }
 }

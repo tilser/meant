@@ -15,6 +15,7 @@ import com.meant.api.module.user.repository.UserProductRecommendationFilterMatch
 import com.meant.api.module.user.repository.UserProductSearchRepository;
 import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import java.lang.reflect.InvocationHandler;
@@ -23,6 +24,8 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +46,11 @@ class UserProductSearchPersistenceServiceTest {
 
     private boolean explanationsLoaded;
     private boolean matchesLoaded;
+    private int explanationsLoadCount;
+    private int matchesLoadCount;
+    private int recentResultItemsLoadCount;
+    private int explanationSaveBatchCount;
+    private int filterMatchSaveBatchCount;
 
     @Test
     void saveSearchKeepsProductsWithoutExplanations() {
@@ -458,6 +466,108 @@ class UserProductSearchPersistenceServiceTest {
                 .satisfies(product -> assertThat(product.productKey()).isEqualTo("merchant.example:item-21"));
     }
 
+    @Test
+    void findRecentProductsLoadsSearchItemsAndExplanationsInBatches() {
+        UUID userId = UUID.randomUUID();
+        UserProductSearch firstSearch = search(userId, "cotton tees", "cotton tees", false);
+        UserProductSearch secondSearch = search(userId, "linen hats", "linen hats", false);
+        List<UserProductSearch> searches = List.of(firstSearch, secondSearch);
+        List<UserProductSearchResultItem> items = List.of(
+                item(firstSearch.getId(), 1),
+                item(firstSearch.getId(), 2),
+                item(secondSearch.getId(), 3)
+        );
+        explanationsLoadCount = 0;
+        matchesLoadCount = 0;
+        recentResultItemsLoadCount = 0;
+        UserProductSearchPersistenceService service = new UserProductSearchPersistenceService(
+                recentSearchRepository(searches),
+                recentResultItemRepository(items),
+                recentExplanationRepository(userId, searches, items),
+                filterMatchRepository(),
+                new UserTasteRankingService(),
+                new UserProductSearchCurationPolicy(),
+                new ObjectMapper()
+        );
+
+        List<UserProductSearchProductResult> result = service.findRecentProducts(
+                userId,
+                PROFILE_HASH,
+                SEARCH_VERSION,
+                MODEL,
+                PROMPT_VERSION,
+                NOW,
+                5,
+                3
+        );
+
+        assertThat(result)
+                .extracting(UserProductSearchProductResult::productKey)
+                .containsExactly(
+                        "merchant.example:item-1",
+                        "merchant.example:item-2",
+                        "merchant.example:item-3"
+                );
+        assertThat(recentResultItemsLoadCount).isOne();
+        assertThat(explanationsLoadCount).isOne();
+        assertThat(matchesLoadCount).isOne();
+    }
+
+    @Test
+    void saveExplanationsPersistsExplanationsAndFilterMatchesInBatches() {
+        UUID userId = UUID.randomUUID();
+        List<UserProductRecommendationExplanation> savedExplanations = new ArrayList<>();
+        List<UserProductRecommendationFilterMatch> savedMatches = new ArrayList<>();
+        explanationSaveBatchCount = 0;
+        filterMatchSaveBatchCount = 0;
+        UserProductSearchPersistenceService service = new UserProductSearchPersistenceService(
+                unusedRepository(UserProductSearchRepository.class),
+                unusedRepository(UserProductSearchResultItemRepository.class),
+                savingExplanationRepository(savedExplanations),
+                savingFilterMatchRepository(savedMatches),
+                new UserTasteRankingService(),
+                new UserProductSearchCurationPolicy(),
+                new ObjectMapper()
+        );
+
+        Map<String, UserProductRecommendationExplanationResult> result = service.saveExplanations(
+                userId,
+                NORMALIZED_QUERY,
+                PROFILE_HASH,
+                MODEL,
+                PROMPT_VERSION,
+                List.of(
+                        new UserProductRecommendationExplanationResult(
+                                "merchant.example:item-1",
+                                "hash-1",
+                                "First product matches.",
+                                List.of("organic", "local"),
+                                List.of("vegan")
+                        ),
+                        new UserProductRecommendationExplanationResult(
+                                "merchant.example:item-2",
+                                "hash-2",
+                                "Second product matches.",
+                                List.of("durable"),
+                                List.of()
+                        )
+                ),
+                NOW
+        );
+
+        assertThat(savedExplanations)
+                .extracting(UserProductRecommendationExplanation::getProductKey)
+                .containsExactly("merchant.example:item-1", "merchant.example:item-2");
+        assertThat(savedMatches)
+                .extracting(UserProductRecommendationFilterMatch::getFilterId)
+                .containsExactly("organic", "local", "vegan", "durable");
+        assertThat(result.keySet()).containsExactly("merchant.example:item-1", "merchant.example:item-2");
+        assertThat(result.get("merchant.example:item-1").matchedFilterIds()).containsExactly("organic", "local");
+        assertThat(result.get("merchant.example:item-1").missedFilterIds()).containsExactly("vegan");
+        assertThat(explanationSaveBatchCount).isOne();
+        assertThat(filterMatchSaveBatchCount).isOne();
+    }
+
     private UserProductSearchPersistenceService service(
             UUID userId,
             UserProductSearch search,
@@ -465,6 +575,8 @@ class UserProductSearchPersistenceServiceTest {
     ) {
         explanationsLoaded = false;
         matchesLoaded = false;
+        explanationsLoadCount = 0;
+        matchesLoadCount = 0;
         return new UserProductSearchPersistenceService(
                 cachedSearchRepository(search),
                 cachedResultItemRepository(search.getId(), items),
@@ -489,6 +601,16 @@ class UserProductSearchPersistenceServiceTest {
             if ("findFirstByUserIdAndNormalizedQueryAndProfileHashAndSearchVersionAndExpiresAtAfterOrderByUpdatedAtDesc"
                     .equals(method.getName())) {
                 return Optional.of(search);
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductSearchRepository recentSearchRepository(List<UserProductSearch> searches) {
+        return repository(UserProductSearchRepository.class, (proxy, method, args) -> {
+            if ("findByUserIdAndProfileHashAndSearchVersionAndExpiresAtAfterOrderByUpdatedAtDesc"
+                    .equals(method.getName())) {
+                return searches;
             }
             throw new UnsupportedOperationException(method.getName());
         });
@@ -524,6 +646,21 @@ class UserProductSearchPersistenceServiceTest {
         });
     }
 
+    private UserProductSearchResultItemRepository recentResultItemRepository(
+            List<UserProductSearchResultItem> items
+    ) {
+        return repository(UserProductSearchResultItemRepository.class, (proxy, method, args) -> {
+            if ("findBySearchIdIn".equals(method.getName())) {
+                recentResultItemsLoadCount++;
+                Collection<UUID> searchIds = searchIds(args[0]);
+                return items.stream()
+                        .filter(item -> searchIds.contains(item.getSearchId()))
+                        .toList();
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
     private UserProductRecommendationExplanationRepository explanationRepository(
             UUID userId,
             List<UserProductSearchResultItem> items
@@ -532,6 +669,7 @@ class UserProductSearchPersistenceServiceTest {
             if ("findByUserIdAndNormalizedQueryAndProfileHashAndModelAndPromptVersionAndProductKeyIn"
                     .equals(method.getName())) {
                 explanationsLoaded = true;
+                explanationsLoadCount++;
                 return items.stream()
                         .map(item -> UserProductRecommendationExplanation.create(
                                 userId,
@@ -555,9 +693,65 @@ class UserProductSearchPersistenceServiceTest {
             if ("findByUserIdAndNormalizedQueryAndProfileHashAndModelAndPromptVersionAndProductKeyIn"
                     .equals(method.getName())) {
                 explanationsLoaded = true;
+                explanationsLoadCount++;
                 return List.<UserProductRecommendationExplanation>of();
             }
             throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductRecommendationExplanationRepository recentExplanationRepository(
+            UUID userId,
+            List<UserProductSearch> searches,
+            List<UserProductSearchResultItem> items
+    ) {
+        Map<UUID, UserProductSearch> searchesById = searches.stream()
+                .collect(LinkedHashMap::new,
+                        (values, search) -> values.put(search.getId(), search),
+                        LinkedHashMap::putAll);
+        return repository(UserProductRecommendationExplanationRepository.class, (proxy, method, args) -> {
+            if ("findByUserIdAndProfileHashAndModelAndPromptVersionAndProductKeyIn"
+                    .equals(method.getName())) {
+                explanationsLoaded = true;
+                explanationsLoadCount++;
+                Collection<String> productKeys = productKeys(args[4]);
+                return items.stream()
+                        .filter(item -> productKeys.contains(item.getProductKey()))
+                        .map(item -> UserProductRecommendationExplanation.create(
+                                userId,
+                                searchesById.get(item.getSearchId()).getNormalizedQuery(),
+                                PROFILE_HASH,
+                                item.getProductKey(),
+                                item.getProductHash(),
+                                MODEL,
+                                PROMPT_VERSION,
+                                "Matches your profile.",
+                                NOW
+                        ))
+                        .toList();
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
+    private UserProductRecommendationExplanationRepository savingExplanationRepository(
+            List<UserProductRecommendationExplanation> savedExplanations
+    ) {
+        return repository(UserProductRecommendationExplanationRepository.class, (proxy, method, args) -> switch (method.getName()) {
+            case "saveAll" -> {
+                explanationSaveBatchCount++;
+                savedExplanations.clear();
+                StreamSupport.stream(explanationEntities(args[0]).spliterator(), false)
+                        .forEach(savedExplanations::add);
+                yield savedExplanations;
+            }
+            case "findByUserIdAndNormalizedQueryAndProfileHashAndModelAndPromptVersionAndProductKeyIn" -> {
+                Collection<String> productKeys = productKeys(args[5]);
+                yield savedExplanations.stream()
+                        .filter(explanation -> productKeys.contains(explanation.getProductKey()))
+                        .toList();
+            }
+            default -> throw new UnsupportedOperationException(method.getName());
         });
     }
 
@@ -565,15 +759,57 @@ class UserProductSearchPersistenceServiceTest {
         return repository(UserProductRecommendationFilterMatchRepository.class, (proxy, method, args) -> {
             if ("findByExplanationIdInOrderByRankAsc".equals(method.getName())) {
                 matchesLoaded = true;
+                matchesLoadCount++;
                 return List.<UserProductRecommendationFilterMatch>of();
             }
             throw new UnsupportedOperationException(method.getName());
         });
     }
 
+    private UserProductRecommendationFilterMatchRepository savingFilterMatchRepository(
+            List<UserProductRecommendationFilterMatch> savedMatches
+    ) {
+        return repository(UserProductRecommendationFilterMatchRepository.class, (proxy, method, args) -> switch (method.getName()) {
+            case "saveAll" -> {
+                filterMatchSaveBatchCount++;
+                savedMatches.clear();
+                StreamSupport.stream(filterMatchEntities(args[0]).spliterator(), false)
+                        .forEach(savedMatches::add);
+                yield savedMatches;
+            }
+            case "findByExplanationIdInOrderByRankAsc" -> {
+                Collection<UUID> explanationIds = searchIds(args[0]);
+                yield savedMatches.stream()
+                        .filter(match -> explanationIds.contains(match.getExplanationId()))
+                        .toList();
+            }
+            default -> throw new UnsupportedOperationException(method.getName());
+        });
+    }
+
     @SuppressWarnings("unchecked")
     private Iterable<UserProductSearchResultItem> resultItems(Object value) {
         return (Iterable<UserProductSearchResultItem>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Iterable<UserProductRecommendationExplanation> explanationEntities(Object value) {
+        return (Iterable<UserProductRecommendationExplanation>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Iterable<UserProductRecommendationFilterMatch> filterMatchEntities(Object value) {
+        return (Iterable<UserProductRecommendationFilterMatch>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Collection<UUID> searchIds(Object value) {
+        return (Collection<UUID>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Collection<String> productKeys(Object value) {
+        return (Collection<String>) value;
     }
 
     private <T> T unusedRepository(Class<T> type) {
@@ -609,10 +845,14 @@ class UserProductSearchPersistenceServiceTest {
     }
 
     private UserProductSearch search(UUID userId, boolean hasMoreProducts) {
+        return search(userId, QUERY, NORMALIZED_QUERY, hasMoreProducts);
+    }
+
+    private UserProductSearch search(UUID userId, String query, String normalizedQuery, boolean hasMoreProducts) {
         return UserProductSearch.create(
                 userId,
-                QUERY,
-                NORMALIZED_QUERY,
+                query,
+                normalizedQuery,
                 PROFILE_HASH,
                 SEARCH_VERSION,
                 NOW,

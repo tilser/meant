@@ -17,4 +17,12 @@ public interface UserProductRecommendationExplanationRepository
             String promptVersion,
             Collection<String> productKeys
     );
+
+    List<UserProductRecommendationExplanation> findByUserIdAndProfileHashAndModelAndPromptVersionAndProductKeyIn(
+            UUID userId,
+            String profileHash,
+            String model,
+            String promptVersion,
+            Collection<String> productKeys
+    );
 }

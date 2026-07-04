@@ -76,9 +76,11 @@ public class UserProductSearchService {
                         command.userAgent()
                 );
         String normalizedQuery = catalogInput.cacheKey();
-        String profileHash = userProductSearchHashService.profileHash(settings)
-                + ":" + userInventoryService.inventoryProfileHash(command.userId())
-                + ":" + tasteProfile.profileHash();
+        String profileHash = userProductSearchHashService.searchProfileHash(
+                settings,
+                userInventoryService.inventoryProfileHash(command.userId()),
+                tasteProfile.profileHash()
+        );
         Instant now = Instant.now();
         int offset = command.offset();
         int limit = command.limit();
@@ -164,9 +166,11 @@ public class UserProductSearchService {
                         command.userAgent()
                 );
         String normalizedQuery = catalogInput.cacheKey();
-        String profileHash = userProductSearchHashService.profileHash(settings)
-                + ":" + userInventoryService.inventoryProfileHash(command.userId())
-                + ":" + tasteProfile.profileHash();
+        String profileHash = userProductSearchHashService.searchProfileHash(
+                settings,
+                userInventoryService.inventoryProfileHash(command.userId()),
+                tasteProfile.profileHash()
+        );
         Instant now = Instant.now();
         int offset = command.offset();
         int limit = command.limit();

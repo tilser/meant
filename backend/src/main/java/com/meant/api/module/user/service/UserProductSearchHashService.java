@@ -49,6 +49,16 @@ public class UserProductSearchHashService {
         ));
     }
 
+    public String searchProfileHash(
+            UserSettingsResult settings,
+            String inventoryProfileHash,
+            String tasteProfileHash
+    ) {
+        return profileHash(settings)
+                + ":" + inventoryProfileHash
+                + ":" + tasteProfileHash;
+    }
+
     public String productHash(MerchantSemanticProductResult product) {
         return sha256(Stream.of(
                         "productKey=" + productKey(product),
