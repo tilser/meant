@@ -147,24 +147,14 @@ public class UserProductSearchPersistenceService {
         if (searches.isEmpty()) {
             return List.of();
         }
-        Map<UUID, Integer> searchOrder = new LinkedHashMap<>();
         Map<UUID, UserProductSearch> searchesById = new LinkedHashMap<>();
-        int searchIndex = 0;
         for (UserProductSearch search : searches) {
-            searchOrder.put(search.getId(), searchIndex++);
             searchesById.put(search.getId(), search);
         }
         Map<UUID, List<UserProductSearchResultItem>> itemsBySearchId = userProductSearchResultItemRepository
-                .findBySearchIdIn(searchOrder.keySet())
+                .findBySearchIdIn(searchesById.keySet())
                 .stream()
-                .sorted(Comparator.comparingInt((UserProductSearchResultItem item) ->
-                                searchOrder.getOrDefault(item.getSearchId(), Integer.MAX_VALUE))
-                        .thenComparingInt(UserProductSearchResultItem::getRank))
-                .collect(Collectors.groupingBy(
-                        UserProductSearchResultItem::getSearchId,
-                        LinkedHashMap::new,
-                        Collectors.toList()
-                ));
+                .collect(Collectors.groupingBy(UserProductSearchResultItem::getSearchId));
         Map<RecentExplanationKey, UserProductRecommendationExplanationResult> explanations =
                 loadRecentExplanations(userId, profileHash, model, promptVersion, searchesById, itemsBySearchId);
         Map<String, UserProductSearchProductResult> products = new LinkedHashMap<>();
@@ -612,16 +602,13 @@ public class UserProductSearchPersistenceService {
             Map<UUID, List<UserProductSearchResultItem>> itemsBySearchId
     ) {
         Map<RecentExplanationKey, String> expectedProductHashes = new LinkedHashMap<>();
-        itemsBySearchId.forEach((searchId, items) -> {
-            UserProductSearch search = searchesById.get(searchId);
-            if (search == null) {
-                return;
-            }
+        for (UserProductSearch search : searchesById.values()) {
+            List<UserProductSearchResultItem> items = itemsBySearchId.getOrDefault(search.getId(), List.of());
             items.forEach(item -> expectedProductHashes.putIfAbsent(
                     new RecentExplanationKey(search.getNormalizedQuery(), item.getProductKey()),
                     item.getProductHash()
             ));
-        });
+        }
         if (expectedProductHashes.isEmpty()) {
             return Map.of();
         }
