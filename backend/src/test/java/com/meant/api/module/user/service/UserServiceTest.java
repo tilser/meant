@@ -193,6 +193,7 @@ class UserServiceTest {
                         case "findByEmail" -> usersById.values().stream()
                                 .filter(user -> user.getEmail().equals(args[0]))
                                 .findFirst();
+                        case "lockProfileProvisioning" -> 1;
                         // Mirrors the native INSERT ... ON CONFLICT: insert with names, or on conflict
                         // refresh only the email (names preserved) and advance updatedAt iff it changed.
                         case "insertOrRefreshFromIdentity" -> {

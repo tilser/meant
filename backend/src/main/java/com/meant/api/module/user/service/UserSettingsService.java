@@ -40,6 +40,8 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserSettingsService {
 
+    private static final int DEFAULT_BUDGET = 120;
+
     private final UserService userService;
     private final UserSettingsRepository userSettingsRepository;
     private final UserSettingsLocationRepository userSettingsLocationRepository;
@@ -86,14 +88,15 @@ public class UserSettingsService {
     private UserSettings findOrCreateSettings(UUID userId, Instant now) {
         return userSettingsRepository.findById(userId)
                 .orElseGet(() -> {
-                    UserSettings settings = userSettingsRepository.save(UserSettings.builder()
-                            .userId(userId)
-                            .budget(120)
-                            .createdAt(now)
-                            .updatedAt(now)
-                            .build());
-                    replaceFilters(settings, Set.copyOf(ShoppingFilterDefaults.DEFAULT_ACTIVE_FILTER_IDS), List.of(), now);
-                    return settings;
+                    int inserted = userSettingsRepository.insertDefaultIfMissing(userId, DEFAULT_BUDGET, now);
+                    if (inserted > 0) {
+                        userShoppingFilterRepository.insertIfMissing(
+                                userId,
+                                ShoppingFilterDefaults.DEFAULT_ACTIVE_FILTER_IDS,
+                                now);
+                    }
+                    return userSettingsRepository.findById(userId)
+                            .orElseThrow(() -> UserException.notFound("User settings not found: " + userId));
                 });
     }
 

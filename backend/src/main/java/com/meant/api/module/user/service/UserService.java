@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -82,21 +83,29 @@ public class UserService {
     /**
      * Resolves the managed profile entity, writing only when necessary. The common case, an existing
      * row whose email is unchanged, is served by a pure read. Only when the row is missing or the
-     * email changed do we use the conflict-safe native insert/update to handle concurrent first
-     * requests without a unique-constraint rollback.
+     * email changed do we serialize provisioning for this user and use the native insert/update.
      */
     private User ensureProfileInternal(EnsureUserProfileCommand command, Instant now) {
         return userRepository.findById(command.id())
                 .filter(existing -> existing.getEmail().equals(command.email()))
-                .orElseGet(() -> {
-                    userRepository.insertOrRefreshFromIdentity(
-                            command.id(),
-                            command.email(),
-                            command.firstName(),
-                            command.surname(),
-                            now);
-                    return findUser(command.id());
-                });
+                .or(() -> provisionProfile(command, now))
+                .orElseThrow(() -> UserException.notFound("User not found: " + command.id()));
+    }
+
+    private Optional<User> provisionProfile(EnsureUserProfileCommand command, Instant now) {
+        userRepository.lockProfileProvisioning(command.id());
+        Optional<User> existing = userRepository.findById(command.id())
+                .filter(user -> user.getEmail().equals(command.email()));
+        if (existing.isPresent()) {
+            return existing;
+        }
+        userRepository.insertOrRefreshFromIdentity(
+                command.id(),
+                command.email(),
+                command.firstName(),
+                command.surname(),
+                now);
+        return Optional.of(findUser(command.id()));
     }
 
     private User findUser(UUID id) {

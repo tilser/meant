@@ -13,11 +13,17 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmail(String email);
 
+    @Query(value = """
+            SELECT 1
+            FROM pg_advisory_xact_lock(hashtextextended(CAST(:id AS text), 0))
+            """, nativeQuery = true)
+    int lockProfileProvisioning(@Param("id") UUID id);
+
     /**
      * Atomically inserts the profile or, if it already exists, refreshes its email — leaving the
-     * user-edited names untouched. Performed as a single {@code INSERT ... ON CONFLICT} so concurrent
-     * first requests never collide on the unique constraint. {@code updated_at} only advances when
-     * the email actually changes, mirroring the entity's dirty-check guard so reads stay write-free.
+     * user-edited names untouched. Callers serialize first-time provisioning for the user before this
+     * query runs; {@code updated_at} only advances when the email actually changes, mirroring the
+     * entity's dirty-check guard so reads stay write-free.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

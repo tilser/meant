@@ -20,6 +20,7 @@ import com.meant.api.module.user.controller.response.UserProductSearchProductRes
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
+import com.meant.api.module.user.controller.response.UserTasteProfileResponse;
 import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductSearch;
@@ -43,7 +44,11 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -365,6 +370,55 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body.availableFilters()).extracting("id")
                 .contains("organic", "gluten-free", "no-polyester", "highly-rated", "crypto");
         assertThat(body.filters()).extracting("id")
+                .containsExactly(
+                        "organic",
+                        "low-sugar",
+                        "natural-materials",
+                        "no-polyester",
+                        "sustainable-brands",
+                        "best-value",
+                        "highly-rated");
+    }
+
+    @Test
+    void tasteProfileHandlesConcurrentFirstSettingsCreation() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String bearer = token(id, email, "Ada Lovelace");
+        int requestCount = 8;
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(requestCount)) {
+            List<CompletableFuture<UserTasteProfileResponse>> futures = IntStream.range(0, requestCount)
+                    .mapToObj(_ -> CompletableFuture.supplyAsync(() -> client.get().uri("/api/users/me/taste-profile")
+                            .headers(headers -> headers.setBearerAuth(bearer))
+                            .exchange()
+                            .expectStatus().isOk()
+                            .expectBody(UserTasteProfileResponse.class)
+                            .returnResult()
+                            .getResponseBody(), executor))
+                    .toList();
+
+            List<UserTasteProfileResponse> responses = futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
+
+            assertThat(responses).hasSize(requestCount)
+                    .allSatisfy(response -> {
+                        assertThat(response).isNotNull();
+                        assertThat(response.profileHash()).isNotBlank();
+                    });
+        }
+
+        UserSettingsResponse settings = client.get().uri("/api/users/me/settings")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(settings).isNotNull();
+        assertThat(settings.filters()).extracting("id")
                 .containsExactly(
                         "organic",
                         "low-sugar",
