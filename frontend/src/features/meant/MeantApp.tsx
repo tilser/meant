@@ -10,7 +10,6 @@ import {
   type TouchEvent as ReactTouchEvent,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -61,7 +60,6 @@ import {
   getOrders,
   getProfilePictureUrl,
   getProductDiscovery,
-  getPopularProductSearches,
   getUserInventoryItems,
   getUserProductSearchSuggestions,
   getUserSettings,
@@ -70,7 +68,6 @@ import {
   removeSavedProduct,
   removeUserTasteSignal,
   rejectUserTasteSuggestion,
-  recordUserTasteBehavior,
   revokeMerchantIdentityLink,
   saveUserProduct,
   startMerchantIdentityAuthorization,
@@ -93,7 +90,6 @@ import {
   type UserInventoryPhotoInput,
   type UserAssistantConversationProfile,
   type UserAssistantConversationSummaryProfile,
-  type UserPopularProductSearchProfile,
   type UserProductSearchStreamEventProfile,
   type UserSavedProductProfile,
   type UserTasteProfile,
@@ -156,6 +152,31 @@ interface Message {
   pending?: boolean
 }
 
+type DiscoverChatBlock =
+  | { type: 'text'; text: string }
+  | { type: 'products'; products: readonly Product[]; query?: string }
+  | { type: 'reviews'; product: Product }
+  | { type: 'code'; product: Product; code: string; saved: number }
+  | { type: 'similar'; product: Product; products: readonly Product[] }
+  | { type: 'decision'; product: Product; runnerUp: Product | null }
+  | { type: 'watch'; product: Product; price: number; merchant: string }
+  | { type: 'added'; product: Product; merchant: string; synced: boolean }
+  | { type: 'saved'; products: readonly Product[] }
+  | { type: 'orders'; orders: readonly Order[] }
+  | { type: 'prefs'; preferences: readonly Preference[] }
+  | { type: 'cart'; lines: readonly CartItem[] }
+  | { type: 'checkout'; merchantCount: number }
+  | { type: 'system'; text: string }
+
+interface DiscoverChatMessage {
+  id: string
+  role: 'you' | 'ai'
+  text?: string
+  blocks?: readonly DiscoverChatBlock[]
+  pending?: boolean
+  query?: string
+}
+
 interface AssistantProductAction {
   product: Product
   shouldAddToCart: boolean
@@ -175,7 +196,6 @@ interface AskPanelSize {
 }
 
 type ProductDetailLoadState = 'idle' | 'loading' | 'loaded' | 'error'
-type ProductResultSortMode = 'match' | 'price-asc' | 'price-desc'
 
 interface ProductOpenProps {
   onOpen: (product: Product, products?: readonly Product[]) => void
@@ -241,12 +261,6 @@ const ASK_PANEL_MIN_HEIGHT = 440
 const ASK_PANEL_MAX_WIDTH = 720
 const ASK_PANEL_MAX_HEIGHT = 760
 
-interface SearchSuggestion {
-  label: string
-  detail?: string
-  query: string
-}
-
 interface InventoryFormState {
   name: string
   brand: string
@@ -264,39 +278,6 @@ interface InventoryFormState {
   restockEnabled: boolean
   restockThreshold: string
 }
-
-const STARTER_SEARCHES: readonly SearchSuggestion[] = [
-  {
-    label: 'Healthy breakfast',
-    detail: 'Low sugar, high protein, organic options',
-    query: 'healthy breakfast cereal with low sugar and high protein',
-  },
-  {
-    label: 'Cotton basics',
-    detail: 'Natural materials, no polyester, under $50',
-    query: 'organic cotton T-shirt under $50 with no polyester',
-  },
-  {
-    label: 'Home upgrades',
-    detail: 'Quiet, durable, easy to clean',
-    query: 'quiet durable home products that are easy to clean',
-  },
-  {
-    label: 'Travel tech',
-    detail: 'Compact USB-C gear for a carry-on',
-    query: 'compact USB-C travel tech accessories',
-  },
-  {
-    label: 'Sensitive skin',
-    detail: 'Fragrance-free personal care',
-    query: 'fragrance-free personal care for sensitive skin',
-  },
-  {
-    label: 'Gift under $50',
-    detail: 'Strong reviews and easy returns',
-    query: 'highly rated gift under $50 with easy returns',
-  },
-]
 
 const INVENTORY_CATEGORIES: readonly UserInventoryCategory[] = [
   'APPAREL',
@@ -334,11 +315,6 @@ const NO_CONFIRMED_PREFERENCE_TAKE =
   'No preference matches are confirmed yet; review the details and offers.'
 const SEARCH_RELEVANCE_TAKE =
   'This looks relevant to your search based on the available product details.'
-const PRODUCT_RESULT_SORT_LABELS: Readonly<Record<ProductResultSortMode, string>> = {
-  match: 'Best match',
-  'price-asc': 'Price: low to high',
-  'price-desc': 'Price: high to low',
-}
 
 const CLOTHING_FIT_OPTIONS: readonly { value: ClothingFit; label: string }[] = [
   { value: 'none', label: 'No preference' },
@@ -1205,13 +1181,6 @@ function savedProductFromProfile(
   return productWithCuratedFields(snapshot, preferences)
 }
 
-function searchSuggestionFromPopular(search: UserPopularProductSearchProfile): SearchSuggestion {
-  return {
-    label: search.displayQuery,
-    query: search.query,
-  }
-}
-
 function findLastAssistantMessageIndex(messages: readonly Message[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index]?.role === 'ai') {
@@ -1685,126 +1654,6 @@ function productForMerchant(product: Product, merchant: MerchantProfile): Produc
     return product
   }
   return null
-}
-
-function normalizedProductSearchText(value: string): string {
-  return value.toLowerCase().trim().replace(/\s+/g, ' ')
-}
-
-function productSearchFields(
-  product: Product,
-  preferences: readonly Preference[],
-  deliveryLocations: readonly UserLocation[],
-): string[] {
-  const preferenceMatches = [...product.satisfies, ...product.misses].map((id) =>
-    prefLabel(preferences, id),
-  )
-  const catalogAttributes = (product.catalogAttributes ?? []).flatMap((attribute) => [
-    attribute.name,
-    attribute.value,
-  ])
-  const selectedOptions = (product.selectedOptions ?? []).flatMap((option) => [
-    option.name,
-    option.value,
-  ])
-  const detailOptions = (product.detailOptions ?? []).flatMap((option) => [
-    option.name,
-    ...option.values,
-  ])
-  const offers = product.offers.flatMap((offer) => [
-    offer.merchant,
-    offer.merchantDomain ?? '',
-    offer.variantTitle ?? '',
-    offer.available === false ? 'unavailable' : 'available',
-    String(offer.price),
-    money(offer.price),
-  ])
-  const price = productPriceFrom(product, deliveryLocations)
-  return [
-    product.name,
-    product.brand,
-    product.category,
-    product.productUrl ?? '',
-    product.note,
-    product.detailDescription ?? '',
-    money(price),
-    String(price),
-    ...product.pros,
-    ...product.cons,
-    ...preferenceMatches,
-    ...(product.materials ?? []),
-    ...(product.certifications ?? []),
-    ...(product.collections ?? []),
-    ...(product.skus ?? []),
-    ...catalogAttributes,
-    ...selectedOptions,
-    ...detailOptions,
-    ...offers,
-  ].filter(Boolean)
-}
-
-function productMatchesTextSearch(
-  product: Product,
-  searchText: string,
-  preferences: readonly Preference[],
-  deliveryLocations: readonly UserLocation[],
-): boolean {
-  const tokens = normalizedProductSearchText(searchText).split(' ').filter(Boolean)
-  if (tokens.length === 0) {
-    return true
-  }
-  const haystack = normalizedProductSearchText(
-    productSearchFields(product, preferences, deliveryLocations).join(' '),
-  )
-  return tokens.every((token) => haystack.includes(token))
-}
-
-function compareProductsByPrice(
-  left: Product,
-  right: Product,
-  deliveryLocations: readonly UserLocation[],
-  direction: 'asc' | 'desc',
-): number {
-  const leftPrice = productPriceFrom(left, deliveryLocations)
-  const rightPrice = productPriceFrom(right, deliveryLocations)
-  const leftHasPrice = leftPrice > 0
-  const rightHasPrice = rightPrice > 0
-  if (leftHasPrice !== rightHasPrice) {
-    return leftHasPrice ? -1 : 1
-  }
-  if (!leftHasPrice || leftPrice === rightPrice) {
-    return 0
-  }
-  return direction === 'asc' ? leftPrice - rightPrice : rightPrice - leftPrice
-}
-
-function visibleProductResults(
-  products: readonly Product[],
-  preferences: readonly Preference[],
-  deliveryLocations: readonly UserLocation[],
-  searchText: string,
-  sortMode: ProductResultSortMode,
-): Product[] {
-  return products
-    .map((product, index) => ({ product, index }))
-    .filter(({ product }) =>
-      productMatchesTextSearch(product, searchText, preferences, deliveryLocations),
-    )
-    .sort((left, right) => {
-      const sortResult = (() => {
-        switch (sortMode) {
-          case 'price-asc':
-            return compareProductsByPrice(left.product, right.product, deliveryLocations, 'asc')
-          case 'price-desc':
-            return compareProductsByPrice(left.product, right.product, deliveryLocations, 'desc')
-          case 'match':
-          default:
-            return right.product.match - left.product.match
-        }
-      })()
-      return sortResult || left.index - right.index
-    })
-    .map(({ product }) => product)
 }
 
 function normalizeAssistantActionText(value: string): string {
@@ -3089,193 +2938,6 @@ function catalogBadgeLabels(product: Product): string[] {
     })
 }
 
-function ProductResultTools({
-  searchText,
-  sortMode,
-  resultCount,
-  totalCount,
-  onSearchText,
-  onSortMode,
-  onReset,
-}: Readonly<{
-  searchText: string
-  sortMode: ProductResultSortMode
-  resultCount: number
-  totalCount: number
-  onSearchText: (value: string) => void
-  onSortMode: (value: ProductResultSortMode) => void
-  onReset: () => void
-}>) {
-  const active = searchText.trim().length > 0 || sortMode !== 'match'
-  const onSortChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    onSortMode(event.target.value as ProductResultSortMode)
-  }
-
-  return (
-    <div className="mt-result-tools">
-      <label className="mt-result-search">
-        <SearchIcon size={15} />
-        <input
-          value={searchText}
-          onChange={(event) => onSearchText(event.target.value)}
-          placeholder="Search found products"
-          aria-label="Search found products"
-        />
-        {searchText ? (
-          <button
-            className="mt-result-search-clear"
-            type="button"
-            onClick={() => onSearchText('')}
-            aria-label="Clear product search"
-          >
-            <CloseIcon size={12} />
-          </button>
-        ) : null}
-      </label>
-      <label className="mt-result-sort">
-        <span className="mt-mono">Sort</span>
-        <select value={sortMode} onChange={onSortChange} aria-label="Sort found products">
-          <option value="match">{PRODUCT_RESULT_SORT_LABELS.match}</option>
-          <option value="price-asc">{PRODUCT_RESULT_SORT_LABELS['price-asc']}</option>
-          <option value="price-desc">{PRODUCT_RESULT_SORT_LABELS['price-desc']}</option>
-        </select>
-      </label>
-      <span className="mt-result-tool-count mt-mono">
-        {resultCount === totalCount ? `${totalCount} products` : `${resultCount} of ${totalCount}`}
-      </span>
-      {active ? (
-        <button className="mt-result-reset mt-mono" type="button" onClick={onReset}>
-          Reset
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-function ProductGrid({
-  products,
-  deliveryLocations,
-  preferences,
-  onOpen,
-  savedSet,
-  savePendingSet,
-  onToggleSave,
-  onDismiss,
-}: Readonly<
-  {
-    products: readonly Product[]
-    deliveryLocations: readonly UserLocation[]
-    preferences: readonly Preference[]
-  } & ProductOpenProps &
-    ProductSaveProps
->) {
-  const gridRef = useRef<HTMLDivElement | null>(null)
-  const positionsRef = useRef<Map<ProductId, DOMRect>>(new Map())
-  const timeoutsRef = useRef<number[]>([])
-  const rafsRef = useRef<number[]>([])
-  const orderKey = products.map((product) => product.id).join('|')
-
-  useLayoutEffect(() => {
-    const grid = gridRef.current
-    if (!grid) {
-      return
-    }
-    const clearAnimationWork = () => {
-      timeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
-      timeoutsRef.current = []
-      rafsRef.current.forEach((raf) => window.cancelAnimationFrame(raf))
-      rafsRef.current = []
-    }
-    const resetCards = () => {
-      Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]')).forEach(
-        resetProductCardAnimation,
-      )
-    }
-
-    clearAnimationWork()
-
-    const previousPositions = positionsRef.current
-    const nextPositions = new Map<ProductId, DOMRect>()
-    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-product-id]'))
-    const cardAnimations: Array<{ card: HTMLElement; deltaX: number; deltaY: number }> = []
-    cards.forEach(resetProductCardAnimation)
-    cards.forEach((card) => {
-      const productId = card.dataset.productId
-      if (!productId) {
-        return
-      }
-      const nextRect = card.getBoundingClientRect()
-      nextPositions.set(productId, nextRect)
-      const previousRect = previousPositions.get(productId)
-      if (!previousRect) {
-        return
-      }
-      const deltaX = previousRect.left - nextRect.left
-      const deltaY = previousRect.top - nextRect.top
-      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
-        return
-      }
-
-      cardAnimations.push({ card, deltaX, deltaY })
-    })
-    positionsRef.current = nextPositions
-
-    cardAnimations.forEach(({ card, deltaX, deltaY }) => {
-      card.dataset.reordering = 'true'
-      card.style.transitionProperty = 'none'
-      card.style.transform = `translate(${deltaX}px, ${deltaY}px)`
-      card.style.zIndex = '2'
-      const firstFrame = window.requestAnimationFrame(() => {
-        const secondFrame = window.requestAnimationFrame(() => {
-          card.style.transitionProperty = ''
-          card.style.transform = ''
-          const timeout = window.setTimeout(() => {
-            card.removeAttribute('data-reordering')
-            card.style.zIndex = ''
-          }, 460)
-          timeoutsRef.current.push(timeout)
-        })
-        rafsRef.current.push(secondFrame)
-      })
-      rafsRef.current.push(firstFrame)
-    })
-
-    return () => {
-      clearAnimationWork()
-      resetCards()
-    }
-  }, [orderKey])
-
-  return (
-    <div className="mt-grid" ref={gridRef}>
-      {products.map((product, index) => (
-        <ProductCard
-          key={product.id}
-          product={product}
-          index={index}
-          deliveryLocations={deliveryLocations}
-          preferences={preferences}
-          onOpen={onOpen}
-          savedSet={savedSet}
-          savePendingSet={savePendingSet}
-          onToggleSave={onToggleSave}
-          onDismiss={onDismiss}
-        />
-      ))}
-    </div>
-  )
-}
-
-function resetProductCardAnimation(card: HTMLElement) {
-  const transitionDelay = card.style.transitionDelay
-  card.removeAttribute('data-reordering')
-  card.style.transition = ''
-  card.style.transitionProperty = ''
-  card.style.transform = ''
-  card.style.zIndex = ''
-  card.style.transitionDelay = transitionDelay
-}
-
 function ProductCard({
   product,
   index,
@@ -3691,104 +3353,688 @@ function MerchantScope({
   )
 }
 
-function SearchSuggestionPanel({
-  title,
-  note,
-  searches,
-  loading,
-  compact,
-  onSubmit,
+let discoverChatMessageSequence = 0
+const nextDiscoverChatMessageId = () => {
+  discoverChatMessageSequence += 1
+  return `discover-chat-${discoverChatMessageSequence}`
+}
+
+function chatDiscountForProduct(product: Product): { code: string; saved: number } {
+  const best = product.offers[0]
+  const base = best?.price ?? product.priceFrom
+  const code = product.category.toLowerCase().includes('clothing') ? 'MEANT15' : 'MEANT10'
+  return { code, saved: Math.max(1, Math.round(base * (code === 'MEANT15' ? 0.15 : 0.1))) }
+}
+
+function similarChatProducts(product: Product, products: readonly Product[]): readonly Product[] {
+  const sameCategory = products
+    .filter((candidate) => candidate.id !== product.id && candidate.category === product.category)
+    .sort((left, right) => right.match - left.match)
+  const fallback = products
+    .filter((candidate) => candidate.id !== product.id)
+    .sort((left, right) => right.match - left.match)
+  return (sameCategory.length > 0 ? sameCategory : fallback).slice(0, 4)
+}
+
+function DiscoverChatProduct({
+  product,
+  index,
+  deliveryLocations,
+  preferences,
+  savedSet,
+  savePendingSet,
+  pinned,
+  watched,
+  onOpen,
+  onToggleSave,
+  onAddCart,
+  onPin,
+  onWatch,
+  onDig,
 }: Readonly<{
-  title: string
-  note: string
-  searches: readonly SearchSuggestion[]
-  loading: boolean
-  compact: boolean
-  onSubmit: (query: string) => void
+  product: Product
+  index: number
+  deliveryLocations: readonly UserLocation[]
+  preferences: readonly Preference[]
+  savedSet: ReadonlySet<ProductId>
+  savePendingSet: ReadonlySet<ProductId>
+  pinned: boolean
+  watched: boolean
+  onOpen: (product: Product) => void
+  onToggleSave: (product: Product) => void
+  onAddCart: (product: Product) => void
+  onPin: (product: Product) => void
+  onWatch: (product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
 }>) {
   return (
-    <section className={`mt-starters${compact ? ' compact' : ''}`} aria-label={title}>
-      <div className="mt-starters-head">
-        <h2 className="mt-starters-title">{title}</h2>
-        <span className="mt-mono mt-starters-note">{note}</span>
+    <div className="mt-ct-prod">
+      <ProductCard
+        product={product}
+        index={index}
+        deliveryLocations={deliveryLocations}
+        preferences={preferences}
+        onOpen={onOpen}
+        savedSet={savedSet}
+        savePendingSet={savePendingSet}
+        onToggleSave={onToggleSave}
+      />
+      <div className="mt-ct-actionrow">
+        <button className="mt-ct-addbtn" type="button" onClick={() => onAddCart(product)}>
+          <CartIcon /> Add to cart
+        </button>
+        <button
+          className={`mt-ct-pinbtn ${pinned ? 'on' : ''}`}
+          type="button"
+          onClick={() => onPin(product)}
+        >
+          {pinned ? 'Pinned' : 'Pin'}
+        </button>
+        <button
+          className={`mt-ct-watchbtn ${watched ? 'on' : ''}`}
+          type="button"
+          onClick={() => onWatch(product)}
+        >
+          {watched ? 'Watching' : 'Watch'}
+        </button>
       </div>
-      {searches.length === 0 ? (
-        <div className="mt-starters-loading mt-mono">Loading searches</div>
-      ) : null}
-      <div className="mt-starters-grid">
-        {searches.map((search) => (
-          <button
-            key={search.query}
-            className="mt-starter-card"
-            type="button"
-            onClick={() => onSubmit(search.query)}
-            disabled={loading}
-          >
-            <span className="mt-starter-main">
-              <span className="mt-starter-label">{search.label}</span>
-              {search.detail ? <span className="mt-starter-detail">{search.detail}</span> : null}
-            </span>
-            <span className="mt-starter-arrow" aria-hidden>
-              <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
-                <path
-                  d="M3.5 9h10M9.5 5l4 4-4 4"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </button>
-        ))}
+      <div className="mt-ct-askbar">
+        <span className="mt-mono mt-ct-askbar-lead">Dig in</span>
+        <button className="mt-ct-askchip" type="button" onClick={() => onDig('reviews', product)}>
+          Reviews
+        </button>
+        <button className="mt-ct-askchip" type="button" onClick={() => onDig('code', product)}>
+          Find a code
+        </button>
+        <button className="mt-ct-askchip" type="button" onClick={() => onDig('similar', product)}>
+          Similar
+        </button>
+        <button className="mt-ct-askchip" type="button" onClick={() => onDig('resale', product)}>
+          Second-hand
+        </button>
       </div>
-    </section>
+    </div>
   )
 }
 
-function RestockNudges({
-  items,
-  onSubmit,
+function DiscoverProductBatch({
+  products,
+  query,
+  deliveryLocations,
+  preferences,
+  savedSet,
+  savePendingSet,
+  pinnedSet,
+  watchedSet,
+  onOpen,
+  onToggleSave,
+  onAddCart,
+  onPin,
+  onWatch,
+  onDig,
+  onJustPick,
+  onCompareHere,
 }: Readonly<{
-  items: readonly UserInventoryItemProfile[]
-  onSubmit: (query: string) => void
+  products: readonly Product[]
+  query?: string
+  deliveryLocations: readonly UserLocation[]
+  preferences: readonly Preference[]
+  savedSet: ReadonlySet<ProductId>
+  savePendingSet: ReadonlySet<ProductId>
+  pinnedSet: ReadonlySet<ProductId>
+  watchedSet: ReadonlySet<ProductId>
+  onOpen: (product: Product, products?: readonly Product[]) => void
+  onToggleSave: (product: Product) => void
+  onAddCart: (product: Product) => void
+  onPin: (product: Product) => void
+  onWatch: (product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onJustPick: (products: readonly Product[]) => void
+  onCompareHere: (products: readonly Product[]) => void
 }>) {
+  const [page, setPage] = useState(0)
+  const pageSize = 4
+  const pageCount = Math.max(1, Math.ceil(products.length / pageSize))
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageProducts = products.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
+
+  useEffect(() => setPage(0), [query, products])
+
+  if (products.length === 0) {
+    return null
+  }
+
   return (
-    <section className="mt-restock-band" aria-label="Restock">
-      <div className="mt-restock-band-head">
-        <span className="mt-mono mt-restock-band-k">Restock</span>
-        <span className="mt-restock-band-count">{items.length}</span>
-      </div>
-      <div className="mt-restock-band-list">
-        {items.slice(0, 4).map((item) => (
-          <button
-            key={item.id}
-            className="mt-restock-pill"
-            type="button"
-            onClick={() => onSubmit(`restock ${item.name}`)}
-          >
-            <span className="mt-restock-pill-name">{item.name}</span>
-            <span className="mt-mono mt-restock-pill-meta">
-              {inventoryCategoryLabel(item.category)}
-              {item.quantity > 0 ? ` · ${item.quantity}${item.unit ? ` ${item.unit}` : ''}` : ''}
+    <div className="mt-ct-batch">
+      <div className="mt-ct-batch-head">
+        <div className="mt-mono mt-ct-batch-count">
+          {products.length} match{products.length === 1 ? '' : 'es'}
+          {pageCount > 1
+            ? ` · ${currentPage * pageSize + 1}-${Math.min((currentPage + 1) * pageSize, products.length)}`
+            : ''}
+        </div>
+        {pageCount > 1 ? (
+          <div className="mt-ct-pager">
+            <button
+              className="mt-ct-pager-btn"
+              type="button"
+              disabled={currentPage === 0}
+              aria-label="Previous products"
+              onClick={() => setPage((value) => Math.max(0, value - 1))}
+            >
+              <ChevronIcon direction="left" size={15} />
+            </button>
+            <span className="mt-mono mt-ct-pager-of">
+              {currentPage + 1}/{pageCount}
             </span>
-          </button>
+            <button
+              className="mt-ct-pager-btn"
+              type="button"
+              disabled={currentPage >= pageCount - 1}
+              aria-label="Next products"
+              onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
+            >
+              <ChevronIcon direction="right" size={15} />
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-ct-grid">
+        {pageProducts.map((product, index) => (
+          <DiscoverChatProduct
+            key={product.id}
+            product={product}
+            index={index}
+            deliveryLocations={deliveryLocations}
+            preferences={preferences}
+            savedSet={savedSet}
+            savePendingSet={savePendingSet}
+            pinned={pinnedSet.has(product.id)}
+            watched={watchedSet.has(product.id)}
+            onOpen={(nextProduct) => onOpen(nextProduct, products)}
+            onToggleSave={onToggleSave}
+            onAddCart={onAddCart}
+            onPin={onPin}
+            onWatch={onWatch}
+            onDig={onDig}
+          />
         ))}
       </div>
-    </section>
+      <div className="mt-ct-batch-foot">
+        <button className="mt-ct-suggchip" type="button" onClick={() => onJustPick(products)}>
+          Just pick one for me
+        </button>
+        {products.length >= 2 ? (
+          <button
+            className="mt-ct-suggchip ghost"
+            type="button"
+            onClick={() => onCompareHere(products)}
+          >
+            Compare here
+          </button>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
-function FeedView({
+function DiscoverChatBlockView({
+  block,
+  deliveryLocations,
+  preferences,
+  savedSet,
+  savePendingSet,
+  pinnedSet,
+  watchedSet,
+  onOpen,
+  onToggleSave,
+  onAddCart,
+  onPin,
+  onWatch,
+  onDig,
+  onJustPick,
+  onCompareHere,
+  onOpenSaved,
+  onOpenOrders,
+  onOpenPrefs,
+  onOpenCart,
+}: Readonly<{
+  block: DiscoverChatBlock
+  deliveryLocations: readonly UserLocation[]
+  preferences: readonly Preference[]
+  savedSet: ReadonlySet<ProductId>
+  savePendingSet: ReadonlySet<ProductId>
+  pinnedSet: ReadonlySet<ProductId>
+  watchedSet: ReadonlySet<ProductId>
+  onOpen: (product: Product, products?: readonly Product[]) => void
+  onToggleSave: (product: Product) => void
+  onAddCart: (product: Product) => void
+  onPin: (product: Product) => void
+  onWatch: (product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onJustPick: (products: readonly Product[]) => void
+  onCompareHere: (products: readonly Product[]) => void
+  onOpenSaved: () => void
+  onOpenOrders: () => void
+  onOpenPrefs: () => void
+  onOpenCart: () => void
+}>) {
+  if (block.type === 'text') {
+    return <p className="mt-ct-intro">{block.text}</p>
+  }
+  if (block.type === 'system') {
+    return (
+      <div className="mt-ct-system">
+        <SparkMark size={11} color="var(--faint)" />
+        {block.text}
+      </div>
+    )
+  }
+  if (block.type === 'products') {
+    return (
+      <DiscoverProductBatch
+        products={block.products}
+        query={block.query}
+        deliveryLocations={deliveryLocations}
+        preferences={preferences}
+        savedSet={savedSet}
+        savePendingSet={savePendingSet}
+        pinnedSet={pinnedSet}
+        watchedSet={watchedSet}
+        onOpen={onOpen}
+        onToggleSave={onToggleSave}
+        onAddCart={onAddCart}
+        onPin={onPin}
+        onWatch={onWatch}
+        onDig={onDig}
+        onJustPick={onJustPick}
+        onCompareHere={onCompareHere}
+      />
+    )
+  }
+  if (block.type === 'reviews') {
+    const score = block.product.review.score
+    return (
+      <div className="mt-ct-block">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Reviews · {block.product.name}</div>
+          <div className="mt-reviews-score">
+            {score !== null ? <span className="mt-stars">{'★'.repeat(Math.round(score))}</span> : null}
+            <span className="mt-mono">
+              {score !== null ? `${score.toFixed(1)} · ` : ''}
+              {block.product.review.count.toLocaleString()}
+            </span>
+          </div>
+        </div>
+        <p className="mt-ct-review-sum">
+          {block.product.review.insight ||
+            searchProductReviewInsight(
+              block.product.agentStage === 'candidate',
+              block.product.review.score,
+              block.product.review.count,
+            )}
+        </p>
+      </div>
+    )
+  }
+  if (block.type === 'code') {
+    const offer = bestOffer(block.product, deliveryLocations)
+    return (
+      <div className="mt-ct-block mt-ct-code">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Discount found · {offer.merchant}</div>
+          <span className="mt-ct-code-save mt-mono">Mocked code · save {money(block.saved)}</span>
+        </div>
+        <div className="mt-ct-code-row">
+          <span className="mt-code">
+            <span className="mt-code-val mt-mono">{block.code}</span>
+            <span className="mt-code-act mt-mono">mock</span>
+          </span>
+          <div className="mt-ct-code-detail">
+            <div className="mt-ct-code-label">A mocked coupon agent found this candidate.</div>
+            <div className="mt-ct-code-price">
+              <span className="mt-ct-code-was">{money(offer.price)}</span>
+              <span className="mt-ct-code-now">{money(Math.max(0, offer.price - block.saved))}</span>
+              <span className="mt-mono mt-ct-code-deliv">{offer.delivery}</span>
+            </div>
+          </div>
+          <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(block.product)}>
+            <CartIcon /> Add
+          </button>
+        </div>
+      </div>
+    )
+  }
+  if (block.type === 'similar') {
+    return (
+      <div className="mt-ct-block">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Similar to {block.product.name}</div>
+        </div>
+        <DiscoverProductBatch
+          products={block.products}
+          deliveryLocations={deliveryLocations}
+          preferences={preferences}
+          savedSet={savedSet}
+          savePendingSet={savePendingSet}
+          pinnedSet={pinnedSet}
+          watchedSet={watchedSet}
+          onOpen={onOpen}
+          onToggleSave={onToggleSave}
+          onAddCart={onAddCart}
+          onPin={onPin}
+          onWatch={onWatch}
+          onDig={onDig}
+          onJustPick={onJustPick}
+          onCompareHere={onCompareHere}
+        />
+      </div>
+    )
+  }
+  if (block.type === 'decision') {
+    return (
+      <div className="mt-ct-decision">
+        <div className="mt-ct-decision-head">
+          <span className="mt-mono mt-ct-decision-key">
+            <SparkMark size={12} /> Meant's pick
+          </span>
+          <span className="mt-ct-decision-conf">{Math.max(76, block.product.match)}% confident</span>
+        </div>
+        <button
+          className="mt-ct-decision-prod"
+          type="button"
+          onClick={() => onOpen(block.product)}
+        >
+          <span className="mt-ct-decision-media">
+            <ProductArtwork product={block.product} label={block.product.category.toLowerCase()} />
+          </span>
+          <span className="mt-ct-decision-info">
+            <span className="mt-mono mt-ct-decision-brand">{block.product.brand}</span>
+            <span className="mt-ct-decision-name">{block.product.name}</span>
+            <span className="mt-ct-decision-price">
+              {money(productPriceFrom(block.product, deliveryLocations))}
+            </span>
+          </span>
+        </button>
+        <p className="mt-ct-decision-why">{productCuratedTake(block.product, preferences)}</p>
+        {block.runnerUp ? (
+          <div className="mt-ct-decision-beat">
+            <span className="mt-mono">vs.</span> Beat {block.runnerUp.name} on match score and fit.
+          </div>
+        ) : null}
+        <div className="mt-ct-decision-actions">
+          <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(block.product)}>
+            <CartIcon /> Add pick
+          </button>
+        </div>
+      </div>
+    )
+  }
+  if (block.type === 'watch') {
+    return (
+      <div className="mt-ct-watchalert">
+        <span className="mt-ct-watchalert-ico">
+          <SparkMark size={14} />
+        </span>
+        <div className="mt-ct-watchalert-body">
+          <div className="mt-mono mt-ct-watchalert-key">Mock price watch</div>
+          <div className="mt-ct-watchalert-text">
+            The <b>{block.product.name}</b> dropped to {money(block.price)} at {block.merchant}.
+          </div>
+        </div>
+        <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(block.product)}>
+          Add
+        </button>
+      </div>
+    )
+  }
+  if (block.type === 'added') {
+    return (
+      <div className="mt-ct-added">
+        <span className="mt-ct-added-check">
+          <SparkMark size={13} color="var(--on-accent)" />
+        </span>
+        <div className="mt-ct-added-body">
+          <span className="mt-ct-added-name">
+            Added <b>{block.product.name}</b> to cart
+          </span>
+          <span className="mt-ct-added-meta">
+            {block.merchant} · {block.synced ? 'merchant cart syncing' : 'local mock cart'}
+          </span>
+        </div>
+        <button className="mt-ct-added-go" type="button" onClick={onOpenCart}>
+          Review
+        </button>
+      </div>
+    )
+  }
+  if (block.type === 'saved') {
+    return (
+      <div className="mt-ct-block mt-ct-mini2">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Saved items</div>
+          <span className="mt-ct-code-save mt-mono">{block.products.length} saved</span>
+        </div>
+        {block.products.length > 0 ? (
+          <div className="mt-ct-mini2-grid">
+            {block.products.slice(0, 4).map((product) => (
+              <button
+                key={product.id}
+                className="mt-ct-mini2-card"
+                type="button"
+                onClick={() => onOpen(product)}
+              >
+                <span className="mt-ct-mini2-media">
+                  <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                </span>
+                <span className="mt-ct-mini2-name">{product.name}</span>
+                <span className="mt-ct-mini2-price">
+                  {money(productPriceFrom(product, deliveryLocations))}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-ct-cart-empty">Nothing saved yet.</p>
+        )}
+        <button className="mt-ct-mini-full" type="button" onClick={onOpenSaved}>
+          Open saved
+        </button>
+      </div>
+    )
+  }
+  if (block.type === 'orders') {
+    return (
+      <div className="mt-ct-block mt-ct-mini2">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Recent orders</div>
+          <span className="mt-ct-code-save mt-mono">{block.orders.length} total</span>
+        </div>
+        {block.orders.length > 0 ? (
+          <div className="mt-ct-mini2-list">
+            {block.orders.slice(0, 3).map((order) => (
+              <div className="mt-ct-mini2-row" key={order.id}>
+                <div className="mt-ct-mini2-info">
+                  <div className="mt-ct-mini2-title">{order.id}</div>
+                  <div className="mt-mono mt-ct-mini2-meta">
+                    {order.status} · {formatOrderDate(order.date)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-ct-cart-empty">No orders yet.</p>
+        )}
+        <button className="mt-ct-mini-full" type="button" onClick={onOpenOrders}>
+          Open orders
+        </button>
+      </div>
+    )
+  }
+  if (block.type === 'prefs') {
+    return (
+      <div className="mt-ct-block mt-ct-mini2">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Your preferences</div>
+          <span className="mt-ct-code-save mt-mono">{block.preferences.length} active</span>
+        </div>
+        <div className="mt-chips">
+          {block.preferences.slice(0, 12).map((preference) => (
+            <span key={preference.id} className="mt-chip mt-chip-muted mt-chip-sm in">
+              {preference.label}
+            </span>
+          ))}
+        </div>
+        <button className="mt-ct-mini-full" type="button" onClick={onOpenPrefs}>
+          Edit preferences
+        </button>
+      </div>
+    )
+  }
+  if (block.type === 'cart') {
+    return (
+      <div className="mt-ct-block mt-ct-cart">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Your cart</div>
+          <span className="mt-ct-code-save mt-mono">
+            {block.lines.reduce((sum, item) => sum + item.qty, 0)} items
+          </span>
+        </div>
+        {block.lines.length > 0 ? (
+          <div className="mt-ct-mini2-list">
+            {block.lines.slice(0, 5).map((item) => (
+              <div className="mt-ct-mini2-row" key={`${item.id}-${item.merchant}`}>
+                <div className="mt-ct-mini2-info">
+                  <div className="mt-ct-mini2-title">{item.productTitle ?? item.id}</div>
+                  <div className="mt-mono mt-ct-mini2-meta">
+                    {item.qty} · {item.merchant}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-ct-cart-empty">Your cart is empty.</p>
+        )}
+        <button className="mt-ct-mini-full" type="button" onClick={onOpenCart}>
+          Open cart
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-ct-block mt-ct-checkout">
+      <div className="mt-ct-block-head">
+        <div className="mt-mono mt-ct-block-key">Mock checkout</div>
+        <span className="mt-ct-code-save mt-mono">{block.merchantCount} merchants</span>
+      </div>
+      <p className="mt-ct-cart-empty">
+        Inline checkout is mocked until backend/payment support lands. The full cart still uses the
+        current merchant checkout flow.
+      </p>
+      <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
+        Open full cart
+      </button>
+    </div>
+  )
+}
+
+function DiscoverChatMessageRow({
+  message,
+  deliveryLocations,
+  preferences,
+  savedSet,
+  savePendingSet,
+  pinnedSet,
+  watchedSet,
+  onOpen,
+  onToggleSave,
+  onAddCart,
+  onPin,
+  onWatch,
+  onDig,
+  onJustPick,
+  onCompareHere,
+  onOpenSaved,
+  onOpenOrders,
+  onOpenPrefs,
+  onOpenCart,
+}: Readonly<{
+  message: DiscoverChatMessage
+  deliveryLocations: readonly UserLocation[]
+  preferences: readonly Preference[]
+  savedSet: ReadonlySet<ProductId>
+  savePendingSet: ReadonlySet<ProductId>
+  pinnedSet: ReadonlySet<ProductId>
+  watchedSet: ReadonlySet<ProductId>
+  onOpen: (product: Product, products?: readonly Product[]) => void
+  onToggleSave: (product: Product) => void
+  onAddCart: (product: Product) => void
+  onPin: (product: Product) => void
+  onWatch: (product: Product) => void
+  onDig: (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => void
+  onJustPick: (products: readonly Product[]) => void
+  onCompareHere: (products: readonly Product[]) => void
+  onOpenSaved: () => void
+  onOpenOrders: () => void
+  onOpenPrefs: () => void
+  onOpenCart: () => void
+}>) {
+  if (message.role === 'you') {
+    return (
+      <div className="mt-ct-msg mt-ct-you">
+        <div className="mt-ct-you-bubble">{message.text}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-ct-msg mt-ct-meant">
+      <span className="mt-ct-av">
+        <SparkMark size={13} />
+      </span>
+      <div className="mt-ct-meant-body">
+        {message.blocks?.map((block, index) => (
+          <DiscoverChatBlockView
+            key={`${message.id}-${index}`}
+            block={block}
+            deliveryLocations={deliveryLocations}
+            preferences={preferences}
+            savedSet={savedSet}
+            savePendingSet={savePendingSet}
+            pinnedSet={pinnedSet}
+            watchedSet={watchedSet}
+            onOpen={onOpen}
+            onToggleSave={onToggleSave}
+            onAddCart={onAddCart}
+            onPin={onPin}
+            onWatch={onWatch}
+            onDig={onDig}
+            onJustPick={onJustPick}
+            onCompareHere={onCompareHere}
+            onOpenSaved={onOpenSaved}
+            onOpenOrders={onOpenOrders}
+            onOpenPrefs={onOpenPrefs}
+            onOpenCart={onOpenCart}
+          />
+        ))}
+        {message.pending ? (
+          <div className="mt-ct-system">
+            <span className="mt-scan-pulse" />
+            Meant is checking merchants and ranking matches.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function ChatDiscoverView({
   profile,
   greeting,
   products,
-  restockItems,
   hiddenByShip,
-  discoveryLoading,
-  discoveryError,
-  popularSearches,
-  popularSearchesLoading,
   agentActivities,
   deliveryLocations,
   prompts,
@@ -3804,292 +4050,469 @@ function FeedView({
   merchantCounts,
   totalProductCount,
   merchantsLoading,
-  merchantsError,
+  savedProducts,
+  cart,
+  orders,
+  savedSet,
+  savePendingSet,
   onSubmit,
   onLoadMore,
   onClear,
   onMerchant,
   onOpen,
-  savedSet,
-  savePendingSet,
   onToggleSave,
-  onDismiss,
-}: Readonly<
-  {
-    profile: typeof PROFILE
-    greeting: string
-    products: readonly Product[]
-    restockItems: readonly UserInventoryItemProfile[]
-    hiddenByShip: number
-    discoveryLoading: boolean
-    discoveryError: string | null
-    popularSearches: readonly SearchSuggestion[]
-    popularSearchesLoading: boolean
-    agentActivities: readonly AgentActivity[]
-    deliveryLocations: readonly UserLocation[]
-    prompts: readonly string[]
-    reply: string | null
-    query: string
-    loading: boolean
-    loadingMore: boolean
-    hasMore: boolean
-    error: string | null
-    preferences: readonly Preference[]
-    merchants: readonly MerchantProfile[]
-    selectedMerchant: MerchantProfile | null
-    merchantCounts: ReadonlyMap<string, number>
-    totalProductCount: number
-    merchantsLoading: boolean
-    merchantsError: string | null
-    onSubmit: (query: string) => void
-    onLoadMore: () => void
-    onClear: () => void
-    onMerchant: (merchant: MerchantProfile | null) => void
-  } & ProductOpenProps &
-    ProductSaveProps
->) {
-  const merchantName = selectedMerchant?.name
-  const searchActive = Boolean(query || loading || error)
-  const preSearch = !searchActive
-  const [productFilterText, setProductFilterText] = useState('')
-  const [productSortMode, setProductSortMode] = useState<ProductResultSortMode>('match')
-  const resultToolsVisible = !preSearch && products.length > 0
-  const visibleProducts = useMemo(
-    () =>
-      resultToolsVisible
-        ? visibleProductResults(
-            products,
-            preferences,
-            deliveryLocations,
-            productFilterText,
-            productSortMode,
-          )
-        : [...products],
-    [
-      deliveryLocations,
-      preferences,
-      productFilterText,
-      productSortMode,
-      products,
-      resultToolsVisible,
-    ],
-  )
-  const filterActive = productFilterText.trim().length > 0
-  const shownProductCount = resultToolsVisible ? visibleProducts.length : products.length
-  const countPrefix = filterActive
-    ? `${shownProductCount} of ${products.length}`
-    : `${shownProductCount}`
-  const sortLabel = PRODUCT_RESULT_SORT_LABELS[productSortMode].toLowerCase()
-  const title = query
-    ? merchantName
-      ? `Your matches on ${merchantName}`
-      : 'Your matches'
-    : merchantName
-      ? `Your context on ${merchantName}`
-      : 'Your saved and recent products'
-  const count = loading
-    ? products.length > 0
-      ? `${countPrefix} found · agents working`
-      : 'Searching stores'
-    : preSearch
-      ? discoveryLoading
-        ? 'Loading your context'
-        : `${products.length} from your context`
-      : loadingMore
-        ? `${countPrefix} shown · loading more`
-        : merchantName
-          ? `${countPrefix} on ${merchantName} · sorted by ${sortLabel}`
-          : `${countPrefix} shown · sorted by ${sortLabel}`
-  const waitingForPopularSearches = popularSearchesLoading && popularSearches.length === 0
-  const suggestionSearches = waitingForPopularSearches
-    ? []
-    : popularSearches.length > 0
-      ? popularSearches
-      : STARTER_SEARCHES
-  const suggestionTitle =
-    popularSearches.length > 0 || waitingForPopularSearches
-      ? 'What others search for'
-      : 'Try a starter search'
-  const suggestionNote =
-    popularSearches.length > 0
-      ? 'Popular searches from the last 24 hours'
-      : waitingForPopularSearches
-        ? 'Loading popular searches'
-        : 'Searches run across supported merchants'
-  const showAgentActivity = !preSearch && agentActivities.length > 0
+  onAddProductToCart,
+  onFallbackAddToCart,
+  onCompareProducts,
+  onOpenSaved,
+  onOpenOrders,
+  onOpenPrefs,
+  onOpenCart,
+}: Readonly<{
+  profile: typeof PROFILE
+  greeting: string
+  products: readonly Product[]
+  hiddenByShip: number
+  agentActivities: readonly AgentActivity[]
+  deliveryLocations: readonly UserLocation[]
+  prompts: readonly string[]
+  reply: string | null
+  query: string
+  loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
+  error: string | null
+  preferences: readonly Preference[]
+  merchants: readonly MerchantProfile[]
+  selectedMerchant: MerchantProfile | null
+  merchantCounts: ReadonlyMap<string, number>
+  totalProductCount: number
+  merchantsLoading: boolean
+  savedProducts: readonly Product[]
+  cart: readonly CartItem[]
+  orders: readonly Order[]
+  savedSet: ReadonlySet<ProductId>
+  savePendingSet: ReadonlySet<ProductId>
+  onSubmit: (query: string) => void
+  onLoadMore: () => void
+  onClear: () => void
+  onMerchant: (merchant: MerchantProfile | null) => void
+  onOpen: (product: Product, products?: readonly Product[]) => void
+  onToggleSave: (product: Product) => void
+  onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
+  onFallbackAddToCart: (product: Product, offer: Offer) => void
+  onCompareProducts: (products: readonly Product[]) => void
+  onOpenSaved: () => void
+  onOpenOrders: () => void
+  onOpenPrefs: () => void
+  onOpenCart: () => void
+}>) {
+  const [messages, setMessages] = useState<DiscoverChatMessage[]>([])
+  const [activeSearchMessageId, setActiveSearchMessageId] = useState<string | null>(null)
+  const [pinnedIds, setPinnedIds] = useStoredState<ProductId[]>('meant.chatPinned', [])
+  const [watchedIds, setWatchedIds] = useState<ProductId[]>([])
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
+  const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds])
+  const displayProducts = useMemo(() => {
+    if (products.length > 0) {
+      return products
+    }
+    if (savedProducts.length > 0) {
+      return savedProducts
+    }
+    return PRODUCTS.slice(0, 4)
+  }, [products, savedProducts])
+  const pinnedProducts = pinnedIds
+    .map((id) => displayProducts.find((product) => product.id === id))
+    .filter((product): product is Product => Boolean(product))
+  const currentCartLines = cartLines(cart, displayProducts)
+  const activeSearchProducts = useMemo(() => (query ? displayProducts : []), [displayProducts, query])
 
   useEffect(() => {
-    setProductFilterText('')
-    setProductSortMode('match')
-  }, [query, selectedMerchant?.id])
+    if (!activeSearchMessageId) {
+      return
+    }
+    setMessages((current) =>
+      current.map((message) => {
+        if (message.id !== activeSearchMessageId) {
+          return message
+        }
+        const statusText = error
+          ? 'Live product search is unavailable, so I mocked a starter shortlist from the demo catalog.'
+          : reply ??
+            (activeSearchProducts.length > 0
+              ? `I found ${activeSearchProducts.length} candidate${activeSearchProducts.length === 1 ? '' : 's'} so far.`
+              : 'Searching across supported merchants...')
+        return {
+          ...message,
+          pending: loading || loadingMore,
+          blocks: [
+            { type: 'text', text: statusText },
+            { type: 'products', products: activeSearchProducts, query },
+          ],
+        }
+      }),
+    )
+    if (!loading && !loadingMore && (reply || error)) {
+      setActiveSearchMessageId(null)
+    }
+  }, [activeSearchMessageId, activeSearchProducts, error, loading, loadingMore, query, reply])
 
-  const openVisibleProduct = (product: Product) => onOpen(product, visibleProducts)
-  const resetResultTools = () => {
-    setProductFilterText('')
-    setProductSortMode('match')
+  const appendMessagePair = (text: string, blocks: readonly DiscoverChatBlock[]) => {
+    setMessages((current) => [
+      ...current,
+      { id: nextDiscoverChatMessageId(), role: 'you', text },
+      { id: nextDiscoverChatMessageId(), role: 'ai', blocks },
+    ])
+  }
+
+  const runSearchInChat = (text: string) => {
+    const aiId = nextDiscoverChatMessageId()
+    setMessages((current) => [
+      ...current,
+      { id: nextDiscoverChatMessageId(), role: 'you', text },
+      {
+        id: aiId,
+        role: 'ai',
+        query: text,
+        pending: true,
+        blocks: [{ type: 'text', text: 'Searching across supported merchants...' }],
+      },
+    ])
+    setActiveSearchMessageId(aiId)
+    onSubmit(text)
+  }
+
+  const submit = (text: string) => {
+    const normalized = text.trim()
+    if (!normalized) {
+      return
+    }
+    const lower = normalized.toLowerCase()
+    if (/\border history\b|\borders?\b|\bpurchases?\b/.test(lower)) {
+      appendMessagePair(normalized, [
+        { type: 'text', text: 'Here are your recent orders. The full order view stays connected to the backend.' },
+        { type: 'orders', orders },
+      ])
+      return
+    }
+    if (/\bsaved\b|\bshortlist\b|\bwishlist\b/.test(lower)) {
+      appendMessagePair(normalized, [
+        { type: 'text', text: 'Here are the products you saved.' },
+        { type: 'saved', products: savedProducts },
+      ])
+      return
+    }
+    if (/\bpreferences?\b|\bfilters?\b|\bprofile\b/.test(lower)) {
+      appendMessagePair(normalized, [
+        { type: 'text', text: 'These are the preferences shaping every recommendation.' },
+        { type: 'prefs', preferences },
+      ])
+      return
+    }
+    if (/\bcart\b|\bbasket\b/.test(lower) && !/\badd\b/.test(lower)) {
+      appendMessagePair(normalized, [
+        { type: 'text', text: 'Here is your cart. The full cart keeps using the live merchant-cart integration.' },
+        { type: 'cart', lines: cart },
+      ])
+      return
+    }
+    if (/\bcheckout\b|\bpay\b|\bbuy\b/.test(lower)) {
+      appendMessagePair(normalized, [
+        { type: 'text', text: 'Inline checkout is shown as a mock until the backend supports paying inside Meant.' },
+        { type: 'checkout', merchantCount: new Set(currentCartLines.map((line) => line.merchant)).size },
+      ])
+      return
+    }
+    runSearchInChat(normalized)
+  }
+
+  const addCartFromChat = async (product: Product) => {
+    const offer = bestOffer(product, deliveryLocations)
+    const synced = offerCartable(offer)
+    if (synced) {
+      const added = await onAddProductToCart(product, offer)
+      if (!added) {
+        onFallbackAddToCart(product, offer)
+      }
+    } else {
+      onFallbackAddToCart(product, offer)
+    }
+    setMessages((current) => [
+      ...current,
+      {
+        id: nextDiscoverChatMessageId(),
+        role: 'ai',
+        blocks: [{ type: 'added', product, merchant: offer.merchant, synced }],
+      },
+    ])
+  }
+
+  const digIntoProduct = (kind: 'reviews' | 'code' | 'similar' | 'resale', product: Product) => {
+    if (kind === 'reviews') {
+      appendMessagePair(`What do reviewers say about ${product.name}?`, [
+        { type: 'text', text: `Here is what I can tell from the current product data for ${product.name}.` },
+        { type: 'reviews', product },
+      ])
+      return
+    }
+    if (kind === 'code') {
+      const discount = chatDiscountForProduct(product)
+      appendMessagePair(`Find a code for ${product.name}.`, [
+        { type: 'text', text: 'Coupon hunting is mocked for now, but the block shape is ready for a backend agent.' },
+        { type: 'code', product, code: discount.code, saved: discount.saved },
+      ])
+      return
+    }
+    if (kind === 'similar') {
+      appendMessagePair(`Show me similar options to ${product.name}.`, [
+        { type: 'text', text: 'Closest matches from the products already loaded in this session.' },
+        { type: 'similar', product, products: similarChatProducts(product, displayProducts) },
+      ])
+      return
+    }
+    appendMessagePair(`Can I find ${product.name} second-hand?`, [
+      {
+        type: 'system',
+        text: 'Second-hand and resale lookup is mocked until backend marketplace search exists.',
+      },
+    ])
+  }
+
+  const chooseOne = (candidates: readonly Product[]) => {
+    const ranked = [...candidates].sort((left, right) => right.match - left.match)
+    const pick = ranked[0]
+    if (!pick) {
+      return
+    }
+    appendMessagePair('Just pick one for me.', [
+      { type: 'text', text: 'Done. I would buy this one.' },
+      { type: 'decision', product: pick, runnerUp: ranked[1] ?? null },
+    ])
+  }
+
+  const compareHere = (candidates: readonly Product[]) => {
+    const nextProducts = candidates.slice(0, 4)
+    if (nextProducts.length < 2) {
+      return
+    }
+    onCompareProducts(nextProducts)
+  }
+
+  const togglePin = (product: Product) => {
+    setPinnedIds((current) => {
+      if (current.includes(product.id)) {
+        return current.filter((id) => id !== product.id)
+      }
+      return [...current, product.id].slice(-4)
+    })
+  }
+
+  const toggleWatch = (product: Product) => {
+    const watching = watchedIds.includes(product.id)
+    setWatchedIds((current) =>
+      watching ? current.filter((id) => id !== product.id) : [...current, product.id],
+    )
+    if (!watching) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: [
+            {
+              type: 'system',
+              text: `Watching ${product.name}. A mocked price-drop alert will land in this chat.`,
+            },
+          ],
+        },
+      ])
+      window.setTimeout(() => {
+        const offer = bestOffer(product, deliveryLocations)
+        setMessages((current) => [
+          ...current,
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'ai',
+            blocks: [
+              {
+                type: 'watch',
+                product,
+                merchant: offer.merchant,
+                price: Math.max(1, Math.round(offer.price * 0.9 * 100) / 100),
+              },
+            ],
+          },
+        ])
+      }, 5000)
+    }
+  }
+
+  const startNewChat = () => {
+    setMessages([])
+    setActiveSearchMessageId(null)
+    onClear()
+  }
+
+  const messageBlockProps = {
+    deliveryLocations,
+    preferences,
+    savedSet,
+    savePendingSet,
+    pinnedSet,
+    watchedSet,
+    onOpen,
+    onToggleSave,
+    onAddCart: (product: Product) => void addCartFromChat(product),
+    onPin: togglePin,
+    onWatch: toggleWatch,
+    onDig: digIntoProduct,
+    onJustPick: chooseOne,
+    onCompareHere: compareHere,
+    onOpenSaved,
+    onOpenOrders,
+    onOpenPrefs,
+    onOpenCart,
+  }
+
+  const empty = messages.length === 0 && !query
+
+  if (empty) {
+    return (
+      <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
+        <ChatHero
+          profile={profile}
+          greeting={greeting}
+          prompts={prompts}
+          onSubmit={submit}
+          loading={loading}
+          merchants={merchants}
+          selectedMerchant={selectedMerchant}
+          merchantCounts={merchantCounts}
+          totalProductCount={totalProductCount}
+          merchantsLoading={merchantsLoading}
+          merchantsError={null}
+          onMerchant={onMerchant}
+        />
+      </main>
+    )
   }
 
   return (
-    <main className="mt-feed">
-      <ChatHero
-        profile={profile}
-        greeting={greeting}
-        prompts={prompts}
-        onSubmit={onSubmit}
-        loading={loading}
-        merchants={merchants}
-        selectedMerchant={selectedMerchant}
-        merchantCounts={merchantCounts}
-        totalProductCount={totalProductCount}
-        merchantsLoading={merchantsLoading}
-        merchantsError={merchantsError}
-        onMerchant={onMerchant}
-      />
-      {reply ? (
-        <div className="mt-reply">
-          <div className="mt-reply-av">
-            <SparkMark />
-          </div>
-          <div className="mt-reply-body">
-            <div className="mt-mono mt-reply-q">You asked: "{query}"</div>
-            <p className="mt-reply-text">{reply}</p>
-          </div>
-          <button className="mt-reply-clear mt-mono" type="button" onClick={onClear}>
-            Back to your feed
+    <main className="mt-feed mt-ct-feed">
+      <div className="mt-ct-tabs">
+        <div className="mt-ct-tabs-scroll">
+          <button className="mt-ct-tab on" type="button">
+            <SparkMark size={11} />
+            <span className="mt-ct-tab-title">{query || 'Shopping agent'}</span>
           </button>
         </div>
-      ) : null}
-      {error ? <div className="mt-search-state mt-search-state-error">{error}</div> : null}
-      {preSearch ? (
-        <SearchSuggestionPanel
-          title={suggestionTitle}
-          note={suggestionNote}
-          searches={suggestionSearches}
-          loading={loading}
-          compact={products.length > 0 || discoveryLoading}
-          onSubmit={onSubmit}
-        />
-      ) : null}
-      {preSearch && discoveryError ? (
-        <div className="mt-search-state mt-search-state-error">{discoveryError}</div>
-      ) : null}
-      {preSearch && restockItems.length > 0 ? (
-        <RestockNudges items={restockItems} onSubmit={onSubmit} />
-      ) : null}
-      <div className="mt-feed-head">
-        <h2 className="mt-feed-title">{title}</h2>
-        <span className="mt-mono mt-feed-count">{count}</span>
+        <div className="mt-ct-tabs-right">
+          <button className="mt-ct-tabtool" type="button" onClick={startNewChat}>
+            New chat
+          </button>
+        </div>
       </div>
-      {deliveryLocations.length > 0 ? (
-        <div className="mt-ship-strip">
-          <span aria-hidden>⌖</span>
-          <span>
-            Shipping to <strong>{deliveryLocationSummary(deliveryLocations)}</strong>
+      <div className="mt-ct-thread">
+        <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
+          <span className="mt-ct-av">
+            <SparkMark size={13} />
           </span>
-          {hiddenByShip > 0 ? (
+          <div className="mt-ct-meant-body">
+            <p className="mt-ct-intro">
+              I only surface products that fit your profile. I can also open your live cart,
+              orders, saved items, and preferences right here.
+            </p>
+          </div>
+        </div>
+        {messages.map((message) => (
+          <DiscoverChatMessageRow key={message.id} message={message} {...messageBlockProps} />
+        ))}
+        {error && !activeSearchMessageId ? (
+          <div className="mt-ct-system">
+            Live search is unavailable, so Meant is showing demo products for this chat.
+          </div>
+        ) : null}
+        {agentActivities.length > 0 && loading ? <AgentActivityPanel activities={agentActivities} /> : null}
+        {hasMore ? (
+          <div className="mt-load-more">
+            <button
+              className="mt-load-more-btn"
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading more' : 'Load more results'}
+            </button>
+          </div>
+        ) : null}
+        {deliveryLocations.length > 0 && hiddenByShip > 0 ? (
+          <div className="mt-ship-strip">
+            <span>
+              Shipping to <strong>{deliveryLocationSummary(deliveryLocations)}</strong>
+            </span>
             <span className="mt-ship-strip-hidden mt-mono">
               {hiddenByShip} hidden · cannot reach you
             </span>
-          ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {pinnedProducts.length > 0 ? (
+        <div className="mt-ct-tray">
+          <span className="mt-mono mt-ct-tray-label">
+            Compare tray
+            <br />
+            <span className="mt-ct-tray-note">chat picks</span>
+          </span>
+          <div className="mt-ct-tray-items">
+            {pinnedProducts.map((product) => (
+              <span className="mt-ct-tray-chip" key={product.id}>
+                <span className="mt-ct-tray-thumb">
+                  <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                </span>
+                {product.name}
+                <button
+                  className="mt-ct-tray-x"
+                  type="button"
+                  aria-label={`Remove ${product.name}`}
+                  onClick={() =>
+                    setPinnedIds((current) => current.filter((id) => id !== product.id))
+                  }
+                >
+                  <CloseIcon size={10} />
+                </button>
+              </span>
+            ))}
+            {pinnedProducts.length < 2 ? (
+              <span className="mt-ct-tray-hint">Pin one more product to compare.</span>
+            ) : null}
+          </div>
+          <button
+            className="mt-ct-tray-go"
+            type="button"
+            disabled={pinnedProducts.length < 2}
+            onClick={() => onCompareProducts(pinnedProducts)}
+          >
+            Full compare
+          </button>
+          <button className="mt-ct-tray-clear" type="button" onClick={() => setPinnedIds([])}>
+            Clear
+          </button>
         </div>
       ) : null}
-      {showAgentActivity ? <AgentActivityPanel activities={agentActivities} /> : null}
-      {(loading && products.length === 0) ||
-      (preSearch && discoveryLoading && products.length === 0) ? (
-        <ProductSearchLoading
-          label={loading ? undefined : 'Loading your saved and recent products'}
-        />
-      ) : products.length > 0 ? (
-        <>
-          {resultToolsVisible ? (
-            <ProductResultTools
-              searchText={productFilterText}
-              sortMode={productSortMode}
-              resultCount={visibleProducts.length}
-              totalCount={products.length}
-              onSearchText={setProductFilterText}
-              onSortMode={setProductSortMode}
-              onReset={resetResultTools}
-            />
-          ) : null}
-          {visibleProducts.length > 0 ? (
-            <ProductGrid
-              products={visibleProducts}
-              deliveryLocations={deliveryLocations}
-              preferences={preferences}
-              onOpen={openVisibleProduct}
-              savedSet={savedSet}
-              savePendingSet={savePendingSet}
-              onToggleSave={onToggleSave}
-              onDismiss={onDismiss}
-            />
-          ) : (
-            <div className="mt-empty mt-empty-inline">
-              <div className="mt-empty-mark">
-                <SearchIcon />
-              </div>
-              <h3 className="mt-empty-title">No products match these filters</h3>
-              <p className="mt-empty-sub">
-                Change the text search or sort mode to see the found products again.
-              </p>
-              <button className="mt-empty-btn ghost" type="button" onClick={resetResultTools}>
-                Reset filters
-              </button>
-            </div>
-          )}
-          {!preSearch && hasMore ? (
-            <div className="mt-load-more">
-              <button
-                className="mt-load-more-btn"
-                type="button"
-                onClick={onLoadMore}
-                disabled={loadingMore}
-                aria-busy={loadingMore}
-              >
-                {loadingMore ? 'Loading more' : 'Load more'}
-              </button>
-            </div>
-          ) : null}
-        </>
-      ) : merchantName ? (
-        <div className="mt-empty">
-          <div className="mt-empty-mark">
-            <MerchantIcon />
-          </div>
-          <h3 className="mt-empty-title">
-            {preSearch
-              ? `No saved or recent products on ${merchantName}`
-              : `Nothing here on ${merchantName}`}
-          </h3>
-          <p className="mt-empty-sub">
-            {preSearch
-              ? `Run a search on ${merchantName} to build this view.`
-              : `Meant has no currently loaded products from ${merchantName}. Try a search or return to all merchants.`}
-          </p>
-          <div className="mt-empty-actions">
-            <button className="mt-empty-btn ghost" type="button" onClick={() => onMerchant(null)}>
-              Search all merchants
-            </button>
-          </div>
+
+      <div className="mt-ct-dock">
+        <div className="mt-ct-dock-inner">
+          <AskComposer
+            placeholder="Ask, compare, show cart, or paste a product idea..."
+            suggestions={[]}
+            showChips={false}
+            onAsk={submit}
+            disabled={loading}
+          />
         </div>
-      ) : query ? (
-        <EmptyState
-          title="No products found"
-          sub="Try a broader search or adjust your preferences."
-          mark={<SparkMark />}
-        />
-      ) : preSearch ? (
-        <EmptyState
-          title="No product context yet"
-          sub="Run a starter search above or save products you want to revisit."
-          mark={<SparkMark />}
-        />
-      ) : null}
-      {preSearch && products.length > 0 ? (
-        <p className="mt-mono mt-feed-foot">
-          These are only your saved products and recent search results.
-        </p>
-      ) : null}
+      </div>
     </main>
   )
 }
@@ -7783,13 +8206,8 @@ export function MeantApp() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [productSearchActivities, setProductSearchActivities] = useState<AgentActivity[]>([])
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
-  const [discoveryLoading, setDiscoveryLoading] = useState(false)
-  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
-  const [popularSearches, setPopularSearches] = useState<SearchSuggestion[]>([])
-  const [popularSearchesLoading, setPopularSearchesLoading] = useState(false)
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantsLoading, setMerchantsLoading] = useState(false)
-  const [merchantsError, setMerchantsError] = useState<string | null>(null)
   const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>(
     [],
   )
@@ -7962,10 +8380,6 @@ export function MeantApp() {
     : unscopedFeedProducts
   const feedProducts = merchantScopedFeedProducts
   const hiddenByShip = baseFeed.length - shippingScopedFeedProducts.length
-  const restockInventoryItems = useMemo(
-    () => inventoryItems.filter((item) => item.restockEnabled),
-    [inventoryItems],
-  )
 
   const openProduct = useCallback((product: Product, list?: readonly Product[]) => {
     setActiveProduct(product)
@@ -8013,13 +8427,11 @@ export function MeantApp() {
   useEffect(() => {
     if (!authed) {
       setMerchants([])
-      setMerchantsError(null)
       setMerchantsLoading(false)
       return
     }
     let active = true
     setMerchantsLoading(true)
-    setMerchantsError(null)
     getMerchants()
       .then((result) => {
         if (!active) return
@@ -8028,7 +8440,6 @@ export function MeantApp() {
       .catch(() => {
         if (!active) return
         setMerchants([])
-        setMerchantsError('Could not load merchants')
       })
       .finally(() => {
         if (!active) return
@@ -8262,8 +8673,6 @@ export function MeantApp() {
         if (!active) return
         setTasteProfile(EMPTY_TASTE_PROFILE)
       })
-    setDiscoveryLoading(true)
-    setDiscoveryError(null)
     getProductDiscovery()
       .then((discovery) => {
         if (!active) return
@@ -8285,25 +8694,6 @@ export function MeantApp() {
         if (!active) return
         setSavedProducts([])
         setSavedIds([])
-        setDiscoveryError('Could not load your saved and recent products.')
-      })
-      .finally(() => {
-        if (!active) return
-        setDiscoveryLoading(false)
-      })
-    setPopularSearchesLoading(true)
-    getPopularProductSearches()
-      .then((searches) => {
-        if (!active) return
-        setPopularSearches(searches.map(searchSuggestionFromPopular))
-      })
-      .catch(() => {
-        if (!active) return
-        setPopularSearches([])
-      })
-      .finally(() => {
-        if (!active) return
-        setPopularSearchesLoading(false)
       })
     return () => {
       active = false
@@ -8331,10 +8721,6 @@ export function MeantApp() {
     searchAbortRef.current = null
     searchSuggestionsRequestRef.current += 1
     setSearchSuggestions([])
-    setDiscoveryError(null)
-    setDiscoveryLoading(false)
-    setPopularSearches([])
-    setPopularSearchesLoading(false)
     setSelectedMerchantId(null)
     setMerchantIdentityLinks([])
     setMerchantIdentityLinksError(null)
@@ -8430,22 +8816,6 @@ export function MeantApp() {
         setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       })
       .finally(() => endSaveOperation(product.id))
-  }
-
-  const dismissProduct = (product: Product) => {
-    const previousSearchResults = searchResults
-    const previousRemoteProducts = remoteProducts
-    setSearchResults((current) => current.filter((candidate) => candidate.id !== product.id))
-    setRemoteProducts((current) => current.filter((candidate) => candidate.id !== product.id))
-    void recordUserTasteBehavior({
-      behavior: 'DISMISS',
-      product: savedProductInput(product, allPreferencesRef.current),
-    })
-      .then((profile) => setTasteProfile(profile))
-      .catch(() => {
-        setSearchResults(previousSearchResults)
-        setRemoteProducts(previousRemoteProducts)
-      })
   }
 
   const commitCompareProducts = (nextIds: ProductId[], product?: Product) => {
@@ -8843,6 +9213,22 @@ export function MeantApp() {
     })
   }
 
+  const compareChatProducts = (products: readonly Product[]) => {
+    const nextProducts = products.slice(0, 4)
+    if (nextProducts.length < 2) {
+      return
+    }
+    const nextIds = nextProducts.map((product) => product.id)
+    compareIdsRef.current = nextIds
+    setCompareIds(nextIds)
+    setCompareProducts((current) => {
+      const byId = new Map(current.map((product) => [product.id, product]))
+      nextProducts.forEach((product) => byId.set(product.id, product))
+      return productSnapshotsForIds(Array.from(byId.values()), nextIds)
+    })
+    nav('compare')
+  }
+
   const checkout = async (payload: CheckoutPayload) => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const cartId = payload.items.find((item) => item.cartId)?.cartId
@@ -9058,16 +9444,11 @@ export function MeantApp() {
       case 'discover':
       default:
         return (
-          <FeedView
+          <ChatDiscoverView
             profile={liveProfile}
             greeting={greeting}
             products={feedProducts}
-            restockItems={restockInventoryItems}
             hiddenByShip={hiddenByShip}
-            discoveryLoading={discoveryLoading}
-            discoveryError={discoveryError}
-            popularSearches={popularSearches}
-            popularSearchesLoading={popularSearchesLoading}
             agentActivities={productSearchActivities}
             deliveryLocations={deliveryLocations}
             prompts={searchSuggestions}
@@ -9083,7 +9464,9 @@ export function MeantApp() {
             merchantCounts={merchantCounts}
             totalProductCount={unscopedFeedProducts.length}
             merchantsLoading={merchantsLoading}
-            merchantsError={merchantsError}
+            savedProducts={savedListProducts}
+            cart={cart}
+            orders={orders}
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
             }}
@@ -9110,7 +9493,13 @@ export function MeantApp() {
             savedSet={savedSet}
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
-            onDismiss={dismissProduct}
+            onAddProductToCart={addProductOfferToCart}
+            onFallbackAddToCart={(product, offer) => addToCart(product.id, offer.merchant)}
+            onCompareProducts={compareChatProducts}
+            onOpenSaved={() => nav('saved')}
+            onOpenOrders={() => nav('orders')}
+            onOpenPrefs={() => nav('preferences')}
+            onOpenCart={() => nav('cart')}
           />
         )
     }
@@ -9227,7 +9616,7 @@ export function MeantApp() {
         onProducts={applyAssistantProducts}
         onProductOpen={(product) => openProduct(product, [product])}
         onAddProductToCart={addProductOfferToCart}
-        hidden={Boolean(activeProduct)}
+        hidden={view === 'discover' || Boolean(activeProduct)}
       />
       <span className="mt-cart-count-debug" aria-hidden>
         {cartCount}
