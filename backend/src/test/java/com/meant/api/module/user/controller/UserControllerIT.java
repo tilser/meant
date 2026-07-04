@@ -33,8 +33,10 @@ import com.meant.api.module.user.repository.UserProductSearchRepository;
 import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserProductSearchHashService;
 import com.meant.api.module.user.service.UserSettingsService;
+import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
@@ -84,6 +86,12 @@ class UserControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private UserSettingsService userSettingsService;
+
+    @Autowired
+    private UserInventoryService userInventoryService;
+
+    @Autowired
+    private UserTasteProfileService userTasteProfileService;
 
     @Autowired
     private UserProductSearchHashService userProductSearchHashService;
@@ -863,8 +871,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        String profileHash = userProductSearchHashService.profileHash(settings);
+        String profileHash = searchProfileHash(id, profileCommand);
         Instant now = Instant.now();
         String productKey = "merchant.example:tee";
         String productHash = "hash-tee";
@@ -922,8 +929,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        String profileHash = userProductSearchHashService.profileHash(settings);
+        String profileHash = searchProfileHash(id, profileCommand);
         Instant now = Instant.now();
 
         UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
@@ -1008,8 +1014,6 @@ class UserControllerIT extends PostgresIntegrationTest {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        String profileHash = userProductSearchHashService.profileHash(settings);
         Instant now = Instant.now();
         String productKey = "merchant.example:organic-tee";
 
@@ -1059,6 +1063,7 @@ class UserControllerIT extends PostgresIntegrationTest {
                 .expectStatus().isOk();
 
         // The recent twin (same productKey) DOES match "organic", so it must still surface.
+        String profileHash = searchProfileHash(id, profileCommand);
         UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
                 id,
                 "organic basics",
@@ -1103,8 +1108,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        String profileHash = userProductSearchHashService.profileHash(settings);
+        String profileHash = searchProfileHash(id, profileCommand);
         Instant now = Instant.now();
 
         UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
@@ -1268,6 +1272,15 @@ class UserControllerIT extends PostgresIntegrationTest {
                 List.of(),
                 "high",
                 "deterministic"
+        );
+    }
+
+    private String searchProfileHash(UUID userId, EnsureUserProfileCommand profileCommand) {
+        UserSettingsResult settings = userSettingsService.get(profileCommand);
+        return userProductSearchHashService.searchProfileHash(
+                settings,
+                userInventoryService.inventoryProfileHash(userId),
+                userTasteProfileService.profile(userId, settings).profileHash()
         );
     }
 

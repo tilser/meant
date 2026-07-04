@@ -149,9 +149,9 @@ public class UserProductSearchPersistenceService {
         }
         Map<UUID, Integer> searchOrder = new LinkedHashMap<>();
         Map<UUID, UserProductSearch> searchesById = new LinkedHashMap<>();
-        for (int index = 0; index < searches.size(); index++) {
-            UserProductSearch search = searches.get(index);
-            searchOrder.put(search.getId(), index);
+        int searchIndex = 0;
+        for (UserProductSearch search : searches) {
+            searchOrder.put(search.getId(), searchIndex++);
             searchesById.put(search.getId(), search);
         }
         Map<UUID, List<UserProductSearchResultItem>> itemsBySearchId = userProductSearchResultItemRepository
@@ -175,11 +175,14 @@ public class UserProductSearchPersistenceService {
                     null,
                     null
             );
-            recentProducts.forEach(product -> {
+            for (UserProductSearchProductResult product : recentProducts) {
                 if (products.size() < productLimit) {
                     products.putIfAbsent(product.productKey(), product);
                 }
-            });
+                if (products.size() >= productLimit) {
+                    break;
+                }
+            }
             if (products.size() >= productLimit) {
                 break;
             }
@@ -716,12 +719,13 @@ public class UserProductSearchPersistenceService {
             return List.of();
         }
         List<UserProductRecommendationFilterMatch> matches = new ArrayList<>();
-        for (int index = 0; index < filterIds.size(); index++) {
+        int index = 1;
+        for (String filterId : filterIds) {
             matches.add(UserProductRecommendationFilterMatch.create(
                     explanationId,
-                    filterIds.get(index),
+                    filterId,
                     matchType,
-                    index + 1,
+                    index++,
                     now
             ));
         }
