@@ -340,7 +340,7 @@ public class UserTasteProfileService {
                         now
                 );
             } else {
-                signal.reinforce(
+                signal = signal.reinforce(
                         mutation.label(),
                         mutation.behavior(),
                         mutation.weight(),

@@ -159,6 +159,9 @@ public class UserInventoryService {
 
     @Transactional
     public void importPurchasedItems(@NotNull @Valid ImportPurchasedInventoryItemsCommand command) {
+        if (command.items().isEmpty()) {
+            return;
+        }
         Instant now = Instant.now();
         long itemCount = userInventoryItemRepository.countByUserId(command.userId());
         int quota = userCollectionProperties.inventory().quota();
