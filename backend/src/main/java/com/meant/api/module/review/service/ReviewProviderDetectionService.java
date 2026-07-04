@@ -22,6 +22,8 @@ public class ReviewProviderDetectionService {
     );
     private static final List<Pattern> YOTPO_ACCOUNT_PATTERNS = List.of(
             Pattern.compile("staticw2\\.yotpo\\.com/([A-Za-z0-9_-]+)/widget\\.js", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("cdn-widgetsrepository\\.yotpo\\.com/v1/loader/([A-Za-z0-9_-]+)",
+                    Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\\\?\"yotpoStoreId\\\\?\"\\s*:\\s*\\\\?\"([A-Za-z0-9_-]+)\\\\?\"",
                     Pattern.CASE_INSENSITIVE)
     );
@@ -36,6 +38,8 @@ public class ReviewProviderDetectionService {
             "yotpoStoreId",
             "MetafieldYotpoRating",
             "MetafieldYotpoCount",
+            "data-yotpo-product-id",
+            "yotpo-reviews-section-data",
             "yotpo-widget",
             "yotpo-main-widget"
     );

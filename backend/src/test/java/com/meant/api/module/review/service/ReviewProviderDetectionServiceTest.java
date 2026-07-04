@@ -73,6 +73,26 @@ class ReviewProviderDetectionServiceTest {
     }
 
     @Test
+    void detectsYotpoWidgetRepositoryLoader() {
+        ReviewProviderDetectionResult result = detectionService.detect(
+                "https://www.spigen.com/products/macbook-air-series-thin-fit",
+                """
+                        <script type="text/javascript"
+                          src="https://cdn-widgetsrepository.yotpo.com/v1/loader/ySssVow4bkeHaw3pnMFNoguTDbxb1DlsLc9cV6pD?languageCode=en"
+                          async></script>
+                        <div class="yotpo-widget-instance"
+                          data-yotpo-instance-id="539171"
+                          data-yotpo-product-id="7406592065583"></div>
+                        """
+        );
+
+        assertThat(result.provider()).isEqualTo(ReviewProviderType.YOTPO);
+        assertThat(result.status()).isEqualTo(ReviewProviderStatus.DETECTED);
+        assertThat(result.providerKey()).isEqualTo("ySssVow4bkeHaw3pnMFNoguTDbxb1DlsLc9cV6pD");
+        assertThat(result.evidence()).contains("data-yotpo-product-id");
+    }
+
+    @Test
     void doesNotClassifyGenericKlaviyoOnsiteReviewTrackingAsKlaviyoReviews() {
         ReviewProviderDetectionResult result = detectionService.detect(
                 "https://merchant.example",
