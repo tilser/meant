@@ -17,6 +17,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -62,7 +64,7 @@ public class DiscountCodeWebSearchService {
             DiscountCodeWebSearchResponse parsed = parseResponse(response);
             return normalizationService.normalize(
                     parsed.codes().stream()
-                            .filter(candidate -> candidate != null)
+                            .filter(Objects::nonNull)
                             .map(DiscountCodeWebSearchService::toCandidate)
                             .toList(),
                     properties.maxCandidates()

@@ -45,15 +45,6 @@ public class ReviewController {
             @Parameter(description = "Review pagination offset.")
             @RequestParam(defaultValue = "0") Integer offset
     ) {
-        return getProductReviewsResponse(merchantId, productId, limit, offset);
-    }
-
-    private ProductReviewsResponse getProductReviewsResponse(
-            UUID merchantId,
-            String productId,
-            Integer limit,
-            Integer offset
-    ) {
         return ProductReviewsResponse.from(reviewService.getProductReviews(new GetProductReviewsQuery(
                 merchantId,
                 productId,
