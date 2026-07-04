@@ -210,6 +210,7 @@ export function DiscoverChatMessageRow({
   shelfMessageSet,
   shelfProductSet,
   flash,
+  celebrateArrival,
   onOpen,
   onToggleSave,
   onAddCart,
@@ -247,6 +248,7 @@ export function DiscoverChatMessageRow({
   shelfMessageSet: ReadonlySet<string>
   shelfProductSet: ReadonlySet<ProductId>
   flash: boolean
+  celebrateArrival: boolean
   onOpen: (product: Product, products?: readonly Product[]) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
@@ -318,7 +320,7 @@ export function DiscoverChatMessageRow({
 
   return (
     <div
-      className={`mt-ct-msg mt-ct-meant ${flash ? 'flash' : ''}`}
+      className={`mt-ct-msg mt-ct-meant ${flash ? 'flash' : ''} ${celebrateArrival ? 'mt-ct-arrival' : ''}`}
       data-mid={message.id}
       draggable
       onDragStart={(event) => onDragMessage(event, message)}

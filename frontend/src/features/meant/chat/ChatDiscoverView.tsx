@@ -828,6 +828,7 @@ export function ChatDiscoverView({
     threadId: string
     messageId: string
   } | null>(null)
+  const [arrivalMessageId, setArrivalMessageId] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [pinnedIds, setPinnedIds] = useStoredState<ProductId[]>('meant.chatPinned', [])
   const [trayClearing, setTrayClearing] = useState(false)
@@ -992,14 +993,26 @@ export function ChatDiscoverView({
     }
     const messageCountIncreased = messages.length > previousMessageCountRef.current
     const activeThreadChanged = activeThreadIdSafe !== previousActiveThreadIdRef.current
-    if (activeThreadChanged && messages.length > 0) {
-      scrollChatToBottom()
+    if (activeThreadChanged) {
+      if (messages.length > 0) {
+        scrollChatToBottom()
+      }
+      setArrivalMessageId(null)
     } else if (messageCountIncreased) {
       scrollChatToBottom()
+      let nextArrivalMessageId: string | null = null
+      for (let index = messages.length - 1; index >= previousMessageCountRef.current; index -= 1) {
+        const message = messages[index]
+        if (message?.role === 'ai') {
+          nextArrivalMessageId = message.id
+          break
+        }
+      }
+      setArrivalMessageId(nextArrivalMessageId)
     }
     previousMessageCountRef.current = messages.length
     previousActiveThreadIdRef.current = activeThreadIdSafe
-  }, [activeThreadIdSafe, messages.length, scrollChatToBottom])
+  }, [activeThreadIdSafe, messages, scrollChatToBottom])
 
   useEffect(
     () => () => {
@@ -1812,6 +1825,7 @@ export function ChatDiscoverView({
             key={message.id}
             message={message}
             flash={shelfFlashMessageId === message.id}
+            celebrateArrival={arrivalMessageId === message.id}
             {...messageBlockProps}
           />
         ))}
