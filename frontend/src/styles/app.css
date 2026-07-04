@@ -522,8 +522,9 @@
 
 .mt-ct-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
 }
 
 .mt-ct-prod {
@@ -535,19 +536,138 @@
 
 .mt-ct-prod .mt-card {
   height: 100%;
+  border-radius: 14px;
+}
+
+.mt-ct-prod .mt-card-media {
+  height: 124px;
+  overflow: hidden;
+  aspect-ratio: auto;
+  background: var(--line-soft);
+}
+
+.mt-ct-prod .mt-product-img,
+.mt-ct-prod .mt-ph {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mt-ct-prod .mt-card-cat {
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 64px);
+  padding: 3px 7px;
+  font-size: 8.5px;
+}
+
+.mt-ct-prod .mt-card-ring {
+  top: 7px;
+  right: 7px;
+  transform: scale(0.84);
+  transform-origin: top right;
+}
+
+.mt-ct-prod .mt-save,
+.mt-ct-prod .mt-dismiss {
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.mt-ct-prod .mt-save {
+  right: 8px;
+}
+
+.mt-ct-prod .mt-dismiss {
+  left: 8px;
+}
+
+.mt-ct-prod .mt-card-body {
+  padding: 10px 11px 12px;
+}
+
+.mt-ct-prod .mt-card-brand {
+  overflow: hidden;
+  margin-bottom: 4px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-ct-prod .mt-inv-signal.compact {
+  max-width: 100%;
+  margin-bottom: 6px;
+  padding: 3px 7px;
+  font-size: 9.5px;
+}
+
+.mt-ct-prod .mt-card-name {
+  display: -webkit-box;
+  min-height: 34px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.mt-ct-prod .mt-card .mt-chips,
+.mt-ct-prod .mt-catalog-pills {
+  gap: 4px;
+  max-height: 24px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.mt-ct-prod .mt-chip-sm,
+.mt-ct-prod .mt-catalog-pill {
+  max-width: 100%;
+  padding: 3px 6px;
+  font-size: 9.5px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+}
+
+.mt-ct-prod .mt-card-foot {
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.mt-ct-prod .mt-card-price {
+  gap: 4px;
+  font-size: 14.5px;
+}
+
+.mt-ct-prod .mt-was-price,
+.mt-ct-prod .mt-card-from,
+.mt-ct-prod .mt-card-stores {
+  font-size: 9.5px;
+}
+
+.mt-ct-prod .mt-card-rating {
+  min-height: 15px;
+  margin-top: 5px;
+  font-size: 9.5px;
+}
+
+.mt-ct-prod .mt-card-note {
+  display: none;
 }
 
 .mt-ct-actionrow,
 .mt-ct-askbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 7px;
 }
 
 .mt-ct-askbar {
   align-items: center;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .mt-ct-askbar-lead {
@@ -597,6 +717,21 @@
 .mt-ct-cart-checkout,
 .mt-ct-tray-mini {
   padding: 7px 11px;
+}
+
+.mt-ct-prod .mt-ct-addbtn,
+.mt-ct-prod .mt-ct-pinbtn,
+.mt-ct-prod .mt-ct-watchbtn,
+.mt-ct-prod .mt-ct-askchip {
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 10.5px;
+}
+
+.mt-ct-prod .mt-ct-addbtn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .mt-ct-addbtn,
@@ -1577,6 +1712,16 @@
   opacity: 0.45;
 }
 
+@media (max-width: 980px) {
+  .mt-ct-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mt-ct-prod .mt-card-media {
+    height: 146px;
+  }
+}
+
 @media (max-width: 720px) {
   .mt-ct-feed {
     padding-inline: 18px;
@@ -1585,6 +1730,10 @@
   .mt-ct-grid,
   .mt-ct-mini2-grid {
     grid-template-columns: 1fr;
+  }
+
+  .mt-ct-prod .mt-card-media {
+    height: 180px;
   }
 
   .mt-ct-tabs,
