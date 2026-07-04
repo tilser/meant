@@ -197,7 +197,7 @@ function searchProductCategory(
     return catalogCategory
   }
 
-  const category = product.matchedFilterIds
+  const category = (product.matchedFilterIds ?? [])
     .map((id) => preferences.find((preference) => preference.id === id)?.category)
     .find(Boolean)
 
@@ -242,6 +242,8 @@ export function productFromSearchResult(
   const ratingScore = normalizeRatingScore(product.ratingScore)
   const reviewCount = Math.max(0, product.reviewCount ?? 0)
   const candidate = agentStage === 'candidate'
+  const matchedFilterIds = product.matchedFilterIds ?? []
+  const missedFilterIds = product.missedFilterIds ?? []
   const baseProduct: Product = {
     id: product.productKey,
     productHash: product.productHash,
@@ -263,8 +265,8 @@ export function productFromSearchResult(
     priceFrom: price,
     listPrice,
     merchants: 1,
-    satisfies: product.matchedFilterIds,
-    misses: product.missedFilterIds,
+    satisfies: matchedFilterIds,
+    misses: missedFilterIds,
     note: product.whyMeantForYou || detail,
     pros: [],
     cons: [],

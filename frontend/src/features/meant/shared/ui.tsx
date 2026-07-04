@@ -86,7 +86,7 @@ export function ProductArtwork({
     product.imageUrl?.trim() ||
     product.media
       ?.filter((item) => item.type.toLowerCase() === 'image')
-      .map((item) => item.url.trim())
+      .map((item) => item.url?.trim() ?? '')
       .find(Boolean)
   if (artworkUrl) {
     return <img className="mt-product-img" src={artworkUrl} alt="" loading="lazy" />

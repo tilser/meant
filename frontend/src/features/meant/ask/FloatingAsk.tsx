@@ -433,7 +433,7 @@ export function FloatingAsk({
           if (controller.signal.aborted || !mountedRef.current) {
             return
           }
-          const products = event.products.map((product) =>
+          const products = (event.products ?? []).map((product) =>
             productFromSearchResult(product, preferences),
           )
           updateStreamingMessage((message) => ({

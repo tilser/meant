@@ -1379,8 +1379,12 @@ export function ChatDiscoverView({
     const offer = bestOffer(product, deliveryLocations)
     const synced = offerCartable(offer)
     if (synced) {
-      const added = await onAddProductToCart(product, offer)
-      if (!added) {
+      try {
+        const added = await onAddProductToCart(product, offer)
+        if (!added) {
+          onFallbackAddToCart(product, offer)
+        }
+      } catch {
         onFallbackAddToCart(product, offer)
       }
     } else {
@@ -1413,9 +1417,13 @@ export function ChatDiscoverView({
     }
     const merchantOffer = product.offers.find((offer) => offer.merchant === merchant)
     if (merchantOffer && offerCartable(merchantOffer)) {
-      const added = await onAddProductToCart(product, merchantOffer)
-      if (added) {
-        return
+      try {
+        const added = await onAddProductToCart(product, merchantOffer)
+        if (added) {
+          return
+        }
+      } catch {
+        // Fall back to the local cart path below.
       }
       onFallbackAddToCart(product, merchantOffer)
       return

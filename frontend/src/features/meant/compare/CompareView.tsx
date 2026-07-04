@@ -52,7 +52,7 @@ export function CompareView({
   const comparisonPreferenceIds = preferences
     .map((preference) => preference.id)
     .filter((id) =>
-      items.some((product) => product.satisfies.includes(id) || product.misses.includes(id)),
+      items.some((product) => product.satisfies?.includes(id) || product.misses?.includes(id)),
     )
   const meantTake = (product: Product) => productCuratedFields(product, preferences).note
 
