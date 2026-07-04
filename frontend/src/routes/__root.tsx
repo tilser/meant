@@ -36,7 +36,9 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       </head>
       <body>
         {children}
-        <TanStackRouterDevtools position="bottom-right" />
+        <div className="mt-router-devtools">
+          <TanStackRouterDevtools position="bottom-right" />
+        </div>
         <Scripts />
       </body>
     </html>

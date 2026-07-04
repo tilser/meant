@@ -4770,6 +4770,23 @@ function copyTextToClipboard(value: string): void {
   void navigator.clipboard.writeText(text).catch(() => undefined)
 }
 
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+    const matcher = window.matchMedia(query)
+    const update = () => setMatches(matcher.matches)
+    update()
+    matcher.addEventListener('change', update)
+    return () => matcher.removeEventListener('change', update)
+  }, [query])
+
+  return matches
+}
+
 function DiscoverChatProduct({
   product,
   index,
@@ -4956,12 +4973,41 @@ function DiscoverProductBatch({
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
+  const isPhone = useMediaQuery('(max-width: 720px)')
   const [page, setPage] = useState(0)
-  const pageSize = 4
+  const [phoneIndex, setPhoneIndex] = useState(0)
+  const carouselRef = useRef<HTMLDivElement | null>(null)
+  const pageSize = isPhone ? Math.max(products.length, 1) : 4
   const pageCount = Math.max(1, Math.ceil(products.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
-  const pageProducts = products.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
-  const many = products.length > pageSize
+  const pageProducts = isPhone
+    ? products
+    : products.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
+  const many = !isPhone && products.length > pageSize
+  const phoneMany = isPhone && products.length > 1
+  const scrollPhoneCarousel = (direction: -1 | 1) => {
+    const nextIndex = Math.min(products.length - 1, Math.max(0, phoneIndex + direction))
+    setPhoneIndex(nextIndex)
+    const target = carouselRef.current?.children.item(nextIndex)
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+    }
+  }
+  const syncPhoneCarouselIndex = () => {
+    const scroller = carouselRef.current
+    const first = scroller?.firstElementChild
+    if (!isPhone || !scroller || !(first instanceof HTMLElement)) {
+      return
+    }
+    const gap = Number.parseFloat(window.getComputedStyle(scroller).columnGap || '0') || 0
+    const stride = first.offsetWidth + gap
+    if (stride <= 0) {
+      return
+    }
+    setPhoneIndex(
+      Math.min(products.length - 1, Math.max(0, Math.round(scroller.scrollLeft / stride))),
+    )
+  }
   const renderPager = () =>
     many ? (
       <div className="mt-ct-pager">
@@ -4988,8 +5034,39 @@ function DiscoverProductBatch({
         </button>
       </div>
     ) : null
+  const renderPhonePager = () =>
+    phoneMany ? (
+      <div className="mt-ct-swipe-nav" aria-label="Product carousel">
+        <span className="mt-mono mt-ct-swipe-hint">Swipe</span>
+        <button
+          className="mt-ct-pager-btn mt-ct-swipe-btn"
+          type="button"
+          disabled={phoneIndex === 0}
+          aria-label="Previous product"
+          onClick={() => scrollPhoneCarousel(-1)}
+        >
+          <ChevronIcon direction="left" size={15} />
+        </button>
+        <span className="mt-mono mt-ct-swipe-count">
+          {phoneIndex + 1}/{products.length}
+        </span>
+        <button
+          className="mt-ct-pager-btn mt-ct-swipe-btn"
+          type="button"
+          disabled={phoneIndex >= products.length - 1}
+          aria-label="Next product"
+          onClick={() => scrollPhoneCarousel(1)}
+        >
+          <ChevronIcon direction="right" size={15} />
+        </button>
+      </div>
+    ) : null
 
-  useEffect(() => setPage(0), [query, products])
+  useEffect(() => {
+    setPage(0)
+    setPhoneIndex(0)
+    carouselRef.current?.scrollTo({ left: 0 })
+  }, [isPhone, query, products])
 
   if (products.length === 0) {
     return null
@@ -5005,13 +5082,19 @@ function DiscoverProductBatch({
             : ''}
         </div>
         {renderPager()}
+        {renderPhonePager()}
       </div>
-      <div className="mt-ct-grid">
+      <div
+        ref={carouselRef}
+        className={`mt-ct-grid${isPhone ? ' phone-swipe' : ''}`}
+        aria-label={isPhone ? 'Swipe through products' : undefined}
+        onScroll={syncPhoneCarouselIndex}
+      >
         {pageProducts.map((product, index) => (
           <DiscoverChatProduct
             key={product.id}
             product={product}
-            index={index}
+            index={isPhone ? index % 4 : index}
             deliveryLocations={deliveryLocations}
             preferences={preferences}
             savedSet={savedSet}
