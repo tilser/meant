@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.plugin.signing.PublicSigningKey;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.net.URI;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -13,11 +14,22 @@ import java.util.Objects;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record AgentProfile(
-        @JsonProperty("profile_url") URI profileUrl,
-        @JsonProperty("protocol_version") String protocolVersion,
-        @JsonProperty("supported_versions") Map<String, String> supportedVersions,
-        @JsonProperty("signing_key_id") String signingKeyId,
-        @JsonProperty("signing_keys") List<PublicSigningKey> signingKeys,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @JsonProperty("profile_url")
+        URI profileUrl,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @JsonProperty("protocol_version")
+        String protocolVersion,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @JsonProperty("supported_versions")
+        Map<String, String> supportedVersions,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @JsonProperty("signing_key_id")
+        String signingKeyId,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @JsonProperty("signing_keys")
+        List<PublicSigningKey> signingKeys,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<CapabilityAdvertisement> capabilities
 ) {
 

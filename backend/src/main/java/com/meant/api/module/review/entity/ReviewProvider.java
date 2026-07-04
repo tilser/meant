@@ -122,4 +122,15 @@ public class ReviewProvider {
             this.productIdType = ReviewProductIdType.UNKNOWN;
         }
     }
+
+    public void claimDiscoveryLease(String merchantDomain, Instant claimExpiresAt, Instant claimedAt) {
+        this.merchantDomain = merchantDomain;
+        this.status = ReviewProviderStatus.FAILED_RETRYABLE;
+        this.nextCheckAt = claimExpiresAt;
+        this.errorMessage = null;
+        this.updatedAt = claimedAt;
+        if (this.provider == null) {
+            this.provider = ReviewProviderType.UNKNOWN;
+        }
+    }
 }

@@ -20,8 +20,10 @@ import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -89,14 +91,105 @@ public class DiscountCodeValidationService {
                 safeNonNullList(command.items()).stream()
                         .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
                         .toList(),
-                command.buyerIdentity(),
-                safeNonNullList(command.deliveryAddressesToAdd()),
-                safeNonNullList(command.deliveryAddressesToReplace()),
-                safeNonNullList(command.selectedDeliveryOptions()),
+                buyerIdentity(command.buyerIdentity()),
+                deliveryAddresses(command.deliveryAddressesToAdd()),
+                deliveryAddresses(command.deliveryAddressesToReplace()),
+                deliveryOptions(command.selectedDeliveryOptions()),
                 List.of(code),
                 List.of(),
                 null
         );
+    }
+
+    private Map<String, Object> buyerIdentity(SearchDiscountCodesCommand.BuyerIdentity source) {
+        if (source == null) {
+            return null;
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        put(values, "email", source.email());
+        put(values, "phone_number", source.phoneNumber());
+        put(values, "first_name", source.firstName());
+        put(values, "last_name", source.lastName());
+        put(values, "country_code", source.countryCode());
+        return emptyToNull(values);
+    }
+
+    private List<Map<String, Object>> deliveryAddresses(
+            List<SearchDiscountCodesCommand.DeliveryAddressSelection> sources
+    ) {
+        return safeNonNullList(sources).stream()
+                .map(this::deliveryAddress)
+                .filter(values -> !values.isEmpty())
+                .toList();
+    }
+
+    private Map<String, Object> deliveryAddress(SearchDiscountCodesCommand.DeliveryAddressSelection source) {
+        if (source == null) {
+            return Map.of();
+        }
+        SearchDiscountCodesCommand.DeliveryAddress address = source.deliveryAddress();
+        Map<String, Object> values = new LinkedHashMap<>();
+        put(values, "id", source.id());
+        put(values, "selected", source.selected());
+        put(values, "first_name", firstText(source.firstName(), address == null ? null : address.firstName()));
+        put(values, "last_name", firstText(source.lastName(), address == null ? null : address.lastName()));
+        put(values, "phone_number", firstText(source.phoneNumber(), address == null ? null : address.phoneNumber()));
+        put(values, "street_address", firstText(source.streetAddress(), address == null ? null : address.streetAddress()));
+        put(values, "extended_address", firstText(source.extendedAddress(), address == null ? null : address.extendedAddress()));
+        put(values, "address_locality", firstText(source.city(), address == null ? null : address.city()));
+        put(values, "address_region", firstText(source.provinceCode(), address == null ? null : address.provinceCode()));
+        put(values, "postal_code", firstText(source.postalCode(), address == null ? null : address.postalCode()));
+        put(values, "address_country", firstText(source.countryCode(), address == null ? null : address.countryCode()));
+        return values;
+    }
+
+    private List<Map<String, Object>> deliveryOptions(
+            List<SearchDiscountCodesCommand.DeliveryOptionSelection> sources
+    ) {
+        return safeNonNullList(sources).stream()
+                .map(this::deliveryOption)
+                .filter(values -> !values.isEmpty())
+                .toList();
+    }
+
+    private Map<String, Object> deliveryOption(SearchDiscountCodesCommand.DeliveryOptionSelection source) {
+        if (source == null) {
+            return Map.of();
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        put(values, "group_id", firstText(source.groupId(), source.deliveryGroupId(), source.id()));
+        put(values, "option_handle", firstText(
+                source.optionHandle(),
+                source.deliveryOptionHandle(),
+                source.selectedOptionId()
+        ));
+        return values;
+    }
+
+    private Map<String, Object> emptyToNull(Map<String, Object> values) {
+        return values.isEmpty() ? null : values;
+    }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private void put(Map<String, Object> destination, String key, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        destination.put(key, value);
+    }
+
+    private void put(Map<String, Object> destination, String key, Boolean value) {
+        if (value != null) {
+            destination.put(key, value);
+        }
     }
 
     private DiscountCodeCandidateEvaluation evaluation(

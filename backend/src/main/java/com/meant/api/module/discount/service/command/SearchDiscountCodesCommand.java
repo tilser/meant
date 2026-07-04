@@ -7,7 +7,6 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record SearchDiscountCodesCommand(
@@ -17,10 +16,11 @@ public record SearchDiscountCodesCommand(
         String merchantDomain,
         @NotEmpty
         List<@Valid Item> items,
-        Map<String, Object> buyerIdentity,
-        List<Map<String, Object>> deliveryAddressesToAdd,
-        List<Map<String, Object>> deliveryAddressesToReplace,
-        List<Map<String, Object>> selectedDeliveryOptions
+        @Valid
+        BuyerIdentity buyerIdentity,
+        List<@Valid DeliveryAddressSelection> deliveryAddressesToAdd,
+        List<@Valid DeliveryAddressSelection> deliveryAddressesToReplace,
+        List<@Valid DeliveryOptionSelection> selectedDeliveryOptions
 ) {
 
     @AssertTrue(message = "merchantId or merchantDomain is required")
@@ -34,6 +34,55 @@ public record SearchDiscountCodesCommand(
             @NotNull
             @Positive
             Integer quantity
+    ) {
+    }
+
+    public record BuyerIdentity(
+            String email,
+            String phoneNumber,
+            String firstName,
+            String lastName,
+            String countryCode
+    ) {
+    }
+
+    public record DeliveryAddressSelection(
+            String id,
+            Boolean selected,
+            @Valid
+            DeliveryAddress deliveryAddress,
+            String firstName,
+            String lastName,
+            String phoneNumber,
+            String streetAddress,
+            String extendedAddress,
+            String city,
+            String provinceCode,
+            String postalCode,
+            String countryCode
+    ) {
+    }
+
+    public record DeliveryAddress(
+            String firstName,
+            String lastName,
+            String phoneNumber,
+            String streetAddress,
+            String extendedAddress,
+            String city,
+            String provinceCode,
+            String postalCode,
+            String countryCode
+    ) {
+    }
+
+    public record DeliveryOptionSelection(
+            String id,
+            String groupId,
+            String deliveryGroupId,
+            String optionHandle,
+            String deliveryOptionHandle,
+            String selectedOptionId
     ) {
     }
 }

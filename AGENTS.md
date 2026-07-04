@@ -100,6 +100,8 @@ Controller DTOs must live in:
 - `controller.request`
 - `controller.response`
 
+Public controller request and response DTOs must include Swagger/OpenAPI `@Schema` annotations on the record and meaningful record components so frontend clients can generate useful request and response types. Every public controller request/response field must set `requiredMode = Schema.RequiredMode.REQUIRED` or `requiredMode = Schema.RequiredMode.NOT_REQUIRED` explicitly.
+
 Controllers must map request DTOs into command or query records before calling services.
 
 Services must only accept command or query records when caller-supplied input is required. Do not pass controller request DTOs into services.
@@ -165,6 +167,8 @@ Spring `@ConfigurationProperties` classes should be Java records, live in the mo
 Prefer simple, direct conversions. For example, if an API numeric value is represented as `Double` and the database field is `Integer`, null-check it and use `value.intValue()` when that matches the API shape.
 
 Do not parse data only to serialize it back into the same storage format. If a dataset field is stored as raw text and the application does not use it structurally, keep it as the original string instead of creating DTOs, parsing it, and writing it back to JSON.
+
+Do not use `Object`, raw maps, or wildcard JSON bags in controller request/response DTOs, service commands, service queries, or service DTOs. Model payloads with concrete records/classes and typed fields. Use `Object` only at unavoidable generic transport or JSON adapter boundaries, and keep those conversions isolated from module request flow.
 
 Avoid generic runtime exceptions in module code. Create module-specific exceptions in the module `exception` package and extend `RuntimeException` when a custom exception is needed.
 

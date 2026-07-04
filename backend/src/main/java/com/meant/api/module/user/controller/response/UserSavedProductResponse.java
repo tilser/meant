@@ -1,32 +1,56 @@
 package com.meant.api.module.user.controller.response;
 
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 
 public record UserSavedProductResponse(
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String id,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String productHash,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String name,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String brand,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String category,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String tone,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String imageUrl,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String productUrl,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         boolean remote,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int match,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         double priceFrom,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int merchants,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> satisfies,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> misses,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String note,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> pros,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> cons,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Review review,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<Offer> offers,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String needs,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> provides,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant updatedAt
 ) {
 
@@ -59,8 +83,11 @@ public record UserSavedProductResponse(
     }
 
     public record Review(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             double score,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int count,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String insight
     ) {
 
@@ -70,13 +97,21 @@ public record UserSavedProductResponse(
     }
 
     public record Offer(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String merchant,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             double price,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String delivery,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String merchantId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String merchantDomain,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String productVariantId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String variantTitle,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             Boolean available
     ) {
 

@@ -1,10 +1,13 @@
 package com.meant.api.module.user.controller.response;
 
 import com.meant.api.module.user.service.dto.UserProductDiscoveryResult;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 public record UserProductDiscoveryResponse(
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<UserSavedProductResponse> savedProducts,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<UserProductSearchProductResponse> recentProducts
 ) {
 

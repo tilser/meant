@@ -28,11 +28,11 @@ public class HealthController {
 
     @Schema(name = "HealthResponse", description = "Current API health status.")
     public record HealthResponse(
-            @Schema(description = "Service name.", example = "Meant API")
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Service name.", example = "Meant API")
             String service,
-            @Schema(description = "Service status.", example = "ok")
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Service status.", example = "ok")
             String status,
-            @Schema(description = "Response timestamp.")
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Response timestamp.")
             Instant timestamp
     ) {
     }

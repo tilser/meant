@@ -2,6 +2,7 @@ package com.meant.api.plugin.spi;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,15 +11,27 @@ import java.util.Objects;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CapabilityAdvertisement(
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         CapabilityId id,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String version,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<String> tools,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         boolean required,
-        @JsonProperty("protocol_versions") ProtocolVersions protocolVersions,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @JsonProperty("protocol_versions")
+        ProtocolVersions protocolVersions,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Requirements requires,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         URI spec,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         URI schema,
-        @JsonProperty("extends") List<CapabilityId> extendsCapabilities,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @JsonProperty("extends")
+        List<CapabilityId> extendsCapabilities,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Map<String, Object> config
 ) {
 
@@ -92,7 +105,9 @@ public record CapabilityAdvertisement(
     }
 
     public record ProtocolVersions(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String min,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String max
     ) {
 
@@ -107,8 +122,12 @@ public record CapabilityAdvertisement(
     }
 
     public record Requirements(
-            @JsonProperty("required_capabilities") List<CapabilityId> requiredCapabilities,
-            @JsonProperty("optional_capabilities") List<CapabilityId> optionalCapabilities
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @JsonProperty("required_capabilities")
+            List<CapabilityId> requiredCapabilities,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @JsonProperty("optional_capabilities")
+            List<CapabilityId> optionalCapabilities
     ) {
 
         public Requirements {

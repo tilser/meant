@@ -5,58 +5,108 @@ import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;
 
 public record MerchantSemanticProductResponse(
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         UUID merchantId,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String merchantDomain,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String merchantName,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String endpoint,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int merchantRank,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         double merchantSemanticScore,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         double merchantRerankScore,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String productId,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String title,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String descriptionHtml,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String url,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String imageUrl,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Long priceMinAmount,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Long priceMaxAmount,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String priceCurrency,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Long listPriceAmount,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String listPriceCurrency,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Double ratingScore,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Integer reviewCount,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductMediaResponse> media,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductCategoryResponse> categories,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> certifications,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> materials,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> skus,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> collections,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductAttributeResponse> attributes,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Boolean available,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String detailError,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String detailDescription,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String detailImageUrl,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductImageResponse> detailImages,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductOptionResponse> detailOptions,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String detailPriceMin,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String detailPriceMax,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String detailPriceCurrency,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Integer totalVariants,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Boolean requiresSellingPlan,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<Object> sellingPlanGroups,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantId,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantTitle,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductSelectedOptionResponse> selectedOptions,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantPriceAmount,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantPriceCurrency,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantImageUrl,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantImageAltText,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Boolean selectedVariantAvailable,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int catalogRank,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         double productRerankScore,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int rank
 ) {
 
@@ -115,8 +165,11 @@ public record MerchantSemanticProductResponse(
     }
 
     public record ProductMediaResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String type,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String url,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String altText
     ) {
 
@@ -126,7 +179,9 @@ public record MerchantSemanticProductResponse(
     }
 
     public record ProductCategoryResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String value,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String taxonomy
     ) {
 
@@ -136,7 +191,9 @@ public record MerchantSemanticProductResponse(
     }
 
     public record ProductAttributeResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String value
     ) {
 
@@ -146,7 +203,9 @@ public record MerchantSemanticProductResponse(
     }
 
     public record ProductImageResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String url,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String altText
     ) {
 
@@ -156,7 +215,9 @@ public record MerchantSemanticProductResponse(
     }
 
     public record ProductOptionResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             List<String> values
     ) {
 
@@ -166,7 +227,9 @@ public record MerchantSemanticProductResponse(
     }
 
     public record ProductSelectedOptionResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String value
     ) {
 

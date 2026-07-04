@@ -107,7 +107,7 @@ class ReviewProviderDiscoveryServiceTest {
         private Instant claimExpiresAt;
 
         private FakeCandidateRepository() {
-            super(null);
+            super(null, null);
         }
 
         @Override

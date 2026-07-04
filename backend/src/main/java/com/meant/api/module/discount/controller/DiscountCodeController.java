@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -63,10 +64,104 @@ public class DiscountCodeController {
                                 item.quantity()
                         ))
                         .toList(),
-                request.buyerIdentity(),
-                request.deliveryAddressesToAdd(),
-                request.deliveryAddressesToReplace(),
-                request.selectedDeliveryOptions()
+                buyerIdentity(request.buyerIdentity()),
+                deliveryAddresses(request.deliveryAddressesToAdd()),
+                deliveryAddresses(request.deliveryAddressesToReplace()),
+                deliveryOptions(request.selectedDeliveryOptions())
+        );
+    }
+
+    private SearchDiscountCodesCommand.BuyerIdentity buyerIdentity(
+            SearchDiscountCodesRequest.BuyerIdentity request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        return new SearchDiscountCodesCommand.BuyerIdentity(
+                request.email(),
+                request.phoneNumber(),
+                request.firstName(),
+                request.lastName(),
+                request.countryCode()
+        );
+    }
+
+    private List<SearchDiscountCodesCommand.DeliveryAddressSelection> deliveryAddresses(
+            List<SearchDiscountCodesRequest.DeliveryAddressSelection> requests
+    ) {
+        if (requests == null) {
+            return List.of();
+        }
+        return requests.stream()
+                .map(this::deliveryAddress)
+                .toList();
+    }
+
+    private SearchDiscountCodesCommand.DeliveryAddressSelection deliveryAddress(
+            SearchDiscountCodesRequest.DeliveryAddressSelection request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        return new SearchDiscountCodesCommand.DeliveryAddressSelection(
+                request.id(),
+                request.selected(),
+                deliveryAddress(request.deliveryAddress()),
+                request.firstName(),
+                request.lastName(),
+                request.phoneNumber(),
+                request.streetAddress(),
+                request.extendedAddress(),
+                request.city(),
+                request.provinceCode(),
+                request.postalCode(),
+                request.countryCode()
+        );
+    }
+
+    private SearchDiscountCodesCommand.DeliveryAddress deliveryAddress(
+            SearchDiscountCodesRequest.DeliveryAddress request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        return new SearchDiscountCodesCommand.DeliveryAddress(
+                request.firstName(),
+                request.lastName(),
+                request.phoneNumber(),
+                request.streetAddress(),
+                request.extendedAddress(),
+                request.city(),
+                request.provinceCode(),
+                request.postalCode(),
+                request.countryCode()
+        );
+    }
+
+    private List<SearchDiscountCodesCommand.DeliveryOptionSelection> deliveryOptions(
+            List<SearchDiscountCodesRequest.DeliveryOptionSelection> requests
+    ) {
+        if (requests == null) {
+            return List.of();
+        }
+        return requests.stream()
+                .map(this::deliveryOption)
+                .toList();
+    }
+
+    private SearchDiscountCodesCommand.DeliveryOptionSelection deliveryOption(
+            SearchDiscountCodesRequest.DeliveryOptionSelection request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        return new SearchDiscountCodesCommand.DeliveryOptionSelection(
+                request.id(),
+                request.groupId(),
+                request.deliveryGroupId(),
+                request.optionHandle(),
+                request.deliveryOptionHandle(),
+                request.selectedOptionId()
         );
     }
 }

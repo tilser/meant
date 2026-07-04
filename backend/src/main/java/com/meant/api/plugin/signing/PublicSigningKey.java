@@ -1,6 +1,7 @@
 package com.meant.api.plugin.signing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -9,10 +10,15 @@ import java.util.Objects;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PublicSigningKey(
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String kid,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         SigningKeyPurpose purpose,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         SigningKeyStatus status,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Map<String, Object> jwk,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Instant advertiseUntil
 ) {
 
