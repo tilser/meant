@@ -125,6 +125,9 @@ export function ProductModal({
       signal: controller.signal,
     })
       .then((details) => {
+        if (controller.signal.aborted) {
+          return
+        }
         setMerchantDetails(details)
         setDetailLoadState('loaded')
       })

@@ -19,6 +19,9 @@ export function InlineCheckoutBlock({
 }>) {
   const [payingMerchant, setPayingMerchant] = useState<string | null>(null)
   const [placedMerchant, setPlacedMerchant] = useState<string | null>(null)
+  const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(
+    null,
+  )
   const lines = cartLines(cart, products)
   const groups = cartGroups(lines, false)
   const alerts = computeSmartAlerts(lines, products)
@@ -27,6 +30,7 @@ export function InlineCheckoutBlock({
   const payGroup = async (group: (typeof groups)[number]) => {
     setPayingMerchant(group.merchant)
     setPlacedMerchant(null)
+    setCheckoutError(null)
     try {
       await onCheckout({
         merchant: group.merchant,
@@ -37,6 +41,11 @@ export function InlineCheckoutBlock({
         continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
       })
       setPlacedMerchant(group.merchant)
+    } catch {
+      setCheckoutError({
+        merchant: group.merchant,
+        message: 'Checkout failed. Please try again.',
+      })
     } finally {
       setPayingMerchant(null)
     }
@@ -86,6 +95,9 @@ export function InlineCheckoutBlock({
                   <span>Delivery</span>
                   <span>Review</span>
                 </div>
+                {checkoutError?.merchant === group.merchant && payingMerchant === null ? (
+                  <div className="mt-cart-inline-error">{checkoutError.message}</div>
+                ) : null}
                 <button
                   className="mt-ct-cobtn"
                   type="button"

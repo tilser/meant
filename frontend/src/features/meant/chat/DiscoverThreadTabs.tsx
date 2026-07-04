@@ -95,8 +95,20 @@ export function DiscoverThreadTabs({
     }
     const resizeObserver = new ResizeObserver(updateTabsScrollState)
     resizeObserver.observe(element)
-    return () => resizeObserver.disconnect()
-  }, [threads, updateTabsScrollState])
+    const handleWheel = (event: WheelEvent) => {
+      if (!tabsOverflow || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return
+      }
+      event.preventDefault()
+      element.scrollLeft += event.deltaY
+      updateTabsScrollState()
+    }
+    element.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      resizeObserver.disconnect()
+      element.removeEventListener('wheel', handleWheel)
+    }
+  }, [tabsOverflow, threads, updateTabsScrollState])
 
   useEffect(() => {
     const activeTab = tabsScrollRef.current?.querySelector<HTMLElement>(
@@ -123,20 +135,7 @@ export function DiscoverThreadTabs({
         >
           <ChevronIcon direction="left" size={15} />
         </button>
-        <div
-          className="mt-ct-tabs-scroll"
-          ref={tabsScrollRef}
-          onScroll={updateTabsScrollState}
-          onWheel={(event) => {
-            const element = tabsScrollRef.current
-            if (!element || !tabsOverflow || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-              return
-            }
-            event.preventDefault()
-            element.scrollLeft += event.deltaY
-            updateTabsScrollState()
-          }}
-        >
+        <div className="mt-ct-tabs-scroll" ref={tabsScrollRef} onScroll={updateTabsScrollState}>
           {threads.map((thread) => (
             <div
               key={thread.id}
