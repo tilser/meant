@@ -23,6 +23,9 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
     @EntityGraph(attributePaths = "merchantRaw")
     List<Merchant> findByActiveTrueOrderByNameAsc();
 
+    @Query("select merchant.domain from Merchant merchant where merchant.active = true")
+    List<String> findActiveDomains();
+
     @Modifying
     @Query("""
             update Merchant merchant
@@ -38,9 +41,9 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
             set merchant.active = false,
                 merchant.updatedAt = :updatedAt
             where merchant.active = true
-              and merchant.domain not in :domains
+              and merchant.domain in :domains
             """)
-    int markInactiveByDomainNotIn(@Param("domains") Collection<String> domains, @Param("updatedAt") Instant updatedAt);
+    int markInactiveByDomainIn(@Param("domains") Collection<String> domains, @Param("updatedAt") Instant updatedAt);
 
     @Query(value = """
             select merchant.*

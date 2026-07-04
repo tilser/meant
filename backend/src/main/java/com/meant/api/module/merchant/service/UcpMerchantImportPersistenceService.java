@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UcpMerchantImportPersistenceService {
 
+    private static final int DOMAIN_UPDATE_BATCH_SIZE = 1_000;
+
     private final MerchantRawRepository merchantRawRepository;
     private final MerchantRepository merchantRepository;
 
@@ -52,8 +54,31 @@ public class UcpMerchantImportPersistenceService {
             merchantRepository.markAllActiveInactive(fetchedAt);
             return;
         }
-        merchantRawRepository.markInactiveByDomainNotIn(seenDomains);
-        merchantRepository.markInactiveByDomainNotIn(seenDomains, fetchedAt);
+        markRawDomainsInactive(missingDomains(merchantRawRepository.findActiveDomains(), seenDomains));
+        markMerchantDomainsInactive(missingDomains(merchantRepository.findActiveDomains(), seenDomains), fetchedAt);
+    }
+
+    private List<String> missingDomains(List<String> activeDomains, Set<String> seenDomains) {
+        return activeDomains.stream()
+                .filter(domain -> !seenDomains.contains(domain))
+                .toList();
+    }
+
+    private void markRawDomainsInactive(List<String> domains) {
+        batches(domains).forEach(merchantRawRepository::markInactiveByDomainIn);
+    }
+
+    private void markMerchantDomainsInactive(List<String> domains, Instant fetchedAt) {
+        batches(domains).forEach(batch -> merchantRepository.markInactiveByDomainIn(batch, fetchedAt));
+    }
+
+    private List<List<String>> batches(List<String> values) {
+        return java.util.stream.IntStream.range(0, (values.size() + DOMAIN_UPDATE_BATCH_SIZE - 1) / DOMAIN_UPDATE_BATCH_SIZE)
+                .mapToObj(batchIndex -> values.subList(
+                        batchIndex * DOMAIN_UPDATE_BATCH_SIZE,
+                        Math.min((batchIndex + 1) * DOMAIN_UPDATE_BATCH_SIZE, values.size())
+                ))
+                .toList();
     }
 
     private MerchantRaw mergeImportedMerchant(MerchantRaw importedMerchant, MerchantRaw existingMerchant) {

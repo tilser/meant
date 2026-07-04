@@ -18,6 +18,9 @@ public interface MerchantRawRepository extends JpaRepository<MerchantRaw, UUID> 
 
     List<MerchantRaw> findByDomainIn(Collection<String> domains);
 
+    @Query("select merchantRaw.domain from MerchantRaw merchantRaw where merchantRaw.active = true")
+    List<String> findActiveDomains();
+
     @Modifying
     @Query("""
             update MerchantRaw merchantRaw
@@ -37,9 +40,9 @@ public interface MerchantRawRepository extends JpaRepository<MerchantRaw, UUID> 
                 merchantRaw.processingStatus = 'INACTIVE',
                 merchantRaw.processingError = null
             where merchantRaw.active = true
-              and merchantRaw.domain not in :domains
+              and merchantRaw.domain in :domains
             """)
-    int markInactiveByDomainNotIn(@Param("domains") Collection<String> domains);
+    int markInactiveByDomainIn(@Param("domains") Collection<String> domains);
 
     @Query("""
             select merchantRaw from MerchantRaw merchantRaw
