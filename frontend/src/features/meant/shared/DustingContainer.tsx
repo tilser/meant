@@ -1,6 +1,8 @@
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef } from 'react'
 
-let dustSequence = 0
+function stableDustSeed(value: string): number {
+  return Array.from(value).reduce((seed, character) => seed + character.charCodeAt(0), 0) || 1
+}
 
 export function DustingContainer({
   children,
@@ -13,20 +15,18 @@ export function DustingContainer({
   className?: string
   onGone: () => void
 }>) {
-  const idRef = useRef<string>('')
+  const uniqueId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  const idRef = useRef<string>(`mtdust-solo-${uniqueId}`)
+  const seedRef = useRef<number>(stableDustSeed(uniqueId))
   const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null)
   const blurRef = useRef<SVGFEGaussianBlurElement | null>(null)
-
-  if (!idRef.current) {
-    dustSequence += 1
-    idRef.current = `mtdust-solo-${dustSequence}`
-  }
 
   useEffect(() => {
     if (!dusting) {
       return undefined
     }
     let frame = 0
+    let goneTimer: number | null = null
     let startedAt = 0
     const duration = 1050
     const step = (time: number) => {
@@ -41,10 +41,15 @@ export function DustingContainer({
         frame = window.requestAnimationFrame(step)
         return
       }
-      window.setTimeout(onGone, 20)
+      goneTimer = window.setTimeout(onGone, 20)
     }
     frame = window.requestAnimationFrame(step)
-    return () => window.cancelAnimationFrame(frame)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (goneTimer !== null) {
+        window.clearTimeout(goneTimer)
+      }
+    }
   }, [dusting, onGone])
 
   return (
@@ -68,7 +73,7 @@ export function DustingContainer({
                 type="fractalNoise"
                 baseFrequency="0.7"
                 numOctaves="2"
-                seed={dustSequence}
+                seed={seedRef.current}
                 result="n"
               />
               <feDisplacementMap

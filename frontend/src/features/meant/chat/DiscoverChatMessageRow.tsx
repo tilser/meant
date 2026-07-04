@@ -2,6 +2,7 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react'
@@ -20,7 +21,9 @@ import { DiscoverChatBlockView } from './DiscoverChatBlockView'
 import type { DiscoverChatMessage } from './types'
 import { copyTextToClipboard, discoverChatMessageCopyText } from './utils'
 
-let messageDustSequence = 0
+function stableDustSeed(value: string): number {
+  return Array.from(value).reduce((seed, character) => seed + character.charCodeAt(0), 0) || 1
+}
 
 function DustWrap({
   children,
@@ -41,21 +44,19 @@ function DustWrap({
 }>) {
   const [dusting, setDusting] = useState(false)
   const [copied, setCopied] = useState(false)
-  const idRef = useRef<string>('')
+  const uniqueId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  const idRef = useRef<string>(`mtdust-${uniqueId}`)
+  const seedRef = useRef<number>(stableDustSeed(uniqueId))
   const copiedTimerRef = useRef<number | null>(null)
   const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null)
   const blurRef = useRef<SVGFEGaussianBlurElement | null>(null)
-
-  if (!idRef.current) {
-    messageDustSequence += 1
-    idRef.current = `mtdust-${messageDustSequence}`
-  }
 
   useEffect(() => {
     if (!dusting) {
       return undefined
     }
     let frame = 0
+    let goneTimer: number | null = null
     let startedAt = 0
     const duration = 1050
     const step = (time: number) => {
@@ -70,10 +71,15 @@ function DustWrap({
         frame = window.requestAnimationFrame(step)
         return
       }
-      window.setTimeout(onGone, 20)
+      goneTimer = window.setTimeout(onGone, 20)
     }
     frame = window.requestAnimationFrame(step)
-    return () => window.cancelAnimationFrame(frame)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (goneTimer !== null) {
+        window.clearTimeout(goneTimer)
+      }
+    }
   }, [dusting, onGone])
 
   useEffect(
@@ -157,7 +163,7 @@ function DustWrap({
                 type="fractalNoise"
                 baseFrequency="0.7"
                 numOctaves="2"
-                seed={messageDustSequence}
+                seed={seedRef.current}
                 result="n"
               />
               <feDisplacementMap

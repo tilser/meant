@@ -18,7 +18,7 @@ export function DiscoverShareSheet({
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 14)
-  const link = `meant.app/s/${thread.id}-${slug || 'chat'}`
+  const link = `https://meant.app/s/${thread.id}-${slug || 'chat'}`
   const people = [
     { name: 'Alex', initial: 'A' },
     { name: 'Sam', initial: 'S' },

@@ -107,6 +107,7 @@ export function PreferencesView({
           clear()
         }
       })
+      .catch(() => undefined)
       .finally(() => setParsing(false))
   }
 

@@ -29,12 +29,12 @@ export function InlineCartBlock({
   const productById = new Map(products.map((product) => [product.id, product]))
   const cartAfterQty = (target: CartItem, qty: number) =>
     qty <= 0
-      ? lines.filter((line) => cartItemIdentity(line) !== cartItemIdentity(target))
-      : lines.map((line) =>
-          cartItemIdentity(line) === cartItemIdentity(target) ? { ...line, qty } : line,
+      ? cart.filter((item) => cartItemIdentity(item) !== cartItemIdentity(target))
+      : cart.map((item) =>
+          cartItemIdentity(item) === cartItemIdentity(target) ? { ...item, qty } : item,
         )
   const cartAfterRemove = (target: CartItem) =>
-    lines.filter((line) => cartItemIdentity(line) !== cartItemIdentity(target))
+    cart.filter((item) => cartItemIdentity(item) !== cartItemIdentity(target))
 
   return (
     <div className="mt-ct-block mt-ct-cart">

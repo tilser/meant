@@ -8,23 +8,32 @@ interface StoredValue<T> {
   value: T
 }
 
+type StoredStateFallback<T> = T | (() => T)
+
+function resolveFallback<T>(fallback: StoredStateFallback<T>): T {
+  return typeof fallback === 'function' ? (fallback as () => T)() : fallback
+}
+
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
   return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
 }
 
 export function useStoredState<T>(
   key: string,
-  fallback: T,
+  fallback: StoredStateFallback<T>,
 ): readonly [T, Dispatch<SetStateAction<T>>] {
   const keyRef = useRef(key)
-  const fallbackRef = useRef(fallback)
+  const [initialFallback] = useState(() => resolveFallback(fallback))
+  const fallbackRef = useRef(initialFallback)
   keyRef.current = key
-  fallbackRef.current = fallback
+  if (typeof fallback !== 'function') {
+    fallbackRef.current = fallback
+  }
 
   const [stored, setStored] = useState<StoredValue<T>>(() => ({
     hydrated: false,
     key,
-    value: fallback,
+    value: initialFallback,
   }))
 
   let current = stored

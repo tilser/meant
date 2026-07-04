@@ -809,7 +809,7 @@ export function ChatDiscoverView({
 }>) {
   const [threads, setThreads] = useStoredState<DiscoverChatThread[]>(
     'meant.discoverChatThreads',
-    initialDiscoverChatThreads(),
+    initialDiscoverChatThreads,
   )
   const [activeThreadId, setActiveThreadId] = useStoredState<string>(
     'meant.discoverActiveThreadId',
