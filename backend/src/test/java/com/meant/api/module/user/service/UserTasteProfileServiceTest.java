@@ -1,7 +1,9 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
+import com.meant.api.module.user.constant.UserTasteSignalType;
 import com.meant.api.module.user.entity.ShoppingFilter;
 import com.meant.api.module.user.entity.UserTasteSignal;
 import com.meant.api.module.user.repository.ShoppingFilterRepository;
@@ -15,8 +17,12 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +43,11 @@ class UserTasteProfileServiceTest {
 
         service.recordSavedProduct(USER_ID, product(), NOW);
         service.recordSavedProduct(USER_ID, product(), NOW.plusSeconds(1));
+
+        assertThat(signals.singleLookupCount).isZero();
+        assertThat(signals.batchLookupCount).isEqualTo(2);
+        assertThat(signals.saveAllCount).isEqualTo(2);
+        assertThat(signals.savedInLastSaveAll).isEqualTo(3);
 
         UserTasteProfileResult learnedProfile = service.profile(USER_ID, settings(List.of()));
 
@@ -60,7 +71,42 @@ class UserTasteProfileServiceTest {
         assertThat(explicitProfile.suggestions()).isEmpty();
     }
 
+    @Test
+    void recordSavedProductMergesDuplicateFilterSignalsInsideBatch() {
+        FakeTasteSignalRepository signals = new FakeTasteSignalRepository();
+        UserTasteProfileService service = new UserTasteProfileService(
+                null,
+                null,
+                signals.proxy(),
+                shoppingFilters()
+        );
+
+        service.recordSavedProduct(USER_ID, product(List.of("linen"), List.of(), List.of("linen")), NOW);
+
+        UserTasteProfileResult profile = service.profile(USER_ID, settings(List.of()));
+
+        assertThat(signals.singleLookupCount).isZero();
+        assertThat(signals.batchLookupCount).isEqualTo(1);
+        assertThat(signals.saveAllCount).isEqualTo(1);
+        assertThat(signals.savedInLastSaveAll).isEqualTo(3);
+        assertThat(profile.signals())
+                .filteredOn(signal -> "linen".equals(signal.signalKey()))
+                .singleElement()
+                .satisfies(signal -> {
+                    assertThat(signal.weight()).isCloseTo(2.52d, within(0.0001d));
+                    assertThat(signal.positiveCount()).isEqualTo(2);
+                });
+    }
+
     private SaveUserProductCommand product() {
+        return product(List.of("linen"), List.of(), List.of());
+    }
+
+    private SaveUserProductCommand product(
+            List<String> satisfies,
+            List<String> misses,
+            List<String> provides
+    ) {
         return new SaveUserProductCommand(
                 USER_ID,
                 "merchant.example:linen-shirt",
@@ -75,8 +121,8 @@ class UserTasteProfileServiceTest {
                 90,
                 42.0d,
                 1,
-                List.of("linen"),
-                List.of(),
+                satisfies,
+                misses,
                 "A strong match.",
                 List.of(),
                 List.of(),
@@ -92,7 +138,7 @@ class UserTasteProfileServiceTest {
                         true
                 )),
                 null,
-                List.of()
+                provides
         );
     }
 
@@ -137,27 +183,73 @@ class UserTasteProfileServiceTest {
     static class FakeTasteSignalRepository {
 
         private final List<UserTasteSignal> signals = new ArrayList<>();
+        private int singleLookupCount;
+        private int batchLookupCount;
+        private int saveAllCount;
+        private int savedInLastSaveAll;
 
         UserTasteSignalRepository proxy() {
             return repository(UserTasteSignalRepository.class, (proxy, method, args) -> switch (method.getName()) {
-                case "findByUserIdAndSignalTypeAndSignalKey" -> signals.stream()
-                        .filter(signal -> signal.getUserId().equals(args[0]))
-                        .filter(signal -> signal.getSignalType().equals(args[1]))
-                        .filter(signal -> signal.getSignalKey().equals(args[2]))
-                        .findFirst();
+                case "findByUserIdAndSignalTypeAndSignalKey" ->
+                        findByUserIdAndSignalTypeAndSignalKey(
+                                (UUID) args[0],
+                                (UserTasteSignalType) args[1],
+                                (String) args[2]);
+                case "findByUserIdAndSignalTypeInAndSignalKeyIn" ->
+                        findByUserIdAndSignalTypeInAndSignalKeyIn(
+                                (UUID) args[0],
+                                (Collection<UserTasteSignalType>) args[1],
+                                (Collection<String>) args[2]);
                 case "findByUserIdOrderByUpdatedAtDesc" -> signals.stream()
                         .filter(signal -> signal.getUserId().equals(args[0]))
                         .sorted(Comparator.comparing(UserTasteSignal::getUpdatedAt).reversed())
                         .toList();
                 case "save" -> save((UserTasteSignal) args[0]);
+                case "saveAll" -> saveAll((Iterable<UserTasteSignal>) args[0]);
                 default -> throw new UnsupportedOperationException(method.getName());
             });
+        }
+
+        private Optional<UserTasteSignal> findByUserIdAndSignalTypeAndSignalKey(
+                UUID userId,
+                UserTasteSignalType signalType,
+                String signalKey
+        ) {
+            singleLookupCount++;
+            return signals.stream()
+                    .filter(signal -> signal.getUserId().equals(userId))
+                    .filter(signal -> signal.getSignalType().equals(signalType))
+                    .filter(signal -> signal.getSignalKey().equals(signalKey))
+                    .findFirst();
+        }
+
+        private List<UserTasteSignal> findByUserIdAndSignalTypeInAndSignalKeyIn(
+                UUID userId,
+                Collection<UserTasteSignalType> signalTypes,
+                Collection<String> signalKeys
+        ) {
+            batchLookupCount++;
+            Set<UserTasteSignalType> requestedTypes = new LinkedHashSet<>(signalTypes);
+            Set<String> requestedKeys = new LinkedHashSet<>(signalKeys);
+            return signals.stream()
+                    .filter(signal -> signal.getUserId().equals(userId))
+                    .filter(signal -> requestedTypes.contains(signal.getSignalType()))
+                    .filter(signal -> requestedKeys.contains(signal.getSignalKey()))
+                    .toList();
         }
 
         private UserTasteSignal save(UserTasteSignal signal) {
             signals.removeIf(existing -> existing.getId().equals(signal.getId()));
             signals.add(signal);
             return signal;
+        }
+
+        private List<UserTasteSignal> saveAll(Iterable<UserTasteSignal> nextSignals) {
+            List<UserTasteSignal> saved = new ArrayList<>();
+            nextSignals.forEach(signal -> saved.add(save(signal)));
+            saveAllCount++;
+            savedInLastSaveAll = saved.size();
+            return saved;
         }
     }
 

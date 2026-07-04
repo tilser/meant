@@ -4,6 +4,7 @@ import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.entity.UserInventoryItem;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +53,12 @@ public interface UserInventoryItemRepository extends JpaRepository<UserInventory
             UUID userId,
             UserInventorySource source,
             String sourceProductKey
+    );
+
+    List<UserInventoryItem> findByUserIdAndSourceAndSourceProductKeyIn(
+            UUID userId,
+            UserInventorySource source,
+            Collection<String> sourceProductKeys
     );
 
     long deleteByIdAndUserId(UUID id, UUID userId);

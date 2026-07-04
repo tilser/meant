@@ -134,16 +134,17 @@ public class UserSettingsService {
             return;
         }
 
+        List<String> currentActiveFilterIds = activeFilterIds(settings.getUserId());
         LinkedHashSet<String> desiredFilterIds = new LinkedHashSet<>();
         if (explicitFilterIds == null) {
-            desiredFilterIds.addAll(activeFilterIds(settings.getUserId()));
+            desiredFilterIds.addAll(currentActiveFilterIds);
         } else {
             desiredFilterIds.addAll(explicitFilterIds);
         }
         desiredFilterIds.addAll(parsedFilterIds);
         validateFilterIds(desiredFilterIds);
 
-        Set<String> currentFilterIds = Set.copyOf(activeFilterIds(settings.getUserId()));
+        Set<String> currentFilterIds = Set.copyOf(currentActiveFilterIds);
         if (currentFilterIds.equals(desiredFilterIds)) {
             return;
         }

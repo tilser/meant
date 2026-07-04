@@ -67,6 +67,19 @@ public class UserTasteProfileService {
     private final UserTasteSignalRepository userTasteSignalRepository;
     private final ShoppingFilterRepository shoppingFilterRepository;
 
+    private record TasteSignalMutation(
+            UserTasteSignalType signalType,
+            String signalKey,
+            String label,
+            String behavior,
+            double weight,
+            String suggestedFilterId
+    ) {
+    }
+
+    private record TasteSignalKey(UserTasteSignalType signalType, String signalKey) {
+    }
+
     @Transactional
     public UserTasteProfileResult get(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -221,50 +234,55 @@ public class UserTasteProfileService {
         filterIds.addAll(safeList(product.provides()));
         filterIds.addAll(safeList(product.misses()));
         Map<String, ShoppingFilter> filters = shoppingFilters(filterIds);
-        safeList(product.satisfies()).forEach(filterId -> filterSignal(userId, filters, filterId, behaviorName, weight, now));
-        safeList(product.provides()).forEach(filterId -> filterSignal(userId, filters, filterId, behaviorName, weight * 0.8d, now));
-        safeList(product.misses()).forEach(filterId -> filterSignal(userId, filters, filterId, behaviorName, -weight, now));
-        textSignal(userId, UserTasteSignalType.BRAND, product.brand(), behaviorName, weight * 0.7d, now);
-        textSignal(userId, UserTasteSignalType.CATEGORY, product.category(), behaviorName, weight * 0.6d, now);
+        List<TasteSignalMutation> mutations = new ArrayList<>();
+        safeList(product.satisfies()).forEach(filterId ->
+                addMutation(mutations, filterSignal(filters, filterId, behaviorName, weight)));
+        safeList(product.provides()).forEach(filterId ->
+                addMutation(mutations, filterSignal(filters, filterId, behaviorName, weight * 0.8d)));
+        safeList(product.misses()).forEach(filterId ->
+                addMutation(mutations, filterSignal(filters, filterId, behaviorName, -weight)));
+        addMutation(mutations, textSignal(UserTasteSignalType.BRAND, product.brand(), behaviorName, weight * 0.7d));
+        addMutation(mutations, textSignal(UserTasteSignalType.CATEGORY, product.category(), behaviorName, weight * 0.6d));
+        upsertSignals(userId, mutations, now);
     }
 
-    private void filterSignal(
-            UUID userId,
+    private TasteSignalMutation filterSignal(
             Map<String, ShoppingFilter> filters,
             String filterId,
             String behavior,
-            double weight,
-            Instant now
+            double weight
     ) {
         ShoppingFilter filter = filters.get(filterId);
         if (filter == null) {
-            return;
+            return null;
         }
-        upsertSignal(
-                userId,
+        return new TasteSignalMutation(
                 UserTasteSignalType.FILTER,
                 filter.getId(),
                 filter.getLabel(),
                 behavior,
                 weight,
-                filter.getId(),
-                now
+                filter.getId()
         );
     }
 
-    private void textSignal(
-            UUID userId,
+    private TasteSignalMutation textSignal(
             UserTasteSignalType signalType,
             String value,
             String behavior,
-            double weight,
-            Instant now
+            double weight
     ) {
         String key = normalized(value);
         if (key == null || key.length() < 2) {
-            return;
+            return null;
         }
-        upsertSignal(userId, signalType, key, value.trim(), behavior, weight, null, now);
+        return new TasteSignalMutation(signalType, key, value.trim(), behavior, weight, null);
+    }
+
+    private void addMutation(List<TasteSignalMutation> mutations, TasteSignalMutation mutation) {
+        if (mutation != null) {
+            mutations.add(mutation);
+        }
     }
 
     private void upsertSignal(
@@ -277,19 +295,65 @@ public class UserTasteProfileService {
             String suggestedFilterId,
             Instant now
     ) {
-        userTasteSignalRepository.save(userTasteSignalRepository
-                .findByUserIdAndSignalTypeAndSignalKey(userId, signalType, signalKey)
-                .map(existing -> existing.reinforce(label, behavior, weight, suggestedFilterId, now))
-                .orElseGet(() -> UserTasteSignal.create(
+        upsertSignals(userId, List.of(new TasteSignalMutation(
+                signalType,
+                signalKey,
+                label,
+                behavior,
+                weight,
+                suggestedFilterId
+        )), now);
+    }
+
+    private void upsertSignals(UUID userId, List<TasteSignalMutation> mutations, Instant now) {
+        if (mutations.isEmpty()) {
+            return;
+        }
+        Set<UserTasteSignalType> signalTypes = mutations.stream()
+                .map(TasteSignalMutation::signalType)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> signalKeys = mutations.stream()
+                .map(TasteSignalMutation::signalKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<TasteSignalKey, UserTasteSignal> signalsByKey = userTasteSignalRepository
+                .findByUserIdAndSignalTypeInAndSignalKeyIn(userId, signalTypes, signalKeys)
+                .stream()
+                .collect(Collectors.toMap(
+                        signal -> new TasteSignalKey(signal.getSignalType(), signal.getSignalKey()),
+                        signal -> signal,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        Map<TasteSignalKey, UserTasteSignal> changedSignals = new LinkedHashMap<>();
+        for (TasteSignalMutation mutation : mutations) {
+            TasteSignalKey key = new TasteSignalKey(mutation.signalType(), mutation.signalKey());
+            UserTasteSignal signal = signalsByKey.get(key);
+            if (signal == null) {
+                signal = UserTasteSignal.create(
                         userId,
-                        signalType,
-                        signalKey,
-                        label,
-                        behavior,
-                        weight,
-                        suggestedFilterId,
+                        mutation.signalType(),
+                        mutation.signalKey(),
+                        mutation.label(),
+                        mutation.behavior(),
+                        mutation.weight(),
+                        mutation.suggestedFilterId(),
                         now
-                )));
+                );
+            } else {
+                signal.reinforce(
+                        mutation.label(),
+                        mutation.behavior(),
+                        mutation.weight(),
+                        mutation.suggestedFilterId(),
+                        now
+                );
+            }
+            signalsByKey.put(key, signal);
+            changedSignals.put(key, signal);
+        }
+        if (!changedSignals.isEmpty()) {
+            userTasteSignalRepository.saveAll(changedSignals.values());
+        }
     }
 
     private List<UserTasteSuggestionResult> suggestions(List<UserTasteSignal> signals, UserSettingsResult settings) {

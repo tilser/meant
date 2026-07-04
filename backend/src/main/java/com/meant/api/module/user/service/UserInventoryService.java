@@ -162,14 +162,25 @@ public class UserInventoryService {
         Instant now = Instant.now();
         long itemCount = userInventoryItemRepository.countByUserId(command.userId());
         int quota = userCollectionProperties.inventory().quota();
+        Set<String> productKeys = command.items().stream()
+                .map(ImportPurchasedInventoryItemsCommand.PurchasedItem::productKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<String, UserInventoryItem> existingByProductKey = userInventoryItemRepository
+                .findByUserIdAndSourceAndSourceProductKeyIn(
+                        command.userId(),
+                        UserInventorySource.MEANT_PURCHASE,
+                        productKeys
+                )
+                .stream()
+                .collect(Collectors.toMap(
+                        UserInventoryItem::getSourceProductKey,
+                        item -> item,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        Map<String, UserInventoryItem> changedItems = new LinkedHashMap<>();
         for (ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem : command.items()) {
-            UserInventoryItem existing = userInventoryItemRepository
-                    .findByUserIdAndSourceAndSourceProductKey(
-                            command.userId(),
-                            UserInventorySource.MEANT_PURCHASE,
-                            purchasedItem.productKey()
-                    )
-                    .orElse(null);
+            UserInventoryItem existing = existingByProductKey.get(purchasedItem.productKey());
             Instant purchasedAt = purchasedAt(purchasedItem, now);
             if (existing != null && Objects.equals(existing.getPurchasedAt(), purchasedAt)) {
                 continue;
@@ -185,7 +196,11 @@ public class UserInventoryService {
             } else {
                 item = existing.replaceSnapshot(snapshot, now);
             }
-            userInventoryItemRepository.save(item);
+            existingByProductKey.put(purchasedItem.productKey(), item);
+            changedItems.put(purchasedItem.productKey(), item);
+        }
+        if (!changedItems.isEmpty()) {
+            userInventoryItemRepository.saveAll(changedItems.values());
         }
     }
 

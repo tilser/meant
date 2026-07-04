@@ -2,6 +2,7 @@ package com.meant.api.module.user.repository;
 
 import com.meant.api.module.user.constant.UserTasteSignalType;
 import com.meant.api.module.user.entity.UserTasteSignal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,12 @@ public interface UserTasteSignalRepository extends JpaRepository<UserTasteSignal
             UUID userId,
             UserTasteSignalType signalType,
             String signalKey
+    );
+
+    List<UserTasteSignal> findByUserIdAndSignalTypeInAndSignalKeyIn(
+            UUID userId,
+            Collection<UserTasteSignalType> signalTypes,
+            Collection<String> signalKeys
     );
 
     List<UserTasteSignal> findByUserIdAndSuggestedFilterId(UUID userId, String suggestedFilterId);

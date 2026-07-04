@@ -28,9 +28,12 @@ import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -314,6 +317,61 @@ class UserInventoryServiceTest {
     }
 
     @Test
+    void importPurchasedItemsBatchLoadsExistingKeysAndSavesChangedItemsTogether() {
+        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
+                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        "merchant.example:variant-1",
+                        "hash-1",
+                        "Cold-Pressed Extra Virgin Olive Oil",
+                        "Casa Verde",
+                        null,
+                        null,
+                        1,
+                        NOW
+                )
+        )));
+        repository.resetCounters();
+
+        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
+                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        "merchant.example:variant-1",
+                        "hash-1",
+                        "Cold-Pressed Extra Virgin Olive Oil",
+                        "Casa Verde",
+                        null,
+                        null,
+                        2,
+                        NOW.plusSeconds(60)
+                ),
+                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                        "merchant.example:variant-2",
+                        "hash-2",
+                        "Merino Crew Sweater",
+                        "Northbound",
+                        null,
+                        null,
+                        1,
+                        NOW
+                )
+        )));
+
+        assertThat(repository.batchSourceProductLookupCount).isEqualTo(1);
+        assertThat(repository.singleSourceProductLookupCount).isZero();
+        assertThat(repository.saveAllCount).isEqualTo(1);
+        assertThat(repository.savedInLastSaveAll).isEqualTo(2);
+        assertThat(service.list(profileCommand(), listQuery(null, false)))
+                .anySatisfy(result -> {
+                    assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-1");
+                    assertThat(result.quantity()).isEqualTo(3);
+                    assertThat(result.purchasedAt()).isEqualTo(NOW.plusSeconds(60));
+                })
+                .anySatisfy(result -> {
+                    assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-2");
+                    assertThat(result.quantity()).isEqualTo(1);
+                });
+    }
+
+    @Test
     void inventoryProfileHashUsesRepositorySignature() {
         assertThat(service.inventoryProfileHash(USER_ID)).isEqualTo("inventory:none");
 
@@ -532,6 +590,10 @@ class UserInventoryServiceTest {
     static class FakeUserInventoryItemRepository {
 
         private final List<UserInventoryItem> items = new ArrayList<>();
+        private int singleSourceProductLookupCount;
+        private int batchSourceProductLookupCount;
+        private int saveAllCount;
+        private int savedInLastSaveAll;
 
         UserInventoryItemRepository proxy() {
             return (UserInventoryItemRepository) Proxy.newProxyInstance(
@@ -539,6 +601,7 @@ class UserInventoryServiceTest {
                     new Class<?>[]{UserInventoryItemRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
                         case "save" -> save((UserInventoryItem) args[0]);
+                        case "saveAll" -> saveAll((Iterable<UserInventoryItem>) args[0]);
                         case "findByUserIdOrderByUpdatedAtDesc" -> args.length == 1
                                 ? byUser((UUID) args[0])
                                 : page(byUser((UUID) args[0]), (Pageable) args[1]);
@@ -568,21 +631,68 @@ class UserInventoryServiceTest {
                                         .filter(item -> item.getId().equals(args[0]) && item.getUserId().equals(args[1]))
                                         .findFirst();
                         case "findByUserIdAndSourceAndSourceProductKey" ->
-                                items.stream()
-                                        .filter(item -> item.getUserId().equals(args[0]))
-                                        .filter(item -> item.getSource() == args[1])
-                                        .filter(item -> item.getSourceProductKey() != null && item.getSourceProductKey().equals(args[2]))
-                                        .findFirst();
+                                findByUserIdAndSourceAndSourceProductKey(
+                                        (UUID) args[0],
+                                        (UserInventorySource) args[1],
+                                        (String) args[2]);
+                        case "findByUserIdAndSourceAndSourceProductKeyIn" ->
+                                findByUserIdAndSourceAndSourceProductKeyIn(
+                                        (UUID) args[0],
+                                        (UserInventorySource) args[1],
+                                        (Collection<String>) args[2]);
                         case "deleteByIdAndUserId" -> deleteByIdAndUserId((UUID) args[0], (UUID) args[1]);
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
             );
         }
 
+        private void resetCounters() {
+            singleSourceProductLookupCount = 0;
+            batchSourceProductLookupCount = 0;
+            saveAllCount = 0;
+            savedInLastSaveAll = 0;
+        }
+
         private UserInventoryItem save(UserInventoryItem item) {
             items.removeIf(existing -> existing.getId().equals(item.getId()));
             items.add(item);
             return item;
+        }
+
+        private List<UserInventoryItem> saveAll(Iterable<UserInventoryItem> nextItems) {
+            List<UserInventoryItem> saved = new ArrayList<>();
+            nextItems.forEach(item -> saved.add(save(item)));
+            saveAllCount++;
+            savedInLastSaveAll = saved.size();
+            return saved;
+        }
+
+        private Optional<UserInventoryItem> findByUserIdAndSourceAndSourceProductKey(
+                UUID userId,
+                UserInventorySource source,
+                String sourceProductKey
+        ) {
+            singleSourceProductLookupCount++;
+            return items.stream()
+                    .filter(item -> item.getUserId().equals(userId))
+                    .filter(item -> item.getSource() == source)
+                    .filter(item -> item.getSourceProductKey() != null
+                            && item.getSourceProductKey().equals(sourceProductKey))
+                    .findFirst();
+        }
+
+        private List<UserInventoryItem> findByUserIdAndSourceAndSourceProductKeyIn(
+                UUID userId,
+                UserInventorySource source,
+                Collection<String> sourceProductKeys
+        ) {
+            batchSourceProductLookupCount++;
+            Set<String> requestedKeys = new LinkedHashSet<>(sourceProductKeys);
+            return items.stream()
+                    .filter(item -> item.getUserId().equals(userId))
+                    .filter(item -> item.getSource() == source)
+                    .filter(item -> requestedKeys.contains(item.getSourceProductKey()))
+                    .toList();
         }
 
         private List<UserInventoryItem> byUser(UUID userId) {
