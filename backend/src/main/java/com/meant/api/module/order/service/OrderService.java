@@ -39,7 +39,7 @@ public class OrderService {
     public OrderListResult list(@NotNull @Valid ListOrdersQuery query) {
         PageRequest pageRequest = PageRequest.of(
                 query.page(),
-                Math.min(query.limit(), OrderListPagination.MAX_LIMIT)
+                Math.max(1, Math.min(query.limit(), OrderListPagination.MAX_LIMIT))
         );
         Slice<MerchantOrder> orders = orderPersistenceService.listOrders(query.userId(), pageRequest);
         return new OrderListResult(

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 public class OrderResultMapper {
 
     public OrderResult from(MerchantOrder order) {
+        OrderState state = state(order);
         return new OrderResult(
                 order.getId(),
                 order.getMerchantId(),
@@ -24,9 +25,9 @@ public class OrderResultMapper {
                 order.getRemoteOrderId(),
                 displayId(order),
                 order.getOrderNumber(),
-                order.getState(),
-                order.getState().displayStatus(),
-                statusNote(order),
+                state,
+                state.displayStatus(),
+                statusNote(state),
                 date(order),
                 order.getTotalAmount(),
                 order.getSubtotalAmount(),
@@ -43,6 +44,7 @@ public class OrderResultMapper {
     }
 
     public OrderSummaryResult summaryFrom(MerchantOrder order) {
+        OrderState state = state(order);
         return new OrderSummaryResult(
                 order.getId(),
                 order.getMerchantId(),
@@ -51,9 +53,9 @@ public class OrderResultMapper {
                 order.getRemoteOrderId(),
                 displayId(order),
                 order.getOrderNumber(),
-                order.getState(),
-                order.getState().displayStatus(),
-                statusNote(order),
+                state,
+                state.displayStatus(),
+                statusNote(state),
                 date(order),
                 order.getTotalAmount(),
                 order.getSubtotalAmount(),
@@ -109,8 +111,7 @@ public class OrderResultMapper {
         return DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC).format(date);
     }
 
-    private String statusNote(MerchantOrder order) {
-        OrderState state = order.getState();
+    private String statusNote(OrderState state) {
         return switch (state) {
             case DELIVERED -> "Delivered by the merchant.";
             case IN_TRANSIT -> "In transit: the merchant is fulfilling this order.";
@@ -118,6 +119,10 @@ public class OrderResultMapper {
             case REFUNDED -> "Refunded by the merchant.";
             case UNKNOWN, PROCESSING -> "Confirmed: the merchant is preparing this order.";
         };
+    }
+
+    private OrderState state(MerchantOrder order) {
+        return order.getState() == null ? OrderState.UNKNOWN : order.getState();
     }
 
     private Instant firstInstant(Instant first, Instant second) {

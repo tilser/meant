@@ -49,7 +49,60 @@ class OrderServiceTest {
         });
     }
 
+    @Test
+    void listClampsNonPositiveLimitWhenValidationIsBypassed() {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        CapturingOrderPersistenceService persistenceService = new CapturingOrderPersistenceService();
+        persistenceService.slice = new SliceImpl<>(
+                List.of(),
+                PageRequest.of(0, 1),
+                false
+        );
+        OrderService service = new OrderService(
+                persistenceService,
+                null,
+                null,
+                null,
+                new OrderResultMapper()
+        );
+
+        OrderListResult result = service.list(new ListOrdersQuery(userId, 0, 0));
+
+        assertThat(persistenceService.pageable.getPageSize()).isEqualTo(1);
+        assertThat(result.limit()).isEqualTo(1);
+    }
+
+    @Test
+    void listMapsMissingOrderStateAsUnknown() {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        CapturingOrderPersistenceService persistenceService = new CapturingOrderPersistenceService();
+        persistenceService.slice = new SliceImpl<>(
+                List.of(order(userId, null)),
+                PageRequest.of(0, 20),
+                false
+        );
+        OrderService service = new OrderService(
+                persistenceService,
+                null,
+                null,
+                null,
+                new OrderResultMapper()
+        );
+
+        OrderListResult result = service.list(new ListOrdersQuery(userId, 0, 20));
+
+        assertThat(result.orders()).singleElement().satisfies(order -> {
+            assertThat(order.state()).isEqualTo(OrderState.UNKNOWN);
+            assertThat(order.status()).isEqualTo("Processing");
+            assertThat(order.statusNote()).isEqualTo("Confirmed: the merchant is preparing this order.");
+        });
+    }
+
     private static MerchantOrder order(UUID userId) {
+        return order(userId, OrderState.PROCESSING);
+    }
+
+    private static MerchantOrder order(UUID userId, OrderState state) {
         Instant now = Instant.parse("2026-06-18T10:05:00Z");
         return MerchantOrder.builder()
                 .id(UUID.fromString("00000000-0000-0000-0000-000000000101"))
@@ -62,7 +115,7 @@ class OrderServiceTest {
                 .remoteOrderIdHash("hash-1001")
                 .orderName("#1001")
                 .orderNumber("1001")
-                .state(OrderState.PROCESSING)
+                .state(state)
                 .rawOrderResponse("{}")
                 .totalAmount("39.89")
                 .subtotalAmount("39.89")

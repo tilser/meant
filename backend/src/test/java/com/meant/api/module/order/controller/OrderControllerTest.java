@@ -45,6 +45,17 @@ class OrderControllerTest {
         assertThat(orderService.query).isEqualTo(new ListOrdersQuery(userId, 0, 20));
     }
 
+    @Test
+    void listMapsMissingSummaryStateAsUnknown() {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        orderService.state = null;
+
+        OrderListResponse response = controller.list(jwt(userId), null, null);
+
+        assertThat(response.orders()).singleElement()
+                .satisfies(order -> assertThat(order.state()).isEqualTo("UNKNOWN"));
+    }
+
     private Jwt jwt(UUID userId) {
         return Jwt.withTokenValue("token")
                 .header("alg", "none")
@@ -56,6 +67,7 @@ class OrderControllerTest {
     private static class CapturingOrderService extends OrderService {
 
         private ListOrdersQuery query;
+        private OrderState state = OrderState.PROCESSING;
 
         private CapturingOrderService() {
             super(null, null, null, null, null);
@@ -73,7 +85,7 @@ class OrderControllerTest {
                             "gid://shopify/Order/1001",
                             "#1001",
                             "1001",
-                            OrderState.PROCESSING,
+                            state,
                             "Confirmed",
                             "Confirmed: the merchant is preparing this order.",
                             "2026-06-18",

@@ -1,5 +1,6 @@
 package com.meant.api.module.order.controller.response;
 
+import com.meant.api.module.order.constant.OrderState;
 import com.meant.api.module.order.service.dto.OrderSummaryResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
@@ -54,7 +55,7 @@ public record OrderSummaryResponse(
                 result.remoteOrderId(),
                 result.displayId(),
                 result.orderNumber(),
-                result.state().name(),
+                stateName(result.state()),
                 result.status(),
                 result.statusNote(),
                 result.date(),
@@ -66,5 +67,9 @@ public record OrderSummaryResponse(
                 result.createdAt(),
                 result.updatedAt()
         );
+    }
+
+    private static String stateName(OrderState state) {
+        return (state == null ? OrderState.UNKNOWN : state).name();
     }
 }
