@@ -329,7 +329,7 @@ export function AccountView({
               onChange={(event) => {
                 void saveNewsletter(event.target.checked)
               }}
-              aria-label={newsletter ? 'Unsubscribe from newsletter' : 'Subscribe to newsletter'}
+              aria-label="Newsletter updates"
             />
             <span className="mt-switch-track" aria-hidden="true">
               <span className="mt-switch-thumb" />
