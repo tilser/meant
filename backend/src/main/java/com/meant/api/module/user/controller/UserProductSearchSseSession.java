@@ -25,6 +25,7 @@ final class UserProductSearchSseSession {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean cancelled = new AtomicBoolean();
+    private final AtomicBoolean cleanupStarted = new AtomicBoolean();
 
     private CompletableFuture<Void> searchFuture;
     private CompletableFuture<Void> drainFuture;
@@ -120,17 +121,25 @@ final class UserProductSearchSseSession {
 
     private void completeWithError(Throwable exception) {
         if (cancelled.compareAndSet(false, true)) {
-            emitter.completeWithError(exception);
+            try {
+                emitter.completeWithError(exception);
+            } finally {
+                cleanup();
+            }
+            return;
         }
         cleanup();
     }
 
     private void cancel() {
-        cancelled.set(true);
+        cancelled.compareAndSet(false, true);
         cleanup();
     }
 
     private void cleanup() {
+        if (!cleanupStarted.compareAndSet(false, true)) {
+            return;
+        }
         synchronized (this) {
             closed.set(true);
             if (searchFuture != null) {
