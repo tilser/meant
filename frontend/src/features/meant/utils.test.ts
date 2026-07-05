@@ -535,17 +535,14 @@ describe('cart and order utilities', () => {
 
 describe('cart delivery groups', () => {
   test('ignores stale zero remote totals when cart lines have prices', () => {
-    const [cartGroup] = cartGroups(
-      [
-        {
-          ...line([]),
-          price: 35,
-          cartSubtotalAmount: '0.00',
-          cartTotalAmount: '0.00',
-        },
-      ],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      {
+        ...line([]),
+        price: 35,
+        cartSubtotalAmount: '0.00',
+        cartTotalAmount: '0.00',
+      },
+    ])
 
     expect(cartGroup.remoteSubtotal).toBeNull()
     expect(cartGroup.remoteTotal).toBeNull()
@@ -554,17 +551,14 @@ describe('cart delivery groups', () => {
   })
 
   test('ignores implausible remote totals when they do not match cart lines', () => {
-    const [cartGroup] = cartGroups(
-      [
-        {
-          ...line([]),
-          price: 35,
-          cartSubtotalAmount: '752.00',
-          cartTotalAmount: '752.00',
-        },
-      ],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      {
+        ...line([]),
+        price: 35,
+        cartSubtotalAmount: '752.00',
+        cartTotalAmount: '752.00',
+      },
+    ])
 
     expect(cartGroup.remoteSubtotal).toBeNull()
     expect(cartGroup.remoteTotal).toBeNull()
@@ -573,17 +567,14 @@ describe('cart delivery groups', () => {
   })
 
   test('keeps plausible remote cart totals', () => {
-    const [cartGroup] = cartGroups(
-      [
-        {
-          ...line([]),
-          price: 35,
-          cartSubtotalAmount: '35.00',
-          cartTotalAmount: '42.00',
-        },
-      ],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      {
+        ...line([]),
+        price: 35,
+        cartSubtotalAmount: '35.00',
+        cartTotalAmount: '42.00',
+      },
+    ])
 
     expect(cartGroup.remoteSubtotal).toBe(35)
     expect(cartGroup.remoteTotal).toBe(42)
@@ -591,16 +582,13 @@ describe('cart delivery groups', () => {
   })
 
   test('infers delivery from reliable remote total without remote subtotal', () => {
-    const [cartGroup] = cartGroups(
-      [
-        {
-          ...line([]),
-          price: 35,
-          cartTotalAmount: '42.00',
-        },
-      ],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      {
+        ...line([]),
+        price: 35,
+        cartTotalAmount: '42.00',
+      },
+    ])
 
     expect(cartGroup.remoteSubtotal).toBeNull()
     expect(cartGroup.remoteTotal).toBe(42)
@@ -610,17 +598,14 @@ describe('cart delivery groups', () => {
   })
 
   test('ignores negative remote cart amounts', () => {
-    const [cartGroup] = cartGroups(
-      [
-        {
-          ...line([]),
-          price: 35,
-          cartSubtotalAmount: '-35.00',
-          cartTotalAmount: '-42.00',
-        },
-      ],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      {
+        ...line([]),
+        price: 35,
+        cartSubtotalAmount: '-35.00',
+        cartTotalAmount: '-42.00',
+      },
+    ])
 
     expect(cartGroup.remoteSubtotal).toBeNull()
     expect(cartGroup.remoteTotal).toBeNull()
