@@ -1,15 +1,19 @@
 package com.meant.api.module.review.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.module.review.constant.ReviewProviderType;
+import com.meant.api.module.review.exception.ReviewException;
 import com.meant.api.module.review.properties.OkendoReviewProperties;
 import com.meant.api.module.review.service.dto.ProductReviewsResult;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -70,6 +74,93 @@ class OkendoReviewClientTest {
         assertThat(result.reviews().getFirst().variantId()).isEqualTo("55080553644419");
         assertThat(result.reviews().getFirst().variantTitle()).isEqualTo("3 Tubes");
         server.verify();
+    }
+
+    @Test
+    void fetchReviewsClampsUnsafePaginationWindow() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        OkendoReviewClient client = new OkendoReviewClient(
+                restClientBuilder.build(),
+                new OkendoReviewProperties("https://api.okendo.io/v1", 20),
+                new OkendoReviewResponseMapper(new ObjectMapper())
+        );
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        server.expect(request -> {
+                    assertThat(request.getURI().getQuery())
+                            .contains("limit=100");
+                    assertThat(request.getURI().getRawQuery())
+                            .contains("orderBy=date%20desc");
+                })
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(reviewsFixture(), MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .endsWith("/products/shopify-15265473495425/review_aggregate"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(aggregateFixture(), MediaType.APPLICATION_JSON));
+
+        ProductReviewsResult result = client.fetchReviews(
+                merchantId,
+                "15265473495425",
+                "ac3ddecd-d40f-41bb-8e17-3a68e331cc08",
+                Integer.MAX_VALUE,
+                Integer.MAX_VALUE
+        );
+
+        assertThat(result.reviews()).isEmpty();
+        assertThat(result.reviewCount()).isEqualTo(116);
+        server.verify();
+    }
+
+    @Test
+    void fetchReviewsUsesParsedReviewCountWhenAggregateIsMissing() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        OkendoReviewClient client = new OkendoReviewClient(
+                restClientBuilder.build(),
+                new OkendoReviewProperties("https://api.okendo.io/v1", 20),
+                new OkendoReviewResponseMapper(new ObjectMapper())
+        );
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        server.expect(request -> assertThat(request.getURI().getQuery())
+                        .contains("limit=4"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(reviewsFixture(), MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .endsWith("/products/shopify-15265473495425/review_aggregate"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        ProductReviewsResult result = client.fetchReviews(
+                merchantId,
+                "15265473495425",
+                "ac3ddecd-d40f-41bb-8e17-3a68e331cc08",
+                2,
+                2
+        );
+
+        assertThat(result.reviewCount()).isEqualTo(4);
+        assertThat(result.reviews()).hasSize(2);
+        server.verify();
+    }
+
+    @Test
+    void fetchReviewsFailsFastWhenBaseUrlIsMissing() {
+        OkendoReviewClient client = new OkendoReviewClient(
+                RestClient.builder().build(),
+                new OkendoReviewProperties(null, 20),
+                new OkendoReviewResponseMapper(new ObjectMapper())
+        );
+
+        assertThatThrownBy(() -> client.fetchReviews(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "15265473495425",
+                "ac3ddecd-d40f-41bb-8e17-3a68e331cc08",
+                2,
+                0
+        ))
+                .isInstanceOf(ReviewException.class)
+                .hasMessage("Okendo Reviews API base URL is not configured");
     }
 
     private String reviewsFixture() {

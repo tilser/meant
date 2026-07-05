@@ -52,8 +52,7 @@ public class ReviewProductPageLinkExtractor {
         String normalizedProductHost = normalizeHost(productHost);
         String normalizedStorefrontHost = normalizeHost(storefrontHost);
         return normalizedProductHost.equalsIgnoreCase(normalizedStorefrontHost)
-                || normalizedProductHost.endsWith("." + normalizedStorefrontHost)
-                || normalizedStorefrontHost.endsWith("." + normalizedProductHost);
+                || normalizedProductHost.endsWith("." + normalizedStorefrontHost);
     }
 
     private String normalizeHost(String host) {

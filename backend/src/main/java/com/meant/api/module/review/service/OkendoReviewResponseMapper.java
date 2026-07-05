@@ -34,8 +34,9 @@ public class OkendoReviewResponseMapper {
             JsonNode reviewsRoot = objectMapper.readTree(rawReviewsResponse == null ? "{}" : rawReviewsResponse);
             JsonNode aggregateRoot = objectMapper.readTree(rawAggregateResponse == null ? "{}" : rawAggregateResponse);
             JsonNode aggregate = aggregateRoot.path("reviewAggregate");
-            List<ProductReview> visibleReviews = visibleReviews(reviews(reviewsRoot.path("reviews")), limit, offset);
-            Integer reviewCount = reviewCount(aggregate, visibleReviews.size());
+            List<ProductReview> parsedReviews = reviews(reviewsRoot.path("reviews"));
+            List<ProductReview> visibleReviews = visibleReviews(parsedReviews, limit, offset);
+            Integer reviewCount = reviewCount(aggregate, parsedReviews.size());
 
             return new ProductReviewsResult(
                     merchantId,
@@ -55,10 +56,14 @@ public class OkendoReviewResponseMapper {
     }
 
     private List<ProductReview> visibleReviews(List<ProductReview> reviews, int limit, int offset) {
-        if (offset >= reviews.size()) {
+        int safeLimit = Math.max(0, limit);
+        int safeOffset = Math.max(0, offset);
+        if (safeOffset >= reviews.size()) {
             return List.of();
         }
-        return reviews.subList(offset, Math.min(reviews.size(), offset + limit));
+        long requestedEnd = (long) safeOffset + safeLimit;
+        int end = (int) Math.min(reviews.size(), requestedEnd);
+        return reviews.subList(safeOffset, end);
     }
 
     private Integer reviewCount(JsonNode aggregate, int fallback) {
@@ -94,7 +99,7 @@ public class OkendoReviewResponseMapper {
         if (hasText(text(reviewsRoot, "nextUrl"))) {
             return true;
         }
-        return offset + visibleReviewCount < reviewCount;
+        return (long) Math.max(0, offset) + Math.max(0, visibleReviewCount) < reviewCount;
     }
 
     private List<ProductReview> reviews(JsonNode reviewsNode) {

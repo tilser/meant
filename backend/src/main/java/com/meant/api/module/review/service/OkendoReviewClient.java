@@ -18,6 +18,8 @@ public class OkendoReviewClient {
 
     private static final String PRODUCT_ID_PREFIX = "shopify-";
     private static final String SORT_MOST_RECENT = "date desc";
+    private static final int MIN_REVIEW_REQUEST_LIMIT = 1;
+    private static final int MAX_REVIEW_REQUEST_LIMIT = 100;
 
     private final RestClient restClient;
     private final OkendoReviewProperties properties;
@@ -51,8 +53,10 @@ public class OkendoReviewClient {
             int limit,
             int offset
     ) {
+        int safeLimit = safeLimit(limit);
+        int safeOffset = safeOffset(offset);
         String okendoProductId = okendoProductId(productId);
-        int requestLimit = limit + offset;
+        int requestLimit = requestLimit(safeLimit, safeOffset);
         try {
             String reviewsResponse = restClient.get()
                     .uri(reviewsUri(providerKey, okendoProductId, requestLimit))
@@ -64,8 +68,8 @@ public class OkendoReviewClient {
                     productId,
                     reviewsResponse,
                     aggregateResponse,
-                    limit,
-                    offset
+                    safeLimit,
+                    safeOffset
             );
         } catch (RestClientResponseException exception) {
             throw new ReviewException(
@@ -115,11 +119,31 @@ public class OkendoReviewClient {
         return PRODUCT_ID_PREFIX + productId;
     }
 
+    private int safeLimit(int limit) {
+        return Math.min(Math.max(MIN_REVIEW_REQUEST_LIMIT, limit), MAX_REVIEW_REQUEST_LIMIT);
+    }
+
+    private int safeOffset(int offset) {
+        return Math.max(0, offset);
+    }
+
+    private int requestLimit(int limit, int offset) {
+        long requestedLimit = (long) limit + offset;
+        return requestedLimit > MAX_REVIEW_REQUEST_LIMIT ? MAX_REVIEW_REQUEST_LIMIT : (int) requestedLimit;
+    }
+
     private String trimTrailingSlash(String value) {
+        if (!hasText(value)) {
+            throw new ReviewException("Okendo Reviews API base URL is not configured");
+        }
         String trimmed = value.trim();
         while (trimmed.endsWith("/")) {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

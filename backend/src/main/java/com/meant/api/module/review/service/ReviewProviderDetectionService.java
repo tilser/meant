@@ -6,6 +6,7 @@ import com.meant.api.module.review.service.dto.ReviewProviderDetectionResult;
 import com.meant.api.module.review.service.dto.StorefrontDocument;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -241,15 +242,24 @@ public class ReviewProviderDetectionService {
     }
 
     public ReviewProviderDetectionResult detect(List<StorefrontDocument> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return ReviewProviderDetectionResult.notFound();
+        }
+        List<StorefrontDocument> safeDocuments = documents.stream()
+                .filter(Objects::nonNull)
+                .toList();
+        if (safeDocuments.isEmpty()) {
+            return ReviewProviderDetectionResult.notFound();
+        }
         for (ProviderDetector detector : PROVIDER_DETECTORS) {
-            Optional<MarkerEvidence> evidence = documents.stream()
+            Optional<MarkerEvidence> evidence = safeDocuments.stream()
                     .map(document -> reviewEvidence(document, detector.reviewEvidencePatterns()))
                     .flatMap(Optional::stream)
                     .findFirst();
             if (evidence.isEmpty()) {
                 continue;
             }
-            Optional<String> providerKey = documents.stream()
+            Optional<String> providerKey = safeDocuments.stream()
                     .map(StorefrontDocument::html)
                     .map(html -> providerKey(html, detector.providerKeyPatterns()))
                     .flatMap(Optional::stream)

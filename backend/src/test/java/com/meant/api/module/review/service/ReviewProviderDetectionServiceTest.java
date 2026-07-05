@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.module.review.constant.ReviewProviderStatus;
 import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.service.dto.ReviewProviderDetectionResult;
+import com.meant.api.module.review.service.dto.StorefrontDocument;
+import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class ReviewProviderDetectionServiceTest {
@@ -46,6 +49,32 @@ class ReviewProviderDetectionServiceTest {
 
         assertThat(klReviews.provider()).isEqualTo(ReviewProviderType.KLAVIYO);
         assertThat(clientReviews.provider()).isEqualTo(ReviewProviderType.KLAVIYO);
+    }
+
+    @Test
+    void returnsNotFoundForNullOrEmptyDocumentLists() {
+        assertThat(detectionService.detect((List<StorefrontDocument>) null).provider())
+                .isEqualTo(ReviewProviderType.NONE);
+        assertThat(detectionService.detect(List.of()).provider())
+                .isEqualTo(ReviewProviderType.NONE);
+    }
+
+    @Test
+    void ignoresNullDocumentsWhenDetectingProvider() {
+        ReviewProviderDetectionResult result = detectionService.detect(Arrays.asList(
+                null,
+                new StorefrontDocument(
+                        "https://gb.harrys.com/en/products/hydrating-face-wash",
+                        """
+                                <script id="oke-reviews-settings" type="application/json">
+                                  {"subscriberId":"ac3ddecd-d40f-41bb-8e17-3a68e331cc08"}
+                                </script>
+                                """
+                )
+        ));
+
+        assertThat(result.provider()).isEqualTo(ReviewProviderType.OKENDO);
+        assertThat(result.providerKey()).isEqualTo("ac3ddecd-d40f-41bb-8e17-3a68e331cc08");
     }
 
     @Test
