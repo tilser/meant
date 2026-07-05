@@ -6,7 +6,6 @@ import com.meant.api.module.user.entity.ShoppingFilter;
 import com.meant.api.module.user.entity.UserSettings;
 import com.meant.api.module.user.entity.UserSettingsLocation;
 import com.meant.api.module.user.entity.UserShoppingFilter;
-import com.meant.api.module.user.entity.UserShoppingFilterId;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.ShoppingFilterRepository;
 import com.meant.api.module.user.repository.UserSettingsLocationRepository;
@@ -183,10 +182,7 @@ public class UserSettingsService {
     }
 
     private List<String> activeFilterIds(UUID userId) {
-        return userShoppingFilterRepository.findByIdUserId(userId).stream()
-                .map(UserShoppingFilter::getId)
-                .map(UserShoppingFilterId::getFilterId)
-                .toList();
+        return userShoppingFilterRepository.findFilterIdsByUserId(userId);
     }
 
     private List<String> replaceFilters(

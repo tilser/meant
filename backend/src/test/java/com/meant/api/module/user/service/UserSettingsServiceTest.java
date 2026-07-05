@@ -74,7 +74,7 @@ class UserSettingsServiceTest {
                 )
         );
 
-        assertThat(userShoppingFilterRepository.findByUserIdCalls).isEqualTo(1);
+        assertThat(userShoppingFilterRepository.findFilterIdsByUserIdCalls).isEqualTo(1);
         assertThat(shoppingFilterRepository.findAllByDisplayOrderCalls).isEqualTo(1);
         assertThat(shoppingFilterRepository.findAllByIdCalls).isZero();
         assertThat(userShoppingFilterRepository.flushCalls).isEqualTo(1);
@@ -160,7 +160,7 @@ class UserSettingsServiceTest {
 
         private List<String> activeFilterIds;
         private List<String> savedFilterIds = List.of();
-        private int findByUserIdCalls;
+        private int findFilterIdsByUserIdCalls;
         private int flushCalls;
 
         FakeUserShoppingFilterRepository(List<String> activeFilterIds) {
@@ -170,7 +170,7 @@ class UserSettingsServiceTest {
         @SuppressWarnings("unchecked")
         UserShoppingFilterRepository proxy() {
             return repository(UserShoppingFilterRepository.class, (proxy, method, args) -> switch (method.getName()) {
-                case "findByIdUserId" -> findByUserId((UUID) args[0]);
+                case "findFilterIdsByUserId" -> findFilterIdsByUserId();
                 case "deleteByIdUserId" -> {
                     activeFilterIds = new ArrayList<>();
                     yield null;
@@ -184,11 +184,9 @@ class UserSettingsServiceTest {
             });
         }
 
-        private List<UserShoppingFilter> findByUserId(UUID userId) {
-            findByUserIdCalls++;
-            return activeFilterIds.stream()
-                    .map(filterId -> UserShoppingFilter.create(userId, filterId, NOW))
-                    .toList();
+        private List<String> findFilterIdsByUserId() {
+            findFilterIdsByUserIdCalls++;
+            return List.copyOf(activeFilterIds);
         }
 
         private List<UserShoppingFilter> saveAll(Iterable<UserShoppingFilter> filters) {

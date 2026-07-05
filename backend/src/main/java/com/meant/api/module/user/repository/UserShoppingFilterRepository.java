@@ -13,8 +13,17 @@ import org.springframework.data.repository.query.Param;
 
 public interface UserShoppingFilterRepository extends JpaRepository<UserShoppingFilter, UserShoppingFilterId> {
 
-    List<UserShoppingFilter> findByIdUserId(UUID userId);
+    @Query("""
+            select userShoppingFilter.id.filterId from UserShoppingFilter userShoppingFilter
+            where userShoppingFilter.id.userId = :userId
+            """)
+    List<String> findFilterIdsByUserId(@Param("userId") UUID userId);
 
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            delete from UserShoppingFilter userShoppingFilter
+            where userShoppingFilter.id.userId = :userId
+            """)
     void deleteByIdUserId(UUID userId);
 
     @Modifying(flushAutomatically = true)
