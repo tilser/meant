@@ -18,9 +18,8 @@ public record ReviewProviderDetectionResult(
             String sourceUrl,
             String evidence
     ) {
-        return new ReviewProviderDetectionResult(
+        return detected(
                 ReviewProviderType.KLAVIYO,
-                ReviewProviderStatus.DETECTED,
                 providerKey,
                 ReviewProductIdType.SHOPIFY_NUMERIC_ID,
                 sourceUrl,
@@ -33,11 +32,27 @@ public record ReviewProviderDetectionResult(
             String sourceUrl,
             String evidence
     ) {
-        return new ReviewProviderDetectionResult(
+        return detected(
                 ReviewProviderType.YOTPO,
-                ReviewProviderStatus.DETECTED,
                 providerKey,
                 ReviewProductIdType.SHOPIFY_NUMERIC_ID,
+                sourceUrl,
+                evidence
+        );
+    }
+
+    public static ReviewProviderDetectionResult detected(
+            ReviewProviderType provider,
+            String providerKey,
+            ReviewProductIdType productIdType,
+            String sourceUrl,
+            String evidence
+    ) {
+        return new ReviewProviderDetectionResult(
+                provider,
+                ReviewProviderStatus.DETECTED,
+                providerKey,
+                productIdType,
                 sourceUrl,
                 evidence
         );

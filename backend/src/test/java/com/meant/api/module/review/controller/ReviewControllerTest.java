@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.properties.KlaviyoReviewProperties;
+import com.meant.api.module.review.properties.OkendoReviewProperties;
 import com.meant.api.module.review.properties.ReviewCacheProperties;
 import com.meant.api.module.review.properties.YotpoReviewProperties;
 import com.meant.api.module.review.service.ReviewProductIdNormalizer;
@@ -53,8 +54,10 @@ class ReviewControllerTest {
                     null,
                     null,
                     null,
+                    null,
                     new KlaviyoReviewProperties("https://reviews.example", 20),
                     new YotpoReviewProperties("https://yotpo.example", 20),
+                    new OkendoReviewProperties("https://okendo.example", 20),
                     new ReviewCacheProperties(Duration.ofMinutes(1), 10L),
                     new ReviewProductIdNormalizer()
             );

@@ -6,6 +6,7 @@ import com.meant.api.module.review.constant.ReviewProviderStatus;
 import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.entity.ReviewProvider;
 import com.meant.api.module.review.properties.KlaviyoReviewProperties;
+import com.meant.api.module.review.properties.OkendoReviewProperties;
 import com.meant.api.module.review.properties.ReviewCacheProperties;
 import com.meant.api.module.review.properties.YotpoReviewProperties;
 import com.meant.api.module.review.repository.ReviewProviderRepository;
@@ -29,8 +30,10 @@ public class ReviewService {
     private final ReviewProviderRepository reviewProviderRepository;
     private final KlaviyoReviewClient klaviyoReviewClient;
     private final YotpoReviewClient yotpoReviewClient;
+    private final OkendoReviewClient okendoReviewClient;
     private final KlaviyoReviewProperties klaviyoReviewProperties;
     private final YotpoReviewProperties yotpoReviewProperties;
+    private final OkendoReviewProperties okendoReviewProperties;
     private final ReviewProductIdNormalizer productIdNormalizer;
     private final Cache<ReviewCacheKey, ProductReviewsResult> cache;
 
@@ -38,16 +41,20 @@ public class ReviewService {
             ReviewProviderRepository reviewProviderRepository,
             KlaviyoReviewClient klaviyoReviewClient,
             YotpoReviewClient yotpoReviewClient,
+            OkendoReviewClient okendoReviewClient,
             KlaviyoReviewProperties klaviyoReviewProperties,
             YotpoReviewProperties yotpoReviewProperties,
+            OkendoReviewProperties okendoReviewProperties,
             ReviewCacheProperties reviewCacheProperties,
             ReviewProductIdNormalizer productIdNormalizer
     ) {
         this.reviewProviderRepository = reviewProviderRepository;
         this.klaviyoReviewClient = klaviyoReviewClient;
         this.yotpoReviewClient = yotpoReviewClient;
+        this.okendoReviewClient = okendoReviewClient;
         this.klaviyoReviewProperties = klaviyoReviewProperties;
         this.yotpoReviewProperties = yotpoReviewProperties;
+        this.okendoReviewProperties = okendoReviewProperties;
         this.productIdNormalizer = productIdNormalizer;
         this.cache = Caffeine.newBuilder()
                 .expireAfterWrite(reviewCacheProperties.ttl())
@@ -118,7 +125,14 @@ public class ReviewService {
                     limit,
                     offset
             );
-            case UNKNOWN, NONE -> ProductReviewsResult.unsupported(
+            case OKENDO -> okendoReviewClient.fetchReviews(
+                    merchantId,
+                    productId,
+                    provider.getProviderKey(),
+                    limit,
+                    offset
+            );
+            default -> ProductReviewsResult.unsupported(
                     merchantId,
                     productId,
                     provider.getProvider(),
@@ -131,15 +145,17 @@ public class ReviewService {
         return (provider.getStatus() == ReviewProviderStatus.DETECTED
                 || provider.getStatus() == ReviewProviderStatus.FAILED_RETRYABLE)
                 && (provider.getProvider() == ReviewProviderType.KLAVIYO
-                || provider.getProvider() == ReviewProviderType.YOTPO)
+                || provider.getProvider() == ReviewProviderType.YOTPO
+                || provider.getProvider() == ReviewProviderType.OKENDO)
                 && hasText(provider.getProviderKey());
     }
 
     private int defaultLimit(ReviewProvider provider) {
-        if (provider.getProvider() == ReviewProviderType.YOTPO) {
-            return yotpoReviewProperties.defaultLimit();
-        }
-        return klaviyoReviewProperties.defaultLimit();
+        return switch (provider.getProvider()) {
+            case YOTPO -> yotpoReviewProperties.defaultLimit();
+            case OKENDO -> okendoReviewProperties.defaultLimit();
+            default -> klaviyoReviewProperties.defaultLimit();
+        };
     }
 
     private boolean hasText(String value) {

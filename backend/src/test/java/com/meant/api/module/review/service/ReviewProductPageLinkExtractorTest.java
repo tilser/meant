@@ -27,4 +27,12 @@ class ReviewProductPageLinkExtractorTest {
         assertThat(extractor.firstProductPage(URI.create("https://merchant.example/"), html))
                 .isEmpty();
     }
+
+    @Test
+    void allowsProductLinksOnCanonicalSubdomains() {
+        String html = "<a href=\"https://us.checkout.gymshark.com/products/good-shirt\">Good shirt</a>";
+
+        assertThat(extractor.firstProductPage(URI.create("https://gymshark.com/"), html))
+                .contains(URI.create("https://us.checkout.gymshark.com/products/good-shirt"));
+    }
 }

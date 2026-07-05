@@ -39,12 +39,31 @@ public class ReviewProductPageLinkExtractor {
             if (!"https".equalsIgnoreCase(resolved.getScheme())) {
                 return Optional.empty();
             }
-            if (resolved.getHost() == null || !resolved.getHost().equalsIgnoreCase(storefrontBaseUri.getHost())) {
+            if (resolved.getHost() == null || !sameOrRelatedHost(resolved.getHost(), storefrontBaseUri.getHost())) {
                 return Optional.empty();
             }
             return Optional.of(resolved);
         } catch (IllegalArgumentException exception) {
             return Optional.empty();
         }
+    }
+
+    private boolean sameOrRelatedHost(String productHost, String storefrontHost) {
+        String normalizedProductHost = normalizeHost(productHost);
+        String normalizedStorefrontHost = normalizeHost(storefrontHost);
+        return normalizedProductHost.equalsIgnoreCase(normalizedStorefrontHost)
+                || normalizedProductHost.endsWith("." + normalizedStorefrontHost)
+                || normalizedStorefrontHost.endsWith("." + normalizedProductHost);
+    }
+
+    private String normalizeHost(String host) {
+        if (host == null) {
+            return "";
+        }
+        String normalizedHost = host.trim().toLowerCase();
+        if (normalizedHost.startsWith("www.")) {
+            return normalizedHost.substring(4);
+        }
+        return normalizedHost;
     }
 }

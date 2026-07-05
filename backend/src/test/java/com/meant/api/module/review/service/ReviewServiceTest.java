@@ -7,6 +7,7 @@ import com.meant.api.module.review.constant.ReviewProviderStatus;
 import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.entity.ReviewProvider;
 import com.meant.api.module.review.properties.KlaviyoReviewProperties;
+import com.meant.api.module.review.properties.OkendoReviewProperties;
 import com.meant.api.module.review.properties.ReviewCacheProperties;
 import com.meant.api.module.review.properties.YotpoReviewProperties;
 import com.meant.api.module.review.repository.ReviewProviderRepository;
@@ -31,8 +32,10 @@ class ReviewServiceTest {
                 repository,
                 client,
                 null,
+                null,
                 new KlaviyoReviewProperties("https://reviews.example", 20),
                 new YotpoReviewProperties("https://yotpo.example", 20),
+                new OkendoReviewProperties("https://okendo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
                 new ReviewProductIdNormalizer()
         );
@@ -57,8 +60,10 @@ class ReviewServiceTest {
                 repository,
                 client,
                 null,
+                null,
                 new KlaviyoReviewProperties("https://reviews.example", 20),
                 new YotpoReviewProperties("https://yotpo.example", 20),
+                new OkendoReviewProperties("https://okendo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
                 new ReviewProductIdNormalizer()
         );
@@ -83,8 +88,10 @@ class ReviewServiceTest {
                 repository,
                 null,
                 client,
+                null,
                 new KlaviyoReviewProperties("https://reviews.example", 20),
                 new YotpoReviewProperties("https://yotpo.example", 5),
+                new OkendoReviewProperties("https://okendo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
                 new ReviewProductIdNormalizer()
         );
@@ -100,6 +107,38 @@ class ReviewServiceTest {
         assertThat(client.providerKey).isEqualTo("yotpo-store");
         assertThat(client.limit).isEqualTo(5);
         assertThat(client.offset).isZero();
+    }
+
+    @Test
+    void fetchesReviewsFromOkendoProvider() {
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        ReviewProviderRepository repository = repositoryReturning(
+                provider(merchantId, ReviewProviderType.OKENDO, ReviewProviderStatus.DETECTED, "okendo-subscriber")
+        );
+        CapturingOkendoReviewClient client = new CapturingOkendoReviewClient();
+        ReviewService service = new ReviewService(
+                repository,
+                null,
+                null,
+                client,
+                new KlaviyoReviewProperties("https://reviews.example", 20),
+                new YotpoReviewProperties("https://yotpo.example", 20),
+                new OkendoReviewProperties("https://okendo.example", 8),
+                new ReviewCacheProperties(Duration.ofHours(1), 100L),
+                new ReviewProductIdNormalizer()
+        );
+
+        ProductReviewsResult result = service.getProductReviews(
+                new GetProductReviewsQuery(merchantId, "gid://shopify/Product/15265473495425", null, 3)
+        );
+
+        assertThat(result.supported()).isTrue();
+        assertThat(result.provider()).isEqualTo(ReviewProviderType.OKENDO);
+        assertThat(client.fetchCount).isEqualTo(1);
+        assertThat(client.productId).isEqualTo("15265473495425");
+        assertThat(client.providerKey).isEqualTo("okendo-subscriber");
+        assertThat(client.limit).isEqualTo(8);
+        assertThat(client.offset).isEqualTo(3);
     }
 
     private ReviewProviderRepository repositoryReturning(ReviewProvider provider) {
@@ -212,6 +251,50 @@ class ReviewServiceTest {
                     5.0,
                     5,
                     false,
+                    List.of(),
+                    false,
+                    true,
+                    null
+            );
+        }
+    }
+
+    private static class CapturingOkendoReviewClient extends OkendoReviewClient {
+
+        private int fetchCount;
+        private String productId;
+        private String providerKey;
+        private int limit;
+        private int offset;
+
+        private CapturingOkendoReviewClient() {
+            super(
+                    org.springframework.web.client.RestClient.builder().build(),
+                    new OkendoReviewProperties("https://okendo.example", 20),
+                    null
+            );
+        }
+
+        @Override
+        public ProductReviewsResult fetchReviews(
+                UUID merchantId,
+                String productId,
+                String providerKey,
+                int limit,
+                int offset
+        ) {
+            fetchCount++;
+            this.productId = productId;
+            this.providerKey = providerKey;
+            this.limit = limit;
+            this.offset = offset;
+            return new ProductReviewsResult(
+                    merchantId,
+                    productId,
+                    ReviewProviderType.OKENDO,
+                    4.7,
+                    116,
+                    true,
                     List.of(),
                     false,
                     true,
