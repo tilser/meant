@@ -267,6 +267,49 @@ class CatalogCapabilityTest {
     }
 
     @Test
+    void getProductParsesGroupedMajorUnitMoneyStrings() {
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+
+        ProductDetailsResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "product": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Runner",
+                            "price_range": {
+                              "min": {
+                                "amount": "1,234",
+                                "currency": "USD"
+                              },
+                              "max": {
+                                "amount": "1,234",
+                                "currency": "USD"
+                              }
+                            },
+                            "variants": [
+                              {
+                                "id": "gid://shopify/ProductVariant/1",
+                                "title": "Default",
+                                "price": {
+                                  "amount": "1,234",
+                                  "currency": "USD"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        ProductDetailsResponse.Product product = response.product();
+        assertThat(product.priceRange().min()).isEqualTo("1234.00");
+        assertThat(product.priceRange().max()).isEqualTo("1234.00");
+        assertThat(product.selectedOrFirstAvailableVariant().price()).isEqualTo("1234.00");
+    }
+
+    @Test
     void shopifyExtensionAdvertisesWithoutToolOwnership() {
         ShopifyCatalogExtensionCapability capability = new ShopifyCatalogExtensionCapability();
 

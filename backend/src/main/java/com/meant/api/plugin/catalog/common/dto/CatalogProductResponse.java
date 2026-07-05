@@ -126,14 +126,25 @@ public record CatalogProductResponse(
             return null;
         }
         Object amount = money.amount();
-        Long minorAmount = wholeNumber(amount);
-        if (minorAmount == null) {
-            minorAmount = UcpMoney.wholeNumberAmount(amount);
-        }
+        Long minorAmount = explicitMinorAmount(amount);
         if (minorAmount == null && (amount instanceof Number || amount instanceof CharSequence)) {
             minorAmount = UcpMoney.minorAmount(amount.toString(), money.currency());
         }
         return UcpDecimal.minorAmountToDecimalText(minorAmount, money.currency());
+    }
+
+    private static Long explicitMinorAmount(Object amount) {
+        Long wholeNumber = wholeNumber(amount);
+        if (wholeNumber != null) {
+            return wholeNumber;
+        }
+        if (amount instanceof Number) {
+            return UcpMoney.wholeNumberAmount(amount);
+        }
+        if (amount instanceof CharSequence value && value.toString().trim().matches("-?\\d+")) {
+            return UcpMoney.wholeNumberAmount(amount);
+        }
+        return null;
     }
 
     private static Long wholeNumber(Object amount) {

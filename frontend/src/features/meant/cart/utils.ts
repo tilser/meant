@@ -263,7 +263,10 @@ export function cartSnapshotSubtotal(
   snapshot: MerchantCartSnapshot | undefined,
   fallbackSubtotal: number,
 ): number {
-  return reliableRemoteCartSubtotal(snapshot?.subtotalAmount ?? null, fallbackSubtotal) ?? fallbackSubtotal
+  return (
+    reliableRemoteCartSubtotal(snapshot?.subtotalAmount ?? null, fallbackSubtotal) ??
+    fallbackSubtotal
+  )
 }
 
 export function cartSnapshotHasReliableTotal(
