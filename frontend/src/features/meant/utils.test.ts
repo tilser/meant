@@ -242,7 +242,6 @@ describe('shopping decision utilities', () => {
     expect(productMerchantCount(cereal, uk)).toBe(1)
     expect(bestOffer(cereal, uk)).toEqual({ merchant: 'iHerb', price: 8.2, delivery: '3 days' })
   })
-
 })
 
 describe('assistant and preference utilities', () => {
