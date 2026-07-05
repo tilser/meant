@@ -625,6 +625,9 @@ export function reliableRemoteCartSubtotal(
   if (remoteSubtotal === null || localSubtotal <= 0) {
     return remoteSubtotal
   }
+  if (remoteSubtotal < 0) {
+    return null
+  }
   const tolerance = Math.max(5, localSubtotal * 0.25)
   if (Math.abs(remoteSubtotal - localSubtotal) > tolerance) {
     return null
@@ -640,7 +643,7 @@ export function reliableRemoteCartTotal(
   if (remoteTotal === null || baselineAmount <= 0) {
     return remoteTotal
   }
-  if (rejectedRemoteSubtotal || remoteTotal === 0) {
+  if (rejectedRemoteSubtotal || remoteTotal <= 0) {
     return null
   }
   const maxPlausibleTotal = Math.max(baselineAmount + 100, baselineAmount * 3)

@@ -110,4 +110,15 @@ describe('cart feature utilities', () => {
     expect(cartSnapshotTotal(snapshot, 200, 35)).toBe(200)
     expect(cartSnapshotHasReliableTotal(snapshot, 200, 35)).toBe(false)
   })
+
+  test('ignores negative snapshot amounts', () => {
+    const snapshot = merchantSnapshot({
+      subtotalAmount: -35,
+      totalAmount: -42,
+    })
+
+    expect(cartSnapshotSubtotal(snapshot, 35)).toBe(35)
+    expect(cartSnapshotTotal(snapshot, 39.99, 35)).toBe(39.99)
+    expect(cartSnapshotHasReliableTotal(snapshot, 39.99, 35)).toBe(false)
+  })
 })

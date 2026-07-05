@@ -140,9 +140,6 @@ public record CatalogProductResponse(
         if (wholeNumber != null) {
             return wholeNumber;
         }
-        if (amount instanceof Number) {
-            return UcpMoney.wholeNumberAmount(amount);
-        }
         if (amount instanceof CharSequence value && value.toString().trim().matches("-?\\d+")) {
             return UcpMoney.wholeNumberAmount(amount);
         }
