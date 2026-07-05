@@ -8,6 +8,7 @@ import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArti
 import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.common.entity.CheckoutCanaryOutcome;
 import com.meant.api.plugin.checkout.common.entity.CheckoutCompletionState;
 import com.meant.api.plugin.checkout.common.entity.CheckoutIdempotencyKey;
 import com.meant.api.plugin.checkout.common.entity.CheckoutIdempotencyStatus;
@@ -79,18 +80,21 @@ class NativeCheckoutCompletionServiceTest {
         completionStateStore = new FakeCompletionStateStore();
         idempotencyKeyStore = new FakeIdempotencyKeyStore();
         checkoutCanaryService = new FakeCanaryService();
-        service = new NativeCheckoutCompletionService(
+        service = completionService(new CheckoutTotalsReconciler(objectMapper, jcs), jcs);
+    }
+
+    private NativeCheckoutCompletionService completionService(CheckoutTotalsReconciler totalsReconciler, Jcs jcs) {
+        return new NativeCheckoutCompletionService(
                 dispatchService,
-                new CompleteCheckoutCapability(objectMapper),
                 completionStateStore,
                 idempotencyKeyStore,
                 new FakeBuyerConsentService(consent(), objectMapper),
-                new CheckoutTotalsReconciler(objectMapper, jcs),
-                null,
-                signer(),
-                jcs,
-                checkoutCanaryService,
-                objectMapper
+                totalsReconciler,
+                new NativeCheckoutAp2MandateBuilder(null, objectMapper),
+                new NativeCheckoutRequestSigner(new CompleteCheckoutCapability(objectMapper), signer(), jcs, objectMapper),
+                new NativeCheckoutResultInterpreter(),
+                new NativeCheckoutCanaryRecorder(checkoutCanaryService),
+                new NativeCheckoutIdempotencyResponseRecorder(idempotencyKeyStore)
         );
     }
 
@@ -141,19 +145,7 @@ class NativeCheckoutCompletionServiceTest {
     @Test
     void nullRawCheckoutPayloadFailsCleanlyWhenBuildingAp2Mandate() {
         Jcs jcs = new Jcs();
-        service = new NativeCheckoutCompletionService(
-                dispatchService,
-                new CompleteCheckoutCapability(objectMapper),
-                completionStateStore,
-                idempotencyKeyStore,
-                new FakeBuyerConsentService(consent(), objectMapper),
-                new NoopCheckoutTotalsReconciler(objectMapper, jcs),
-                null,
-                signer(),
-                jcs,
-                checkoutCanaryService,
-                objectMapper
-        );
+        service = completionService(new NoopCheckoutTotalsReconciler(objectMapper, jcs), jcs);
         dispatchService.getResults.add(toolResult("null", openCheckoutJson()));
 
         assertThatThrownBy(() -> service.complete(
@@ -200,6 +192,22 @@ class NativeCheckoutCompletionServiceTest {
         assertThat(idempotencyKeyStore.recordCommands)
                 .extracting(RecordIdempotencyResponseCommand::status)
                 .contains(CheckoutIdempotencyStatus.FAILED);
+    }
+
+    @Test
+    void chargeMismatchMessageRecordsChargeMismatchCanary() {
+        dispatchService.getResults.add(toolResult(openCheckoutJson()));
+        dispatchService.completeResult = toolResult(messageCheckoutJson("unrecoverable", "charge_mismatch"));
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.UNRECOVERABLE_ERROR);
+        assertThat(checkoutCanaryService.commands)
+                .extracting(CanaryEventCommand::outcome)
+                .contains(CheckoutCanaryOutcome.CHARGE_MISMATCH);
+        assertThat(checkoutCanaryService.commands)
+                .filteredOn(CanaryEventCommand::chargeMismatch)
+                .hasSize(1);
     }
 
     @Test
