@@ -186,7 +186,7 @@ export function AccountView({
         email: savedEmail,
         avatar: savedAvatar,
         avatarPath: savedAvatarPath,
-        newsletter,
+        newsletter: user.newsletter,
       })
       setName(savedName)
       setAvatar(savedAvatar)
@@ -319,7 +319,7 @@ export function AccountView({
               Get an email when Watch, Similar, and other new features are ready.
             </div>
           </div>
-          <label className={`mt-switch ${newsletter ? 'on' : ''}`}>
+          <label className="mt-switch">
             <input
               className="mt-switch-input"
               type="checkbox"

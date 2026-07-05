@@ -443,7 +443,7 @@ const nextDiscoverChatMessageId = () => {
   return `discover-chat-${discoverChatMessageSequence}`
 }
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
-  'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your profile settings.'
+  'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
 
 function deriveDiscoverChatTitle(text: string): string {
   const normalized = text.trim().replace(/\s+/g, ' ')

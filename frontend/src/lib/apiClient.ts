@@ -683,15 +683,13 @@ export async function updateProfilePicture(profilePicturePath: string): Promise<
 }
 
 export async function updateNewsletterSubscription(newsletter: boolean): Promise<UserProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/newsletter`, {
-    method: 'PATCH',
-    headers: {
-      ...(await authHeaders()),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ newsletter }),
+  const { data, error } = await client.PATCH('/api/users/me/newsletter', {
+    body: { newsletter },
   })
-  return parseJsonResponse<UserProfile>(response, 'Failed to update newsletter subscription')
+  if (error || !data) {
+    throw new Error('Failed to update newsletter subscription')
+  }
+  return data
 }
 
 export async function removeProfilePicture(): Promise<UserProfile> {
