@@ -122,15 +122,16 @@ final class UserProductSearchSseSession {
         if (cancelled.compareAndSet(false, true)) {
             emitter.completeWithError(exception);
         }
-        shutdown();
+        cleanup();
     }
 
     private void cancel() {
+        cancelled.set(true);
+        cleanup();
+    }
+
+    private void cleanup() {
         synchronized (this) {
-            if (!cancelled.compareAndSet(false, true)) {
-                shutdown();
-                return;
-            }
             closed.set(true);
             if (searchFuture != null) {
                 searchFuture.cancel(true);
