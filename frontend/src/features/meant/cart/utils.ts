@@ -247,7 +247,7 @@ export function cartSnapshotSavings(
     return codeSavings
   }
   const subtotal = cartSnapshotSubtotal(snapshot, fallbackSubtotal)
-  const total = cartSnapshotTotal(snapshot, fallbackTotal)
+  const total = cartSnapshotTotal(snapshot, fallbackTotal, fallbackSubtotal)
   const deliveryFee = Math.max(0, fallbackTotal - fallbackSubtotal)
   return Math.max(subtotal + deliveryFee - total, 0)
 }
@@ -255,8 +255,9 @@ export function cartSnapshotSavings(
 export function cartSnapshotTotal(
   snapshot: MerchantCartSnapshot | undefined,
   fallbackTotal: number,
+  fallbackSubtotal = fallbackTotal,
 ): number {
-  return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackTotal) ?? fallbackTotal
+  return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackSubtotal) ?? fallbackTotal
 }
 
 export function cartSnapshotSubtotal(
@@ -272,8 +273,9 @@ export function cartSnapshotSubtotal(
 export function cartSnapshotHasReliableTotal(
   snapshot: MerchantCartSnapshot | undefined,
   fallbackTotal: number,
+  fallbackSubtotal = fallbackTotal,
 ): boolean {
-  return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackTotal) !== null
+  return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackSubtotal) !== null
 }
 
 export function cartableOfferForProduct(product: Product): Offer | null {

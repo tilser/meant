@@ -586,10 +586,7 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
       (group) => cartDeliveryOptions(group).length > 0,
     )
     const selectedDeliveryCost = selectedDeliveryGroupsCost(deliveryGroups)
-    const inferredDelivery =
-      remoteTotal !== null && remoteSubtotal !== null
-        ? Math.max(0, remoteTotal - remoteSubtotal)
-        : null
+    const inferredDelivery = remoteTotal !== null ? Math.max(0, remoteTotal - subtotal) : null
     const deliveryRaw = selectedDeliveryCost ?? inferredDelivery ?? (subtotal >= 50 ? 0 : 4.99)
     const found = scanning ? null : bestCode(DISCOUNTS[merchant], subtotal, deliveryRaw)
     const itemDiscount = found && found.code.type !== 'shipping' ? found.save : 0
@@ -637,16 +634,16 @@ export function reliableRemoteCartSubtotal(
 
 export function reliableRemoteCartTotal(
   remoteTotal: number | null,
-  localSubtotal: number,
+  baselineAmount: number,
   rejectedRemoteSubtotal = false,
 ): number | null {
-  if (remoteTotal === null || localSubtotal <= 0) {
+  if (remoteTotal === null || baselineAmount <= 0) {
     return remoteTotal
   }
   if (rejectedRemoteSubtotal || remoteTotal === 0) {
     return null
   }
-  const maxPlausibleTotal = Math.max(localSubtotal + 100, localSubtotal * 3)
+  const maxPlausibleTotal = Math.max(baselineAmount + 100, baselineAmount * 3)
   if (remoteTotal > maxPlausibleTotal) {
     return null
   }

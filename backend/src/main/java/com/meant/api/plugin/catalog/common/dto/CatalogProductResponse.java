@@ -6,6 +6,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -154,7 +156,21 @@ public record CatalogProductResponse(
         if (amount instanceof Integer value) {
             return value.longValue();
         }
+        if (amount instanceof Number value) {
+            return wholeNumber(value);
+        }
         return null;
+    }
+
+    private static Long wholeNumber(Number value) {
+        try {
+            if (value instanceof BigInteger bigInteger) {
+                return bigInteger.longValueExact();
+            }
+            return new BigDecimal(value.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException exception) {
+            return null;
+        }
     }
 
     private static String currency(Money first, Money second) {

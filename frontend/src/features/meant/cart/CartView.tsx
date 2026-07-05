@@ -36,7 +36,6 @@ import type {
 import {
   appliedCodeDisplay,
   cartMoney,
-  cartSnapshotHasReliableTotal,
   cartSnapshotSavings,
   cartSnapshotSubtotal,
   cartSnapshotTotal,
@@ -283,17 +282,13 @@ export function CartView({
       snapshot,
       subtotal: cartSnapshotSubtotal(snapshot, group.subtotal),
       savings: cartSnapshotSavings(snapshot, group.subtotal, fallbackTotal),
-      total: cartSnapshotTotal(snapshot, fallbackTotal),
-      hasReliableRemoteTotal: cartSnapshotHasReliableTotal(snapshot, fallbackTotal),
+      total: cartSnapshotTotal(snapshot, fallbackTotal, group.subtotal),
       currency: snapshot?.currency ?? null,
     }
   })
   const itemsTotal = groupSummaries.reduce((sum, summary) => sum + summary.subtotal, 0)
   const discountTotal = groupSummaries.reduce((sum, summary) => sum + summary.savings, 0)
-  const deliveryTotal = groupSummaries.reduce(
-    (sum, summary) => (summary.hasReliableRemoteTotal ? sum : sum + summary.group.delivery),
-    0,
-  )
+  const deliveryTotal = groupSummaries.reduce((sum, summary) => sum + summary.group.delivery, 0)
   const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
   const codeCount = groupSummaries.reduce(
     (sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0),

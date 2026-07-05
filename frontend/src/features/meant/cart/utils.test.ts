@@ -101,4 +101,13 @@ describe('cart feature utilities', () => {
     expect(cartSnapshotTotal(snapshot, 39.99)).toBe(42)
     expect(cartSnapshotHasReliableTotal(snapshot, 39.99)).toBe(true)
   })
+
+  test('validates snapshot totals against explicit subtotal baseline', () => {
+    const snapshot = merchantSnapshot({
+      totalAmount: 150,
+    })
+
+    expect(cartSnapshotTotal(snapshot, 200, 35)).toBe(200)
+    expect(cartSnapshotHasReliableTotal(snapshot, 200, 35)).toBe(false)
+  })
 })

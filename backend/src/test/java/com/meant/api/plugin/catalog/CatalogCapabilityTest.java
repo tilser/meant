@@ -310,6 +310,49 @@ class CatalogCapabilityTest {
     }
 
     @Test
+    void getProductParsesWholeNumberFloatingMoneyAsMinorUnits() {
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+
+        ProductDetailsResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "product": {
+                            "id": "gid://shopify/Product/1",
+                            "title": "Runner",
+                            "price_range": {
+                              "min": {
+                                "amount": 6500.0,
+                                "currency": "USD"
+                              },
+                              "max": {
+                                "amount": 6500.0,
+                                "currency": "USD"
+                              }
+                            },
+                            "variants": [
+                              {
+                                "id": "gid://shopify/ProductVariant/1",
+                                "title": "Default",
+                                "price": {
+                                  "amount": 6500.0,
+                                  "currency": "USD"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        ProductDetailsResponse.Product product = response.product();
+        assertThat(product.priceRange().min()).isEqualTo("65.00");
+        assertThat(product.priceRange().max()).isEqualTo("65.00");
+        assertThat(product.selectedOrFirstAvailableVariant().price()).isEqualTo("65.00");
+    }
+
+    @Test
     void shopifyExtensionAdvertisesWithoutToolOwnership() {
         ShopifyCatalogExtensionCapability capability = new ShopifyCatalogExtensionCapability();
 
