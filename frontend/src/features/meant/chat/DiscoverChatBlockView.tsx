@@ -201,6 +201,10 @@ export function DiscoverChatBlockView({
                 code.title ||
                 code.validationMessage ||
                 'Accepted by the merchant cart.'
+              const validationMeta =
+                code.validationMessage && code.validationMessage !== detail
+                  ? code.validationMessage
+                  : null
               return (
                 <div className="mt-ct-code-row" key={code.code}>
                   <span className="mt-code">
@@ -225,7 +229,7 @@ export function DiscoverChatBlockView({
                           {sourceHost}
                         </a>
                       ) : null}
-                      {code.validationMessage ? <span>{code.validationMessage}</span> : null}
+                      {validationMeta ? <span>{validationMeta}</span> : null}
                     </div>
                   </div>
                 </div>
