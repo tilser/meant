@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Service
 public class NativeCheckoutResultInterpreter {
@@ -68,7 +69,7 @@ public class NativeCheckoutResultInterpreter {
     ) {
         UcpCheckoutResponse response = result.response();
         String normalizedStatus = normalizedStatus(status(response));
-        if ("completed".equals(normalizedStatus) || hasText(orderRef(response))) {
+        if ("completed".equals(normalizedStatus) || StringUtils.hasText(orderRef(response))) {
             return new NativeCheckoutInterpretation(
                     new NativeCheckoutResult(
                             NativeCheckoutStatus.COMPLETED,
@@ -100,7 +101,7 @@ public class NativeCheckoutResultInterpreter {
                     false
             );
         }
-        if (allowSca && hasText(continueUrl(response))) {
+        if (allowSca && StringUtils.hasText(continueUrl(response))) {
             return new NativeCheckoutInterpretation(
                     new NativeCheckoutResult(
                             NativeCheckoutStatus.SCA_REQUIRED,
@@ -159,7 +160,7 @@ public class NativeCheckoutResultInterpreter {
 
     private String status(UcpCheckoutResponse response) {
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
-        if (checkout != null && hasText(checkout.status())) {
+        if (checkout != null && StringUtils.hasText(checkout.status())) {
             return checkout.status();
         }
         return response.status();
@@ -167,7 +168,7 @@ public class NativeCheckoutResultInterpreter {
 
     private String checkoutId(UcpCheckoutResponse response) {
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
-        if (checkout != null && hasText(checkout.id())) {
+        if (checkout != null && StringUtils.hasText(checkout.id())) {
             return checkout.id();
         }
         return response.checkoutId();
@@ -175,7 +176,7 @@ public class NativeCheckoutResultInterpreter {
 
     private String continueUrl(UcpCheckoutResponse response) {
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
-        if (checkout != null && hasText(checkout.continueUrl())) {
+        if (checkout != null && StringUtils.hasText(checkout.continueUrl())) {
             return checkout.continueUrl();
         }
         return response.continueUrl();
@@ -183,15 +184,25 @@ public class NativeCheckoutResultInterpreter {
 
     private String orderRef(UcpCheckoutResponse response) {
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
-        String orderRef = checkout == null ? null : firstText(checkout.orderId(), orderRef(checkout.order()));
-        return firstText(orderRef, response.orderId(), orderRef(response.order()));
+        String orderRef = checkout == null
+                ? null
+                : NativeCheckoutValueSupport.firstText(checkout.orderId(), orderRef(checkout.order()));
+        return NativeCheckoutValueSupport.firstText(orderRef, response.orderId(), orderRef(response.order()));
     }
 
     private String orderRef(Map<String, Object> order) {
         if (order == null) {
             return null;
         }
-        return scalarString(firstMapValue(order, "id", "order_id", "orderId", "name", "reference", "ref"));
+        return NativeCheckoutValueSupport.scalarString(NativeCheckoutValueSupport.firstMapValue(
+                order,
+                "id",
+                "order_id",
+                "orderId",
+                "name",
+                "reference",
+                "ref"
+        ));
     }
 
     private UcpCheckoutResponse.CheckoutMessage firstRecoverableMessage(UcpCheckoutResponse response) {
@@ -211,7 +222,7 @@ public class NativeCheckoutResultInterpreter {
     private List<String> messages(UcpCheckoutResponse response) {
         return allMessages(response).stream()
                 .map(UcpCheckoutResponse.CheckoutMessage::message)
-                .filter(this::hasText)
+                .filter(StringUtils::hasText)
                 .toList();
     }
 
@@ -231,51 +242,11 @@ public class NativeCheckoutResultInterpreter {
         return matches(message.code(), "charge_mismatch") || matches(message.code(), "amount_mismatch");
     }
 
-    private Object firstMapValue(Map<?, ?> values, String... keys) {
-        for (String key : keys) {
-            for (Map.Entry<?, ?> entry : values.entrySet()) {
-                if (entry.getKey() != null && key.equalsIgnoreCase(entry.getKey().toString())) {
-                    return entry.getValue();
-                }
-            }
-        }
-        return null;
-    }
-
-    private String scalarString(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String string) {
-            return string.isBlank() ? null : string.trim();
-        }
-        if (value instanceof Number || value instanceof Boolean || value instanceof Character) {
-            return value.toString();
-        }
-        return null;
-    }
-
     private String normalizedStatus(String status) {
         return status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
     }
 
-    private String firstText(String... values) {
-        if (values == null) {
-            return null;
-        }
-        for (String value : values) {
-            if (hasText(value)) {
-                return value.trim();
-            }
-        }
-        return null;
-    }
-
     private boolean matches(String value, String expected) {
         return value != null && value.trim().equalsIgnoreCase(expected);
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 }

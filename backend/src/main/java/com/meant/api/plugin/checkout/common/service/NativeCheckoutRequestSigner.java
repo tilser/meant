@@ -15,6 +15,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -39,7 +40,7 @@ public class NativeCheckoutRequestSigner {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("checkout_id", request.checkoutId());
-            if (hasText(request.reason())) {
+            if (StringUtils.hasText(request.reason())) {
                 body.put("reason", request.reason().trim());
             }
             return jcs.canonicalizeToUtf8Bytes(objectMapper.writeValueAsBytes(body));
@@ -64,26 +65,13 @@ public class NativeCheckoutRequestSigner {
     }
 
     private URI signingEndpoint(MerchantCartProvider provider) {
-        String endpoint = firstText(provider.profileMcpEndpoint(), provider.advertisedMcpEndpoint());
-        if (!hasText(endpoint)) {
+        String endpoint = NativeCheckoutValueSupport.firstText(
+                provider.profileMcpEndpoint(),
+                provider.advertisedMcpEndpoint()
+        );
+        if (!StringUtils.hasText(endpoint)) {
             endpoint = "https://" + provider.domain() + "/api/mcp";
         }
         return URI.create(endpoint);
-    }
-
-    private String firstText(String... values) {
-        if (values == null) {
-            return null;
-        }
-        for (String value : values) {
-            if (hasText(value)) {
-                return value.trim();
-            }
-        }
-        return null;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 }

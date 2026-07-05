@@ -29,6 +29,7 @@ import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
 
@@ -397,14 +398,10 @@ public class NativeCheckoutCompletionService {
     }
 
     private String idempotencyKey(NativeCheckoutCompletionCommand command) {
-        if (hasText(command.idempotencyKey())) {
+        if (StringUtils.hasText(command.idempotencyKey())) {
             return command.idempotencyKey().trim();
         }
         return "ucp-complete-" + command.buyerConsentId();
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 
     private String simpleErrorCode(Throwable throwable) {
