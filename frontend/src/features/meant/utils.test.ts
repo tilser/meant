@@ -37,6 +37,8 @@ import {
   productsForLocation,
   productsForPreferences,
   readStorage,
+  reliableRemoteCartSubtotal,
+  reliableRemoteCartTotal,
   resolveAsk,
   resolveReply,
   selectedCartDeliveryOption,
@@ -643,6 +645,14 @@ describe('cart delivery groups', () => {
     expect(cartGroup.remoteTotal).toBeNull()
     expect(cartGroup.subtotal).toBe(35)
     expect(cartGroup.total).toBeCloseTo(39.99)
+  })
+
+  test('rejects invalid remote cart amounts before zero-baseline fallback', () => {
+    expect(reliableRemoteCartSubtotal(-35, 0)).toBeNull()
+    expect(reliableRemoteCartTotal(-42, 0)).toBeNull()
+    expect(reliableRemoteCartTotal(0, 0)).toBeNull()
+    expect(reliableRemoteCartSubtotal(35, 0)).toBe(35)
+    expect(reliableRemoteCartTotal(42, 0)).toBe(42)
   })
 
   test('requires every shipment with options to have a selected delivery option', () => {
