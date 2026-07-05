@@ -14,6 +14,7 @@ import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -55,7 +56,9 @@ public class UserInventoryController {
     @ApiResponse(
             responseCode = "200",
             description = "Inventory items for the current user",
-            content = @Content(schema = @Schema(implementation = UserInventoryItemResponse.class))
+            content = @Content(array = @ArraySchema(
+                    schema = @Schema(implementation = UserInventoryItemResponse.class)
+            ))
     )
     public List<UserInventoryItemResponse> inventory(
             @AuthenticationPrincipal Jwt jwt,

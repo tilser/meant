@@ -51,22 +51,29 @@ final class UserProductSearchSseSession {
         });
         emitter.onError(exception -> cancel());
 
-        searchFuture = CompletableFuture.runAsync(searchTask, executor)
-                .whenComplete((ignored, exception) -> {
-                    if (exception != null && !cancelled.get()) {
-                        log.warn(
-                                "Product search stream failed. userId={}, merchantId={}",
-                                userId,
-                                merchantId,
-                                exception
-                        );
-                        send(UserProductSearchStreamEventResponse.error(
-                                "Product search failed. Please try again."
-                        ));
-                    }
-                    closed.set(true);
-                });
-        drainFuture = CompletableFuture.runAsync(this::drain, executor);
+        synchronized (this) {
+            if (cancelled.get()) {
+                closed.set(true);
+                shutdown();
+                return;
+            }
+            searchFuture = CompletableFuture.runAsync(searchTask, executor)
+                    .whenComplete((ignored, exception) -> {
+                        if (exception != null && !cancelled.get()) {
+                            log.warn(
+                                    "Product search stream failed. userId={}, merchantId={}",
+                                    userId,
+                                    merchantId,
+                                    exception
+                            );
+                            send(UserProductSearchStreamEventResponse.error(
+                                    "Product search failed. Please try again."
+                            ));
+                        }
+                        closed.set(true);
+                    });
+            drainFuture = CompletableFuture.runAsync(this::drain, executor);
+        }
     }
 
     void send(UserProductSearchStreamEventResponse event) {
@@ -119,18 +126,20 @@ final class UserProductSearchSseSession {
     }
 
     private void cancel() {
-        if (!cancelled.compareAndSet(false, true)) {
+        synchronized (this) {
+            if (!cancelled.compareAndSet(false, true)) {
+                shutdown();
+                return;
+            }
+            closed.set(true);
+            if (searchFuture != null) {
+                searchFuture.cancel(true);
+            }
+            if (drainFuture != null) {
+                drainFuture.cancel(true);
+            }
             shutdown();
-            return;
         }
-        closed.set(true);
-        if (searchFuture != null) {
-            searchFuture.cancel(true);
-        }
-        if (drainFuture != null) {
-            drainFuture.cancel(true);
-        }
-        shutdown();
     }
 
     private void shutdown() {

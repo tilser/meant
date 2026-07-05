@@ -9,6 +9,7 @@ import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -47,7 +48,9 @@ public class UserSavedProductController {
     @ApiResponse(
             responseCode = "200",
             description = "Saved products for the current user",
-            content = @Content(schema = @Schema(implementation = UserSavedProductResponse.class))
+            content = @Content(array = @ArraySchema(
+                    schema = @Schema(implementation = UserSavedProductResponse.class)
+            ))
     )
     public List<UserSavedProductResponse> savedProducts(
             @AuthenticationPrincipal Jwt jwt,

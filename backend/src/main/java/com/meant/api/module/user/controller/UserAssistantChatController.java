@@ -14,6 +14,7 @@ import com.meant.api.module.user.service.query.GetLatestUserAssistantConversatio
 import com.meant.api.module.user.service.query.GetUserAssistantConversationQuery;
 import com.meant.api.module.user.service.query.ListUserAssistantConversationsQuery;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -63,7 +64,9 @@ public class UserAssistantChatController {
     @ApiResponse(
             responseCode = "200",
             description = "Recent Ask Meant conversations",
-            content = @Content(schema = @Schema(implementation = UserAssistantConversationSummaryResponse.class))
+            content = @Content(array = @ArraySchema(
+                    schema = @Schema(implementation = UserAssistantConversationSummaryResponse.class)
+            ))
     )
     public List<UserAssistantConversationSummaryResponse> assistantConversations(
             @AuthenticationPrincipal Jwt jwt,

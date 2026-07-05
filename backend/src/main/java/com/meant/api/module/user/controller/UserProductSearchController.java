@@ -18,6 +18,7 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.query.GetUserProductDiscoveryQuery;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -173,7 +174,9 @@ public class UserProductSearchController {
     @ApiResponse(
             responseCode = "200",
             description = "Popular product search prompts",
-            content = @Content(schema = @Schema(implementation = UserPopularProductSearchResponse.class))
+            content = @Content(array = @ArraySchema(
+                    schema = @Schema(implementation = UserPopularProductSearchResponse.class)
+            ))
     )
     public List<UserPopularProductSearchResponse> popularProductSearches(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser.fromJwt(jwt);
