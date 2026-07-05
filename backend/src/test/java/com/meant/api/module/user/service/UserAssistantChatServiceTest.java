@@ -460,6 +460,42 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void streamPersistsFallbackAssistantWhenOpenRouterStreamFails() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                {"action":"search_products","searchQuery":"organic cotton tee","clarifyingQuestion":""}
+                """;
+        openRouterChatClient.failStream = true;
+        FakeUserProductSearchService.nextResult = new UserProductSearchResult(
+                "organic cotton tee",
+                "organic cotton tee",
+                "profile",
+                false,
+                0,
+                20,
+                null,
+                false,
+                List.of(product("Heavyweight Organic Cotton Tee"))
+        );
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find an organic cotton tee"), events::add);
+
+        UUID conversationId = events.getFirst().conversationId();
+        List<UserAssistantMessage> messages = messageRepository
+                .findByConversationIdAndUserIdOrderByCreatedAtDesc(conversationId, userId, PageRequest.of(0, 50));
+        Collections.reverse(messages);
+
+        assertThat(messages).extracting(UserAssistantMessage::getRole)
+                .containsExactly(UserAssistantMessageRole.USER, UserAssistantMessageRole.ASSISTANT);
+        assertThat(messages.getLast().getContent())
+                .contains("I found 1 strong option: Heavyweight Organic Cotton Tee");
+        assertThat(events.getLast().type()).isEqualTo("done");
+        assertThat(events.getLast().messageId()).isEqualTo(messages.getLast().getId());
+        assertThat(events.getLast().text()).isEqualTo(messages.getLast().getContent());
+    }
+
+    @Test
     void latestRestoresPersistedMessagesWithProducts() throws Exception {
         UUID userId = UUID.randomUUID();
         Instant now = Instant.parse("2026-06-17T10:00:00Z");
