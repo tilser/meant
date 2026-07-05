@@ -211,6 +211,9 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
   if (block.type === 'text' || block.type === 'system') {
     return block.text
   }
+  if (block.type === 'newsletter') {
+    return "This functionality isn't ready yet. We're working on it!"
+  }
   if (block.type === 'products') {
     return [
       block.query ? `Products for "${block.query}":` : 'Products:',
@@ -307,6 +310,9 @@ function compactChatHistoryText(value: string): string {
 function discoverBlockPreview(block: DiscoverChatBlock): string {
   if (block.type === 'text' || block.type === 'system') {
     return block.text
+  }
+  if (block.type === 'newsletter') {
+    return "This functionality isn't ready yet."
   }
   if (block.type === 'products') {
     return block.query

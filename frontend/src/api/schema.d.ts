@@ -88,6 +88,25 @@ export interface paths {
         patch: operations["updateMe"];
         trace?: never;
     };
+    "/api/users/me/newsletter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Update current user's newsletter subscription
+         * @description Stores whether the authenticated user wants newsletter updates.
+         */
+        patch: operations["updateNewsletter"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        trace?: never;
+    };
     "/api/carts/{cartId}": {
         parameters: {
             query?: never;
@@ -403,6 +422,9 @@ export interface components {
             firstName: string;
             surname?: string;
         };
+        UpdateUserNewsletterRequest: {
+            newsletter: boolean;
+        };
         UserResponse: {
             /** Format: uuid */
             id?: string;
@@ -410,6 +432,7 @@ export interface components {
             firstName?: string;
             surname?: string;
             profilePicturePath?: string;
+            newsletter?: boolean;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -580,6 +603,30 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateUserProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated user profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
+    updateNewsletter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserNewsletterRequest"];
             };
         };
         responses: {

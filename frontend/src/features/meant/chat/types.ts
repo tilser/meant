@@ -20,6 +20,7 @@ export interface FoundDiscountCode {
 
 export type DiscoverChatBlock =
   | { type: 'text'; text: string }
+  | { type: 'newsletter' }
   | { type: 'products'; products: readonly Product[]; query?: string }
   | { type: 'reviews'; product: Product }
   | {

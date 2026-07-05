@@ -4,6 +4,7 @@ import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.UpdateUserNewsletterCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.query.GetUserQuery;
@@ -55,6 +56,19 @@ public class UserService {
         Instant now = Instant.now();
         User user = ensureProfileInternal(profileCommand, now);
         user.updateProfile(updateCommand.firstName(), updateCommand.surname(), now);
+        return user;
+    }
+
+    @Transactional
+    public User updateNewsletter(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid UpdateUserNewsletterCommand updateCommand) {
+        if (!profileCommand.id().equals(updateCommand.id())) {
+            throw UserException.forbidden("Cannot update another user's newsletter subscription");
+        }
+        Instant now = Instant.now();
+        User user = ensureProfileInternal(profileCommand, now);
+        user.updateNewsletter(Boolean.TRUE.equals(updateCommand.newsletter()), now);
         return user;
     }
 

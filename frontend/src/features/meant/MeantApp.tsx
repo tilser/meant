@@ -94,6 +94,7 @@ import {
   type UserProductSearchStreamEventProfile,
   type UserTasteProfile,
   updateUserInventoryItem,
+  updateNewsletterSubscription,
   updateUserTasteSignal,
   updateUserSettings,
   type UserSettingsProfile,
@@ -1167,6 +1168,7 @@ export function MeantApp() {
           email: profile.email || current.email,
           avatar,
           avatarPath: profile.profilePicturePath ?? null,
+          newsletter: profile.newsletter ?? current.newsletter,
         }))
       })
       .catch(() => {
@@ -1279,6 +1281,18 @@ export function MeantApp() {
         void refreshMerchantIdentityLinks()
       })
   }
+
+  const updateNewsletter = useCallback(
+    async (newsletter: boolean) => {
+      const profile = await updateNewsletterSubscription(newsletter)
+      setUser((current) => ({
+        ...current,
+        email: profile.email || current.email,
+        newsletter: profile.newsletter ?? newsletter,
+      }))
+    },
+    [setUser],
+  )
 
   const nav = useCallback(
     (next: View) => {
@@ -2100,6 +2114,7 @@ export function MeantApp() {
             onEditPrefs={() => nav('preferences')}
             onConnectMerchant={connectMerchantIdentity}
             onRevokeMerchant={revokeMerchantIdentity}
+            onNewsletterChange={updateNewsletter}
             onDone={() => nav('discover')}
           />
         )
@@ -2134,6 +2149,7 @@ export function MeantApp() {
             shelfFlashMessageId={shelfFlashMessageId}
             discoverFindRequest={discoverFindRequest}
             productDetailChatRequest={productDetailChatRequest}
+            newsletter={user.newsletter}
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
             }}
@@ -2171,6 +2187,7 @@ export function MeantApp() {
             onOpenPrefs={() => nav('preferences')}
             onOpenCart={() => nav('cart')}
             onOpenShelf={() => setShelfOpen(true)}
+            onNewsletterChange={updateNewsletter}
             onShelfAddMessage={addMessageToShelf}
             onShelfAddProduct={addProductToShelf}
             onProductDetailChatRequestHandled={(requestId) => {

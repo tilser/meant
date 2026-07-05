@@ -8,6 +8,7 @@ import com.meant.api.module.user.controller.request.RecordUserTasteBehaviorReque
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UpdateUserTasteSignalRequest;
 import com.meant.api.module.user.controller.request.UpdateUserInventoryItemRequest;
+import com.meant.api.module.user.controller.request.UpdateUserNewsletterRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
@@ -16,6 +17,7 @@ import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCom
 import com.meant.api.module.user.service.command.RecordUserTasteBehaviorCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
+import com.meant.api.module.user.service.command.UpdateUserNewsletterCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
@@ -47,6 +49,12 @@ public final class UserCommandMapper {
                 userId,
                 request.firstName(),
                 request.surname());
+    }
+
+    public static UpdateUserNewsletterCommand toUpdateCommand(UUID userId, UpdateUserNewsletterRequest request) {
+        return new UpdateUserNewsletterCommand(
+                userId,
+                request.newsletter());
     }
 
     public static UpdateUserProfilePictureCommand toUpdateCommand(

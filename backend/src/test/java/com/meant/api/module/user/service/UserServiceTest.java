@@ -7,6 +7,7 @@ import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.UpdateUserNewsletterCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.query.GetUserQuery;
@@ -41,6 +42,7 @@ class UserServiceTest {
         assertThat(created.getEmail()).isEqualTo("ada@example.com");
         assertThat(created.getFirstName()).isEqualTo("Ada");
         assertThat(created.getSurname()).isEqualTo("Lovelace");
+        assertThat(created.isNewsletter()).isFalse();
         assertThat(created.getCreatedAt()).isNotNull();
         assertThat(created.getUpdatedAt()).isNotNull();
         assertThat(userRepository.insertCount).isEqualTo(1);
@@ -87,6 +89,26 @@ class UserServiceTest {
         assertThat(created.getId()).isEqualTo(id);
         assertThat(created.getEmail()).isEqualTo("grace@example.com");
         assertThat(created.getSurname()).isEqualTo("Murray Hopper");
+        assertThat(userRepository.insertCount).isEqualTo(1);
+    }
+
+    @Test
+    void updateNewsletterMutatesSubscriptionFlag() {
+        UUID id = UUID.randomUUID();
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        User subscribed = userService.updateNewsletter(
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserNewsletterCommand(id, true));
+
+        assertThat(subscribed.isNewsletter()).isTrue();
+
+        User unsubscribed = userService.updateNewsletter(
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"),
+                new UpdateUserNewsletterCommand(id, false));
+
+        assertThat(unsubscribed.isNewsletter()).isFalse();
+        assertThat(userRepository.usersById.get(id).isNewsletter()).isFalse();
         assertThat(userRepository.insertCount).isEqualTo(1);
     }
 

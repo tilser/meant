@@ -39,6 +39,7 @@ export function AccountView({
   onEditPrefs,
   onConnectMerchant,
   onRevokeMerchant,
+  onNewsletterChange,
   onDone,
 }: Readonly<{
   user: UserAccount
@@ -52,18 +53,24 @@ export function AccountView({
   onEditPrefs: () => void
   onConnectMerchant: (merchant: MerchantProfile) => void
   onRevokeMerchant: (merchantId: string) => void
+  onNewsletterChange: (newsletter: boolean) => Promise<void> | void
   onDone: () => void
 }>) {
   const [name, setName] = useState(user.name)
   const [avatar, setAvatar] = useState<string | null>(user.avatar)
   const [avatarPath, setAvatarPath] = useState<string | null>(user.avatarPath)
+  const [newsletter, setNewsletter] = useState(user.newsletter)
+  const [newsletterSaving, setNewsletterSaving] = useState(false)
+  const [newsletterSaved, setNewsletterSaved] = useState(false)
+  const [newsletterError, setNewsletterError] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const savedTimeoutRef = useRef<number | null>(null)
-  const preview: UserAccount = { name, email: user.email, avatar, avatarPath }
+  const newsletterSavedTimeoutRef = useRef<number | null>(null)
+  const preview: UserAccount = { name, email: user.email, avatar, avatarPath, newsletter }
   const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
   const hasProfilePicture = Boolean(avatar || avatarPath)
   const identityLinksByMerchant = new Map(
@@ -76,8 +83,15 @@ export function AccountView({
       if (savedTimeoutRef.current !== null) {
         window.clearTimeout(savedTimeoutRef.current)
       }
+      if (newsletterSavedTimeoutRef.current !== null) {
+        window.clearTimeout(newsletterSavedTimeoutRef.current)
+      }
     }
   }, [])
+
+  useEffect(() => {
+    setNewsletter(user.newsletter)
+  }, [user.newsletter])
 
   const showSaved = () => {
     if (savedTimeoutRef.current !== null) {
@@ -87,6 +101,17 @@ export function AccountView({
     savedTimeoutRef.current = window.setTimeout(() => {
       setSaved(false)
       savedTimeoutRef.current = null
+    }, 1800)
+  }
+
+  const showNewsletterSaved = () => {
+    if (newsletterSavedTimeoutRef.current !== null) {
+      window.clearTimeout(newsletterSavedTimeoutRef.current)
+    }
+    setNewsletterSaved(true)
+    newsletterSavedTimeoutRef.current = window.setTimeout(() => {
+      setNewsletterSaved(false)
+      newsletterSavedTimeoutRef.current = null
     }, 1800)
   }
 
@@ -161,6 +186,7 @@ export function AccountView({
         email: savedEmail,
         avatar: savedAvatar,
         avatarPath: savedAvatarPath,
+        newsletter,
       })
       setName(savedName)
       setAvatar(savedAvatar)
@@ -174,6 +200,23 @@ export function AccountView({
       setError('Could not save your changes. Please try again.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const saveNewsletter = async (nextNewsletter: boolean) => {
+    const previousNewsletter = newsletter
+    setNewsletter(nextNewsletter)
+    setNewsletterSaving(true)
+    setNewsletterSaved(false)
+    setNewsletterError(null)
+    try {
+      await onNewsletterChange(nextNewsletter)
+      showNewsletterSaved()
+    } catch {
+      setNewsletter(previousNewsletter)
+      setNewsletterError('Could not update newsletter settings. Please try again.')
+    } finally {
+      setNewsletterSaving(false)
     }
   }
 
@@ -268,6 +311,37 @@ export function AccountView({
           </div>
         </div>
       </button>
+      <section className="mt-acct-card mt-acct-newsletter">
+        <div className="mt-acct-switch-row">
+          <div>
+            <div className="mt-acct-link-t">Newsletter updates</div>
+            <div className="mt-acct-link-s">
+              Get an email when Watch, Similar, and other new features are ready.
+            </div>
+          </div>
+          <label className={`mt-switch ${newsletter ? 'on' : ''}`}>
+            <input
+              className="mt-switch-input"
+              type="checkbox"
+              role="switch"
+              checked={newsletter}
+              disabled={newsletterSaving}
+              onChange={(event) => {
+                void saveNewsletter(event.target.checked)
+              }}
+              aria-label={newsletter ? 'Unsubscribe from newsletter' : 'Subscribe to newsletter'}
+            />
+            <span className="mt-switch-track" aria-hidden="true">
+              <span className="mt-switch-thumb" />
+            </span>
+          </label>
+        </div>
+        <div className="mt-acct-newsletter-state">
+          {newsletterSaving ? <span className="mt-mono">Saving</span> : null}
+          {newsletterSaved ? <span className="mt-acct-saved-note">Saved</span> : null}
+          {newsletterError ? <span className="mt-acct-save-error">{newsletterError}</span> : null}
+        </div>
+      </section>
       <section className="mt-acct-card mt-acct-links">
         <div className="mt-acct-link-head">
           <div>

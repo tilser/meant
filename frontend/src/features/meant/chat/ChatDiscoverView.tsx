@@ -442,6 +442,8 @@ const nextDiscoverChatMessageId = () => {
   discoverChatMessageSequence += 1
   return `discover-chat-${discoverChatMessageSequence}`
 }
+const NEWSLETTER_SUBSCRIBED_MESSAGE =
+  'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your profile settings.'
 
 function deriveDiscoverChatTitle(text: string): string {
   const normalized = text.trim().replace(/\s+/g, ' ')
@@ -597,6 +599,10 @@ function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapsho
     if ((block.type === 'text' || block.type === 'system') && !text) {
       text = block.text
     }
+    if (block.type === 'newsletter') {
+      title = 'Coming soon'
+      text = "This functionality isn't ready yet. We're working on it!"
+    }
     if (block.type === 'products') {
       title = `${block.products.length} match${block.products.length === 1 ? '' : 'es'}`
       products.push(...block.products)
@@ -689,13 +695,7 @@ function productDetailChatBlocks(
   if (
     /\bsimilar\b|\balternative\b|\blike this\b|\bother option\b|\binstead\b|\bcompare\b/.test(lower)
   ) {
-    return [
-      {
-        type: 'text',
-        text: `Close matches to ${product.name}, filtered through the products already loaded here.`,
-      },
-      { type: 'similar', product, products: similarChatProducts(product, products) },
-    ]
+    return [{ type: 'newsletter' }]
   }
   if (/\bmatch\b|\bpreferences?\b|\bfit\b|\bmeant\b/.test(lower)) {
     return [
@@ -744,6 +744,7 @@ export function ChatDiscoverView({
   shelfFlashMessageId,
   productDetailChatRequest,
   discoverFindRequest,
+  newsletter,
   savedSet,
   savePendingSet,
   onSubmit,
@@ -763,6 +764,7 @@ export function ChatDiscoverView({
   onOpenPrefs,
   onOpenCart,
   onOpenShelf,
+  onNewsletterChange,
   onShelfAddMessage,
   onShelfAddProduct,
   onProductDetailChatRequestHandled,
@@ -795,6 +797,7 @@ export function ChatDiscoverView({
   shelfFlashMessageId: string | null
   productDetailChatRequest: ProductDetailChatRequest | null
   discoverFindRequest: DiscoverFindRequest | null
+  newsletter: boolean
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   onSubmit: (query: string) => void
@@ -814,6 +817,7 @@ export function ChatDiscoverView({
   onOpenPrefs: () => void
   onOpenCart: () => void
   onOpenShelf: () => void
+  onNewsletterChange: (newsletter: boolean) => Promise<void> | void
   onShelfAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
   onShelfAddProduct: (snapshot: ShelfProductSnapshot) => void
   onProductDetailChatRequestHandled: (requestId: string) => void
@@ -844,7 +848,7 @@ export function ChatDiscoverView({
   const [shareOpen, setShareOpen] = useState(false)
   const [pinnedIds, setPinnedIds] = useStoredState<ProductId[]>('meant.chatPinned', [])
   const [trayClearing, setTrayClearing] = useState(false)
-  const [watchedIds, setWatchedIds] = useState<ProductId[]>([])
+  const [newsletterPending, setNewsletterPending] = useState(false)
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
   const previousMessageCountRef = useRef(messages.length)
   const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
@@ -852,7 +856,7 @@ export function ChatDiscoverView({
   const handledDiscoverFindRequestRef = useRef<string | null>(null)
   const scheduledChatTimersRef = useRef<number[]>([])
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
-  const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds])
+  const watchedSet = useMemo(() => new Set<ProductId>(), [])
   const shelfMessageSet = useMemo(
     () =>
       new Set(
@@ -1149,6 +1153,54 @@ export function ChatDiscoverView({
       ],
       { titleSeed: text },
     )
+  }
+
+  const appendUnavailableFeatureMessage = (product?: Product) => {
+    appendMessagesToActiveThread(
+      [
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: [{ type: 'newsletter' }],
+        },
+      ],
+      product ? { focusProductId: product.id } : undefined,
+    )
+    scrollChatToBottom()
+  }
+
+  const subscribeToNewsletter = async () => {
+    if (newsletter || newsletterPending) {
+      return
+    }
+    setNewsletterPending(true)
+    try {
+      await onNewsletterChange(true)
+      appendMessagesToActiveThread([
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: [{ type: 'system', text: NEWSLETTER_SUBSCRIBED_MESSAGE }],
+        },
+      ])
+      scrollChatToBottom()
+    } catch {
+      appendMessagesToActiveThread([
+        {
+          id: nextDiscoverChatMessageId(),
+          role: 'ai',
+          blocks: [
+            {
+              type: 'system',
+              text: 'Could not update newsletter settings. Please try again.',
+            },
+          ],
+        },
+      ])
+      scrollChatToBottom()
+    } finally {
+      setNewsletterPending(false)
+    }
   }
 
   const discountOfferForProduct = useCallback(
@@ -1684,10 +1736,7 @@ export function ChatDiscoverView({
       return
     }
     if (kind === 'similar') {
-      appendMessagePair(`Show me similar options to ${product.name}.`, [
-        { type: 'text', text: 'Closest matches from the products already loaded in this session.' },
-        { type: 'similar', product, products: similarChatProducts(product, displayProducts) },
-      ])
+      appendUnavailableFeatureMessage(product)
       return
     }
   }
@@ -1756,46 +1805,7 @@ export function ChatDiscoverView({
   }
 
   const toggleWatch = (product: Product) => {
-    const watching = watchedIds.includes(product.id)
-    setWatchedIds((current) =>
-      watching ? current.filter((id) => id !== product.id) : [...current, product.id],
-    )
-    if (!watching) {
-      appendMessagesToActiveThread(
-        [
-          {
-            id: nextDiscoverChatMessageId(),
-            role: 'ai',
-            blocks: [
-              {
-                type: 'system',
-                text: `Watching ${product.name}. A mocked price-drop alert will land in this chat.`,
-              },
-            ],
-          },
-        ],
-        { focusProductId: product.id },
-      )
-      const watchThreadId = activeThreadIdSafe
-      scheduleChatTimer(() => {
-        const offer = bestOffer(product, deliveryLocations)
-        updateThreadMessages(watchThreadId, (current) => [
-          ...current,
-          {
-            id: nextDiscoverChatMessageId(),
-            role: 'ai',
-            blocks: [
-              {
-                type: 'watch',
-                product,
-                merchant: offer.merchant,
-                price: Math.max(1, Math.round(offer.price * 0.9 * 100) / 100),
-              },
-            ],
-          },
-        ])
-      }, 5000)
-    }
+    appendUnavailableFeatureMessage(product)
   }
 
   const newThread = () => {
@@ -1946,6 +1956,9 @@ export function ChatDiscoverView({
     onCartRemove: removeChatCartLine,
     onCheckout,
     onCheckoutHere: showCheckoutHere,
+    newsletter,
+    newsletterPending,
+    onNewsletterSignup: () => void subscribeToNewsletter(),
     onDelete: deleteMessage,
     onShelfAddMessage: addMessageToShelf,
     onShelfAddProduct: addProductToShelf,

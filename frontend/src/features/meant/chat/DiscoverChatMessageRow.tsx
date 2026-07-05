@@ -230,6 +230,9 @@ export function DiscoverChatMessageRow({
   onCartRemove,
   onCheckout,
   onCheckoutHere,
+  newsletter,
+  newsletterPending,
+  onNewsletterSignup,
   onDelete,
   onShelfAddMessage,
   onShelfAddProduct,
@@ -281,6 +284,9 @@ export function DiscoverChatMessageRow({
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   onCheckoutHere: () => void
+  newsletter: boolean
+  newsletterPending: boolean
+  onNewsletterSignup: () => void
   onDelete: (messageId: string) => void
   onShelfAddMessage: (message: DiscoverChatMessage, sourceElement: HTMLElement) => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
@@ -375,6 +381,9 @@ export function DiscoverChatMessageRow({
                 }
                 onCheckout={onCheckout}
                 onCheckoutHere={onCheckoutHere}
+                newsletter={newsletter}
+                newsletterPending={newsletterPending}
+                onNewsletterSignup={onNewsletterSignup}
                 onShelfAddProduct={onShelfAddProduct}
                 onDragProduct={onDragProduct}
               />

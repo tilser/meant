@@ -268,6 +268,7 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body.email()).isEqualTo(email);
         assertThat(body.firstName()).isEqualTo("Ada");
         assertThat(body.surname()).isEqualTo("Lovelace");
+        assertThat(body.newsletter()).isFalse();
         assertThat(userRepository.findById(id)).isPresent();
     }
 
@@ -291,6 +292,44 @@ class UserControllerIT extends PostgresIntegrationTest {
         assertThat(body).isNotNull();
         assertThat(body.firstName()).isEqualTo("Augusta");
         assertThat(body.surname()).isEqualTo("Byron");
+    }
+
+    @Test
+    void patchUpdatesNewsletterSubscription() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+
+        UserResponse subscribed = client.patch().uri("/api/users/me/newsletter")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"newsletter\":true}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(subscribed).isNotNull();
+        assertThat(subscribed.newsletter()).isTrue();
+        assertThat(userRepository.findById(id).orElseThrow().isNewsletter()).isTrue();
+
+        UserResponse unsubscribed = client.patch().uri("/api/users/me/newsletter")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, null));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"newsletter\":false}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(unsubscribed).isNotNull();
+        assertThat(unsubscribed.newsletter()).isFalse();
+        assertThat(userRepository.findById(id).orElseThrow().isNewsletter()).isFalse();
     }
 
     @Test

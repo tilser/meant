@@ -44,6 +44,9 @@ public class User {
     private String profilePicturePath;
 
     @Column(nullable = false)
+    private boolean newsletter;
+
+    @Column(nullable = false)
     private Instant createdAt;
 
     @Column(nullable = false)
@@ -75,6 +78,14 @@ public class User {
             return;
         }
         this.profilePicturePath = profilePicturePath;
+        this.updatedAt = now;
+    }
+
+    public void updateNewsletter(boolean newsletter, Instant now) {
+        if (this.newsletter == newsletter) {
+            return;
+        }
+        this.newsletter = newsletter;
         this.updatedAt = now;
     }
 }

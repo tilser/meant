@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
 
+@Schema(description = "Authenticated user profile.")
 public record UserResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         UUID id,
@@ -16,6 +17,8 @@ public record UserResponse(
         String surname,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String profilePicturePath,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        boolean newsletter,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -29,6 +32,7 @@ public record UserResponse(
                 user.getFirstName(),
                 user.getSurname(),
                 user.getProfilePicturePath(),
+                user.isNewsletter(),
                 user.getCreatedAt(),
                 user.getUpdatedAt());
     }

@@ -1,6 +1,7 @@
 package com.meant.api.module.user.controller;
 
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
+import com.meant.api.module.user.controller.request.UpdateUserNewsletterRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
@@ -74,6 +75,26 @@ public class UserProfileSettingsController {
         // Profile provisioning and the name edit run in a single service transaction (the row may not
         // exist yet if a client PATCHes before ever calling GET /me).
         return UserResponse.from(userService.updateProfile(
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
+                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+    }
+
+    @PatchMapping("/me/newsletter")
+    @Operation(
+            summary = "Update current user's newsletter subscription",
+            description = "Stores whether the authenticated user wants newsletter updates."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated user profile",
+            content = @Content(schema = @Schema(implementation = UserResponse.class))
+    )
+    public UserResponse updateNewsletter(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UpdateUserNewsletterRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserResponse.from(userService.updateNewsletter(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
     }

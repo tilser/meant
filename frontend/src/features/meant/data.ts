@@ -969,6 +969,7 @@ export const DEFAULT_USER: UserAccount = {
   email: 'mara@meant.app',
   avatar: null,
   avatarPath: null,
+  newsletter: false,
 }
 
 export const PRODUCTS: readonly Product[] = [

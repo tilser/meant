@@ -225,6 +225,7 @@ export interface UserAccount {
   email: string
   avatar: string | null
   avatarPath: string | null
+  newsletter: boolean
 }
 
 export interface CheckoutPayload {

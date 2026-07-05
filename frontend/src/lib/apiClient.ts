@@ -682,6 +682,18 @@ export async function updateProfilePicture(profilePicturePath: string): Promise<
   return parseJsonResponse<UserProfile>(response, 'Failed to update profile picture')
 }
 
+export async function updateNewsletterSubscription(newsletter: boolean): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/newsletter`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ newsletter }),
+  })
+  return parseJsonResponse<UserProfile>(response, 'Failed to update newsletter subscription')
+}
+
 export async function removeProfilePicture(): Promise<UserProfile> {
   const response = await fetch(`${API_URL}/api/users/me/profile-picture`, {
     method: 'DELETE',
