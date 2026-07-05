@@ -496,6 +496,41 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void streamPersistsFallbackAssistantWhenOpenRouterStreamThrowsRuntimeException() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                {"action":"search_products","searchQuery":"organic cotton tee","clarifyingQuestion":""}
+                """;
+        openRouterChatClient.failStreamWithRuntimeException = true;
+        FakeUserProductSearchService.nextResult = new UserProductSearchResult(
+                "organic cotton tee",
+                "organic cotton tee",
+                "profile",
+                false,
+                0,
+                20,
+                null,
+                false,
+                List.of(product("Heavyweight Organic Cotton Tee"))
+        );
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find an organic cotton tee"), events::add);
+
+        UUID conversationId = events.getFirst().conversationId();
+        List<UserAssistantMessage> messages = messageRepository
+                .findByConversationIdAndUserIdOrderByCreatedAtDesc(conversationId, userId, PageRequest.of(0, 50));
+        Collections.reverse(messages);
+
+        assertThat(events.getLast().type()).isEqualTo("done");
+        assertThat(events.getLast().text())
+                .contains("I found 1 strong option: Heavyweight Organic Cotton Tee");
+        assertThat(messages).extracting(UserAssistantMessage::getRole)
+                .containsExactly(UserAssistantMessageRole.USER, UserAssistantMessageRole.ASSISTANT);
+        assertThat(messages.getLast().getContent()).isEqualTo(events.getLast().text());
+    }
+
+    @Test
     void streamPersistsPartialAssistantWhenOpenRouterStreamFailsAfterDelta() {
         UUID userId = UUID.randomUUID();
         openRouterChatClient.routeResponse = """
@@ -756,6 +791,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private String streamModel;
         private List<OpenRouterChatMessage> streamMessages = List.of();
         private boolean failStream;
+        private boolean failStreamWithRuntimeException;
         private Integer failAfterChunkCount;
 
         FakeOpenRouterChatClient() {
@@ -782,6 +818,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             streamModel = null;
             streamMessages = List.of();
             failStream = false;
+            failStreamWithRuntimeException = false;
             failAfterChunkCount = null;
         }
 
@@ -809,6 +846,9 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             streamMessages = messages;
             if (failStream) {
                 throw new OpenRouterException("stream failed");
+            }
+            if (failStreamWithRuntimeException) {
+                throw new IllegalStateException("stream failed");
             }
             for (int index = 0; index < streamChunks.size(); index++) {
                 chunkConsumer.accept(streamChunks.get(index));

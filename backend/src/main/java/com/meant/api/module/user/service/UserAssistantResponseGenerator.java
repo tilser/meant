@@ -1,6 +1,5 @@
 package com.meant.api.module.user.service;
 
-import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.module.user.entity.UserAssistantMessage;
@@ -62,7 +61,7 @@ public class UserAssistantResponseGenerator {
                         eventConsumer.accept(UserAssistantStreamEvent.delta(chunk));
                     }
             );
-        } catch (OpenRouterException exception) {
+        } catch (RuntimeException exception) {
             String partialAnswer = streamed.toString().trim();
             if (!partialAnswer.isBlank()) {
                 log.warn("Failed to stream assistant answer after emitting partial text; preserving partial answer", exception);

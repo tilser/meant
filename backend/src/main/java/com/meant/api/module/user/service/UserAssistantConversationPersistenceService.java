@@ -13,6 +13,7 @@ import com.meant.api.module.user.service.dto.UserAssistantMessageResult;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -108,7 +109,11 @@ public class UserAssistantConversationPersistenceService {
     }
 
     public List<UserAssistantMessage> promptHistory(UUID conversationId, UUID userId) {
-        List<UserAssistantMessage> messages = recentMessages(conversationId, userId, PROMPT_HISTORY_LIMIT);
+        List<UserAssistantMessage> messages = new ArrayList<>(recentMessages(
+                conversationId,
+                userId,
+                PROMPT_HISTORY_LIMIT
+        ));
         Collections.reverse(messages);
         return messages.stream().limit(PROMPT_HISTORY_LIMIT).toList();
     }
@@ -166,7 +171,11 @@ public class UserAssistantConversationPersistenceService {
     }
 
     private List<UserAssistantMessageResult> restoreMessages(UUID conversationId, UUID userId) {
-        List<UserAssistantMessage> messages = recentMessages(conversationId, userId, RESTORE_HISTORY_LIMIT);
+        List<UserAssistantMessage> messages = new ArrayList<>(recentMessages(
+                conversationId,
+                userId,
+                RESTORE_HISTORY_LIMIT
+        ));
         Collections.reverse(messages);
         return messages.stream()
                 .limit(RESTORE_HISTORY_LIMIT)
