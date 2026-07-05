@@ -75,7 +75,7 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class UserControllerIT extends PostgresIntegrationTest {
 
-    /** Mirrors {@code UserController.MAX_CONVERSATION_LIMIT}; kept local to avoid exposing the constant. */
+    /** Mirrors the assistant conversations controller limit; kept local to avoid exposing the constant. */
     private static final int MAX_CONVERSATION_LIMIT_FIXTURE = 50;
 
     @LocalServerPort
