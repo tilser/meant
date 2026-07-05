@@ -570,6 +570,43 @@ describe('cart delivery groups', () => {
     expect(cartGroup.total).toBe(39.99)
   })
 
+  test('ignores implausible remote totals when they do not match cart lines', () => {
+    const [cartGroup] = cartGroups(
+      [
+        {
+          ...line([]),
+          price: 35,
+          cartSubtotalAmount: '752.00',
+          cartTotalAmount: '752.00',
+        },
+      ],
+      false,
+    )
+
+    expect(cartGroup.remoteSubtotal).toBeNull()
+    expect(cartGroup.remoteTotal).toBeNull()
+    expect(cartGroup.subtotal).toBe(35)
+    expect(cartGroup.total).toBe(39.99)
+  })
+
+  test('keeps plausible remote cart totals', () => {
+    const [cartGroup] = cartGroups(
+      [
+        {
+          ...line([]),
+          price: 35,
+          cartSubtotalAmount: '35.00',
+          cartTotalAmount: '42.00',
+        },
+      ],
+      false,
+    )
+
+    expect(cartGroup.remoteSubtotal).toBe(35)
+    expect(cartGroup.remoteTotal).toBe(42)
+    expect(cartGroup.total).toBe(42)
+  })
+
   test('requires every shipment with options to have a selected delivery option', () => {
     const selected = option('standard', '5.00', true)
     const unselected = option('express', '8.00', false)

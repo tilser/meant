@@ -11,6 +11,8 @@ import {
   cartDeliveryOptionAmount,
   cartMerchantKey,
   money,
+  reliableRemoteCartSubtotal,
+  reliableRemoteCartTotal,
   selectedCartDeliveryOption,
 } from '../utils'
 import type { AppliedCartCode, DeliveryAddressDraft, MerchantCartSnapshot } from './types'
@@ -244,8 +246,8 @@ export function cartSnapshotSavings(
   if (codeSavings > 0) {
     return codeSavings
   }
-  const subtotal = snapshot.subtotalAmount ?? fallbackSubtotal
-  const total = snapshot.totalAmount ?? fallbackTotal
+  const subtotal = cartSnapshotSubtotal(snapshot, fallbackSubtotal)
+  const total = cartSnapshotTotal(snapshot, fallbackTotal)
   const deliveryFee = Math.max(0, fallbackTotal - fallbackSubtotal)
   return Math.max(subtotal + deliveryFee - total, 0)
 }
@@ -254,14 +256,21 @@ export function cartSnapshotTotal(
   snapshot: MerchantCartSnapshot | undefined,
   fallbackTotal: number,
 ): number {
-  return snapshot?.totalAmount ?? fallbackTotal
+  return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackTotal) ?? fallbackTotal
 }
 
 export function cartSnapshotSubtotal(
   snapshot: MerchantCartSnapshot | undefined,
   fallbackSubtotal: number,
 ): number {
-  return snapshot?.subtotalAmount ?? fallbackSubtotal
+  return reliableRemoteCartSubtotal(snapshot?.subtotalAmount ?? null, fallbackSubtotal) ?? fallbackSubtotal
+}
+
+export function cartSnapshotHasReliableTotal(
+  snapshot: MerchantCartSnapshot | undefined,
+  fallbackTotal: number,
+): boolean {
+  return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackTotal) !== null
 }
 
 export function cartableOfferForProduct(product: Product): Offer | null {

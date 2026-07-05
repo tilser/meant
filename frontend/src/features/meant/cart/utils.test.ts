@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test'
 
 import type { CartProfile } from '../../../lib/apiClient'
 import type { MerchantCartSnapshot } from './types'
-import { cartSnapshotFromProfile, cartSnapshotSavings } from './utils'
+import {
+  cartSnapshotFromProfile,
+  cartSnapshotHasReliableTotal,
+  cartSnapshotSavings,
+  cartSnapshotSubtotal,
+  cartSnapshotTotal,
+} from './utils'
 
 function merchantSnapshot(overrides: Partial<MerchantCartSnapshot>): MerchantCartSnapshot {
   return {
@@ -71,5 +77,28 @@ describe('cart feature utilities', () => {
     })
 
     expect(cartSnapshotSavings(snapshot, 100, 110)).toBe(5)
+  })
+
+  test('ignores stale snapshot totals that do not match fallback cart lines', () => {
+    const snapshot = merchantSnapshot({
+      subtotalAmount: 752,
+      totalAmount: 752,
+    })
+
+    expect(cartSnapshotSubtotal(snapshot, 35)).toBe(35)
+    expect(cartSnapshotTotal(snapshot, 39.99)).toBe(39.99)
+    expect(cartSnapshotSavings(snapshot, 35, 39.99)).toBe(0)
+    expect(cartSnapshotHasReliableTotal(snapshot, 39.99)).toBe(false)
+  })
+
+  test('uses plausible snapshot totals', () => {
+    const snapshot = merchantSnapshot({
+      subtotalAmount: 35,
+      totalAmount: 42,
+    })
+
+    expect(cartSnapshotSubtotal(snapshot, 35)).toBe(35)
+    expect(cartSnapshotTotal(snapshot, 39.99)).toBe(42)
+    expect(cartSnapshotHasReliableTotal(snapshot, 39.99)).toBe(true)
   })
 })

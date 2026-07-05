@@ -573,13 +573,12 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
 
   return [...groups.entries()].map(([merchant, items]) => {
     const localSubtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0)
-    const remoteSubtotal = reliableCartAmount(
-      firstCartAmount(items, (item) => item.cartSubtotalAmount),
-      localSubtotal,
-    )
-    const remoteTotal = reliableCartAmount(
+    const rawRemoteSubtotal = firstCartAmount(items, (item) => item.cartSubtotalAmount)
+    const remoteSubtotal = reliableRemoteCartSubtotal(rawRemoteSubtotal, localSubtotal)
+    const remoteTotal = reliableRemoteCartTotal(
       firstCartAmount(items, (item) => item.cartTotalAmount),
       localSubtotal,
+      rawRemoteSubtotal !== null && remoteSubtotal === null,
     )
     const subtotal = remoteSubtotal ?? localSubtotal
     const deliveryGroups = firstDeliveryGroups(items)
@@ -622,11 +621,36 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
   })
 }
 
-function reliableCartAmount(remoteAmount: number | null, localSubtotal: number): number | null {
-  if (remoteAmount === 0 && localSubtotal > 0) {
+export function reliableRemoteCartSubtotal(
+  remoteSubtotal: number | null,
+  localSubtotal: number,
+): number | null {
+  if (remoteSubtotal === null || localSubtotal <= 0) {
+    return remoteSubtotal
+  }
+  const tolerance = Math.max(5, localSubtotal * 0.25)
+  if (Math.abs(remoteSubtotal - localSubtotal) > tolerance) {
     return null
   }
-  return remoteAmount
+  return remoteSubtotal
+}
+
+export function reliableRemoteCartTotal(
+  remoteTotal: number | null,
+  localSubtotal: number,
+  rejectedRemoteSubtotal = false,
+): number | null {
+  if (remoteTotal === null || localSubtotal <= 0) {
+    return remoteTotal
+  }
+  if (rejectedRemoteSubtotal || remoteTotal === 0) {
+    return null
+  }
+  const maxPlausibleTotal = Math.max(localSubtotal + 100, localSubtotal * 3)
+  if (remoteTotal > maxPlausibleTotal) {
+    return null
+  }
+  return remoteTotal
 }
 
 function firstCartAmount(
