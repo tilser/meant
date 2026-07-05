@@ -5,15 +5,15 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
         https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
-    <changeSet id="001-add-merchant-raw-unprocessed-active-index" author="codex">
+    <changeSet id="001-add-merchant-raw-unprocessed-active-index" author="codex" runInTransaction="false">
         <sql dbms="postgresql">
-            CREATE INDEX IF NOT EXISTS idx_merchant_raw_unprocessed_active_retry
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_merchant_raw_unprocessed_active_retry
             ON merchant_raw (processed_at ASC NULLS FIRST, fetched_at ASC)
             WHERE active = true AND processed = false
         </sql>
         <rollback>
             <sql dbms="postgresql">
-                DROP INDEX IF EXISTS idx_merchant_raw_unprocessed_active_retry
+                DROP INDEX CONCURRENTLY IF EXISTS idx_merchant_raw_unprocessed_active_retry
             </sql>
         </rollback>
     </changeSet>

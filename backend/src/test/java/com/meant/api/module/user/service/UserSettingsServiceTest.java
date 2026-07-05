@@ -77,7 +77,7 @@ class UserSettingsServiceTest {
         assertThat(userShoppingFilterRepository.findFilterIdsByUserIdCalls).isEqualTo(1);
         assertThat(shoppingFilterRepository.findAllByDisplayOrderCalls).isEqualTo(1);
         assertThat(shoppingFilterRepository.findAllByIdCalls).isZero();
-        assertThat(userShoppingFilterRepository.flushCalls).isEqualTo(1);
+        assertThat(userShoppingFilterRepository.flushCalls).isZero();
         assertThat(userShoppingFilterRepository.savedFilterIds)
                 .containsExactly("organic", "cotton", "gluten-free");
         assertThat(result.filters())
