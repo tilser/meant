@@ -74,12 +74,10 @@ public class MerchantProductDetailsEnricher {
                                 return null;
                             }))
                     .toList();
-            return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                    .handle((ignored, exception) -> futures.stream()
-                            .map(CompletableFuture::join)
-                            .filter(Objects::nonNull)
-                            .toList())
-                    .join();
+            return futures.stream()
+                    .map(CompletableFuture::join)
+                    .filter(Objects::nonNull)
+                    .toList();
         }
     }
 

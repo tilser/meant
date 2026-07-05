@@ -12,7 +12,6 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
-import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.Comparator;
@@ -20,7 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -36,7 +34,6 @@ public class MerchantSemanticProductSearchService {
     private final MerchantProductDetailsEnricher merchantProductDetailsEnricher;
     private final MerchantProductFilterMatcher merchantProductFilterMatcher;
 
-    @Autowired
     public MerchantSemanticProductSearchService(
             MerchantSemanticSearchService merchantSemanticSearchService,
             VoyageRerankClient voyageRerankClient,
@@ -53,27 +50,6 @@ public class MerchantSemanticProductSearchService {
         this.merchantCatalogSearchExecutor = merchantCatalogSearchExecutor;
         this.merchantProductDetailsEnricher = merchantProductDetailsEnricher;
         this.merchantProductFilterMatcher = merchantProductFilterMatcher;
-    }
-
-    public MerchantSemanticProductSearchService(
-            MerchantSemanticSearchService merchantSemanticSearchService,
-            MerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService,
-            VoyageRerankClient voyageRerankClient,
-            MerchantLookupService merchantLookupService,
-            MerchantCatalogSearchProperties merchantCatalogSearchProperties
-    ) {
-        this(
-                merchantSemanticSearchService,
-                voyageRerankClient,
-                merchantLookupService,
-                merchantCatalogSearchProperties,
-                new MerchantCatalogSearchExecutor(merchantCatalogPluginDispatchService),
-                new MerchantProductDetailsEnricher(
-                        merchantCatalogPluginDispatchService,
-                        new MerchantRichCatalogNormalizer(new ProductCatalogMetadataNormalizer())
-                ),
-                new MerchantProductFilterMatcher(new ProductCatalogMetadataNormalizer())
-        );
     }
 
     public MerchantSemanticProductSearchResult search(@NotNull @Valid SemanticProductSearchQuery query) {

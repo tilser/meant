@@ -49,12 +49,18 @@ class MerchantSemanticProductSearchServiceTest {
         merchantCatalogPluginDispatchService = new FakeMerchantCatalogPluginDispatchService();
         voyageRerankClient = new FakeVoyageRerankClient();
         merchantLookupService = new FakeMerchantLookupService();
+        ProductCatalogMetadataNormalizer metadataNormalizer = new ProductCatalogMetadataNormalizer();
         merchantSemanticProductSearchService = new MerchantSemanticProductSearchService(
                 merchantSemanticSearchService,
-                merchantCatalogPluginDispatchService,
                 voyageRerankClient,
                 merchantLookupService,
-                new MerchantCatalogSearchProperties(3, 2, 2, 2)
+                new MerchantCatalogSearchProperties(3, 2, 2, 2),
+                new MerchantCatalogSearchExecutor(merchantCatalogPluginDispatchService),
+                new MerchantProductDetailsEnricher(
+                        merchantCatalogPluginDispatchService,
+                        new MerchantRichCatalogNormalizer(metadataNormalizer)
+                ),
+                new MerchantProductFilterMatcher(metadataNormalizer)
         );
     }
 

@@ -52,11 +52,9 @@ public class MerchantCatalogSearchExecutor {
                             exception
                     )))
                     .toList();
-            return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                    .handle((ignored, exception) -> futures.stream()
-                            .map(CompletableFuture::join)
-                            .toList())
-                    .join();
+            return futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
         }
     }
 
