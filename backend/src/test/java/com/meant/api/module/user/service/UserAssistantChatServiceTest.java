@@ -162,6 +162,31 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void streamFallsBackWhenRouteResponseDeserializesToNull() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = "null";
+        openRouterChatClient.streamChunks = List.of("I found a strong tee.");
+        UserProductSearchProductResult product = product();
+        FakeUserProductSearchService.nextResult = new UserProductSearchResult(
+                "Find me a tee",
+                "Find me a tee",
+                "profile",
+                false,
+                0,
+                20,
+                null,
+                false,
+                List.of(product)
+        );
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "Find me a tee"), events::add);
+
+        assertThat(FakeUserProductSearchService.lastCommand.query()).isEqualTo("Find me a tee");
+        assertThat(events.getLast().type()).isEqualTo("done");
+    }
+
+    @Test
     void streamDoesNotSearchSavedContextQuestionWhenRouteResponseIsInvalid() {
         UUID userId = UUID.randomUUID();
         openRouterChatClient.routeResponse = """

@@ -35,13 +35,19 @@ public class UserAssistantFallbackRenderer {
         if (toolContext != null && toolContext.hasSavedProducts()) {
             return savedProductsFallbackAnswer(toolContext.savedProducts());
         }
-        if (pageContext != null && !pageContext.orders().isEmpty()) {
-            UserAssistantPageContext.Order order = pageContext.orders().getFirst();
+        List<UserAssistantPageContext.Order> orders = pageContext == null
+                ? List.of()
+                : safeList(pageContext.orders());
+        if (!orders.isEmpty()) {
+            UserAssistantPageContext.Order order = orders.getFirst();
             return "Your latest visible order is " + order.id() + ", marked " + order.status()
                     + ". " + value(order.statusNote());
         }
-        if (pageContext != null && !pageContext.visibleProducts().isEmpty()) {
-            UserAssistantPageContext.Product product = pageContext.visibleProducts().stream()
+        List<UserAssistantPageContext.Product> visibleProducts = pageContext == null
+                ? List.of()
+                : safeList(pageContext.visibleProducts());
+        if (!visibleProducts.isEmpty()) {
+            UserAssistantPageContext.Product product = visibleProducts.stream()
                     .max((left, right) -> Integer.compare(score(left.match()), score(right.match())))
                     .orElseThrow();
             return "From the products visible here, I would start with " + product.name()
@@ -95,5 +101,9 @@ public class UserAssistantFallbackRenderer {
 
     private int score(Integer value) {
         return value == null ? -1 : value;
+    }
+
+    private static <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
     }
 }

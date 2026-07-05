@@ -40,6 +40,9 @@ public class UserAssistantRouteClassifier {
                     routeSchema()
             );
             AssistantRouteResponse route = parseRouteResponse(response);
+            if (route == null) {
+                return UserAssistantRoute.fallback(userMessage);
+            }
             return UserAssistantRoute.from(
                     route.action(),
                     route.searchQuery(),

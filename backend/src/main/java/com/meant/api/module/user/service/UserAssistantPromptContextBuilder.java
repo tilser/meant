@@ -224,10 +224,11 @@ public class UserAssistantPromptContextBuilder {
         prompt.append("Cart items: ").append(context.cartItemCount() == null ? "unknown" : context.cartItemCount()).append('\n');
 
         prompt.append("Visible products:\n");
-        if (context.visibleProducts().isEmpty()) {
+        List<UserAssistantPageContext.Product> visibleProducts = safeList(context.visibleProducts());
+        if (visibleProducts.isEmpty()) {
             prompt.append("- none\n");
         } else {
-            context.visibleProducts().stream().limit(8).forEach(product -> prompt.append("- ")
+            visibleProducts.stream().limit(8).forEach(product -> prompt.append("- ")
                     .append(promptValue(product.name()))
                     .append(" by ")
                     .append(promptValue(product.brand()))
@@ -243,10 +244,11 @@ public class UserAssistantPromptContextBuilder {
         }
 
         prompt.append("Cart summary:\n");
-        if (context.cartItems().isEmpty()) {
+        List<UserAssistantPageContext.CartItem> cartItems = safeList(context.cartItems());
+        if (cartItems.isEmpty()) {
             prompt.append("- none\n");
         } else {
-            context.cartItems().stream().limit(8).forEach(item -> prompt.append("- ")
+            cartItems.stream().limit(8).forEach(item -> prompt.append("- ")
                     .append(item.quantity() == null ? "?" : item.quantity())
                     .append(" x ")
                     .append(promptValue(item.name()))
@@ -258,10 +260,11 @@ public class UserAssistantPromptContextBuilder {
         }
 
         prompt.append("Orders visible in app:\n");
-        if (context.orders().isEmpty()) {
+        List<UserAssistantPageContext.Order> orders = safeList(context.orders());
+        if (orders.isEmpty()) {
             prompt.append("- none\n");
         } else {
-            context.orders().stream().limit(5).forEach(order -> prompt.append("- ")
+            orders.stream().limit(5).forEach(order -> prompt.append("- ")
                     .append(promptValue(order.id()))
                     .append("; date ")
                     .append(promptValue(order.date()))
@@ -443,5 +446,9 @@ public class UserAssistantPromptContextBuilder {
                 .replace('\u2018', '\'')
                 .replace('\u2019', '\'')
                 .toLowerCase(Locale.ROOT);
+    }
+
+    private static <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
     }
 }
