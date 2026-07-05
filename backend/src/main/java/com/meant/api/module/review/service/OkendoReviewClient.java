@@ -27,6 +27,7 @@ public class OkendoReviewClient {
     private final RestClient restClient;
     private final OkendoReviewResponseMapper responseMapper;
     private final String reviewsBaseUrl;
+    private final URI reviewsBaseUri;
 
     @Autowired
     public OkendoReviewClient(
@@ -37,6 +38,7 @@ public class OkendoReviewClient {
         this.restClient = restClientBuilder.build();
         this.responseMapper = responseMapper;
         this.reviewsBaseUrl = trimTrailingSlash(properties.reviewsBaseUrl());
+        this.reviewsBaseUri = paginationUri(reviewsBaseUrl);
     }
 
     OkendoReviewClient(
@@ -47,6 +49,7 @@ public class OkendoReviewClient {
         this.restClient = restClient;
         this.responseMapper = responseMapper;
         this.reviewsBaseUrl = trimTrailingSlash(properties.reviewsBaseUrl());
+        this.reviewsBaseUri = paginationUri(reviewsBaseUrl);
     }
 
     public ProductReviewsResult fetchReviews(
@@ -163,11 +166,10 @@ public class OkendoReviewClient {
     }
 
     private boolean isSameBaseUri(URI candidate) {
-        URI baseUri = URI.create(reviewsBaseUrl);
-        return equalsIgnoreCase(candidate.getScheme(), baseUri.getScheme())
-                && equalsIgnoreCase(candidate.getHost(), baseUri.getHost())
-                && effectivePort(candidate) == effectivePort(baseUri)
-                && isSameBasePath(candidate.getPath(), baseUri.getPath());
+        return equalsIgnoreCase(candidate.getScheme(), reviewsBaseUri.getScheme())
+                && equalsIgnoreCase(candidate.getHost(), reviewsBaseUri.getHost())
+                && effectivePort(candidate) == effectivePort(reviewsBaseUri)
+                && isSameBasePath(candidate.getPath(), reviewsBaseUri.getPath());
     }
 
     private int effectivePort(URI uri) {
