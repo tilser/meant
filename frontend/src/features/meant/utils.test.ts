@@ -551,6 +551,25 @@ describe('cart and order utilities', () => {
 })
 
 describe('cart delivery groups', () => {
+  test('ignores stale zero remote totals when cart lines have prices', () => {
+    const [cartGroup] = cartGroups(
+      [
+        {
+          ...line([]),
+          price: 35,
+          cartSubtotalAmount: '0.00',
+          cartTotalAmount: '0.00',
+        },
+      ],
+      false,
+    )
+
+    expect(cartGroup.remoteSubtotal).toBeNull()
+    expect(cartGroup.remoteTotal).toBeNull()
+    expect(cartGroup.subtotal).toBe(35)
+    expect(cartGroup.total).toBe(39.99)
+  })
+
   test('requires every shipment with options to have a selected delivery option', () => {
     const selected = option('standard', '5.00', true)
     const unselected = option('express', '8.00', false)

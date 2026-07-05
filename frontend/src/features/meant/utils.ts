@@ -573,8 +573,14 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
 
   return [...groups.entries()].map(([merchant, items]) => {
     const localSubtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0)
-    const remoteSubtotal = firstCartAmount(items, (item) => item.cartSubtotalAmount)
-    const remoteTotal = firstCartAmount(items, (item) => item.cartTotalAmount)
+    const remoteSubtotal = reliableCartAmount(
+      firstCartAmount(items, (item) => item.cartSubtotalAmount),
+      localSubtotal,
+    )
+    const remoteTotal = reliableCartAmount(
+      firstCartAmount(items, (item) => item.cartTotalAmount),
+      localSubtotal,
+    )
     const subtotal = remoteSubtotal ?? localSubtotal
     const deliveryGroups = firstDeliveryGroups(items)
     const deliveryGroupsWithOptions = deliveryGroups.filter(
@@ -614,6 +620,13 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
       itemDiscount,
     }
   })
+}
+
+function reliableCartAmount(remoteAmount: number | null, localSubtotal: number): number | null {
+  if (remoteAmount === 0 && localSubtotal > 0) {
+    return null
+  }
+  return remoteAmount
 }
 
 function firstCartAmount(
