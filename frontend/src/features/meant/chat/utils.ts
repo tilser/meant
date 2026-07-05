@@ -224,14 +224,9 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
     return `${block.product.name} reviews: ${block.product.review.insight}`
   }
   if (block.type === 'code') {
-    const codes = block.codes?.length
-      ? block.codes.map((code) => code.code)
-      : block.code
-        ? [block.code]
-        : []
+    const codes = block.codes?.map((code) => code.code) ?? []
     if (codes.length > 0) {
-      const saved = block.saved ? ` saves ${money(block.saved)}` : ''
-      return `${block.product.name} ${codes.length === 1 ? 'code' : 'codes'}: ${codes.join(', ')}${saved}`
+      return `${block.product.name} ${codes.length === 1 ? 'code' : 'codes'}: ${codes.join(', ')}`
     }
     return `${block.product.name} code search: ${block.message ?? 'No accepted code found'}`
   }

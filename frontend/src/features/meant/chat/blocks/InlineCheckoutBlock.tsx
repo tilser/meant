@@ -23,7 +23,7 @@ export function InlineCheckoutBlock({
     null,
   )
   const lines = cartLines(cart, products)
-  const groups = cartGroups(lines, false)
+  const groups = cartGroups(lines)
   const alerts = computeSmartAlerts(lines, products)
   const total = groups.reduce((sum, group) => sum + group.total, 0)
 
@@ -37,8 +37,8 @@ export function InlineCheckoutBlock({
       await onCheckout({
         merchant: group.merchant,
         items: group.items,
-        saved: group.itemDiscount,
-        savedNote: group.found ? `${group.found.code.code} applied in chat` : 'Checked out in chat',
+        saved: 0,
+        savedNote: 'Checked out in chat',
         checkoutUrl: firstUrl(...group.items.map((item) => item.checkoutUrl)),
         continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
       })
@@ -85,12 +85,6 @@ export function InlineCheckoutBlock({
                   </div>
                   <strong>{money(group.total)}</strong>
                 </div>
-                {group.found ? (
-                  <div className="mt-ct-cocode">
-                    <span className="mt-mono">{group.found.code.code}</span>
-                    saves {money(group.found.save)}
-                  </div>
-                ) : null}
                 <div className="mt-ct-coframe">
                   <span>Payment</span>
                   <span>Address</span>

@@ -1,7 +1,6 @@
 import type {
   CartItem,
   CorePreferenceId,
-  DiscountCode,
   LocationOption,
   MerchantCoverage,
   Order,
@@ -1258,42 +1257,6 @@ export const REPLIES: Readonly<Record<string, Reply>> = {
   },
 }
 
-export const DISCOUNTS: Readonly<Record<string, readonly DiscountCode[]>> = {
-  Amazon: [
-    {
-      code: 'SPRING15',
-      label: '15% off orders over $300',
-      type: 'percent',
-      value: 15,
-      min: 300,
-    },
-  ],
-  'Lumen Store': [
-    {
-      code: 'LUMEN50',
-      label: '$50 off your first order',
-      type: 'fixed',
-      value: 50,
-    },
-  ],
-  'Whole Foods': [
-    {
-      code: 'FRESH10',
-      label: '10% off groceries',
-      type: 'percent',
-      value: 10,
-    },
-  ],
-  'Crisp Store': [
-    {
-      code: 'FREESHIP',
-      label: 'Free delivery',
-      type: 'shipping',
-      value: 0,
-    },
-  ],
-}
-
 export const LOCATIONS: readonly LocationOption[] = [
   {
     country: 'United States',
@@ -1398,8 +1361,8 @@ export const DEFAULT_ORDERS: readonly Order[] = [
       { id: 'cereal', merchant: 'Whole Foods', qty: 2 },
       { id: 'oil', merchant: 'Casa Verde', qty: 1 },
     ],
-    saved: 1.48,
-    savedNote: 'FRESH10 · Whole Foods',
+    saved: 0,
+    savedNote: '',
   },
   {
     id: 'MNT-3158',
@@ -1410,8 +1373,8 @@ export const DEFAULT_ORDERS: readonly Order[] = [
       { id: 'laptop', merchant: 'Lumen Store', qty: 1 },
       { id: 'adapter', merchant: 'Lumen Store', qty: 1 },
     ],
-    saved: 50,
-    savedNote: 'LUMEN50 · Lumen Store',
+    saved: 0,
+    savedNote: '',
   },
 ]
 

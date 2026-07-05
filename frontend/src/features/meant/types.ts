@@ -11,7 +11,6 @@ export type View =
 export type Theme = 'light' | 'dark'
 export type AuthMode = 'signin' | 'signup' | 'reset'
 export type OrderStatus = 'Delivered' | 'In transit' | 'Processing' | 'Canceled' | 'Refunded'
-export type DiscountType = 'percent' | 'fixed' | 'shipping'
 export type ClothingFit = 'none' | 'men' | 'women' | 'other'
 export type ProductAudience = 'men' | 'women' | 'other' | 'unisex'
 export type InventoryRelationship = 'NONE' | 'DUPLICATE' | 'COMPLEMENT' | 'RESTOCK'
@@ -124,14 +123,6 @@ export interface Product {
 export interface Reply {
   text: string
   ids: readonly ProductId[]
-}
-
-export interface DiscountCode {
-  code: string
-  label: string
-  type: DiscountType
-  value: number
-  min?: number
 }
 
 export interface LocationOption {

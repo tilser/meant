@@ -5,7 +5,6 @@ import type { CartProfile } from '../../lib/apiClient'
 import { DEFAULT_PREFERENCE_IDS, PREFERENCES, PRODUCTS, REPLIES } from './data'
 import {
   availableOffers,
-  bestCode,
   bestOffer,
   canMerchantShip,
   cartDeliveryOptionAmount,
@@ -244,23 +243,6 @@ describe('shopping decision utilities', () => {
     expect(bestOffer(cereal, uk)).toEqual({ merchant: 'iHerb', price: 8.2, delivery: '3 days' })
   })
 
-  test('chooses the strongest discount code only when it saves money', () => {
-    expect(
-      bestCode(
-        [
-          { code: 'P20', label: '20%', type: 'percent', value: 20 },
-          { code: 'F12', label: '$12', type: 'fixed', value: 12 },
-          { code: 'SHIP', label: 'Ship', type: 'shipping', value: 0 },
-        ],
-        100,
-        5,
-      ),
-    ).toEqual({ code: { code: 'P20', label: '20%', type: 'percent', value: 20 }, save: 20 })
-
-    expect(
-      bestCode([{ code: 'P20', label: '20%', type: 'percent', value: 20, min: 200 }], 100, 5),
-    ).toBeNull()
-  })
 })
 
 describe('assistant and preference utilities', () => {
@@ -659,10 +641,9 @@ describe('cart delivery groups', () => {
     const selected = option('standard', '5.00', true)
     const unselected = option('express', '8.00', false)
 
-    const [cartGroup] = cartGroups(
-      [line([group('shipment-1', [selected], selected), group('shipment-2', [unselected])])],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      line([group('shipment-1', [selected], selected), group('shipment-2', [unselected])]),
+    ])
 
     expect(cartGroup.hasDeliveryOptions).toBe(true)
     expect(cartGroup.hasSelectedDelivery).toBe(false)
@@ -673,10 +654,9 @@ describe('cart delivery groups', () => {
     const standard = option('standard', '5.00', true)
     const economy = option('economy', '3.00', true)
 
-    const [cartGroup] = cartGroups(
-      [line([group('shipment-1', [standard], standard), group('shipment-2', [economy], economy)])],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      line([group('shipment-1', [standard], standard), group('shipment-2', [economy], economy)]),
+    ])
 
     expect(cartGroup.hasSelectedDelivery).toBe(true)
     expect(cartGroup.deliveryRaw).toBe(8)
@@ -686,10 +666,9 @@ describe('cart delivery groups', () => {
   test('does not require selection for shipment groups without delivery options', () => {
     const standard = option('standard', '5.00', true)
 
-    const [cartGroup] = cartGroups(
-      [line([group('shipment-1', []), group('shipment-2', [standard], standard)])],
-      false,
-    )
+    const [cartGroup] = cartGroups([
+      line([group('shipment-1', []), group('shipment-2', [standard], standard)]),
+    ])
 
     expect(cartGroup.hasSelectedDelivery).toBe(true)
     expect(cartGroup.deliveryRaw).toBe(5)

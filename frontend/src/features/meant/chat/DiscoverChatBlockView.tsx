@@ -11,13 +11,14 @@ import type {
 import { bestOffer, formatOrderDate, money, productPriceFrom } from '../utils'
 import { productCuratedTake } from '../product/productCuration'
 import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
+import { CopyIcon } from '../shared/icons'
 import { CartIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import { DiscoverProductBatch } from './DiscoverProductBatch'
 import { InlineCartBlock } from './blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
-import type { DiscoverChatBlock, FoundDiscountCode } from './types'
-import { cartItemsWithFallback, productsWithFallback } from './utils'
+import type { DiscoverChatBlock } from './types'
+import { cartItemsWithFallback, copyTextToClipboard, productsWithFallback } from './utils'
 
 function discountCodeSourceHost(sourceUrl: string | null | undefined): string | null {
   if (!sourceUrl) {
@@ -31,19 +32,7 @@ function discountCodeSourceHost(sourceUrl: string | null | undefined): string | 
 }
 
 function discountCodeEntries(block: Extract<DiscoverChatBlock, { type: 'code' }>) {
-  if (block.codes?.length) {
-    return block.codes
-  }
-  if (!block.code) {
-    return []
-  }
-  return [
-    {
-      code: block.code,
-      title: block.saved ? `Estimated ${money(block.saved)} savings` : null,
-      validationMessage: null,
-    },
-  ] satisfies FoundDiscountCode[]
+  return block.codes ?? []
 }
 
 export function DiscoverChatBlockView({
@@ -192,7 +181,6 @@ export function DiscoverChatBlockView({
     const status = block.status ?? (codes.length > 0 ? 'found' : 'empty')
     const backendResult = block.codes !== undefined
     const merchant = block.merchant ?? offer.merchant
-    const saved = typeof block.saved === 'number' && block.saved > 0 ? block.saved : null
     const statusLabel =
       status === 'error'
         ? 'Search unavailable'
@@ -206,57 +194,45 @@ export function DiscoverChatBlockView({
           <span className="mt-ct-code-save mt-mono">{statusLabel}</span>
         </div>
         {codes.length > 0 ? (
-          <>
-            <div className="mt-ct-code-list">
-              {codes.map((code) => {
-                const sourceHost = discountCodeSourceHost(code.sourceUrl)
-                const detail =
-                  code.description ||
-                  code.title ||
-                  code.validationMessage ||
-                  'Accepted by the merchant cart.'
-                return (
-                  <div className="mt-ct-code-row" key={code.code}>
-                    <span className="mt-code">
-                      <span className="mt-code-val mt-mono">{code.code}</span>
-                      <span className="mt-code-act mt-mono">
-                        {backendResult ? 'valid' : 'code'}
-                      </span>
-                    </span>
-                    <div className="mt-ct-code-detail">
-                      <div className="mt-ct-code-label">{detail}</div>
-                      {saved ? (
-                        <div className="mt-ct-code-price">
-                          <span className="mt-ct-code-was">{money(offer.price)}</span>
-                          <span className="mt-ct-code-now">
-                            {money(Math.max(0, offer.price - saved))}
-                          </span>
-                          <span className="mt-mono mt-ct-code-deliv">{offer.delivery}</span>
-                        </div>
-                      ) : (
-                        <div className="mt-ct-code-meta mt-mono">
-                          {code.restrictions ? <span>{code.restrictions}</span> : null}
-                          {sourceHost && code.sourceUrl ? (
-                            <a href={code.sourceUrl} target="_blank" rel="noreferrer">
-                              {sourceHost}
-                            </a>
-                          ) : null}
-                          {code.validationMessage ? <span>{code.validationMessage}</span> : null}
-                        </div>
-                      )}
+          <div className="mt-ct-code-list">
+            {codes.map((code) => {
+              const sourceHost = discountCodeSourceHost(code.sourceUrl)
+              const detail =
+                code.description ||
+                code.title ||
+                code.validationMessage ||
+                'Accepted by the merchant cart.'
+              return (
+                <div className="mt-ct-code-row" key={code.code}>
+                  <span className="mt-code">
+                    <span className="mt-code-val mt-mono">{code.code}</span>
+                    <span className="mt-code-act mt-mono">{backendResult ? 'valid' : 'code'}</span>
+                    <button
+                      className="mt-code-copy"
+                      type="button"
+                      title={`Copy ${code.code}`}
+                      aria-label={`Copy ${code.code}`}
+                      onClick={() => copyTextToClipboard(code.code)}
+                    >
+                      <CopyIcon size={12} />
+                    </button>
+                  </span>
+                  <div className="mt-ct-code-detail">
+                    <div className="mt-ct-code-label">{detail}</div>
+                    <div className="mt-ct-code-meta mt-mono">
+                      {code.restrictions ? <span>{code.restrictions}</span> : null}
+                      {sourceHost && code.sourceUrl ? (
+                        <a href={code.sourceUrl} target="_blank" rel="noreferrer">
+                          {sourceHost}
+                        </a>
+                      ) : null}
+                      {code.validationMessage ? <span>{code.validationMessage}</span> : null}
                     </div>
                   </div>
-                )
-              })}
-            </div>
-            <button
-              className="mt-ct-addbtn solid"
-              type="button"
-              onClick={() => onAddCart(block.product)}
-            >
-              <CartIcon /> Add
-            </button>
-          </>
+                </div>
+              )
+            })}
+          </div>
         ) : (
           <div className={`mt-ct-code-empty ${status === 'error' ? 'error' : ''}`}>
             {block.message ?? `No accepted discount code found for ${merchant}.`}
@@ -411,8 +387,7 @@ export function DiscoverChatBlockView({
             Added <b>{block.product.name}</b> to your cart
           </span>
           <span className="mt-ct-added-meta">
-            {money(addedPrice)} · {block.merchant}
-            {block.code ? ` · code ${block.code}` : ''} · {addedCount} in cart
+            {money(addedPrice)} · {block.merchant} · {addedCount} in cart
           </span>
         </div>
         <div className="mt-ct-added-actions">

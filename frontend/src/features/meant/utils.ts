@@ -1,4 +1,4 @@
-import { CORE_PREFERENCE_IDS, DISCOUNTS, MERCHANTS, PRODUCTS, REPLIES } from './data'
+import { CORE_PREFERENCE_IDS, MERCHANTS, PRODUCTS, REPLIES } from './data'
 import { ApiError } from '../../lib/apiError'
 import type { CartProfile } from '../../lib/apiClient'
 import type {
@@ -9,7 +9,6 @@ import type {
   CheckoutPayload,
   ClothingFit,
   CorePreferenceId,
-  DiscountCode,
   Offer,
   Order,
   Preference,
@@ -520,34 +519,6 @@ export function computeSmartAlerts(
   return alerts.sort((a, b) => (a.kind === 'warn' ? 0 : 1) - (b.kind === 'warn' ? 0 : 1))
 }
 
-export interface DiscountResult {
-  code: DiscountCode
-  save: number
-}
-
-export function bestCode(
-  codes: readonly DiscountCode[] | undefined,
-  subtotal: number,
-  deliveryRaw: number,
-): DiscountResult | null {
-  let best: DiscountResult | null = null
-  for (const code of codes ?? []) {
-    let save: number
-    if (code.type === 'percent') {
-      save = code.min && subtotal < code.min ? 0 : (subtotal * code.value) / 100
-    } else if (code.type === 'fixed') {
-      save = Math.min(code.value, subtotal)
-    } else {
-      save = deliveryRaw
-    }
-
-    if (!best || save > best.save) {
-      best = { code, save }
-    }
-  }
-  return best && best.save > 0 ? best : null
-}
-
 export interface CartGroup {
   merchant: string
   items: CartLine[]
@@ -560,11 +531,9 @@ export interface CartGroup {
   deliveryGroups: readonly CartDeliveryGroup[]
   hasDeliveryOptions: boolean
   hasSelectedDelivery: boolean
-  found: DiscountResult | null
-  itemDiscount: number
 }
 
-export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartGroup[] {
+export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
   const groups = new Map<string, CartLine[]>()
   lines.forEach((line) => {
     const existing = groups.get(line.merchant) ?? []
@@ -588,14 +557,8 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
     const selectedDeliveryCost = selectedDeliveryGroupsCost(deliveryGroups)
     const inferredDelivery = remoteTotal !== null ? Math.max(0, remoteTotal - subtotal) : null
     const deliveryRaw = selectedDeliveryCost ?? inferredDelivery ?? (subtotal >= 50 ? 0 : 4.99)
-    const found = scanning ? null : bestCode(DISCOUNTS[merchant], subtotal, deliveryRaw)
-    const itemDiscount = found && found.code.type !== 'shipping' ? found.save : 0
-    const deliveryDiscount = found && found.code.type === 'shipping' ? deliveryRaw : 0
-    const delivery = found && found.code.type === 'shipping' ? 0 : deliveryRaw
-    const total = Math.max(
-      0,
-      (remoteTotal ?? subtotal + deliveryRaw) - itemDiscount - deliveryDiscount,
-    )
+    const delivery = deliveryRaw
+    const total = Math.max(0, remoteTotal ?? subtotal + deliveryRaw)
     const hasDeliveryOptions = deliveryGroupsWithOptions.length > 0
     const hasSelectedDelivery = deliveryGroupsWithOptions.every((group) =>
       Boolean(selectedCartDeliveryOption(group)),
@@ -612,8 +575,6 @@ export function cartGroups(lines: readonly CartLine[], scanning: boolean): CartG
       deliveryGroups,
       hasDeliveryOptions,
       hasSelectedDelivery,
-      found,
-      itemDiscount,
     }
   })
 }

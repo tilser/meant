@@ -270,7 +270,7 @@ export function CartView({
     deliveryLocations.length > 0
       ? lines.filter((line) => !canMerchantShip(line.merchant, deliveryLocations))
       : []
-  const groups = cartGroups(lines, scanning)
+  const groups = cartGroups(lines)
   const groupSummaries = groups.map((group) => {
     const merchantKey = group.items[0]
       ? cartMerchantKey(group.items[0])

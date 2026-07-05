@@ -82,7 +82,7 @@ export function CartPopover({
 
   const alerts = computeSmartAlerts(lines, products)
   const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
-  const groups = cartGroups(lines, false)
+  const groups = cartGroups(lines)
   const groupSummaries = groups.map((group) => {
     const merchantKey = group.items[0]
       ? cartMerchantKey(group.items[0])

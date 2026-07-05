@@ -26,8 +26,6 @@ export type DiscoverChatBlock =
   | {
       type: 'code'
       product: Product
-      code?: string
-      saved?: number
       merchant?: string
       codes?: readonly FoundDiscountCode[]
       cached?: boolean
@@ -47,7 +45,6 @@ export type DiscoverChatBlock =
       synced: boolean
       price?: number
       count?: number
-      code?: string
     }
   | { type: 'saved'; products: readonly Product[] }
   | { type: 'orders'; orders: readonly Order[] }

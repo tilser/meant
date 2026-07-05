@@ -22,9 +22,8 @@ export function InlineCartBlock({
 }>) {
   const lines = cartLines(cart, products)
   const alerts = computeSmartAlerts(lines, products)
-  const groups = cartGroups(lines, false)
+  const groups = cartGroups(lines)
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
-  const saved = groups.reduce((sum, group) => sum + group.itemDiscount, 0)
   const total = groups.reduce((sum, group) => sum + group.total, 0)
   const productById = new Map(products.map((product) => [product.id, product]))
   const cartAfterQty = (target: CartItem, qty: number) =>
@@ -128,7 +127,6 @@ export function InlineCartBlock({
             {groups.length} merchant{groups.length === 1 ? '' : 's'}
           </span>
           <strong>{money(total)}</strong>
-          {saved > 0 ? <span className="mt-ct-cart-save">Saved {money(saved)}</span> : null}
         </div>
         <div className="mt-ct-cart-foot-actions">
           <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>

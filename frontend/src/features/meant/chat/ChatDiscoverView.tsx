@@ -1342,7 +1342,6 @@ export function ChatDiscoverView({
             product: context.product,
             merchant: context.offer.merchant,
             codes,
-            code: codes[0]?.code,
             cached: result.cached,
             searchedAt: result.searchedAt,
             expiresAt: result.expiresAt,
