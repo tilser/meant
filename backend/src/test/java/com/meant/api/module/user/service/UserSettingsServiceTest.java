@@ -77,6 +77,7 @@ class UserSettingsServiceTest {
         assertThat(userShoppingFilterRepository.findByUserIdCalls).isEqualTo(1);
         assertThat(shoppingFilterRepository.findAllByDisplayOrderCalls).isEqualTo(1);
         assertThat(shoppingFilterRepository.findAllByIdCalls).isZero();
+        assertThat(userShoppingFilterRepository.flushCalls).isEqualTo(1);
         assertThat(userShoppingFilterRepository.savedFilterIds)
                 .containsExactly("organic", "cotton", "gluten-free");
         assertThat(result.filters())
@@ -160,6 +161,7 @@ class UserSettingsServiceTest {
         private List<String> activeFilterIds;
         private List<String> savedFilterIds = List.of();
         private int findByUserIdCalls;
+        private int flushCalls;
 
         FakeUserShoppingFilterRepository(List<String> activeFilterIds) {
             this.activeFilterIds = new ArrayList<>(activeFilterIds);
@@ -171,6 +173,10 @@ class UserSettingsServiceTest {
                 case "findByIdUserId" -> findByUserId((UUID) args[0]);
                 case "deleteByIdUserId" -> {
                     activeFilterIds = new ArrayList<>();
+                    yield null;
+                }
+                case "flush" -> {
+                    flushCalls++;
                     yield null;
                 }
                 case "saveAll" -> saveAll((Iterable<UserShoppingFilter>) args[0]);

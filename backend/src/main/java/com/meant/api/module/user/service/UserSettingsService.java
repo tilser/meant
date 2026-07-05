@@ -216,6 +216,7 @@ public class UserSettingsService {
         }
 
         userShoppingFilterRepository.deleteByIdUserId(settings.getUserId());
+        userShoppingFilterRepository.flush();
         userShoppingFilterRepository.saveAll(desiredFilterIds.stream()
                 .map(filterId -> UserShoppingFilter.create(settings.getUserId(), filterId, now))
                 .toList());

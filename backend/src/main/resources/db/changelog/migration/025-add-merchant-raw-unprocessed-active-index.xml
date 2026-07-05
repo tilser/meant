@@ -11,5 +11,10 @@
             ON merchant_raw (processed_at ASC NULLS FIRST, fetched_at ASC)
             WHERE active = true AND processed = false
         </sql>
+        <rollback>
+            <sql dbms="postgresql">
+                DROP INDEX IF EXISTS idx_merchant_raw_unprocessed_active_retry
+            </sql>
+        </rollback>
     </changeSet>
 </databaseChangeLog>
