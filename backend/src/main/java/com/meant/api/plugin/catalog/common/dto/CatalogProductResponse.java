@@ -125,11 +125,25 @@ public record CatalogProductResponse(
         if (money == null || money.amount() == null) {
             return null;
         }
-        Long minorAmount = UcpMoney.wholeNumberAmount(money.amount());
-        if (minorAmount == null && (money.amount() instanceof Number || money.amount() instanceof CharSequence)) {
-            minorAmount = UcpMoney.minorAmount(money.amount().toString(), money.currency());
+        Object amount = money.amount();
+        Long minorAmount = wholeNumber(amount);
+        if (minorAmount == null) {
+            minorAmount = UcpMoney.wholeNumberAmount(amount);
+        }
+        if (minorAmount == null && (amount instanceof Number || amount instanceof CharSequence)) {
+            minorAmount = UcpMoney.minorAmount(amount.toString(), money.currency());
         }
         return UcpDecimal.minorAmountToDecimalText(minorAmount, money.currency());
+    }
+
+    private static Long wholeNumber(Object amount) {
+        if (amount instanceof Long value) {
+            return value;
+        }
+        if (amount instanceof Integer value) {
+            return value.longValue();
+        }
+        return null;
     }
 
     private static String currency(Money first, Money second) {
