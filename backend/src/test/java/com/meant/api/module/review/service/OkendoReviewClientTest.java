@@ -88,12 +88,12 @@ class OkendoReviewClientTest {
         UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         server.expect(request -> {
                     assertThat(request.getURI().getQuery())
-                            .contains("limit=100");
+                            .contains("limit=25");
                     assertThat(request.getURI().getRawQuery())
                             .contains("orderBy=date%20desc");
                 })
                 .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess(reviewsFixture(), MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(reviewsFixtureWithoutNextUrl(), MediaType.APPLICATION_JSON));
         server.expect(request -> assertThat(request.getURI().getPath())
                         .endsWith("/products/shopify-15265473495425/review_aggregate"))
                 .andExpect(method(HttpMethod.GET))
@@ -109,6 +109,83 @@ class OkendoReviewClientTest {
 
         assertThat(result.reviews()).isEmpty();
         assertThat(result.reviewCount()).isEqualTo(116);
+        server.verify();
+    }
+
+    @Test
+    void fetchReviewsFollowsOkendoCursorPages() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        OkendoReviewClient client = new OkendoReviewClient(
+                restClientBuilder.build(),
+                new OkendoReviewProperties("https://api.okendo.io/v1/", 20),
+                new OkendoReviewResponseMapper(new ObjectMapper())
+        );
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath())
+                            .isEqualTo("/v1/stores/ac3ddecd-d40f-41bb-8e17-3a68e331cc08"
+                                    + "/products/shopify-15265473495425/reviews");
+                    assertThat(request.getURI().getQuery())
+                            .contains("limit=25");
+                })
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(reviewsFixture(), MediaType.APPLICATION_JSON));
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath())
+                            .isEqualTo("/v1/stores/ac3ddecd-d40f-41bb-8e17-3a68e331cc08"
+                                    + "/products/shopify-15265473495425/reviews");
+                    assertThat(request.getURI().getQuery())
+                            .contains("lastEvaluated=abc");
+                })
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(reviewsFixtureWithoutNextUrl(), MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .endsWith("/products/shopify-15265473495425/review_aggregate"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(aggregateFixture(), MediaType.APPLICATION_JSON));
+
+        ProductReviewsResult result = client.fetchReviews(
+                merchantId,
+                "15265473495425",
+                "ac3ddecd-d40f-41bb-8e17-3a68e331cc08",
+                30,
+                0
+        );
+
+        assertThat(result.reviews()).hasSize(8);
+        assertThat(result.reviewCount()).isEqualTo(116);
+        assertThat(result.hasMore()).isTrue();
+        server.verify();
+    }
+
+    @Test
+    void fetchReviewsRejectsUnexpectedAbsoluteCursorUrl() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        OkendoReviewClient client = new OkendoReviewClient(
+                restClientBuilder.build(),
+                new OkendoReviewProperties("https://api.okendo.io/v1", 20),
+                new OkendoReviewResponseMapper(new ObjectMapper())
+        );
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        server.expect(request -> assertThat(request.getURI().getQuery())
+                        .contains("limit=25"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(reviewsFixtureWithNextUrl(
+                        "https://api.okendo.io.evil/v1/stores/ac3ddecd-d40f-41bb-8e17-3a68e331cc08"
+                                + "/products/shopify-15265473495425/reviews?lastEvaluated=abc"
+                ), MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.fetchReviews(
+                merchantId,
+                "15265473495425",
+                "ac3ddecd-d40f-41bb-8e17-3a68e331cc08",
+                30,
+                0
+        ))
+                .isInstanceOf(ReviewException.class)
+                .hasMessage("Okendo Reviews API returned an unexpected pagination URL");
         server.verify();
     }
 
@@ -146,21 +223,57 @@ class OkendoReviewClientTest {
 
     @Test
     void fetchReviewsFailsFastWhenBaseUrlIsMissing() {
-        OkendoReviewClient client = new OkendoReviewClient(
-                RestClient.builder().build(),
-                new OkendoReviewProperties(null, 20),
-                new OkendoReviewResponseMapper(new ObjectMapper())
-        );
-
-        assertThatThrownBy(() -> client.fetchReviews(
-                UUID.fromString("00000000-0000-0000-0000-000000000001"),
-                "15265473495425",
-                "ac3ddecd-d40f-41bb-8e17-3a68e331cc08",
-                2,
-                0
-        ))
+        assertThatThrownBy(() -> new OkendoReviewClient(
+                        RestClient.builder().build(),
+                        new OkendoReviewProperties(null, 20),
+                        new OkendoReviewResponseMapper(new ObjectMapper())
+                ))
                 .isInstanceOf(ReviewException.class)
                 .hasMessage("Okendo Reviews API base URL is not configured");
+    }
+
+    @Test
+    void mapperHandlesBlankRawResponses() {
+        OkendoReviewResponseMapper mapper = new OkendoReviewResponseMapper(new ObjectMapper());
+
+        ProductReviewsResult result = mapper.fromJson(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "15265473495425",
+                java.util.List.of(""),
+                "",
+                2,
+                0
+        );
+
+        assertThat(result.reviewCount()).isZero();
+        assertThat(result.rating()).isNull();
+        assertThat(result.reviews()).isEmpty();
+        assertThat(result.hasMore()).isFalse();
+    }
+
+    @Test
+    void mapperIgnoresCorruptNonPositiveAggregateCountsForRating() {
+        OkendoReviewResponseMapper mapper = new OkendoReviewResponseMapper(new ObjectMapper());
+
+        ProductReviewsResult result = mapper.fromJson(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "15265473495425",
+                java.util.List.of(reviewsFixtureWithoutNextUrl()),
+                """
+                        {
+                          "reviewAggregate": {
+                            "ratingAndReviewCount": -1,
+                            "ratingAndReviewValuesTotal": 547,
+                            "reviewCount": 116
+                          }
+                        }
+                        """,
+                2,
+                0
+        );
+
+        assertThat(result.rating()).isNull();
+        assertThat(result.reviewCount()).isEqualTo(116);
     }
 
     private String reviewsFixture() {
@@ -211,6 +324,75 @@ class OkendoReviewClientTest {
                       "rating": 5,
                       "reviewer": {
                         "displayName": "Lin T.",
+                        "isVerified": true
+                      }
+                    }
+                  ]
+                }
+                """;
+    }
+
+    private String reviewsFixtureWithNextUrl(String nextUrl) {
+        return """
+                {
+                  "nextUrl": "%s",
+                  "reviews": [
+                    {
+                      "reviewId": "review-1",
+                      "body": "Newest review.",
+                      "dateCreated": "2026-07-04T13:25:44.422Z",
+                      "rating": 5,
+                      "reviewer": {
+                        "displayName": "Ada L.",
+                        "isVerified": true
+                      }
+                    }
+                  ]
+                }
+                """.formatted(nextUrl);
+    }
+
+    private String reviewsFixtureWithoutNextUrl() {
+        return """
+                {
+                  "reviews": [
+                    {
+                      "reviewId": "review-5",
+                      "body": "Another page.",
+                      "dateCreated": "2026-06-30T12:00:00.000Z",
+                      "rating": 5,
+                      "reviewer": {
+                        "displayName": "Mae R.",
+                        "isVerified": true
+                      }
+                    },
+                    {
+                      "reviewId": "review-6",
+                      "body": "Second cursor review.",
+                      "dateCreated": "2026-06-29T12:00:00.000Z",
+                      "rating": 4,
+                      "reviewer": {
+                        "displayName": "Noah S.",
+                        "isVerified": true
+                      }
+                    },
+                    {
+                      "reviewId": "review-7",
+                      "body": "Third cursor review.",
+                      "dateCreated": "2026-06-28T12:00:00.000Z",
+                      "rating": 5,
+                      "reviewer": {
+                        "displayName": "Olive C.",
+                        "isVerified": false
+                      }
+                    },
+                    {
+                      "reviewId": "review-8",
+                      "body": "Fourth cursor review.",
+                      "dateCreated": "2026-06-27T12:00:00.000Z",
+                      "rating": 3,
+                      "reviewer": {
+                        "displayName": "Paul N.",
                         "isVerified": true
                       }
                     }
