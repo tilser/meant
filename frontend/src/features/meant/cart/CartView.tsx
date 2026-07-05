@@ -39,6 +39,7 @@ import {
   cartSnapshotSavings,
   cartSnapshotSubtotal,
   cartSnapshotTotal,
+  cartSummaryDelivery,
   deliveryGroupSummary,
   deliveryOptionCost,
   deliveryOptionSpeed,
@@ -276,19 +277,23 @@ export function CartView({
       : normalizedMerchantName(group.merchant)
     const snapshot = cartSnapshots[merchantKey]
     const fallbackTotal = group.subtotal + group.delivery
+    const subtotal = cartSnapshotSubtotal(snapshot, group.subtotal)
+    const savings = cartSnapshotSavings(snapshot, group.subtotal, fallbackTotal)
+    const total = cartSnapshotTotal(snapshot, fallbackTotal, group.subtotal)
     return {
       group,
       merchantKey,
       snapshot,
-      subtotal: cartSnapshotSubtotal(snapshot, group.subtotal),
-      savings: cartSnapshotSavings(snapshot, group.subtotal, fallbackTotal),
-      total: cartSnapshotTotal(snapshot, fallbackTotal, group.subtotal),
+      subtotal,
+      savings,
+      total,
+      delivery: cartSummaryDelivery(subtotal, savings, total),
       currency: snapshot?.currency ?? null,
     }
   })
   const itemsTotal = groupSummaries.reduce((sum, summary) => sum + summary.subtotal, 0)
   const discountTotal = groupSummaries.reduce((sum, summary) => sum + summary.savings, 0)
-  const deliveryTotal = groupSummaries.reduce((sum, summary) => sum + summary.group.delivery, 0)
+  const deliveryTotal = groupSummaries.reduce((sum, summary) => sum + summary.delivery, 0)
   const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
   const codeCount = groupSummaries.reduce(
     (sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0),

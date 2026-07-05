@@ -8,6 +8,7 @@ import {
   cartSnapshotSavings,
   cartSnapshotSubtotal,
   cartSnapshotTotal,
+  cartSummaryDelivery,
 } from './utils'
 
 function merchantSnapshot(overrides: Partial<MerchantCartSnapshot>): MerchantCartSnapshot {
@@ -120,5 +121,11 @@ describe('cart feature utilities', () => {
     expect(cartSnapshotSubtotal(snapshot, 35)).toBe(35)
     expect(cartSnapshotTotal(snapshot, 39.99, 35)).toBe(39.99)
     expect(cartSnapshotHasReliableTotal(snapshot, 39.99, 35)).toBe(false)
+  })
+
+  test('derives summary delivery from displayed totals', () => {
+    expect(cartSummaryDelivery(35, 0, 42)).toBe(7)
+    expect(cartSummaryDelivery(35, 5, 42)).toBe(12)
+    expect(cartSummaryDelivery(42, 0, 35)).toBe(0)
   })
 })

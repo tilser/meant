@@ -278,6 +278,10 @@ export function cartSnapshotHasReliableTotal(
   return reliableRemoteCartTotal(snapshot?.totalAmount ?? null, fallbackSubtotal) !== null
 }
 
+export function cartSummaryDelivery(subtotal: number, savings: number, total: number): number {
+  return Math.max(0, total + savings - subtotal)
+}
+
 export function cartableOfferForProduct(product: Product): Offer | null {
   return product.offers.find(offerCartable) ?? null
 }
