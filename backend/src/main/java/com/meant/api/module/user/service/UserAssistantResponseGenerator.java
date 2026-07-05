@@ -63,7 +63,12 @@ public class UserAssistantResponseGenerator {
                     }
             );
         } catch (OpenRouterException exception) {
-            log.warn("Failed to stream assistant answer; using local fallback", exception);
+            String partialAnswer = streamed.toString().trim();
+            if (!partialAnswer.isBlank()) {
+                log.warn("Failed to stream assistant answer after emitting partial text; preserving partial answer", exception);
+                return partialAnswer;
+            }
+            log.warn("Failed to stream assistant answer before emitting text; using local fallback", exception);
             String fallback = fallbackRenderer.fallbackAnswer(route, settings, pageContext, toolContext, products);
             streamEventAdapter.emitText(fallback, eventConsumer);
             return fallback;

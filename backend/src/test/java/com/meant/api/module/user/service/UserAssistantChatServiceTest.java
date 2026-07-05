@@ -496,6 +496,32 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void streamPersistsPartialAssistantWhenOpenRouterStreamFailsAfterDelta() {
+        UUID userId = UUID.randomUUID();
+        openRouterChatClient.routeResponse = """
+                {"action":"answer","searchQuery":"","clarifyingQuestion":""}
+                """;
+        openRouterChatClient.streamChunks = List.of("Partial answer");
+        openRouterChatClient.failAfterChunkCount = 1;
+
+        List<UserAssistantStreamEvent> events = new ArrayList<>();
+        userAssistantChatService.stream(profileCommand(userId), command(userId, null, "What should I do?"), events::add);
+
+        UUID conversationId = events.getFirst().conversationId();
+        List<UserAssistantMessage> messages = messageRepository
+                .findByConversationIdAndUserIdOrderByCreatedAtDesc(conversationId, userId, PageRequest.of(0, 50));
+        Collections.reverse(messages);
+
+        assertThat(events).extracting(UserAssistantStreamEvent::type)
+                .containsExactly("metadata", "delta", "done");
+        assertThat(events.get(1).text()).isEqualTo("Partial answer");
+        assertThat(events.getLast().text()).isEqualTo("Partial answer");
+        assertThat(messages).extracting(UserAssistantMessage::getRole)
+                .containsExactly(UserAssistantMessageRole.USER, UserAssistantMessageRole.ASSISTANT);
+        assertThat(messages.getLast().getContent()).isEqualTo("Partial answer");
+    }
+
+    @Test
     void latestRestoresPersistedMessagesWithProducts() throws Exception {
         UUID userId = UUID.randomUUID();
         Instant now = Instant.parse("2026-06-17T10:00:00Z");
@@ -730,6 +756,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
         private String streamModel;
         private List<OpenRouterChatMessage> streamMessages = List.of();
         private boolean failStream;
+        private Integer failAfterChunkCount;
 
         FakeOpenRouterChatClient() {
             super(RestClient.builder(), new OpenRouterProperties(
@@ -755,6 +782,7 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             streamModel = null;
             streamMessages = List.of();
             failStream = false;
+            failAfterChunkCount = null;
         }
 
         @Override
@@ -782,7 +810,12 @@ class UserAssistantChatServiceTest extends PostgresIntegrationTest {
             if (failStream) {
                 throw new OpenRouterException("stream failed");
             }
-            streamChunks.forEach(chunkConsumer);
+            for (int index = 0; index < streamChunks.size(); index++) {
+                chunkConsumer.accept(streamChunks.get(index));
+                if (failAfterChunkCount != null && index + 1 >= failAfterChunkCount) {
+                    throw new OpenRouterException("stream failed");
+                }
+            }
         }
     }
 

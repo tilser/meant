@@ -43,7 +43,7 @@ public class UserAssistantFallbackRenderer {
         if (pageContext != null && !pageContext.visibleProducts().isEmpty()) {
             UserAssistantPageContext.Product product = pageContext.visibleProducts().stream()
                     .max((left, right) -> Integer.compare(score(left.match()), score(right.match())))
-                    .orElse(pageContext.visibleProducts().getFirst());
+                    .orElseThrow();
             return "From the products visible here, I would start with " + product.name()
                     + ". It has the strongest current match"
                     + (product.match() == null ? "" : " at " + product.match() + "%")
@@ -61,7 +61,7 @@ public class UserAssistantFallbackRenderer {
     private String savedProductsFallbackAnswer(List<UserSavedProductResult> savedProducts) {
         UserSavedProductResult product = savedProducts.stream()
                 .max((left, right) -> Integer.compare(left.match(), right.match()))
-                .orElse(savedProducts.getFirst());
+                .orElseThrow();
         StringBuilder answer = new StringBuilder();
         answer.append("From your saved products, I would start with ")
                 .append(product.name())

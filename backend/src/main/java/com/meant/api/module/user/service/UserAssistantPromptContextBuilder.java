@@ -20,6 +20,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -123,7 +124,7 @@ public class UserAssistantPromptContextBuilder {
                         ? userMessagePrompt("CONVERSATION USER MESSAGE", message.getContent())
                         : assistantMessagePrompt(message.getContent())
         )));
-        if (history.isEmpty() || !history.getLast().getContent().equals(userMessage)) {
+        if (history.isEmpty() || !Objects.equals(history.getLast().getContent(), userMessage)) {
             messages.add(new OpenRouterChatMessage(
                     "user",
                     userMessagePrompt("CURRENT USER MESSAGE", userMessage)
