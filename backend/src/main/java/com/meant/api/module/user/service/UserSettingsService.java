@@ -53,7 +53,9 @@ public class UserSettingsService {
         userService.ensureProfile(profileCommand);
         Instant now = Instant.now();
         UserSettings settings = findOrCreateSettings(profileCommand.id(), now);
-        return result(settings, List.of(), List.of());
+        List<String> activeFilterIds = activeFilterIds(settings.getUserId());
+        List<ShoppingFilter> availableFilters = shoppingFilterRepository.findAllByOrderByDisplayOrderAsc();
+        return result(settings, activeFilterIds, availableFilters, List.of(), List.of());
     }
 
     @Transactional
@@ -81,8 +83,16 @@ public class UserSettingsService {
             replaceLocations(settings, List.of(command.location()), now);
         }
         List<String> parsedFilterIds = List.copyOf(command.parsedFilterIds());
-        replaceFilters(settings, command.filterIds(), parsedFilterIds, now);
-        return result(settings, parsedFilterIds, command.unmappedPreferences());
+        List<String> currentActiveFilterIds = activeFilterIds(settings.getUserId());
+        List<ShoppingFilter> availableFilters = shoppingFilterRepository.findAllByOrderByDisplayOrderAsc();
+        List<String> activeFilterIds = replaceFilters(
+                settings,
+                command.filterIds(),
+                parsedFilterIds,
+                currentActiveFilterIds,
+                availableFilters,
+                now);
+        return result(settings, activeFilterIds, availableFilters, parsedFilterIds, command.unmappedPreferences());
     }
 
     private UserSettings findOrCreateSettings(UUID userId, Instant now) {
@@ -121,38 +131,6 @@ public class UserSettingsService {
         }
         userSettingsLocationRepository.saveAll(replacementLocations);
         settings.updatePrimaryLocation(desiredLocations.isEmpty() ? null : desiredLocations.get(0), now);
-        settings.touch(now);
-    }
-
-    private void replaceFilters(
-            UserSettings settings,
-            Set<String> explicitFilterIds,
-            List<String> parsedFilterIds,
-            Instant now
-    ) {
-        if (explicitFilterIds == null && parsedFilterIds.isEmpty()) {
-            return;
-        }
-
-        List<String> currentActiveFilterIds = activeFilterIds(settings.getUserId());
-        LinkedHashSet<String> desiredFilterIds = new LinkedHashSet<>();
-        if (explicitFilterIds == null) {
-            desiredFilterIds.addAll(currentActiveFilterIds);
-        } else {
-            desiredFilterIds.addAll(explicitFilterIds);
-        }
-        desiredFilterIds.addAll(parsedFilterIds);
-        validateFilterIds(desiredFilterIds);
-
-        Set<String> currentFilterIds = Set.copyOf(currentActiveFilterIds);
-        if (currentFilterIds.equals(desiredFilterIds)) {
-            return;
-        }
-
-        userShoppingFilterRepository.deleteByIdUserId(settings.getUserId());
-        userShoppingFilterRepository.saveAll(desiredFilterIds.stream()
-                .map(filterId -> UserShoppingFilter.create(settings.getUserId(), filterId, now))
-                .toList());
         settings.touch(now);
     }
 
@@ -211,11 +189,45 @@ public class UserSettingsService {
                 .toList();
     }
 
-    private void validateFilterIds(Set<String> filterIds) {
+    private List<String> replaceFilters(
+            UserSettings settings,
+            Set<String> explicitFilterIds,
+            List<String> parsedFilterIds,
+            List<String> currentActiveFilterIds,
+            List<ShoppingFilter> availableFilters,
+            Instant now
+    ) {
+        if (explicitFilterIds == null && parsedFilterIds.isEmpty()) {
+            return currentActiveFilterIds;
+        }
+
+        LinkedHashSet<String> desiredFilterIds = new LinkedHashSet<>();
+        if (explicitFilterIds == null) {
+            desiredFilterIds.addAll(currentActiveFilterIds);
+        } else {
+            desiredFilterIds.addAll(explicitFilterIds);
+        }
+        desiredFilterIds.addAll(parsedFilterIds);
+        validateFilterIds(desiredFilterIds, availableFilters);
+
+        Set<String> currentFilterIds = Set.copyOf(currentActiveFilterIds);
+        if (currentFilterIds.equals(desiredFilterIds)) {
+            return currentActiveFilterIds;
+        }
+
+        userShoppingFilterRepository.deleteByIdUserId(settings.getUserId());
+        userShoppingFilterRepository.saveAll(desiredFilterIds.stream()
+                .map(filterId -> UserShoppingFilter.create(settings.getUserId(), filterId, now))
+                .toList());
+        settings.touch(now);
+        return List.copyOf(desiredFilterIds);
+    }
+
+    private void validateFilterIds(Set<String> filterIds, List<ShoppingFilter> availableFilters) {
         if (filterIds.isEmpty()) {
             return;
         }
-        Set<String> existingFilterIds = shoppingFilterRepository.findAllById(filterIds).stream()
+        Set<String> existingFilterIds = availableFilters.stream()
                 .map(ShoppingFilter::getId)
                 .collect(Collectors.toSet());
         List<String> missingFilterIds = filterIds.stream()
@@ -228,13 +240,14 @@ public class UserSettingsService {
 
     private UserSettingsResult result(
             UserSettings settings,
+            List<String> activeFilterIds,
+            List<ShoppingFilter> availableFilters,
             List<String> parsedFilterIds,
             List<String> unmappedPreferences
     ) {
-        List<ShoppingFilter> availableFilters = shoppingFilterRepository.findAllByOrderByDisplayOrderAsc();
-        Set<String> activeFilterIds = Set.copyOf(activeFilterIds(settings.getUserId()));
+        Set<String> activeFilterIdSet = Set.copyOf(activeFilterIds);
         List<ShoppingFilterResult> activeFilters = availableFilters.stream()
-                .filter(filter -> activeFilterIds.contains(filter.getId()))
+                .filter(filter -> activeFilterIdSet.contains(filter.getId()))
                 .map(ShoppingFilterResult::from)
                 .toList();
         return UserSettingsResult.from(

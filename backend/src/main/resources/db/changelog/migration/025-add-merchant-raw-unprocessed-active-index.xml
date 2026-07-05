@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-merchant-raw-unprocessed-active-index" author="codex">
+        <sql dbms="postgresql">
+            CREATE INDEX IF NOT EXISTS idx_merchant_raw_unprocessed_active_retry
+            ON merchant_raw (processed_at ASC NULLS FIRST, fetched_at ASC)
+            WHERE active = true AND processed = false
+        </sql>
+    </changeSet>
+</databaseChangeLog>
