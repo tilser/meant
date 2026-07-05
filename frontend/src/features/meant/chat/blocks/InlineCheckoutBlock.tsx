@@ -34,11 +34,12 @@ export function InlineCheckoutBlock({
     setPayingMerchant(group.merchant)
     setCheckoutError(null)
     try {
+      const saved = Math.max(0, group.subtotal + group.delivery - group.total)
       await onCheckout({
         merchant: group.merchant,
         items: group.items,
-        saved: 0,
-        savedNote: 'Checked out in chat',
+        saved,
+        savedNote: saved > 0 ? 'Merchant-applied savings' : 'Checked out in chat',
         checkoutUrl: firstUrl(...group.items.map((item) => item.checkoutUrl)),
         continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
       })

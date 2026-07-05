@@ -179,13 +179,12 @@ export function DiscoverChatBlockView({
     const offer = bestOffer(block.product, deliveryLocations)
     const codes = discountCodeEntries(block)
     const status = block.status ?? (codes.length > 0 ? 'found' : 'empty')
-    const backendResult = block.codes !== undefined
     const merchant = block.merchant ?? offer.merchant
     const statusLabel =
       status === 'error'
         ? 'Search unavailable'
         : codes.length > 0
-          ? `${codes.length} ${backendResult ? 'valid ' : ''}code${codes.length === 1 ? '' : 's'}${block.cached ? ' · cached' : ''}`
+          ? `${codes.length} valid code${codes.length === 1 ? '' : 's'}${block.cached ? ' · cached' : ''}`
           : 'No accepted code'
     return (
       <div className="mt-ct-block mt-ct-code">
@@ -206,7 +205,7 @@ export function DiscoverChatBlockView({
                 <div className="mt-ct-code-row" key={code.code}>
                   <span className="mt-code">
                     <span className="mt-code-val mt-mono">{code.code}</span>
-                    <span className="mt-code-act mt-mono">{backendResult ? 'valid' : 'code'}</span>
+                    <span className="mt-code-act mt-mono">valid</span>
                     <button
                       className="mt-code-copy"
                       type="button"
