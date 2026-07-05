@@ -35,6 +35,14 @@ public final class UcpDecimal {
         }
     }
 
+    public static String minorAmountToDecimalText(Long amount, String currency) {
+        if (amount == null) {
+            return null;
+        }
+        int exponent = currencyExponent(currency);
+        return BigDecimal.valueOf(amount, exponent).toPlainString();
+    }
+
     public static Double ratingValue(Object value) {
         Object ratingValue = value;
         if (value instanceof Map<?, ?> map) {

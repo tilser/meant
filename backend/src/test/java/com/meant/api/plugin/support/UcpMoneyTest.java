@@ -21,6 +21,13 @@ class UcpMoneyTest {
     }
 
     @Test
+    void formatsMinorAmountsAsDecimalText() {
+        assertThat(UcpDecimal.minorAmountToDecimalText(6000L, "USD")).isEqualTo("60.00");
+        assertThat(UcpDecimal.minorAmountToDecimalText(1234L, "JPY")).isEqualTo("1234");
+        assertThat(UcpDecimal.minorAmountToDecimalText(1234L, "KWD")).isEqualTo("1.234");
+    }
+
+    @Test
     void distinguishesEuropeanAndUsGroupedAmounts() {
         assertThat(UcpMoney.minorAmount("1.234,56", "EUR")).isEqualTo(123456L);
         assertThat(UcpMoney.minorAmount("1,234.56", "USD")).isEqualTo(123456L);

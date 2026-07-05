@@ -177,12 +177,12 @@ class CatalogCapabilityTest {
                     assertThat(media.url()).isEqualTo("https://example.test/runner.jpg");
                     assertThat(media.altText()).isEqualTo("Runner profile");
                 });
-        assertThat(product.priceRange().min()).isEqualTo("6500");
-        assertThat(product.priceRange().max()).isEqualTo("13000");
+        assertThat(product.priceRange().min()).isEqualTo("65.00");
+        assertThat(product.priceRange().max()).isEqualTo("130.00");
         assertThat(product.priceRange().currency()).isEqualTo("USD");
         assertThat(product.options().getFirst().values()).containsExactly("8", "9");
         assertThat(product.selectedOrFirstAvailableVariant().variantId()).isEqualTo("gid://shopify/ProductVariant/1");
-        assertThat(product.selectedOrFirstAvailableVariant().price()).isEqualTo("6500");
+        assertThat(product.selectedOrFirstAvailableVariant().price()).isEqualTo("65.00");
         assertThat(product.selectedOrFirstAvailableVariant().currency()).isEqualTo("USD");
         assertThat(product.selectedOrFirstAvailableVariant().available()).isTrue();
         assertThat(product.selectedOrFirstAvailableVariant().selectedOptions().getFirst().value()).isEqualTo("8");
@@ -261,7 +261,7 @@ class CatalogCapabilityTest {
         ProductDetailsResponse.Product product = response.product();
         assertThat(product.productId()).isEqualTo("gid://shopify/Product/1");
         assertThat(product.description()).isEqualTo("Weather-ready wool runner.");
-        assertThat(product.priceRange().min()).isEqualTo("6500");
+        assertThat(product.priceRange().min()).isEqualTo("65.00");
         assertThat(product.selectedOrFirstAvailableVariant().variantId()).isEqualTo("gid://shopify/ProductVariant/1");
         assertThat(product.selectedOrFirstAvailableVariant().sku()).isEqualTo("A10990W050");
     }

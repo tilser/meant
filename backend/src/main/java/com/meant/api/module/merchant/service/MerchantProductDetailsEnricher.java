@@ -14,6 +14,7 @@ import com.meant.api.module.merchant.service.dto.ProductRichCatalogData;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
+import com.meant.api.plugin.support.UcpDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -274,7 +275,7 @@ public class MerchantProductDetailsEnricher {
     }
 
     private String catalogAmount(CatalogSearchResponse.Money money) {
-        return money == null || money.amount() == null ? null : money.amount().toString();
+        return money == null ? null : UcpDecimal.minorAmountToDecimalText(money.amount(), money.currency());
     }
 
     private String valueOrDefault(String value, String defaultValue) {

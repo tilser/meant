@@ -169,6 +169,7 @@ class MerchantSemanticProductSearchServiceTest {
         assertThat(result.products().getFirst().productId()).isEqualTo("runner");
         assertThat(result.products().getFirst().detailError()).contains("details unavailable");
         assertThat(result.products().getFirst().selectedVariantId()).isEqualTo("runner-variant");
+        assertThat(result.products().getFirst().selectedVariantPriceAmount()).isEqualTo("10.00");
     }
 
     @Test

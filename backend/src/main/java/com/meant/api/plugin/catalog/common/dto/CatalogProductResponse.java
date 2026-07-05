@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.support.UcpDecimal;
+import com.meant.api.plugin.support.UcpMoney;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -120,7 +122,14 @@ public record CatalogProductResponse(
     }
 
     private static String amount(Money money) {
-        return money == null || money.amount() == null ? null : money.amount().toString();
+        if (money == null || money.amount() == null) {
+            return null;
+        }
+        Long minorAmount = UcpMoney.wholeNumberAmount(money.amount());
+        if (minorAmount == null && (money.amount() instanceof Number || money.amount() instanceof CharSequence)) {
+            minorAmount = UcpMoney.minorAmount(money.amount().toString(), money.currency());
+        }
+        return UcpDecimal.minorAmountToDecimalText(minorAmount, money.currency());
     }
 
     private static String currency(Money first, Money second) {
