@@ -87,7 +87,8 @@ Use:
 - Expo Router
 - React Native primitives, not shared web UI components
 - Supabase JS client for auth
-- `openapi-fetch` or an equivalent generated client around the existing OpenAPI schema
+- `openapi-fetch` around the existing OpenAPI schema (the web app already uses `openapi-fetch` + `openapi-typescript`; mobile uses the same, via `packages/api-client`)
+- `@tanstack/react-query` for server state (fetch caching, retries, invalidation) from Phase 1. This is a data-fetching layer, not an app-wide state framework — without it every screen reinvents loading/error/refetch handling. Client-side app state stays in plain React state/context until proven otherwise.
 - EAS Build/Submit/Update once the app is ready for device distribution
 
 Avoid in the first version:
@@ -231,12 +232,17 @@ Mobile should use Supabase as the identity provider and backend should remain th
 Implementation requirements:
 
 - Use `@supabase/supabase-js`.
-- Configure mobile session persistence with React Native-compatible storage.
+- Sign-in approach: use native ID-token flows, not web-redirect OAuth, for both providers:
+  - Apple: `expo-apple-authentication` → `supabase.auth.signInWithIdToken({ provider: 'apple', token })`. Native Apple sign-in is also the App Store-expected UX on iOS.
+  - Google: native Google Sign-In (e.g. `@react-native-google-signin/google-signin`) → `signInWithIdToken({ provider: 'google', token })`.
+  - Both require a development build (they use native modules) — they will not work in Expo Go. Plan Phase 1 around development builds from day one.
+  - Deep-link handling is still required (Supabase magic links, password recovery if ever enabled, and the merchant identity-link flow later), so configure the app scheme and a callback route in Phase 1 anyway.
+- Note: Apple sign-in requires the final bundle identifier for the Apple Services ID configuration — this is the concrete reason the bundle identifier open decision blocks Phase 1 completion, not just store setup.
+- Session persistence: create the Supabase client with a React Native storage adapter and `detectSessionInUrl: false` (the web client uses `true`; copying it breaks RN). Default to `@react-native-async-storage/async-storage` per Supabase's Expo guidance. If we want tokens in the OS keychain instead, use an `expo-secure-store` adapter with chunking — SecureStore has a 2048-byte per-key limit and Supabase session JSON exceeds it. Decide once in Phase 1 and document it in `mobile/src/auth/supabase.ts`.
 - Use `EXPO_PUBLIC_SUPABASE_URL`.
-- Use `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or the current Supabase public anon/publishable key naming we standardize on.
+- Use `EXPO_PUBLIC_SUPABASE_ANON_KEY` — the same public anon key the web app already uses as `VITE_SUPABASE_ANON_KEY`. If Supabase publishable-key naming is adopted later, migrate web and mobile together.
 - Do not store any private Supabase service role key or backend secret in the mobile app.
 - Implement Google and Apple sign-in immediately for the MVP auth path.
-- Configure OAuth redirect/deep-link handling during the first auth implementation, not as a later enhancement.
 - Treat email/password as an optional development fallback only, not the MVP user-facing auth path.
 
 Backend API calls:
@@ -251,44 +257,75 @@ Mobile-specific Supabase setup must stay in `mobile/src/auth/supabase.ts`; web-s
 
 Use the backend as the source of truth. Mobile should not call UCP/plugin transport endpoints directly.
 
-Primary mobile endpoint groups:
+Primary mobile endpoint groups (verified against current backend controllers):
 
-- Profile/settings:
+- Profile/settings (Phase 1 and Phase 4):
   - `GET /api/users/me`
   - `PATCH /api/users/me`
   - `GET /api/users/me/settings`
   - `PATCH /api/users/me/settings`
-- Product discovery:
-  - `POST /api/users/me/product-searches`
+  - `PATCH /api/users/me/newsletter`
+  - `PATCH /api/users/me/profile-picture`
+  - `DELETE /api/users/me/profile-picture`
+- Product discovery (Phase 2):
+  - `POST /api/users/me/product-searches` (non-streaming; use this for the first mobile result path)
+  - `POST /api/users/me/product-searches:stream` (SSE; this is what web actually uses as its primary search path — mobile adopts it only after device streaming verification)
   - `GET /api/users/me/product-discovery`
   - `GET /api/users/me/product-search-suggestions`
   - `GET /api/users/me/popular-product-searches`
-- Assistant:
+- Product detail (Phase 2 — required by the product detail screen):
+  - `GET /api/merchants/{merchantId}/product-details`
+  - `GET /api/reviews/merchants/{merchantId}/products` (product reviews shown on detail)
+- Assistant (Phase 5):
   - `GET /api/users/me/assistant/conversations`
   - `GET /api/users/me/assistant/conversations/latest`
   - `GET /api/users/me/assistant/conversations/{conversationId}`
-  - `POST /api/users/me/assistant/messages:stream`
-- Saved products:
+  - `POST /api/users/me/assistant/messages:stream` (SSE)
+- Saved products (Phase 2):
   - `GET /api/users/me/saved-products`
   - `POST /api/users/me/saved-products`
   - `DELETE /api/users/me/saved-products`
-- Inventory:
+- Inventory (Phase 4):
   - `GET /api/users/me/inventory`
   - `POST /api/users/me/inventory`
   - `POST /api/users/me/inventory/photos`
   - `PATCH /api/users/me/inventory/{itemId}`
   - `DELETE /api/users/me/inventory/{itemId}`
-- Cart:
+- Taste profile / preferences (Phase 4 — "preference editing" is backed by these, not by `/me/settings` alone):
+  - `GET /api/users/me/taste-profile`
+  - `POST /api/users/me/taste-profile/behaviors`
+  - `PATCH /api/users/me/taste-profile/signals/{signalId}`
+  - `DELETE /api/users/me/taste-profile/signals/{signalId}`
+  - `POST /api/users/me/taste-profile/suggestions/{filterId}:accept`
+  - `POST /api/users/me/taste-profile/suggestions/{filterId}:reject`
+- Cart and in-app checkout (Phase 3 — the in-app checkout contract already exists and web uses it today; mobile targets the same endpoints):
   - `POST /api/carts`
   - `GET /api/carts/{cartId}`
   - `PATCH /api/carts/{cartId}`
   - `DELETE /api/carts/{cartId}`
-  - checkout endpoints to be finalized by the in-app checkout rework
-- Orders:
+  - `GET /api/carts/{cartId}/checkout`
+  - `POST /api/carts/{cartId}/checkout/consent`
+  - `POST /api/carts/{cartId}/checkout/complete`
+  - `POST /api/carts/{cartId}/checkout/cancel`
+  - `POST /api/discounts/search` (discount code lookup used by the cart)
+  - Mobile checkout completion must send its own surface attribution: web sends `credentialDetails.source: 'meant_web_checkout'` and `'dev.meant.checkout_surface': 'web'`; mobile sends the mobile equivalents (e.g. `meant_mobile_checkout` / `mobile`) so orders are attributable per surface. Confirm the accepted values with backend before Phase 3.
+- Merchant identity links (needed if checkout consent requires a linked merchant identity — verify during Phase 3 planning):
+  - `GET /api/merchants/identity-links`
+  - `POST /api/merchants/{merchantId}/identity-link/authorization`
+  - `POST /api/merchants/identity-links/oauth/callback`
+  - `DELETE /api/merchants/identity-links/{merchantId}`
+  - Note: this OAuth flow is browser-redirect based on web. On mobile it needs an in-app browser (`expo-web-browser` auth session) plus a deep-link return route. This is a second deep-link surface besides Supabase sign-in and must be scoped explicitly in Phase 3, not discovered mid-implementation.
+- Orders (Phase 3/4):
   - `GET /api/orders`
   - `GET /api/orders/{orderId}`
 
-Streaming endpoints need mobile-specific verification. The first discovery screen must still feel like the current app: a hybrid chat and product search surface. Prefer non-streaming product search for the first result-loading path where possible, then add streaming assistant behavior after testing on iOS and Android devices because React Native fetch/SSE support can differ from browser behavior.
+Error contract: the backend returns RFC 7807 ProblemDetail bodies with a machine-readable `code` property (e.g. `not_found`), and the web client branches on `ApiError.status`/`ApiError.code`, never on error message text. The shared `packages/api-client` must carry this exact behavior (`errors.ts` should be the existing `frontend/src/lib/apiError.ts` moved, together with its tests), and mobile must reuse the same stale-cart recovery semantics as web (404/`not_found` on cart endpoints → rebuild cart, do not surface a raw error).
+
+### Streaming on React Native
+
+Both streaming endpoints are POST-based SSE, so `EventSource` libraries (GET-only) do not apply, and React Native's built-in `fetch` does not expose `response.body.getReader()`. Use `expo/fetch` (available since Expo SDK 52), which is WinterCG-compliant and supports streamed response bodies — the web streaming reader logic can then be shared nearly as-is. Verify on physical iOS and Android devices, not just simulators.
+
+The first discovery screen must still feel like the current app: a hybrid chat and product search surface. Prefer non-streaming product search for the first result-loading path (accepting that results appear all at once instead of progressively like web), then add streaming behavior once `expo/fetch` streaming is verified on devices.
 
 ## Environment Configuration
 
@@ -297,7 +334,7 @@ Mobile `.env` values should be public-only:
 ```text
 EXPO_PUBLIC_MEANT_API_URL=https://api.example.com
 EXPO_PUBLIC_SUPABASE_URL=https://example.supabase.co
-EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 ```
 
 Local development needs a device-aware API URL:
@@ -336,7 +373,8 @@ Deliverables:
 
 - Add root workspace config.
 - Use Bun workspaces and migrate to a single root `bun.lock`.
-- Update frontend CI commands to run from the workspace root or explicitly target the `frontend` workspace.
+- Update the existing `.github/workflows/ci.yml` frontend job: install from the workspace root with the root lockfile, keep lint/format/test/typecheck/build targeting the `frontend` workspace, and normalize the current bun/npm script-runner mix to Bun.
+- Add a `mobile` CI job in the same PR: `bun install` from root, then mobile `tsc --noEmit` and lint. Cheap, and prevents the mobile workspace from rotting between phases. EAS builds are not part of CI at this stage.
 - Add `mobile/` Expo app scaffold with the latest stable Expo SDK available at scaffold time.
 - Add `packages/api-client` placeholder or first version.
 - Add `packages/shared` placeholder only if the first vertical slice needs it.
@@ -344,19 +382,21 @@ Deliverables:
 
 Acceptance:
 
-- Web still installs and builds.
+- Web still installs and builds, and web CI stays green.
 - Mobile starts with Expo locally.
+- Mobile typecheck/lint runs in CI.
 - TypeScript project references or package exports are understandable and documented.
 
 ### Phase 1 - Auth and API Client
 
 Deliverables:
 
-- Mobile Supabase client with persisted session.
-- Google and Apple sign-in.
-- Deep-link/OAuth callback handling for development builds and production builds.
+- Mobile Supabase client with persisted session (RN storage adapter, `detectSessionInUrl: false`).
+- Google and Apple sign-in via native ID-token flows (requires a development build — set up EAS development builds here, not in Phase 6).
+- App scheme + deep-link callback route for development builds and production builds.
 - Optional email/password fallback only if it materially speeds local development.
-- Shared API client that injects the Supabase bearer token.
+- Shared API client that injects the Supabase bearer token and carries the `ApiError` status/code contract.
+- `@tanstack/react-query` provider and first query hook.
 - `GET /api/users/me` wired in mobile.
 - Basic authenticated/unauthenticated route gating.
 
@@ -393,8 +433,11 @@ Deliverables:
 - Add to cart from product detail.
 - Cart tab.
 - Quantity updates/removal.
-- In-app checkout flow once the checkout rework lands.
+- Discount code apply/remove (`POST /api/discounts/search` + cart PATCH), matching web.
+- Stale-cart recovery matching web semantics (404/`not_found` → rebuild cart from remaining items).
+- In-app checkout flow against the existing checkout endpoints (`GET /checkout`, `POST consent/complete/cancel`) with mobile surface attribution.
 - Checkout completion/cancel state handling inside the app.
+- Merchant identity-link flow on mobile if checkout consent requires it (verify at phase start; needs in-app browser + deep-link return).
 
 Acceptance:
 
@@ -406,8 +449,8 @@ Acceptance:
 
 Deliverables:
 
-- Profile/settings screen.
-- Preference editing.
+- Profile/settings screen (including newsletter and profile picture endpoints).
+- Preference editing backed by the taste-profile endpoint group, not only `/me/settings`.
 - Inventory list.
 - Inventory item create/edit/delete.
 - Inventory photo upload if backend/Supabase storage flow is ready for mobile.
@@ -483,7 +526,8 @@ Later test scope:
 
 - Expo app smoke tests.
 - Device/manual QA checklist for auth, search, in-app checkout, image upload, and deep links.
-- CI build validation for web and mobile TypeScript.
+
+CI note: mobile typecheck/lint lands in Phase 0 (see phase deliverables); web CI already exists in `.github/workflows/ci.yml` and must stay green through the workspace migration.
 
 Do not add a large React Native testing stack until the first mobile flows stabilize.
 
@@ -521,25 +565,28 @@ Mitigation:
 - Keep UI platform-specific.
 - Move code only when two apps actively need it.
 
-### Mobile auth redirects
+### Mobile auth flows
 
-Risk: OAuth/magic link redirect behavior differs across Expo Go, development builds, and production builds.
-
-Mitigation:
-
-- Implement Google and Apple sign-in through development builds early.
-- Configure deep links as part of the initial auth work.
-- Test redirects in a development build, not only Expo Go.
-
-### In-app checkout rework
-
-Risk: the mobile checkout target is changing from redirect/handoff behavior to an in-app checkout flow, so the mobile app could be built against a moving backend/API contract.
+Risk: native sign-in modules and deep-link behavior differ across Expo Go, development builds, and production builds — and native Apple/Google sign-in does not work in Expo Go at all.
 
 Mitigation:
 
-- Treat checkout as Phase 3, after the backend checkout rework contract is clear.
+- Use native ID-token sign-in (`signInWithIdToken`) instead of web-redirect OAuth, as specified in the Auth Plan.
+- Build and test through development builds from Phase 1; do not validate auth in Expo Go.
+- Configure the app scheme and deep links as part of the initial auth work.
+- Resolve the bundle identifier before Phase 1 sign-off — Apple sign-in configuration depends on it.
+
+### In-app checkout parity
+
+The in-app checkout contract already exists (`GET /api/carts/{cartId}/checkout`, `POST .../checkout/consent|complete|cancel`) and the web app uses it in production code. The risk is no longer a moving contract — it is mobile parity with web behavior.
+
+Mitigation:
+
+- Treat checkout as Phase 3 and reuse the web flow as the reference implementation.
 - Keep cart state and checkout state boundaries explicit in the mobile client.
-- Test checkout completion and cancellation on both iOS and Android against the final in-app API.
+- Match web's stale-cart recovery semantics (404/`not_found` → cart rebuild) — this is already codified in `frontend/src/features/meant/utils.ts` helpers and covered by tests.
+- Agree mobile surface attribution values (`credentialDetails.source`, `dev.meant.checkout_surface`) with backend before implementation.
+- Test checkout completion and cancellation on both iOS and Android physical devices.
 
 ## First PR Scope
 
@@ -557,10 +604,11 @@ Do not implement product search, cart, or checkout in the first PR. The first PR
 ## Resolved Product Decisions
 
 - Expo SDK: use the latest stable Expo SDK available at scaffold time.
-- MVP auth: Google and Apple sign-in are required immediately.
+- MVP auth: Google and Apple sign-in are required immediately, implemented as native ID-token flows.
+- Server state: `@tanstack/react-query` from Phase 1; no app-wide client-state framework until proven necessary.
 - First discovery surface: hybrid chat and product search, matching the current web app.
 - Push notifications: not part of the first mobile release.
-- Checkout: the mobile app should target the in-app checkout rework and should not rely on an external redirect or browser handoff.
+- Checkout: the mobile app targets the existing in-app checkout endpoints (already live for web) and must not rely on an external redirect or browser handoff.
 
 ## Open Decisions
 
