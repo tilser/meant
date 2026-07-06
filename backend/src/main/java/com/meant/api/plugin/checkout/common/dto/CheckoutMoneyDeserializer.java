@@ -45,15 +45,7 @@ public class CheckoutMoneyDeserializer extends ValueDeserializer<CheckoutMoney> 
                      "amountCents",
                      "amount_cents",
                      "cents" -> minorAmount = firstPresent(minorAmount, wholeNumber(parser));
-                case "amount", "value", "price", "min" -> {
-                    MoneyScalar scalar = moneyScalar(parser);
-                    if (scalar.minorAmount() != null) {
-                        minorAmount = firstPresent(minorAmount, scalar.minorAmount());
-                    }
-                    if (scalar.amount() != null) {
-                        amount = firstPresent(amount, scalar.amount());
-                    }
-                }
+                case "amount", "value", "price", "min" -> amount = firstPresent(amount, scalarValue(parser));
                 case "currency", "currency_code", "currencyCode" -> currency = firstPresent(currency, scalarValue(parser));
                 case "unit", "units", "amountUnit", "amount_unit", "scale", "format" -> unit = firstPresent(unit, scalarValue(parser));
                 default -> parser.skipChildren();
