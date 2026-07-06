@@ -72,13 +72,21 @@ public class CartCheckoutConsentService {
                 currency.toUpperCase(Locale.ROOT),
                 checkout.resolvedTaxAmountMinor(),
                 shippingAddress(checkout),
-                firstText(command.shippingMethod(), checkout.resolvedShippingMethod(), "none"),
+                shippingMethod(command, checkout),
                 command.paymentInstrumentReference(),
                 now,
                 now.plus(CONSENT_TTL),
                 firstText(command.presentedTermsHash(), hash(cart.getRawCheckoutResponse()))
         ));
         return new CheckoutConsentResult(artifact.consentId(), artifact.expiresAt());
+    }
+
+    private String shippingMethod(CreateCheckoutConsentCommand command, UcpCheckoutResponse.Checkout checkout) {
+        String requested = firstText(command.shippingMethod());
+        if ("selected".equalsIgnoreCase(requested)) {
+            return firstText(checkout.resolvedShippingMethod(), "none");
+        }
+        return firstText(requested, checkout.resolvedShippingMethod(), "none");
     }
 
     private UcpCheckoutResponse parseRawCheckout(String rawCheckoutResponse) {
