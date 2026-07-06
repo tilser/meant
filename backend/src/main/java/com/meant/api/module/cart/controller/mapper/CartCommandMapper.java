@@ -162,6 +162,9 @@ public final class CartCommandMapper {
     }
 
     private static JsonWebKey jsonWebKey(CompleteCheckoutRequest.JsonWebKeyRequest request) {
+        if (request == null) {
+            return null;
+        }
         return new JsonWebKey(
                 request.kty(),
                 request.kid(),
