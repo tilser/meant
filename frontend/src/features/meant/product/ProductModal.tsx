@@ -50,10 +50,25 @@ function stripHtml(value: string | null | undefined): string {
 
 function stripMarkdown(value: string | null | undefined): string {
   return stripHtml(value)
-    .replace(/[*_`>#-]+/g, ' ')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s*[-*+>#]+\s+/gm, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function safeMessageUrl(value: string | null | undefined): string | null {
+  if (!value) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? value : null
+  } catch {
+    return null
+  }
 }
 
 function detailMoney(
@@ -760,31 +775,34 @@ export function ProductModal({
                 ) : null}
                 {detailMessages.length > 0 ? (
                   <div className="mt-product-messages">
-                    {detailMessages.map((message, index) => (
-                      <div
-                        className={`mt-product-message ${message.presentation === 'disclosure' ? 'disclosure' : ''} ${message.type || 'info'}`}
-                        key={`${message.code ?? message.type ?? 'message'}-${index}`}
-                      >
-                        <div className="mt-product-message-main">
-                          <span className="mt-mono">
-                            {message.presentation === 'disclosure'
-                              ? 'Disclosure'
-                              : message.type || 'Notice'}
-                          </span>
-                          <p>{stripMarkdown(message.content)}</p>
+                    {detailMessages.map((message, index) => {
+                      const messageUrl = safeMessageUrl(message.url)
+                      return (
+                        <div
+                          className={`mt-product-message ${message.presentation === 'disclosure' ? 'disclosure' : ''} ${message.type || 'info'}`}
+                          key={`${message.code ?? message.type ?? 'message'}-${index}`}
+                        >
+                          <div className="mt-product-message-main">
+                            <span className="mt-mono">
+                              {message.presentation === 'disclosure'
+                                ? 'Disclosure'
+                                : message.type || 'Notice'}
+                            </span>
+                            <p>{stripMarkdown(message.content)}</p>
+                          </div>
+                          {messageUrl ? (
+                            <a
+                              className="mt-product-message-link mt-mono"
+                              href={messageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Source
+                            </a>
+                          ) : null}
                         </div>
-                        {message.url ? (
-                          <a
-                            className="mt-product-message-link mt-mono"
-                            href={message.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Source
-                          </a>
-                        ) : null}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : null}
                 {hasSelectedVariantFacts ? (
