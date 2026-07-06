@@ -136,6 +136,9 @@ public class CartCheckoutConsentService {
         List<CreateBuyerConsentCommand.LineItem> items = new ArrayList<>();
         for (CartLine line : cart.getLines()) {
             String currency = firstText(line.getCurrency(), fallbackCurrency, cart.getCurrency());
+            if (line.getTotalAmount() == null) {
+                throw CartException.upstream("Cart line total amount is required for checkout consent");
+            }
             Long amount = UcpMoney.minorAmount(line.getTotalAmount(), currency);
             if (amount == null) {
                 throw CartException.upstream("Cart line total amount is required for checkout consent");

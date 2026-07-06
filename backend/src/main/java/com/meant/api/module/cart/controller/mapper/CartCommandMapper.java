@@ -155,6 +155,9 @@ public final class CartCommandMapper {
     private static TokenPaymentCredentialDetails paymentCredentialDetails(
             CompleteCheckoutRequest.PaymentCredentialDetailsRequest request
     ) {
+        if (request == null) {
+            return null;
+        }
         return new TokenPaymentCredentialDetails(request.source());
     }
 

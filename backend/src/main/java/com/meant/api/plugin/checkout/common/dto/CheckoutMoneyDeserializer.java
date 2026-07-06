@@ -90,7 +90,8 @@ public class CheckoutMoneyDeserializer extends ValueDeserializer<CheckoutMoney> 
     }
 
     private Long wholeNumber(JsonParser parser) throws JacksonException {
-        return UcpMoney.wholeNumberAmount(scalarValue(parser));
+        String value = scalarValue(parser);
+        return value == null ? null : UcpMoney.wholeNumberAmount(value);
     }
 
     private String scalarValue(JsonParser parser) throws JacksonException {

@@ -362,9 +362,15 @@ public record UcpCheckoutResponse(
             if (amount == null) {
                 return null;
             }
-            Long parsedAmount = hasMinorUnitHint(unit)
-                    ? UcpMoney.wholeNumberAmount(amount)
-                    : UcpMoney.minorAmount(amount, resolvedCurrency);
+            Long parsedAmount;
+            if (hasMinorUnitHint(unit)) {
+                parsedAmount = UcpMoney.wholeNumberAmount(amount);
+            } else {
+                if (resolvedCurrency == null) {
+                    return null;
+                }
+                parsedAmount = UcpMoney.minorAmount(amount, resolvedCurrency);
+            }
             return parsedAmount == null ? null : new UcpMoney(parsedAmount, resolvedCurrency);
         }
 
