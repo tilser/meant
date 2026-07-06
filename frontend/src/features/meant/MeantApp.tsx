@@ -2016,7 +2016,12 @@ export function MeantApp() {
     const checkoutId = activeCheckout.profile.checkoutId
     const amountMinor = activeCheckout.profile.totalAmountMinor
     const currency = activeCheckout.profile.currency
-    if (!checkoutId || typeof amountMinor !== 'number' || !currency) {
+    if (
+      !checkoutId ||
+      typeof amountMinor !== 'number' ||
+      !Number.isFinite(amountMinor) ||
+      !currency
+    ) {
       setCheckoutSheetError('Checkout is missing merchant total details.')
       return
     }
@@ -2043,7 +2048,7 @@ export function MeantApp() {
         idempotencyKey:
           typeof crypto !== 'undefined' && 'randomUUID' in crypto
             ? `web-${crypto.randomUUID()}`
-            : `web-${Date.now()}`,
+            : `web-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       })
       setActiveCheckout((current) => (current ? { ...current, completion } : current))
       if (completion.status === 'COMPLETED') {

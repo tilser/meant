@@ -47,7 +47,8 @@ public class CartCheckoutConsentService {
             throw CartException.upstream("UCP checkout response did not contain a checkout session");
         }
         String checkoutId = firstText(checkout.id(), cart.getCheckoutId());
-        if (!command.checkoutId().trim().equals(checkoutId)) {
+        String commandCheckoutId = firstText(command.checkoutId());
+        if (!StringUtils.hasText(commandCheckoutId) || !commandCheckoutId.equals(checkoutId)) {
             throw CartException.rejected("Checkout consent did not match the active checkout session.");
         }
 

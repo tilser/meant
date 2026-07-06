@@ -31,15 +31,17 @@ function statusLabel(status: string | null | undefined): string {
 }
 
 function amountLabel(amountMinor: number | null | undefined, currency: string | null | undefined) {
-  if (typeof amountMinor !== 'number') {
+  if (typeof amountMinor !== 'number' || !Number.isFinite(amountMinor)) {
     return null
   }
-  const currencyCode = currency || 'USD'
+  const currencyCode = currency?.trim() || 'USD'
   try {
-    return new Intl.NumberFormat(undefined, {
+    const formatter = new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: currencyCode,
-    }).format(amountMinor / 100)
+    })
+    const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2
+    return formatter.format(amountMinor / 10 ** fractionDigits)
   } catch {
     return `${(amountMinor / 100).toFixed(2)} ${currencyCode}`
   }
@@ -52,8 +54,12 @@ function embeddedCheckoutUrl(
   if (!continueUrl?.trim()) {
     return null
   }
+  const trimmed = continueUrl.trim()
   try {
-    const url = new URL(continueUrl)
+    const url = new URL(trimmed)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null
+    }
     if (ucpVersion?.trim()) {
       url.searchParams.set('ec_version', ucpVersion.trim())
     }
@@ -61,9 +67,7 @@ function embeddedCheckoutUrl(
     url.searchParams.set('ec_delegate', 'window.open')
     return url.toString()
   } catch {
-    const separator = continueUrl.includes('?') ? '&' : '?'
-    const version = ucpVersion?.trim() ? `ec_version=${encodeURIComponent(ucpVersion.trim())}&` : ''
-    return `${continueUrl}${separator}${version}ec_color_scheme=light&ec_delegate=window.open`
+    return null
   }
 }
 
