@@ -2394,17 +2394,19 @@ export function MeantApp() {
         onPrev={() => navigateProduct(-1)}
         onNext={() => navigateProduct(1)}
       />
-      <CheckoutSheet
-        session={activeCheckout}
-        busy={checkoutSheetBusy}
-        error={checkoutSheetError}
-        onClose={() => {
-          setActiveCheckout(null)
-          setCheckoutSheetError(null)
-        }}
-        onRefresh={refreshActiveCheckout}
-        onComplete={completeActiveCheckout}
-      />
+      {activeCheckout ? (
+        <CheckoutSheet
+          session={activeCheckout}
+          busy={checkoutSheetBusy}
+          error={checkoutSheetError}
+          onClose={() => {
+            setActiveCheckout(null)
+            setCheckoutSheetError(null)
+          }}
+          onRefresh={refreshActiveCheckout}
+          onComplete={completeActiveCheckout}
+        />
+      ) : null}
       <FloatingAsk
         contextLabel={askContext.label}
         context={assistantContext}

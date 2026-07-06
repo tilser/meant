@@ -79,6 +79,11 @@ function completionDone(completion: CheckoutCompletionProfile | null): boolean {
   return completion?.status === 'COMPLETED'
 }
 
+function messageIsError(severity: string | null | undefined): boolean {
+  const normalized = severity?.trim().toLowerCase()
+  return normalized === 'error' || normalized === 'critical' || normalized === 'fatal'
+}
+
 export function CheckoutSheet({
   session,
   busy,
@@ -116,8 +121,17 @@ export function CheckoutSheet({
       profile?.checkoutId &&
       !escalation &&
       normalizedStatus === 'ready_for_complete',
-    ) && !completionDone(completion)
+    ) &&
+    !completionDone(completion) &&
+    completion?.status !== 'PROCESSING'
   const displayError = localError ?? error
+  let completeButtonLabel = 'Place order'
+  if (completion?.status === 'PROCESSING') {
+    completeButtonLabel = 'Processing...'
+  }
+  if (busy) {
+    completeButtonLabel = 'Completing...'
+  }
 
   if (!session || !profile) {
     return null
@@ -166,7 +180,7 @@ export function CheckoutSheet({
           <div className="mt-checkout-messages">
             {profile.messages.map((message, index) => (
               <div
-                className={`mt-checkout-message ${message.type === 'error' ? 'error' : ''}`}
+                className={`mt-checkout-message ${messageIsError(message.severity) ? 'error' : ''}`}
                 key={`${message.code ?? 'message'}-${index}`}
               >
                 <span>{message.content}</span>
@@ -241,7 +255,7 @@ export function CheckoutSheet({
               onClick={submit}
               disabled={!canComplete || busy}
             >
-              {busy ? 'Completing...' : 'Place order'}
+              {completeButtonLabel}
             </button>
           )}
         </div>
