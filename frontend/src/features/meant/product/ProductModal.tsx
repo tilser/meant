@@ -800,8 +800,7 @@ export function ProductModal({
                         <span className="mt-mono">Selected</span>
                         {selectedVariantListPrice ? (
                           <>
-                            <s>{selectedVariantListPrice}</s>
-                            {selectedVariantPrice}
+                            <s>{selectedVariantListPrice}</s> {selectedVariantPrice}
                           </>
                         ) : (
                           selectedVariantPrice
