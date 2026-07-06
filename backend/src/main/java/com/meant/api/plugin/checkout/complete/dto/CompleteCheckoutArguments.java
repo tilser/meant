@@ -5,7 +5,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.plugin.checkout.extension.ap2mandate.dto.Ap2CheckoutData;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import java.util.List;
-import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CompleteCheckoutArguments(
@@ -13,7 +12,7 @@ public record CompleteCheckoutArguments(
         String checkoutId,
         Payment payment,
         Ap2CheckoutData ap2,
-        Map<String, Object> signals
+        CheckoutSignals signals
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

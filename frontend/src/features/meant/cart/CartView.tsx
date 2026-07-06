@@ -792,7 +792,7 @@ export function CartView({
                         })
                       }
                     >
-                      {checkoutBusy ? 'Opening checkout...' : `Check out at ${group.merchant}`}
+                      {checkoutBusy ? 'Starting checkout...' : `Check out with ${group.merchant}`}
                     </button>
                   </div>
                 </div>
@@ -844,8 +844,7 @@ export function CartView({
             <div className="mt-sum-handoff">
               <SparkMark size={14} />
               <span>
-                Checkout happens on each merchant's site. Use the checkout button inside every
-                merchant group.
+                Checkout stays on this page unless a merchant requires escalation.
               </span>
             </div>
             <div className="mt-mono mt-summary-foot">

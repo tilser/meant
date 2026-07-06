@@ -1,14 +1,13 @@
 package com.meant.api.plugin.checkout.common.service.command;
 
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record CreateBuyerConsentCommand(
@@ -19,7 +18,7 @@ public record CreateBuyerConsentCommand(
         @NotNull Long totalAmountMinor,
         @NotBlank String currency,
         Long taxAmountMinor,
-        Map<String, Object> shippingAddress,
+        BuyerConsentShippingAddress shippingAddress,
         @NotBlank String shippingMethod,
         @NotBlank String paymentInstrumentReference,
         @NotNull Instant consentedAt,
@@ -29,7 +28,6 @@ public record CreateBuyerConsentCommand(
 
     public CreateBuyerConsentCommand {
         lineItems = lineItems == null ? null : List.copyOf(lineItems);
-        shippingAddress = shippingAddress == null ? null : new LinkedHashMap<>(shippingAddress);
     }
 
     public record LineItem(

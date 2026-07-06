@@ -488,9 +488,40 @@ export interface components {
             /** Format: uuid */
             cartId?: string;
             remoteCartId?: string;
+            checkoutId?: string;
+            status?: string;
             checkoutUrl?: string;
             continueUrl?: string;
+            ucpVersion?: string;
+            totalAmountMinor?: number;
+            currency?: string;
+            requiresEscalation?: boolean;
+            messages?: components["schemas"]["CheckoutMessageResponse"][];
             nativeCheckoutEnabled?: boolean;
+        };
+        CheckoutMessageResponse: {
+            type?: string;
+            code?: string;
+            severity?: string;
+            content?: string;
+            path?: string;
+        };
+        CheckoutConsentResponse: {
+            /** Format: uuid */
+            buyerConsentId?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        CheckoutCompletionResponse: {
+            /** Format: uuid */
+            cartId?: string;
+            remoteCartId?: string;
+            status?: "COMPLETED" | "PROCESSING" | "SCA_REQUIRED" | "CANCELED" | "HANDOFF_FALLBACK" | "RECOVERABLE_ERROR" | "UNRECOVERABLE_ERROR" | "SECURITY_LOCKED";
+            checkoutId?: string;
+            orderRef?: string;
+            continueUrl?: string;
+            messages?: string[];
+            nativeAttempted?: boolean;
         };
     };
     responses: never;

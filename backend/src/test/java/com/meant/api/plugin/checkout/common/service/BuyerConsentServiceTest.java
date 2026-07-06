@@ -3,6 +3,7 @@ package com.meant.api.plugin.checkout.common.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
 import com.meant.api.plugin.checkout.common.entity.BuyerConsent;
 import com.meant.api.plugin.checkout.common.repository.BuyerConsentRepository;
 import com.meant.api.plugin.checkout.common.service.command.CreateBuyerConsentCommand;
@@ -34,7 +35,7 @@ class BuyerConsentServiceTest {
                 1999L,
                 "usd",
                 200L,
-                Map.of("country", "US", "postal_code", "10001"),
+                new BuyerConsentShippingAddress(null, null, null, "10001", "US"),
                 "standard",
                 "card-token-raw-value",
                 Instant.parse("2026-06-29T12:00:00Z"),
@@ -48,7 +49,7 @@ class BuyerConsentServiceTest {
         assertThat(artifact.totalAmountMinor()).isEqualTo(1999L);
         assertThat(artifact.currency()).isEqualTo("USD");
         assertThat(artifact.taxAmountMinor()).isEqualTo(200L);
-        assertThat(artifact.shippingAddress()).containsEntry("postal_code", "10001");
+        assertThat(artifact.shippingAddress().postalCode()).isEqualTo("10001");
         assertThat(artifact.shippingMethod()).isEqualTo("standard");
         assertThat(artifact.paymentInstrumentHash()).isNotEqualTo("card-token-raw-value");
         assertThat(artifact.presentedTermsHash()).isEqualTo("terms-sha256");

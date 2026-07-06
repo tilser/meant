@@ -158,7 +158,7 @@ class CheckoutCapabilityTest {
         ));
 
         assertThat(response.resolvedCheckout().id()).isEqualTo("checkout_456");
-        assertThat(response.resolvedCheckout().buyer()).containsKey("consent");
+        assertThat(response.resolvedCheckout().buyer().email()).isEqualTo("jane.doe@example.com");
         assertThat(response.resolvedCheckout().discounts().codes()).containsExactly("SAVE10");
         assertThat(response.resolvedCheckout().fulfillment().methods()).isEmpty();
         assertThat(response.resolvedCheckout().ap2().merchantAuthorization()).isEqualTo("merchant-signature");

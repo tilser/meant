@@ -6,13 +6,17 @@ import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
 import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
+import com.meant.api.module.cart.controller.request.CreateCheckoutConsentRequest;
 import com.meant.api.module.cart.service.command.CancelCheckoutCommand;
 import com.meant.api.module.cart.service.command.CompleteCheckoutCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
+import com.meant.api.module.cart.service.command.CreateCheckoutConsentCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.plugin.payment.common.dto.PaymentCredential;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import com.meant.api.plugin.payment.common.dto.PaymentScaLiability;
+import com.meant.api.plugin.payment.common.dto.TokenPaymentCredentialDetails;
+import com.meant.api.plugin.signing.JsonWebKey;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -82,7 +86,22 @@ public final class CartCommandMapper {
                 request.idempotencyKey(),
                 request.ap2SecurityLock(),
                 ap2MandateCommand(request.ap2Mandate()),
-                request.signals()
+                checkoutSignalsCommand(request.signals())
+        );
+    }
+
+    public static CreateCheckoutConsentCommand toCommand(
+            UUID cartId,
+            UUID userId,
+            CreateCheckoutConsentRequest request
+    ) {
+        return new CreateCheckoutConsentCommand(
+                cartId,
+                userId,
+                request.checkoutId(),
+                request.paymentInstrumentReference(),
+                request.shippingMethod(),
+                request.presentedTermsHash()
         );
     }
 
@@ -104,7 +123,7 @@ public final class CartCommandMapper {
                 new PaymentCredential(
                         request.credential().type(),
                         request.credential().token(),
-                        request.credential().details()
+                        paymentCredentialDetails(request.credential().details())
                 ),
                 new PaymentScaLiability(
                         request.scaLiability().liableParty(),
@@ -122,7 +141,7 @@ public final class CartCommandMapper {
             return null;
         }
         return new CompleteCheckoutCommand.Ap2MandateCommand(
-                request.merchantPublicJwk(),
+                jsonWebKey(request.merchantPublicJwk()),
                 request.expectedMerchantAuthorizationKid(),
                 request.merchantAuthorizationIssuer(),
                 request.agentIssuer(),
@@ -130,6 +149,39 @@ public final class CartCommandMapper {
                 request.nonce(),
                 request.expiresAt(),
                 request.merchantAuthorizationJws()
+        );
+    }
+
+    private static TokenPaymentCredentialDetails paymentCredentialDetails(
+            CompleteCheckoutRequest.PaymentCredentialDetailsRequest request
+    ) {
+        return new TokenPaymentCredentialDetails(request.source());
+    }
+
+    private static JsonWebKey jsonWebKey(CompleteCheckoutRequest.JsonWebKeyRequest request) {
+        return new JsonWebKey(
+                request.kty(),
+                request.kid(),
+                request.crv(),
+                request.x(),
+                request.y(),
+                request.n(),
+                request.e(),
+                request.alg(),
+                request.use(),
+                request.keyOps()
+        );
+    }
+
+    private static CompleteCheckoutCommand.CheckoutSignalsCommand checkoutSignalsCommand(
+            CompleteCheckoutRequest.CheckoutSignalsRequest request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        return new CompleteCheckoutCommand.CheckoutSignalsCommand(
+                request.checkoutSurface(),
+                request.userAgent()
         );
     }
 

@@ -3,7 +3,6 @@ package com.meant.api.plugin.checkout.extension.buyerconsent.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record BuyerConsentArtifact(
@@ -23,7 +22,7 @@ public record BuyerConsentArtifact(
         @JsonProperty("tax_amount_minor")
         Long taxAmountMinor,
         @JsonProperty("shipping_address")
-        Map<String, Object> shippingAddress,
+        BuyerConsentShippingAddress shippingAddress,
         @JsonProperty("shipping_method")
         String shippingMethod,
         @JsonProperty("payment_instrument_hash")

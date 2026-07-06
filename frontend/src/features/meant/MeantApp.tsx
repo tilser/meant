@@ -23,6 +23,11 @@ import { AuthScreen } from './auth/AuthScreen'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
 import { CartView } from './cart/CartView'
+import {
+  CheckoutSheet,
+  type ActiveCheckoutSession,
+  type CompleteCheckoutInput,
+} from './cart/CheckoutSheet'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot } from './cart/types'
 import { useCartController } from './cart/useCartController'
@@ -59,7 +64,9 @@ import { Shelf } from './shelf/Shelf'
 import type { ShelfDragPayload, ShelfItem, ShelfProductSnapshot } from './shelf/types'
 import {
   acceptUserTasteSuggestion,
+  completeCartCheckout,
   completeMerchantIdentityAuthorization,
+  createCheckoutConsent,
   createUserInventoryItem,
   createUserInventoryPhotoItem,
   deleteUserInventoryItem,
@@ -119,7 +126,6 @@ import type {
 import {
   cartLines,
   createOrder,
-  firstUrl,
   normalizedMerchantName,
   productsForLocation,
   productsForClothingFit,
@@ -757,6 +763,9 @@ export function MeantApp() {
   const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(
     null,
   )
+  const [activeCheckout, setActiveCheckout] = useState<ActiveCheckoutSession | null>(null)
+  const [checkoutSheetBusy, setCheckoutSheetBusy] = useState(false)
+  const [checkoutSheetError, setCheckoutSheetError] = useState<string | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersError, setOrdersError] = useState<string | null>(null)
@@ -1891,17 +1900,40 @@ export function MeantApp() {
     nav('compare')
   }
 
-  const checkout = async (payload: CheckoutPayload) => {
+  const updateCartWithCheckoutProfile = (
+    payload: CheckoutPayload,
+    checkoutProfile: CheckoutProfile,
+  ) => {
+    const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
+    updateStoredCart((current) =>
+      current.map((item) =>
+        checkoutItems.has(`${item.id}:${item.merchant}`)
+          ? {
+              ...item,
+              remoteCartId: checkoutProfile.remoteCartId ?? item.remoteCartId,
+              checkoutUrl: checkoutProfile.checkoutUrl ?? item.checkoutUrl,
+              continueUrl: checkoutProfile.continueUrl ?? item.continueUrl,
+              syncError: null,
+            }
+          : item,
+      ),
+    )
+  }
+
+  const completeLocalOrder = (payload: CheckoutPayload) => {
+    const order = createOrder(payload)
+    const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
+    setOrders((current) => [order, ...current])
+    setCart((current) =>
+      current.filter((item) => !checkoutItems.has(`${item.id}:${item.merchant}`)),
+    )
+    setCheckoutError(null)
+    setLastPlaced(order.id)
+  }
+
+  const startCheckout = async (payload: CheckoutPayload, source: ActiveCheckoutSession['source']) => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const cartId = payload.items.find((item) => item.cartId)?.cartId
-    const payloadCheckoutUrl = firstUrl(
-      payload.checkoutUrl,
-      payload.items.find((item) => item.checkoutUrl)?.checkoutUrl,
-    )
-    const payloadContinueUrl = firstUrl(
-      payload.continueUrl,
-      payload.items.find((item) => item.continueUrl)?.continueUrl,
-    )
     if (!cartId) {
       setCheckoutError({
         merchant,
@@ -1911,71 +1943,122 @@ export function MeantApp() {
     }
     setCheckoutMerchant(merchant)
     setCheckoutError(null)
+    setCheckoutSheetError(null)
     try {
-      let checkoutProfile: CheckoutProfile | null = null
-      let checkoutUrl = firstUrl(payloadContinueUrl, payloadCheckoutUrl)
-      if (!checkoutUrl) {
-        checkoutProfile = await getCartCheckout({ cartId })
-        checkoutUrl = firstUrl(checkoutProfile.continueUrl, checkoutProfile.checkoutUrl)
-      }
-      if (!checkoutUrl) {
-        throw new Error('Missing checkout URL')
-      }
-      const nextCheckoutUrl = checkoutProfile?.checkoutUrl ?? payloadCheckoutUrl
-      const nextContinueUrl = checkoutProfile?.continueUrl ?? payloadContinueUrl
-
-      const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
-      updateStoredCart((current) =>
-        current.map((item) =>
-          checkoutItems.has(`${item.id}:${item.merchant}`)
-            ? {
-                ...item,
-                remoteCartId: checkoutProfile?.remoteCartId ?? item.remoteCartId,
-                checkoutUrl: nextCheckoutUrl ?? item.checkoutUrl,
-                continueUrl: nextContinueUrl ?? item.continueUrl,
-                syncError: null,
-              }
-            : item,
-        ),
-      )
-
-      // `window.open` with `noopener` returns null even on success, so its
-      // return value can't tell us whether the tab opened. Open via a detached
-      // anchor instead — this reliably opens a new tab and never falls through
-      // to navigating the current page.
-      const opener = document.createElement('a')
-      opener.href = checkoutUrl
-      opener.target = '_blank'
-      opener.rel = 'noopener noreferrer'
-      // Firefox/older Safari only act on a click if the anchor is in the
-      // document, so attach it briefly and remove it right after.
-      document.body.appendChild(opener)
-      opener.click()
-      opener.remove()
-      void loadInventory({ silent: true })
-      void loadOrders({ silent: true })
+      const checkoutProfile = await getCartCheckout({ cartId, refresh: true })
+      updateCartWithCheckoutProfile(payload, checkoutProfile)
+      setActiveCheckout({
+        cartId,
+        merchant,
+        source,
+        items: payload.items,
+        saved: payload.saved,
+        savedNote: payload.savedNote,
+        profile: checkoutProfile,
+        completion: null,
+      })
     } catch {
       setCheckoutError({
         merchant,
-        message: 'Could not open merchant checkout. Try again.',
+        message: 'Could not start checkout. Try again.',
       })
     } finally {
       setCheckoutMerchant(null)
     }
   }
 
+  const checkout = async (payload: CheckoutPayload) => {
+    await startCheckout(payload, 'cart')
+  }
+
   const checkoutInChat = async (payload: CheckoutPayload) => {
     if (payload.items.length === 0) {
       return
     }
-    const order = createOrder(payload)
-    const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
-    setOrders((current) => [order, ...current])
-    setCart((current) =>
-      current.filter((item) => !checkoutItems.has(`${item.id}:${item.merchant}`)),
-    )
-    setCheckoutError(null)
-    setLastPlaced(order.id)
+    await startCheckout(payload, 'chat')
+  }
+
+  const refreshActiveCheckout = async () => {
+    if (!activeCheckout) {
+      return
+    }
+    setCheckoutSheetBusy(true)
+    setCheckoutSheetError(null)
+    try {
+      const checkoutProfile = await getCartCheckout({
+        cartId: activeCheckout.cartId,
+        refresh: true,
+      })
+      updateCartWithCheckoutProfile(activeCheckout, checkoutProfile)
+      setActiveCheckout((current) =>
+        current
+          ? {
+              ...current,
+              profile: checkoutProfile,
+              completion: null,
+            }
+          : current,
+      )
+    } catch {
+      setCheckoutSheetError('Could not refresh checkout.')
+    } finally {
+      setCheckoutSheetBusy(false)
+    }
+  }
+
+  const completeActiveCheckout = async ({ handler, token }: CompleteCheckoutInput) => {
+    if (!activeCheckout) {
+      return
+    }
+    const checkoutId = activeCheckout.profile.checkoutId
+    const amountMinor = activeCheckout.profile.totalAmountMinor
+    const currency = activeCheckout.profile.currency
+    if (!checkoutId || typeof amountMinor !== 'number' || !currency) {
+      setCheckoutSheetError('Checkout is missing merchant total details.')
+      return
+    }
+    setCheckoutSheetBusy(true)
+    setCheckoutSheetError(null)
+    try {
+      const consent = await createCheckoutConsent({
+        cartId: activeCheckout.cartId,
+        checkoutId,
+        paymentInstrumentReference: `${handler}:${token}`,
+        shippingMethod: 'selected',
+      })
+      if (!consent.buyerConsentId) {
+        throw new Error('Missing buyer consent id')
+      }
+      const completion = await completeCartCheckout({
+        cartId: activeCheckout.cartId,
+        buyerConsentId: consent.buyerConsentId,
+        checkoutId,
+        handler,
+        amountMinor,
+        currency,
+        token,
+        idempotencyKey:
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? `web-${crypto.randomUUID()}`
+            : `web-${Date.now()}`,
+      })
+      setActiveCheckout((current) => (current ? { ...current, completion } : current))
+      if (completion.status === 'COMPLETED') {
+        completeLocalOrder(activeCheckout)
+        void loadInventory({ silent: true })
+        void loadOrders({ silent: true })
+      } else if (
+        completion.status === 'RECOVERABLE_ERROR' ||
+        completion.status === 'UNRECOVERABLE_ERROR' ||
+        completion.status === 'SECURITY_LOCKED'
+      ) {
+        setCheckoutSheetError(completion.messages?.[0] ?? 'Checkout could not be completed.')
+      }
+    } catch {
+      setCheckoutSheetError('Could not complete checkout.')
+    } finally {
+      setCheckoutSheetBusy(false)
+    }
   }
 
   const content = (() => {
@@ -2302,6 +2385,17 @@ export function MeantApp() {
         canNext={canNavNext}
         onPrev={() => navigateProduct(-1)}
         onNext={() => navigateProduct(1)}
+      />
+      <CheckoutSheet
+        session={activeCheckout}
+        busy={checkoutSheetBusy}
+        error={checkoutSheetError}
+        onClose={() => {
+          setActiveCheckout(null)
+          setCheckoutSheetError(null)
+        }}
+        onRefresh={refreshActiveCheckout}
+        onComplete={completeActiveCheckout}
       />
       <FloatingAsk
         contextLabel={askContext.label}

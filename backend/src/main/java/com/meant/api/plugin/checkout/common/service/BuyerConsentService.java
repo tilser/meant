@@ -1,10 +1,11 @@
 package com.meant.api.plugin.checkout.common.service;
 
-import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.common.entity.BuyerConsent;
 import com.meant.api.plugin.checkout.common.exception.UcpCheckoutSafetyException;
 import com.meant.api.plugin.checkout.common.repository.BuyerConsentRepository;
 import com.meant.api.plugin.checkout.common.service.command.CreateBuyerConsentCommand;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.nio.charset.StandardCharsets;
@@ -13,7 +14,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,7 +30,7 @@ public class BuyerConsentService {
 
     private static final TypeReference<List<BuyerConsentArtifact.LineItem>> LINE_ITEM_TYPE = new TypeReference<>() {
     };
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    private static final TypeReference<BuyerConsentShippingAddress> SHIPPING_ADDRESS_TYPE = new TypeReference<>() {
     };
 
     private final BuyerConsentRepository repository;
@@ -78,7 +78,9 @@ public class BuyerConsentService {
                 consent.getTotalAmount(),
                 consent.getCurrency(),
                 consent.getTaxAmount(),
-                consent.getShippingAddressJson() == null ? null : fromJson(consent.getShippingAddressJson(), MAP_TYPE),
+                consent.getShippingAddressJson() == null
+                        ? null
+                        : fromJson(consent.getShippingAddressJson(), SHIPPING_ADDRESS_TYPE),
                 consent.getShippingMethod(),
                 consent.getPaymentInstrumentHash(),
                 consent.getConsentedAt(),
@@ -99,7 +101,15 @@ public class BuyerConsentService {
                 .toList();
     }
 
-    private String toJson(Object value) {
+    private String toJson(List<BuyerConsentArtifact.LineItem> value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JacksonException exception) {
+            throw new UcpCheckoutSafetyException("Buyer consent artifact could not be serialized", exception);
+        }
+    }
+
+    private String toJson(BuyerConsentShippingAddress value) {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JacksonException exception) {

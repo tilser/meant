@@ -148,10 +148,14 @@ public class CartPersistenceService {
         }
         String checkoutUrl = blankToNull(checkout.checkoutUrl());
         String continueUrl = blankToNull(checkout.continueUrl());
-        if (checkoutUrl == null && continueUrl == null) {
-            throw CartException.upstream("UCP checkout response did not contain a handoff URL");
-        }
-        cart.replaceCheckoutHandoff(checkoutUrl, continueUrl, Instant.now());
+        cart.replaceCheckoutSession(
+                blankToNull(checkout.id()),
+                blankToNull(checkout.status()),
+                checkoutUrl,
+                continueUrl,
+                result.rawResponse(),
+                Instant.now()
+        );
         return cartRepository.save(cart);
     }
 

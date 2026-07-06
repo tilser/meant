@@ -18,7 +18,7 @@ export function InlineCheckoutBlock({
   onOpenOrders: () => void
 }>) {
   const [payingMerchant, setPayingMerchant] = useState<string | null>(null)
-  const [placedMerchants, setPlacedMerchants] = useState<ReadonlySet<string>>(() => new Set())
+  const [startedMerchants, setStartedMerchants] = useState<ReadonlySet<string>>(() => new Set())
   const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(
     null,
   )
@@ -28,7 +28,7 @@ export function InlineCheckoutBlock({
   const total = groups.reduce((sum, group) => sum + group.total, 0)
 
   const payGroup = async (group: (typeof groups)[number]) => {
-    if (placedMerchants.has(group.merchant)) {
+    if (startedMerchants.has(group.merchant)) {
       return
     }
     setPayingMerchant(group.merchant)
@@ -39,11 +39,11 @@ export function InlineCheckoutBlock({
         merchant: group.merchant,
         items: group.items,
         saved,
-        savedNote: saved > 0 ? 'Merchant-applied savings' : 'Checked out in chat',
+        savedNote: saved > 0 ? 'Merchant-applied savings' : 'Chat checkout',
         checkoutUrl: firstUrl(...group.items.map((item) => item.checkoutUrl)),
         continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
       })
-      setPlacedMerchants((current) => new Set(current).add(group.merchant))
+      setStartedMerchants((current) => new Set(current).add(group.merchant))
     } catch {
       setCheckoutError({
         merchant: group.merchant,
@@ -98,13 +98,13 @@ export function InlineCheckoutBlock({
                 <button
                   className="mt-ct-cobtn"
                   type="button"
-                  disabled={payingMerchant !== null || placedMerchants.has(group.merchant)}
+                  disabled={payingMerchant !== null || startedMerchants.has(group.merchant)}
                   onClick={() => void payGroup(group)}
                 >
                   {payingMerchant === group.merchant
-                    ? 'Placing order'
-                    : placedMerchants.has(group.merchant)
-                      ? 'Order placed'
+                    ? 'Starting checkout'
+                    : startedMerchants.has(group.merchant)
+                      ? 'Checkout open'
                       : `Pay ${money(group.total)} with Meant`}
                 </button>
               </div>
@@ -115,8 +115,8 @@ export function InlineCheckoutBlock({
         <div className="mt-ct-checkout-empty">
           <SparkMark size={13} />
           <span>
-            {placedMerchants.size > 0
-              ? `Order placed with ${Array.from(placedMerchants).join(', ')}.`
+            {startedMerchants.size > 0
+              ? `Checkout opened for ${Array.from(startedMerchants).join(', ')}.`
               : 'Your cart is empty.'}
           </span>
           <button className="mt-ct-mini-full" type="button" onClick={onOpenOrders}>

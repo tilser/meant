@@ -10,7 +10,7 @@ public record PaymentCredential(
         String type,
         String token,
         @JsonProperty("details")
-        Object details
+        PaymentCredentialDetails details
 ) {
 
     public PaymentCredential {

@@ -1,14 +1,14 @@
 package com.meant.api.plugin.checkout.common.service.command;
 
+import com.meant.api.plugin.checkout.complete.dto.CheckoutSignals;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
+import com.meant.api.plugin.signing.JsonWebKey;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record NativeCheckoutCompletionCommand(
@@ -20,16 +20,15 @@ public record NativeCheckoutCompletionCommand(
         String idempotencyKey,
         boolean ap2SecurityLock,
         @Valid Ap2MandateInput ap2Mandate,
-        Map<String, Object> signals
+        CheckoutSignals signals
 ) {
 
     public NativeCheckoutCompletionCommand {
         paymentInstruments = paymentInstruments == null ? null : List.copyOf(paymentInstruments);
-        signals = signals == null ? Map.of() : new LinkedHashMap<>(signals);
     }
 
     public record Ap2MandateInput(
-            @NotEmpty Map<String, Object> merchantPublicJwk,
+            @NotNull @Valid JsonWebKey merchantPublicJwk,
             @NotBlank String expectedMerchantAuthorizationKid,
             @NotBlank String merchantAuthorizationIssuer,
             @NotBlank String agentIssuer,
@@ -38,9 +37,5 @@ public record NativeCheckoutCompletionCommand(
             @NotNull Instant expiresAt,
             String merchantAuthorizationJws
     ) {
-
-        public Ap2MandateInput {
-            merchantPublicJwk = merchantPublicJwk == null ? Map.of() : new LinkedHashMap<>(merchantPublicJwk);
-        }
     }
 }

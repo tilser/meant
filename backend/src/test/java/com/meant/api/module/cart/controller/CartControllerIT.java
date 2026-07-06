@@ -522,6 +522,7 @@ class CartControllerIT extends PostgresIntegrationTest {
         ) {
             createCount.incrementAndGet();
             UcpCheckoutResponse response = new UcpCheckoutResponse(
+                    null,
                     "Open checkout in browser",
                     new UcpCheckoutResponse.Checkout(
                             "gid://shopify/Checkout/" + createCount.get(),
@@ -537,12 +538,20 @@ class CartControllerIT extends PostgresIntegrationTest {
                             null,
                             null,
                             null,
-                            Map.of(),
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
                             null,
                             null,
                             null,
                             List.of()
                     ),
+                    null,
+                    null,
+                    null,
+                    null,
                     null,
                     null,
                     null,

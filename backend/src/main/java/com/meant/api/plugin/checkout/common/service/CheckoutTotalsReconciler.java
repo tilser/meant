@@ -1,6 +1,7 @@
 package com.meant.api.plugin.checkout.common.service;
 
 import com.meant.api.plugin.checkout.common.exception.UcpCheckoutSafetyException;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
 import com.meant.api.plugin.signing.Jcs;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;
@@ -51,7 +52,12 @@ public class CheckoutTotalsReconciler {
         requireOptionalEqual("discount amount", expected.discountAmountMinor(), observed.discountAmountMinor(), violations);
         requireOptionalEqual("tip amount", expected.tipAmountMinor(), observed.tipAmountMinor(), violations);
         requireOptionalEqual("shipping method", expected.shippingMethod(), observed.shippingMethod(), violations);
-        requireOptionalCanonicalEqual("shipping address", expected.shippingAddress(), observed.shippingAddress(), violations);
+        requireOptionalCanonicalEqual(
+                "shipping address",
+                normalizedShippingAddress(expected.shippingAddress()),
+                observed.shippingAddress(),
+                violations
+        );
         requireOptionalCanonicalEqual("subscription terms", expected.subscriptionTerms(), observed.subscriptionTerms(), violations);
         reconcileLineItems(expected.lineItems(), observed.lineItems(), violations);
         reconcileSpendCeiling(expected, observed, violations);
@@ -182,10 +188,33 @@ public class CheckoutTotalsReconciler {
     private Object shippingAddress(Map<String, Object> checkout) {
         Object address = firstValue(checkout, "shipping_address", "shippingAddress", "deliveryAddress");
         if (address != null) {
-            return address;
+            return normalizedShippingAddress(address);
         }
         Map<String, Object> fulfillment = mapValue(checkout, "fulfillment");
-        return fulfillment == null ? null : firstValue(fulfillment, "shipping_address", "shippingAddress", "address");
+        return fulfillment == null
+                ? null
+                : normalizedShippingAddress(firstValue(fulfillment, "shipping_address", "shippingAddress", "address"));
+    }
+
+    private BuyerConsentShippingAddress normalizedShippingAddress(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof BuyerConsentShippingAddress address) {
+            return address.isEmpty() ? null : address;
+        }
+        Map<String, Object> address = objectMap(value);
+        if (address.isEmpty()) {
+            return null;
+        }
+        BuyerConsentShippingAddress normalized = new BuyerConsentShippingAddress(
+                firstScalar(address, "street_address", "streetAddress", "address1"),
+                firstScalar(address, "address_locality", "addressLocality", "city"),
+                firstScalar(address, "address_region", "addressRegion", "province", "provinceCode"),
+                firstScalar(address, "postal_code", "postalCode", "zip"),
+                firstScalar(address, "address_country", "addressCountry", "country", "countryCode")
+        );
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private String shippingMethod(Map<String, Object> checkout) {

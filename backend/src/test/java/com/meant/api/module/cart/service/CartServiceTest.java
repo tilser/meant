@@ -34,6 +34,7 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
+import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
@@ -84,7 +85,9 @@ class CartServiceTest {
                 checkoutDispatchService,
                 null,
                 userInventoryService,
-                new CartResultMapper(new ObjectMapper())
+                new CartResultMapper(new ObjectMapper()),
+                new CheckoutResultMapper(new ObjectMapper()),
+                null
         );
         merchant = merchant();
         merchantRepository.save(merchant);
@@ -428,14 +431,24 @@ class CartServiceTest {
     @Test
     void checkoutReturnsStoredUrlWithoutRefresh() {
         UUID cartId = UUID.randomUUID();
-        cartRepository.save(cart(
+        Cart cart = cart(
                 cartId,
                 "https://merchant.example/stored-checkout",
                 "https://merchant.example/stored-continue"
-        ));
+        );
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                "https://merchant.example/stored-continue",
+                "{}",
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        cartRepository.save(cart);
 
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
+        assertThat(result.checkoutId()).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
         assertThat(result.continueUrl()).isEqualTo("https://merchant.example/stored-continue");
         assertThat(cartDispatchService.getCount).isZero();
@@ -444,16 +457,27 @@ class CartServiceTest {
     }
 
     @Test
-    void checkoutUsesStoredHandoffUrlEvenWhenRefreshIsRequested() {
+    void checkoutRefreshesStoredCheckoutSessionWhenRefreshIsRequested() {
         UUID cartId = UUID.randomUUID();
-        cartRepository.save(cart(cartId, "https://merchant.example/stored-checkout"));
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                null,
+                "{}",
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        cartRepository.save(cart);
 
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, true));
 
-        assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
-        assertThat(result.continueUrl()).isNull();
+        assertThat(result.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
+        assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
+        assertThat(result.continueUrl()).isEqualTo("https://merchant.example/continue");
         assertThat(checkoutDispatchService.createCount).isZero();
-        assertThat(checkoutDispatchService.lastRemoteCartId).isNull();
+        assertThat(checkoutDispatchService.getCount).isEqualTo(1);
+        assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(cartDispatchService.getCount).isZero();
         assertImportedCandle();
     }
@@ -930,7 +954,9 @@ class CartServiceTest {
 
         private UcpCheckoutToolResult checkoutToolResult;
         private String lastRemoteCartId;
+        private String lastCheckoutId;
         private int createCount;
+        private int getCount;
 
         FakeCheckoutDispatchService() {
             super(null, null, null);
@@ -948,8 +974,20 @@ class CartServiceTest {
             return checkoutToolResult;
         }
 
+        @Override
+        public UcpCheckoutToolResult getCheckout(
+                MerchantCartProvider provider,
+                GetCheckoutRequest request,
+                UcpSession session
+        ) {
+            getCount++;
+            lastCheckoutId = request.checkoutId();
+            return checkoutToolResult;
+        }
+
         private UcpCheckoutToolResult checkoutToolResult(String cartId) {
             UcpCheckoutResponse response = new UcpCheckoutResponse(
+                    null,
                     "Open checkout in browser",
                     new UcpCheckoutResponse.Checkout(
                             "gid://shopify/Checkout/1",
@@ -965,12 +1003,20 @@ class CartServiceTest {
                             null,
                             null,
                             null,
-                            Map.of("email", "ada@example.com"),
+                            new UcpCheckoutResponse.CheckoutBuyer(null, null, "ada@example.com", null),
+                            null,
+                            null,
+                            null,
+                            null,
                             null,
                             null,
                             null,
                             List.of()
                     ),
+                    null,
+                    null,
+                    null,
+                    null,
                     null,
                     null,
                     null,

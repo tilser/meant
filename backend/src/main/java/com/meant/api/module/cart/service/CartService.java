@@ -9,8 +9,10 @@ import com.meant.api.module.cart.service.command.CancelCheckoutCommand;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CompleteCheckoutCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
+import com.meant.api.module.cart.service.command.CreateCheckoutConsentCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CheckoutConsentResult;
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
@@ -34,7 +36,9 @@ import com.meant.api.plugin.checkout.common.service.command.NativeCheckoutCancel
 import com.meant.api.plugin.checkout.common.service.command.NativeCheckoutCompletionCommand;
 import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutResult;
 import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
+import com.meant.api.plugin.checkout.complete.dto.CheckoutSignals;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
+import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -60,6 +64,8 @@ public class CartService {
     private final NativeCheckoutCompletionService nativeCheckoutCompletionService;
     private final UserInventoryService userInventoryService;
     private final CartResultMapper cartResultMapper;
+    private final CheckoutResultMapper checkoutResultMapper;
+    private final CartCheckoutConsentService cartCheckoutConsentService;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
@@ -108,39 +114,33 @@ public class CartService {
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        if (hasText(handoffUrl(cart))) {
+        if (!query.refresh() && hasText(cart.getCheckoutId())) {
             importCartInventory(cart);
-            return new CheckoutResult(
-                    cart.getId(),
-                    cart.getRemoteCartId(),
-                    cart.getCheckoutUrl(),
-                    cart.getContinueUrl(),
-                    provider.nativeCheckoutEnabled()
-            );
+            return checkoutResultMapper.from(cart, provider.nativeCheckoutEnabled());
         }
         UcpSession session = session(cart);
-        UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
-                provider,
-                new CreateCheckoutRequest(
-                        cart.getRemoteCartId(),
-                        cart.getLines().stream()
-                                .map(line -> new CreateCheckoutRequest.LineItem(
-                                        line.getProductVariantId(),
-                                        line.getQuantity()
-                                ))
-                                .toList()
-                ),
-                session
-        );
+        UcpCheckoutToolResult result = query.refresh() && hasText(cart.getCheckoutId())
+                ? merchantCheckoutPluginDispatchService.getCheckout(
+                        provider,
+                        new GetCheckoutRequest(cart.getCheckoutId()),
+                        session
+                )
+                : merchantCheckoutPluginDispatchService.createCheckout(
+                        provider,
+                        new CreateCheckoutRequest(
+                                cart.getRemoteCartId(),
+                                cart.getLines().stream()
+                                        .map(line -> new CreateCheckoutRequest.LineItem(
+                                                line.getProductVariantId(),
+                                                line.getQuantity()
+                                        ))
+                                        .toList()
+                        ),
+                        session
+                );
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart, query.userId(), result);
         importCartInventory(refreshedCart);
-        return new CheckoutResult(
-                refreshedCart.getId(),
-                refreshedCart.getRemoteCartId(),
-                refreshedCart.getCheckoutUrl(),
-                refreshedCart.getContinueUrl(),
-                provider.nativeCheckoutEnabled()
-        );
+        return checkoutResultMapper.from(refreshedCart, provider.nativeCheckoutEnabled());
     }
 
     public CheckoutCompletionResult completeCheckout(@NotNull @Valid CompleteCheckoutCommand command) {
@@ -156,6 +156,11 @@ public class CartService {
             importCartInventory(checkoutCart);
         }
         return completionResult(checkoutCart, result);
+    }
+
+    public CheckoutConsentResult recordCheckoutConsent(@NotNull @Valid CreateCheckoutConsentCommand command) {
+        Cart cart = findCart(command.cartId(), command.userId());
+        return cartCheckoutConsentService.recordConsent(cart, command);
     }
 
     public CheckoutCompletionResult cancelCheckout(@NotNull @Valid CancelCheckoutCommand command) {
@@ -243,7 +248,7 @@ public class CartService {
                 command.idempotencyKey(),
                 command.ap2SecurityLock(),
                 ap2MandateInput(command.ap2Mandate()),
-                command.signals()
+                checkoutSignals(command.signals())
         );
     }
 
@@ -263,6 +268,13 @@ public class CartService {
                 command.expiresAt(),
                 command.merchantAuthorizationJws()
         );
+    }
+
+    private CheckoutSignals checkoutSignals(CompleteCheckoutCommand.CheckoutSignalsCommand command) {
+        if (command == null) {
+            return null;
+        }
+        return new CheckoutSignals(command.checkoutSurface(), command.userAgent());
     }
 
     private CheckoutCompletionResult completionResult(Cart cart, NativeCheckoutResult result) {

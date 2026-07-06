@@ -50,7 +50,7 @@ public class NativeCheckoutAp2MandateBuilder {
         String merchantAuthorizationJws = StringUtils.hasText(input.merchantAuthorizationJws())
                 ? input.merchantAuthorizationJws().trim()
                 : merchantAuthorizationJws(checkoutPayloadJson);
-        ECKey merchantPublicKey = ECKey.parse(input.merchantPublicJwk());
+        ECKey merchantPublicKey = ECKey.parse(objectMapper.writeValueAsString(input.merchantPublicJwk()));
         return ap2MandateService.buildCheckoutMandate(new Ap2MandateService.BuildMandateCommand(
                 checkoutPayloadJson,
                 merchantAuthorizationJws,

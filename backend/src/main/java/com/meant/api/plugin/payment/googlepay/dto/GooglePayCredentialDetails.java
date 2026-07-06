@@ -3,6 +3,7 @@ package com.meant.api.plugin.payment.googlepay.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.plugin.payment.common.dto.PaymentBinding;
+import com.meant.api.plugin.payment.common.dto.PaymentCredentialDetails;
 import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -24,5 +25,5 @@ public record GooglePayCredentialDetails(
         @JsonProperty("cryptogram_expires_at")
         Instant cryptogramExpiresAt,
         PaymentBinding binding
-) {
+) implements PaymentCredentialDetails {
 }

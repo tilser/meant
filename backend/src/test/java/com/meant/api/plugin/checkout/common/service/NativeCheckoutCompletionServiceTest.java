@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
-import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
@@ -26,12 +25,17 @@ import com.meant.api.plugin.checkout.common.service.command.StartCheckoutComplet
 import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutResult;
 import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
 import com.meant.api.plugin.checkout.complete.CompleteCheckoutCapability;
+import com.meant.api.plugin.checkout.complete.dto.CheckoutSignals;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.payment.common.dto.PaymentCredential;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import com.meant.api.plugin.payment.common.dto.PaymentScaLiability;
+import com.meant.api.plugin.payment.common.dto.TokenPaymentCredentialDetails;
 import com.meant.api.plugin.signing.Ap2MandateException;
+import com.meant.api.plugin.signing.JsonWebKey;
 import com.meant.api.plugin.signing.Jcs;
 import com.meant.api.plugin.signing.PublicSigningKey;
 import com.meant.api.plugin.signing.Rfc9421Signer;
@@ -307,7 +311,7 @@ class NativeCheckoutCompletionServiceTest {
                 "idem-1",
                 ap2SecurityLock,
                 null,
-                Map.of("source", "test")
+                new CheckoutSignals("test", null)
         );
     }
 
@@ -321,7 +325,7 @@ class NativeCheckoutCompletionServiceTest {
                 "idem-1",
                 true,
                 new NativeCheckoutCompletionCommand.Ap2MandateInput(
-                        Map.of("kty", "EC"),
+                        new JsonWebKey("EC", "merchant-key", null, null, null, null, null, null, null, List.of()),
                         "merchant-key",
                         "merchant.example",
                         "agent.example",
@@ -330,7 +334,7 @@ class NativeCheckoutCompletionServiceTest {
                         NOW.plus(Duration.ofMinutes(10)),
                         "merchant-authorization-jws"
                 ),
-                Map.of("source", "test")
+                new CheckoutSignals("test", null)
         );
     }
 
@@ -339,7 +343,7 @@ class NativeCheckoutCompletionServiceTest {
                 "card",
                 1999L,
                 "USD",
-                new PaymentCredential("card_token", "payment-token", Map.of("last4", "4242")),
+                new PaymentCredential("card_token", "payment-token", new TokenPaymentCredentialDetails("test")),
                 PaymentScaLiability.shiftedTo("issuer", "test")
         );
     }
@@ -354,7 +358,7 @@ class NativeCheckoutCompletionServiceTest {
                 1999L,
                 "USD",
                 200L,
-                Map.of("country", "US", "postal_code", "10001"),
+                new BuyerConsentShippingAddress(null, null, null, "10001", "US"),
                 "standard",
                 "instrument-hash",
                 NOW,
@@ -515,7 +519,7 @@ class NativeCheckoutCompletionServiceTest {
                 {
                   "checkout": {
                     "id": "co_123",
-                    "status": "open",
+                    "status": "requires_escalation",
                     "continue_url": "https://merchant.example/sca",
                     "messages": []
                   },

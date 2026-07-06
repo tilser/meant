@@ -475,6 +475,34 @@ export interface MerchantIdentityAuthorizationProfile {
 export type CartProfile = components['schemas']['CartResponse']
 export type CartDeliveryGroupProfile = NonNullable<CartProfile['deliveryGroups']>[number]
 export type CheckoutProfile = components['schemas']['CheckoutResponse']
+export type CheckoutMessageProfile = components['schemas']['CheckoutMessageResponse']
+export type CheckoutConsentProfile = components['schemas']['CheckoutConsentResponse']
+export type CheckoutCompletionProfile = components['schemas']['CheckoutCompletionResponse']
+
+export interface CreateCheckoutConsentInput {
+  cartId: string
+  checkoutId: string
+  paymentInstrumentReference: string
+  shippingMethod?: string | null
+  presentedTermsHash?: string | null
+}
+
+export interface CompleteCartCheckoutInput {
+  cartId: string
+  buyerConsentId: string
+  checkoutId: string
+  handler: string
+  amountMinor: number
+  currency: string
+  token: string
+  credentialType?: string
+  credentialDetails?: CheckoutCredentialDetailsInput
+  idempotencyKey?: string
+}
+
+export interface CheckoutCredentialDetailsInput {
+  source?: string
+}
 
 export interface DiscountCodeProfile {
   code: string
@@ -1486,6 +1514,72 @@ export async function getCartCheckout(input: {
     },
   )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
+}
+
+export async function createCheckoutConsent(
+  input: CreateCheckoutConsentInput,
+): Promise<CheckoutConsentProfile> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/consent`,
+    {
+      method: 'POST',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        checkout_id: input.checkoutId,
+        payment_instrument_reference: input.paymentInstrumentReference,
+        shipping_method: input.shippingMethod || undefined,
+        presented_terms_hash: input.presentedTermsHash || undefined,
+      }),
+    },
+  )
+  return parseJsonResponse<CheckoutConsentProfile>(response, 'Failed to authorize checkout')
+}
+
+export async function completeCartCheckout(
+  input: CompleteCartCheckoutInput,
+): Promise<CheckoutCompletionProfile> {
+  const credentialType = input.credentialType?.trim() || 'token'
+  const credentialDetails = input.credentialDetails ?? { source: 'meant_web_checkout' }
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/complete`,
+    {
+      method: 'POST',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        buyer_consent_id: input.buyerConsentId,
+        checkout_id: input.checkoutId,
+        payment_instruments: [
+          {
+            handler: input.handler,
+            amount: input.amountMinor,
+            currency: input.currency,
+            credential: {
+              type: credentialType,
+              token: input.token,
+              details: credentialDetails,
+            },
+            sca_liability: {
+              liable_party: 'platform',
+              liability_shifted: false,
+              challenge_required: false,
+              reason: 'User confirmed checkout inside Meant.',
+            },
+          },
+        ],
+        idempotency_key: input.idempotencyKey || undefined,
+        signals: {
+          'dev.meant.checkout_surface': 'web',
+        },
+      }),
+    },
+  )
+  return parseJsonResponse<CheckoutCompletionProfile>(response, 'Failed to complete checkout')
 }
 
 export async function searchDiscountCodes(

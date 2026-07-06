@@ -9,7 +9,6 @@ import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -101,7 +100,7 @@ public class NativeCheckoutResultInterpreter {
                     false
             );
         }
-        if (allowSca && StringUtils.hasText(continueUrl(response))) {
+        if (allowSca && "requires_escalation".equals(normalizedStatus) && StringUtils.hasText(continueUrl(response))) {
             return new NativeCheckoutInterpretation(
                     new NativeCheckoutResult(
                             NativeCheckoutStatus.SCA_REQUIRED,
@@ -184,25 +183,12 @@ public class NativeCheckoutResultInterpreter {
 
     private String orderRef(UcpCheckoutResponse response) {
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
-        String orderRef = checkout == null
-                ? null
-                : NativeCheckoutValueSupport.firstText(checkout.orderId(), orderRef(checkout.order()));
-        return NativeCheckoutValueSupport.firstText(orderRef, response.orderId(), orderRef(response.order()));
-    }
-
-    private String orderRef(Map<String, Object> order) {
-        if (order == null) {
-            return null;
-        }
-        return NativeCheckoutValueSupport.scalarString(NativeCheckoutValueSupport.firstMapValue(
-                order,
-                "id",
-                "order_id",
-                "orderId",
-                "name",
-                "reference",
-                "ref"
-        ));
+        String orderRef = checkout == null ? null : checkout.resolvedOrderRef();
+        return NativeCheckoutValueSupport.firstText(
+                orderRef,
+                response.orderId(),
+                response.order() == null ? null : response.order().resolvedRef()
+        );
     }
 
     private UcpCheckoutResponse.CheckoutMessage firstRecoverableMessage(UcpCheckoutResponse response) {

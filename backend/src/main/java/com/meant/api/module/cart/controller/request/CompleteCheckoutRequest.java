@@ -7,11 +7,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
+@Schema(name = "CompleteCheckoutRequest")
 public record CompleteCheckoutRequest(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         @JsonProperty("buyer_consent_id")
@@ -36,14 +35,15 @@ public record CompleteCheckoutRequest(
         @Valid
         Ap2MandateRequest ap2Mandate,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        Map<String, Object> signals
+        @Valid
+        CheckoutSignalsRequest signals
 ) {
 
     public CompleteCheckoutRequest {
         paymentInstruments = paymentInstruments == null ? null : List.copyOf(paymentInstruments);
-        signals = signals == null ? Map.of() : new LinkedHashMap<>(signals);
     }
 
+    @Schema(name = "CompleteCheckoutPaymentInstrumentRequest")
     public record PaymentInstrumentRequest(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @NotBlank
@@ -67,6 +67,7 @@ public record CompleteCheckoutRequest(
     ) {
     }
 
+    @Schema(name = "CompleteCheckoutPaymentCredentialRequest")
     public record PaymentCredentialRequest(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @NotBlank
@@ -76,10 +77,19 @@ public record CompleteCheckoutRequest(
             String token,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @NotNull
-            Object details
+            @Valid
+            PaymentCredentialDetailsRequest details
     ) {
     }
 
+    @Schema(name = "CompleteCheckoutPaymentCredentialDetailsRequest")
+    public record PaymentCredentialDetailsRequest(
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String source
+    ) {
+    }
+
+    @Schema(name = "CompleteCheckoutPaymentScaLiabilityRequest")
     public record PaymentScaLiabilityRequest(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @JsonProperty("liable_party")
@@ -96,11 +106,13 @@ public record CompleteCheckoutRequest(
     ) {
     }
 
+    @Schema(name = "CompleteCheckoutAp2MandateRequest")
     public record Ap2MandateRequest(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @JsonProperty("merchant_public_jwk")
-            @NotEmpty
-            Map<String, Object> merchantPublicJwk,
+            @NotNull
+            @Valid
+            JsonWebKeyRequest merchantPublicJwk,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @JsonProperty("expected_merchant_authorization_kid")
             @NotBlank
@@ -127,9 +139,47 @@ public record CompleteCheckoutRequest(
             @JsonProperty("merchant_authorization_jws")
             String merchantAuthorizationJws
     ) {
+    }
 
-        public Ap2MandateRequest {
-            merchantPublicJwk = merchantPublicJwk == null ? Map.of() : new LinkedHashMap<>(merchantPublicJwk);
+    @Schema(name = "CompleteCheckoutJsonWebKeyRequest")
+    public record JsonWebKeyRequest(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank
+            String kty,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank
+            String kid,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String crv,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String x,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String y,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String n,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String e,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String alg,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String use,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @JsonProperty("key_ops")
+            List<String> keyOps
+    ) {
+        public JsonWebKeyRequest {
+            keyOps = keyOps == null ? List.of() : List.copyOf(keyOps);
         }
+    }
+
+    @Schema(name = "CompleteCheckoutSignalsRequest")
+    public record CheckoutSignalsRequest(
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @JsonProperty("dev.meant.checkout_surface")
+            String checkoutSurface,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @JsonProperty("user_agent")
+            String userAgent
+    ) {
     }
 }

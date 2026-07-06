@@ -5,6 +5,8 @@ import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
 import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
+import com.meant.api.module.cart.controller.request.CreateCheckoutConsentRequest;
+import com.meant.api.module.cart.controller.response.CheckoutConsentResponse;
 import com.meant.api.module.cart.controller.response.CheckoutCompletionResponse;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
@@ -129,24 +131,46 @@ public class CartController {
 
     @GetMapping("/{cartId}/checkout")
     @Operation(
-            summary = "Get cart checkout URL",
-            description = "Returns the stored checkout URL, or refreshes the cart from MCP when missing or requested."
+            summary = "Get cart checkout session",
+            description = "Creates or refreshes a UCP checkout session for in-page checkout. continueUrl is returned for iframe escalation only."
     )
     @ApiResponse(
             responseCode = "200",
-            description = "Cart checkout URL",
+            description = "Cart checkout session",
             content = @Content(schema = @Schema(implementation = CheckoutResponse.class))
     )
     public CheckoutResponse checkout(
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
-            @Parameter(description = "Refresh the local snapshot from the remote MCP cart before returning checkout.")
+            @Parameter(description = "Refresh the checkout session from the remote UCP checkout when possible.")
             @RequestParam(defaultValue = "false") boolean refresh
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutResponse.from(
                 cartService.checkout(new GetCheckoutQuery(cartId, authenticatedUser.id(), refresh))
+        );
+    }
+
+    @PostMapping("/{cartId}/checkout/consent")
+    @Operation(
+            summary = "Record checkout consent",
+            description = "Records buyer consent for the active UCP checkout session before native completion."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Checkout consent artifact",
+            content = @Content(schema = @Schema(implementation = CheckoutConsentResponse.class))
+    )
+    public CheckoutConsentResponse recordCheckoutConsent(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Local cart UUID.", required = true)
+            @PathVariable UUID cartId,
+            @Valid @RequestBody CreateCheckoutConsentRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return CheckoutConsentResponse.from(
+                cartService.recordCheckoutConsent(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
         );
     }
 

@@ -3,6 +3,7 @@ package com.meant.api.plugin.payment.card.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.plugin.payment.common.dto.PaymentBinding;
+import com.meant.api.plugin.payment.common.dto.PaymentCredentialDetails;
 import com.meant.api.plugin.payment.common.dto.PaymentScaLiability;
 import java.time.Instant;
 
@@ -23,5 +24,5 @@ public record CardCredentialDetails(
         PaymentBinding binding,
         @JsonProperty("sca_liability")
         PaymentScaLiability scaLiability
-) {
+) implements PaymentCredentialDetails {
 }
