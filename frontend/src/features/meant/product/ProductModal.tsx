@@ -68,10 +68,14 @@ function detailMoney(
     return amount
   }
   if (currency && /^[A-Z]{3}$/i.test(currency)) {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-    }).format(value)
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: currency.toUpperCase(),
+      }).format(value)
+    } catch {
+      return `${currency.toUpperCase()} ${value.toFixed(2)}`
+    }
   }
   return `$${value.toFixed(2)}`
 }
@@ -97,8 +101,8 @@ function attributeRows(
   const seen = new Set<string>()
   return (attributes ?? [])
     .map((attribute): ProductAttributeProfile | null => {
-      const name = attribute.name?.trim()
-      const value = attribute.value?.trim()
+      const name = attribute?.name?.trim()
+      const value = attribute?.value?.trim()
       if (!name || !value) {
         return null
       }
@@ -115,7 +119,10 @@ function attributeRows(
 function messageRows(
   messages: readonly ProductMessageProfile[] | null | undefined,
 ): ProductMessageProfile[] {
-  return (messages ?? []).filter((message) => Boolean(stripMarkdown(message.content)))
+  return (messages ?? []).filter(
+    (message): message is ProductMessageProfile =>
+      Boolean(message) && Boolean(stripMarkdown(message.content)),
+  )
 }
 
 function selectedOptionValue(
@@ -124,7 +131,7 @@ function selectedOptionValue(
 ): string | null {
   const normalizedName = optionName.trim().toLowerCase()
   return (
-    variant.selectedOptions?.find((option) => option.name?.trim().toLowerCase() === normalizedName)
+    variant.selectedOptions?.find((option) => option?.name?.trim().toLowerCase() === normalizedName)
       ?.value ?? null
   )
 }
@@ -136,8 +143,9 @@ function optionAvailability(
 ): { label: string; className: string } {
   const matchingVariants = variants.filter(
     (variant) =>
+      Boolean(variant) &&
       selectedOptionValue(variant, optionName)?.trim().toLowerCase() ===
-      optionValue.trim().toLowerCase(),
+        optionValue.trim().toLowerCase(),
   )
   if (matchingVariants.length === 0) {
     return { label: 'Listed', className: 'unknown' }
@@ -378,7 +386,9 @@ export function ProductModal({
   const selectedOptions = merchantDetails
     ? productSelectedOptionsFromProfiles(merchantDetails.selectedOptions)
     : [...(product.selectedOptions ?? [])]
-  const detailVariants = merchantDetails?.variants ?? []
+  const detailVariants = (merchantDetails?.variants ?? []).filter(
+    (variant): variant is MerchantProductVariantProfile => Boolean(variant),
+  )
   const availableVariantCount = detailVariants.filter(
     (variant) => variant.available === true,
   ).length
@@ -390,7 +400,7 @@ export function ProductModal({
     0,
   )
   const detailCategories = (merchantDetails?.categories ?? [])
-    .map((category) => category.value?.trim())
+    .map((category) => category?.value?.trim())
     .filter((value): value is string => Boolean(value))
   const detailTags = cleanValues(merchantDetails?.tags)
   const detailSkus = cleanValues(merchantDetails?.skus)

@@ -50,12 +50,12 @@ public record CatalogProductResponse(
                 html(description),
                 url,
                 firstMediaUrl(safeMedia, selectedVariant == null ? List.of() : safeList(selectedVariant.media())),
-                safeMedia.stream().map(Media::toImage).filter(Objects::nonNull).toList(),
-                safeMedia.stream().map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
-                safeCategories.stream().map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
+                safeMedia.stream().filter(Objects::nonNull).map(Media::toImage).filter(Objects::nonNull).toList(),
+                safeMedia.stream().filter(Objects::nonNull).map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
+                safeCategories.stream().filter(Objects::nonNull).map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
                 safeList(tags).stream().filter(value -> value != null && !value.isBlank()).distinct().toList(),
-                safeList(options).stream().map(Option::toDetailsOption).filter(Objects::nonNull).toList(),
-                safeVariants.stream().map(variant -> variant.toDetailsVariant(selected)).filter(Objects::nonNull).toList(),
+                safeList(options).stream().filter(Objects::nonNull).map(Option::toDetailsOption).filter(Objects::nonNull).toList(),
+                safeVariants.stream().filter(Objects::nonNull).map(variant -> variant.toDetailsVariant(selected)).filter(Objects::nonNull).toList(),
                 safeVariants.isEmpty() ? null : safeVariants.size(),
                 priceRange == null ? null : priceRange.toDetailsPriceRange(),
                 listPriceRange == null ? null : listPriceRange.toDetailsPriceRange(),
@@ -67,6 +67,7 @@ public record CatalogProductResponse(
                         : selectedVariant.requires().sellingPlan(),
                 List.of(),
                 safeList(variants).stream()
+                        .filter(Objects::nonNull)
                         .map(Variant::sku)
                         .filter(value -> value != null && !value.isBlank())
                         .toList(),
@@ -249,11 +250,12 @@ public record CatalogProductResponse(
                     listPrice,
                     firstMediaUrl(safeMedia, List.of()),
                     safeMedia.stream()
+                            .filter(Objects::nonNull)
                             .map(Media::altText)
                             .filter(value -> value != null && !value.isBlank())
                             .findFirst()
                             .orElse(null),
-                    safeMedia.stream().map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
+                    safeMedia.stream().filter(Objects::nonNull).map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
                     availability == null ? null : availability.available(),
                     selectedOptions(selected)
             );
@@ -277,14 +279,15 @@ public record CatalogProductResponse(
                     listPrice,
                     imageUrl,
                     safeMedia.stream()
+                            .filter(Objects::nonNull)
                             .map(Media::altText)
                             .filter(value -> value != null && !value.isBlank())
                             .findFirst()
                             .orElse(null),
-                    safeMedia.stream().map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
+                    safeMedia.stream().filter(Objects::nonNull).map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
                     availability == null ? null : availability.available(),
                     selectedOptions(selected),
-                    safeList(categories).stream().map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
+                    safeList(categories).stream().filter(Objects::nonNull).map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
                     safeList(tags).stream().filter(value -> value != null && !value.isBlank()).distinct().toList(),
                     metadata
             );
@@ -293,6 +296,7 @@ public record CatalogProductResponse(
         private List<ProductDetailsResponse.SelectedOption> selectedOptions(List<SelectedOption> selected) {
             List<SelectedOption> values = safeList(options).isEmpty() ? safeList(selected) : safeList(options);
             return values.stream()
+                    .filter(Objects::nonNull)
                     .map(SelectedOption::toDetailsSelectedOption)
                     .filter(Objects::nonNull)
                     .toList();

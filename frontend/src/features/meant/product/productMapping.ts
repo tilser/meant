@@ -53,26 +53,31 @@ function mediaFromMerchantDetails(details: MerchantProductDetailsProfile | null)
     })
     .filter((item): item is ProductMedia => item !== null)
   const variantMedia = (details.variants ?? [])
-    .flatMap((variant) => [
-      ...(variant.media ?? []).map((item): ProductMedia | null => {
-        const url = item.url || item.previewImageUrl
-        if (!url) {
-          return null
-        }
-        return {
-          type: item.type || 'image',
-          url,
-          altText: item.altText || variant.imageAltText,
-        }
-      }),
-      variant.imageUrl
-        ? {
-            type: 'image',
-            url: variant.imageUrl,
-            altText: variant.imageAltText,
+    .flatMap((variant) => {
+      if (!variant) {
+        return []
+      }
+      return [
+        ...(variant.media ?? []).map((item): ProductMedia | null => {
+          const url = item?.url || item?.previewImageUrl
+          if (!url) {
+            return null
           }
-        : null,
-    ])
+          return {
+            type: item?.type || 'image',
+            url,
+            altText: item?.altText || variant.imageAltText,
+          }
+        }),
+        variant.imageUrl
+          ? {
+              type: 'image',
+              url: variant.imageUrl,
+              altText: variant.imageAltText,
+            }
+          : null,
+      ]
+    })
     .filter((item): item is ProductMedia => item !== null)
   const images = (details.images ?? [])
     .map((image): ProductMedia | null => {
