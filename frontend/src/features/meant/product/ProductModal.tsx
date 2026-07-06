@@ -400,9 +400,9 @@ export function ProductModal({
     detailVariants.length - availableVariantCount - unavailableVariantCount,
     0,
   )
-  const detailCategories = (merchantDetails?.categories ?? [])
-    .map((category) => category?.value?.trim())
-    .filter((value): value is string => Boolean(value))
+  const detailCategories = cleanValues(
+    (merchantDetails?.categories ?? []).map((category) => category?.value),
+  )
   const detailTags = cleanValues(merchantDetails?.tags)
   const detailSkus = cleanValues(merchantDetails?.skus)
   const detailMaterials = cleanValues(merchantDetails?.materials)

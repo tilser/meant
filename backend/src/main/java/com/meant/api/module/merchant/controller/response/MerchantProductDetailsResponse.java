@@ -421,7 +421,7 @@ public record MerchantProductDetailsResponse(
         List<ValueNode> stack = new ArrayList<>();
         stack.add(new ValueNode(value, 0));
         while (!stack.isEmpty()) {
-            ValueNode node = stack.removeLast();
+            ValueNode node = stack.remove(stack.size() - 1);
             if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
                 continue;
             }
