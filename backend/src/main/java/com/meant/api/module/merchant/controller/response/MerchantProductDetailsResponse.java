@@ -10,7 +10,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -99,6 +98,48 @@ public record MerchantProductDetailsResponse(
 
     public static MerchantProductDetailsResponse from(ProductDetailsResult result) {
         ProductDetailsResponse.Product product = result.product();
+        if (product == null) {
+            return new MerchantProductDetailsResponse(
+                    result.endpoint(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    messageResponses(result.messages())
+            );
+        }
         ProductDetailsResponse.PriceRange priceRange = product.priceRange();
         ProductDetailsResponse.PriceRange listPriceRange = product.listPriceRange();
         ProductDetailsResponse.SelectedVariant selectedVariant = product.selectedOrFirstAvailableVariant();
@@ -165,10 +206,7 @@ public record MerchantProductDetailsResponse(
                 stringValues(product.materials()),
                 stringValues(product.collections()),
                 attributes(product.metadata(), product.metafields(), product.techSpecs()),
-                safeList(result.messages()).stream()
-                        .filter(Objects::nonNull)
-                        .map(ProductMessageResponse::from)
-                        .toList()
+                messageResponses(result.messages())
         );
     }
 
@@ -358,11 +396,20 @@ public record MerchantProductDetailsResponse(
     }
 
     private static List<String> distinctStrings(List<String> values) {
-        LinkedHashSet<String> seen = new LinkedHashSet<>();
-        return safeList(values).stream()
-                .map(MerchantProductDetailsResponse::blankToNull)
+        Map<String, String> seen = new LinkedHashMap<>();
+        for (String value : safeList(values)) {
+            String normalizedValue = blankToNull(value);
+            if (normalizedValue != null) {
+                seen.putIfAbsent(normalizedValue.toLowerCase(Locale.ROOT), normalizedValue);
+            }
+        }
+        return List.copyOf(seen.values());
+    }
+
+    private static List<ProductMessageResponse> messageResponses(List<ProductDetailsResponse.Message> messages) {
+        return safeList(messages).stream()
                 .filter(Objects::nonNull)
-                .filter(value -> seen.add(value.toLowerCase(Locale.ROOT)))
+                .map(ProductMessageResponse::from)
                 .toList();
     }
 
@@ -424,8 +471,9 @@ public record MerchantProductDetailsResponse(
         }
         if (value instanceof Map<?, ?> map) {
             Object namedValue = firstMapValue(map, "value", "values", "text", "description");
-            String namedKey = firstPresent(scalarString(firstMapValue(map, "name", "key", "label", "title")), name);
-            if (namedValue != null) {
+            Object keyField = firstMapValue(map, "name", "key", "label", "title");
+            if (namedValue != null && keyField != null) {
+                String namedKey = firstPresent(scalarString(keyField), name);
                 addAttribute(attributes, namedKey, String.join(", ", stringValues(namedValue)));
                 return;
             }

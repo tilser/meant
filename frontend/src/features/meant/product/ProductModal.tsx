@@ -131,8 +131,9 @@ function selectedOptionValue(
 ): string | null {
   const normalizedName = optionName.trim().toLowerCase()
   return (
-    variant.selectedOptions?.find((option) => option?.name?.trim().toLowerCase() === normalizedName)
-      ?.value ?? null
+    variant.selectedOptions?.find(
+      (option) => option?.name?.trim()?.toLowerCase() === normalizedName,
+    )?.value ?? null
   )
 }
 
@@ -144,7 +145,7 @@ function optionAvailability(
   const matchingVariants = variants.filter(
     (variant) =>
       Boolean(variant) &&
-      selectedOptionValue(variant, optionName)?.trim().toLowerCase() ===
+      selectedOptionValue(variant, optionName)?.trim()?.toLowerCase() ===
         optionValue.trim().toLowerCase(),
   )
   if (matchingVariants.length === 0) {
