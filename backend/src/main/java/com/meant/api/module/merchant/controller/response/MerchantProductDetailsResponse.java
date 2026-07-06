@@ -144,8 +144,10 @@ public record MerchantProductDetailsResponse(
         ProductDetailsResponse.PriceRange listPriceRange = product.listPriceRange();
         ProductDetailsResponse.SelectedVariant selectedVariant = product.selectedOrFirstAvailableVariant();
         String priceCurrency = priceRange == null ? null : priceRange.currency();
-        UcpMoney productListPrice = UcpMoney.value(product.listPrice(), priceCurrency);
-        UcpMoney selectedListPrice = selectedVariant == null
+        UcpMoney productListPrice = product.listPrice() == null
+                ? null
+                : UcpMoney.value(product.listPrice(), priceCurrency);
+        UcpMoney selectedListPrice = selectedVariant == null || selectedVariant.listPrice() == null
                 ? null
                 : UcpMoney.value(selectedVariant.listPrice(), selectedVariant.currency());
         return new MerchantProductDetailsResponse(
@@ -314,7 +316,9 @@ public record MerchantProductDetailsResponse(
     ) {
 
         static ProductVariantResponse from(ProductDetailsResponse.Variant variant) {
-            UcpMoney listPrice = UcpMoney.value(variant.listPrice(), variant.currency());
+            UcpMoney listPrice = variant.listPrice() == null
+                    ? null
+                    : UcpMoney.value(variant.listPrice(), variant.currency());
             return new ProductVariantResponse(
                     variant.variantId(),
                     variant.handle(),

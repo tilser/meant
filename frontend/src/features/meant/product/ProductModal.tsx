@@ -80,6 +80,15 @@ function detailMoney(
   return `$${value.toFixed(2)}`
 }
 
+function sameAmount(first: string | null | undefined, second: string | null | undefined): boolean {
+  const firstValue = Number(first)
+  const secondValue = Number(second)
+  if (Number.isFinite(firstValue) && Number.isFinite(secondValue)) {
+    return firstValue === secondValue
+  }
+  return first === second
+}
+
 function cleanValues(values: readonly (string | null | undefined)[] | null | undefined): string[] {
   const seen = new Set<string>()
   return (values ?? [])
@@ -426,7 +435,7 @@ export function ProductModal({
       merchantDetails?.selectedVariantAvailable !== undefined)
   const listPriceRange =
     merchantDetails?.listPriceMin && merchantDetails?.listPriceMax
-      ? merchantDetails.listPriceMin === merchantDetails.listPriceMax
+      ? sameAmount(merchantDetails.listPriceMin, merchantDetails.listPriceMax)
         ? detailMoney(merchantDetails.listPriceMin, merchantDetails.listPriceCurrency)
         : `${detailMoney(merchantDetails.listPriceMin, merchantDetails.listPriceCurrency)} - ${detailMoney(
             merchantDetails.listPriceMax,
