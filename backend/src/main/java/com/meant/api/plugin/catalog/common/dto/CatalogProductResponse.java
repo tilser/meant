@@ -29,6 +29,8 @@ public record CatalogProductResponse(
         List<Option> options,
         List<Media> media,
         List<Category> categories,
+        List<String> tags,
+        Object metadata,
         @JsonProperty("gift_card")
         @JsonAlias("giftCard")
         Boolean giftCard,
@@ -38,18 +40,25 @@ public record CatalogProductResponse(
 
     public ProductDetailsResponse.Product toProductDetailsProduct() {
         List<Media> safeMedia = safeList(media);
+        List<Category> safeCategories = safeList(categories);
+        List<Variant> safeVariants = safeList(variants);
         Variant selectedVariant = selectedVariant();
         return new ProductDetailsResponse.Product(
                 id,
+                handle,
                 title,
                 html(description),
                 url,
                 firstMediaUrl(safeMedia, selectedVariant == null ? List.of() : safeList(selectedVariant.media())),
                 safeMedia.stream().map(Media::toImage).filter(Objects::nonNull).toList(),
                 safeMedia.stream().map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
+                safeCategories.stream().map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
+                safeList(tags).stream().filter(value -> value != null && !value.isBlank()).distinct().toList(),
                 safeList(options).stream().map(Option::toDetailsOption).filter(Objects::nonNull).toList(),
-                safeList(variants).isEmpty() ? null : safeList(variants).size(),
+                safeVariants.stream().map(variant -> variant.toDetailsVariant(selected)).filter(Objects::nonNull).toList(),
+                safeVariants.isEmpty() ? null : safeVariants.size(),
                 priceRange == null ? null : priceRange.toDetailsPriceRange(),
+                listPriceRange == null ? null : listPriceRange.toDetailsPriceRange(),
                 moneyOrRange(listPriceRange),
                 null,
                 null,
@@ -64,7 +73,7 @@ public record CatalogProductResponse(
                 null,
                 null,
                 collectionLabels(),
-                categoryLabels(),
+                metadata,
                 null,
                 null,
                 selectedVariant == null ? null : selectedVariant.toDetailsSelectedVariant(selected)
@@ -83,14 +92,6 @@ public record CatalogProductResponse(
     private List<String> collectionLabels() {
         return safeList(collections).stream()
                 .flatMap(collection -> Stream.of(collection.title(), collection.handle()))
-                .filter(value -> value != null && !value.isBlank())
-                .distinct()
-                .toList();
-    }
-
-    private List<String> categoryLabels() {
-        return safeList(categories).stream()
-                .flatMap(category -> Stream.of(category.value(), category.taxonomy()))
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
                 .toList();
@@ -210,8 +211,10 @@ public record CatalogProductResponse(
     public record Variant(
             String id,
             String sku,
+            String handle,
             String title,
             Description description,
+            String url,
             Money price,
             @JsonProperty("list_price")
             @JsonAlias({
@@ -227,6 +230,9 @@ public record CatalogProductResponse(
             List<SelectedOption> options,
             List<Media> media,
             Requires requires,
+            List<Category> categories,
+            List<String> tags,
+            Object metadata,
             @JsonProperty("checkout_url")
             @JsonAlias("checkoutUrl")
             String checkoutUrl
@@ -250,6 +256,37 @@ public record CatalogProductResponse(
                     safeMedia.stream().map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
                     availability == null ? null : availability.available(),
                     selectedOptions(selected)
+            );
+        }
+
+        ProductDetailsResponse.Variant toDetailsVariant(List<SelectedOption> selected) {
+            if (id == null && title == null && price == null && sku == null) {
+                return null;
+            }
+            List<Media> safeMedia = safeList(media);
+            String imageUrl = firstMediaUrl(safeMedia, List.of());
+            return new ProductDetailsResponse.Variant(
+                    id,
+                    handle,
+                    title,
+                    html(description),
+                    url,
+                    amount(price),
+                    price == null ? null : price.currency(),
+                    sku,
+                    listPrice,
+                    imageUrl,
+                    safeMedia.stream()
+                            .map(Media::altText)
+                            .filter(value -> value != null && !value.isBlank())
+                            .findFirst()
+                            .orElse(null),
+                    safeMedia.stream().map(Media::toDetailsMedia).filter(Objects::nonNull).toList(),
+                    availability == null ? null : availability.available(),
+                    selectedOptions(selected),
+                    safeList(categories).stream().map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
+                    safeList(tags).stream().filter(value -> value != null && !value.isBlank()).distinct().toList(),
+                    metadata
             );
         }
 
@@ -348,6 +385,10 @@ public record CatalogProductResponse(
             String value,
             String taxonomy
     ) {
+
+        ProductDetailsResponse.Category toDetailsCategory() {
+            return value == null && taxonomy == null ? null : new ProductDetailsResponse.Category(value, taxonomy);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

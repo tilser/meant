@@ -128,6 +128,7 @@ public class MerchantCatalogPluginDispatchService {
                     result.endpoint(),
                     result.contentText(),
                     response.product(),
+                    response.messages(),
                     result.negotiatedCapabilities()
             );
         } catch (MerchantProductDetailsException exception) {

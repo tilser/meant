@@ -136,26 +136,75 @@ export interface ProductSelectedOptionProfile {
 export interface MerchantProductDetailsProfile {
   endpoint: string | null
   productId: string | null
+  handle: string | null
   title: string | null
   description: string | null
   url: string | null
   imageUrl: string | null
   images: MerchantProductImageProfile[]
   media: MerchantProductDetailMediaProfile[]
+  categories: ProductCategoryProfile[]
+  tags: string[]
   options: ProductOptionProfile[]
+  variants: MerchantProductVariantProfile[]
   totalVariants: number | null
   priceMin: string | null
   priceMax: string | null
   priceCurrency: string | null
+  listPriceMin: string | null
+  listPriceMax: string | null
+  listPriceCurrency: string | null
   requiresSellingPlan: boolean | null
   selectedVariantId: string | null
   selectedVariantTitle: string | null
   selectedVariantPriceAmount: string | null
   selectedVariantPriceCurrency: string | null
+  selectedVariantSku: string | null
+  selectedVariantListPriceAmount: string | null
+  selectedVariantListPriceCurrency: string | null
   selectedVariantImageUrl: string | null
   selectedVariantImageAltText: string | null
   selectedVariantAvailable: boolean | null
   selectedOptions: ProductSelectedOptionProfile[]
+  skus: string[]
+  certifications: string[]
+  materials: string[]
+  collections: string[]
+  attributes: ProductAttributeProfile[]
+  messages: ProductMessageProfile[]
+}
+
+export interface MerchantProductVariantProfile {
+  variantId: string | null
+  handle: string | null
+  title: string | null
+  description: string | null
+  url: string | null
+  priceAmount: string | null
+  priceCurrency: string | null
+  listPriceAmount: string | null
+  listPriceCurrency: string | null
+  sku: string | null
+  imageUrl: string | null
+  imageAltText: string | null
+  media: MerchantProductDetailMediaProfile[]
+  available: boolean | null
+  selectedOptions: ProductSelectedOptionProfile[]
+  categories: ProductCategoryProfile[]
+  tags: string[]
+  attributes: ProductAttributeProfile[]
+}
+
+export interface ProductMessageProfile {
+  type: string | null
+  code: string | null
+  path: string | null
+  contentType: string | null
+  content: string | null
+  severity: string | null
+  presentation: string | null
+  imageUrl: string | null
+  url: string | null
 }
 
 export type ProductReviewProviderProfile = 'KLAVIYO' | 'YOTPO' | 'UNKNOWN' | 'NONE'

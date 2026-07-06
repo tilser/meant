@@ -8,14 +8,20 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ProductDetailsResponse(
         Product product,
-        String instructions
+        String instructions,
+        List<Message> messages
 ) {
+
+    public ProductDetailsResponse(Product product, String instructions) {
+        this(product, instructions, List.of());
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Product(
             @JsonProperty("product_id")
             @JsonAlias({"productId", "id"})
             String productId,
+            String handle,
             String title,
             String description,
             String url,
@@ -23,11 +29,17 @@ public record ProductDetailsResponse(
             String imageUrl,
             List<Image> images,
             List<Media> media,
+            List<Category> categories,
+            List<String> tags,
             List<Option> options,
+            List<Variant> variants,
             @JsonProperty("total_variants")
             Integer totalVariants,
             @JsonProperty("price_range")
             PriceRange priceRange,
+            @JsonProperty("list_price_range")
+            @JsonAlias({"listPriceRange", "compare_at_price_range", "compareAtPriceRange"})
+            PriceRange listPriceRange,
             @JsonProperty("list_price")
             @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
             Object listPrice,
@@ -70,15 +82,20 @@ public record ProductDetailsResponse(
         ) {
             this(
                     productId,
+                    null,
                     title,
                     description,
                     url,
                     imageUrl,
                     images,
                     List.of(),
+                    List.of(),
+                    List.of(),
                     options,
+                    List.of(),
                     totalVariants,
                     priceRange,
+                    null,
                     null,
                     null,
                     null,
@@ -121,6 +138,13 @@ public record ProductDetailsResponse(
     public record Option(
             String name,
             List<String> values
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Category(
+            String value,
+            String taxonomy
     ) {
     }
 
@@ -182,7 +206,55 @@ public record ProductDetailsResponse(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SelectedOption(
             String name,
+            @JsonAlias("label")
             String value
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Variant(
+            @JsonProperty("variant_id")
+            @JsonAlias({"variantId", "id"})
+            String variantId,
+            String handle,
+            String title,
+            String description,
+            String url,
+            String price,
+            String currency,
+            String sku,
+            @JsonProperty("list_price")
+            @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
+            Object listPrice,
+            @JsonProperty("image_url")
+            String imageUrl,
+            @JsonProperty("image_alt_text")
+            String imageAltText,
+            List<Media> media,
+            Boolean available,
+            @JsonProperty("selected_options")
+            List<SelectedOption> selectedOptions,
+            List<Category> categories,
+            List<String> tags,
+            Object metadata
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Message(
+            String type,
+            String code,
+            String path,
+            @JsonProperty("content_type")
+            @JsonAlias("contentType")
+            String contentType,
+            String content,
+            String severity,
+            String presentation,
+            @JsonProperty("image_url")
+            @JsonAlias("imageUrl")
+            String imageUrl,
+            String url
     ) {
     }
 }

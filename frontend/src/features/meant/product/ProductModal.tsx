@@ -3,6 +3,9 @@ import { type TouchEvent as ReactTouchEvent, useEffect, useRef, useState } from 
 import {
   getMerchantProductDetails,
   type MerchantProductDetailsProfile,
+  type MerchantProductVariantProfile,
+  type ProductAttributeProfile,
+  type ProductMessageProfile,
 } from '../../../lib/apiClient'
 import { AskComposer } from '../ask/AskComposer'
 import { AskThread } from '../ask/AskThread'
@@ -43,6 +46,144 @@ function stripHtml(value: string | null | undefined): string {
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function stripMarkdown(value: string | null | undefined): string {
+  return stripHtml(value)
+    .replace(/[*_`>#-]+/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function detailMoney(
+  amount: string | null | undefined,
+  currency: string | null | undefined,
+): string | null {
+  if (!amount) {
+    return null
+  }
+  const value = Number(amount)
+  if (!Number.isFinite(value)) {
+    return amount
+  }
+  if (currency && /^[A-Z]{3}$/i.test(currency)) {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+    }).format(value)
+  }
+  return `$${value.toFixed(2)}`
+}
+
+function cleanValues(values: readonly (string | null | undefined)[] | null | undefined): string[] {
+  const seen = new Set<string>()
+  return (values ?? [])
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .filter((value) => {
+      const key = value.toLowerCase()
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    })
+}
+
+function attributeRows(
+  attributes: readonly ProductAttributeProfile[] | null | undefined,
+): ProductAttributeProfile[] {
+  const seen = new Set<string>()
+  return (attributes ?? [])
+    .map((attribute): ProductAttributeProfile | null => {
+      const name = attribute.name?.trim()
+      const value = attribute.value?.trim()
+      if (!name || !value) {
+        return null
+      }
+      const key = `${name.toLowerCase()}|${value.toLowerCase()}`
+      if (seen.has(key)) {
+        return null
+      }
+      seen.add(key)
+      return { name, value }
+    })
+    .filter((attribute): attribute is ProductAttributeProfile => attribute !== null)
+}
+
+function messageRows(
+  messages: readonly ProductMessageProfile[] | null | undefined,
+): ProductMessageProfile[] {
+  return (messages ?? []).filter((message) => Boolean(stripMarkdown(message.content)))
+}
+
+function selectedOptionValue(
+  variant: MerchantProductVariantProfile,
+  optionName: string,
+): string | null {
+  const normalizedName = optionName.trim().toLowerCase()
+  return (
+    variant.selectedOptions?.find((option) => option.name?.trim().toLowerCase() === normalizedName)
+      ?.value ?? null
+  )
+}
+
+function optionAvailability(
+  variants: readonly MerchantProductVariantProfile[],
+  optionName: string,
+  optionValue: string,
+): { label: string; className: string } {
+  const matchingVariants = variants.filter(
+    (variant) =>
+      selectedOptionValue(variant, optionName)?.trim().toLowerCase() ===
+      optionValue.trim().toLowerCase(),
+  )
+  if (matchingVariants.length === 0) {
+    return { label: 'Listed', className: 'unknown' }
+  }
+  const availableCount = matchingVariants.filter((variant) => variant.available === true).length
+  if (availableCount > 0) {
+    return {
+      label:
+        availableCount === matchingVariants.length
+          ? 'Available'
+          : `${availableCount}/${matchingVariants.length} available`,
+      className: 'available',
+    }
+  }
+  if (matchingVariants.every((variant) => variant.available === false)) {
+    return { label: 'Unavailable', className: 'unavailable' }
+  }
+  return { label: 'Check merchant', className: 'unknown' }
+}
+
+function variantOptionSummary(variant: MerchantProductVariantProfile): string {
+  const options = productSelectedOptionsFromProfiles(variant.selectedOptions)
+  if (options.length > 0) {
+    return options.map((option) => `${option.name}: ${option.value}`).join(' / ')
+  }
+  return variant.title?.trim() || 'Default'
+}
+
+function availabilityLabel(value: boolean | null | undefined): string {
+  if (value === true) {
+    return 'Available'
+  }
+  if (value === false) {
+    return 'Unavailable'
+  }
+  return 'Check merchant'
+}
+
+function availabilityClass(value: boolean | null | undefined): string {
+  if (value === true) {
+    return 'available'
+  }
+  if (value === false) {
+    return 'unavailable'
+  }
+  return 'unknown'
 }
 
 export function ProductModal({
@@ -237,11 +378,75 @@ export function ProductModal({
   const selectedOptions = merchantDetails
     ? productSelectedOptionsFromProfiles(merchantDetails.selectedOptions)
     : [...(product.selectedOptions ?? [])]
+  const detailVariants = merchantDetails?.variants ?? []
+  const availableVariantCount = detailVariants.filter(
+    (variant) => variant.available === true,
+  ).length
+  const unavailableVariantCount = detailVariants.filter(
+    (variant) => variant.available === false,
+  ).length
+  const unknownVariantCount = Math.max(
+    detailVariants.length - availableVariantCount - unavailableVariantCount,
+    0,
+  )
+  const detailCategories = (merchantDetails?.categories ?? [])
+    .map((category) => category.value?.trim())
+    .filter((value): value is string => Boolean(value))
+  const detailTags = cleanValues(merchantDetails?.tags)
+  const detailSkus = cleanValues(merchantDetails?.skus)
+  const detailMaterials = cleanValues(merchantDetails?.materials)
+  const detailCertifications = cleanValues(merchantDetails?.certifications)
+  const detailCollections = cleanValues(merchantDetails?.collections)
+  const detailAttributes = attributeRows(merchantDetails?.attributes)
+  const detailMessages = messageRows(merchantDetails?.messages)
+  const selectedVariantPrice = detailMoney(
+    merchantDetails?.selectedVariantPriceAmount,
+    merchantDetails?.selectedVariantPriceCurrency,
+  )
+  const selectedVariantListPrice = detailMoney(
+    merchantDetails?.selectedVariantListPriceAmount,
+    merchantDetails?.selectedVariantListPriceCurrency,
+  )
+  const hasSelectedVariantFacts =
+    selectedOptions.length > 0 ||
+    Boolean(merchantDetails?.selectedVariantSku) ||
+    Boolean(selectedVariantPrice) ||
+    (merchantDetails?.selectedVariantAvailable !== null &&
+      merchantDetails?.selectedVariantAvailable !== undefined)
+  const listPriceRange =
+    merchantDetails?.listPriceMin && merchantDetails?.listPriceMax
+      ? merchantDetails.listPriceMin === merchantDetails.listPriceMax
+        ? detailMoney(merchantDetails.listPriceMin, merchantDetails.listPriceCurrency)
+        : `${detailMoney(merchantDetails.listPriceMin, merchantDetails.listPriceCurrency)} - ${detailMoney(
+            merchantDetails.listPriceMax,
+            merchantDetails.listPriceCurrency,
+          )}`
+      : null
+  const detailDataGroups = [
+    { label: 'Materials', values: detailMaterials },
+    { label: 'Certifications', values: detailCertifications },
+    { label: 'Collections', values: detailCollections },
+    { label: 'Tags', values: detailTags },
+    {
+      label: 'Identifiers',
+      values: cleanValues([
+        merchantDetails?.handle ? `Handle: ${merchantDetails.handle}` : null,
+        merchantDetails?.productId ? `Product: ${merchantDetails.productId}` : null,
+        ...detailSkus.map((sku) => `SKU: ${sku}`),
+      ]),
+    },
+  ].filter((group) => group.values.length > 0)
+  const hasMerchantData = detailDataGroups.length > 0 || detailAttributes.length > 0
   const hasProductDetails =
     detailLoadState === 'loading' ||
     Boolean(detailDescription) ||
     detailOptions.length > 0 ||
     selectedOptions.length > 0 ||
+    hasSelectedVariantFacts ||
+    detailVariants.length > 0 ||
+    detailMessages.length > 0 ||
+    detailCategories.length > 0 ||
+    hasMerchantData ||
     Boolean(merchantDetails?.totalVariants) ||
     detailLoadState === 'error'
   const showProductDetailLoading =
@@ -533,7 +738,36 @@ export function ProductModal({
                 {detailDescription ? (
                   <p className="mt-product-detail-description">{detailDescription}</p>
                 ) : null}
-                {selectedOptions.length > 0 ? (
+                {detailMessages.length > 0 ? (
+                  <div className="mt-product-messages">
+                    {detailMessages.map((message, index) => (
+                      <div
+                        className={`mt-product-message ${message.presentation === 'disclosure' ? 'disclosure' : ''} ${message.type || 'info'}`}
+                        key={`${message.code ?? message.type ?? 'message'}-${index}`}
+                      >
+                        <div className="mt-product-message-main">
+                          <span className="mt-mono">
+                            {message.presentation === 'disclosure'
+                              ? 'Disclosure'
+                              : message.type || 'Notice'}
+                          </span>
+                          <p>{stripMarkdown(message.content)}</p>
+                        </div>
+                        {message.url ? (
+                          <a
+                            className="mt-product-message-link mt-mono"
+                            href={message.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Source
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {hasSelectedVariantFacts ? (
                   <div className="mt-product-detail-facts">
                     {selectedOptions.map((option) => (
                       <span
@@ -544,28 +778,193 @@ export function ProductModal({
                         {option.value}
                       </span>
                     ))}
+                    {merchantDetails?.selectedVariantSku ? (
+                      <span className="mt-product-detail-fact">
+                        <span className="mt-mono">SKU</span>
+                        {merchantDetails.selectedVariantSku}
+                      </span>
+                    ) : null}
+                    {selectedVariantPrice ? (
+                      <span className="mt-product-detail-fact">
+                        <span className="mt-mono">Selected</span>
+                        {selectedVariantListPrice ? (
+                          <>
+                            <s>{selectedVariantListPrice}</s>
+                            {selectedVariantPrice}
+                          </>
+                        ) : (
+                          selectedVariantPrice
+                        )}
+                      </span>
+                    ) : null}
+                    {merchantDetails?.selectedVariantAvailable !== null &&
+                    merchantDetails?.selectedVariantAvailable !== undefined ? (
+                      <span
+                        className={`mt-product-detail-fact ${availabilityClass(
+                          merchantDetails.selectedVariantAvailable,
+                        )}`}
+                      >
+                        <span className="mt-mono">Stock</span>
+                        {availabilityLabel(merchantDetails.selectedVariantAvailable)}
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
-                {detailOptions.length > 0 ? (
-                  <div className="mt-product-options">
-                    {detailOptions.slice(0, 4).map((option) => (
-                      <div className="mt-product-option" key={option.name}>
-                        <span className="mt-mono">{option.name}</span>
-                        <span>{option.values.slice(0, 8).join(', ')}</span>
-                      </div>
+                {detailCategories.length > 0 ? (
+                  <div className="mt-product-category-strip">
+                    {detailCategories.map((category) => (
+                      <span className="mt-product-category-chip" key={category}>
+                        {category}
+                      </span>
                     ))}
                   </div>
                 ) : null}
-                {merchantDetails?.totalVariants ? (
-                  <p className="mt-product-detail-muted mt-mono">
-                    {merchantDetails.totalVariants.toLocaleString()} variants available
-                  </p>
+                {listPriceRange ? (
+                  <p className="mt-product-detail-muted mt-mono">List price {listPriceRange}</p>
                 ) : null}
                 {detailLoadState === 'error' && !detailDescription ? (
                   <p className="mt-product-detail-muted mt-product-detail-error">
                     {detailLoadError || 'Latest product details are unavailable right now.'}
                   </p>
                 ) : null}
+              </section>
+            ) : null}
+
+            {detailOptions.length > 0 ? (
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">Options and availability</div>
+                <div className="mt-product-option-groups">
+                  {detailOptions.map((option) => (
+                    <div className="mt-product-option-group" key={option.name}>
+                      <div className="mt-product-option-head">
+                        <span className="mt-mono">{option.name}</span>
+                        <span>
+                          {option.values.length} value{option.values.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <div className="mt-product-option-values">
+                        {option.values.map((value) => {
+                          const availability = optionAvailability(
+                            detailVariants,
+                            option.name,
+                            value,
+                          )
+                          return (
+                            <span
+                              className={`mt-product-option-chip ${availability.className}`}
+                              key={`${option.name}-${value}`}
+                            >
+                              <span>{value}</span>
+                              <span className="mt-mono">{availability.label}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {detailOptions.length > 0 ? (
+                  <p className="mt-product-detail-muted mt-mono">
+                    {merchantDetails?.totalVariants
+                      ? `${merchantDetails.totalVariants.toLocaleString()} merchant variants`
+                      : `${detailVariants.length.toLocaleString()} merchant variants`}
+                    {availableVariantCount > 0 ? ` / ${availableVariantCount} available` : ''}
+                    {unavailableVariantCount > 0 ? ` / ${unavailableVariantCount} unavailable` : ''}
+                    {unknownVariantCount > 0 ? ` / ${unknownVariantCount} check merchant` : ''}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
+            {detailVariants.length > 0 ? (
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">Variants</div>
+                <div className="mt-product-variant-table" role="table">
+                  <div className="mt-product-variant-head" role="row">
+                    <span>Variant</span>
+                    <span>Options</span>
+                    <span>Price</span>
+                    <span>Availability</span>
+                  </div>
+                  <div className="mt-product-variant-rows">
+                    {detailVariants.map((variant, index) => {
+                      const price = detailMoney(variant.priceAmount, variant.priceCurrency)
+                      const listPrice = detailMoney(
+                        variant.listPriceAmount,
+                        variant.listPriceCurrency,
+                      )
+                      const variantTitle = variant.title?.trim() || `Variant ${index + 1}`
+                      return (
+                        <div
+                          className="mt-product-variant-row"
+                          key={variant.variantId || `${variantTitle}-${index}`}
+                          role="row"
+                        >
+                          <div className="mt-product-variant-main">
+                            {variant.imageUrl ? (
+                              <img
+                                src={variant.imageUrl}
+                                alt={variant.imageAltText || variantTitle}
+                                loading="lazy"
+                              />
+                            ) : null}
+                            <div>
+                              <div className="mt-product-variant-title">{variantTitle}</div>
+                              {variant.sku ? (
+                                <div className="mt-product-variant-sku mt-mono">{variant.sku}</div>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="mt-product-variant-options">
+                            {variantOptionSummary(variant)}
+                          </div>
+                          <div className="mt-product-variant-price">
+                            {listPrice ? <s>{listPrice}</s> : null}
+                            <span>{price ?? 'See merchant'}</span>
+                          </div>
+                          <div>
+                            <span
+                              className={`mt-product-variant-availability ${availabilityClass(
+                                variant.available,
+                              )}`}
+                            >
+                              {availabilityLabel(variant.available)}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {hasMerchantData ? (
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">Merchant data</div>
+                <div className="mt-product-data">
+                  {detailDataGroups.map((group) => (
+                    <div className="mt-product-data-group" key={group.label}>
+                      <div className="mt-mono">{group.label}</div>
+                      <div>
+                        {group.values.map((value) => (
+                          <span key={value}>{value}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {detailAttributes.map((attribute) => (
+                    <div
+                      className="mt-product-data-group"
+                      key={`${attribute.name}-${attribute.value}`}
+                    >
+                      <div className="mt-mono">{attribute.name}</div>
+                      <div>
+                        <span>{attribute.value}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </section>
             ) : null}
 
