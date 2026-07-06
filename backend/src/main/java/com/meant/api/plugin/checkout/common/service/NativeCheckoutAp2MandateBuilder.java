@@ -50,7 +50,7 @@ public class NativeCheckoutAp2MandateBuilder {
         String merchantAuthorizationJws = StringUtils.hasText(input.merchantAuthorizationJws())
                 ? input.merchantAuthorizationJws().trim()
                 : merchantAuthorizationJws(checkoutPayloadJson);
-        ECKey merchantPublicKey = ECKey.parse(objectMapper.writeValueAsString(input.merchantPublicJwk()));
+        ECKey merchantPublicKey = merchantPublicKey(input);
         return ap2MandateService.buildCheckoutMandate(new Ap2MandateService.BuildMandateCommand(
                 checkoutPayloadJson,
                 merchantAuthorizationJws,
@@ -67,6 +67,14 @@ public class NativeCheckoutAp2MandateBuilder {
                 consent.currency(),
                 input.expiresAt()
         )).checkoutMandate();
+    }
+
+    private ECKey merchantPublicKey(NativeCheckoutCompletionCommand.Ap2MandateInput input) {
+        try {
+            return ECKey.parse(objectMapper.writeValueAsString(input.merchantPublicJwk()));
+        } catch (JacksonException | ParseException exception) {
+            throw new Ap2MandateException("Merchant AP2 public key could not be parsed", exception);
+        }
     }
 
     private String checkoutPayloadJson(UcpCheckoutToolResult result) throws JacksonException {

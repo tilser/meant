@@ -103,21 +103,16 @@ export function CheckoutSheet({
     normalizedStatus === 'requires_escalation' ||
     completionRequiresEscalation(completion)
   const escalationUrl = useMemo(
-    () =>
-      embeddedCheckoutUrl(
-        completion?.continueUrl ?? profile?.continueUrl,
-        profile?.ucpVersion,
-      ),
+    () => embeddedCheckoutUrl(completion?.continueUrl ?? profile?.continueUrl, profile?.ucpVersion),
     [completion?.continueUrl, profile?.continueUrl, profile?.ucpVersion],
   )
   const canComplete =
     Boolean(
       profile?.nativeCheckoutEnabled &&
-        profile?.checkoutId &&
-        !escalation &&
-        normalizedStatus === 'ready_for_complete',
-    ) &&
-    !completionDone(completion)
+      profile?.checkoutId &&
+      !escalation &&
+      normalizedStatus === 'ready_for_complete',
+    ) && !completionDone(completion)
   const displayError = localError ?? error
 
   if (!session || !profile) {
@@ -198,7 +193,9 @@ export function CheckoutSheet({
                 sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
               />
             ) : (
-              <div className="mt-checkout-empty">Merchant escalation is required but no URL was returned.</div>
+              <div className="mt-checkout-empty">
+                Merchant escalation is required but no URL was returned.
+              </div>
             )}
           </div>
         ) : (
@@ -234,7 +231,12 @@ export function CheckoutSheet({
               Done
             </button>
           ) : (
-            <button className="primary" type="button" onClick={submit} disabled={!canComplete || busy}>
+            <button
+              className="primary"
+              type="button"
+              onClick={submit}
+              disabled={!canComplete || busy}
+            >
               {busy ? 'Completing...' : 'Place order'}
             </button>
           )}
@@ -245,7 +247,9 @@ export function CheckoutSheet({
             session or wait for merchant escalation.
           </div>
         ) : null}
-        {profile.nativeCheckoutEnabled && !escalation && normalizedStatus !== 'ready_for_complete' ? (
+        {profile.nativeCheckoutEnabled &&
+        !escalation &&
+        normalizedStatus !== 'ready_for_complete' ? (
           <div className="mt-checkout-note">
             Merchant checkout is not ready for completion yet. Refresh to check the latest status.
           </div>

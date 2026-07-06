@@ -843,9 +843,7 @@ export function CartView({
             ) : null}
             <div className="mt-sum-handoff">
               <SparkMark size={14} />
-              <span>
-                Checkout stays on this page unless a merchant requires escalation.
-              </span>
+              <span>Checkout stays on this page unless a merchant requires escalation.</span>
             </div>
             <div className="mt-mono mt-summary-foot">
               {groups.length} merchant checkout{groups.length > 1 ? 's' : ''} needed.

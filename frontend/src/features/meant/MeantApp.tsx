@@ -1931,7 +1931,10 @@ export function MeantApp() {
     setLastPlaced(order.id)
   }
 
-  const startCheckout = async (payload: CheckoutPayload, source: ActiveCheckoutSession['source']) => {
+  const startCheckout = async (
+    payload: CheckoutPayload,
+    source: ActiveCheckoutSession['source'],
+  ) => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const cartId = payload.items.find((item) => item.cartId)?.cartId
     if (!cartId) {

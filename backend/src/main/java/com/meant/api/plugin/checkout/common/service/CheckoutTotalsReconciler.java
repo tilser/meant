@@ -204,7 +204,7 @@ public class CheckoutTotalsReconciler {
             return address.isEmpty() ? null : address;
         }
         Map<String, Object> address = objectMap(value);
-        if (address.isEmpty()) {
+        if (address == null || address.isEmpty()) {
             return null;
         }
         BuyerConsentShippingAddress normalized = new BuyerConsentShippingAddress(

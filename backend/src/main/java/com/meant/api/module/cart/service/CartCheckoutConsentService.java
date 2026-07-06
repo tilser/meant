@@ -39,6 +39,9 @@ public class CartCheckoutConsentService {
             throw CartException.rejected("Create a checkout session before authorizing checkout.");
         }
         UcpCheckoutResponse response = parseRawCheckout(cart.getRawCheckoutResponse());
+        if (response == null) {
+            throw CartException.upstream("UCP checkout response was empty");
+        }
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
         if (checkout == null) {
             throw CartException.upstream("UCP checkout response did not contain a checkout session");
