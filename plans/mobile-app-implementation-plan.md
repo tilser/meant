@@ -16,6 +16,8 @@ A separate mobile repository would be reasonable later if the mobile app gets a 
   Reference: https://docs.expo.dev/guides/monorepos/
 - Expo Router is the recommended file-based routing model for Expo apps and gives us typed routes, deep linking, and route-based organization.
   Reference: https://docs.expo.dev/router/introduction/
+- Expo's `versions/latest` documentation and `create-expo-app` flow should be used at scaffold time so the app starts on the latest stable Expo SDK available then, not a stale SDK pinned in this planning document.
+  Reference: https://docs.expo.dev/versions/latest/
 - Expo public environment variables must use `EXPO_PUBLIC_` and are embedded into the app bundle, so they must never contain secrets.
   Reference: https://docs.expo.dev/guides/environment-variables/
 - EAS Build is the standard hosted build path for Expo/React Native binaries, supports build profiles, internal distribution, app signing credentials, and app store submission integration.
@@ -80,6 +82,7 @@ Use Bun workspaces by default. The existing frontend already has `frontend/bun.l
 Use:
 
 - Expo managed app
+- Latest stable Expo SDK available at scaffold time
 - TypeScript
 - Expo Router
 - React Native primitives, not shared web UI components
@@ -93,6 +96,7 @@ Avoid in the first version:
 - prebuild unless a required package forces it
 - shared React UI components between web and mobile
 - a complex app-wide state framework before the data flows prove it is needed
+- push notifications
 
 ## Workspace Packages
 
@@ -214,7 +218,7 @@ mobile/
 
 Main navigation:
 
-- `Discover`: primary search/chat/product discovery entry point.
+- `Discover`: primary hybrid chat and product search entry point, matching the current web app behavior.
 - `Saved`: saved products and shopping memory.
 - `Inventory`: owned items and upload flow.
 - `Cart`: active cart/checkout state.
@@ -231,7 +235,9 @@ Implementation requirements:
 - Use `EXPO_PUBLIC_SUPABASE_URL`.
 - Use `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or the current Supabase public anon/publishable key naming we standardize on.
 - Do not store any private Supabase service role key or backend secret in the mobile app.
-- Add OAuth redirect/deep-link configuration only when social login is implemented.
+- Implement Google and Apple sign-in immediately for the MVP auth path.
+- Configure OAuth redirect/deep-link handling during the first auth implementation, not as a later enhancement.
+- Treat email/password as an optional development fallback only, not the MVP user-facing auth path.
 
 Backend API calls:
 
@@ -277,14 +283,12 @@ Primary mobile endpoint groups:
   - `GET /api/carts/{cartId}`
   - `PATCH /api/carts/{cartId}`
   - `DELETE /api/carts/{cartId}`
-  - `GET /api/carts/{cartId}/checkout`
-  - `POST /api/carts/{cartId}/checkout/complete`
-  - `POST /api/carts/{cartId}/checkout/cancel`
+  - checkout endpoints to be finalized by the in-app checkout rework
 - Orders:
   - `GET /api/orders`
   - `GET /api/orders/{orderId}`
 
-Streaming endpoints need mobile-specific verification. For MVP, prefer the non-streaming product search endpoint first. Add streaming chat/search only after testing behavior on iOS and Android devices, because React Native fetch/SSE support can differ from browser behavior.
+Streaming endpoints need mobile-specific verification. The first discovery screen must still feel like the current app: a hybrid chat and product search surface. Prefer non-streaming product search for the first result-loading path where possible, then add streaming assistant behavior after testing on iOS and Android devices because React Native fetch/SSE support can differ from browser behavior.
 
 ## Environment Configuration
 
@@ -322,6 +326,8 @@ Use EAS Update only after the app has a stable runtime version policy. Avoid shi
 
 Do not wire app store submission in the first scaffold PR. Add it after we have bundle identifiers, Apple/Google accounts, signing ownership, privacy answers, and a real release candidate.
 
+Push notifications are explicitly out of scope for the first mobile release.
+
 ## Implementation Phases
 
 ### Phase 0 - Monorepo Foundation
@@ -331,7 +337,7 @@ Deliverables:
 - Add root workspace config.
 - Use Bun workspaces and migrate to a single root `bun.lock`.
 - Update frontend CI commands to run from the workspace root or explicitly target the `frontend` workspace.
-- Add `mobile/` Expo app scaffold.
+- Add `mobile/` Expo app scaffold with the latest stable Expo SDK available at scaffold time.
 - Add `packages/api-client` placeholder or first version.
 - Add `packages/shared` placeholder only if the first vertical slice needs it.
 - Keep backend untouched.
@@ -347,14 +353,16 @@ Acceptance:
 Deliverables:
 
 - Mobile Supabase client with persisted session.
-- Auth screens for email/password at minimum.
+- Google and Apple sign-in.
+- Deep-link/OAuth callback handling for development builds and production builds.
+- Optional email/password fallback only if it materially speeds local development.
 - Shared API client that injects the Supabase bearer token.
 - `GET /api/users/me` wired in mobile.
 - Basic authenticated/unauthenticated route gating.
 
 Acceptance:
 
-- New user can sign in on mobile.
+- User can sign in on mobile with Google and Apple.
 - Mobile can call backend `/api/users/me`.
 - Expired sessions refresh without manual user intervention.
 - Sign out clears mobile session.
@@ -363,7 +371,9 @@ Acceptance:
 
 Deliverables:
 
-- Discover screen with search input.
+- Discover screen matching the current web app's hybrid chat and search behavior.
+- Direct search input.
+- Chat-style assistant/discovery surface.
 - Call `POST /api/users/me/product-searches`.
 - Product result list.
 - Product detail screen.
@@ -372,9 +382,9 @@ Deliverables:
 
 Acceptance:
 
-- User can search, view products, open detail, save a product, and see it in `Saved`.
+- User can search or use the chat-style discovery surface, view products, open detail, save a product, and see it in `Saved`.
 - Product and price rendering uses shared pure helpers where practical.
-- No streaming dependency yet.
+- Streaming is not required for the first product result path, but the screen architecture must leave room for assistant streaming.
 
 ### Phase 3 - Cart and Checkout
 
@@ -383,13 +393,13 @@ Deliverables:
 - Add to cart from product detail.
 - Cart tab.
 - Quantity updates/removal.
-- Checkout handoff flow.
-- Checkout completion/cancel state handling.
+- In-app checkout flow once the checkout rework lands.
+- Checkout completion/cancel state handling inside the app.
 
 Acceptance:
 
 - User can create/update/delete cart state against backend.
-- Checkout URL handling works on iOS and Android.
+- Checkout stays inside the app and does not depend on a merchant redirect or external browser handoff.
 - Cart recovery/error behavior matches web where applicable.
 
 ### Phase 4 - Profile, Preferences, and Inventory
@@ -472,7 +482,7 @@ Initial test scope:
 Later test scope:
 
 - Expo app smoke tests.
-- Device/manual QA checklist for auth, search, checkout handoff, image upload, and deep links.
+- Device/manual QA checklist for auth, search, in-app checkout, image upload, and deep links.
 - CI build validation for web and mobile TypeScript.
 
 Do not add a large React Native testing stack until the first mobile flows stabilize.
@@ -496,7 +506,8 @@ Risk: browser streaming assumptions may not hold in React Native.
 
 Mitigation:
 
-- MVP uses non-streaming product search.
+- Use non-streaming product search for the first result-loading path where possible.
+- Keep assistant streaming as a separately verified mobile behavior inside the hybrid discovery surface.
 - Verify SSE/fetch streaming on iOS and Android before committing assistant streaming UX.
 - Provide fallback behavior.
 
@@ -516,38 +527,41 @@ Risk: OAuth/magic link redirect behavior differs across Expo Go, development bui
 
 Mitigation:
 
-- Start with email/password auth.
-- Add deep links when social login is prioritized.
+- Implement Google and Apple sign-in through development builds early.
+- Configure deep links as part of the initial auth work.
 - Test redirects in a development build, not only Expo Go.
 
-### Checkout handoff
+### In-app checkout rework
 
-Risk: external merchant checkout URLs may behave differently in in-app browsers and system browsers.
+Risk: the mobile checkout target is changing from redirect/handoff behavior to an in-app checkout flow, so the mobile app could be built against a moving backend/API contract.
 
 Mitigation:
 
-- Use system browser/deep link safe handling.
-- Log and display recoverable errors.
-- Test on both platforms with real merchant checkout URLs.
+- Treat checkout as Phase 3, after the backend checkout rework contract is clear.
+- Keep cart state and checkout state boundaries explicit in the mobile client.
+- Test checkout completion and cancellation on both iOS and Android against the final in-app API.
 
 ## First PR Scope
 
 Recommended first implementation PR:
 
 1. Add root workspace config.
-2. Scaffold `mobile/` Expo app with TypeScript and Expo Router.
-3. Add mobile Supabase setup with public env variables.
+2. Scaffold `mobile/` Expo app with TypeScript, Expo Router, and the latest stable Expo SDK available at scaffold time.
+3. Add mobile Supabase setup with public env variables and Google/Apple OAuth wiring. If the final bundle identifier is still unknown, document which production Apple/EAS settings remain blocked.
 4. Add a minimal typed API client wrapper or `packages/api-client` skeleton.
 5. Implement auth route gating and a signed-in home screen that calls `/api/users/me`.
 6. Document local development URLs for iOS simulator, Android emulator, and physical devices.
 
-Do not implement product search, cart, or checkout in the first PR. The first PR should prove that monorepo, Expo, auth, and backend connectivity are sound.
+Do not implement product search, cart, or checkout in the first PR. The first PR should prove that monorepo, Expo, social auth wiring, and backend connectivity are sound.
+
+## Resolved Product Decisions
+
+- Expo SDK: use the latest stable Expo SDK available at scaffold time.
+- MVP auth: Google and Apple sign-in are required immediately.
+- First discovery surface: hybrid chat and product search, matching the current web app.
+- Push notifications: not part of the first mobile release.
+- Checkout: the mobile app should target the in-app checkout rework and should not rely on an external redirect or browser handoff.
 
 ## Open Decisions
 
-- Exact Expo SDK version at scaffold time.
-- Mobile bundle identifier.
-- Whether email/password is enough for MVP auth or Google/Apple login is required immediately.
-- Whether the first product discovery screen should be search-first, chat-first, or a hybrid.
-- Whether push notifications are part of the first mobile release.
-- Whether checkout should open in the system browser or an in-app browser for the first release.
+- Mobile bundle identifier. This blocks final Apple sign-in configuration, EAS production metadata, and app store setup.
