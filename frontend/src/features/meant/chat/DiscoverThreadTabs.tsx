@@ -14,6 +14,7 @@ export function DiscoverThreadTabs({
   onRename,
   onShare,
   onReorder,
+  onDeleteHistory,
   historyThreads,
 }: Readonly<{
   threads: readonly DiscoverChatThread[]
@@ -24,6 +25,7 @@ export function DiscoverThreadTabs({
   onRename: (threadId: string, title: string) => void
   onShare: () => void
   onReorder: (fromIndex: number, toIndex: number) => void
+  onDeleteHistory: (threadId: string) => void
   historyThreads?: readonly DiscoverChatThread[]
 }>) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -240,6 +242,7 @@ export function DiscoverThreadTabs({
           threads={historyThreads ?? threads}
           activeId={activeId}
           onSelect={onSelect}
+          onDelete={onDeleteHistory}
         />
         <button className="mt-ct-newtab" type="button" onClick={onNew}>
           <PlusIcon />

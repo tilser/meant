@@ -330,11 +330,11 @@
 
 .mt-ct-history-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 4px;
   min-height: 62px;
   align-items: center;
-  padding: 10px 9px;
+  padding: 4px;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -348,6 +348,38 @@
 .mt-ct-history-row:hover,
 .mt-ct-history-row.active {
   background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.mt-ct-history-select {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  padding: 6px 5px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.mt-ct-history-delete {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  align-self: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--faint);
+}
+
+.mt-ct-history-delete:hover {
+  background: color-mix(in srgb, #c2410c 11%, transparent);
+  color: #9a3412;
 }
 
 .mt-ct-history-main,

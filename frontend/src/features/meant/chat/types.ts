@@ -75,6 +75,7 @@ export interface DiscoverChatThread {
   title: string
   messages: readonly DiscoverChatMessage[]
   named?: boolean
+  archived?: boolean
   focusProductId?: ProductId
   createdAt?: number
   updatedAt?: number

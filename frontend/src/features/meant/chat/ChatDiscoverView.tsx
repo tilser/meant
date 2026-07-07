@@ -9,9 +9,13 @@ import {
 } from 'react'
 
 import {
+  deleteDiscoverConversation,
+  getDiscoverConversations,
+  saveDiscoverConversation,
   searchDiscountCodes,
   type DiscountCodeProfile,
   type MerchantProfile,
+  type UserDiscoverConversationProfile,
 } from '../../../lib/apiClient'
 import { PRODUCTS, PROFILE } from '../data'
 import type {
@@ -71,6 +75,8 @@ import {
   isRenderableSearchProduct,
   normalizeDiscoverChatThreads,
 } from './utils'
+
+const DISCOVER_HISTORY_SYNC_DELAY = 500
 
 function merchantPrimarySearchValues(merchant: MerchantProfile): string[] {
   return [normalizedMerchantName(merchant.name), normalizedMerchantName(merchant.domain)].filter(
@@ -135,6 +141,51 @@ function hasDiscoverThreadHistory(thread: DiscoverChatThread): boolean {
   return thread.messages.length > 0 || Boolean(thread.focusProductId) || thread.named === true
 }
 
+function timestampFromProfile(value: string): number {
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : Date.now()
+}
+
+function discoverThreadFromProfile(
+  profile: UserDiscoverConversationProfile,
+): DiscoverChatThread | null {
+  try {
+    const parsed: unknown = JSON.parse(profile.threadJson)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null
+    }
+    const snapshot = parsed as Partial<DiscoverChatThread>
+    const messages = Array.isArray(snapshot.messages) ? snapshot.messages : []
+    return (
+      normalizeDiscoverChatThreads([
+        {
+          ...snapshot,
+          id: profile.conversationId,
+          title: snapshot.title?.trim() || profile.title || DEFAULT_DISCOVER_CHAT_TITLE,
+          messages,
+          archived: snapshot.archived === true,
+          createdAt: snapshot.createdAt ?? timestampFromProfile(profile.createdAt),
+          updatedAt: snapshot.updatedAt ?? timestampFromProfile(profile.updatedAt),
+        },
+      ])[0] ?? null
+    )
+  } catch {
+    return null
+  }
+}
+
+function discoverThreadJson(thread: DiscoverChatThread, archived: boolean): string {
+  return JSON.stringify({
+    ...thread,
+    archived,
+  })
+}
+
+function discoverThreadTitle(thread: DiscoverChatThread): string {
+  const title = thread.title.trim() || DEFAULT_DISCOVER_CHAT_TITLE
+  return title.length <= 120 ? title : `${title.slice(0, 117)}...`
+}
+
 function ChatHero({
   profile,
   greeting,
@@ -151,6 +202,7 @@ function ChatHero({
   activeThreadId,
   onMerchant,
   onHistorySelect,
+  onHistoryDelete,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
@@ -167,6 +219,7 @@ function ChatHero({
   activeThreadId: string
   onMerchant: (merchant: MerchantProfile | null) => void
   onHistorySelect: (threadId: string) => void
+  onHistoryDelete: (threadId: string) => void
 }>) {
   const [value, setValue] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -257,6 +310,7 @@ function ChatHero({
           threads={historyThreads}
           activeId={activeThreadId}
           onSelect={onHistorySelect}
+          onDelete={onHistoryDelete}
         />
       </div>
       <div className="mt-prompts">
@@ -817,18 +871,10 @@ export function ChatDiscoverView({
   onProductDetailChatRequestHandled: (requestId: string) => void
   onFlashMessage: (messageId: string) => void
 }>) {
-  const [threads, setThreads] = useStoredState<DiscoverChatThread[]>(
-    'meant.discoverChatThreads',
-    initialDiscoverChatThreads,
-  )
-  const [activeThreadId, setActiveThreadId] = useStoredState<string>(
-    'meant.discoverActiveThreadId',
-    threads[0]?.id ?? DEFAULT_DISCOVER_CHAT_TITLE,
-  )
-  const [archivedThreads, setArchivedThreads] = useStoredState<DiscoverChatThread[]>(
-    'meant.discoverArchivedThreads',
-    [],
-  )
+  const [threads, setThreads] = useState<DiscoverChatThread[]>(() => [createDiscoverChatThread()])
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [archivedThreads, setArchivedThreads] = useState<DiscoverChatThread[]>([])
+  const [discoverHistoryLoaded, setDiscoverHistoryLoaded] = useState(false)
   const fallbackThread = useMemo(() => createDiscoverChatThread(), [])
   const activeThread =
     threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? fallbackThread
@@ -849,6 +895,8 @@ export function ChatDiscoverView({
   const didInitialScrollRef = useRef(false)
   const handledDiscoverFindRequestRef = useRef<string | null>(null)
   const scheduledChatTimersRef = useRef<number[]>([])
+  const deletedDiscoverThreadIdsRef = useRef(new Set<string>())
+  const skipNextDiscoverHistorySyncRef = useRef(false)
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set<ProductId>(), [])
   const shelfMessageSet = useMemo(
@@ -911,6 +959,81 @@ export function ChatDiscoverView({
     }
     return Array.from(byId.values())
   }, [archivedThreads, threads])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getDiscoverConversations({ signal: controller.signal })
+      .then((profiles) => {
+        if (controller.signal.aborted) {
+          return
+        }
+        const restoredThreads = profiles
+          .map(discoverThreadFromProfile)
+          .filter((thread): thread is DiscoverChatThread => Boolean(thread))
+        if (restoredThreads.length === 0) {
+          const localThreads = initialDiscoverChatThreads()
+          setThreads(localThreads.length > 0 ? localThreads : [createDiscoverChatThread()])
+          setArchivedThreads([])
+          setActiveThreadId(localThreads[0]?.id ?? null)
+          setDiscoverHistoryLoaded(true)
+          return
+        }
+
+        const activeThreads = restoredThreads.filter((thread) => thread.archived !== true)
+        const nextArchivedThreads = restoredThreads.filter((thread) => thread.archived === true)
+        const nextThreads = activeThreads.length > 0 ? activeThreads : [createDiscoverChatThread()]
+        skipNextDiscoverHistorySyncRef.current = true
+        setThreads(nextThreads)
+        setArchivedThreads(nextArchivedThreads)
+        setActiveThreadId(nextThreads[0]?.id ?? null)
+        setDiscoverHistoryLoaded(true)
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return
+        }
+        const localThreads = initialDiscoverChatThreads()
+        setThreads(localThreads.length > 0 ? localThreads : [createDiscoverChatThread()])
+        setArchivedThreads([])
+        setActiveThreadId(localThreads[0]?.id ?? null)
+        setDiscoverHistoryLoaded(true)
+      })
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    if (!discoverHistoryLoaded) {
+      return undefined
+    }
+    if (skipNextDiscoverHistorySyncRef.current) {
+      skipNextDiscoverHistorySyncRef.current = false
+      return undefined
+    }
+    const controller = new AbortController()
+    const snapshots = [
+      ...threads.map((thread) => ({ thread, archived: false })),
+      ...archivedThreads.map((thread) => ({ thread, archived: true })),
+    ].filter(({ thread }) => hasDiscoverThreadHistory(thread))
+    const timer = window.setTimeout(() => {
+      snapshots.forEach(({ thread, archived }) => {
+        if (deletedDiscoverThreadIdsRef.current.has(thread.id)) {
+          return
+        }
+        void saveDiscoverConversation({
+          conversationId: thread.id,
+          title: discoverThreadTitle(thread),
+          threadJson: discoverThreadJson(thread, archived),
+          signal: controller.signal,
+        }).catch(() => undefined)
+      })
+    }, DISCOVER_HISTORY_SYNC_DELAY)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [archivedThreads, discoverHistoryLoaded, threads])
+
   const pinnedProducts = pinnedIds
     .map((id) => displayProducts.find((product) => product.id === id))
     .filter((product): product is Product => Boolean(product))
@@ -1813,8 +1936,9 @@ export function ChatDiscoverView({
     const closingIndex = threads.findIndex((thread) => thread.id === threadId)
     const closingThread = threads[closingIndex]
     if (closingThread && hasDiscoverThreadHistory(closingThread)) {
+      const archivedThread = { ...closingThread, archived: true, updatedAt: Date.now() }
       setArchivedThreads((current) => [
-        closingThread,
+        archivedThread,
         ...current.filter((thread) => thread.id !== closingThread.id),
       ])
     }
@@ -1846,10 +1970,44 @@ export function ChatDiscoverView({
     if (!archivedThread) {
       return
     }
-    setThreads((current) => [...current.filter((thread) => thread.id !== threadId), archivedThread])
+    setThreads((current) => [
+      ...current.filter((thread) => thread.id !== threadId),
+      { ...archivedThread, archived: false, updatedAt: Date.now() },
+    ])
     setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
     setActiveThreadId(threadId)
     setActiveSearchTarget(null)
+  }
+
+  const deleteHistoryThread = (threadId: string) => {
+    deletedDiscoverThreadIdsRef.current.add(threadId)
+    const deletingIndex = threads.findIndex((thread) => thread.id === threadId)
+    setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
+    void deleteDiscoverConversation(threadId).catch(() => undefined)
+    if (deletingIndex < 0) {
+      return
+    }
+
+    const nextThreads = threads.filter((thread) => thread.id !== threadId)
+    if (nextThreads.length === 0) {
+      const nextThread = createDiscoverChatThread()
+      setThreads([nextThread])
+      setActiveThreadId(nextThread.id)
+      setActiveSearchTarget(null)
+      onClear()
+      return
+    }
+
+    setThreads(nextThreads)
+    if (threadId === activeThreadIdSafe) {
+      const nextActive = nextThreads[Math.max(0, deletingIndex - 1)] ?? nextThreads[0]
+      setActiveThreadId(nextActive.id)
+      setActiveSearchTarget(null)
+    } else {
+      setActiveSearchTarget((currentTarget) =>
+        currentTarget?.threadId === threadId ? null : currentTarget,
+      )
+    }
   }
 
   const renameThread = (threadId: string, title: string) => {
@@ -1980,6 +2138,7 @@ export function ChatDiscoverView({
           activeThreadId={activeThreadIdSafe}
           onMerchant={onMerchant}
           onHistorySelect={selectHistoryThread}
+          onHistoryDelete={deleteHistoryThread}
         />
       </main>
     )
@@ -1996,6 +2155,7 @@ export function ChatDiscoverView({
         onRename={renameThread}
         onShare={() => setShareOpen(true)}
         onReorder={reorderThreads}
+        onDeleteHistory={deleteHistoryThread}
         historyThreads={historyThreads}
       />
       <div className="mt-ct-thread">

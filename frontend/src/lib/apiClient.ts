@@ -385,6 +385,14 @@ export interface UserAssistantConversationSummaryProfile {
   updatedAt: string
 }
 
+export interface UserDiscoverConversationProfile {
+  conversationId: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  threadJson: string
+}
+
 export interface UserAssistantStreamEventProfile {
   type: 'metadata' | 'delta' | 'done' | 'error'
   conversationId: string | null
@@ -1271,6 +1279,59 @@ export async function getAssistantConversation(
     response,
     'Failed to load Ask Meant conversation',
   )
+}
+
+export async function getDiscoverConversations(options?: {
+  signal?: AbortSignal
+}): Promise<UserDiscoverConversationProfile[]> {
+  const response = await fetch(`${API_URL}/api/users/me/discover/conversations`, {
+    headers: await authHeaders(),
+    signal: options?.signal,
+  })
+  return parseJsonResponse<UserDiscoverConversationProfile[]>(
+    response,
+    'Failed to load Discover conversations',
+  )
+}
+
+export async function saveDiscoverConversation(input: {
+  conversationId: string
+  title: string
+  threadJson: string
+  signal?: AbortSignal
+}): Promise<UserDiscoverConversationProfile> {
+  const response = await fetch(
+    `${API_URL}/api/users/me/discover/conversations/${encodeURIComponent(input.conversationId)}`,
+    {
+      method: 'PUT',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: input.title,
+        threadJson: input.threadJson,
+      }),
+      signal: input.signal,
+    },
+  )
+  return parseJsonResponse<UserDiscoverConversationProfile>(
+    response,
+    'Failed to save Discover conversation',
+  )
+}
+
+export async function deleteDiscoverConversation(conversationId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/users/me/discover/conversations/${encodeURIComponent(conversationId)}`,
+    {
+      method: 'DELETE',
+      headers: await authHeaders(),
+    },
+  )
+  if (!response.ok && response.status !== 404) {
+    throw new Error('Failed to delete Discover conversation')
+  }
 }
 
 export async function streamAssistantMessage(

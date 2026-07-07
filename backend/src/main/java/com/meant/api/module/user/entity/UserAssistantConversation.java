@@ -1,7 +1,10 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.module.user.constant.UserAssistantConversationKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
@@ -34,6 +37,12 @@ public class UserAssistantConversation implements Persistable<UUID> {
     @Column(nullable = false)
     private String title;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private UserAssistantConversationKind kind;
+
+    private String payload;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -45,13 +54,32 @@ public class UserAssistantConversation implements Persistable<UUID> {
     private boolean isNew = true;
 
     public static UserAssistantConversation create(UUID userId, String title, Instant now) {
+        return create(UUID.randomUUID(), userId, title, UserAssistantConversationKind.ASSISTANT, null, now);
+    }
+
+    public static UserAssistantConversation create(
+            UUID id,
+            UUID userId,
+            String title,
+            UserAssistantConversationKind kind,
+            String payload,
+            Instant now
+    ) {
         return UserAssistantConversation.builder()
-                .id(UUID.randomUUID())
+                .id(id)
                 .userId(userId)
                 .title(title)
+                .kind(kind)
+                .payload(payload)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+    }
+
+    public void replaceSnapshot(String title, String payload, Instant now) {
+        this.title = title;
+        this.payload = payload;
+        touch(now);
     }
 
     public void touch(Instant now) {

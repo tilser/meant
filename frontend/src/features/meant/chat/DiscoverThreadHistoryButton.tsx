@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { HistoryIcon } from '../shared/icons'
+import { CloseIcon } from '../shared/ui'
 import type { DiscoverChatThread } from './types'
 import {
   discoverThreadMessageCount,
@@ -13,10 +14,12 @@ export function DiscoverThreadHistoryButton({
   threads,
   activeId,
   onSelect,
+  onDelete,
 }: Readonly<{
   threads: readonly DiscoverChatThread[]
   activeId?: string
   onSelect: (threadId: string) => void
+  onDelete: (threadId: string) => void
 }>) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
@@ -77,24 +80,39 @@ export function DiscoverThreadHistoryButton({
           </div>
           <div className="mt-ct-history-list">
             {historyThreads.map((thread) => (
-              <button
+              <div
                 key={thread.id}
                 className={`mt-ct-history-row ${thread.id === activeId ? 'active' : ''}`}
-                type="button"
-                onClick={() => {
-                  onSelect(thread.id)
-                  setOpen(false)
-                }}
+                role="group"
+                aria-label={`${thread.title} chat`}
               >
-                <span className="mt-ct-history-main">
-                  <span className="mt-ct-history-title">{thread.title}</span>
-                  <span className="mt-ct-history-preview">{discoverThreadPreview(thread)}</span>
-                </span>
-                <span className="mt-ct-history-meta">
-                  <span>{discoverThreadTimeLabel(thread)}</span>
-                  <span>{discoverThreadMessageCount(thread)}</span>
-                </span>
-              </button>
+                <button
+                  className="mt-ct-history-select"
+                  type="button"
+                  onClick={() => {
+                    onSelect(thread.id)
+                    setOpen(false)
+                  }}
+                >
+                  <span className="mt-ct-history-main">
+                    <span className="mt-ct-history-title">{thread.title}</span>
+                    <span className="mt-ct-history-preview">{discoverThreadPreview(thread)}</span>
+                  </span>
+                  <span className="mt-ct-history-meta">
+                    <span>{discoverThreadTimeLabel(thread)}</span>
+                    <span>{discoverThreadMessageCount(thread)}</span>
+                  </span>
+                </button>
+                <button
+                  className="mt-ct-history-delete"
+                  type="button"
+                  onClick={() => onDelete(thread.id)}
+                  aria-label={`Delete ${thread.title} chat permanently`}
+                  title="Delete chat permanently"
+                >
+                  <CloseIcon size={11} />
+                </button>
+              </div>
             ))}
           </div>
         </div>

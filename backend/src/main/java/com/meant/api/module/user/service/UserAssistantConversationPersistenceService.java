@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.common.properties.OpenRouterProperties;
+import com.meant.api.module.user.constant.UserAssistantConversationKind;
 import com.meant.api.module.user.constant.UserAssistantMessageRole;
 import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserAssistantMessage;
@@ -11,6 +12,7 @@ import com.meant.api.module.user.service.dto.UserAssistantConversationResult;
 import com.meant.api.module.user.service.dto.UserAssistantConversationSummaryResult;
 import com.meant.api.module.user.service.dto.UserAssistantMessageResult;
 import com.meant.api.module.user.service.dto.UserAssistantPageContext;
+import com.meant.api.module.user.service.dto.UserDiscoverConversationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -42,14 +44,16 @@ public class UserAssistantConversationPersistenceService {
     private final ObjectMapper objectMapper;
 
     public UserAssistantConversationResult latest(UUID userId) {
-        return conversationRepository.findFirstByUserIdOrderByUpdatedAtDesc(userId)
+        return conversationRepository
+                .findFirstByUserIdAndKindOrderByUpdatedAtDesc(userId, UserAssistantConversationKind.ASSISTANT)
                 .map(conversation -> conversationResult(conversation, userId))
                 .orElseGet(() -> new UserAssistantConversationResult(null, null, null, null, List.of()));
     }
 
     public List<UserAssistantConversationSummaryResult> list(UUID userId, int limit) {
-        return conversationRepository.findByUserIdOrderByUpdatedAtDesc(
+        return conversationRepository.findByUserIdAndKindOrderByUpdatedAtDesc(
                         userId,
+                        UserAssistantConversationKind.ASSISTANT,
                         PageRequest.of(0, limit))
                 .stream()
                 .map(this::conversationSummary)
@@ -58,9 +62,47 @@ public class UserAssistantConversationPersistenceService {
 
     public UserAssistantConversationResult get(UUID userId, UUID conversationId) {
         UserAssistantConversation conversation = conversationRepository
-                .findByIdAndUserId(conversationId, userId)
+                .findByIdAndUserIdAndKind(conversationId, userId, UserAssistantConversationKind.ASSISTANT)
                 .orElseThrow(() -> UserException.notFound("Assistant conversation not found"));
         return conversationResult(conversation, userId);
+    }
+
+    public List<UserDiscoverConversationResult> listDiscover(UUID userId, int limit) {
+        return conversationRepository.findByUserIdAndKindOrderByUpdatedAtDesc(
+                        userId,
+                        UserAssistantConversationKind.DISCOVER,
+                        PageRequest.of(0, limit))
+                .stream()
+                .map(this::discoverConversationResult)
+                .toList();
+    }
+
+    public UserDiscoverConversationResult saveDiscover(
+            UUID userId,
+            UUID conversationId,
+            String title,
+            String threadJson
+    ) {
+        Instant now = Instant.now();
+        String normalizedTitle = title(title);
+        UserAssistantConversation conversation = conversationRepository.findById(conversationId)
+                .map(existing -> updateDiscover(existing, userId, normalizedTitle, threadJson, now))
+                .orElseGet(() -> UserAssistantConversation.create(
+                        conversationId,
+                        userId,
+                        normalizedTitle,
+                        UserAssistantConversationKind.DISCOVER,
+                        threadJson,
+                        now
+                ));
+        return discoverConversationResult(conversationRepository.save(conversation));
+    }
+
+    public void deleteDiscover(UUID userId, UUID conversationId) {
+        UserAssistantConversation conversation = conversationRepository
+                .findByIdAndUserIdAndKind(conversationId, userId, UserAssistantConversationKind.DISCOVER)
+                .orElseThrow(() -> UserException.notFound("Discover conversation not found"));
+        conversationRepository.delete(conversation);
     }
 
     public UserAssistantConversation saveUserMessage(
@@ -164,10 +206,25 @@ public class UserAssistantConversationPersistenceService {
             ));
         }
         UserAssistantConversation conversation = conversationRepository
-                .findByIdAndUserId(conversationId, userId)
+                .findByIdAndUserIdAndKind(conversationId, userId, UserAssistantConversationKind.ASSISTANT)
                 .orElseThrow(() -> UserException.notFound("Assistant conversation not found"));
         conversation.touch(now);
         return conversationRepository.save(conversation);
+    }
+
+    private UserAssistantConversation updateDiscover(
+            UserAssistantConversation conversation,
+            UUID userId,
+            String title,
+            String threadJson,
+            Instant now
+    ) {
+        if (!conversation.getUserId().equals(userId)
+                || conversation.getKind() != UserAssistantConversationKind.DISCOVER) {
+            throw UserException.notFound("Discover conversation not found");
+        }
+        conversation.replaceSnapshot(title, threadJson, now);
+        return conversation;
     }
 
     private List<UserAssistantMessageResult> restoreMessages(UUID conversationId, UUID userId) {
@@ -193,6 +250,16 @@ public class UserAssistantConversationPersistenceService {
                 conversationId,
                 userId,
                 PageRequest.of(0, limit)
+        );
+    }
+
+    private UserDiscoverConversationResult discoverConversationResult(UserAssistantConversation conversation) {
+        return new UserDiscoverConversationResult(
+                conversation.getId(),
+                conversation.getTitle(),
+                conversation.getCreatedAt(),
+                conversation.getUpdatedAt(),
+                conversation.getPayload()
         );
     }
 

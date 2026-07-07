@@ -8,9 +8,15 @@ import type {
 } from './types'
 
 let discoverChatThreadSequence = 0
+const DISCOVER_CHAT_THREAD_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 const nextDiscoverChatThreadId = () => {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
   discoverChatThreadSequence += 1
-  return `discover-thread-${Date.now().toString(36)}-${discoverChatThreadSequence}`
+  return `00000000-0000-4000-8000-${discoverChatThreadSequence.toString().padStart(12, '0')}`
 }
 
 export const DEFAULT_DISCOVER_CHAT_TITLE = 'New chat'
@@ -33,11 +39,18 @@ export function normalizeDiscoverChatThreads(
   threads: readonly DiscoverChatThread[],
 ): DiscoverChatThread[] {
   const now = Date.now()
+  const seenIds = new Set<string>()
   return threads.map((thread, index) => {
     const fallbackTime = now - (threads.length - index) * 1000
     const createdAt = thread.createdAt ?? fallbackTime
+    const id =
+      DISCOVER_CHAT_THREAD_UUID.test(thread.id) && !seenIds.has(thread.id)
+        ? thread.id
+        : nextDiscoverChatThreadId()
+    seenIds.add(id)
     return {
       ...thread,
+      id,
       createdAt,
       updatedAt: thread.updatedAt ?? createdAt,
     }

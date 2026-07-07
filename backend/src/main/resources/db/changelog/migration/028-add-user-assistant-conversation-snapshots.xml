@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="028-add-user-assistant-conversation-snapshots" author="codex">
+        <addColumn tableName="user_assistant_conversations">
+            <column name="kind" type="text" defaultValue="ASSISTANT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="payload" type="text"/>
+        </addColumn>
+
+        <createIndex tableName="user_assistant_conversations" indexName="idx_user_assistant_conversations_user_kind_updated">
+            <column name="user_id"/>
+            <column name="kind"/>
+            <column name="updated_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
