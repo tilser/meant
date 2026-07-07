@@ -897,6 +897,7 @@ export function ChatDiscoverView({
   const scheduledChatTimersRef = useRef<number[]>([])
   const deletedDiscoverThreadIdsRef = useRef(new Set<string>())
   const skipNextDiscoverHistorySyncRef = useRef(false)
+  const lastSavedTimestampsRef = useRef<Record<string, number>>({})
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set<ProductId>(), [])
   const shelfMessageSet = useMemo(
@@ -970,6 +971,9 @@ export function ChatDiscoverView({
         const restoredThreads = profiles
           .map(discoverThreadFromProfile)
           .filter((thread): thread is DiscoverChatThread => Boolean(thread))
+        restoredThreads.forEach((thread) => {
+          lastSavedTimestampsRef.current[thread.id] = thread.updatedAt ?? Date.now()
+        })
         if (restoredThreads.length === 0) {
           const localThreads = initialDiscoverChatThreads()
           setThreads(localThreads.length > 0 ? localThreads : [createDiscoverChatThread()])
@@ -992,6 +996,7 @@ export function ChatDiscoverView({
         if (controller.signal.aborted) {
           return
         }
+        lastSavedTimestampsRef.current = {}
         const localThreads = initialDiscoverChatThreads()
         setThreads(localThreads.length > 0 ? localThreads : [createDiscoverChatThread()])
         setArchivedThreads([])
@@ -1013,7 +1018,16 @@ export function ChatDiscoverView({
     const snapshots = [
       ...threads.map((thread) => ({ thread, archived: false })),
       ...archivedThreads.map((thread) => ({ thread, archived: true })),
-    ].filter(({ thread }) => hasDiscoverThreadHistory(thread))
+    ].filter(({ thread }) => {
+      if (!hasDiscoverThreadHistory(thread)) {
+        return false
+      }
+      const lastSaved = lastSavedTimestampsRef.current[thread.id] ?? 0
+      return !lastSaved || (thread.updatedAt ?? 0) > lastSaved
+    })
+    if (snapshots.length === 0) {
+      return undefined
+    }
     const timer = window.setTimeout(() => {
       snapshots.forEach(({ thread, archived }) => {
         if (deletedDiscoverThreadIdsRef.current.has(thread.id)) {
@@ -1024,7 +1038,11 @@ export function ChatDiscoverView({
           title: discoverThreadTitle(thread),
           threadJson: discoverThreadJson(thread, archived),
           signal: controller.signal,
-        }).catch(() => undefined)
+        })
+          .then(() => {
+            lastSavedTimestampsRef.current[thread.id] = thread.updatedAt ?? Date.now()
+          })
+          .catch(() => undefined)
       })
     }, DISCOVER_HISTORY_SYNC_DELAY)
 
@@ -1981,6 +1999,7 @@ export function ChatDiscoverView({
 
   const deleteHistoryThread = (threadId: string) => {
     deletedDiscoverThreadIdsRef.current.add(threadId)
+    delete lastSavedTimestampsRef.current[threadId]
     const deletingIndex = threads.findIndex((thread) => thread.id === threadId)
     setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
     void deleteDiscoverConversation(threadId).catch(() => undefined)
