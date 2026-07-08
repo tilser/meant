@@ -30,7 +30,14 @@ public record CheckoutResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<MessageResponse> messages,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        boolean nativeCheckoutEnabled
+        boolean nativeCheckoutEnabled,
+        @Schema(
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                description = "Whether the merchant checkout URL allows iframe embedding. "
+                        + "false when the merchant forbids framing (open in a new tab instead); "
+                        + "absent when unknown."
+        )
+        Boolean embeddableCheckout
 ) {
 
     public static CheckoutResponse from(CheckoutResult result) {
@@ -48,7 +55,8 @@ public record CheckoutResponse(
                 result.messages().stream()
                         .map(MessageResponse::from)
                         .toList(),
-                result.nativeCheckoutEnabled()
+                result.nativeCheckoutEnabled(),
+                result.embeddableCheckout()
         );
     }
 

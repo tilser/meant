@@ -1,17 +1,21 @@
 package com.meant.api.module.cart.controller;
 
 import com.meant.api.module.cart.controller.mapper.CartCommandMapper;
+import com.meant.api.module.cart.controller.request.AssistCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
 import com.meant.api.module.cart.controller.request.CheckoutUpdateRequest;
 import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CreateCheckoutConsentRequest;
+import com.meant.api.module.cart.controller.response.CheckoutAssistResponse;
 import com.meant.api.module.cart.controller.response.CheckoutConsentResponse;
 import com.meant.api.module.cart.controller.response.CheckoutCompletionResponse;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
 import com.meant.api.module.cart.service.CartService;
+import com.meant.api.module.cart.service.CheckoutAssistantService;
+import com.meant.api.module.cart.service.command.AssistCheckoutCommand;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -26,6 +30,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -50,6 +55,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CartController {
 
     private final CartService cartService;
+    private final CheckoutAssistantService checkoutAssistantService;
     private final UserService userService;
 
     @PostMapping
@@ -173,6 +179,40 @@ public class CartController {
         return CheckoutResponse.from(
                 cartService.updateCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
         );
+    }
+
+    @PostMapping("/{cartId}/checkout/assistant")
+    @Operation(
+            summary = "Chat with the checkout assistant",
+            description = "Conversational helper that asks the buyer for the pieces the merchant still needs "
+                    + "(buyer identity, shipping destination) and applies them to the active UCP checkout session."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Assistant reply with the current checkout session",
+            content = @Content(schema = @Schema(implementation = CheckoutAssistResponse.class))
+    )
+    public CheckoutAssistResponse assistCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Local cart UUID.", required = true)
+            @PathVariable UUID cartId,
+            @Valid @RequestBody AssistCheckoutRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return CheckoutAssistResponse.from(checkoutAssistantService.assist(new AssistCheckoutCommand(
+                cartId,
+                authenticatedUser.id(),
+                request.message(),
+                request.merchantDeliveryHint(),
+                request.history() == null
+                        ? List.of()
+                        : request.history().stream()
+                                .map(message -> new AssistCheckoutCommand.HistoryMessage(
+                                        message.role(),
+                                        message.content()
+                                ))
+                                .toList()
+        )));
     }
 
     @PostMapping("/{cartId}/checkout/consent")

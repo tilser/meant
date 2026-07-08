@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -23,6 +24,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
+@Slf4j
 public class UcpMcpClient {
 
     private static final String JSONRPC_VERSION = "2.0";
@@ -79,6 +81,10 @@ public class UcpMcpClient {
             Map<String, String> headers,
             boolean allowJsonToolErrors
     ) {
+        McpToolCallRequest request = request(
+                "tools/call",
+                new McpToolCallParams(toolName, argumentsWithAgentMeta(arguments, headers))
+        );
         McpToolCallResponse response = restClient.post()
                 .uri(endpoint)
                 .headers(httpHeaders -> {
@@ -86,9 +92,10 @@ public class UcpMcpClient {
                         headers.forEach(httpHeaders::set);
                     }
                 })
-                .body(request("tools/call", new McpToolCallParams(toolName, argumentsWithAgentMeta(arguments, headers))))
+                .body(request)
                 .retrieve()
                 .body(McpToolCallResponse.class);
+        logMerchantToolExchange(endpoint, toolName, request, response);
 
         McpToolResult result = requireToolResult(response);
         String textContent = firstContentText(result.content());
@@ -108,6 +115,42 @@ public class UcpMcpClient {
                 result.structuredContent(),
                 negotiatedCapabilities(result.structuredContent())
         );
+    }
+
+    private void logMerchantToolExchange(
+            URI endpoint,
+            String toolName,
+            McpToolCallRequest request,
+            McpToolCallResponse response
+    ) {
+        if (!isCartOrCheckoutTool(toolName)) {
+            return;
+        }
+        McpToolResult result = response == null ? null : response.result();
+        boolean failed = response == null || response.error() != null || result == null || result.isError();
+        String message = "UCP merchant tool response endpoint={} tool={} requestId={} arguments={} "
+                + "resultText={} structuredContent={} jsonRpcResponse={}";
+        Object[] values = {
+                endpoint,
+                toolName,
+                request.id(),
+                json(request.params() == null ? null : request.params().arguments()),
+                result == null ? null : firstContentText(result.content()),
+                json(result == null ? null : result.structuredContent()),
+                json(response)
+        };
+        if (failed) {
+            log.warn(message, values);
+        } else {
+            log.info(message, values);
+        }
+    }
+
+    private boolean isCartOrCheckoutTool(String toolName) {
+        if (toolName == null) {
+            return false;
+        }
+        return toolName.contains("cart") || toolName.contains("checkout");
     }
 
     public String listTools(RestClient restClient, URI endpoint) {
@@ -312,5 +355,16 @@ public class UcpMcpClient {
 
     private String text(Object value) {
         return value == null ? "" : value.toString().trim();
+    }
+
+    private String json(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (IllegalArgumentException | JacksonException exception) {
+            return value.toString();
+        }
     }
 }

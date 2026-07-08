@@ -12,6 +12,7 @@ import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
+import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
@@ -88,7 +89,7 @@ class CartServiceTest {
                 null,
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper()),
-                new CheckoutResultMapper(new ObjectMapper()),
+                new CheckoutResultMapper(new ObjectMapper(), new StubEmbedProbeService()),
                 null
         );
         merchant = merchant();
@@ -306,6 +307,33 @@ class CartServiceTest {
     }
 
     @Test
+    void updateUsesRemoteRemoveIdWhenLocalRemoveIdIsStale() {
+        UUID cartId = UUID.randomUUID();
+        UUID staleCartLineId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout", UUID.randomUUID()));
+
+        cartService.update(new UpdateCartCommand(
+                cartId,
+                USER_ID,
+                List.of(),
+                List.of(),
+                List.of(staleCartLineId),
+                List.of("gid://shopify/CartLine/1"),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+
+        assertThat(cartDispatchService.lastUpdateRequest.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
+        assertThat(cartDispatchService.lastUpdateRequest.removeItems()).hasSize(1);
+        assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().quantity()).isZero();
+    }
+
+    @Test
     void updateOmitsCodesWhenNoCodeChangeIsRequested() {
         UUID cartId = UUID.randomUUID();
         UUID cartLineId = UUID.randomUUID();
@@ -431,6 +459,23 @@ class CartServiceTest {
     }
 
     @Test
+    void checkoutRefreshesEmptyLocalCartBeforeCreatingCheckout() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, null);
+        cart.replaceLines(List.of());
+        cartRepository.save(cart);
+
+        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, true));
+
+        assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
+        assertThat(cartDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(checkoutDispatchService.createCount).isEqualTo(1);
+        assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartRepository.carts.get(cartId).getLines()).hasSize(1);
+    }
+
+    @Test
     void checkoutReturnsStoredUrlWithoutRefresh() {
         UUID cartId = UUID.randomUUID();
         Cart cart = cart(
@@ -532,6 +577,17 @@ class CartServiceTest {
                 .containsEntry("first_name", "Ada")
                 .containsEntry("last_name", "Lovelace")
                 .containsEntry("phone_number", "+15551234567");
+        assertThat(request.shippingAddress())
+                .containsEntry("id", "shipping")
+                .containsEntry("street_address", "123 Main St")
+                .containsEntry("extended_address", "Apt 4")
+                .containsEntry("address_locality", "Springfield")
+                .containsEntry("address_region", "IL")
+                .containsEntry("postal_code", "62701")
+                .containsEntry("address_country", "US")
+                .containsEntry("first_name", "Ada")
+                .containsEntry("last_name", "Lovelace")
+                .containsEntry("phone_number", "+15551234567");
         assertThat(request.currency()).isNull();
         List<?> methods = (List<?>) request.fulfillment().get("methods");
         assertThat(methods).hasSize(1);
@@ -552,7 +608,12 @@ class CartServiceTest {
                 .containsEntry("address_locality", "Springfield")
                 .containsEntry("address_region", "IL")
                 .containsEntry("postal_code", "62701")
-                .containsEntry("address_country", "US");
+                .containsEntry("address_country", "US")
+                .containsEntry("first_name", "Ada")
+                .containsEntry("last_name", "Lovelace")
+                .containsEntry("phone_number", "+15551234567");
+        assertThat(checkoutDispatchService.getCount).isEqualTo(1);
+        assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
         assertImportedCandle();
     }
 
@@ -1041,6 +1102,18 @@ class CartServiceTest {
             cancelCount++;
             lastCanceledRemoteCartId = request.cartId();
             return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
+        }
+    }
+
+    static class StubEmbedProbeService extends CheckoutEmbedProbeService {
+
+        StubEmbedProbeService() {
+            super(new MerchantOutboundUrlValidator());
+        }
+
+        @Override
+        public Boolean embeddable(String url) {
+            return null;
         }
     }
 

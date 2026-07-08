@@ -19,12 +19,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Service
+@Slf4j
 public class MerchantMcpToolClient {
 
     private final RestClient restClient;
@@ -236,6 +239,7 @@ public class MerchantMcpToolClient {
                      | MerchantMcpToolException
                      | MerchantOutboundUrlException
                      | UcpMcpException exception) {
+                logEndpointFailure(domain, endpoint, operation, exception);
                 failures.add(new MerchantMcpToolException(operation + " failed for " + endpoint, exception));
                 if (MerchantHttpFailureClassifier.isRateLimited(exception)) {
                     break;
@@ -243,6 +247,35 @@ public class MerchantMcpToolClient {
             }
         }
         throw mcpToolException(domain, operation, failures);
+    }
+
+    private void logEndpointFailure(
+            String domain,
+            String endpoint,
+            String operation,
+            RuntimeException exception
+    ) {
+        if (exception instanceof RestClientResponseException responseException) {
+            log.warn(
+                    "UCP merchant HTTP failure domain={} endpoint={} operation={} status={} responseBody={}",
+                    domain,
+                    endpoint,
+                    operation,
+                    responseException.getStatusCode().value(),
+                    responseException.getResponseBodyAsString()
+            );
+            return;
+        }
+        if (exception instanceof UcpMcpException || exception instanceof MerchantMcpToolException) {
+            log.warn(
+                    "UCP merchant MCP failure domain={} endpoint={} operation={} exception={} message={}",
+                    domain,
+                    endpoint,
+                    operation,
+                    exception.getClass().getName(),
+                    exception.getMessage()
+            );
+        }
     }
 
     private MerchantMcpToolException mcpToolException(

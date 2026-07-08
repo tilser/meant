@@ -18,6 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 public class CheckoutResultMapper {
 
     private final ObjectMapper objectMapper;
+    private final CheckoutEmbedProbeService embedProbeService;
 
     public CheckoutResult from(Cart cart, boolean nativeCheckoutEnabled) {
         UcpCheckoutResponse response = parseStoredResponse(cart.getRawCheckoutResponse());
@@ -28,18 +29,21 @@ public class CheckoutResultMapper {
                 checkout == null ? null : checkout.resolvedCurrency(cart.getCurrency()),
                 cart.getCurrency()
         );
+        String continueUrl = firstText(checkout == null ? null : checkout.continueUrl(), cart.getContinueUrl());
+        String checkoutUrl = firstText(checkout == null ? null : checkout.checkoutUrl(), cart.getCheckoutUrl());
         return new CheckoutResult(
                 cart.getId(),
                 cart.getRemoteCartId(),
                 firstText(checkout == null ? null : checkout.id(), cart.getCheckoutId()),
                 firstText(checkout == null ? null : checkout.status(), cart.getCheckoutStatus()),
-                firstText(checkout == null ? null : checkout.checkoutUrl(), cart.getCheckoutUrl()),
-                firstText(checkout == null ? null : checkout.continueUrl(), cart.getContinueUrl()),
+                checkoutUrl,
+                continueUrl,
                 response == null ? null : response.version(),
                 total == null ? null : total.amount(),
                 currency == null ? null : currency.toUpperCase(Locale.ROOT),
                 messages(response),
-                nativeCheckoutEnabled
+                nativeCheckoutEnabled,
+                embedProbeService.embeddable(firstText(continueUrl, checkoutUrl))
         );
     }
 

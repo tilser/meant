@@ -162,6 +162,52 @@ class CartCapabilityTest {
     }
 
     @Test
+    void createParsesShopifyConnectionCartLines() {
+        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+
+        UcpCartResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "cart": {
+                            "id": "gid://shopify/Cart/connection",
+                            "lines": {
+                              "edges": [
+                                {
+                                  "node": {
+                                    "id": "gid://shopify/CartLine/connection-1",
+                                    "quantity": 2,
+                                    "cost": {
+                                      "totalAmount": {"amount": "38.00", "currencyCode": "USD"},
+                                      "subtotalAmount": {"amount": "38.00", "currencyCode": "USD"}
+                                    },
+                                    "merchandise": {
+                                      "id": "gid://shopify/ProductVariant/connection-1",
+                                      "title": "Pocket T-Shirt - Black / S",
+                                      "product": {
+                                        "id": "gid://shopify/Product/connection-1",
+                                        "title": "Pocket T-Shirt"
+                                      }
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        assertThat(response.cart().id()).isEqualTo("gid://shopify/Cart/connection");
+        assertThat(response.cart().lines()).hasSize(1);
+        assertThat(response.cart().lines().getFirst().id()).isEqualTo("gid://shopify/CartLine/connection-1");
+        assertThat(response.cart().lines().getFirst().quantity()).isEqualTo(2);
+        assertThat(response.cart().lines().getFirst().merchandise().id())
+                .isEqualTo("gid://shopify/ProductVariant/connection-1");
+    }
+
+    @Test
     void cancelBuildsTypedArgumentsAndParsesTypedResponse() {
         CancelCartCapability capability = new CancelCartCapability(objectMapper);
 

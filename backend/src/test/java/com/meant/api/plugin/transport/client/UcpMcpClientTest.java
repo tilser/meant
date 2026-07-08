@@ -15,12 +15,16 @@ import com.meant.api.plugin.transport.profile.AgentIdentity;
 import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class UcpMcpClientTest {
 
     @Test
@@ -150,6 +154,48 @@ class UcpMcpClientTest {
         );
 
         assertThat(response.textContent()).contains("\"checkout_1\"");
+        server.verify();
+    }
+
+    @Test
+    void callToolLogsCheckoutPayloadAndMerchantResponse(CapturedOutput output) {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(containsString("\"method\":\"tools/call\"")))
+                .andExpect(jsonPath("$.params.name").value("create_checkout"))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\"errors\\":[{\\"code\\":\\"shipping_unavailable\\",\\"message\\":\\"Cross-border checkout is not supported for this channel.\\"}]}"
+                              }
+                            ],
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        UcpToolResponse response = client.callToolAllowingJsonToolErrors(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "create_checkout",
+                Map.of("checkout", Map.of("cart_id", "cart_1")),
+                Map.of()
+        );
+
+        assertThat(response.textContent()).contains("Cross-border checkout is not supported for this channel.");
+        assertThat(output).contains("UCP merchant tool response");
+        assertThat(output).contains("endpoint=https://merchant.example/api/mcp");
+        assertThat(output).contains("tool=create_checkout");
+        assertThat(output).contains("cart_1");
+        assertThat(output).contains("Cross-border checkout is not supported for this channel.");
         server.verify();
     }
 

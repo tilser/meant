@@ -189,7 +189,8 @@ public class MerchantCheckoutPluginDispatchService {
                                 ? Stream.empty()
                                 : safeNonNullList(response.resolvedCheckout().messages()).stream()
                 )
-                .filter(message -> message.isNotFound() || (message.isError() && !message.isRecoverable()))
+                .filter(message -> message.isNotFound()
+                        || (message.isError() && !message.isRecoverable() && !message.requiresBuyerAction()))
                 .findFirst()
                 .orElse(null);
     }

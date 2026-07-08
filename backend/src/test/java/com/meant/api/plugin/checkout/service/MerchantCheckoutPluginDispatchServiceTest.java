@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.plugin.checkout.create.CreateCheckoutCapability;
@@ -140,6 +141,40 @@ class MerchantCheckoutPluginDispatchServiceTest {
         assertThat(result.response().errors())
                 .extracting("message")
                 .containsExactly("An extension interaction is required to complete the checkout.");
+        assertThat(session.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
+        server.verify();
+    }
+
+    @Test
+    void createCheckoutAcceptsRequiresBuyerInputMessageWhenCheckoutIsPresent() throws Exception {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
+                merchantMcpToolClient(restClientBuilder.build()),
+                registry(),
+                objectMapper
+        );
+        UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
+
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(containsString("\"name\":\"create_checkout\"")))
+                .andRespond(withSuccess(
+                        mcpResponse(requiresBuyerInputRootCheckoutResponse(), true),
+                        MediaType.APPLICATION_JSON
+                ));
+
+        UcpCheckoutToolResult result = service.createCheckout(
+                provider(),
+                createCheckoutRequest(),
+                session
+        );
+
+        assertThat(result.response().resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
+        assertThat(result.response().resolvedCheckout().status()).isEqualTo("requires_escalation");
+        assertThat(result.response().messages())
+                .extracting(UcpCheckoutResponse.CheckoutMessage::code)
+                .containsExactly("extension_interaction_required", "delivery_address_required");
         assertThat(session.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
         server.verify();
     }
@@ -276,6 +311,33 @@ class MerchantCheckoutPluginDispatchServiceTest {
                     }
                   ],
                   "errors": []
+                }
+                """;
+    }
+
+    private String requiresBuyerInputRootCheckoutResponse() {
+        return """
+                {
+                  "id": "gid://shopify/Checkout/1",
+                  "currency": "USD",
+                  "status": "requires_escalation",
+                  "continue_url": "https://merchant.example/continue",
+                  "messages": [
+                    {
+                      "type": "error",
+                      "content_type": "plain",
+                      "code": "extension_interaction_required",
+                      "content": "An extension interaction is required to complete the checkout.",
+                      "severity": "requires_buyer_input"
+                    },
+                    {
+                      "type": "error",
+                      "content_type": "plain",
+                      "code": "delivery_address_required",
+                      "content": "A destination address is required in order to continue.",
+                      "severity": "recoverable"
+                    }
+                  ]
                 }
                 """;
     }

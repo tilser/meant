@@ -27,6 +27,7 @@ public record UcpCartResponse(
             @JsonProperty("expires_at")
             @JsonAlias({"expiresAt", "expiration", "expiration_time"})
             Instant expiresAt,
+            @JsonDeserialize(using = CartLineListDeserializer.class)
             List<Line> lines,
             Cost cost,
             @JsonProperty("total_quantity")
@@ -65,6 +66,8 @@ public record UcpCartResponse(
             String id,
             Integer quantity,
             Cost cost,
+            @JsonProperty("merchandise")
+            @JsonAlias("item")
             Merchandise merchandise
     ) {
     }

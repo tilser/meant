@@ -610,6 +610,11 @@ public record UcpCheckoutResponse(
                     || matches(code, "retryable");
         }
 
+        public boolean requiresBuyerAction() {
+            return matches(severity, "requires_buyer_input")
+                    || matches(severity, "requires_buyer_review");
+        }
+
         public boolean isUnrecoverable() {
             return matches(severity, "unrecoverable")
                     || matches(type, "unrecoverable")

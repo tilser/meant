@@ -1,0 +1,511 @@
+package com.meant.api.module.cart.service;
+
+import com.meant.api.common.exception.OpenRouterException;
+import com.meant.api.common.properties.OpenRouterProperties;
+import com.meant.api.common.service.OpenRouterChatClient;
+import com.meant.api.common.service.OpenRouterJsonExtractor;
+import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.service.command.AssistCheckoutCommand;
+import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
+import com.meant.api.module.cart.service.dto.CheckoutAssistResult;
+import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.validation.annotation.Validated;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * Conversational checkout helper: asks the buyer for the pieces the merchant still needs
+ * (buyer identity + shipping destination) and applies them to the active UCP checkout
+ * session through the same update path the address form uses.
+ */
+@Service
+@Validated
+@Slf4j
+@RequiredArgsConstructor
+public class CheckoutAssistantService {
+
+    private static final int MAX_HISTORY_MESSAGES = 20;
+    private static final int MAX_HISTORY_MESSAGE_LENGTH = 1000;
+    private static final String FALLBACK_REPLY =
+            "I could not reach the checkout assistant right now. "
+                    + "Please send the shipping and contact details here again.";
+    private static final Map<String, String> COUNTRY_ALIASES = Map.ofEntries(
+            Map.entry("UNITED STATES", "US"),
+            Map.entry("UNITED STATES OF AMERICA", "US"),
+            Map.entry("USA", "US"),
+            Map.entry("U.S.", "US"),
+            Map.entry("U.S.A.", "US"),
+            Map.entry("AMERICA", "US"),
+            Map.entry("CANADA", "CA"),
+            Map.entry("UNITED KINGDOM", "GB"),
+            Map.entry("UK", "GB"),
+            Map.entry("GREAT BRITAIN", "GB"),
+            Map.entry("BRITAIN", "GB"),
+            Map.entry("ENGLAND", "GB"),
+            Map.entry("GERMANY", "DE"),
+            Map.entry("DEUTSCHLAND", "DE"),
+            Map.entry("AUSTRALIA", "AU"),
+            Map.entry("CZECH REPUBLIC", "CZ"),
+            Map.entry("CZECHIA", "CZ"),
+            Map.entry("CESKO", "CZ"),
+            Map.entry("\u010cESKO", "CZ")
+    );
+    private static final Map<String, String> US_REGION_ALIASES = Map.ofEntries(
+            Map.entry("ALABAMA", "AL"),
+            Map.entry("ALASKA", "AK"),
+            Map.entry("ARIZONA", "AZ"),
+            Map.entry("ARKANSAS", "AR"),
+            Map.entry("CALIFORNIA", "CA"),
+            Map.entry("COLORADO", "CO"),
+            Map.entry("CONNECTICUT", "CT"),
+            Map.entry("DELAWARE", "DE"),
+            Map.entry("DISTRICT OF COLUMBIA", "DC"),
+            Map.entry("FLORIDA", "FL"),
+            Map.entry("GEORGIA", "GA"),
+            Map.entry("HAWAII", "HI"),
+            Map.entry("IDAHO", "ID"),
+            Map.entry("ILLINOIS", "IL"),
+            Map.entry("INDIANA", "IN"),
+            Map.entry("IOWA", "IA"),
+            Map.entry("KANSAS", "KS"),
+            Map.entry("KENTUCKY", "KY"),
+            Map.entry("LOUISIANA", "LA"),
+            Map.entry("MAINE", "ME"),
+            Map.entry("MARYLAND", "MD"),
+            Map.entry("MASSACHUSETTS", "MA"),
+            Map.entry("MICHIGAN", "MI"),
+            Map.entry("MINNESOTA", "MN"),
+            Map.entry("MISSISSIPPI", "MS"),
+            Map.entry("MISSOURI", "MO"),
+            Map.entry("MONTANA", "MT"),
+            Map.entry("NEBRASKA", "NE"),
+            Map.entry("NEVADA", "NV"),
+            Map.entry("NEW HAMPSHIRE", "NH"),
+            Map.entry("NEW JERSEY", "NJ"),
+            Map.entry("NEW MEXICO", "NM"),
+            Map.entry("NEW YORK", "NY"),
+            Map.entry("NORTH CAROLINA", "NC"),
+            Map.entry("NORTH DAKOTA", "ND"),
+            Map.entry("OHIO", "OH"),
+            Map.entry("OKLAHOMA", "OK"),
+            Map.entry("OREGON", "OR"),
+            Map.entry("PENNSYLVANIA", "PA"),
+            Map.entry("RHODE ISLAND", "RI"),
+            Map.entry("SOUTH CAROLINA", "SC"),
+            Map.entry("SOUTH DAKOTA", "SD"),
+            Map.entry("TENNESSEE", "TN"),
+            Map.entry("TEXAS", "TX"),
+            Map.entry("UTAH", "UT"),
+            Map.entry("VERMONT", "VT"),
+            Map.entry("VIRGINIA", "VA"),
+            Map.entry("WASHINGTON", "WA"),
+            Map.entry("WEST VIRGINIA", "WV"),
+            Map.entry("WISCONSIN", "WI"),
+            Map.entry("WYOMING", "WY")
+    );
+    private static final Map<String, String> CA_REGION_ALIASES = Map.ofEntries(
+            Map.entry("ALBERTA", "AB"),
+            Map.entry("BRITISH COLUMBIA", "BC"),
+            Map.entry("MANITOBA", "MB"),
+            Map.entry("NEW BRUNSWICK", "NB"),
+            Map.entry("NEWFOUNDLAND AND LABRADOR", "NL"),
+            Map.entry("NOVA SCOTIA", "NS"),
+            Map.entry("ONTARIO", "ON"),
+            Map.entry("PRINCE EDWARD ISLAND", "PE"),
+            Map.entry("QUEBEC", "QC"),
+            Map.entry("QU\u00c9BEC", "QC"),
+            Map.entry("SASKATCHEWAN", "SK")
+    );
+
+    private final CartService cartService;
+    private final OpenRouterChatClient openRouterChatClient;
+    private final OpenRouterProperties openRouterProperties;
+    private final ObjectMapper objectMapper;
+
+    public CheckoutAssistResult assist(@NotNull @Valid AssistCheckoutCommand command) {
+        CheckoutResult checkout = cartService.checkout(
+                new GetCheckoutQuery(command.cartId(), command.userId(), false)
+        );
+
+        AssistantTurn turn;
+        try {
+            String response = openRouterChatClient.completeJson(
+                    openRouterProperties.models().chatModel(),
+                    systemPrompt(),
+                    userPrompt(command, checkout),
+                    "checkout_assist",
+                    assistSchema()
+            );
+            turn = parseTurn(response);
+        } catch (OpenRouterException | JacksonException exception) {
+            log.warn("Checkout assistant completion failed ({})", exception.getClass().getSimpleName());
+            return new CheckoutAssistResult(FALLBACK_REPLY, false, checkout);
+        }
+
+        UpdateCheckoutCommand update = updateCommand(command, turn);
+        if (update == null) {
+            return new CheckoutAssistResult(turn.reply(), false, checkout);
+        }
+        try {
+            CheckoutResult updated = cartService.updateCheckout(update);
+            return new CheckoutAssistResult(appliedReply(command, turn, updated), true, updated);
+        } catch (CartException exception) {
+            return new CheckoutAssistResult(
+                    rejectedReply(command, turn, exception),
+                    false,
+                    checkout
+            );
+        }
+    }
+
+    private String appliedReply(AssistCheckoutCommand command, AssistantTurn turn, CheckoutResult updated) {
+        String submitted = submittedDetails(turn);
+        String merchantMessage = firstBuyerRelevantMessage(updated);
+        StringBuilder reply = new StringBuilder();
+        if (hasText(submitted)) {
+            reply.append("I sent this to the merchant: ").append(submitted).append(". ");
+        }
+        if (isShippingRejection(merchantMessage)) {
+            reply.append(destinationRejectedReply(command.merchantDeliveryHint(), merchantMessage));
+            return reply.toString();
+        }
+        if (hasText(merchantMessage)) {
+            reply.append("Merchant response: ").append(merchantMessage);
+            return reply.toString();
+        }
+        reply.append(hasText(turn.reply()) ? turn.reply().trim() : "The merchant accepted those checkout details.");
+        return reply.toString();
+    }
+
+    private String rejectedReply(AssistCheckoutCommand command, AssistantTurn turn, CartException exception) {
+        String submitted = submittedDetails(turn);
+        StringBuilder reply = new StringBuilder();
+        if (hasText(submitted)) {
+            reply.append("I sent this to the merchant: ").append(submitted).append(". ");
+        }
+        if (isShippingRejection(exception.getMessage())) {
+            reply.append(destinationRejectedReply(command.merchantDeliveryHint(), exception.getMessage()));
+            return reply.toString();
+        }
+        reply.append("Merchant response: ").append(exception.getMessage());
+        return reply.toString();
+    }
+
+    private String destinationRejectedReply(String merchantDeliveryHint, String merchantMessage) {
+        StringBuilder reply = new StringBuilder("The merchant rejected that shipping destination.");
+        if (hasText(merchantDeliveryHint)) {
+            reply.append(' ').append(merchantDeliveryHint.trim());
+        } else {
+            reply.append(" The merchant did not return a supported-destinations list through checkout, ")
+                    .append("so I only know this address was rejected.");
+        }
+        if (hasText(merchantMessage) && !merchantMessage.toLowerCase(Locale.ROOT).contains("remove")) {
+            reply.append(" Merchant response: ").append(merchantMessage.trim());
+        }
+        reply.append(" Send another shipping address in a supported destination and I will retry.");
+        return reply.toString();
+    }
+
+    private String submittedDetails(AssistantTurn turn) {
+        if (turn == null || turn.shippingAddress() == null || turn.buyer() == null) {
+            return null;
+        }
+        AssistantAddress address = turn.shippingAddress();
+        AssistantBuyer buyer = turn.buyer();
+        List<String> destination = java.util.stream.Stream.of(
+                address.streetAddress(),
+                address.extendedAddress(),
+                address.addressLocality(),
+                address.addressRegion(),
+                address.postalCode(),
+                address.addressCountry()
+        )
+                .filter(this::hasText)
+                .map(String::trim)
+                .toList();
+        String buyerName = java.util.stream.Stream.of(
+                buyer.firstName(),
+                buyer.lastName()
+        )
+                .filter(this::hasText)
+                .map(String::trim)
+                .reduce((first, second) -> first + " " + second)
+                .orElse(null);
+        List<String> contact = java.util.stream.Stream.of(
+                buyerName,
+                buyer.email(),
+                buyer.phoneNumber()
+        )
+                .filter(this::hasText)
+                .map(String::trim)
+                .toList();
+        if (destination.isEmpty() && contact.isEmpty()) {
+            return null;
+        }
+        if (contact.isEmpty()) {
+            return String.join(", ", destination);
+        }
+        if (destination.isEmpty()) {
+            return String.join(", ", contact);
+        }
+        return String.join(", ", destination) + " with contact " + String.join(", ", contact);
+    }
+
+    private String firstBuyerRelevantMessage(CheckoutResult checkout) {
+        return checkout.messages().stream()
+                .filter(message -> hasText(message.content()))
+                .filter(message -> !"extension_interaction_required".equalsIgnoreCase(
+                        message.code() == null ? "" : message.code().trim()
+                ))
+                .map(CheckoutResult.Message::content)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private UpdateCheckoutCommand updateCommand(AssistCheckoutCommand command, AssistantTurn turn) {
+        if (!turn.readyToUpdate() || turn.buyer() == null || turn.shippingAddress() == null) {
+            return null;
+        }
+        AssistantBuyer buyer = turn.buyer();
+        AssistantAddress address = turn.shippingAddress();
+        String countryCode = normalizedCountryCode(address.addressCountry());
+        String regionCode = normalizedRegionCode(countryCode, address.addressRegion());
+        if (!hasText(buyer.email())
+                || !hasText(buyer.firstName())
+                || !hasText(buyer.lastName())
+                || !hasText(address.streetAddress())
+                || !hasText(address.addressLocality())
+                || !hasText(address.postalCode())
+                || !hasText(countryCode)) {
+            return null;
+        }
+        if (requiresRegion(countryCode) && !hasText(regionCode)) {
+            return null;
+        }
+        return new UpdateCheckoutCommand(
+                command.cartId(),
+                command.userId(),
+                new UpdateCheckoutCommand.Buyer(
+                        buyer.email().trim(),
+                        buyer.firstName().trim(),
+                        buyer.lastName().trim(),
+                        trimmedOrNull(buyer.phoneNumber())
+                ),
+                new UpdateCheckoutCommand.PostalAddress(
+                        address.streetAddress().trim(),
+                        trimmedOrNull(address.extendedAddress()),
+                        address.addressLocality().trim(),
+                        trimmedOrNull(regionCode),
+                        address.postalCode().trim(),
+                        countryCode
+                ),
+                null
+        );
+    }
+
+    private String normalizedCountryCode(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim().replace('.', ' ').replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
+        if (normalized.length() == 2) {
+            return normalized;
+        }
+        return COUNTRY_ALIASES.get(normalized);
+    }
+
+    private String normalizedRegionCode(String countryCode, String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String trimmed = value.trim();
+        String normalized = trimmed.replace('.', ' ').replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
+        if (normalized.length() == 2) {
+            return normalized;
+        }
+        if ("US".equalsIgnoreCase(countryCode)) {
+            return US_REGION_ALIASES.getOrDefault(normalized, trimmed);
+        }
+        if ("CA".equalsIgnoreCase(countryCode)) {
+            return CA_REGION_ALIASES.getOrDefault(normalized, trimmed);
+        }
+        return trimmed;
+    }
+
+    private AssistantTurn parseTurn(String response) throws JacksonException {
+        return objectMapper.readValue(
+                OpenRouterJsonExtractor.objectCandidate(response),
+                AssistantTurn.class
+        );
+    }
+
+    private String systemPrompt() {
+        return """
+                You are Meant's checkout assistant. The buyer is completing a purchase inside \
+                Meant's own checkout UI, and the merchant still needs some details.
+                Your only job is to collect the buyer identity and shipping destination:
+                email, first name, last name, phone number (optional), street address, \
+                apartment/suite (optional), city, state/region (required for US and CA), \
+                postal code, and 2-letter country code.
+                Rules:
+                - Look at the merchant messages and the conversation to work out what is \
+                still missing, then ask for it in one short, friendly question. Ask for at \
+                most two things at a time.
+                - Never invent or guess values. Only use what the buyer explicitly said.
+                - Carry forward every value the buyer already gave earlier in the conversation.
+                - When every required field is known, set readyToUpdate to true and fill all \
+                fields; reply with a one-line confirmation of what you are applying.
+                - If a merchant message says the items cannot be shipped, do not tell the buyer \
+                to remove the items. Say the destination was rejected, use the known delivery \
+                coverage if present, and ask for another shipping address in a supported \
+                destination.
+                - If checkout must continue on the merchant site, explain that plainly.
+                - Use an empty string for any field the buyer has not provided yet.
+                - Reply in the language the buyer writes in.
+                """;
+    }
+
+    private String userPrompt(AssistCheckoutCommand command, CheckoutResult checkout) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("Checkout state:\n");
+        prompt.append("status: ").append(checkout.status() == null ? "unknown" : checkout.status()).append('\n');
+        if (!checkout.messages().isEmpty()) {
+            prompt.append("merchant messages:\n");
+            checkout.messages().stream()
+                    .limit(8)
+                    .forEach(message -> prompt.append("- ")
+                            .append(message.code() == null ? "" : message.code() + ": ")
+                            .append(message.content() == null ? "" : message.content())
+                            .append(" (severity: ")
+                            .append(message.severity() == null ? "unknown" : message.severity())
+                            .append(")\n"));
+        }
+        if (hasText(command.merchantDeliveryHint())) {
+            prompt.append("known merchant delivery coverage: ")
+                    .append(truncate(command.merchantDeliveryHint()))
+                    .append('\n');
+        }
+        prompt.append("\nConversation so far:\n");
+        List<AssistCheckoutCommand.HistoryMessage> history = command.history();
+        int start = Math.max(0, history.size() - MAX_HISTORY_MESSAGES);
+        for (AssistCheckoutCommand.HistoryMessage message : history.subList(start, history.size())) {
+            prompt.append(message.role()).append(": ").append(truncate(message.content())).append('\n');
+        }
+        prompt.append("user: ").append(truncate(command.message())).append('\n');
+        return prompt.toString();
+    }
+
+    private OpenRouterJsonSchemaDefinition assistSchema() {
+        return OpenRouterJsonSchemaDefinition.object(
+                List.of("reply", "readyToUpdate", "buyer", "shippingAddress"),
+                Map.of(
+                        "reply", OpenRouterJsonSchemaDefinition.string(),
+                        "readyToUpdate", OpenRouterJsonSchemaDefinition.bool(),
+                        "buyer", OpenRouterJsonSchemaDefinition.object(
+                                List.of("email", "firstName", "lastName", "phoneNumber"),
+                                Map.of(
+                                        "email", OpenRouterJsonSchemaDefinition.string(),
+                                        "firstName", OpenRouterJsonSchemaDefinition.string(),
+                                        "lastName", OpenRouterJsonSchemaDefinition.string(),
+                                        "phoneNumber", OpenRouterJsonSchemaDefinition.string()
+                                )
+                        ),
+                        "shippingAddress", OpenRouterJsonSchemaDefinition.object(
+                                List.of(
+                                        "streetAddress",
+                                        "extendedAddress",
+                                        "addressLocality",
+                                        "addressRegion",
+                                        "postalCode",
+                                        "addressCountry"
+                                ),
+                                Map.of(
+                                        "streetAddress", OpenRouterJsonSchemaDefinition.string(),
+                                        "extendedAddress", OpenRouterJsonSchemaDefinition.string(),
+                                        "addressLocality", OpenRouterJsonSchemaDefinition.string(),
+                                        "addressRegion", OpenRouterJsonSchemaDefinition.string(),
+                                        "postalCode", OpenRouterJsonSchemaDefinition.string(),
+                                        "addressCountry", OpenRouterJsonSchemaDefinition.string()
+                                )
+                        )
+                )
+        );
+    }
+
+    private String truncate(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= MAX_HISTORY_MESSAGE_LENGTH
+                ? trimmed
+                : trimmed.substring(0, MAX_HISTORY_MESSAGE_LENGTH);
+    }
+
+    private String trimmedOrNull(String value) {
+        return hasText(value) ? value.trim() : null;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private boolean requiresRegion(String country) {
+        String normalized = normalizedCountryCode(country);
+        if (!hasText(normalized)) {
+            return false;
+        }
+        return "US".equals(normalized) || "CA".equals(normalized);
+    }
+
+    private boolean isShippingRejection(String message) {
+        if (!hasText(message)) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT).replace('\u2019', '\'');
+        return normalized.contains("cannot be shipped")
+                || normalized.contains("can't be shipped")
+                || normalized.contains("does not ship")
+                || normalized.contains("doesn't ship")
+                || normalized.contains("no shipping")
+                || normalized.contains("no delivery")
+                || normalized.contains("delivery not available")
+                || normalized.contains("shipping not available");
+    }
+
+    private record AssistantTurn(
+            String reply,
+            boolean readyToUpdate,
+            AssistantBuyer buyer,
+            AssistantAddress shippingAddress
+    ) {
+    }
+
+    private record AssistantBuyer(
+            String email,
+            String firstName,
+            String lastName,
+            String phoneNumber
+    ) {
+    }
+
+    private record AssistantAddress(
+            String streetAddress,
+            String extendedAddress,
+            String addressLocality,
+            String addressRegion,
+            String postalCode,
+            String addressCountry
+    ) {
+    }
+}

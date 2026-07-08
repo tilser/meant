@@ -14,7 +14,8 @@ public record CheckoutResult(
         Long totalAmountMinor,
         String currency,
         List<Message> messages,
-        boolean nativeCheckoutEnabled
+        boolean nativeCheckoutEnabled,
+        Boolean embeddableCheckout
 ) {
 
     public CheckoutResult {
@@ -22,7 +23,7 @@ public record CheckoutResult(
     }
 
     public CheckoutResult(UUID cartId, String remoteCartId, String checkoutUrl, String continueUrl) {
-        this(cartId, remoteCartId, null, null, checkoutUrl, continueUrl, null, null, null, List.of(), false);
+        this(cartId, remoteCartId, null, null, checkoutUrl, continueUrl, null, null, null, List.of(), false, null);
     }
 
     public boolean requiresEscalation() {
