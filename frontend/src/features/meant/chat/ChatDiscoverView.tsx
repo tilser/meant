@@ -1015,7 +1015,10 @@ export function ChatDiscoverView({
         remoteThreads.forEach((thread) => {
           lastSavedTimestampsRef.current[thread.id] = thread.updatedAt ?? Date.now()
         })
-        const restoredThreads = mergeDiscoverThreadSources(remoteThreads, initialDiscoverChatThreads())
+        const restoredThreads = mergeDiscoverThreadSources(
+          remoteThreads,
+          initialDiscoverChatThreads(),
+        )
         if (restoredThreads.length === 0) {
           const nextThread = createDiscoverChatThread()
           setThreads([nextThread])

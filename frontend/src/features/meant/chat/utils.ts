@@ -99,10 +99,7 @@ export function deleteStoredDiscoverChatThread(threadId: string): void {
     return
   }
   const nextThreads = storedThreads.filter((thread) => thread.id !== threadId)
-  writeStorage(
-    DISCOVER_CHAT_THREADS_STORAGE_KEY,
-    nextThreads,
-  )
+  writeStorage(DISCOVER_CHAT_THREADS_STORAGE_KEY, nextThreads)
   if (nextThreads.length === 0) {
     writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
   }

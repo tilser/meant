@@ -13134,8 +13134,7 @@ body.mt-shelf-resizing .mt-shelf {
   border-radius: var(--pitch-radius);
   padding: 28px;
   background:
-    linear-gradient(180deg, rgba(110, 231, 168, 0.16), rgba(120, 168, 255, 0.12)),
-    #101815;
+    linear-gradient(180deg, rgba(110, 231, 168, 0.16), rgba(120, 168, 255, 0.12)), #101815;
   border: 1px solid rgba(110, 231, 168, 0.28);
 }
 
@@ -13220,8 +13219,7 @@ body.mt-shelf-resizing .mt-shelf {
   border-radius: var(--pitch-radius);
   background:
     linear-gradient(rgba(247, 244, 234, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(247, 244, 234, 0.035) 1px, transparent 1px),
-    rgba(11, 16, 14, 0.68);
+    linear-gradient(90deg, rgba(247, 244, 234, 0.035) 1px, transparent 1px), rgba(11, 16, 14, 0.68);
   background-size: 28px 28px;
   padding: clamp(18px, 3vw, 34px);
 }
@@ -13316,8 +13314,7 @@ body.mt-shelf-resizing .mt-shelf {
   background:
     linear-gradient(135deg, rgba(23, 71, 51, 0.18), rgba(31, 87, 146, 0.12)),
     linear-gradient(rgba(17, 25, 23, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(17, 25, 23, 0.08) 1px, transparent 1px),
-    #e7eee8;
+    linear-gradient(90deg, rgba(17, 25, 23, 0.08) 1px, transparent 1px), #e7eee8;
   background-size:
     auto,
     24px 24px,

@@ -555,9 +555,9 @@ export function CartView({
               const groupCheckoutable = group.items.every((item) =>
                 Boolean(
                   item.cartId &&
-                    item.productVariantId &&
-                    (item.cartLineId || item.remoteCartLineId) &&
-                    !item.syncError,
+                  item.productVariantId &&
+                  (item.cartLineId || item.remoteCartLineId) &&
+                  !item.syncError,
                 ),
               )
               const checkoutNeedsDelivery = group.hasDeliveryOptions && !group.hasSelectedDelivery

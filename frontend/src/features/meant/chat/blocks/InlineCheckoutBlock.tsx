@@ -24,9 +24,9 @@ import {
 function cartItemReadyForCheckout(item: CartItem): boolean {
   return Boolean(
     item.cartId &&
-      item.productVariantId &&
-      (item.cartLineId || item.remoteCartLineId) &&
-      !item.syncError,
+    item.productVariantId &&
+    (item.cartLineId || item.remoteCartLineId) &&
+    !item.syncError,
   )
 }
 
@@ -261,7 +261,9 @@ export function InlineCheckoutBlock({
               const groupCartId = group.items.find((item) => item.cartId)?.cartId
               const groupIsActive =
                 Boolean(activeCheckout && groupCartId && activeCheckout.cartId === groupCartId) ||
-                Boolean(activeCheckout && !groupCartId && activeCheckout.merchant === group.merchant)
+                Boolean(
+                  activeCheckout && !groupCartId && activeCheckout.merchant === group.merchant,
+                )
               const groupReady = group.items.every(cartItemReadyForCheckout)
               const checkoutBlocked = payingMerchant !== null || !groupReady
               const checkoutLabel = !groupReady

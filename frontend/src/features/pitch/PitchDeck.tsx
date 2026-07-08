@@ -117,29 +117,25 @@ const futureCards: readonly EvidenceCard[] = [
   {
     value: '$3T-5T',
     label: 'global annual agentic commerce by 2030',
-    text:
-      'McKinsey is cited as forecasting a multi-trillion-dollar agentic commerce opportunity as agents begin orchestrating buying journeys.',
+    text: 'McKinsey is cited as forecasting a multi-trillion-dollar agentic commerce opportunity as agents begin orchestrating buying journeys.',
     source: SOURCES.mckinseyViaIbd,
   },
   {
     value: '$1T',
     label: 'U.S. B2C retail potentially agent-orchestrated',
-    text:
-      'The same McKinsey-cited forecast frames U.S. consumer retail as large enough for agentic commerce to become its own distribution channel.',
+    text: 'The same McKinsey-cited forecast frames U.S. consumer retail as large enough for agentic commerce to become its own distribution channel.',
     source: SOURCES.mckinseyViaIbd,
   },
   {
     value: '+693%',
     label: 'GenAI traffic to retail sites',
-    text:
-      'Adobe data cited by Axios shows generative-AI referral traffic to retail sites jumped during the 2025 holiday season.',
+    text: 'Adobe data cited by Axios shows generative-AI referral traffic to retail sites jumped during the 2025 holiday season.',
     source: SOURCES.adobeViaAxios,
   },
   {
     value: '60+',
     label: 'payment ecosystem partners around AP2',
-    text:
-      'Google AP2 is a signal that delegated buying needs proof of user intent, payment authorization, and agent accountability.',
+    text: 'Google AP2 is a signal that delegated buying needs proof of user intent, payment authorization, and agent accountability.',
     source: SOURCES.ap2,
   },
 ]
@@ -148,43 +144,37 @@ const presentMoves: readonly MarketMove[] = [
   {
     layer: 'Surface',
     title: 'ChatGPT is moving from answers to checkout.',
-    text:
-      'OpenAI introduced direct purchases in ChatGPT, starting with Etsy sellers and planned Shopify merchant support.',
+    text: 'OpenAI introduced direct purchases in ChatGPT, starting with Etsy sellers and planned Shopify merchant support.',
     source: SOURCES.openAiCheckout,
   },
   {
     layer: 'Protocol',
     title: 'Google and Shopify are pushing UCP.',
-    text:
-      'Universal Commerce Protocol is being positioned as a shared language for agent-to-merchant discovery, checkout, and support.',
+    text: 'Universal Commerce Protocol is being positioned as a shared language for agent-to-merchant discovery, checkout, and support.',
     source: SOURCES.googleUcp,
   },
   {
     layer: 'Retail',
     title: 'Walmart is putting shopping inside Gemini.',
-    text:
-      'Walmart announced Gemini integration so customers can discover products, build carts, and buy inside the assistant surface.',
+    text: 'Walmart announced Gemini integration so customers can discover products, build carts, and buy inside the assistant surface.',
     source: SOURCES.walmartGemini,
   },
   {
     layer: 'Marketplace',
     title: 'Amazon is testing off-Amazon buying.',
-    text:
-      'Buy for Me lets selected U.S. app users purchase products from third-party brand sites through an Amazon-managed handoff.',
+    text: 'Buy for Me lets selected U.S. app users purchase products from third-party brand sites through an Amazon-managed handoff.',
     source: SOURCES.amazonBuyForMe,
   },
   {
     layer: 'Trust',
     title: 'Visa is building agent legitimacy rails.',
-    text:
-      'Visa Trusted Agent Protocol focuses on separating legitimate shopping agents from malicious bot traffic.',
+    text: 'Visa Trusted Agent Protocol focuses on separating legitimate shopping agents from malicious bot traffic.',
     source: SOURCES.visaTrustedAgent,
   },
   {
     layer: 'Conflict',
     title: 'Perplexity shows the access fight is real.',
-    text:
-      'Comet can buy products for users, but Amazon objected, showing that merchant permissions and agent identity are unresolved.',
+    text: 'Comet can buy products for users, but Amazon objected, showing that merchant permissions and agent identity are unresolved.',
     source: SOURCES.perplexityComet,
   },
 ]
@@ -193,29 +183,25 @@ const meantLayers: readonly MeantLayer[] = [
   {
     label: 'Consumer OS',
     title: 'The buyer owns persistent preferences.',
-    text:
-      'Meant stores durable shopping constraints, taste, budget, saved products, inventory, cart, and order context.',
+    text: 'Meant stores durable shopping constraints, taste, budget, saved products, inventory, cart, and order context.',
     source: SOURCES.meantReadme,
   },
   {
     label: 'Decision engine',
     title: 'Search becomes personalized ranking.',
-    text:
-      'Meant finds relevant merchants, searches products live, reranks candidates, and explains why each item matches.',
+    text: 'Meant finds relevant merchants, searches products live, reranks candidates, and explains why each item matches.',
     source: SOURCES.meantReadme,
   },
   {
     label: 'Commerce rails',
     title: 'Agents need safe checkout primitives.',
-    text:
-      'The UCP path points to catalog, cart, checkout, order, identity-linking, and payment-handler orchestration.',
+    text: 'The UCP path points to catalog, cart, checkout, order, identity-linking, and payment-handler orchestration.',
     source: SOURCES.meantUcpSpike,
   },
   {
     label: 'Infrastructure',
     title: 'Other agents can buy through Meant.',
-    text:
-      'Meant can expose buying capabilities to agents that need commerce execution without rebuilding merchant integrations.',
+    text: 'Meant can expose buying capabilities to agents that need commerce execution without rebuilding merchant integrations.',
     source: SOURCES.ucpSpec,
   },
 ]
@@ -226,7 +212,8 @@ const demoSteps: readonly DemoStep[] = [
     label: 'Intent',
     title: 'User asks once.',
     prompt: 'Find me a durable organic cotton tee under $50. No polyester. Ships this week.',
-    agent: 'Meant converts the ask into constraints, budget, delivery, merchant, and taste signals.',
+    agent:
+      'Meant converts the ask into constraints, budget, delivery, merchant, and taste signals.',
     primary: 'Personal profile loaded',
     secondary: 'Organic cotton, natural materials, no polyester, value-first, highly rated',
     metrics: ['6 constraints', '4 preference groups', '1 buyer profile'],
@@ -236,7 +223,8 @@ const demoSteps: readonly DemoStep[] = [
     label: 'Search',
     title: 'Meant searches the merchant graph.',
     prompt: 'Searching merchants that can satisfy apparel + organic cotton + delivery constraints.',
-    agent: 'The agent narrows the merchant set before product search, so results start relevant instead of broad.',
+    agent:
+      'The agent narrows the merchant set before product search, so results start relevant instead of broad.',
     primary: 'Field & Loom selected',
     secondary: 'Merchant profile matches sustainable apparel, stock availability, cart support',
     metrics: ['23 merchants scanned', '5 searched live', '41 candidates'],
@@ -246,7 +234,8 @@ const demoSteps: readonly DemoStep[] = [
     label: 'Rank',
     title: 'Products are ranked against the person.',
     prompt: 'Heavyweight Organic Cotton Tee is the top match.',
-    agent: 'Meant prefers exact materials, review quality, budget fit, and delivery speed over sponsored placement.',
+    agent:
+      'Meant prefers exact materials, review quality, budget fit, and delivery speed over sponsored placement.',
     primary: '94% match',
     secondary: '100% organic cotton, GOTS certified, holds shape after wash, $38',
     metrics: ['$38 best offer', '4.7 rating', '3-day delivery'],
@@ -256,7 +245,8 @@ const demoSteps: readonly DemoStep[] = [
     label: 'Checkout',
     title: 'The agent prepares a safe purchase.',
     prompt: 'Add the best offer to cart and prepare checkout with user consent.',
-    agent: 'Meant keeps payment and checkout state bounded: quote, consent, idempotency, and merchant handoff.',
+    agent:
+      'Meant keeps payment and checkout state bounded: quote, consent, idempotency, and merchant handoff.',
     primary: 'Checkout ready',
     secondary: '1 item, $38 subtotal, delivery selected, buyer consent pending',
     metrics: ['Cart created', 'Quote verified', 'Consent required'],
@@ -266,7 +256,8 @@ const demoSteps: readonly DemoStep[] = [
     label: 'Order',
     title: 'Post-purchase becomes agent memory.',
     prompt: 'Track the order and remember what worked for the next purchase.',
-    agent: 'Meant turns the completed purchase into inventory, order status, and better future recommendations.',
+    agent:
+      'Meant turns the completed purchase into inventory, order status, and better future recommendations.',
     primary: 'Order tracking active',
     secondary: 'ETA in 3 days, merchant order linked, preference outcome saved',
     metrics: ['Order event', 'Inventory signal', 'Preference feedback'],
@@ -297,7 +288,10 @@ const revenueScenarios: readonly RevenueScenario[] = [
   },
 ]
 
-const sourceGroups: readonly { readonly title: string; readonly sources: readonly PitchSource[] }[] = [
+const sourceGroups: readonly {
+  readonly title: string
+  readonly sources: readonly PitchSource[]
+}[] = [
   {
     title: 'Future and market',
     sources: [
@@ -356,7 +350,10 @@ export function PitchDeck() {
         </div>
         <div className="pitch-agenda" aria-label="Deck outline">
           {agendaItems.map((item, index) => (
-            <a href={`#${['future', 'present', 'meant', 'demo', 'potential', 'team'][index]}`} key={item}>
+            <a
+              href={`#${['future', 'present', 'meant', 'demo', 'potential', 'team'][index]}`}
+              key={item}
+            >
               <span>{String(index + 1).padStart(2, '0')}</span>
               {item}
             </a>
@@ -494,7 +491,11 @@ export function PitchDeck() {
         </div>
       </section>
 
-      <section className="pitch-slide pitch-potential" id="potential" aria-labelledby="potential-title">
+      <section
+        className="pitch-slide pitch-potential"
+        id="potential"
+        aria-labelledby="potential-title"
+      >
         <div className="pitch-section-head">
           <p className="pitch-kicker">05 / Potential</p>
           <h2 id="potential-title">A small share of agentic GMV is a large business.</h2>
@@ -519,7 +520,9 @@ export function PitchDeck() {
           <article className="pitch-market-size">
             <span>Monetization</span>
             <strong>GMV x take rate</strong>
-            <p>Meant's current stated revenue model is merchant commissions on completed purchases.</p>
+            <p>
+              Meant's current stated revenue model is merchant commissions on completed purchases.
+            </p>
             <SourceLink source={SOURCES.meantReadme} />
           </article>
         </div>
@@ -566,7 +569,9 @@ export function PitchDeck() {
           <article>
             <span>Built</span>
             <h3>Full-stack personal commerce app</h3>
-            <p>Search, preferences, merchant registry, product ranking, cart, checkout, and orders.</p>
+            <p>
+              Search, preferences, merchant registry, product ranking, cart, checkout, and orders.
+            </p>
             <SourceLink source={SOURCES.meantReadme} />
           </article>
           <article>

@@ -73,7 +73,8 @@ export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
   return (
     session.completion?.status === 'SCA_REQUIRED' ||
     (!checkoutNeedsAddress(session) &&
-      (Boolean(session.profile.requiresEscalation) || normalizedStatus === 'requires_escalation')) ||
+      (Boolean(session.profile.requiresEscalation) ||
+        normalizedStatus === 'requires_escalation')) ||
     (!session.profile.nativeCheckoutEnabled && !checkoutNeedsAddress(session))
   )
 }
