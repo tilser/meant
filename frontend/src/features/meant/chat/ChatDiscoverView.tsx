@@ -727,8 +727,6 @@ export function ChatDiscoverView({
   reply,
   query,
   loading,
-  loadingMore,
-  hasMore,
   error,
   preferences,
   merchants,
@@ -748,7 +746,6 @@ export function ChatDiscoverView({
   savedSet,
   savePendingSet,
   onSubmit,
-  onLoadMore,
   onClear,
   onMerchant,
   onOpen,
@@ -780,8 +777,6 @@ export function ChatDiscoverView({
   reply: string | null
   query: string
   loading: boolean
-  loadingMore: boolean
-  hasMore: boolean
   error: string | null
   preferences: readonly Preference[]
   merchants: readonly MerchantProfile[]
@@ -801,7 +796,6 @@ export function ChatDiscoverView({
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   onSubmit: (query: string) => void
-  onLoadMore: () => void
   onClear: () => void
   onMerchant: (merchant: MerchantProfile | null) => void
   onOpen: (product: Product, products?: readonly Product[]) => void
@@ -1121,7 +1115,7 @@ export function ChatDiscoverView({
               : 'Searching across supported merchants...'))
         return {
           ...message,
-          pending: loading || loadingMore,
+          pending: loading,
           blocks: [
             { type: 'text', text: statusText },
             { type: 'products', products: activeSearchProducts, query },
@@ -1130,7 +1124,7 @@ export function ChatDiscoverView({
       }),
     )
     scrollChatToBottom()
-    if (!loading && !loadingMore && (reply || error)) {
+    if (!loading && (reply || error)) {
       setActiveSearchTarget(null)
     }
   }, [
@@ -1138,7 +1132,6 @@ export function ChatDiscoverView({
     activeSearchProducts,
     error,
     loading,
-    loadingMore,
     query,
     reply,
     scrollChatToBottom,
@@ -2055,18 +2048,6 @@ export function ChatDiscoverView({
         ) : null}
         {agentActivities.length > 0 && loading ? (
           <AgentActivityPanel activities={agentActivities} />
-        ) : null}
-        {hasMore ? (
-          <div className="mt-load-more">
-            <button
-              className="mt-load-more-btn"
-              type="button"
-              onClick={onLoadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore ? 'Loading more' : 'Load more results'}
-            </button>
-          </div>
         ) : null}
         {deliveryLocations.length > 0 && hiddenByShip > 0 ? (
           <div className="mt-ship-strip">

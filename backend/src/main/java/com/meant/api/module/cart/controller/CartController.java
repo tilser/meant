@@ -4,6 +4,7 @@ import com.meant.api.module.cart.controller.mapper.CartCommandMapper;
 import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
+import com.meant.api.module.cart.controller.request.CheckoutUpdateRequest;
 import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CreateCheckoutConsentRequest;
 import com.meant.api.module.cart.controller.response.CheckoutConsentResponse;
@@ -149,6 +150,28 @@ public class CartController {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutResponse.from(
                 cartService.checkout(new GetCheckoutQuery(cartId, authenticatedUser.id(), refresh))
+        );
+    }
+
+    @PatchMapping("/{cartId}/checkout")
+    @Operation(
+            summary = "Update cart checkout session",
+            description = "Updates buyer and fulfillment details on the active UCP checkout session before native completion."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Updated cart checkout session",
+            content = @Content(schema = @Schema(implementation = CheckoutResponse.class))
+    )
+    public CheckoutResponse updateCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @Parameter(description = "Local cart UUID.", required = true)
+            @PathVariable UUID cartId,
+            @Valid @RequestBody CheckoutUpdateRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return CheckoutResponse.from(
+                cartService.updateCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
         );
     }
 

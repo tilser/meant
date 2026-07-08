@@ -14,11 +14,10 @@ public record CreateCheckoutArguments(
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Checkout(
-            @JsonProperty("cart_id")
-            String cartId,
             @JsonProperty("line_items")
             List<LineItem> lineItems,
             Map<String, Object> buyer,
+            String currency,
             CheckoutDiscounts discounts,
             CheckoutFulfillment fulfillment
     ) {

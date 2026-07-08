@@ -39,10 +39,7 @@ public class NativeCheckoutRequestSigner {
     public byte[] canonicalCancelBody(CancelCheckoutRequest request) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("checkout_id", request.checkoutId());
-            if (StringUtils.hasText(request.reason())) {
-                body.put("reason", request.reason().trim());
-            }
+            body.put("id", request.checkoutId());
             return jcs.canonicalizeToUtf8Bytes(objectMapper.writeValueAsBytes(body));
         } catch (JacksonException exception) {
             throw new UcpCheckoutSafetyException("Cancel checkout payload could not be canonicalized", exception);

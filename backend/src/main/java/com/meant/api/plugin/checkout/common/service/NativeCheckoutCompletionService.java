@@ -351,6 +351,9 @@ public class NativeCheckoutCompletionService {
             idempotencyResponseRecorder.recordCompletionResponse(idempotencyKey, interpretation, result.rawResponse());
             return interpretation.result();
         }
+        if (interpretation.result().status() == NativeCheckoutStatus.RECOVERABLE_ERROR) {
+            completionStateStore.releaseCompletionStart(stateCommand);
+        }
         idempotencyResponseRecorder.recordCompletionResponse(idempotencyKey, interpretation, result.rawResponse());
         canaryRecorder.record(provider, interpretation);
         return interpretation.result();

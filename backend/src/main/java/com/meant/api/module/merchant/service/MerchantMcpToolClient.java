@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -126,14 +127,14 @@ public class MerchantMcpToolClient {
     }
 
     public MerchantMcpToolCallResult callTool(MerchantCartProvider provider, String toolName, Object arguments) {
-        return callTool(provider, toolName, arguments, java.util.Map.of());
+        return callTool(provider, toolName, arguments, Map.of());
     }
 
     public MerchantMcpToolCallResult callTool(
             MerchantCartProvider provider,
             String toolName,
             Object arguments,
-            java.util.Map<String, String> headers
+            Map<String, String> headers
     ) {
         return callTool(
                 provider.domain(),
@@ -141,7 +142,33 @@ public class MerchantMcpToolClient {
                 provider.profileMcpEndpoint(),
                 toolName,
                 arguments,
-                headers
+                headers,
+                false
+        );
+    }
+
+    public MerchantMcpToolCallResult callToolReturningJsonToolErrors(
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments
+    ) {
+        return callToolReturningJsonToolErrors(provider, toolName, arguments, Map.of());
+    }
+
+    public MerchantMcpToolCallResult callToolReturningJsonToolErrors(
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers
+    ) {
+        return callTool(
+                provider.domain(),
+                provider.advertisedMcpEndpoint(),
+                provider.profileMcpEndpoint(),
+                toolName,
+                arguments,
+                headers,
+                true
         );
     }
 
@@ -152,7 +179,7 @@ public class MerchantMcpToolClient {
             String toolName,
             Object arguments
     ) {
-        return callTool(domain, advertisedMcpEndpoint, profileMcpEndpoint, toolName, arguments, java.util.Map.of());
+        return callTool(domain, advertisedMcpEndpoint, profileMcpEndpoint, toolName, arguments, Map.of(), false);
     }
 
     private MerchantMcpToolCallResult callTool(
@@ -161,17 +188,23 @@ public class MerchantMcpToolClient {
             String profileMcpEndpoint,
             String toolName,
             Object arguments,
-            java.util.Map<String, String> headers
+            Map<String, String> headers,
+            boolean allowJsonToolErrors
     ) {
         EndpointResult<UcpToolResponse> result = executeWithEndpointFallback(
                 domain,
                 advertisedMcpEndpoint,
                 profileMcpEndpoint,
                 "MCP tool " + toolName,
-                endpoint -> {
-                    UcpToolResponse response = ucpMcpClient.callTool(restClient, endpoint, toolName, arguments, headers);
-                    return response;
-                }
+                endpoint -> allowJsonToolErrors
+                        ? ucpMcpClient.callToolAllowingJsonToolErrors(
+                                restClient,
+                                endpoint,
+                                toolName,
+                                arguments,
+                                headers
+                        )
+                        : ucpMcpClient.callTool(restClient, endpoint, toolName, arguments, headers)
         );
         UcpToolResponse response = result.value();
         return new MerchantMcpToolCallResult(

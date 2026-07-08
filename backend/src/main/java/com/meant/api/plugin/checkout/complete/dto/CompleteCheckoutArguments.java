@@ -8,12 +8,18 @@ import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CompleteCheckoutArguments(
-        @JsonProperty("checkout_id")
+        @JsonProperty("id")
         String checkoutId,
-        Payment payment,
-        Ap2CheckoutData ap2,
-        CheckoutSignals signals
+        Checkout checkout
 ) {
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record Checkout(
+            Payment payment,
+            Ap2CheckoutData ap2,
+            CheckoutSignals signals
+    ) {
+    }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Payment(

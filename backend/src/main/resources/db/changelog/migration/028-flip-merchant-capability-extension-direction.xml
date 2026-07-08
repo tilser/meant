@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-flip-merchant-capability-extension-direction" author="codex">
+        <dropUniqueConstraint
+                tableName="merchant_capability_extension"
+                constraintName="uk_merchant_capability_extension_parent"/>
+        <renameColumn
+                tableName="merchant_capability_extension"
+                oldColumnName="parent_capability_name"
+                newColumnName="extension_capability_name"
+                columnDataType="text"/>
+        <sql>
+            update merchant_capability_extension capability_extension
+            set
+                merchant_capability_id = parent.id,
+                extension_capability_name = child.name
+            from merchant_capability child
+            cross join merchant_capability parent
+            where child.id = capability_extension.merchant_capability_id
+                and parent.merchant_id = child.merchant_id
+                and parent.name = capability_extension.extension_capability_name
+                and (
+                    parent.version = child.version
+                    or (
+                        parent.version = ''
+                        and not exists (
+                            select 1
+                            from merchant_capability same_version_parent
+                            where same_version_parent.merchant_id = child.merchant_id
+                                and same_version_parent.name = capability_extension.extension_capability_name
+                                and same_version_parent.version = child.version
+                        )
+                    )
+                )
+        </sql>
+        <addUniqueConstraint
+                tableName="merchant_capability_extension"
+                columnNames="merchant_capability_id, extension_capability_name"
+                constraintName="uk_merchant_capability_extension_parent"/>
+    </changeSet>
+</databaseChangeLog>

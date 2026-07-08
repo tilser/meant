@@ -20,7 +20,7 @@ public class CheckoutResultMapper {
     private final ObjectMapper objectMapper;
 
     public CheckoutResult from(Cart cart, boolean nativeCheckoutEnabled) {
-        UcpCheckoutResponse response = parseResponse(cart.getRawCheckoutResponse());
+        UcpCheckoutResponse response = parseStoredResponse(cart.getRawCheckoutResponse());
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         UcpMoney total = checkout == null ? null : checkout.resolvedTotal();
         String currency = firstText(
@@ -43,7 +43,7 @@ public class CheckoutResultMapper {
         );
     }
 
-    private UcpCheckoutResponse parseResponse(String rawCheckoutResponse) {
+    UcpCheckoutResponse parseStoredResponse(String rawCheckoutResponse) {
         if (!StringUtils.hasText(rawCheckoutResponse)) {
             return null;
         }
@@ -60,6 +60,7 @@ public class CheckoutResultMapper {
         }
         List<CheckoutResult.Message> messages = new ArrayList<>();
         addMessages(messages, response.messages());
+        addErrors(messages, response.errors());
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
         if (checkout != null) {
             addMessages(messages, checkout.messages());
@@ -82,6 +83,25 @@ public class CheckoutResultMapper {
                         message.severity(),
                         message.message(),
                         message.target()
+                ))
+                .forEach(target::add);
+    }
+
+    private void addErrors(
+            List<CheckoutResult.Message> target,
+            List<UcpCheckoutResponse.CheckoutError> errors
+    ) {
+        if (errors == null) {
+            return;
+        }
+        errors.stream()
+                .filter(error -> error != null && StringUtils.hasText(error.message()))
+                .map(error -> new CheckoutResult.Message(
+                        "error",
+                        error.code(),
+                        error.isRecoverable() ? "recoverable" : "unrecoverable",
+                        error.message(),
+                        null
                 ))
                 .forEach(target::add);
     }

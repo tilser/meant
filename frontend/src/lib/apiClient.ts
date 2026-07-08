@@ -479,6 +479,29 @@ export type CheckoutMessageProfile = components['schemas']['CheckoutMessageRespo
 export type CheckoutConsentProfile = components['schemas']['CheckoutConsentResponse']
 export type CheckoutCompletionProfile = components['schemas']['CheckoutCompletionResponse']
 
+export interface CheckoutBuyerInput {
+  email: string
+  firstName: string
+  lastName: string
+  phoneNumber?: string | null
+}
+
+export interface CheckoutShippingAddressInput {
+  streetAddress: string
+  extendedAddress?: string | null
+  addressLocality: string
+  addressRegion?: string | null
+  postalCode: string
+  addressCountry: string
+}
+
+export interface UpdateCheckoutInput {
+  cartId: string
+  buyer: CheckoutBuyerInput
+  shippingAddress: CheckoutShippingAddressInput
+  discountCodes?: readonly string[]
+}
+
 export interface CreateCheckoutConsentInput {
   cartId: string
   checkoutId: string
@@ -1514,6 +1537,22 @@ export async function getCartCheckout(input: {
     },
   )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
+}
+
+export async function updateCartCheckout(input: UpdateCheckoutInput): Promise<CheckoutProfile> {
+  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      buyer: input.buyer,
+      shippingAddress: input.shippingAddress,
+      discountCodes: input.discountCodes,
+    }),
+  })
+  return parseJsonResponse<CheckoutProfile>(response, 'Failed to update checkout')
 }
 
 export async function createCheckoutConsent(

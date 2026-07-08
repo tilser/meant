@@ -3,7 +3,6 @@ package com.meant.api.plugin.checkout.common.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.exception.CartException;
-import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
@@ -23,7 +22,6 @@ import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -51,39 +49,15 @@ public class MerchantCheckoutPluginDispatchService {
                 CreateCheckoutCapability.TOOL_NAME,
                 CreateCheckoutCapability.class
         );
-        MerchantMcpToolCallResult result = callCreateCheckout(provider, request, session, capability);
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
+                provider,
+                CreateCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities())
+        );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "create checkout");
         rejectCheckoutProblems("Cart not found: " + request.cartId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
-    }
-
-    private MerchantMcpToolCallResult callCreateCheckout(
-            MerchantCartProvider provider,
-            CreateCheckoutRequest request,
-            UcpSession session,
-            CreateCheckoutCapability capability
-    ) {
-        try {
-            return merchantMcpToolClient.callTool(
-                    provider,
-                    CreateCheckoutCapability.TOOL_NAME,
-                    capability.buildArguments(request, session.activeCapabilities())
-            );
-        } catch (MerchantMcpToolException exception) {
-            Map<String, Object> legacyArguments = new LinkedHashMap<>();
-            legacyArguments.put("cart_id", request.cartId());
-            try {
-                return merchantMcpToolClient.callTool(
-                        provider,
-                        CreateCheckoutCapability.TOOL_NAME,
-                        legacyArguments
-                );
-            } catch (MerchantMcpToolException legacyException) {
-                legacyException.addSuppressed(exception);
-                throw legacyException;
-            }
-        }
     }
 
     public UcpCheckoutToolResult getCheckout(
@@ -92,7 +66,7 @@ public class MerchantCheckoutPluginDispatchService {
             UcpSession session
     ) {
         GetCheckoutCapability capability = capability(GetCheckoutCapability.TOOL_NAME, GetCheckoutCapability.class);
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
                 GetCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities())
@@ -112,7 +86,7 @@ public class MerchantCheckoutPluginDispatchService {
                 UpdateCheckoutCapability.TOOL_NAME,
                 UpdateCheckoutCapability.class
         );
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
                 UpdateCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities())
@@ -133,7 +107,7 @@ public class MerchantCheckoutPluginDispatchService {
                 CompleteCheckoutCapability.TOOL_NAME,
                 CompleteCheckoutCapability.class
         );
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
                 CompleteCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()),
@@ -151,7 +125,7 @@ public class MerchantCheckoutPluginDispatchService {
             Map<String, String> signedHeaders
     ) {
         CancelCheckoutCapability capability = capability(CancelCheckoutCapability.TOOL_NAME, CancelCheckoutCapability.class);
-        MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
+        MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
                 CancelCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()),
@@ -180,10 +154,12 @@ public class MerchantCheckoutPluginDispatchService {
             if (error.isNotFound()) {
                 throw CartException.notFound(notFoundMessage);
             }
-            throw CartException.rejected(safeCheckoutErrorMessage(error.message()));
+            if (response.resolvedCheckout() == null) {
+                throw CartException.rejected(safeCheckoutErrorMessage(error.message()));
+            }
         }
 
-        UcpCheckoutResponse.CheckoutMessage message = firstErrorMessage(response);
+        UcpCheckoutResponse.CheckoutMessage message = firstBlockingErrorMessage(response);
         if (message != null) {
             if (message.isNotFound()) {
                 throw CartException.notFound(notFoundMessage);
@@ -206,14 +182,14 @@ public class MerchantCheckoutPluginDispatchService {
                 .orElse(null);
     }
 
-    private UcpCheckoutResponse.CheckoutMessage firstErrorMessage(UcpCheckoutResponse response) {
+    private UcpCheckoutResponse.CheckoutMessage firstBlockingErrorMessage(UcpCheckoutResponse response) {
         return Stream.concat(
                         safeNonNullList(response.messages()).stream(),
                         response.resolvedCheckout() == null
                                 ? Stream.empty()
                                 : safeNonNullList(response.resolvedCheckout().messages()).stream()
                 )
-                .filter(UcpCheckoutResponse.CheckoutMessage::isError)
+                .filter(message -> message.isNotFound() || (message.isError() && !message.isRecoverable()))
                 .findFirst()
                 .orElse(null);
     }

@@ -34,6 +34,24 @@ public class NativeCheckoutResultInterpreter {
                     chargeMismatch
             );
         }
+        UcpCheckoutResponse.CheckoutError unrecoverableError = firstUnrecoverableError(result.response());
+        if (unrecoverableError != null) {
+            boolean chargeMismatch = chargeMismatch(unrecoverableError);
+            return new NativeCheckoutInterpretation(
+                    new NativeCheckoutResult(
+                            NativeCheckoutStatus.UNRECOVERABLE_ERROR,
+                            checkoutId(result.response()),
+                            null,
+                            continueUrl(result.response()),
+                            messages(result.response()),
+                            true
+                    ),
+                    chargeMismatch ? CheckoutCanaryOutcome.CHARGE_MISMATCH : CheckoutCanaryOutcome.UNRECOVERABLE_ERROR,
+                    status(result.response()),
+                    unrecoverableError.code(),
+                    chargeMismatch
+            );
+        }
 
         NativeCheckoutInterpretation terminal = terminalStatusResult(result, true, true);
         if (terminal != null) {
@@ -54,6 +72,23 @@ public class NativeCheckoutResultInterpreter {
                     CheckoutCanaryOutcome.RECOVERABLE_ERROR,
                     status(result.response()),
                     recoverable.code(),
+                    false
+            );
+        }
+        UcpCheckoutResponse.CheckoutError recoverableError = firstRecoverableError(result.response());
+        if (recoverableError != null) {
+            return new NativeCheckoutInterpretation(
+                    new NativeCheckoutResult(
+                            NativeCheckoutStatus.RECOVERABLE_ERROR,
+                            checkoutId(result.response()),
+                            null,
+                            continueUrl(result.response()),
+                            messages(result.response()),
+                            true
+                    ),
+                    CheckoutCanaryOutcome.RECOVERABLE_ERROR,
+                    status(result.response()),
+                    recoverableError.code(),
                     false
             );
         }
@@ -205,11 +240,30 @@ public class NativeCheckoutResultInterpreter {
                 .orElse(null);
     }
 
+    private UcpCheckoutResponse.CheckoutError firstRecoverableError(UcpCheckoutResponse response) {
+        return response.errors().stream()
+                .filter(UcpCheckoutResponse.CheckoutError::isRecoverable)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private UcpCheckoutResponse.CheckoutError firstUnrecoverableError(UcpCheckoutResponse response) {
+        return response.errors().stream()
+                .filter(UcpCheckoutResponse.CheckoutError::isUnrecoverable)
+                .findFirst()
+                .orElse(null);
+    }
+
     private List<String> messages(UcpCheckoutResponse response) {
-        return allMessages(response).stream()
+        List<String> messages = new ArrayList<>(allMessages(response).stream()
                 .map(UcpCheckoutResponse.CheckoutMessage::message)
                 .filter(StringUtils::hasText)
-                .toList();
+                .toList());
+        response.errors().stream()
+                .map(UcpCheckoutResponse.CheckoutError::message)
+                .filter(StringUtils::hasText)
+                .forEach(messages::add);
+        return messages;
     }
 
     private List<UcpCheckoutResponse.CheckoutMessage> allMessages(UcpCheckoutResponse response) {
@@ -226,6 +280,10 @@ public class NativeCheckoutResultInterpreter {
 
     private boolean chargeMismatch(UcpCheckoutResponse.CheckoutMessage message) {
         return matches(message.code(), "charge_mismatch") || matches(message.code(), "amount_mismatch");
+    }
+
+    private boolean chargeMismatch(UcpCheckoutResponse.CheckoutError error) {
+        return matches(error.code(), "charge_mismatch") || matches(error.code(), "amount_mismatch");
     }
 
     private String normalizedStatus(String status) {

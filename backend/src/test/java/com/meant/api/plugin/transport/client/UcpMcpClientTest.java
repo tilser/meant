@@ -1,6 +1,7 @@
 package com.meant.api.plugin.transport.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
@@ -112,6 +113,125 @@ class UcpMcpClientTest {
 
         assertThat(toolsList).contains("\"tools\"");
         assertThat(toolsList).contains("\"search_catalog\"");
+        server.verify();
+    }
+
+    @Test
+    void callToolAllowingJsonToolErrorsReturnsJsonPayload() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(containsString("\"method\":\"tools/call\"")))
+                .andExpect(jsonPath("$.params.name").value("create_checkout"))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\"id\\":\\"checkout_1\\",\\"status\\":\\"incomplete\\"}"
+                              }
+                            ],
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        UcpToolResponse response = client.callToolAllowingJsonToolErrors(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "create_checkout",
+                Map.of("checkout", Map.of("cart_id", "cart_1")),
+                Map.of()
+        );
+
+        assertThat(response.textContent()).contains("\"checkout_1\"");
+        server.verify();
+    }
+
+    @Test
+    void callToolAllowingJsonToolErrorsReturnsStructuredPayloadWhenTextIsPlain() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "Checkout requires more information"
+                              }
+                            ],
+                            "structuredContent": {
+                              "id": "checkout_1",
+                              "status": "incomplete"
+                            },
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        UcpToolResponse response = client.callToolAllowingJsonToolErrors(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "create_checkout",
+                Map.of("checkout", Map.of("cart_id", "cart_1")),
+                Map.of()
+        );
+
+        assertThat(response.textContent()).isNull();
+        assertThat(response.structuredContent()).isInstanceOf(Map.class);
+        server.verify();
+    }
+
+    @Test
+    void callToolAllowingJsonToolErrorsStillRejectsPlainTextToolErrorsWithMetadataOnlyStructuredContent() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "Missing required arguments: checkout"
+                              }
+                            ],
+                            "structuredContent": {
+                              "ucp": {
+                                "capabilities": {
+                                  "dev.ucp.shopping.checkout.create": "2026-04-08"
+                                }
+                              }
+                            },
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.callToolAllowingJsonToolErrors(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "create_checkout",
+                Map.of("cart_id", "cart_1"),
+                Map.of()
+        ))
+                .isInstanceOf(UcpMcpException.class)
+                .hasMessageContaining("Missing required arguments: checkout");
         server.verify();
     }
 

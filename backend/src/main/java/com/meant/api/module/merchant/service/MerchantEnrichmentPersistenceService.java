@@ -29,6 +29,7 @@ import com.meant.api.module.merchant.service.dto.UcpProfile;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.merchant.service.dto.UcpVersionRange;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -196,6 +197,7 @@ public class MerchantEnrichmentPersistenceService {
     }
 
     private void saveCapabilities(Merchant merchant, UcpProfile ucpProfile) {
+        Map<CapabilityKey, MerchantCapability> capabilitiesByNameVersion = new LinkedHashMap<>();
         safeMap(ucpProfile.capabilities()).forEach((name, capabilityDefinitions) -> safeNonNullList(capabilityDefinitions).forEach(capabilityDefinition -> {
             MerchantCapability capability = merchantCapabilityRepository.save(MerchantCapability.builder()
                     .merchant(merchant)
@@ -207,14 +209,7 @@ public class MerchantEnrichmentPersistenceService {
                     .requiresProtocolMin(protocolMin(capabilityDefinition))
                     .requiresProtocolMax(protocolMax(capabilityDefinition))
                     .build());
-
-            List<MerchantCapabilityExtension> extensions = safeNonNullList(capabilityDefinition.extendsCapabilities()).stream()
-                    .map(parentCapabilityName -> MerchantCapabilityExtension.builder()
-                            .merchantCapability(capability)
-                            .parentCapabilityName(parentCapabilityName)
-                            .build())
-                    .toList();
-            merchantCapabilityExtensionRepository.saveAll(extensions);
+            capabilitiesByNameVersion.put(new CapabilityKey(name, valueOrEmpty(capabilityDefinition.version())), capability);
 
             List<MerchantCapabilityRequirement> requirements = safeMap(requiresCapabilities(capabilityDefinition)).entrySet().stream()
                     .map(entry -> MerchantCapabilityRequirement.builder()
@@ -226,6 +221,39 @@ public class MerchantEnrichmentPersistenceService {
                     .toList();
             merchantCapabilityRequirementRepository.saveAll(requirements);
         }));
+        List<MerchantCapabilityExtension> extensions = safeMap(ucpProfile.capabilities()).entrySet().stream()
+                .flatMap(entry -> safeNonNullList(entry.getValue()).stream()
+                        .flatMap(capabilityDefinition -> safeNonNullList(capabilityDefinition.extendsCapabilities()).stream()
+                                .map(parentCapabilityName -> extension(
+                                        capabilitiesByNameVersion,
+                                        parentCapabilityName,
+                                        valueOrEmpty(capabilityDefinition.version()),
+                                        entry.getKey()
+                                ))))
+                .filter(extension -> extension != null)
+                .toList();
+        merchantCapabilityExtensionRepository.saveAll(extensions);
+    }
+
+    private MerchantCapabilityExtension extension(
+            Map<CapabilityKey, MerchantCapability> capabilitiesByNameVersion,
+            String parentCapabilityName,
+            String extensionVersion,
+            String extensionCapabilityName
+    ) {
+        MerchantCapability parentCapability = capabilitiesByNameVersion.get(
+                new CapabilityKey(parentCapabilityName, extensionVersion)
+        );
+        if (parentCapability == null) {
+            parentCapability = capabilitiesByNameVersion.get(new CapabilityKey(parentCapabilityName, ""));
+        }
+        if (parentCapability == null) {
+            return null;
+        }
+        return MerchantCapabilityExtension.builder()
+                .merchantCapability(parentCapability)
+                .extensionCapabilityName(extensionCapabilityName)
+                .build();
     }
 
     private void savePaymentHandlers(Merchant merchant, UcpProfile ucpProfile) {
@@ -326,6 +354,9 @@ public class MerchantEnrichmentPersistenceService {
             return Map.of();
         }
         return capabilityDefinition.requires().capabilities();
+    }
+
+    private record CapabilityKey(String name, String version) {
     }
 
     private String resourceUrl(com.meant.api.module.merchant.service.dto.UcpResourceReference reference) {

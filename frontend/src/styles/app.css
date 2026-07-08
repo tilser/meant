@@ -3796,42 +3796,6 @@ button:disabled {
   gap: 22px;
 }
 
-.mt-load-more {
-  display: flex;
-  justify-content: center;
-  margin-top: 26px;
-}
-
-.mt-load-more-btn {
-  min-width: 132px;
-  height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 550;
-  transition:
-    border-color var(--motion-quick) var(--ease-out),
-    background var(--motion-quick) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-
-.mt-load-more-btn:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  background: var(--accent-tint);
-}
-
-.mt-load-more-btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.mt-load-more-btn:disabled {
-  cursor: wait;
-  color: var(--muted);
-}
-
 .mt-card {
   position: relative;
   display: flex;
@@ -11980,7 +11944,9 @@ body.mt-shelf-resizing .mt-shelf {
 }
 
 .mt-checkout-close,
-.mt-checkout-actions button {
+.mt-checkout-actions button,
+.mt-checkout-actions a,
+.mt-checkout-address-submit {
   min-height: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -11990,15 +11956,22 @@ body.mt-shelf-resizing .mt-shelf {
   font-size: 12px;
   font-weight: 700;
   padding: 8px 12px;
+  text-decoration: none;
 }
 
-.mt-checkout-actions button.primary {
+.mt-checkout-actions .primary,
+.mt-checkout-address-submit.primary {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--surface);
 }
 
 .mt-checkout-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.mt-checkout-address-submit:disabled {
   cursor: not-allowed;
   opacity: 0.52;
 }
@@ -12075,6 +12048,28 @@ body.mt-shelf-resizing .mt-shelf {
   gap: 12px;
 }
 
+.mt-checkout-address {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mt-checkout-address .mt-checkout-note,
+.mt-checkout-address-wide,
+.mt-checkout-address-submit {
+  grid-column: 1 / -1;
+}
+
+.mt-checkout-address-submit {
+  justify-self: end;
+}
+
+.mt-checkout-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .mt-checkout-embed {
   overflow: hidden;
   min-height: min(540px, 60vh);
@@ -12112,7 +12107,8 @@ body.mt-shelf-resizing .mt-shelf {
   }
 
   .mt-checkout-summary,
-  .mt-checkout-native {
+  .mt-checkout-native,
+  .mt-checkout-address {
     grid-template-columns: 1fr;
   }
 

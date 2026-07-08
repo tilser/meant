@@ -474,6 +474,9 @@ public record UcpCheckoutResponse(
     public record CheckoutFulfillmentMethod(
             String id,
             String type,
+            @JsonProperty("line_item_ids")
+            @JsonAlias("lineItemIds")
+            List<String> lineItemIds,
             @JsonProperty("selected_destination_id")
             @JsonAlias("selectedDestinationId")
             String selectedDestinationId,
@@ -482,6 +485,7 @@ public record UcpCheckoutResponse(
     ) {
 
         public CheckoutFulfillmentMethod {
+            lineItemIds = safeList(lineItemIds);
             destinations = safeList(destinations);
             groups = safeList(groups);
         }
@@ -516,6 +520,9 @@ public record UcpCheckoutResponse(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record CheckoutFulfillmentGroup(
             String id,
+            @JsonProperty("line_item_ids")
+            @JsonAlias("lineItemIds")
+            List<String> lineItemIds,
             @JsonProperty("selected_option_id")
             @JsonAlias("selectedOptionId")
             String selectedOptionId,
@@ -523,6 +530,7 @@ public record UcpCheckoutResponse(
     ) {
 
         public CheckoutFulfillmentGroup {
+            lineItemIds = safeList(lineItemIds);
             options = safeList(options);
         }
 
@@ -626,6 +634,26 @@ public record UcpCheckoutResponse(
                     && (code.trim().equalsIgnoreCase("not_found")
                     || code.trim().equalsIgnoreCase("checkout_not_found")
                     || code.trim().equalsIgnoreCase("cart_not_found"));
+        }
+
+        public boolean isUnrecoverable() {
+            return matches(code, "unrecoverable")
+                    || matches(code, "payment_declined")
+                    || matches(code, "mandate_required")
+                    || matches(code, "charge_mismatch")
+                    || matches(code, "amount_mismatch");
+        }
+
+        public boolean isRecoverable() {
+            return !isNotFound() && !isUnrecoverable() && (hasText(code) || hasText(message));
+        }
+
+        private boolean matches(String value, String expected) {
+            return value != null && value.trim().equalsIgnoreCase(expected);
+        }
+
+        private boolean hasText(String value) {
+            return value != null && !value.isBlank();
         }
     }
 

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
 import com.meant.api.module.merchant.entity.Merchant;
+import com.meant.api.module.merchant.entity.MerchantCapability;
+import com.meant.api.module.merchant.entity.MerchantCapabilityExtension;
 import com.meant.api.module.merchant.entity.MerchantCategory;
 import com.meant.api.module.merchant.entity.MerchantMcpToolsList;
 import com.meant.api.module.merchant.entity.MerchantRaw;
@@ -136,9 +138,16 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
         assertThat(merchant.getProfileAgentProfileHash()).isEqualTo("agent-profile-test-hash");
         assertThat(merchant.isActive()).isTrue();
         assertThat(merchantServiceRepository.count()).isEqualTo(2);
-        assertThat(merchantCapabilityRepository.count()).isEqualTo(1);
-        assertThat(merchantCapabilityExtensionRepository.count()).isEqualTo(1);
+        assertThat(merchantCapabilityRepository.count()).isEqualTo(4);
+        assertThat(merchantCapabilityExtensionRepository.count()).isEqualTo(4);
         assertThat(merchantCapabilityRequirementRepository.count()).isEqualTo(1);
+        MerchantCapability checkoutCapability = merchantCapabilityRepository.findAll().stream()
+                .filter(capability -> capability.getName().equals("dev.ucp.shopping.checkout"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(merchantCapabilityExtensionRepository.findByMerchantCapabilityId(checkoutCapability.getId()).stream()
+                .map(MerchantCapabilityExtension::getExtensionCapabilityName))
+                .containsExactlyInAnyOrder("dev.ucp.shopping.fulfillment", "dev.ucp.shopping.discount");
         assertThat(merchantPaymentHandlerRepository.count()).isEqualTo(1);
         assertThat(merchantCategoryRepository.findByMerchant(merchant))
                 .extracting(MerchantCategory::getNormalizedName)
@@ -304,20 +313,55 @@ class MerchantEnrichmentServiceTest extends PostgresIntegrationTest {
                                 new UcpResourceReference("https://ucp.dev/schema")
                         )
                 )),
-                Map.of("dev.ucp.shopping.checkout", List.of(
-                        new UcpCapabilityDefinition(
-                                "checkout",
-                                "1.0.0",
-                                new UcpResourceReference("https://ucp.dev/checkout"),
-                                new UcpResourceReference("https://ucp.dev/checkout-schema"),
-                                List.of("dev.ucp.shopping.cart"),
-                                new UcpCapabilityRequires(
-                                        new UcpVersionRange("2026-01-01", "2026-12-31"),
-                                        Map.of("dev.ucp.shopping.cart", new UcpVersionRange("1.0.0", "2.0.0"))
-                                ),
-                                null
+                Map.of(
+                        "dev.ucp.shopping.cart", List.of(
+                                new UcpCapabilityDefinition(
+                                        "cart",
+                                        "1.0.0",
+                                        new UcpResourceReference("https://ucp.dev/cart"),
+                                        new UcpResourceReference("https://ucp.dev/cart-schema"),
+                                        List.of(),
+                                        null,
+                                        null
+                                )
+                        ),
+                        "dev.ucp.shopping.checkout", List.of(
+                                new UcpCapabilityDefinition(
+                                        "checkout",
+                                        "1.0.0",
+                                        new UcpResourceReference("https://ucp.dev/checkout"),
+                                        new UcpResourceReference("https://ucp.dev/checkout-schema"),
+                                        List.of(),
+                                        new UcpCapabilityRequires(
+                                                new UcpVersionRange("2026-01-01", "2026-12-31"),
+                                                Map.of("dev.ucp.shopping.cart", new UcpVersionRange("1.0.0", "2.0.0"))
+                                        ),
+                                        null
+                                )
+                        ),
+                        "dev.ucp.shopping.fulfillment", List.of(
+                                new UcpCapabilityDefinition(
+                                        "fulfillment",
+                                        "1.0.0",
+                                        new UcpResourceReference("https://ucp.dev/fulfillment"),
+                                        new UcpResourceReference("https://ucp.dev/fulfillment-schema"),
+                                        List.of("dev.ucp.shopping.checkout", "dev.ucp.shopping.cart"),
+                                        null,
+                                        null
+                                )
+                        ),
+                        "dev.ucp.shopping.discount", List.of(
+                                new UcpCapabilityDefinition(
+                                        "discount",
+                                        "1.0.0",
+                                        new UcpResourceReference("https://ucp.dev/discount"),
+                                        new UcpResourceReference("https://ucp.dev/discount-schema"),
+                                        List.of("dev.ucp.shopping.checkout", "dev.ucp.shopping.cart"),
+                                        null,
+                                        null
+                                )
                         )
-                )),
+                ),
                 Map.of("com.google.pay", List.of(
                         new UcpPaymentHandlerDefinition(
                                 "google-pay",

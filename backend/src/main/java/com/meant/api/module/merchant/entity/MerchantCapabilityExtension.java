@@ -24,7 +24,7 @@ import lombok.NoArgsConstructor;
         name = "merchant_capability_extension",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_merchant_capability_extension_parent",
-                columnNames = {"merchant_capability_id", "parent_capability_name"}
+                columnNames = {"merchant_capability_id", "extension_capability_name"}
         )
 )
 public class MerchantCapabilityExtension {
@@ -39,5 +39,5 @@ public class MerchantCapabilityExtension {
     private MerchantCapability merchantCapability;
 
     @Column(nullable = false)
-    private String parentCapabilityName;
+    private String extensionCapabilityName;
 }

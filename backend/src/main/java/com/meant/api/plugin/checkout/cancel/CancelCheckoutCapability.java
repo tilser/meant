@@ -42,7 +42,7 @@ public class CancelCheckoutCapability implements UcpCapability<CancelCheckoutReq
 
     @Override
     public CancelCheckoutArguments buildArguments(CancelCheckoutRequest request, NegotiatedCapabilities activeCapabilities) {
-        return new CancelCheckoutArguments(request.checkoutId(), request.reason());
+        return new CancelCheckoutArguments(request.checkoutId());
     }
 
     @Override

@@ -10,6 +10,7 @@ public record CreateCheckoutRequest(
         List<LineItem> lineItems,
         Map<String, Object> buyer,
         BuyerConsentState buyerConsent,
+        String currency,
         List<String> discountCodes,
         Map<String, Object> fulfillment
 ) {
@@ -19,7 +20,7 @@ public record CreateCheckoutRequest(
     }
 
     public CreateCheckoutRequest(String cartId, List<LineItem> lineItems) {
-        this(cartId, lineItems, Map.of(), null, List.of(), Map.of());
+        this(cartId, lineItems, Map.of(), null, null, List.of(), Map.of());
     }
 
     public CreateCheckoutRequest(
@@ -29,7 +30,7 @@ public record CreateCheckoutRequest(
             List<String> discountCodes,
             Map<String, Object> fulfillment
     ) {
-        this(cartId, lineItems, buyer, null, discountCodes, fulfillment);
+        this(cartId, lineItems, buyer, null, null, discountCodes, fulfillment);
     }
 
     public CreateCheckoutRequest {
@@ -40,8 +41,12 @@ public record CreateCheckoutRequest(
     }
 
     public record LineItem(
+            String id,
             String productVariantId,
             Integer quantity
     ) {
+        public LineItem(String productVariantId, Integer quantity) {
+            this(null, productVariantId, quantity);
+        }
     }
 }

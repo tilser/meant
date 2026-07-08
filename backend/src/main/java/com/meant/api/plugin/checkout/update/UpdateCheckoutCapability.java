@@ -13,7 +13,9 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -44,17 +46,37 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
             UpdateCheckoutRequest request,
             NegotiatedCapabilities activeCapabilities
     ) {
+        Map<String, Object> buyer = BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent());
+        if (buyer == null) {
+            buyer = new LinkedHashMap<>();
+        }
+        if (hasText(request.email()) && !buyer.containsKey("email")) {
+            buyer.put("email", request.email().trim());
+        }
         return new UpdateCheckoutArguments(
                 request.checkoutId(),
-                BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent()),
-                request.email(),
-                FulfillmentExtensionSupport.fulfillment(request.shippingAddress(), request.fulfillment()),
-                DiscountExtensionSupport.discountCodes(request.discountCodes())
+                new UpdateCheckoutArguments.Checkout(
+                        request.lineItems().stream()
+                                .map(item -> new UpdateCheckoutArguments.LineItem(
+                                        item.id(),
+                                        new UpdateCheckoutArguments.Item(item.productVariantId()),
+                                        item.quantity()
+                                ))
+                                .toList(),
+                        buyer,
+                        request.currency(),
+                        FulfillmentExtensionSupport.fulfillment(request.shippingAddress(), request.fulfillment()),
+                        DiscountExtensionSupport.discountCodes(request.discountCodes())
+                )
         );
     }
 
     @Override
     public UcpCheckoutResponse parseResponse(UcpToolResponse response) {
         return CheckoutPluginJson.parse(objectMapper, response, UcpCheckoutResponse.class);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

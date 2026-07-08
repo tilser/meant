@@ -16,6 +16,7 @@ import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
+import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
@@ -35,6 +36,7 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.common.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
+import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
@@ -483,6 +485,78 @@ class CartServiceTest {
     }
 
     @Test
+    void updateCheckoutSendsBuyerLineItemsAndFulfillmentDestination() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                null,
+                storedCheckoutResponse(),
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        cartRepository.save(cart);
+
+        CheckoutResult result = cartService.updateCheckout(new UpdateCheckoutCommand(
+                cartId,
+                USER_ID,
+                new UpdateCheckoutCommand.Buyer(
+                        "ada@example.com",
+                        "Ada",
+                        "Lovelace",
+                        "+15551234567"
+                ),
+                new UpdateCheckoutCommand.PostalAddress(
+                        "123 Main St",
+                        "Apt 4",
+                        "Springfield",
+                        "IL",
+                        "62701",
+                        "US"
+                ),
+                List.of()
+        ));
+
+        assertThat(result.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
+        assertThat(checkoutDispatchService.updateCount).isEqualTo(1);
+        UpdateCheckoutRequest request = checkoutDispatchService.lastUpdateRequest;
+        assertThat(request.checkoutId()).isEqualTo("gid://shopify/Checkout/stored");
+        assertThat(request.lineItems()).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo("gid://shopify/CheckoutLine/1");
+            assertThat(item.productVariantId()).isEqualTo("gid://shopify/ProductVariant/1");
+            assertThat(item.quantity()).isEqualTo(1);
+        });
+        assertThat(request.buyer())
+                .containsEntry("email", "ada@example.com")
+                .containsEntry("first_name", "Ada")
+                .containsEntry("last_name", "Lovelace")
+                .containsEntry("phone_number", "+15551234567");
+        assertThat(request.currency()).isNull();
+        List<?> methods = (List<?>) request.fulfillment().get("methods");
+        assertThat(methods).hasSize(1);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> method = (Map<String, Object>) methods.getFirst();
+        assertThat(method)
+                .containsEntry("id", "shipping")
+                .containsEntry("type", "shipping")
+                .containsEntry("selected_destination_id", "shipping");
+        assertThat(method.get("line_item_ids")).isEqualTo(List.of("gid://shopify/CheckoutLine/1"));
+        List<?> destinations = (List<?>) method.get("destinations");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> destination = (Map<String, Object>) destinations.getFirst();
+        assertThat(destination)
+                .containsEntry("id", "shipping")
+                .containsEntry("street_address", "123 Main St")
+                .containsEntry("extended_address", "Apt 4")
+                .containsEntry("address_locality", "Springfield")
+                .containsEntry("address_region", "IL")
+                .containsEntry("postal_code", "62701")
+                .containsEntry("address_country", "US");
+        assertImportedCandle();
+    }
+
+    @Test
     void cartLifecycleCreateUpdateCancelThenGetReturnsNotFound() {
         CartResult created = cartService.create(new CreateCartCommand(
                 USER_ID,
@@ -707,6 +781,26 @@ class CartServiceTest {
                 .refreshedAt(now)
                 .lines(new ArrayList<>(List.of(line)))
                 .build();
+    }
+
+    private String storedCheckoutResponse() {
+        return """
+                {
+                  "checkout": {
+                    "id": "gid://shopify/Checkout/stored",
+                    "line_items": [
+                      {
+                        "id": "gid://shopify/CheckoutLine/1",
+                        "item": {
+                          "id": "gid://shopify/ProductVariant/1"
+                        },
+                        "quantity": 1
+                      }
+                    ]
+                  },
+                  "errors": []
+                }
+                """;
     }
 
     private void assertImportedCandle() {
@@ -955,8 +1049,10 @@ class CartServiceTest {
         private UcpCheckoutToolResult checkoutToolResult;
         private String lastRemoteCartId;
         private String lastCheckoutId;
+        private UpdateCheckoutRequest lastUpdateRequest;
         private int createCount;
         private int getCount;
+        private int updateCount;
 
         FakeCheckoutDispatchService() {
             super(null, null, null);
@@ -982,6 +1078,17 @@ class CartServiceTest {
         ) {
             getCount++;
             lastCheckoutId = request.checkoutId();
+            return checkoutToolResult;
+        }
+
+        @Override
+        public UcpCheckoutToolResult updateCheckout(
+                MerchantCartProvider provider,
+                UpdateCheckoutRequest request,
+                UcpSession session
+        ) {
+            updateCount++;
+            lastUpdateRequest = request;
             return checkoutToolResult;
         }
 

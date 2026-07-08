@@ -48,9 +48,11 @@ public class CompleteCheckoutCapability implements UcpCapability<CompleteCheckou
     ) {
         return new CompleteCheckoutArguments(
                 request.checkoutId(),
-                new CompleteCheckoutArguments.Payment(request.paymentInstruments()),
-                Ap2MandateExtensionSupport.completeRequest(request.checkoutMandate()),
-                request.signals()
+                new CompleteCheckoutArguments.Checkout(
+                        new CompleteCheckoutArguments.Payment(request.paymentInstruments()),
+                        Ap2MandateExtensionSupport.completeRequest(request.checkoutMandate()),
+                        request.signals()
+                )
         );
     }
 

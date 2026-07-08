@@ -32,15 +32,20 @@ class CheckoutCapabilityTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void createBuildsTypedArgumentsAndParsesTypedResponse() {
+    void createBuildsTypedArgumentsAndParsesTypedResponse() throws Exception {
         CreateCheckoutCapability capability = new CreateCheckoutCapability(objectMapper);
 
         CreateCheckoutArguments arguments = capability.buildArguments(
                 new CreateCheckoutRequest(
                         "gid://shopify/Cart/1",
-                        List.of(),
+                        List.of(new CreateCheckoutRequest.LineItem(
+                                "gid://shopify/CartLine/1",
+                                "gid://shopify/ProductVariant/1",
+                                2
+                        )),
                         Map.of("email", "ada@example.com"),
                         new BuyerConsentState(true, null, false, null),
+                        "USD",
                         List.of("SAVE10"),
                         Map.of("methods", List.of(Map.of("id", "method_1", "type", "shipping")))
                 ),
@@ -51,9 +56,15 @@ class CheckoutCapabilityTest {
                 null,
                 NegotiatedCapabilities.none()
         ));
+        String serializedArguments = objectMapper.writeValueAsString(arguments);
 
-        assertThat(arguments.checkout().cartId()).isEqualTo("gid://shopify/Cart/1");
+        assertThat(arguments.checkout().lineItems()).singleElement().satisfies(lineItem -> {
+            assertThat(lineItem.item().id()).isEqualTo("gid://shopify/ProductVariant/1");
+            assertThat(lineItem.quantity()).isEqualTo(2);
+        });
+        assertThat(serializedArguments).doesNotContain("gid://shopify/CartLine/1");
         assertThat(arguments.checkout().buyer()).containsKey("consent");
+        assertThat(arguments.checkout().currency()).isEqualTo("USD");
         assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
         assertThat(arguments.checkout().fulfillment().methods().getFirst())
                 .satisfies(method -> assertThat(method).containsEntry("id", "method_1"));
@@ -67,7 +78,7 @@ class CheckoutCapabilityTest {
     }
 
     @Test
-    void getBuildsTypedArgumentsAndParsesStructuredContentResponse() {
+    void getBuildsTypedArgumentsAndParsesStructuredContentResponse() throws Exception {
         GetCheckoutCapability capability = new GetCheckoutCapability(objectMapper);
 
         GetCheckoutArguments arguments = capability.buildArguments(
@@ -83,14 +94,17 @@ class CheckoutCapabilityTest {
                         "errors", List.of()
                 ),
                 NegotiatedCapabilities.none()));
+        String serializedArguments = objectMapper.writeValueAsString(arguments);
 
         assertThat(arguments.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
+        assertThat(serializedArguments).contains("\"id\":\"gid://shopify/Checkout/1\"");
+        assertThat(serializedArguments).doesNotContain("checkout_id");
         assertThat(response.resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
         assertThat(response.resolvedCheckout().continueUrl()).isEqualTo("https://merchant.example/continue");
     }
 
     @Test
-    void updateBuildsBuyerEmailAndShippingArgumentsAndParsesTypedResponse() {
+    void updateBuildsBuyerEmailAndShippingArgumentsAndParsesTypedResponse() throws Exception {
         UpdateCheckoutCapability capability = new UpdateCheckoutCapability(objectMapper);
 
         UpdateCheckoutArguments arguments = capability.buildArguments(
@@ -116,16 +130,20 @@ class CheckoutCapabilityTest {
                 null,
                 NegotiatedCapabilities.none()
         ));
+        String serializedArguments = objectMapper.writeValueAsString(arguments);
 
         assertThat(arguments.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
-        assertThat(arguments.buyer()).containsEntry("id", "buyer-1");
-        assertThat(arguments.email()).isEqualTo("ada@example.com");
-        assertThat(arguments.fulfillment().shippingAddress()).containsEntry("city", "New York");
-        assertThat(arguments.fulfillment().methods().getFirst())
+        assertThat(serializedArguments).contains("\"id\":\"gid://shopify/Checkout/1\"");
+        assertThat(serializedArguments).contains("\"checkout\"");
+        assertThat(serializedArguments).doesNotContain("checkout_id");
+        assertThat(arguments.checkout().buyer()).containsEntry("id", "buyer-1");
+        assertThat(arguments.checkout().buyer()).containsEntry("email", "ada@example.com");
+        assertThat(arguments.checkout().fulfillment().shippingAddress()).containsEntry("city", "New York");
+        assertThat(arguments.checkout().fulfillment().methods().getFirst())
                 .satisfies(method -> assertThat(method).containsEntry("id", "method_1"));
-        assertThat(arguments.fulfillment().availableMethods().getFirst())
+        assertThat(arguments.checkout().fulfillment().availableMethods().getFirst())
                 .satisfies(method -> assertThat(method).containsEntry("type", "shipping"));
-        assertThat(arguments.discounts().codes()).containsExactly("SAVE10");
+        assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
         assertThat(response.resolvedCheckout().status()).isEqualTo("open");
     }
 

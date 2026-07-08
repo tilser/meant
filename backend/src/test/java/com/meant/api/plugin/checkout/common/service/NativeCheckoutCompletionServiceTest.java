@@ -183,6 +183,21 @@ class NativeCheckoutCompletionServiceTest {
 
         assertThat(result.status()).isEqualTo(NativeCheckoutStatus.RECOVERABLE_ERROR);
         assertThat(completionStateStore.markCompletedCount).isZero();
+        assertThat(completionStateStore.releaseCompletionStartCount).isEqualTo(1);
+    }
+
+    @Test
+    void extensionInteractionErrorReturnsRecoverableWithoutMarkingCompleted() {
+        dispatchService.getResults.add(toolResult(openCheckoutJson()));
+        dispatchService.completeResult = toolResult(extensionInteractionErrorCheckoutJson());
+
+        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.RECOVERABLE_ERROR);
+        assertThat(result.messages())
+                .containsExactly("An extension interaction is required to complete the checkout.");
+        assertThat(completionStateStore.markCompletedCount).isZero();
+        assertThat(completionStateStore.releaseCompletionStartCount).isEqualTo(1);
     }
 
     @Test
@@ -543,6 +558,24 @@ class NativeCheckoutCompletionServiceTest {
                 """.formatted(severity, code);
     }
 
+    private String extensionInteractionErrorCheckoutJson() {
+        return """
+                {
+                  "checkout": {
+                    "id": "co_123",
+                    "status": "incomplete",
+                    "messages": []
+                  },
+                  "errors": [
+                    {
+                      "code": "extension_interaction_required",
+                      "message": "An extension interaction is required to complete the checkout."
+                    }
+                  ]
+                }
+                """;
+    }
+
     private String privateJwk(String kid) {
         return """
                 {"kty":"EC","alg":"ES256","crv":"P-256","kid":"%s","d":"UpuF81l-kOxbjf7T4mNSv0r5tN67Gim7rnf6EFpcYDs","x":"qIVYZVLCrPZHGHjP17CTW0_-D9Lfw0EkjqF7xB4FivA","y":"Mc4nN9LTDOBhfoUeg8Ye9WedFRhnZXZJA12Qp0zZ6F0"}
@@ -603,6 +636,7 @@ class NativeCheckoutCompletionServiceTest {
         private boolean startResult = true;
         private boolean cancelResult = true;
         private int markCompletedCount;
+        private int releaseCompletionStartCount;
         private UcpCheckoutSafetyException authorizeException;
 
         private FakeCompletionStateStore() {
@@ -641,6 +675,7 @@ class NativeCheckoutCompletionServiceTest {
 
         @Override
         public CheckoutCompletionState releaseCompletionStart(StartCheckoutCompletionCommand command) {
+            releaseCompletionStartCount++;
             return null;
         }
     }

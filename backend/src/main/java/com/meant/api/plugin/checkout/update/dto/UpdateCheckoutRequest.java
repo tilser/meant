@@ -7,9 +7,11 @@ import java.util.Map;
 
 public record UpdateCheckoutRequest(
         String checkoutId,
+        List<LineItem> lineItems,
         Map<String, Object> buyer,
         BuyerConsentState buyerConsent,
         String email,
+        String currency,
         Map<String, Object> shippingAddress,
         List<String> discountCodes,
         Map<String, Object> fulfillment
@@ -21,7 +23,7 @@ public record UpdateCheckoutRequest(
             String email,
             Map<String, Object> shippingAddress
     ) {
-        this(checkoutId, buyer, null, email, shippingAddress, List.of(), Map.of());
+        this(checkoutId, List.of(), buyer, null, email, null, shippingAddress, List.of(), Map.of());
     }
 
     public UpdateCheckoutRequest(
@@ -32,13 +34,21 @@ public record UpdateCheckoutRequest(
             List<String> discountCodes,
             Map<String, Object> fulfillment
     ) {
-        this(checkoutId, buyer, null, email, shippingAddress, discountCodes, fulfillment);
+        this(checkoutId, List.of(), buyer, null, email, null, shippingAddress, discountCodes, fulfillment);
     }
 
     public UpdateCheckoutRequest {
+        lineItems = lineItems == null ? List.of() : List.copyOf(lineItems);
         buyer = buyer == null ? Map.of() : new LinkedHashMap<>(buyer);
         shippingAddress = shippingAddress == null ? Map.of() : new LinkedHashMap<>(shippingAddress);
         discountCodes = discountCodes == null ? List.of() : List.copyOf(discountCodes);
         fulfillment = fulfillment == null ? Map.of() : new LinkedHashMap<>(fulfillment);
+    }
+
+    public record LineItem(
+            String id,
+            String productVariantId,
+            Integer quantity
+    ) {
     }
 }

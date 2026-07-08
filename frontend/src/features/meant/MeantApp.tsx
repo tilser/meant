@@ -27,6 +27,7 @@ import {
   CheckoutSheet,
   type ActiveCheckoutSession,
   type CompleteCheckoutInput,
+  type UpdateCheckoutAddressInput,
 } from './cart/CheckoutSheet'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot } from './cart/types'
@@ -102,6 +103,7 @@ import {
   type UserTasteProfile,
   updateUserInventoryItem,
   updateNewsletterSubscription,
+  updateCartCheckout,
   updateUserTasteSignal,
   updateUserSettings,
   type UserSettingsProfile,
@@ -709,10 +711,6 @@ export function MeantApp() {
   const [searchResults, setSearchResults] = useState<Product[]>([])
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
-  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
-  const [searchHasMore, setSearchHasMore] = useState(false)
-  const [searchNextOffset, setSearchNextOffset] = useState<number | null>(null)
-  const [searchMerchantId, setSearchMerchantId] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [productSearchActivities, setProductSearchActivities] = useState<AgentActivity[]>([])
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
@@ -1248,10 +1246,6 @@ export function MeantApp() {
     setRemoteProducts([])
     setSearchError(null)
     setSearchLoading(false)
-    setSearchLoadingMore(false)
-    setSearchHasMore(false)
-    setSearchNextOffset(null)
-    setSearchMerchantId(null)
     setProductSearchActivities([])
     setTasteProfile(EMPTY_TASTE_PROFILE)
     searchRequestRef.current += 1
@@ -1651,19 +1645,12 @@ export function MeantApp() {
     URL.revokeObjectURL(url)
   }
 
-  const runProductSearch = async (
-    nextQuery: string,
-    options?: { append?: boolean; offset?: number; merchantId?: string | null },
-  ) => {
+  const runProductSearch = async (nextQuery: string) => {
     const submittedQuery = nextQuery.trim()
     if (!submittedQuery) {
       return
     }
-    const append = options?.append === true
-    const offset = options?.offset ?? 0
-    const merchantId = append
-      ? (options?.merchantId ?? searchMerchantId)
-      : (selectedMerchant?.id ?? null)
+    const merchantId = selectedMerchant?.id ?? null
     const merchantAtSubmit = merchants.find((merchant) => merchant.id === merchantId) ?? null
     const requestId = searchRequestRef.current + 1
     searchRequestRef.current = requestId
@@ -1672,19 +1659,10 @@ export function MeantApp() {
     searchAbortRef.current = controller
     setQuery(submittedQuery)
     setSearchError(null)
-    if (append) {
-      setProductSearchActivities([])
-      setSearchLoadingMore(true)
-    } else {
-      setReply(null)
-      setSearchLoading(true)
-      setSearchLoadingMore(false)
-      setSearchResults([])
-      setSearchHasMore(false)
-      setSearchNextOffset(null)
-      setSearchMerchantId(merchantId)
-      setProductSearchActivities([])
-    }
+    setReply(null)
+    setSearchLoading(true)
+    setSearchResults([])
+    setProductSearchActivities([])
     const streamedProductIds = new Set<ProductId>()
     const upsertStreamProduct = (
       event: UserProductSearchStreamEventProfile,
@@ -1721,17 +1699,14 @@ export function MeantApp() {
       const mergedProducts = products
         .map((product) => mergeProductSnapshot(currentById.get(product.id), product))
         .filter(isRenderableSearchProduct)
-      if (!append) {
-        return mergedProducts
-      }
-      return appendProductSnapshots(current.filter(isRenderableSearchProduct), mergedProducts)
+      return mergedProducts
     }
     try {
       await streamUserProductSearch(
         {
           query: submittedQuery,
           merchantId,
-          offset,
+          offset: 0,
           limit: PRODUCT_SEARCH_PAGE_SIZE,
           signal: controller.signal,
         },
@@ -1770,9 +1745,6 @@ export function MeantApp() {
             setRemoteProducts((current) =>
               appendProductSnapshots(current, products).filter(isRenderableSearchProduct),
             )
-            setSearchHasMore(Boolean(event.hasMore))
-            setSearchNextOffset(event.nextOffset)
-            setSearchMerchantId(merchantId)
             setProductSearchActivities((current) =>
               upsertAgentActivity(
                 current.map((activity) => ({ ...activity, state: 'done' })),
@@ -1780,19 +1752,11 @@ export function MeantApp() {
                 'done',
               ),
             )
-            if (append) {
-              setReply(
-                displayedCount > 0
-                  ? `Loaded ${displayedCount} more match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
-                  : `No more matches found for "${submittedQuery}".`,
-              )
-            } else {
-              setReply(
-                event.cached
-                  ? `Showing ${displayedCount} cached match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
-                  : `Found ${displayedCount} match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
-              )
-            }
+            setReply(
+              event.cached
+                ? `Showing ${displayedCount} cached match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
+                : `Found ${displayedCount} match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
+            )
           },
           onError: (message) => {
             if (searchRequestRef.current !== requestId) {
@@ -1819,45 +1783,16 @@ export function MeantApp() {
       if (controller.signal.aborted) {
         return
       }
-      if (!append) {
-        setSearchResults([])
-        setSearchHasMore(false)
-        setSearchNextOffset(null)
-      }
-      setSearchError(
-        append
-          ? 'Could not load more products. Please try again.'
-          : 'Product search failed. Please try again.',
-      )
+      setSearchResults([])
+      setSearchError('Product search failed. Please try again.')
     } finally {
       if (searchRequestRef.current === requestId) {
         if (searchAbortRef.current === controller) {
           searchAbortRef.current = null
         }
-        if (append) {
-          setSearchLoadingMore(false)
-        } else {
-          setSearchLoading(false)
-        }
+        setSearchLoading(false)
       }
     }
-  }
-
-  const loadMoreSearchResults = () => {
-    if (
-      !query ||
-      !searchHasMore ||
-      searchNextOffset === null ||
-      searchLoading ||
-      searchLoadingMore
-    ) {
-      return
-    }
-    void runProductSearch(query, {
-      append: true,
-      offset: searchNextOffset,
-      merchantId: searchMerchantId,
-    })
   }
 
   const applyAssistantProducts = (products: readonly Product[], sourceQuery: string) => {
@@ -1871,11 +1806,7 @@ export function MeantApp() {
     )
     setSearchError(null)
     setSearchLoading(false)
-    setSearchLoadingMore(false)
     setProductSearchActivities([])
-    setSearchHasMore(false)
-    setSearchNextOffset(null)
-    setSearchMerchantId(null)
     setSearchResults([...renderableProducts])
     setRemoteProducts((current) => {
       const byId = new Map(current.map((product) => [product.id, product]))
@@ -2009,6 +1940,38 @@ export function MeantApp() {
     }
   }
 
+  const updateActiveCheckoutAddress = async ({
+    buyer,
+    shippingAddress,
+  }: UpdateCheckoutAddressInput) => {
+    if (!activeCheckout) {
+      return
+    }
+    setCheckoutSheetBusy(true)
+    setCheckoutSheetError(null)
+    try {
+      const checkoutProfile = await updateCartCheckout({
+        cartId: activeCheckout.cartId,
+        buyer,
+        shippingAddress,
+      })
+      updateCartWithCheckoutProfile(activeCheckout, checkoutProfile)
+      setActiveCheckout((current) =>
+        current
+          ? {
+              ...current,
+              profile: checkoutProfile,
+              completion: null,
+            }
+          : current,
+      )
+    } catch {
+      setCheckoutSheetError('Could not update checkout address.')
+    } finally {
+      setCheckoutSheetBusy(false)
+    }
+  }
+
   const completeActiveCheckout = async ({ handler, token }: CompleteCheckoutInput) => {
     if (!activeCheckout) {
       return
@@ -2055,11 +2018,9 @@ export function MeantApp() {
         completeLocalOrder(activeCheckout)
         void loadInventory({ silent: true })
         void loadOrders({ silent: true })
-      } else if (
-        completion.status === 'RECOVERABLE_ERROR' ||
-        completion.status === 'UNRECOVERABLE_ERROR' ||
-        completion.status === 'SECURITY_LOCKED'
-      ) {
+      } else if (completion.status === 'RECOVERABLE_ERROR') {
+        setCheckoutSheetError(null)
+      } else if (completion.status === 'UNRECOVERABLE_ERROR' || completion.status === 'SECURITY_LOCKED') {
         setCheckoutSheetError(completion.messages?.[0] ?? 'Checkout could not be completed.')
       }
     } catch {
@@ -2223,8 +2184,6 @@ export function MeantApp() {
             reply={reply}
             query={query}
             loading={searchLoading}
-            loadingMore={searchLoadingMore}
-            hasMore={searchHasMore}
             error={searchError}
             preferences={allPreferences}
             merchants={merchants}
@@ -2244,7 +2203,6 @@ export function MeantApp() {
             onSubmit={(nextQuery) => {
               void runProductSearch(nextQuery)
             }}
-            onLoadMore={loadMoreSearchResults}
             onClear={() => {
               searchRequestRef.current += 1
               searchAbortRef.current?.abort()
@@ -2254,10 +2212,6 @@ export function MeantApp() {
               setSearchResults([])
               setSearchError(null)
               setSearchLoading(false)
-              setSearchLoadingMore(false)
-              setSearchHasMore(false)
-              setSearchNextOffset(null)
-              setSearchMerchantId(null)
               setProductSearchActivities([])
             }}
             onMerchant={(merchant) => {
@@ -2399,11 +2353,14 @@ export function MeantApp() {
           session={activeCheckout}
           busy={checkoutSheetBusy}
           error={checkoutSheetError}
+          buyerDefaults={{ email: user.email, name: user.name }}
+          deliveryLocation={deliveryLocations[0] ?? null}
           onClose={() => {
             setActiveCheckout(null)
             setCheckoutSheetError(null)
           }}
           onRefresh={refreshActiveCheckout}
+          onUpdateAddress={updateActiveCheckoutAddress}
           onComplete={completeActiveCheckout}
         />
       ) : null}

@@ -5,6 +5,7 @@ import static com.meant.api.common.util.CollectionUtils.safeList;
 import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
+import com.meant.api.module.cart.controller.request.CheckoutUpdateRequest;
 import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CreateCheckoutConsentRequest;
 import com.meant.api.module.cart.service.command.CancelCheckoutCommand;
@@ -12,6 +13,7 @@ import com.meant.api.module.cart.service.command.CompleteCheckoutCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.CreateCheckoutConsentCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
+import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.plugin.payment.common.dto.PaymentCredential;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import com.meant.api.plugin.payment.common.dto.PaymentScaLiability;
@@ -87,6 +89,28 @@ public final class CartCommandMapper {
                 request.ap2SecurityLock(),
                 ap2MandateCommand(request.ap2Mandate()),
                 checkoutSignalsCommand(request.signals())
+        );
+    }
+
+    public static UpdateCheckoutCommand toCommand(UUID cartId, UUID userId, CheckoutUpdateRequest request) {
+        return new UpdateCheckoutCommand(
+                cartId,
+                userId,
+                new UpdateCheckoutCommand.Buyer(
+                        request.buyer().email(),
+                        request.buyer().firstName(),
+                        request.buyer().lastName(),
+                        request.buyer().phoneNumber()
+                ),
+                new UpdateCheckoutCommand.PostalAddress(
+                        request.shippingAddress().streetAddress(),
+                        request.shippingAddress().extendedAddress(),
+                        request.shippingAddress().addressLocality(),
+                        request.shippingAddress().addressRegion(),
+                        request.shippingAddress().postalCode(),
+                        request.shippingAddress().addressCountry()
+                ),
+                safeList(request.discountCodes())
         );
     }
 

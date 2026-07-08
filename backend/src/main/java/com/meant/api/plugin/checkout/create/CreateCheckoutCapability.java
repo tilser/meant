@@ -45,7 +45,6 @@ public class CreateCheckoutCapability implements UcpCapability<CreateCheckoutReq
             NegotiatedCapabilities activeCapabilities
     ) {
         return new CreateCheckoutArguments(new CreateCheckoutArguments.Checkout(
-                request.cartId(),
                 request.lineItems().stream()
                         .filter(item -> item.productVariantId() != null && !item.productVariantId().isBlank())
                         .map(item -> new CreateCheckoutArguments.LineItem(
@@ -54,6 +53,7 @@ public class CreateCheckoutCapability implements UcpCapability<CreateCheckoutReq
                         ))
                         .toList(),
                 BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent()),
+                request.currency(),
                 DiscountExtensionSupport.discountCodes(request.discountCodes()),
                 FulfillmentExtensionSupport.fulfillment(null, request.fulfillment())
         ));

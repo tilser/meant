@@ -28,6 +28,8 @@ public class UcpMcpClient {
     private static final String JSONRPC_VERSION = "2.0";
     private static final String UCP_AGENT_META_KEY = "ucp-agent";
     private static final String UCP_AGENT_PROFILE_KEY = "profile";
+    private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+    private static final String IDEMPOTENCY_KEY_META_KEY = "idempotency-key";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
@@ -56,6 +58,27 @@ public class UcpMcpClient {
             Object arguments,
             Map<String, String> headers
     ) {
+        return callTool(restClient, endpoint, toolName, arguments, headers, false);
+    }
+
+    public UcpToolResponse callToolAllowingJsonToolErrors(
+            RestClient restClient,
+            URI endpoint,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers
+    ) {
+        return callTool(restClient, endpoint, toolName, arguments, headers, true);
+    }
+
+    private UcpToolResponse callTool(
+            RestClient restClient,
+            URI endpoint,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers,
+            boolean allowJsonToolErrors
+    ) {
         McpToolCallResponse response = restClient.post()
                 .uri(endpoint)
                 .headers(httpHeaders -> {
@@ -63,16 +86,25 @@ public class UcpMcpClient {
                         headers.forEach(httpHeaders::set);
                     }
                 })
-                .body(request("tools/call", new McpToolCallParams(toolName, argumentsWithAgentMeta(arguments))))
+                .body(request("tools/call", new McpToolCallParams(toolName, argumentsWithAgentMeta(arguments, headers))))
                 .retrieve()
                 .body(McpToolCallResponse.class);
 
         McpToolResult result = requireToolResult(response);
+        String textContent = firstContentText(result.content());
         if (result.isError()) {
-            throw new UcpMcpException("MCP result was marked as error: " + contentText(result.content()));
+            boolean hasJsonTextPayload = hasJsonTextPayload(textContent);
+            boolean canReturnToolError = allowJsonToolErrors
+                    && (hasJsonTextPayload || hasResultStructuredContent(result.structuredContent()));
+            if (!canReturnToolError) {
+                throw new UcpMcpException("MCP result was marked as error: " + contentText(result.content()));
+            }
+            if (!hasJsonTextPayload) {
+                textContent = null;
+            }
         }
         return new UcpToolResponse(
-                firstContentText(result.content()),
+                textContent,
                 result.structuredContent(),
                 negotiatedCapabilities(result.structuredContent())
         );
@@ -81,7 +113,7 @@ public class UcpMcpClient {
     public String listTools(RestClient restClient, URI endpoint) {
         McpToolsListResponse response = restClient.post()
                 .uri(endpoint)
-                .body(request("tools/list", new McpToolCallParams(null, argumentsWithAgentMeta(null))))
+                .body(request("tools/list", new McpToolCallParams(null, argumentsWithAgentMeta(null, Map.of()))))
                 .retrieve()
                 .body(McpToolsListResponse.class);
 
@@ -131,16 +163,32 @@ public class UcpMcpClient {
         );
     }
 
-    private Map<String, Object> argumentsWithAgentMeta(Object arguments) {
+    private Map<String, Object> argumentsWithAgentMeta(Object arguments, Map<String, String> headers) {
         Map<String, Object> values = objectMap(arguments);
         Map<String, Object> meta = mapValue(values.get("meta"));
         Map<String, Object> ucpAgent = mapValue(meta.get(UCP_AGENT_META_KEY));
 
         ucpAgent.put(UCP_AGENT_PROFILE_KEY, agentIdentity.profileUrl().toString());
         meta.put(UCP_AGENT_META_KEY, ucpAgent);
+        String idempotencyKey = firstHeader(headers, IDEMPOTENCY_KEY_HEADER);
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            meta.put(IDEMPOTENCY_KEY_META_KEY, idempotencyKey.trim());
+        }
         values.put("meta", meta);
 
         return values;
+    }
+
+    private String firstHeader(Map<String, String> headers, String expectedHeader) {
+        if (headers == null || headers.isEmpty()) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(expectedHeader)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> objectMap(Object value) {
@@ -243,6 +291,23 @@ public class UcpMcpClient {
                 .filter(text -> text != null && !text.isBlank())
                 .findFirst()
                 .orElse(null);
+    }
+
+    private boolean hasJsonTextPayload(String textContent) {
+        if (textContent == null) {
+            return false;
+        }
+        String trimmed = textContent.trim();
+        return trimmed.startsWith("{") || trimmed.startsWith("[");
+    }
+
+    private boolean hasResultStructuredContent(Object structuredContent) {
+        if (structuredContent instanceof Map<?, ?> map) {
+            return map.keySet().stream()
+                    .map(Object::toString)
+                    .anyMatch(key -> !"ucp".equals(key));
+        }
+        return structuredContent != null;
     }
 
     private String text(Object value) {
