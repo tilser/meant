@@ -2020,7 +2020,10 @@ export function MeantApp() {
         void loadOrders({ silent: true })
       } else if (completion.status === 'RECOVERABLE_ERROR') {
         setCheckoutSheetError(null)
-      } else if (completion.status === 'UNRECOVERABLE_ERROR' || completion.status === 'SECURITY_LOCKED') {
+      } else if (
+        completion.status === 'UNRECOVERABLE_ERROR' ||
+        completion.status === 'SECURITY_LOCKED'
+      ) {
         setCheckoutSheetError(completion.messages?.[0] ?? 'Checkout could not be completed.')
       }
     } catch {

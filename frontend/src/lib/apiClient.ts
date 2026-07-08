@@ -1540,18 +1540,21 @@ export async function getCartCheckout(input: {
 }
 
 export async function updateCartCheckout(input: UpdateCheckoutInput): Promise<CheckoutProfile> {
-  const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout`, {
-    method: 'PATCH',
-    headers: {
-      ...(await authHeaders()),
-      'Content-Type': 'application/json',
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        buyer: input.buyer,
+        shippingAddress: input.shippingAddress,
+        discountCodes: input.discountCodes,
+      }),
     },
-    body: JSON.stringify({
-      buyer: input.buyer,
-      shippingAddress: input.shippingAddress,
-      discountCodes: input.discountCodes,
-    }),
-  })
+  )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to update checkout')
 }
 

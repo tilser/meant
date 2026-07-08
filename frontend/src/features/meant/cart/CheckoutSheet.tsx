@@ -492,7 +492,8 @@ export function CheckoutSheet({
               </div>
             ) : (
               <div className="mt-checkout-empty">
-                Merchant checkout is not available yet. Refresh to check for an updated checkout session.
+                Merchant checkout is not available yet. Refresh to check for an updated checkout
+                session.
               </div>
             )}
           </div>
