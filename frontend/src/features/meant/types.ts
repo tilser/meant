@@ -224,6 +224,7 @@ export interface CheckoutPayload {
   saved: number
   savedNote: string
   merchant?: string
+  chatThreadId?: string | null
   checkoutUrl?: string | null
   continueUrl?: string | null
 }

@@ -498,6 +498,8 @@ export interface components {
             requiresEscalation?: boolean;
             messages?: components["schemas"]["CheckoutMessageResponse"][];
             nativeCheckoutEnabled?: boolean;
+            /** Whether the merchant checkout URL allows iframe embedding. false when the merchant forbids framing (open in a new tab instead); absent when unknown. */
+            embeddableCheckout?: boolean;
         };
         CheckoutMessageResponse: {
             type?: string;

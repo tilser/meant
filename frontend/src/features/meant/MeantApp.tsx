@@ -22,13 +22,9 @@ import { AccountView } from './account/AccountView'
 import { AuthScreen } from './auth/AuthScreen'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
+import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
 import { CartView } from './cart/CartView'
-import {
-  CheckoutSheet,
-  type ActiveCheckoutSession,
-  type CompleteCheckoutInput,
-  type UpdateCheckoutAddressInput,
-} from './cart/CheckoutSheet'
+import type { ActiveCheckoutSession } from './cart/checkoutTypes'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot } from './cart/types'
 import { useCartController } from './cart/useCartController'
@@ -65,9 +61,8 @@ import { Shelf } from './shelf/Shelf'
 import type { ShelfDragPayload, ShelfItem, ShelfProductSnapshot } from './shelf/types'
 import {
   acceptUserTasteSuggestion,
-  completeCartCheckout,
+  assistCartCheckout,
   completeMerchantIdentityAuthorization,
-  createCheckoutConsent,
   createUserInventoryItem,
   createUserInventoryPhotoItem,
   deleteUserInventoryItem,
@@ -91,6 +86,7 @@ import {
   startMerchantIdentityAuthorization,
   streamUserProductSearch,
   type AssistantChatContextInput,
+  type CheckoutAssistantMessage,
   type CheckoutProfile,
   type MerchantIdentityLinkProfile,
   type MerchantProfile,
@@ -103,7 +99,6 @@ import {
   type UserTasteProfile,
   updateUserInventoryItem,
   updateNewsletterSubscription,
-  updateCartCheckout,
   updateUserTasteSignal,
   updateUserSettings,
   type UserSettingsProfile,
@@ -127,7 +122,6 @@ import type {
 } from './types'
 import {
   cartLines,
-  createOrder,
   normalizedMerchantName,
   productsForLocation,
   productsForClothingFit,
@@ -762,12 +756,11 @@ export function MeantApp() {
     null,
   )
   const [activeCheckout, setActiveCheckout] = useState<ActiveCheckoutSession | null>(null)
-  const [checkoutSheetBusy, setCheckoutSheetBusy] = useState(false)
-  const [checkoutSheetError, setCheckoutSheetError] = useState<string | null>(null)
+  const [checkoutFlowBusy, setCheckoutFlowBusy] = useState(false)
+  const [checkoutFlowError, setCheckoutFlowError] = useState<string | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersError, setOrdersError] = useState<string | null>(null)
-  const [lastPlaced, setLastPlaced] = useState<string | null>(null)
   const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
@@ -1304,9 +1297,6 @@ export function MeantApp() {
       setAccountMenu(false)
       if (next === 'orders') {
         void loadOrders({ silent: true })
-      }
-      if (next !== 'orders') {
-        setLastPlaced(null)
       }
       window.scrollTo({ top: 0 })
     },
@@ -1851,38 +1841,29 @@ export function MeantApp() {
     )
   }
 
-  const completeLocalOrder = (payload: CheckoutPayload) => {
-    const order = createOrder(payload)
-    const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
-    setOrders((current) => [order, ...current])
-    setCart((current) =>
-      current.filter((item) => !checkoutItems.has(`${item.id}:${item.merchant}`)),
-    )
-    setCheckoutError(null)
-    setLastPlaced(order.id)
-  }
-
   const startCheckout = async (
     payload: CheckoutPayload,
     source: ActiveCheckoutSession['source'],
-  ) => {
+  ): Promise<string | null> => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const cartId = payload.items.find((item) => item.cartId)?.cartId
     if (!cartId) {
+      const message = 'Checkout is not available until this merchant cart syncs.'
       setCheckoutError({
         merchant,
-        message: 'Checkout is not available until this merchant cart syncs.',
+        message,
       })
-      return
+      return message
     }
     setCheckoutMerchant(merchant)
     setCheckoutError(null)
-    setCheckoutSheetError(null)
+    setCheckoutFlowError(null)
     try {
       const checkoutProfile = await getCartCheckout({ cartId, refresh: true })
       updateCartWithCheckoutProfile(payload, checkoutProfile)
       setActiveCheckout({
         cartId,
+        threadId: payload.chatThreadId ?? null,
         merchant,
         source,
         items: payload.items,
@@ -1891,11 +1872,14 @@ export function MeantApp() {
         profile: checkoutProfile,
         completion: null,
       })
+      return null
     } catch {
+      const message = 'Could not start checkout. Try again.'
       setCheckoutError({
         merchant,
-        message: 'Could not start checkout. Try again.',
+        message,
       })
+      return message
     } finally {
       setCheckoutMerchant(null)
     }
@@ -1909,15 +1893,18 @@ export function MeantApp() {
     if (payload.items.length === 0) {
       return
     }
-    await startCheckout(payload, 'chat')
+    const errorMessage = await startCheckout(payload, 'chat')
+    if (errorMessage) {
+      throw new Error(errorMessage)
+    }
   }
 
   const refreshActiveCheckout = async () => {
     if (!activeCheckout) {
       return
     }
-    setCheckoutSheetBusy(true)
-    setCheckoutSheetError(null)
+    setCheckoutFlowBusy(true)
+    setCheckoutFlowError(null)
     try {
       const checkoutProfile = await getCartCheckout({
         cartId: activeCheckout.cartId,
@@ -1934,102 +1921,42 @@ export function MeantApp() {
           : current,
       )
     } catch {
-      setCheckoutSheetError('Could not refresh checkout.')
+      setCheckoutFlowError('Could not refresh checkout.')
     } finally {
-      setCheckoutSheetBusy(false)
+      setCheckoutFlowBusy(false)
     }
   }
 
-  const updateActiveCheckoutAddress = async ({
-    buyer,
-    shippingAddress,
-  }: UpdateCheckoutAddressInput) => {
+  const assistActiveCheckout = async (
+    message: string,
+    history: readonly CheckoutAssistantMessage[],
+    context?: { merchantDeliveryHint?: string | null },
+  ) => {
     if (!activeCheckout) {
-      return
+      return null
     }
-    setCheckoutSheetBusy(true)
-    setCheckoutSheetError(null)
+    const checkoutSession = activeCheckout
+    setCheckoutFlowError(null)
     try {
-      const checkoutProfile = await updateCartCheckout({
-        cartId: activeCheckout.cartId,
-        buyer,
-        shippingAddress,
+      const result = await assistCartCheckout({
+        cartId: checkoutSession.cartId,
+        message,
+        merchantDeliveryHint: context?.merchantDeliveryHint,
+        history,
       })
-      updateCartWithCheckoutProfile(activeCheckout, checkoutProfile)
+      updateCartWithCheckoutProfile(checkoutSession, result.checkout)
       setActiveCheckout((current) =>
-        current
+        current?.cartId === checkoutSession.cartId
           ? {
               ...current,
-              profile: checkoutProfile,
+              profile: result.checkout,
               completion: null,
             }
           : current,
       )
+      return result
     } catch {
-      setCheckoutSheetError('Could not update checkout address.')
-    } finally {
-      setCheckoutSheetBusy(false)
-    }
-  }
-
-  const completeActiveCheckout = async ({ handler, token }: CompleteCheckoutInput) => {
-    if (!activeCheckout) {
-      return
-    }
-    const checkoutId = activeCheckout.profile.checkoutId
-    const amountMinor = activeCheckout.profile.totalAmountMinor
-    const currency = activeCheckout.profile.currency
-    if (
-      !checkoutId ||
-      typeof amountMinor !== 'number' ||
-      !Number.isFinite(amountMinor) ||
-      !currency
-    ) {
-      setCheckoutSheetError('Checkout is missing merchant total details.')
-      return
-    }
-    setCheckoutSheetBusy(true)
-    setCheckoutSheetError(null)
-    try {
-      const consent = await createCheckoutConsent({
-        cartId: activeCheckout.cartId,
-        checkoutId,
-        paymentInstrumentReference: `${handler}:${token}`,
-        shippingMethod: 'selected',
-      })
-      if (!consent.buyerConsentId) {
-        throw new Error('Missing buyer consent id')
-      }
-      const completion = await completeCartCheckout({
-        cartId: activeCheckout.cartId,
-        buyerConsentId: consent.buyerConsentId,
-        checkoutId,
-        handler,
-        amountMinor,
-        currency,
-        token,
-        idempotencyKey:
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? `web-${crypto.randomUUID()}`
-            : `web-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      })
-      setActiveCheckout((current) => (current ? { ...current, completion } : current))
-      if (completion.status === 'COMPLETED') {
-        completeLocalOrder(activeCheckout)
-        void loadInventory({ silent: true })
-        void loadOrders({ silent: true })
-      } else if (completion.status === 'RECOVERABLE_ERROR') {
-        setCheckoutSheetError(null)
-      } else if (
-        completion.status === 'UNRECOVERABLE_ERROR' ||
-        completion.status === 'SECURITY_LOCKED'
-      ) {
-        setCheckoutSheetError(completion.messages?.[0] ?? 'Checkout could not be completed.')
-      }
-    } catch {
-      setCheckoutSheetError('Could not complete checkout.')
-    } finally {
-      setCheckoutSheetBusy(false)
+      return null
     }
   }
 
@@ -2147,7 +2074,7 @@ export function MeantApp() {
             loading={ordersLoading}
             error={ordersError}
             preferences={allPreferences}
-            flashId={lastPlaced}
+            flashId={null}
             onOpen={(product) => openProduct(product)}
             onReorder={(order) => {
               setCart((current) => [...current, ...order.items])
@@ -2230,6 +2157,11 @@ export function MeantApp() {
             onCartQty={updateQty}
             onCartRemove={removeFromCart}
             onCheckout={checkoutInChat}
+            activeCheckout={activeCheckout?.source === 'chat' ? activeCheckout : null}
+            checkoutBusy={checkoutFlowBusy}
+            checkoutError={checkoutFlowError}
+            onCheckoutAssistant={assistActiveCheckout}
+            onRefreshCheckout={refreshActiveCheckout}
             onOpenSaved={() => nav('saved')}
             onOpenOrders={() => nav('orders')}
             onOpenPrefs={() => nav('preferences')}
@@ -2334,6 +2266,19 @@ export function MeantApp() {
         onEdit={() => nav('preferences')}
       />
       {content}
+      {activeCheckout?.source === 'cart' ? (
+        <CartCheckoutDialog
+          session={activeCheckout}
+          busy={checkoutFlowBusy}
+          error={checkoutFlowError}
+          onClose={() => {
+            setActiveCheckout(null)
+            setCheckoutFlowError(null)
+          }}
+          onRefresh={refreshActiveCheckout}
+          onCheckoutAssistant={assistActiveCheckout}
+        />
+      ) : null}
       <ProductModal
         product={activeProduct}
         deliveryLocations={deliveryLocations}
@@ -2351,22 +2296,6 @@ export function MeantApp() {
         onPrev={() => navigateProduct(-1)}
         onNext={() => navigateProduct(1)}
       />
-      {activeCheckout ? (
-        <CheckoutSheet
-          session={activeCheckout}
-          busy={checkoutSheetBusy}
-          error={checkoutSheetError}
-          buyerDefaults={{ email: user.email, name: user.name }}
-          deliveryLocation={deliveryLocations[0] ?? null}
-          onClose={() => {
-            setActiveCheckout(null)
-            setCheckoutSheetError(null)
-          }}
-          onRefresh={refreshActiveCheckout}
-          onUpdateAddress={updateActiveCheckoutAddress}
-          onComplete={completeActiveCheckout}
-        />
-      ) : null}
       <FloatingAsk
         contextLabel={askContext.label}
         context={assistantContext}

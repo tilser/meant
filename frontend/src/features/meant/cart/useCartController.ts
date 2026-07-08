@@ -293,7 +293,11 @@ export function useCartController(products: readonly Product[]) {
 
     void updateCart({
       cartId: item.cartId,
-      removeCartLineIds: item.cartLineId ? [item.cartLineId] : undefined,
+      removeCartLineIds: item.remoteCartLineId
+        ? undefined
+        : item.cartLineId
+          ? [item.cartLineId]
+          : undefined,
       removeRemoteCartLineIds: item.remoteCartLineId ? [item.remoteCartLineId] : undefined,
     })
       .then((snapshot) => {

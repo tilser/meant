@@ -1,5 +1,5 @@
 import type { CartItem, Product, ProductId, UserLocation } from '../types'
-import { money, productPriceFrom, readStorage } from '../utils'
+import { money, productPriceFrom, readStorage, writeStorage } from '../utils'
 import type {
   DiscoverChatBlock,
   DiscoverChatMessage,
@@ -8,6 +8,8 @@ import type {
 } from './types'
 
 let discoverChatThreadSequence = 0
+const DISCOVER_CHAT_THREADS_STORAGE_KEY = 'meant.discoverChatThreads'
+const LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY = 'meant.discoverChatMessages'
 const DISCOVER_CHAT_THREAD_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -58,17 +60,52 @@ export function normalizeDiscoverChatThreads(
 }
 
 export function initialDiscoverChatThreads(): DiscoverChatThread[] {
-  const storedThreads = readStorage<DiscoverChatThread[] | null>('meant.discoverChatThreads', null)
+  const storedThreads = readStorage<DiscoverChatThread[] | null>(
+    DISCOVER_CHAT_THREADS_STORAGE_KEY,
+    null,
+  )
   if (storedThreads?.length) {
     return normalizeDiscoverChatThreads(storedThreads)
   }
-  const legacyMessages = readStorage<DiscoverChatMessage[]>('meant.discoverChatMessages', [])
+  const legacyMessages = readStorage<DiscoverChatMessage[]>(
+    LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY,
+    [],
+  )
   return [
     createDiscoverChatThread(
       legacyMessages,
       legacyMessages.length > 0 ? 'Shopping agent' : DEFAULT_DISCOVER_CHAT_TITLE,
     ),
   ]
+}
+
+export function saveStoredDiscoverChatThreads(threads: readonly DiscoverChatThread[]): void {
+  writeStorage(
+    DISCOVER_CHAT_THREADS_STORAGE_KEY,
+    threads.map((thread) => ({
+      ...thread,
+      messages: [...thread.messages],
+    })),
+  )
+}
+
+export function deleteStoredDiscoverChatThread(threadId: string): void {
+  const storedThreads = readStorage<DiscoverChatThread[] | null>(
+    DISCOVER_CHAT_THREADS_STORAGE_KEY,
+    null,
+  )
+  if (!storedThreads?.length) {
+    writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
+    return
+  }
+  const nextThreads = storedThreads.filter((thread) => thread.id !== threadId)
+  writeStorage(
+    DISCOVER_CHAT_THREADS_STORAGE_KEY,
+    nextThreads,
+  )
+  if (nextThreads.length === 0) {
+    writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
+  }
 }
 
 function winningIndex(values: readonly number[], higherIsBetter: boolean): number {

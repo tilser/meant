@@ -553,7 +553,12 @@ export function CartView({
               const codeError = codeErrors[merchantKey]
               const codeControlsDisabled = groupSyncing || !cartId || Boolean(busy)
               const groupCheckoutable = group.items.every((item) =>
-                Boolean(item.cartId && item.productVariantId && !item.syncError),
+                Boolean(
+                  item.cartId &&
+                    item.productVariantId &&
+                    (item.cartLineId || item.remoteCartLineId) &&
+                    !item.syncError,
+                ),
               )
               const checkoutNeedsDelivery = group.hasDeliveryOptions && !group.hasSelectedDelivery
               const checkoutBusy = checkoutMerchant === group.merchant
@@ -792,7 +797,7 @@ export function CartView({
                         })
                       }
                     >
-                      {checkoutBusy ? 'Starting checkout...' : `Check out with ${group.merchant}`}
+                      {checkoutBusy ? 'Starting checkout...' : `Checkout with ${group.merchant}`}
                     </button>
                   </div>
                 </div>

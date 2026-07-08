@@ -17,6 +17,7 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
+import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
 import { DiscoverChatBlockView } from './DiscoverChatBlockView'
 import type { DiscoverChatMessage } from './types'
 import { copyTextToClipboard, discoverChatMessageCopyText } from './utils'
@@ -198,6 +199,7 @@ function ProductContextChip({ product }: Readonly<{ product: Product }>) {
 }
 
 export function DiscoverChatMessageRow({
+  threadId,
   message,
   deliveryLocations,
   preferences,
@@ -229,6 +231,11 @@ export function DiscoverChatMessageRow({
   onCartQty,
   onCartRemove,
   onCheckout,
+  activeCheckout,
+  checkoutBusy,
+  checkoutError,
+  onCheckoutAssistant,
+  onRefreshCheckout,
   onCheckoutHere,
   newsletter,
   newsletterPending,
@@ -239,6 +246,7 @@ export function DiscoverChatMessageRow({
   onDragMessage,
   onDragProduct,
 }: Readonly<{
+  threadId: string
   message: DiscoverChatMessage
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
@@ -283,6 +291,11 @@ export function DiscoverChatMessageRow({
     nextCart: readonly CartItem[],
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  activeCheckout: ActiveCheckoutSession | null
+  checkoutBusy: boolean
+  checkoutError: string | null
+  onCheckoutAssistant: CheckoutAssistantHandler
+  onRefreshCheckout: () => Promise<void> | void
   onCheckoutHere: () => void
   newsletter: boolean
   newsletterPending: boolean
@@ -348,6 +361,7 @@ export function DiscoverChatMessageRow({
             {message.blocks?.map((block, index) => (
               <DiscoverChatBlockView
                 key={`${message.id}-${index}`}
+                threadId={threadId}
                 block={block}
                 deliveryLocations={deliveryLocations}
                 preferences={preferences}
@@ -380,6 +394,11 @@ export function DiscoverChatMessageRow({
                   onCartRemove(message.id, index, id, merchant, nextCart)
                 }
                 onCheckout={onCheckout}
+                activeCheckout={activeCheckout}
+                checkoutBusy={checkoutBusy}
+                checkoutError={checkoutError}
+                onCheckoutAssistant={onCheckoutAssistant}
+                onRefreshCheckout={onRefreshCheckout}
                 onCheckoutHere={onCheckoutHere}
                 newsletter={newsletter}
                 newsletterPending={newsletterPending}

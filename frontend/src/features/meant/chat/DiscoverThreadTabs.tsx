@@ -9,7 +9,7 @@ export function DiscoverThreadTabs({
   threads,
   activeId,
   onSelect,
-  onClose,
+  onDelete,
   onNew,
   onRename,
   onShare,
@@ -20,7 +20,7 @@ export function DiscoverThreadTabs({
   threads: readonly DiscoverChatThread[]
   activeId: string
   onSelect: (threadId: string) => void
-  onClose: (threadId: string) => void
+  onDelete: (threadId: string) => void
   onNew: () => void
   onRename: (threadId: string, title: string) => void
   onShare: () => void
@@ -207,10 +207,10 @@ export function DiscoverThreadTabs({
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation()
-                  onClose(thread.id)
+                  onDelete(thread.id)
                 }}
-                aria-label="Close chat"
-                title={threads.length > 1 ? 'Close this chat' : 'Close chat - back to start'}
+                aria-label={`Delete ${thread.title} chat permanently`}
+                title="Delete chat permanently"
               >
                 <CloseIcon size={11} />
               </button>

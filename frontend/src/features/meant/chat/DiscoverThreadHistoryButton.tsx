@@ -54,10 +54,6 @@ export function DiscoverThreadHistoryButton({
     }
   }, [open])
 
-  if (historyThreads.length === 0) {
-    return null
-  }
-
   return (
     <div className="mt-ct-history-wrap" ref={ref}>
       <button
@@ -78,43 +74,52 @@ export function DiscoverThreadHistoryButton({
             <span>Chat history</span>
             <span>{historyThreads.length} saved</span>
           </div>
-          <div className="mt-ct-history-list">
-            {historyThreads.map((thread) => (
-              <div
-                key={thread.id}
-                className={`mt-ct-history-row ${thread.id === activeId ? 'active' : ''}`}
-                role="group"
-                aria-label={`${thread.title} chat`}
-              >
-                <button
-                  className="mt-ct-history-select"
-                  type="button"
-                  onClick={() => {
-                    onSelect(thread.id)
-                    setOpen(false)
-                  }}
+          {historyThreads.length > 0 ? (
+            <div className="mt-ct-history-list">
+              {historyThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className={`mt-ct-history-row ${thread.id === activeId ? 'active' : ''}`}
+                  role="group"
+                  aria-label={`${thread.title} chat`}
                 >
-                  <span className="mt-ct-history-main">
-                    <span className="mt-ct-history-title">{thread.title}</span>
-                    <span className="mt-ct-history-preview">{discoverThreadPreview(thread)}</span>
-                  </span>
-                  <span className="mt-ct-history-meta">
-                    <span>{discoverThreadTimeLabel(thread)}</span>
-                    <span>{discoverThreadMessageCount(thread)}</span>
-                  </span>
-                </button>
-                <button
-                  className="mt-ct-history-delete"
-                  type="button"
-                  onClick={() => onDelete(thread.id)}
-                  aria-label={`Delete ${thread.title} chat permanently`}
-                  title="Delete chat permanently"
-                >
-                  <CloseIcon size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
+                  <button
+                    className="mt-ct-history-select"
+                    type="button"
+                    onClick={() => {
+                      onSelect(thread.id)
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="mt-ct-history-main">
+                      <span className="mt-ct-history-title">{thread.title}</span>
+                      <span className="mt-ct-history-preview">{discoverThreadPreview(thread)}</span>
+                    </span>
+                    <span className="mt-ct-history-meta">
+                      <span>{discoverThreadTimeLabel(thread)}</span>
+                      <span>{discoverThreadMessageCount(thread)}</span>
+                    </span>
+                  </button>
+                  <button
+                    className="mt-ct-history-delete"
+                    type="button"
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onDelete(thread.id)
+                      setOpen(false)
+                    }}
+                    aria-label={`Delete ${thread.title} chat permanently`}
+                    title="Delete chat permanently"
+                  >
+                    <CloseIcon size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-ct-history-empty mt-mono">No saved chats yet</div>
+          )}
         </div>
       ) : null}
     </div>

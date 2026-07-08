@@ -8,6 +8,7 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
+import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
 import { bestOffer, formatOrderDate, money, productPriceFrom } from '../utils'
 import { productCuratedTake } from '../product/productCuration'
 import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
@@ -36,6 +37,7 @@ function discountCodeEntries(block: Extract<DiscoverChatBlock, { type: 'code' }>
 }
 
 export function DiscoverChatBlockView({
+  threadId,
   block,
   deliveryLocations,
   preferences,
@@ -64,6 +66,11 @@ export function DiscoverChatBlockView({
   onCartQty,
   onCartRemove,
   onCheckout,
+  activeCheckout,
+  checkoutBusy,
+  checkoutError,
+  onCheckoutAssistant,
+  onRefreshCheckout,
   onCheckoutHere,
   newsletter,
   newsletterPending,
@@ -71,6 +78,7 @@ export function DiscoverChatBlockView({
   onShelfAddProduct,
   onDragProduct,
 }: Readonly<{
+  threadId: string
   block: DiscoverChatBlock
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
@@ -99,6 +107,11 @@ export function DiscoverChatBlockView({
   onCartQty: (id: ProductId, merchant: string, qty: number, nextCart: readonly CartItem[]) => void
   onCartRemove: (id: ProductId, merchant: string, nextCart: readonly CartItem[]) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  activeCheckout: ActiveCheckoutSession | null
+  checkoutBusy: boolean
+  checkoutError: string | null
+  onCheckoutAssistant: CheckoutAssistantHandler
+  onRefreshCheckout: () => Promise<void> | void
   onCheckoutHere: () => void
   newsletter: boolean
   newsletterPending: boolean
@@ -528,9 +541,15 @@ export function DiscoverChatBlockView({
   if (block.type === 'checkout') {
     return (
       <InlineCheckoutBlock
+        threadId={threadId}
         cart={cart}
         products={cartProducts}
         onCheckout={onCheckout}
+        activeCheckout={activeCheckout}
+        checkoutBusy={checkoutBusy}
+        checkoutError={checkoutError}
+        onCheckoutAssistant={onCheckoutAssistant}
+        onRefreshCheckout={onRefreshCheckout}
         onOpenCart={onOpenCart}
         onOpenOrders={onOpenOrders}
       />

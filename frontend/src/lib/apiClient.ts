@@ -1619,6 +1619,45 @@ export async function updateCartCheckout(input: UpdateCheckoutInput): Promise<Ch
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to update checkout')
 }
 
+export interface CheckoutAssistantMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AssistCheckoutInput {
+  cartId: string
+  message: string
+  merchantDeliveryHint?: string | null
+  history?: readonly CheckoutAssistantMessage[]
+}
+
+export interface CheckoutAssistantResult {
+  reply: string
+  checkoutUpdated: boolean
+  checkout: CheckoutProfile
+}
+
+export async function assistCartCheckout(
+  input: AssistCheckoutInput,
+): Promise<CheckoutAssistantResult> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/assistant`,
+    {
+      method: 'POST',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: input.message,
+        merchantDeliveryHint: input.merchantDeliveryHint || undefined,
+        history: input.history?.slice(-40),
+      }),
+    },
+  )
+  return parseJsonResponse<CheckoutAssistantResult>(response, 'Failed to reach checkout assistant')
+}
+
 export async function createCheckoutConsent(
   input: CreateCheckoutConsentInput,
 ): Promise<CheckoutConsentProfile> {

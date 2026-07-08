@@ -1,4 +1,4 @@
-import { CORE_PREFERENCE_IDS, MERCHANTS, PRODUCTS, REPLIES } from './data'
+import { CORE_PREFERENCE_IDS, LOCATIONS, MERCHANTS, PRODUCTS, REPLIES } from './data'
 import { ApiError } from '../../lib/apiError'
 import type { CartProfile } from '../../lib/apiClient'
 import type {
@@ -113,7 +113,7 @@ export function canMerchantShip(merchant: string, locations: DeliveryLocations):
   if (locations.length === 0) {
     return true
   }
-  const coverage = MERCHANTS[merchant]
+  const coverage = merchantCoverage(merchant)
   if (!coverage) {
     return true
   }
@@ -127,6 +127,48 @@ export function canMerchantShip(merchant: string, locations: DeliveryLocations):
     }
     return true
   })
+}
+
+function merchantCoverage(merchant: string) {
+  const direct = MERCHANTS[merchant]
+  if (direct) {
+    return direct
+  }
+  const normalized = normalizedMerchantName(merchant).replace(/^www\./, '')
+  return Object.entries(MERCHANTS).find(([name]) => {
+    const normalizedName = normalizedMerchantName(name).replace(/^www\./, '')
+    return normalizedName === normalized
+  })?.[1]
+}
+
+function countryLabel(code: string): string {
+  const normalized = code.trim().toUpperCase()
+  const location =
+    LOCATIONS.find((candidate) => candidate.code.toUpperCase() === normalized) ??
+    (normalized === 'GB'
+      ? LOCATIONS.find((candidate) => candidate.code.toUpperCase() === 'UK')
+      : undefined)
+  return location?.country ?? normalized
+}
+
+export function merchantDeliveryCoverageSummary(merchant: string): string {
+  const displayName = merchant.trim() || 'This merchant'
+  const coverage = merchantCoverage(merchant)
+  if (!coverage) {
+    return [
+      `Known delivery coverage: ${displayName} has not returned supported shipping destinations to Meant yet.`,
+      'I only know when checkout rejects a specific address.',
+    ].join(' ')
+  }
+  if (coverage.ships === 'global') {
+    return `Known delivery coverage: ${displayName} ships globally.`
+  }
+  const countries = coverage.ships.map(countryLabel)
+  const countryText = `Known delivery coverage: ${displayName} ships to ${listJoin(countries)}.`
+  if (!coverage.cities?.length) {
+    return countryText
+  }
+  return `${countryText} Known city coverage: ${listJoin(coverage.cities)}.`
 }
 
 export function productMatchesClothingFit(product: Product, clothingFit: ClothingFit): boolean {
