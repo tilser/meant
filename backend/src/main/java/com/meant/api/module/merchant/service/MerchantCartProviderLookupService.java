@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.Merchant;
+import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import java.util.Optional;
@@ -13,7 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class MerchantCartProviderLookupService {
 
+    private static final String UCP_CHECKOUT_CAPABILITY = "dev.ucp.shopping.checkout";
+
     private final MerchantRepository merchantRepository;
+    private final MerchantCapabilityRepository merchantCapabilityRepository;
 
     @Transactional(readOnly = true)
     public Optional<MerchantCartProvider> findById(UUID merchantId) {
@@ -36,7 +40,17 @@ public class MerchantCartProviderLookupService {
                 merchant.getDomain(),
                 merchant.getAdvertisedMcpEndpoint(),
                 merchant.getProfileMcpEndpoint(),
-                merchant.isNativeCheckoutEnabled()
+                nativeCheckoutEnabled(merchant)
         );
+    }
+
+    /**
+     * UCP checkout runs natively in the platform whenever the merchant advertises the checkout
+     * capability in its /.well-known/ucp profile; the merchant flag stays as a manual override
+     * for merchants whose profile has not been enriched yet.
+     */
+    private boolean nativeCheckoutEnabled(Merchant merchant) {
+        return merchant.isNativeCheckoutEnabled()
+                || merchantCapabilityRepository.existsByMerchantIdAndName(merchant.getId(), UCP_CHECKOUT_CAPABILITY);
     }
 }

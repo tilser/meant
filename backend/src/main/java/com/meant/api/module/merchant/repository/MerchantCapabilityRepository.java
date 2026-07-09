@@ -12,4 +12,10 @@ public interface MerchantCapabilityRepository extends JpaRepository<MerchantCapa
     @Modifying
     @Query("delete from MerchantCapability merchantCapability where merchantCapability.merchant = :merchant")
     void deleteByMerchant(Merchant merchant);
+
+    @Query("""
+            select count(merchantCapability) > 0 from MerchantCapability merchantCapability
+            where merchantCapability.merchant.id = :merchantId and merchantCapability.name = :name
+            """)
+    boolean existsByMerchantIdAndName(UUID merchantId, String name);
 }

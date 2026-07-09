@@ -12255,6 +12255,15 @@ body.mt-shelf-resizing .mt-shelf {
   background: white;
 }
 
+.mt-checkout-embed-open {
+  display: block;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  text-align: center;
+  color: var(--muted, inherit);
+}
+
 @media (max-width: 1000px) {
   .mt-shelf {
     width: min(var(--shelf-w, 340px), 88vw);

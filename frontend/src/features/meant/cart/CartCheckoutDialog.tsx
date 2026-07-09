@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage } from '../../../lib/apiClient'
 import { CloseIcon, SparkMark } from '../shared/ui'
+import { MerchantCheckoutFrame } from './MerchantCheckoutFrame'
 import { merchantDeliveryCoverageSummary, money } from '../utils'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkoutTypes'
 import {
@@ -189,9 +190,7 @@ export function CartCheckoutDialog({
               </div>
               <div className="mt-checkout-actions">
                 {merchantUrl ? (
-                  <a className="primary" href={merchantUrl} target="_blank" rel="noreferrer">
-                    Finish order on merchant site
-                  </a>
+                  <MerchantCheckoutFrame session={session} />
                 ) : (
                   <button type="button" onClick={() => void onRefresh()} disabled={busy}>
                     {busy ? 'Checking...' : 'Get merchant checkout link'}

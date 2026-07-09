@@ -1,6 +1,7 @@
 package com.meant.api.module.cart.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
+import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
@@ -50,8 +51,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -62,6 +65,7 @@ import org.springframework.validation.annotation.Validated;
 public class CartService {
 
     private final MerchantCartProviderLookupService merchantCartProviderLookupService;
+    private final CartBuyerContextService cartBuyerContextService;
     private final CartPersistenceService cartPersistenceService;
     private final MerchantCartPluginDispatchService merchantCartPluginDispatchService;
     private final MerchantCheckoutPluginDispatchService merchantCheckoutPluginDispatchService;
@@ -185,30 +189,36 @@ public class CartService {
                 ),
                 session
         );
-        if (fulfillmentOptionsMissing(result.response())) {
-            result = merchantCheckoutPluginDispatchService.getCheckout(
-                    provider,
-                    new GetCheckoutRequest(cart.getCheckoutId()),
-                    session
-            );
-        }
-        Map<String, Object> defaultFulfillmentSelection = defaultFulfillmentSelection(result.response());
-        if (!defaultFulfillmentSelection.isEmpty()) {
-            result = merchantCheckoutPluginDispatchService.updateCheckout(
-                    provider,
-                    new UpdateCheckoutRequest(
-                            cart.getCheckoutId(),
-                            lineItems,
-                            buyer,
-                            null,
-                            command.buyer().email(),
-                            cart.getCurrency(),
-                            shippingAddress,
-                            discountCodes,
-                            defaultFulfillmentSelection
-                    ),
-                    session
-            );
+        // A field-validation rejection (e.g. buyer_identity_email_is_invalid) means the merchant
+        // discarded this update. Refreshing the checkout here would replace the validation message
+        // with the stale pre-update state (e.g. "address required"), hiding the real problem.
+        if (!hasFieldValidationMessages(result.response())) {
+            if (fulfillmentOptionsMissing(result.response())) {
+                result = merchantCheckoutPluginDispatchService.getCheckout(
+                        provider,
+                        new GetCheckoutRequest(cart.getCheckoutId()),
+                        session
+                );
+            }
+            Map<String, Object> defaultFulfillmentSelection =
+                    defaultFulfillmentSelection(result.response(), shippingAddress);
+            if (!defaultFulfillmentSelection.isEmpty()) {
+                result = merchantCheckoutPluginDispatchService.updateCheckout(
+                        provider,
+                        new UpdateCheckoutRequest(
+                                cart.getCheckoutId(),
+                                lineItems,
+                                buyer,
+                                null,
+                                command.buyer().email(),
+                                cart.getCurrency(),
+                                shippingAddress,
+                                discountCodes,
+                                defaultFulfillmentSelection
+                        ),
+                        session
+                );
+            }
         }
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart, command.userId(), result);
         importCartInventory(refreshedCart);
@@ -285,6 +295,7 @@ public class CartService {
                 Map.of(),
                 null,
                 cart.getCurrency(),
+                cartBuyerContextService.buyerContext(cart.getUserId()),
                 List.of(),
                 Map.of()
         );
@@ -359,6 +370,7 @@ public class CartService {
                         .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
                         .toList(),
                 command.buyerIdentity(),
+                cartBuyerContextService.buyerContext(command.userId()),
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
                 safeList(command.selectedDeliveryOptions()),
@@ -410,21 +422,25 @@ public class CartService {
         return Map.of("methods", List.of(method));
     }
 
-    private Map<String, Object> defaultFulfillmentSelection(UcpCheckoutResponse response) {
+    private Map<String, Object> defaultFulfillmentSelection(
+            UcpCheckoutResponse response,
+            Map<String, Object> destination
+    ) {
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         UcpCheckoutResponse.CheckoutFulfillment fulfillment = checkout == null ? null : checkout.fulfillment();
         if (fulfillment == null || fulfillment.methods().isEmpty()) {
             return Map.of();
         }
         List<Map<String, Object>> methods = fulfillment.methods().stream()
-                .map(this::defaultFulfillmentMethodSelection)
+                .map(method -> defaultFulfillmentMethodSelection(method, destination))
                 .filter(selection -> !selection.isEmpty())
                 .toList();
         return methods.isEmpty() ? Map.of() : Map.of("methods", methods);
     }
 
     private Map<String, Object> defaultFulfillmentMethodSelection(
-            UcpCheckoutResponse.CheckoutFulfillmentMethod method
+            UcpCheckoutResponse.CheckoutFulfillmentMethod method,
+            Map<String, Object> destination
     ) {
         if (method == null || method.groups().isEmpty()) {
             return Map.of();
@@ -441,8 +457,38 @@ public class CartService {
         putIfHasText(values, "type", method.type());
         putIfNotEmpty(values, "line_item_ids", method.lineItemIds());
         putIfHasText(values, "selected_destination_id", selectedDestinationId(method));
+        // Update checkout uses replacement semantics, so the selection must carry the
+        // destination again or the merchant may drop the shipping address.
+        if (destination != null && !destination.isEmpty()) {
+            values.put("destinations", List.of(destination));
+        }
         values.put("groups", groups);
         return values;
+    }
+
+    private boolean hasFieldValidationMessages(UcpCheckoutResponse response) {
+        if (response == null) {
+            return false;
+        }
+        return Stream.concat(
+                        safeNonNullList(response.messages()).stream(),
+                        response.resolvedCheckout() == null
+                                ? Stream.empty()
+                                : safeNonNullList(response.resolvedCheckout().messages()).stream()
+                )
+                .anyMatch(this::isFieldValidationMessage);
+    }
+
+    private boolean isFieldValidationMessage(UcpCheckoutResponse.CheckoutMessage message) {
+        if (message == null) {
+            return false;
+        }
+        String code = message.code() == null ? "" : message.code().trim().toLowerCase(Locale.ROOT);
+        if (code.startsWith("buyer_identity")) {
+            return true;
+        }
+        String target = message.target() == null ? "" : message.target().trim().toLowerCase(Locale.ROOT);
+        return target.startsWith("$.buyer");
     }
 
     private Map<String, Object> defaultFulfillmentGroupSelection(UcpCheckoutResponse.CheckoutFulfillmentGroup group) {
@@ -619,6 +665,7 @@ public class CartService {
                 removeLineIds(removeItems),
                 removeItems,
                 command.buyerIdentity(),
+                cartBuyerContextService.buyerContext(command.userId()),
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
                 safeList(command.selectedDeliveryOptions()),

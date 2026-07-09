@@ -2,15 +2,33 @@ import type { CheckoutCompletionProfile, CheckoutProfile } from '../../../lib/ap
 import type { ActiveCheckoutSession } from './checkoutTypes'
 import { merchantDeliveryCoverageSummary } from '../utils'
 
-function normalizedSeverity(severity: string | null | undefined): string {
-  return severity?.trim().toLowerCase() ?? ''
+// Merchant message content is localized (e.g. French for balibaris.com), so buyer-input
+// detection relies on the standardized UCP message codes and paths instead of text.
+const BUYER_INPUT_CODES = new Set([
+  'delivery_address_required',
+  'missing_shipping_address',
+  'address_invalid',
+  'delivery_address_invalid',
+  'address_undeliverable',
+  'delivery_no_delivery_available_for_merchandise_line',
+  'buyer_identity_required',
+  'missing_buyer_identity',
+])
+
+function messageNeedsBuyerDetails(message: {
+  code?: string | null
+  path?: string | null
+}): boolean {
+  const code = message.code?.trim().toLowerCase() ?? ''
+  if (code.startsWith('buyer_identity') || BUYER_INPUT_CODES.has(code)) {
+    return true
+  }
+  const path = message.path?.trim().toLowerCase() ?? ''
+  return path.startsWith('$.buyer') || path.includes('destination') || path.includes('delivery')
 }
 
-function checkoutHasRecoverableMessages(profile: CheckoutProfile | null | undefined): boolean {
-  return (
-    profile?.messages?.some((message) => normalizedSeverity(message.severity) === 'recoverable') ??
-    false
-  )
+function checkoutHasBuyerDetailMessages(profile: CheckoutProfile | null | undefined): boolean {
+  return profile?.messages?.some((message) => messageNeedsBuyerDetails(message)) ?? false
 }
 
 function checkoutNeedsMerchantInput(
@@ -63,9 +81,14 @@ export function merchantCheckoutUrl(session: ActiveCheckoutSession): string | nu
 
 export function checkoutNeedsAddress(session: ActiveCheckoutSession): boolean {
   return (
-    checkoutHasRecoverableMessages(session.profile) ||
+    checkoutHasBuyerDetailMessages(session.profile) ||
     checkoutNeedsMerchantInput(session.profile, session.completion)
   )
+}
+
+export function checkoutReadyForPayment(session: ActiveCheckoutSession): boolean {
+  const normalizedStatus = session.profile.status?.trim().toLowerCase() ?? ''
+  return normalizedStatus === 'ready_for_complete' || normalizedStatus === 'ready_for_payment'
 }
 
 export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
@@ -75,7 +98,10 @@ export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
     (!checkoutNeedsAddress(session) &&
       (Boolean(session.profile.requiresEscalation) ||
         normalizedStatus === 'requires_escalation')) ||
-    (!session.profile.nativeCheckoutEnabled && !checkoutNeedsAddress(session))
+    (!session.profile.nativeCheckoutEnabled && !checkoutNeedsAddress(session)) ||
+    // Payment instruments are not collected inside Meant yet, so the final
+    // payment step continues on the merchant's secure checkout.
+    (checkoutReadyForPayment(session) && !checkoutNeedsAddress(session))
   )
 }
 
@@ -101,12 +127,17 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
   }
   if (!session.profile.nativeCheckoutEnabled) {
     return merchantUrl
-      ? 'This merchant does not support native checkout inside Meant yet. I prepared the merchant checkout with the cart details we have; use the button below to finish on the merchant site.'
+      ? 'This merchant does not support native checkout inside Meant yet. I prepared the merchant checkout with the cart details we have; finish the order below.'
       : 'This merchant does not support native checkout inside Meant yet, and it has not returned a checkout link I can open.'
+  }
+  if (checkoutReadyForPayment(session)) {
+    return merchantUrl
+      ? 'All checkout details are confirmed — items, address, and delivery. Finish the secure payment below.'
+      : 'All checkout details are confirmed, but the merchant has not returned a payment link yet.'
   }
   if (checkoutNeedsHandoff(session)) {
     return merchantUrl
-      ? 'The merchant requires the final secure step on its checkout page. I prepared what I can here; use the button below to continue.'
+      ? 'The merchant requires the final secure step on its own checkout. I prepared everything I could; finish the order below.'
       : 'The merchant requires an external checkout step, but it has not returned a checkout link yet.'
   }
   return 'I have the checkout details I need. Keep replying here if anything is missing or needs to change.'
@@ -118,6 +149,9 @@ export function merchantHandoffReason(session: ActiveCheckoutSession): string {
   }
   if (session.profile.embeddableCheckout === false) {
     return 'The merchant blocks embedded checkout, so I cannot show that page safely inside Meant.'
+  }
+  if (checkoutReadyForPayment(session)) {
+    return 'Everything is prepared — only the secure payment step remains with the merchant.'
   }
   return 'The merchant requires this final step on its own checkout page.'
 }

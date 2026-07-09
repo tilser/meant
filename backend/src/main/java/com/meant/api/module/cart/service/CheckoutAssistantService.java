@@ -170,21 +170,52 @@ public class CheckoutAssistantService {
 
     private String appliedReply(AssistCheckoutCommand command, AssistantTurn turn, CheckoutResult updated) {
         String submitted = submittedDetails(turn);
-        String merchantMessage = firstBuyerRelevantMessage(updated);
+        CheckoutResult.Message merchantMessage = firstBuyerRelevantMessage(updated);
+        String merchantMessageText = merchantMessage == null ? null : merchantMessage.content();
         StringBuilder reply = new StringBuilder();
         if (hasText(submitted)) {
             reply.append("I sent this to the merchant: ").append(submitted).append(". ");
         }
-        if (isShippingRejection(merchantMessage)) {
-            reply.append(destinationRejectedReply(command.merchantDeliveryHint(), merchantMessage));
+        String contactRejection = contactRejectionReply(merchantMessage);
+        if (contactRejection != null) {
+            reply.append(contactRejection);
             return reply.toString();
         }
-        if (hasText(merchantMessage)) {
-            reply.append("Merchant response: ").append(merchantMessage);
+        if (isShippingRejection(merchantMessage)) {
+            reply.append(destinationRejectedReply(command.merchantDeliveryHint(), merchantMessageText));
+            return reply.toString();
+        }
+        if (hasText(merchantMessageText)) {
+            reply.append("Merchant response: ").append(merchantMessageText);
             return reply.toString();
         }
         reply.append(hasText(turn.reply()) ? turn.reply().trim() : "The merchant accepted those checkout details.");
         return reply.toString();
+    }
+
+    /**
+     * Merchant validation messages arrive in the shop's language, so field-level contact
+     * rejections are recognized by their UCP message code and answered in a way the LLM and
+     * buyer can act on.
+     */
+    private String contactRejectionReply(CheckoutResult.Message message) {
+        String code = message == null || message.code() == null
+                ? ""
+                : message.code().trim().toLowerCase(Locale.ROOT);
+        if (!code.startsWith("buyer_identity")) {
+            return null;
+        }
+        String detail = hasText(message.content()) ? " Merchant response: " + message.content().trim() : "";
+        if (code.contains("email")) {
+            return "The merchant rejected the email address as invalid — please send a real, "
+                    + "deliverable email address." + detail;
+        }
+        if (code.contains("phone")) {
+            return "The merchant rejected the phone number — please send it in international "
+                    + "format (e.g. +1 415 555 0100)." + detail;
+        }
+        return "The merchant rejected the contact details — please double-check them and send "
+                + "them again." + detail;
     }
 
     private String rejectedReply(AssistCheckoutCommand command, AssistantTurn turn, CartException exception) {
@@ -261,13 +292,12 @@ public class CheckoutAssistantService {
         return String.join(", ", destination) + " with contact " + String.join(", ", contact);
     }
 
-    private String firstBuyerRelevantMessage(CheckoutResult checkout) {
+    private CheckoutResult.Message firstBuyerRelevantMessage(CheckoutResult checkout) {
         return checkout.messages().stream()
                 .filter(message -> hasText(message.content()))
                 .filter(message -> !"extension_interaction_required".equalsIgnoreCase(
                         message.code() == null ? "" : message.code().trim()
                 ))
-                .map(CheckoutResult.Message::content)
                 .findFirst()
                 .orElse(null);
     }
@@ -466,6 +496,18 @@ public class CheckoutAssistantService {
             return false;
         }
         return "US".equals(normalized) || "CA".equals(normalized);
+    }
+
+    private boolean isShippingRejection(CheckoutResult.Message message) {
+        if (message == null) {
+            return false;
+        }
+        String code = message.code() == null ? "" : message.code().trim().toLowerCase(Locale.ROOT);
+        // Merchant content is localized, so the UCP message code is the reliable signal.
+        if (code.contains("undeliverable") || code.contains("no_delivery_available")) {
+            return true;
+        }
+        return isShippingRejection(message.content());
     }
 
     private boolean isShippingRejection(String message) {

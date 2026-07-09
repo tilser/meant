@@ -10,6 +10,7 @@ import {
   merchantCheckoutUrl,
   merchantHandoffReason,
 } from '../../cart/checkoutSessionUi'
+import { MerchantCheckoutFrame } from '../../cart/MerchantCheckoutFrame'
 import { SparkMark } from '../../shared/ui'
 import type { CartItem, CheckoutPayload, Product } from '../../types'
 import {
@@ -193,14 +194,7 @@ export function InlineCheckoutBlock({
               <span>{merchantHandoffReason(session)}</span>
             </div>
             {merchantUrl ? (
-              <a
-                className="mt-ct-cobtn mt-ct-cobtn-link"
-                href={merchantUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Continue on merchant site
-              </a>
+              <MerchantCheckoutFrame session={session} />
             ) : (
               <button
                 className="mt-ct-cobtn"
@@ -265,9 +259,18 @@ export function InlineCheckoutBlock({
                   activeCheckout && !groupCartId && activeCheckout.merchant === group.merchant,
                 )
               const groupReady = group.items.every(cartItemReadyForCheckout)
+              const groupSyncIssues = Array.from(
+                new Set(
+                  group.items
+                    .map((item) => item.syncError?.trim())
+                    .filter((message): message is string => Boolean(message)),
+                ),
+              )
               const checkoutBlocked = payingMerchant !== null || !groupReady
               const checkoutLabel = !groupReady
-                ? 'Merchant cart is syncing...'
+                ? groupSyncIssues.length > 0
+                  ? 'Resolve cart issues to continue'
+                  : 'Merchant cart is syncing...'
                 : payingMerchant === group.merchant
                   ? 'Starting checkout...'
                   : payingMerchant
@@ -289,10 +292,18 @@ export function InlineCheckoutBlock({
                     <div className="mt-cart-inline-error">{checkoutStartError.message}</div>
                   ) : null}
                   {!groupReady ? (
-                    <div className="mt-cart-inline-error">
-                      Merchant cart is still syncing. Checkout can start once the merchant returns
-                      line IDs for these items.
-                    </div>
+                    groupSyncIssues.length > 0 ? (
+                      <div className="mt-cart-inline-error">
+                        {groupSyncIssues.map((message) => (
+                          <div key={message}>{message}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-cart-inline-error">
+                        Merchant cart is still syncing. Checkout can start as soon as the merchant
+                        confirms these items.
+                      </div>
+                    )
                   ) : null}
                   {groupIsActive && activeCheckout ? (
                     renderConversation(activeCheckout)

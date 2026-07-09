@@ -448,6 +448,11 @@ function cartLineForItem(
   })
 }
 
+function cartSnapshotIssueMessage(snapshot: CartProfile): string | null {
+  const message = snapshot.messages?.find((candidate) => candidate.message?.trim())
+  return message?.message?.trim() ?? null
+}
+
 export function mergeCartSnapshot(
   cart: readonly CartItem[],
   merchantKey: string,
@@ -461,6 +466,24 @@ export function mergeCartSnapshot(
       return item
     }
     const line = cartLineForItem(snapshot, item)
+    // The merchant confirmed the cart but did not return this line (e.g. the
+    // variant sold out). Keep the item visible with the merchant's reason
+    // instead of leaving it in a permanent "syncing" state.
+    if (!line && item.productVariantId) {
+      return {
+        ...item,
+        merchantId: snapshot.merchantId ?? item.merchantId,
+        merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
+        cartId: snapshot.cartId ?? item.cartId,
+        remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
+        checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
+        continueUrl: snapshot.continueUrl ?? item.continueUrl,
+        syncing: false,
+        syncError:
+          cartSnapshotIssueMessage(snapshot) ??
+          'The merchant could not add this item to the cart. It may be out of stock.',
+      }
+    }
     return {
       ...item,
       merchantId: snapshot.merchantId ?? item.merchantId,

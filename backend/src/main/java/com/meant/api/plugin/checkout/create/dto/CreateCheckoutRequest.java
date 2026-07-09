@@ -11,6 +11,7 @@ public record CreateCheckoutRequest(
         Map<String, Object> buyer,
         BuyerConsentState buyerConsent,
         String currency,
+        Map<String, Object> context,
         List<String> discountCodes,
         Map<String, Object> fulfillment
 ) {
@@ -20,7 +21,7 @@ public record CreateCheckoutRequest(
     }
 
     public CreateCheckoutRequest(String cartId, List<LineItem> lineItems) {
-        this(cartId, lineItems, Map.of(), null, null, List.of(), Map.of());
+        this(cartId, lineItems, Map.of(), null, null, null, List.of(), Map.of());
     }
 
     public CreateCheckoutRequest(
@@ -30,12 +31,25 @@ public record CreateCheckoutRequest(
             List<String> discountCodes,
             Map<String, Object> fulfillment
     ) {
-        this(cartId, lineItems, buyer, null, null, discountCodes, fulfillment);
+        this(cartId, lineItems, buyer, null, null, null, discountCodes, fulfillment);
+    }
+
+    public CreateCheckoutRequest(
+            String cartId,
+            List<LineItem> lineItems,
+            Map<String, Object> buyer,
+            BuyerConsentState buyerConsent,
+            String currency,
+            List<String> discountCodes,
+            Map<String, Object> fulfillment
+    ) {
+        this(cartId, lineItems, buyer, buyerConsent, currency, null, discountCodes, fulfillment);
     }
 
     public CreateCheckoutRequest {
         lineItems = lineItems == null ? List.of() : List.copyOf(lineItems);
         buyer = buyer == null ? Map.of() : new LinkedHashMap<>(buyer);
+        context = context == null ? Map.of() : new LinkedHashMap<>(context);
         discountCodes = discountCodes == null ? List.of() : List.copyOf(discountCodes);
         fulfillment = fulfillment == null ? Map.of() : new LinkedHashMap<>(fulfillment);
     }

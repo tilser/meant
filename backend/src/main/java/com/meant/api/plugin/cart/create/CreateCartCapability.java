@@ -46,6 +46,7 @@ public class CreateCartCapability implements UcpCapability<CreateCartRequest, Uc
                 CartToolArguments.create(
                         request.addItems(),
                         request.buyerIdentity(),
+                        request.context(),
                         request.deliveryAddressesToAdd(),
                         request.deliveryAddressesToReplace(),
                         request.selectedDeliveryOptions(),

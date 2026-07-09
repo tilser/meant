@@ -12,6 +12,7 @@ public record CartToolArguments(
         @JsonProperty("line_items")
         List<LineItem> lineItems,
         Map<String, Object> buyer,
+        Map<String, Object> context,
         Fulfillment fulfillment,
         Discounts discounts,
         String note
@@ -20,6 +21,7 @@ public record CartToolArguments(
     public static CartToolArguments create(
             List<CartAddItem> addItems,
             Map<String, Object> buyerIdentity,
+            Map<String, Object> context,
             List<Map<String, Object>> deliveryAddressesToAdd,
             List<Map<String, Object>> deliveryAddressesToReplace,
             List<Map<String, Object>> selectedDeliveryOptions,
@@ -29,6 +31,7 @@ public record CartToolArguments(
         return new CartToolArguments(
                 addLineItems(addItems),
                 emptyToNull(buyerIdentity),
+                emptyToNull(context),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
                 discounts(discountCodes),
                 note
@@ -40,6 +43,7 @@ public record CartToolArguments(
             List<CartUpdateItem> updateItems,
             List<CartUpdateItem> removeItems,
             Map<String, Object> buyerIdentity,
+            Map<String, Object> context,
             List<Map<String, Object>> deliveryAddressesToAdd,
             List<Map<String, Object>> deliveryAddressesToReplace,
             List<Map<String, Object>> selectedDeliveryOptions,
@@ -67,6 +71,7 @@ public record CartToolArguments(
         return new CartToolArguments(
                 lineItems,
                 emptyToNull(buyerIdentity),
+                emptyToNull(context),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
                 discounts(discountCodes),
                 note

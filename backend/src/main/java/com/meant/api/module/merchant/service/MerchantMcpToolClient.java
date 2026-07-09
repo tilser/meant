@@ -301,9 +301,19 @@ public class MerchantMcpToolClient {
             String advertisedMcpEndpoint,
             String profileMcpEndpoint
     ) {
+        // The advertised endpoint comes from the merchant's /.well-known/ucp services entry and is
+        // the only endpoint guaranteed to serve UCP-shaped tool arguments. Legacy /api/mcp
+        // (Shopify Storefront MCP) rejects UCP arguments, so it stays last as a best-effort fallback.
         List<String> endpoints = new ArrayList<>();
-        addEndpoint(endpoints, domain, profileMcpEndpoint);
         addEndpoint(endpoints, domain, advertisedMcpEndpoint);
+        if (hasText(domain)) {
+            String trimmedDomain = domain.trim();
+            endpoints.add("https://" + trimmedDomain + "/api/ucp/mcp");
+            if (!trimmedDomain.startsWith("www.")) {
+                endpoints.add("https://www." + trimmedDomain + "/api/ucp/mcp");
+            }
+        }
+        addEndpoint(endpoints, domain, profileMcpEndpoint);
         if (hasText(domain)) {
             String trimmedDomain = domain.trim();
             endpoints.add("https://" + trimmedDomain + "/api/mcp");

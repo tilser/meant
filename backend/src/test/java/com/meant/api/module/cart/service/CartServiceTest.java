@@ -10,7 +10,9 @@ import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.merchant.entity.Merchant;
+import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
+import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
@@ -82,7 +84,11 @@ class CartServiceTest {
                 new ObjectMapper()
         );
         cartService = new CartService(
-                new MerchantCartProviderLookupService(merchantRepository.proxy()),
+                new MerchantCartProviderLookupService(
+                        merchantRepository.proxy(),
+                        merchantCapabilityRepositoryProxy()
+                ),
+                new CartBuyerContextService(userSettingsLocationRepositoryProxy()),
                 cartPersistenceService,
                 cartDispatchService,
                 checkoutDispatchService,
@@ -1223,6 +1229,28 @@ class CartServiceTest {
                     response
             );
         }
+    }
+
+    static UserSettingsLocationRepository userSettingsLocationRepositoryProxy() {
+        return (UserSettingsLocationRepository) Proxy.newProxyInstance(
+                UserSettingsLocationRepository.class.getClassLoader(),
+                new Class<?>[]{UserSettingsLocationRepository.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "findByIdUserIdOrderByDisplayOrderAsc" -> List.of();
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
+    static MerchantCapabilityRepository merchantCapabilityRepositoryProxy() {
+        return (MerchantCapabilityRepository) Proxy.newProxyInstance(
+                MerchantCapabilityRepository.class.getClassLoader(),
+                new Class<?>[]{MerchantCapabilityRepository.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "existsByMerchantIdAndName" -> false;
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
     }
 
     static class FakeMerchantRepository {

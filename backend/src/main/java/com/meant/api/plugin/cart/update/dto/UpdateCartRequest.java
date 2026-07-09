@@ -12,6 +12,7 @@ public record UpdateCartRequest(
         List<String> removeLineIds,
         List<CartUpdateItem> removeItems,
         Map<String, Object> buyerIdentity,
+        Map<String, Object> context,
         List<Map<String, Object>> deliveryAddressesToAdd,
         List<Map<String, Object>> deliveryAddressesToReplace,
         List<Map<String, Object>> selectedDeliveryOptions,
@@ -19,6 +20,37 @@ public record UpdateCartRequest(
         List<String> giftCardCodes,
         String note
 ) {
+
+    public UpdateCartRequest(
+            String cartId,
+            List<CartAddItem> addItems,
+            List<CartUpdateItem> updateItems,
+            List<String> removeLineIds,
+            List<CartUpdateItem> removeItems,
+            Map<String, Object> buyerIdentity,
+            List<Map<String, Object>> deliveryAddressesToAdd,
+            List<Map<String, Object>> deliveryAddressesToReplace,
+            List<Map<String, Object>> selectedDeliveryOptions,
+            List<String> discountCodes,
+            List<String> giftCardCodes,
+            String note
+    ) {
+        this(
+                cartId,
+                addItems,
+                updateItems,
+                removeLineIds,
+                removeItems,
+                buyerIdentity,
+                null,
+                deliveryAddressesToAdd,
+                deliveryAddressesToReplace,
+                selectedDeliveryOptions,
+                discountCodes,
+                giftCardCodes,
+                note
+        );
+    }
 
     public UpdateCartRequest(
             String cartId,

@@ -92,6 +92,7 @@ public class DiscountCodeValidationService {
                         .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
                         .toList(),
                 buyerIdentity(command.buyerIdentity()),
+                buyerContext(command.buyerIdentity()),
                 deliveryAddresses(command.deliveryAddressesToAdd()),
                 deliveryAddresses(command.deliveryAddressesToReplace()),
                 deliveryOptions(command.selectedDeliveryOptions()),
@@ -99,6 +100,20 @@ public class DiscountCodeValidationService {
                 List.of(),
                 null
         );
+    }
+
+    /**
+     * Market hint for inventory allocation — without an address_country the merchant treats
+     * validation carts as an unknown market and drops the line items as sold out.
+     */
+    private Map<String, Object> buyerContext(SearchDiscountCodesCommand.BuyerIdentity source) {
+        String countryCode = source == null ? null : source.countryCode();
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put(
+                "address_country",
+                countryCode == null || countryCode.isBlank() ? "US" : countryCode.trim().toUpperCase(Locale.ROOT)
+        );
+        return context;
     }
 
     private Map<String, Object> buyerIdentity(SearchDiscountCodesCommand.BuyerIdentity source) {

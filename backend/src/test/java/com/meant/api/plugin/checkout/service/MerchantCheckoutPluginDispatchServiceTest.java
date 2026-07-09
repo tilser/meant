@@ -77,7 +77,7 @@ class MerchantCheckoutPluginDispatchServiceTest {
         );
         UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
 
-        server.expect(requestTo("https://merchant.example/api/mcp"))
+        server.expect(requestTo("https://shopify.example/api/ucp/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"name\":\"create_checkout\"")))
                 .andRespond(withSuccess("""
@@ -90,7 +90,7 @@ class MerchantCheckoutPluginDispatchServiceTest {
                           }
                         }
                         """, MediaType.APPLICATION_JSON));
-        server.expect(requestTo("https://shopify.example/api/ucp/mcp"))
+        server.expect(requestTo("https://merchant.example/api/ucp/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"checkout\"")))
                 .andExpect(content().string(containsString("\"line_items\"")))
@@ -106,7 +106,7 @@ class MerchantCheckoutPluginDispatchServiceTest {
                 session
         );
 
-        assertThat(result.endpoint()).isEqualTo("https://shopify.example/api/ucp/mcp");
+        assertThat(result.endpoint()).isEqualTo("https://merchant.example/api/ucp/mcp");
         assertThat(result.response().resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
         assertThat(result.response().messages()).hasSize(1);
         assertThat(result.response().messages().getFirst().isRecoverable()).isTrue();

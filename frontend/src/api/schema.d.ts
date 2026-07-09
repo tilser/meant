@@ -417,6 +417,14 @@ export interface components {
             appliedCodes?: components["schemas"]["CartAppliedCodeResponse"][];
             lines?: components["schemas"]["CartLineResponse"][];
             deliveryGroups?: components["schemas"]["CartDeliveryGroupResponse"][];
+            messages?: components["schemas"]["CartMessageResponse"][];
+        };
+        CartMessageResponse: {
+            code?: string;
+            severity?: string;
+            type?: string;
+            message?: string;
+            target?: string;
         };
         UpdateUserProfileRequest: {
             firstName: string;

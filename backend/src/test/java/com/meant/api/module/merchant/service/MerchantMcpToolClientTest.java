@@ -212,11 +212,11 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
-    void fallsBackToAdvertisedEndpointWhenProfileEndpointFails() {
+    void fallsBackToConventionalUcpEndpointWhenAdvertisedEndpointFails() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
-        server.expect(requestTo("https://advertised.example/profile-mcp"))
+        server.expect(requestTo("https://advertised.example/advertised-mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
                         {
@@ -228,7 +228,7 @@ class MerchantMcpToolClientTest {
                           }
                         }
                         """, MediaType.APPLICATION_JSON));
-        server.expect(requestTo("https://advertised.example/api/mcp"))
+        server.expect(requestTo("https://advertised.example/api/ucp/mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
                         {
@@ -251,7 +251,7 @@ class MerchantMcpToolClientTest {
                         UUID.randomUUID(),
                         "advertised.example",
                         "Merchant",
-                        "https://advertised.example/api/mcp",
+                        "https://advertised.example/advertised-mcp",
                         "https://advertised.example/profile-mcp",
                         "Context",
                         0.9d,
@@ -262,7 +262,7 @@ class MerchantMcpToolClientTest {
                 Map.of("catalog", Map.of("query", "candle"))
         );
 
-        assertThat(result.endpoint()).isEqualTo("https://advertised.example/api/mcp");
+        assertThat(result.endpoint()).isEqualTo("https://advertised.example/api/ucp/mcp");
         assertThat(result.contentText()).isEqualTo("{\"ok\":true}");
         server.verify();
     }
@@ -272,7 +272,7 @@ class MerchantMcpToolClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
-        server.expect(requestTo("https://advertised.example/profile-mcp"))
+        server.expect(requestTo("https://advertised.example/advertised-mcp"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
 
@@ -281,7 +281,7 @@ class MerchantMcpToolClientTest {
                         UUID.randomUUID(),
                         "advertised.example",
                         "Merchant",
-                        "https://advertised.example/api/mcp",
+                        "https://advertised.example/advertised-mcp",
                         "https://advertised.example/profile-mcp",
                         "Context",
                         0.9d,
