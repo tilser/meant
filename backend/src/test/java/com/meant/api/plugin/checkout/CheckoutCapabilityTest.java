@@ -110,17 +110,26 @@ class CheckoutCapabilityTest {
         UpdateCheckoutArguments arguments = capability.buildArguments(
                 new UpdateCheckoutRequest(
                         "gid://shopify/Checkout/1",
+                        List.of(),
                         Map.of("id", "buyer-1"),
+                        null,
                         "ada@example.com",
-                        Map.of(
-                                "address1", "1 Main St",
-                                "city", "New York",
-                                "country_code", "US"
-                        ),
+                        "USD",
+                        Map.of("address_country", "US"),
                         List.of("SAVE10"),
                         Map.of(
-                                "methods", List.of(Map.of("id", "method_1", "type", "shipping")),
-                                "available_methods", List.of(Map.of("type", "shipping", "line_item_ids", List.of("li_1")))
+                                "methods", List.of(Map.of(
+                                        "id", "method_1",
+                                        "type", "shipping",
+                                        "line_item_ids", List.of("li_1"),
+                                        "destinations", List.of(Map.of(
+                                                "id", "destination_1",
+                                                "street_address", "1 Main St",
+                                                "address_locality", "New York",
+                                                "address_country", "US"
+                                        )),
+                                        "selected_destination_id", "destination_1"
+                                ))
                         )
                 ),
                 NegotiatedCapabilities.none()
@@ -138,12 +147,11 @@ class CheckoutCapabilityTest {
         assertThat(serializedArguments).doesNotContain("checkout_id");
         assertThat(arguments.checkout().buyer()).containsEntry("id", "buyer-1");
         assertThat(arguments.checkout().buyer()).containsEntry("email", "ada@example.com");
-        assertThat(arguments.checkout().fulfillment().shippingAddress()).containsEntry("city", "New York");
+        assertThat(arguments.checkout().context()).containsEntry("address_country", "US");
         assertThat(arguments.checkout().fulfillment().methods().getFirst())
                 .satisfies(method -> assertThat(method).containsEntry("id", "method_1"));
-        assertThat(arguments.checkout().fulfillment().availableMethods().getFirst())
-                .satisfies(method -> assertThat(method).containsEntry("type", "shipping"));
         assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
+        assertThat(serializedArguments).doesNotContain("shipping_address", "available_methods");
         assertThat(response.resolvedCheckout().status()).isEqualTo("open");
     }
 

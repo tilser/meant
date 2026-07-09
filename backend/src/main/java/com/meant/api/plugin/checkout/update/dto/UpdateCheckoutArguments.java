@@ -20,6 +20,7 @@ public record UpdateCheckoutArguments(
             List<LineItem> lineItems,
             Map<String, Object> buyer,
             String currency,
+            Map<String, Object> context,
             CheckoutFulfillment fulfillment,
             CheckoutDiscounts discounts
     ) {

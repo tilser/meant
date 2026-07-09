@@ -80,6 +80,38 @@ class CheckoutAssistantServiceTest {
     }
 
     @Test
+    void reportsRequiredMerchantInteractionAfterCheckoutDetailsAreAccepted() {
+        cartService.updatedCheckout = checkoutResult(
+                "requires_escalation",
+                List.of(new CheckoutResult.Message(
+                        "error",
+                        "extension_interaction_required",
+                        "requires_buyer_input",
+                        "An extension interaction is required to complete the checkout.",
+                        null
+                ))
+        );
+        CheckoutAssistantService service = service("""
+                {
+                  "reply": "Applying your details now.",
+                  "readyToUpdate": true,
+                  "buyer": {"email": "ada@example.com", "firstName": "Ada", "lastName": "Lovelace",
+                    "phoneNumber": "+14155551234"},
+                  "shippingAddress": {"streetAddress": "1531 Hyde St", "extendedAddress": "",
+                    "addressLocality": "San Francisco", "addressRegion": "CA", "postalCode": "94109",
+                    "addressCountry": "US"}
+                }
+                """);
+
+        CheckoutAssistResult result = service.assist(command("Use my shipping details"));
+
+        assertThat(result.checkoutUpdated()).isTrue();
+        assertThat(result.reply()).contains("The merchant accepted those checkout details.");
+        assertThat(result.reply()).contains("Further interaction is required in the merchant checkout");
+        assertThat(result.reply()).doesNotContain("An extension interaction is required");
+    }
+
+    @Test
     void normalizesCountryAndRegionNamesBeforeUpdatingMerchant() {
         CheckoutAssistantService service = service("""
                 {
@@ -283,8 +315,7 @@ class CheckoutAssistantServiceTest {
                 5200L,
                 "USD",
                 messages,
-                true,
-                null
+                true
         );
     }
 
@@ -292,6 +323,7 @@ class CheckoutAssistantServiceTest {
 
         private UpdateCheckoutCommand updateCommand;
         private CartException updateException;
+        private CheckoutResult updatedCheckout;
 
         FakeCartService() {
             super(null, null, null, null, null, null, null, null, null, null);
@@ -308,7 +340,9 @@ class CheckoutAssistantServiceTest {
                 throw updateException;
             }
             updateCommand = command;
-            return checkoutResult("ready_for_complete", List.of());
+            return updatedCheckout == null
+                    ? checkoutResult("ready_for_complete", List.of())
+                    : updatedCheckout;
         }
     }
 

@@ -14,7 +14,6 @@ import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
-import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
@@ -95,7 +94,7 @@ class CartServiceTest {
                 null,
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper()),
-                new CheckoutResultMapper(new ObjectMapper(), new StubEmbedProbeService()),
+                new CheckoutResultMapper(new ObjectMapper()),
                 null
         );
         merchant = merchant();
@@ -583,18 +582,8 @@ class CartServiceTest {
                 .containsEntry("first_name", "Ada")
                 .containsEntry("last_name", "Lovelace")
                 .containsEntry("phone_number", "+15551234567");
-        assertThat(request.shippingAddress())
-                .containsEntry("id", "shipping")
-                .containsEntry("street_address", "123 Main St")
-                .containsEntry("extended_address", "Apt 4")
-                .containsEntry("address_locality", "Springfield")
-                .containsEntry("address_region", "IL")
-                .containsEntry("postal_code", "62701")
-                .containsEntry("address_country", "US")
-                .containsEntry("first_name", "Ada")
-                .containsEntry("last_name", "Lovelace")
-                .containsEntry("phone_number", "+15551234567");
         assertThat(request.currency()).isNull();
+        assertThat(request.context()).containsEntry("address_country", "US");
         List<?> methods = (List<?>) request.fulfillment().get("methods");
         assertThat(methods).hasSize(1);
         @SuppressWarnings("unchecked")
@@ -1108,18 +1097,6 @@ class CartServiceTest {
             cancelCount++;
             lastCanceledRemoteCartId = request.cartId();
             return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
-        }
-    }
-
-    static class StubEmbedProbeService extends CheckoutEmbedProbeService {
-
-        StubEmbedProbeService() {
-            super(new MerchantOutboundUrlValidator());
-        }
-
-        @Override
-        public Boolean embeddable(String url) {
-            return null;
         }
     }
 

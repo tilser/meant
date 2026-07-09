@@ -1,5 +1,6 @@
 package com.meant.api.module.cart.controller.response;
 
+import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -27,17 +28,15 @@ public record CheckoutResponse(
         String currency,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         boolean requiresEscalation,
+        @Schema(
+                requiredMode = Schema.RequiredMode.REQUIRED,
+                description = "Next checkout action derived from UCP status and message severity."
+        )
+        CheckoutNextAction nextAction,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<MessageResponse> messages,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        boolean nativeCheckoutEnabled,
-        @Schema(
-                requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-                description = "Whether the merchant checkout URL allows iframe embedding. "
-                        + "false when the merchant forbids framing (open in a new tab instead); "
-                        + "absent when unknown."
-        )
-        Boolean embeddableCheckout
+        boolean nativeCheckoutEnabled
 ) {
 
     public static CheckoutResponse from(CheckoutResult result) {
@@ -52,11 +51,11 @@ public record CheckoutResponse(
                 result.totalAmountMinor(),
                 result.currency(),
                 result.requiresEscalation(),
+                result.nextAction(),
                 result.messages().stream()
                         .map(MessageResponse::from)
                         .toList(),
-                result.nativeCheckoutEnabled(),
-                result.embeddableCheckout()
+                result.nativeCheckoutEnabled()
         );
     }
 

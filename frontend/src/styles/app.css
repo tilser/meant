@@ -12272,31 +12272,6 @@ body.mt-shelf-resizing .mt-shelf {
   gap: 10px;
 }
 
-.mt-checkout-embed {
-  overflow: hidden;
-  min-height: min(540px, 60vh);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--wash, var(--line-soft));
-}
-
-.mt-checkout-embed iframe {
-  display: block;
-  width: 100%;
-  height: min(540px, 60vh);
-  border: 0;
-  background: white;
-}
-
-.mt-checkout-embed-open {
-  display: block;
-  padding: 8px 12px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-  text-align: center;
-  color: var(--muted, inherit);
-}
-
 @media (max-width: 1000px) {
   .mt-shelf {
     width: min(var(--shelf-w, 340px), 88vw);

@@ -3,6 +3,7 @@ package com.meant.api.module.cart.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
 import com.meant.api.module.cart.entity.Cart;
@@ -148,6 +149,7 @@ class CartControllerIT extends PostgresIntegrationTest {
         assertThat(checkout.cartId()).isEqualTo(created.cartId());
         assertThat(checkout.checkoutUrl()).contains("checkout");
         assertThat(checkout.continueUrl()).contains("continue");
+        assertThat(checkout.nextAction()).isEqualTo(CheckoutNextAction.UNKNOWN);
         assertThat(checkoutDispatchService.createCount()).isEqualTo(1);
 
         Cart persisted = cartRepository.findById(created.cartId()).orElseThrow();

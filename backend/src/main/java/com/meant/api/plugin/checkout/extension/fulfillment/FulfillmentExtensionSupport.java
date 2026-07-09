@@ -18,30 +18,10 @@ public final class FulfillmentExtensionSupport {
         return activeCapabilities != null && activeCapabilities.supports(ID);
     }
 
-    public static CheckoutFulfillment fulfillment(
-            Map<String, Object> shippingAddress,
-            Map<String, Object> fulfillment
-    ) {
+    public static CheckoutFulfillment fulfillment(Map<String, Object> fulfillment) {
         Map<String, Object> values = fulfillment == null ? Map.of() : fulfillment;
-        Map<String, Object> resolvedShippingAddress = shippingAddress == null || shippingAddress.isEmpty()
-                ? mapValue(values.get("shipping_address"), values.get("shippingAddress"), values.get("address"))
-                : new LinkedHashMap<>(shippingAddress);
-        CheckoutFulfillment result = new CheckoutFulfillment(
-                resolvedShippingAddress,
-                listOfMaps(values.get("methods")),
-                listOfMaps(firstValue(values, "available_methods", "availableMethods"))
-        );
+        CheckoutFulfillment result = new CheckoutFulfillment(listOfMaps(values.get("methods")));
         return result.empty() ? null : result;
-    }
-
-    private static Object firstValue(Map<String, Object> values, String... keys) {
-        for (String key : keys) {
-            Object value = values.get(key);
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
     }
 
     private static Map<String, Object> mapValue(Object... values) {

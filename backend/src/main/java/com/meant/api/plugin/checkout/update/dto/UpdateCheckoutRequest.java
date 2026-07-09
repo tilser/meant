@@ -12,35 +12,15 @@ public record UpdateCheckoutRequest(
         BuyerConsentState buyerConsent,
         String email,
         String currency,
-        Map<String, Object> shippingAddress,
+        Map<String, Object> context,
         List<String> discountCodes,
         Map<String, Object> fulfillment
 ) {
 
-    public UpdateCheckoutRequest(
-            String checkoutId,
-            Map<String, Object> buyer,
-            String email,
-            Map<String, Object> shippingAddress
-    ) {
-        this(checkoutId, List.of(), buyer, null, email, null, shippingAddress, List.of(), Map.of());
-    }
-
-    public UpdateCheckoutRequest(
-            String checkoutId,
-            Map<String, Object> buyer,
-            String email,
-            Map<String, Object> shippingAddress,
-            List<String> discountCodes,
-            Map<String, Object> fulfillment
-    ) {
-        this(checkoutId, List.of(), buyer, null, email, null, shippingAddress, discountCodes, fulfillment);
-    }
-
     public UpdateCheckoutRequest {
         lineItems = lineItems == null ? List.of() : List.copyOf(lineItems);
         buyer = buyer == null ? Map.of() : new LinkedHashMap<>(buyer);
-        shippingAddress = shippingAddress == null ? Map.of() : new LinkedHashMap<>(shippingAddress);
+        context = context == null ? Map.of() : new LinkedHashMap<>(context);
         discountCodes = discountCodes == null ? List.of() : List.copyOf(discountCodes);
         fulfillment = fulfillment == null ? Map.of() : new LinkedHashMap<>(fulfillment);
     }

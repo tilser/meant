@@ -31,6 +31,14 @@ function checkoutHasBuyerDetailMessages(profile: CheckoutProfile | null | undefi
   return profile?.messages?.some((message) => messageNeedsBuyerDetails(message)) ?? false
 }
 
+function checkoutHasExtensionInteraction(profile: CheckoutProfile | null | undefined): boolean {
+  return (
+    profile?.messages?.some(
+      (message) => message.code?.trim().toLowerCase() === 'extension_interaction_required',
+    ) ?? false
+  )
+}
+
 function checkoutNeedsMerchantInput(
   profile: CheckoutProfile | null | undefined,
   completion: CheckoutCompletionProfile | null,
@@ -88,14 +96,26 @@ export function checkoutNeedsAddress(session: ActiveCheckoutSession): boolean {
 
 export function checkoutReadyForPayment(session: ActiveCheckoutSession): boolean {
   const normalizedStatus = session.profile.status?.trim().toLowerCase() ?? ''
-  return normalizedStatus === 'ready_for_complete' || normalizedStatus === 'ready_for_payment'
+  return (
+    session.profile.nextAction === 'COMPLETE_CHECKOUT' ||
+    normalizedStatus === 'ready_for_complete' ||
+    normalizedStatus === 'ready_for_payment'
+  )
 }
 
 export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
   const normalizedStatus = session.profile.status?.trim().toLowerCase() ?? ''
+  const nextAction = session.profile.nextAction
+  if (session.completion?.status === 'SCA_REQUIRED') {
+    return true
+  }
+  if (nextAction === 'UPDATE_CHECKOUT' && session.profile.nativeCheckoutEnabled) {
+    return false
+  }
   return (
-    session.completion?.status === 'SCA_REQUIRED' ||
-    (!checkoutNeedsAddress(session) &&
+    nextAction === 'HANDOFF' ||
+    (!nextAction &&
+      !checkoutNeedsAddress(session) &&
       (Boolean(session.profile.requiresEscalation) ||
         normalizedStatus === 'requires_escalation')) ||
     (!session.profile.nativeCheckoutEnabled && !checkoutNeedsAddress(session)) ||
@@ -137,8 +157,10 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
   }
   if (checkoutNeedsHandoff(session)) {
     return merchantUrl
-      ? 'The merchant requires the final secure step on its own checkout. I prepared everything I could; finish the order below.'
-      : 'The merchant requires an external checkout step, but it has not returned a checkout link yet.'
+      ? checkoutHasExtensionInteraction(session.profile)
+        ? 'The merchant requires additional interaction in its checkout. I prepared the details available through UCP; continue below.'
+        : 'The merchant requires you to continue in its checkout. I prepared the details available through UCP; continue below.'
+      : 'The merchant requires checkout interaction, but it has not returned a checkout link yet.'
   }
   return 'I have the checkout details I need. Keep replying here if anything is missing or needs to change.'
 }
@@ -147,11 +169,11 @@ export function merchantHandoffReason(session: ActiveCheckoutSession): string {
   if (!session.profile.nativeCheckoutEnabled) {
     return 'Native checkout is not available for this merchant yet.'
   }
-  if (session.profile.embeddableCheckout === false) {
-    return 'The merchant blocks embedded checkout, so I cannot show that page safely inside Meant.'
-  }
   if (checkoutReadyForPayment(session)) {
     return 'Everything is prepared — only the secure payment step remains with the merchant.'
   }
-  return 'The merchant requires this final step on its own checkout page.'
+  if (checkoutHasExtensionInteraction(session.profile)) {
+    return `${session.merchant} requires additional interaction in its checkout before the order can be completed.`
+  }
+  return `Continue in ${session.merchant}'s checkout to finish the order.`
 }

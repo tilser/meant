@@ -5,6 +5,7 @@ import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.command.AssistCheckoutCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
@@ -185,12 +186,32 @@ public class CheckoutAssistantService {
             reply.append(destinationRejectedReply(command.merchantDeliveryHint(), merchantMessageText));
             return reply.toString();
         }
+        if (isExtensionInteractionRequired(merchantMessage)) {
+            reply.append("The merchant accepted those checkout details. "
+                    + "Further interaction is required in the merchant checkout to finish the order.");
+            return reply.toString();
+        }
         if (hasText(merchantMessageText)) {
             reply.append("Merchant response: ").append(merchantMessageText);
+            if (updated.nextAction() == CheckoutNextAction.HANDOFF) {
+                reply.append(" Continue in the merchant checkout to finish the order.");
+            }
+            return reply.toString();
+        }
+        if (updated.nextAction() == CheckoutNextAction.HANDOFF) {
+            reply.append("The merchant accepted those checkout details. "
+                    + "Continue in the merchant checkout to finish the order.");
             return reply.toString();
         }
         reply.append(hasText(turn.reply()) ? turn.reply().trim() : "The merchant accepted those checkout details.");
         return reply.toString();
+    }
+
+    private boolean isExtensionInteractionRequired(CheckoutResult.Message message) {
+        return message != null
+                && "extension_interaction_required".equalsIgnoreCase(
+                        message.code() == null ? "" : message.code().trim()
+                );
     }
 
     /**
@@ -293,13 +314,13 @@ public class CheckoutAssistantService {
     }
 
     private CheckoutResult.Message firstBuyerRelevantMessage(CheckoutResult checkout) {
-        return checkout.messages().stream()
+        List<CheckoutResult.Message> messages = checkout.messages().stream()
                 .filter(message -> hasText(message.content()))
-                .filter(message -> !"extension_interaction_required".equalsIgnoreCase(
-                        message.code() == null ? "" : message.code().trim()
-                ))
+                .toList();
+        return messages.stream()
+                .filter(message -> !isExtensionInteractionRequired(message))
                 .findFirst()
-                .orElse(null);
+                .orElse(messages.isEmpty() ? null : messages.getFirst());
     }
 
     private UpdateCheckoutCommand updateCommand(AssistCheckoutCommand command, AssistantTurn turn) {

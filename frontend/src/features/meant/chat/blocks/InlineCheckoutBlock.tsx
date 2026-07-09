@@ -10,7 +10,7 @@ import {
   merchantCheckoutUrl,
   merchantHandoffReason,
 } from '../../cart/checkoutSessionUi'
-import { MerchantCheckoutFrame } from '../../cart/MerchantCheckoutFrame'
+import { MerchantCheckoutLink } from '../../cart/MerchantCheckoutLink'
 import { SparkMark } from '../../shared/ui'
 import type { CartItem, CheckoutPayload, Product } from '../../types'
 import {
@@ -194,7 +194,7 @@ export function InlineCheckoutBlock({
               <span>{merchantHandoffReason(session)}</span>
             </div>
             {merchantUrl ? (
-              <MerchantCheckoutFrame session={session} />
+              <MerchantCheckoutLink session={session} />
             ) : (
               <button
                 className="mt-ct-cobtn"

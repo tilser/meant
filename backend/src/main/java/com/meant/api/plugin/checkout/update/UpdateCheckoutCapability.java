@@ -65,7 +65,8 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
                                 .toList(),
                         buyer,
                         request.currency(),
-                        FulfillmentExtensionSupport.fulfillment(request.shippingAddress(), request.fulfillment()),
+                        request.context(),
+                        FulfillmentExtensionSupport.fulfillment(request.fulfillment()),
                         DiscountExtensionSupport.discountCodes(request.discountCodes())
                 )
         );

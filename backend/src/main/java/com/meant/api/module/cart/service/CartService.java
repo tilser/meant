@@ -172,6 +172,7 @@ public class CartService {
         List<UpdateCheckoutRequest.LineItem> lineItems = updateCheckoutLineItems(cart);
         Map<String, Object> buyer = buyer(command.buyer());
         Map<String, Object> shippingAddress = postalAddress(command.buyer(), command.shippingAddress());
+        Map<String, Object> context = cartBuyerContextService.buyerContext(command.userId());
         List<String> discountCodes = normalizeCodes(command.discountCodes());
         UcpSession session = session(cart);
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.updateCheckout(
@@ -183,7 +184,7 @@ public class CartService {
                         null,
                         command.buyer().email(),
                         cart.getCurrency(),
-                        shippingAddress,
+                        context,
                         discountCodes,
                         fulfillment(command.buyer(), command.shippingAddress(), lineItems)
                 ),
@@ -212,7 +213,7 @@ public class CartService {
                                 null,
                                 command.buyer().email(),
                                 cart.getCurrency(),
-                                shippingAddress,
+                                context,
                                 discountCodes,
                                 defaultFulfillmentSelection
                         ),
