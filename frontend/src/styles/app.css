@@ -11368,6 +11368,10 @@ button:disabled {
   cursor: grab;
 }
 
+.mt-tool-shelf.click-only {
+  cursor: pointer;
+}
+
 .mt-ct-prod {
   cursor: grab;
 }
@@ -11384,6 +11388,35 @@ button:disabled {
 .mt-ct-system {
   cursor: grab;
   user-select: none;
+}
+
+.mt-ct-msg.no-drag .mt-dust-inner,
+.mt-ct-msg.no-drag .mt-ct-meant-body,
+.mt-ct-checkout,
+.mt-ct-checkout * {
+  cursor: auto;
+  user-select: text;
+}
+
+.mt-ct-checkout button,
+.mt-ct-checkout button *,
+.mt-ct-checkout input {
+  user-select: none;
+}
+
+.mt-ct-checkout button {
+  cursor: pointer;
+}
+
+.mt-ct-checkout button:disabled,
+.mt-ct-checkout button:disabled * {
+  cursor: default;
+  user-select: text;
+}
+
+.mt-ct-checkout input {
+  cursor: text;
+  user-select: text;
 }
 
 .mt-ct-attach-chip {

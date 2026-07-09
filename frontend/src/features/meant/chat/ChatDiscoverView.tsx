@@ -828,6 +828,7 @@ export function ChatDiscoverView({
   shelfFlashMessageId,
   productDetailChatRequest,
   discoverFindRequest,
+  homeRequestId,
   newsletter,
   savedSet,
   savePendingSet,
@@ -883,6 +884,7 @@ export function ChatDiscoverView({
   shelfFlashMessageId: string | null
   productDetailChatRequest: ProductDetailChatRequest | null
   discoverFindRequest: DiscoverFindRequest | null
+  homeRequestId: number
   newsletter: boolean
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
@@ -939,6 +941,7 @@ export function ChatDiscoverView({
   const scheduledChatTimersRef = useRef<number[]>([])
   const deletedDiscoverThreadIdsRef = useRef(new Set<string>())
   const lastSavedTimestampsRef = useRef<Record<string, number>>({})
+  const handledHomeRequestRef = useRef(0)
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set<ProductId>(), [])
   const shelfMessageSet = useMemo(
@@ -972,6 +975,20 @@ export function ChatDiscoverView({
     }, delay)
     scheduledChatTimersRef.current = [...scheduledChatTimersRef.current, timer]
   }, [])
+
+  useEffect(() => {
+    if (handledHomeRequestRef.current === homeRequestId) {
+      return
+    }
+    handledHomeRequestRef.current = homeRequestId
+    const homeThread = createDiscoverChatThread()
+    setThreads((current) => [homeThread, ...current.filter(hasDiscoverThreadHistory)])
+    setActiveThreadId(homeThread.id)
+    setActiveSearchTarget(null)
+    onClear()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [homeRequestId, onClear])
+
   const displayProducts = useMemo(() => {
     if (products.length > 0) {
       return products
@@ -1019,20 +1036,20 @@ export function ChatDiscoverView({
           remoteThreads,
           initialDiscoverChatThreads(),
         )
+        const homeThread = createDiscoverChatThread()
         if (restoredThreads.length === 0) {
-          const nextThread = createDiscoverChatThread()
-          setThreads([nextThread])
+          setThreads([homeThread])
           setArchivedThreads([])
-          setActiveThreadId(nextThread.id)
+          setActiveThreadId(homeThread.id)
           setDiscoverHistoryLoaded(true)
           return
         }
 
         const { threads: nextThreads, archivedThreads: nextArchivedThreads } =
           activeAndArchivedDiscoverThreads(restoredThreads)
-        setThreads(nextThreads)
+        setThreads([homeThread, ...nextThreads])
         setArchivedThreads(nextArchivedThreads)
-        setActiveThreadId(nextThreads[0]?.id ?? null)
+        setActiveThreadId(homeThread.id)
         setDiscoverHistoryLoaded(true)
       })
       .catch(() => {
@@ -1044,9 +1061,10 @@ export function ChatDiscoverView({
         const restoredThreads = localThreads.filter(hasDiscoverThreadHistory)
         const { threads: nextThreads, archivedThreads: nextArchivedThreads } =
           activeAndArchivedDiscoverThreads(restoredThreads)
-        setThreads(nextThreads)
+        const homeThread = createDiscoverChatThread()
+        setThreads([homeThread, ...nextThreads])
         setArchivedThreads(nextArchivedThreads)
-        setActiveThreadId(nextThreads[0]?.id ?? null)
+        setActiveThreadId(homeThread.id)
         setDiscoverHistoryLoaded(true)
       })
     return () => controller.abort()
@@ -2175,7 +2193,7 @@ export function ChatDiscoverView({
     [...messages]
       .reverse()
       .find((message) => message.blocks?.some((block) => block.type === 'checkout'))?.id ?? null
-  if (empty && threads.length === 1 && !visibleActiveCheckout) {
+  if (empty && !visibleActiveCheckout) {
     return (
       <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
         <ChatHero

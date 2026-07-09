@@ -134,6 +134,10 @@ const EMPTY_TASTE_PROFILE: UserTasteProfile = {
   suggestions: [],
 }
 
+interface NavOptions {
+  home?: boolean
+}
+
 const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> = {
   discover: {
     label: 'Your feed',
@@ -450,7 +454,7 @@ function TopBar({
   cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
   cartPeek: boolean
   accountMenu: boolean
-  onNav: (view: View) => void
+  onNav: (view: View, options?: NavOptions) => void
   onToggleTheme: () => void
   onToggleCart: () => void
   onToggleAccount: () => void
@@ -469,7 +473,7 @@ function TopBar({
       <button
         className="mt-brand"
         type="button"
-        onClick={() => onNav('discover')}
+        onClick={() => onNav('discover', { home: true })}
         aria-label="Meant home"
       >
         <img className="mt-brand-logo" src="/assets/meant-logo.png" alt="Meant" />
@@ -485,7 +489,7 @@ function TopBar({
             key={key}
             className={`mt-nav-item ${view === key ? 'on' : ''}`}
             type="button"
-            onClick={() => onNav(key as View)}
+            onClick={() => onNav(key as View, key === 'discover' ? { home: true } : undefined)}
           >
             {label}
             {key === 'saved' && savedCount > 0 ? (
@@ -728,6 +732,7 @@ export function MeantApp() {
   const [shelfOpen, setShelfOpen] = useState(false)
   const [shelfFlashMessageId, setShelfFlashMessageId] = useState<string | null>(null)
   const [discoverFindRequest, setDiscoverFindRequest] = useState<DiscoverFindRequest | null>(null)
+  const [discoverHomeRequestId, setDiscoverHomeRequestId] = useState(0)
   const [productDetailChatRequest, setProductDetailChatRequest] =
     useState<ProductDetailChatRequest | null>(null)
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
@@ -1291,8 +1296,11 @@ export function MeantApp() {
   )
 
   const nav = useCallback(
-    (next: View) => {
+    (next: View, options?: NavOptions) => {
       setView(next)
+      if (next === 'discover' && options?.home) {
+        setDiscoverHomeRequestId((current) => current + 1)
+      }
       setCartPeek(false)
       setAccountMenu(false)
       if (next === 'orders') {
@@ -2128,6 +2136,7 @@ export function MeantApp() {
             shelf={shelf}
             shelfFlashMessageId={shelfFlashMessageId}
             discoverFindRequest={discoverFindRequest}
+            homeRequestId={discoverHomeRequestId}
             productDetailChatRequest={productDetailChatRequest}
             newsletter={user.newsletter}
             onSubmit={(nextQuery) => {

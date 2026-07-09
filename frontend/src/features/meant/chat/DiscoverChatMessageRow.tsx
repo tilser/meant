@@ -113,14 +113,22 @@ function DustWrap({
         <div className={`mt-msg-tools side-${side}`}>
           {onSetAside ? (
             <button
-              className={`mt-msg-tool mt-tool-shelf ${saved ? 'on' : ''}`}
+              className={`mt-msg-tool mt-tool-shelf ${saved ? 'on' : ''} ${
+                onShelfDragStart ? '' : 'click-only'
+              }`}
               type="button"
               draggable={Boolean(onShelfDragStart)}
               onClick={(event) => onSetAside(event.currentTarget)}
               onDragStart={onShelfDragStart}
               onDragEnd={() => document.body.classList.remove('mt-dragging')}
               aria-label={saved ? 'On your shelf' : 'Set aside on shelf'}
-              title={saved ? 'On your shelf' : 'Click or drag to set aside'}
+              title={
+                saved
+                  ? 'On your shelf'
+                  : onShelfDragStart
+                    ? 'Click or drag to set aside'
+                    : 'Click to set aside'
+              }
             >
               <BookmarkIcon filled={saved} size={12} />
             </button>
@@ -308,6 +316,8 @@ export function DiscoverChatMessageRow({
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
+  const containsCheckoutBlock = message.blocks?.some((block) => block.type === 'checkout') ?? false
+  const messageDraggable = !containsCheckoutBlock
 
   if (message.role === 'you') {
     return (
@@ -339,17 +349,21 @@ export function DiscoverChatMessageRow({
 
   return (
     <div
-      className={`mt-ct-msg mt-ct-meant ${flash ? 'flash' : ''} ${celebrateArrival ? 'mt-ct-arrival' : ''}`}
+      className={`mt-ct-msg mt-ct-meant ${flash ? 'flash' : ''} ${
+        celebrateArrival ? 'mt-ct-arrival' : ''
+      } ${messageDraggable ? '' : 'no-drag'}`}
       data-mid={message.id}
-      draggable
-      onDragStart={(event) => onDragMessage(event, message)}
-      onDragEnd={() => document.body.classList.remove('mt-dragging')}
+      draggable={messageDraggable}
+      onDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
+      onDragEnd={
+        messageDraggable ? () => document.body.classList.remove('mt-dragging') : undefined
+      }
     >
       <DustWrap
         side="meant"
         onGone={() => onDelete(message.id)}
         onSetAside={(sourceElement) => onShelfAddMessage(message, sourceElement)}
-        onShelfDragStart={(event) => onDragMessage(event, message)}
+        onShelfDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
         onCopy={copyMessage}
         saved={onShelf}
       >
