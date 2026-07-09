@@ -50,25 +50,30 @@ class CheckoutAssistantServiceTest {
                 {
                   "reply": "Applying your details now.",
                   "readyToUpdate": true,
-                  "buyer": {"email": "ada@example.com", "firstName": "Ada", "lastName": "Lovelace",
-                    "phoneNumber": "+14155551234"},
+                  "buyer": {"email": "tilseroz@gmail.com", "firstName": "David", "lastName": "Tilseroz",
+                    "phoneNumber": "+420731958653"},
                   "shippingAddress": {"streetAddress": "1531 Hyde St", "extendedAddress": "",
                     "addressLocality": "San Francisco", "addressRegion": "CA", "postalCode": "94109",
-                    "addressCountry": "us"}
+                    "addressCountry": "United States"}
                 }
                 """);
 
-        CheckoutAssistResult result = service.assist(command("94109, country US"));
+        CheckoutAssistResult result = service.assist(command(
+                "Ship to 1531 Hyde St, San Francisco, CA 94109, United States, "
+                        + "David Tilseroz, tilseroz@gmail.com, +420731958653"
+        ));
 
         assertThat(result.reply()).contains(
-                "I sent this to the merchant: 1531 Hyde St, San Francisco, CA, 94109, us"
+                "I sent this to the merchant: 1531 Hyde St, San Francisco, CA, 94109, United States"
         );
-        assertThat(result.reply()).contains("with contact Ada Lovelace, ada@example.com, +14155551234");
+        assertThat(result.reply()).contains("with contact David Tilseroz, tilseroz@gmail.com, +420731958653");
         assertThat(result.reply()).contains("Applying your details now.");
         assertThat(result.checkoutUpdated()).isTrue();
         assertThat(cartService.updateCommand).isNotNull();
-        assertThat(cartService.updateCommand.buyer().email()).isEqualTo("ada@example.com");
-        assertThat(cartService.updateCommand.buyer().phoneNumber()).isEqualTo("+14155551234");
+        assertThat(cartService.updateCommand.buyer().email()).isEqualTo("tilseroz@gmail.com");
+        assertThat(cartService.updateCommand.buyer().firstName()).isEqualTo("David");
+        assertThat(cartService.updateCommand.buyer().lastName()).isEqualTo("Tilseroz");
+        assertThat(cartService.updateCommand.buyer().phoneNumber()).isEqualTo("+420731958653");
         assertThat(cartService.updateCommand.shippingAddress().streetAddress()).isEqualTo("1531 Hyde St");
         assertThat(cartService.updateCommand.shippingAddress().extendedAddress()).isNull();
         assertThat(cartService.updateCommand.shippingAddress().addressCountry()).isEqualTo("US");
@@ -141,6 +146,43 @@ class CheckoutAssistantServiceTest {
 
         assertThat(result.checkoutUpdated()).isFalse();
         assertThat(cartService.updateCommand).isNull();
+    }
+
+    @Test
+    void appliesParsedFollowUpWhenAssistantAskedForLastName() {
+        CheckoutAssistantService service = service("""
+                {
+                  "reply": "Applying your details now.",
+                  "readyToUpdate": true,
+                  "buyer": {"email": "ada@example.com", "firstName": "Ada", "lastName": "Lovelace",
+                    "phoneNumber": ""},
+                  "shippingAddress": {"streetAddress": "1531 Hyde St", "extendedAddress": "",
+                    "addressLocality": "San Francisco", "addressRegion": "CA", "postalCode": "94109",
+                    "addressCountry": "US"}
+                }
+                """);
+
+        CheckoutAssistResult result = service.assist(new AssistCheckoutCommand(
+                CART_ID,
+                USER_ID,
+                "Lovelace",
+                null,
+                List.of(
+                        new AssistCheckoutCommand.HistoryMessage(
+                                "user",
+                                "Ship to 1531 Hyde St, San Francisco, CA 94109, US, Ada, ada@example.com"
+                        ),
+                        new AssistCheckoutCommand.HistoryMessage(
+                                "assistant",
+                                "I need your last name to complete the checkout."
+                        )
+                )
+        ));
+
+        assertThat(result.checkoutUpdated()).isTrue();
+        assertThat(cartService.updateCommand).isNotNull();
+        assertThat(cartService.updateCommand.buyer().lastName()).isEqualTo("Lovelace");
+        assertThat(result.reply()).contains("Ada Lovelace");
     }
 
     @Test

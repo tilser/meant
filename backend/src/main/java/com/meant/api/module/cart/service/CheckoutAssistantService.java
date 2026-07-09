@@ -143,7 +143,7 @@ public class CheckoutAssistantService {
                     openRouterProperties.models().chatModel(),
                     systemPrompt(),
                     userPrompt(command, checkout),
-                    "checkout_assist",
+                    "checkout_detail_parse",
                     assistSchema()
             );
             turn = parseTurn(response);
@@ -303,25 +303,13 @@ public class CheckoutAssistantService {
     }
 
     private UpdateCheckoutCommand updateCommand(AssistCheckoutCommand command, AssistantTurn turn) {
-        if (!turn.readyToUpdate() || turn.buyer() == null || turn.shippingAddress() == null) {
+        if (turn == null || !turn.readyToUpdate() || !hasRequiredCheckoutDetails(turn)) {
             return null;
         }
         AssistantBuyer buyer = turn.buyer();
         AssistantAddress address = turn.shippingAddress();
         String countryCode = normalizedCountryCode(address.addressCountry());
         String regionCode = normalizedRegionCode(countryCode, address.addressRegion());
-        if (!hasText(buyer.email())
-                || !hasText(buyer.firstName())
-                || !hasText(buyer.lastName())
-                || !hasText(address.streetAddress())
-                || !hasText(address.addressLocality())
-                || !hasText(address.postalCode())
-                || !hasText(countryCode)) {
-            return null;
-        }
-        if (requiresRegion(countryCode) && !hasText(regionCode)) {
-            return null;
-        }
         return new UpdateCheckoutCommand(
                 command.cartId(),
                 command.userId(),
@@ -341,6 +329,24 @@ public class CheckoutAssistantService {
                 ),
                 null
         );
+    }
+
+    private boolean hasRequiredCheckoutDetails(AssistantTurn turn) {
+        if (turn == null || turn.buyer() == null || turn.shippingAddress() == null) {
+            return false;
+        }
+        AssistantBuyer buyer = turn.buyer();
+        AssistantAddress address = turn.shippingAddress();
+        String countryCode = normalizedCountryCode(address.addressCountry());
+        String regionCode = normalizedRegionCode(countryCode, address.addressRegion());
+        return hasText(buyer.email())
+                && hasText(buyer.firstName())
+                && hasText(buyer.lastName())
+                && hasText(address.streetAddress())
+                && hasText(address.addressLocality())
+                && hasText(address.postalCode())
+                && hasText(countryCode)
+                && (!requiresRegion(countryCode) || hasText(regionCode));
     }
 
     private String normalizedCountryCode(String value) {
@@ -381,36 +387,63 @@ public class CheckoutAssistantService {
 
     private String systemPrompt() {
         return """
-                You are Meant's checkout assistant. The buyer is completing a purchase inside \
-                Meant's own checkout UI, and the merchant still needs some details.
-                Your only job is to collect the buyer identity and shipping destination:
-                email, first name, last name, phone number (optional), street address, \
-                apartment/suite (optional), city, state/region (required for US and CA), \
-                postal code, and 2-letter country code.
-                Rules:
-                - Look at the merchant messages and the conversation to work out what is \
-                still missing, then ask for it in one short, friendly question. Ask for at \
-                most two things at a time.
-                - Never invent or guess values. Only use what the buyer explicitly said.
-                - Carry forward every value the buyer already gave earlier in the conversation.
-                - When every required field is known, set readyToUpdate to true and fill all \
-                fields; reply with a one-line confirmation of what you are applying.
-                - If a merchant message says the items cannot be shipped, do not tell the buyer \
-                to remove the items. Say the destination was rejected, use the known delivery \
-                coverage if present, and ask for another shipping address in a supported \
-                destination.
-                - If checkout must continue on the merchant site, explain that plainly.
-                - Use an empty string for any field the buyer has not provided yet.
+                You are Meant's checkout detail parser for an in-chat merchant checkout.
+                Return only the JSON object required by the schema.
+
+                Your job is to parse buyer-provided free text into:
+                - buyer.email
+                - buyer.firstName
+                - buyer.lastName
+                - buyer.phoneNumber, optional
+                - shippingAddress.streetAddress
+                - shippingAddress.extendedAddress, optional
+                - shippingAddress.addressLocality
+                - shippingAddress.addressRegion, required for US and CA
+                - shippingAddress.postalCode
+                - shippingAddress.addressCountry as a 2-letter country code when clear
+
+                The buyer is shown this template and often sends it in one message:
+                "Ship to 1531 Hyde St, San Francisco, CA 94109, US, David Test, \
+                david@test.cz, +420 731 958 653".
+
+                Parsing rules:
+                - The current buyer message is the highest priority source. Merchant messages \
+                may describe stale checkout state from before the current buyer message; never \
+                let a merchant "address required" message override an address the buyer just sent.
+                - Parse the whole conversation, not only the latest answer. Carry forward all \
+                details the buyer already gave in earlier user turns.
+                - If the buyer sends the template form, split it into destination, full name, \
+                email, and phone. In "1531 Hyde St, San Francisco, CA 94109, US", parse \
+                streetAddress=1531 Hyde St, addressLocality=San Francisco, \
+                addressRegion=CA, postalCode=94109, addressCountry=US.
+                - If the buyer later answers one missing field, merge that answer with details \
+                from earlier buyer turns.
+                - Never invent values. If you are not sure which field a value belongs to, leave \
+                that field empty and ask one concise clarifying question in reply.
+                - Use empty strings for unknown fields.
+                - Set readyToUpdate true only when every required field is known. Otherwise set \
+                readyToUpdate false and ask for at most two missing things.
                 - Reply in the language the buyer writes in.
+                - If a merchant message says the items cannot be shipped, do not tell the buyer \
+                to remove items. Say the destination was rejected, use known delivery coverage \
+                if present, and ask for another supported shipping address.
                 """;
     }
 
     private String userPrompt(AssistCheckoutCommand command, CheckoutResult checkout) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("Checkout state:\n");
+        prompt.append("Current buyer message to parse first:\n");
+        prompt.append(truncate(command.message())).append("\n\n");
+        prompt.append("Prior conversation turns, oldest first:\n");
+        List<AssistCheckoutCommand.HistoryMessage> history = command.history();
+        int start = Math.max(0, history.size() - MAX_HISTORY_MESSAGES);
+        for (AssistCheckoutCommand.HistoryMessage message : history.subList(start, history.size())) {
+            prompt.append(message.role()).append(": ").append(truncate(message.content())).append('\n');
+        }
+        prompt.append("\nCheckout state for context:\n");
         prompt.append("status: ").append(checkout.status() == null ? "unknown" : checkout.status()).append('\n');
         if (!checkout.messages().isEmpty()) {
-            prompt.append("merchant messages:\n");
+            prompt.append("merchant messages, possibly stale relative to current buyer message:\n");
             checkout.messages().stream()
                     .limit(8)
                     .forEach(message -> prompt.append("- ")
@@ -425,13 +458,6 @@ public class CheckoutAssistantService {
                     .append(truncate(command.merchantDeliveryHint()))
                     .append('\n');
         }
-        prompt.append("\nConversation so far:\n");
-        List<AssistCheckoutCommand.HistoryMessage> history = command.history();
-        int start = Math.max(0, history.size() - MAX_HISTORY_MESSAGES);
-        for (AssistCheckoutCommand.HistoryMessage message : history.subList(start, history.size())) {
-            prompt.append(message.role()).append(": ").append(truncate(message.content())).append('\n');
-        }
-        prompt.append("user: ").append(truncate(command.message())).append('\n');
         return prompt.toString();
     }
 
