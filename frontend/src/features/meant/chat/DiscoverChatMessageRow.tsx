@@ -355,9 +355,7 @@ export function DiscoverChatMessageRow({
       data-mid={message.id}
       draggable={messageDraggable}
       onDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
-      onDragEnd={
-        messageDraggable ? () => document.body.classList.remove('mt-dragging') : undefined
-      }
+      onDragEnd={messageDraggable ? () => document.body.classList.remove('mt-dragging') : undefined}
     >
       <DustWrap
         side="meant"
