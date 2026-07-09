@@ -320,7 +320,8 @@ public class CheckoutAssistantService {
         return messages.stream()
                 .filter(message -> !isExtensionInteractionRequired(message))
                 .findFirst()
-                .orElse(messages.isEmpty() ? null : messages.getFirst());
+                .or(() -> messages.stream().findFirst())
+                .orElse(null);
     }
 
     private UpdateCheckoutCommand updateCommand(AssistCheckoutCommand command, AssistantTurn turn) {
