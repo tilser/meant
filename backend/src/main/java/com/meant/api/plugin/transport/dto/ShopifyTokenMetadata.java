@@ -1,6 +1,8 @@
 package com.meant.api.plugin.transport.dto;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -11,6 +13,7 @@ public record ShopifyTokenMetadata(
 ) {
 
     public ShopifyTokenMetadata {
+        expiresAt = Objects.requireNonNull(expiresAt, "expiresAt");
         if (scopes == null) {
             scopes = Set.of();
         } else {
@@ -20,7 +23,7 @@ public record ShopifyTokenMetadata(
                     clean.add(scope);
                 }
             }
-            scopes = Set.copyOf(clean);
+            scopes = Collections.unmodifiableSet(clean);
         }
         limits = limits == null ? ShopifyTokenLimits.none() : limits;
     }

@@ -4,6 +4,7 @@ import com.meant.api.plugin.transport.dto.ShopifyTokenMetadata;
 import com.meant.api.plugin.transport.dto.ShopifyTokenScopeDecision;
 import com.meant.api.plugin.transport.dto.ShopifyTokenScopeDecision.Availability;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -101,6 +102,6 @@ public class ShopifyBearerAuthenticationStrategy {
                 normalized.add(scope.trim());
             }
         }
-        return Set.copyOf(normalized);
+        return Collections.unmodifiableSet(normalized);
     }
 }

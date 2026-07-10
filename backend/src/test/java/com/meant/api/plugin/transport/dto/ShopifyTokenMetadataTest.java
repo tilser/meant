@@ -12,7 +12,8 @@ class ShopifyTokenMetadataTest {
     @Test
     void filtersNullScopesAtTheMetadataBoundary() {
         Set<String> scopes = new HashSet<>();
-        scopes.add("catalog:read");
+        scopes.add("zeta:read");
+        scopes.add("alpha:read");
         scopes.add(null);
 
         ShopifyTokenMetadata metadata = new ShopifyTokenMetadata(
@@ -21,6 +22,6 @@ class ShopifyTokenMetadataTest {
                 ShopifyTokenLimits.none()
         );
 
-        assertThat(metadata.scopes()).containsExactly("catalog:read");
+        assertThat(metadata.scopes()).containsExactly("alpha:read", "zeta:read");
     }
 }

@@ -1,5 +1,6 @@
 package com.meant.api.plugin.transport.dto;
 
+import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -15,7 +16,7 @@ public record ShopifyTokenLimits(Map<String, Long> values) {
                     clean.put(key, value);
                 }
             });
-            values = Map.copyOf(clean);
+            values = Collections.unmodifiableMap(clean);
         }
     }
 

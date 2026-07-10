@@ -1,7 +1,8 @@
 package com.meant.api.plugin.transport.dto;
 
-import java.util.Optional;
+import java.util.Collections;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -31,6 +32,15 @@ public record ShopifyTokenScopeDecision(
     }
 
     private static Set<String> immutable(Set<String> values) {
-        return values == null ? Set.of() : Set.copyOf(new TreeSet<>(values));
+        if (values == null) {
+            return Set.of();
+        }
+        Set<String> clean = new TreeSet<>();
+        for (String value : values) {
+            if (value != null) {
+                clean.add(value);
+            }
+        }
+        return Collections.unmodifiableSet(clean);
     }
 }

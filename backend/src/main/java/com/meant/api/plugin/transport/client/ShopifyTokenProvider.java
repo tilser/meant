@@ -9,6 +9,7 @@ import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -246,7 +247,7 @@ class ShopifyTokenProvider {
                 values.addAll(scopes(scope.textValue()));
             }
         }
-        return Set.copyOf(values);
+        return Collections.unmodifiableSet(values);
     }
 
     private Map<String, Long> limitClaims(JsonNode limits) {
@@ -264,7 +265,7 @@ class ShopifyTokenProvider {
                     clean.put(key, value);
                 }
             });
-            return Map.copyOf(clean);
+            return Collections.unmodifiableMap(clean);
         } catch (IllegalArgumentException exception) {
             return Map.of();
         }
@@ -280,7 +281,7 @@ class ShopifyTokenProvider {
                 values.add(scope);
             }
         }
-        return Set.copyOf(values);
+        return Collections.unmodifiableSet(values);
     }
 
     private void requireEnabled() {

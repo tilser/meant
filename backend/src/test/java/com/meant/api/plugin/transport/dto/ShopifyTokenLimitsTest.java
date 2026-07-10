@@ -12,11 +12,13 @@ class ShopifyTokenLimitsTest {
     void filtersNullKeysAndValuesAtTheMetadataBoundary() {
         Map<String, Long> limits = new HashMap<>();
         limits.put("catalog_per_minute", 120L);
+        limits.put("checkout_per_minute", 20L);
         limits.put("unknown_limit", null);
         limits.put(null, 10L);
 
         ShopifyTokenLimits result = new ShopifyTokenLimits(limits);
 
-        assertThat(result.values()).containsOnlyKeys("catalog_per_minute");
+        assertThat(result.values().keySet())
+                .containsExactly("catalog_per_minute", "checkout_per_minute");
     }
 }
