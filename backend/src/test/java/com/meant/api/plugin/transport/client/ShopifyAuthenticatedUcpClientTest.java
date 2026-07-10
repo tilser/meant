@@ -177,7 +177,10 @@ class ShopifyAuthenticatedUcpClientTest {
                         assertThat(exception.failure()).isEqualTo(ShopifyUcpTransportFailure.RATE_LIMITED);
                         assertThat(exception.retryAfter()).contains(Duration.ofSeconds(9));
                         assertThat(exception.upstreamStatus()).contains(429);
-                        assertThat(exception.toString()).doesNotContain("reflected-rate-limit-token");
+                        assertThat(exception.getMessage()).isEqualTo("Shopify UCP endpoint rate limited the request");
+                        assertThat(exception.toString())
+                                .doesNotContain("Shopify Global Catalog")
+                                .doesNotContain("reflected-rate-limit-token");
                     });
         } finally {
             context.client().close();
@@ -213,8 +216,10 @@ class ShopifyAuthenticatedUcpClientTest {
         try {
             assertThatThrownBy(() -> transientContext.client().callTool(
                     options(Duration.ofSeconds(1)), "search_catalog", searchArguments(10)))
-                    .isInstanceOfSatisfying(ShopifyUcpTransportException.class, exception ->
-                            assertThat(exception.failure()).isEqualTo(ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM));
+                    .isInstanceOfSatisfying(ShopifyUcpTransportException.class, exception -> {
+                        assertThat(exception.failure()).isEqualTo(ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM);
+                        assertThat(exception.getMessage()).isEqualTo("Shopify UCP endpoint returned a server failure");
+                    });
         } finally {
             transientContext.client().close();
         }
@@ -225,8 +230,12 @@ class ShopifyAuthenticatedUcpClientTest {
         try {
             assertThatThrownBy(() -> malformedContext.client().callTool(
                     options(Duration.ofSeconds(1)), "search_catalog", searchArguments(10)))
-                    .isInstanceOfSatisfying(ShopifyUcpTransportException.class, exception ->
-                            assertThat(exception.failure()).isEqualTo(ShopifyUcpTransportFailure.MALFORMED_RESPONSE));
+                    .isInstanceOfSatisfying(ShopifyUcpTransportException.class, exception -> {
+                        assertThat(exception.failure()).isEqualTo(ShopifyUcpTransportFailure.MALFORMED_RESPONSE);
+                        assertThat(exception.getMessage()).isEqualTo(
+                                "Shopify UCP endpoint response was not valid JSON"
+                        );
+                    });
         } finally {
             malformedContext.client().close();
         }

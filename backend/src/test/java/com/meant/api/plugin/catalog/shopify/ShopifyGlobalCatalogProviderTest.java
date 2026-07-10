@@ -43,8 +43,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import tools.jackson.databind.ObjectMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ShopifyGlobalCatalogProviderTest {
 
     private static final Instant OBSERVED_AT = Instant.parse("2026-07-10T10:00:00Z");
@@ -268,7 +272,7 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
-    void unexpectedHalfOpenProbeFailureDoesNotPermanentlyLockCircuit() throws Exception {
+    void unexpectedHalfOpenProbeFailureDoesNotPermanentlyLockCircuit(CapturedOutput output) throws Exception {
         ShopifyGlobalCatalogProperties properties = properties(1);
         MutableClock clock = new MutableClock(OBSERVED_AT);
         ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
@@ -301,6 +305,9 @@ class ShopifyGlobalCatalogProviderTest {
         assertThat(provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null)).successful())
                 .isTrue();
         assertThat(calls).hasValue(3);
+        assertThat(output).asString()
+                .contains("exceptionType=java.lang.NullPointerException")
+                .doesNotContain("unexpected provider bug");
     }
 
     @Test
@@ -422,8 +429,7 @@ class ShopifyGlobalCatalogProviderTest {
             assertThat(advertisement.extendsCapabilities())
                     .containsExactlyInAnyOrder(
                             com.meant.api.plugin.catalog.search.CatalogSearchCapability.ID,
-                            com.meant.api.plugin.catalog.lookup.CatalogLookupCapability.ID,
-                            com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability.ID
+                            com.meant.api.plugin.catalog.lookup.CatalogLookupCapability.ID
                     );
         });
     }

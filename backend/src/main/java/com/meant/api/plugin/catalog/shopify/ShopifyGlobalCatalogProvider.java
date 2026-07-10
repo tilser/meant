@@ -7,9 +7,8 @@ import com.meant.api.plugin.catalog.common.dto.CatalogSourcePage;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
-import com.meant.api.plugin.catalog.common.exception.ShopifyGlobalCatalogContractException;
-import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
+import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.search.CatalogSearchCapability;
 import com.meant.api.plugin.catalog.shopify.ShopifyGlobalCatalogNormalizer.NormalizedCandidates;
 import com.meant.api.plugin.catalog.shopify.ShopifyGlobalCatalogResponseParser.ParsedResponse;
@@ -36,11 +35,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** One-source adapter. Federated invocation and ranking intentionally belong to PCOS-007. */
 @Service
+@Slf4j
 public class ShopifyGlobalCatalogProvider {
 
     private final ShopifyUcpClient client;
@@ -246,6 +247,10 @@ public class ShopifyGlobalCatalogProvider {
             ));
         } catch (RuntimeException exception) {
             circuitBreaker.recordFailure(null);
+            log.warn(
+                    "Shopify Global Catalog request failed unexpectedly; exceptionType={}",
+                    exception.getClass().getName()
+            );
             return failure(operation, new CatalogSourceFailure(
                     CatalogSourceFailureKind.TRANSIENT_UPSTREAM,
                     "Shopify Global Catalog request failed unexpectedly",

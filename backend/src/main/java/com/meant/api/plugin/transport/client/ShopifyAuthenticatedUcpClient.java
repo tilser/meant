@@ -196,25 +196,25 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
                         "Shopify rejected bearer authorization", null, status, null);
             }
             if (status == 429) {
-                throw failure(ShopifyUcpTransportFailure.RATE_LIMITED, "Shopify Global Catalog rate limited the request",
+                throw failure(ShopifyUcpTransportFailure.RATE_LIMITED, "Shopify UCP endpoint rate limited the request",
                         ShopifyHttpResponseSupport.retryAfter(exception.getResponseHeaders(), clock), status, null);
             }
             if (status == 408) {
-                throw failure(ShopifyUcpTransportFailure.TIMEOUT, "Shopify Global Catalog timed out the request",
+                throw failure(ShopifyUcpTransportFailure.TIMEOUT, "Shopify UCP endpoint timed out the request",
                         null, status, null);
             }
             if (HttpStatusCode.valueOf(status).is5xxServerError()) {
                 throw failure(ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM,
-                        "Shopify Global Catalog returned a server failure", null, status, null);
+                        "Shopify UCP endpoint returned a server failure", null, status, null);
             }
             throw failure(ShopifyUcpTransportFailure.INVALID_REQUEST,
-                    "Shopify Global Catalog rejected the request", null, status, null);
+                    "Shopify UCP endpoint rejected the request", null, status, null);
         } catch (UcpMcpRemoteErrorException exception) {
             throw failure(ShopifyUcpTransportFailure.INVALID_REQUEST,
-                    "Shopify Global Catalog returned a JSON-RPC error", null, null, exception);
+                    "Shopify UCP endpoint returned a JSON-RPC error", null, null, exception);
         } catch (UcpMcpException exception) {
             throw failure(ShopifyUcpTransportFailure.MALFORMED_RESPONSE,
-                    "Shopify Global Catalog returned a malformed MCP response", null, null, exception);
+                    "Shopify UCP endpoint returned a malformed MCP response", null, null, exception);
         } catch (RestClientException exception) {
             throw classify(exception);
         }
@@ -223,16 +223,16 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
     private ShopifyUcpTransportException classify(Throwable throwable) {
         if (ShopifyHttpResponseSupport.hasCause(throwable, HttpMessageConversionException.class)) {
             return failure(ShopifyUcpTransportFailure.MALFORMED_RESPONSE,
-                    "Shopify Global Catalog response was not valid JSON", null, null, null);
+                    "Shopify UCP endpoint response was not valid JSON", null, null, null);
         }
         if (throwable instanceof ResourceAccessException
                 && (ShopifyHttpResponseSupport.hasCause(throwable, SocketTimeoutException.class)
                 || ShopifyHttpResponseSupport.hasCause(throwable, InterruptedIOException.class))) {
-            return failure(ShopifyUcpTransportFailure.TIMEOUT, "Shopify Global Catalog request timed out",
+            return failure(ShopifyUcpTransportFailure.TIMEOUT, "Shopify UCP request timed out",
                     null, null, throwable);
         }
         return failure(ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM,
-                "Could not reach Shopify Global Catalog", null, null, throwable);
+                "Could not reach Shopify UCP endpoint", null, null, throwable);
     }
 
     private RestClient restClient(ShopifyUcpRequestOptions options) {

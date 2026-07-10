@@ -1,4 +1,4 @@
-package com.meant.api.plugin.catalog.common.exception;
+package com.meant.api.plugin.catalog.shopify;
 
 public class ShopifyGlobalCatalogContractException extends RuntimeException {
 

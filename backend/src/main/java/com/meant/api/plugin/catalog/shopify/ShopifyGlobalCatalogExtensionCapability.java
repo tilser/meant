@@ -1,6 +1,5 @@
 package com.meant.api.plugin.catalog.shopify;
 
-import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
 import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.search.CatalogSearchCapability;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
@@ -38,8 +37,7 @@ public class ShopifyGlobalCatalogExtensionCapability implements UcpCapability<Vo
                 properties.extensionSchema(),
                 List.of(
                         CatalogSearchCapability.ID,
-                        CatalogLookupCapability.ID,
-                        CatalogGetProductCapability.ID
+                        CatalogLookupCapability.ID
                 ),
                 java.util.Map.of()
         ));

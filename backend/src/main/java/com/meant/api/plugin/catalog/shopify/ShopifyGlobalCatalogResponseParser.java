@@ -1,7 +1,6 @@
 package com.meant.api.plugin.catalog.shopify;
 
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceOperation;
-import com.meant.api.plugin.catalog.common.exception.ShopifyGlobalCatalogContractException;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyGlobalCatalogResponse;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyGlobalCatalogResponse.CapabilityVersion;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyGlobalCatalogResponse.Product;
