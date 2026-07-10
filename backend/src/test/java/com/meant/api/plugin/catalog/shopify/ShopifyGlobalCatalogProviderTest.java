@@ -370,7 +370,7 @@ class ShopifyGlobalCatalogProviderTest {
         String missingGetProduct = """
                 {
                   "ucp":{"version":"2026-04-08","capabilities":{
-                    "dev.ucp.shopping.catalog.lookup":[{"version":"2026-04-08"}],
+                    "dev.ucp.shopping.catalog.get_product":[{"version":"2026-04-08"}],
                     "dev.shopify.catalog.global":[{"version":"2026-04-08"}]
                   }}
                 }
@@ -398,7 +398,8 @@ class ShopifyGlobalCatalogProviderTest {
             assertThat(advertisement.extendsCapabilities())
                     .containsExactlyInAnyOrder(
                             com.meant.api.plugin.catalog.search.CatalogSearchCapability.ID,
-                            com.meant.api.plugin.catalog.lookup.CatalogLookupCapability.ID
+                            com.meant.api.plugin.catalog.lookup.CatalogLookupCapability.ID,
+                            com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability.ID
                     );
         });
     }

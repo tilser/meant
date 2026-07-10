@@ -152,7 +152,7 @@ public class ShopifyGlobalCatalogProvider {
         return execute(
                 CatalogSourceOperation.GET_PRODUCT,
                 CatalogGetProductCapability.TOOL_NAME,
-                CatalogLookupCapability.ID,
+                CatalogGetProductCapability.ID,
                 arguments
         );
     }
