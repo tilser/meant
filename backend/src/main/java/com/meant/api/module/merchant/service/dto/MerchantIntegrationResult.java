@@ -29,6 +29,6 @@ public record MerchantIntegrationResult(
         Instant updatedAt
 ) {
     public MerchantIntegrationResult {
-        roles = Set.copyOf(roles);
+        roles = roles == null ? Set.of() : Set.copyOf(roles);
     }
 }

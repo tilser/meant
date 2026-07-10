@@ -12,16 +12,17 @@ import org.springframework.data.repository.query.Param;
 
 public interface MerchantIntegrationRepository extends JpaRepository<MerchantIntegration, UUID> {
 
-    @EntityGraph(attributePaths = "roles")
+    @EntityGraph(attributePaths = {"roles", "merchant"})
     List<MerchantIntegration> findByMerchantIdOrderByCreatedAtAsc(UUID merchantId);
 
-    @EntityGraph(attributePaths = "roles")
+    @EntityGraph(attributePaths = {"roles", "merchant"})
     Optional<MerchantIntegration> findByProviderAndExternalMerchantId(
             MerchantIntegrationProvider provider,
             String externalMerchantId
     );
 
-    @EntityGraph(attributePaths = "roles")
+    // The lower expression intentionally matches the case-insensitive unique index for non-JPA writers.
+    @EntityGraph(attributePaths = {"roles", "merchant"})
     @Query("""
             select integration
             from MerchantIntegration integration

@@ -210,6 +210,7 @@
             ON merchant_integration (provider, external_merchant_id)
             WHERE external_merchant_id IS NOT NULL;
 
+            -- Keep case-insensitive ownership at the database boundary for writers that bypass JPA callbacks.
             CREATE UNIQUE INDEX uk_merchant_integration_provider_verified_domain
             ON merchant_integration (lower(verified_domain), provider)
             WHERE verified_domain IS NOT NULL;

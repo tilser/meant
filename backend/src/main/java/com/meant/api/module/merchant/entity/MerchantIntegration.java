@@ -111,14 +111,30 @@ public class MerchantIntegration {
     @Column(nullable = false)
     private Instant capturedAt;
 
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
     @Column(nullable = false)
     private Instant updatedAt;
 
     @PrePersist
+    private void prePersist() {
+        normalizeIdentities();
+        Instant now = Instant.now();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+    }
+
     @PreUpdate
+    private void preUpdate() {
+        normalizeIdentities();
+        updatedAt = Instant.now();
+    }
+
     private void normalizeIdentities() {
         externalMerchantId = trimToNull(externalMerchantId);
         verifiedDomain = normalizeVerifiedIdentity(verifiedDomain);

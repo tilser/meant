@@ -190,7 +190,7 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void generatedIdAndNormalizedIdentitiesSupportCanonicalLookup() {
+    void generatedIdTimestampsAndNormalizedIdentitiesSupportCanonicalLookup() {
         Merchant merchant = saveMerchant("canonical-%s.example".formatted(UUID.randomUUID()));
         String externalMerchantId = "gid://shopify/Shop/" + UUID.randomUUID();
         String verifiedDomain = "canonical-shop-%s.example".formatted(UUID.randomUUID());
@@ -203,14 +203,20 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
                 "https://canonical-shop.example/api/ucp/mcp",
                 MerchantIntegrationAuthStrategy.OAUTH_BEARER,
                 Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
-                "  " + verifiedShopIdentity.toUpperCase() + ".  "
+                "  " + verifiedShopIdentity.toUpperCase() + ".  ",
+                null,
+                null
         );
 
         assertThat(integration.getId()).isNull();
+        assertThat(integration.getCreatedAt()).isNull();
+        assertThat(integration.getUpdatedAt()).isNull();
 
         MerchantIntegration saved = merchantIntegrationRepository.saveAndFlush(integration);
 
         assertThat(saved.getId()).isNotNull();
+        assertThat(saved.getCreatedAt()).isNotNull();
+        assertThat(saved.getUpdatedAt()).isEqualTo(saved.getCreatedAt());
         assertThat(saved.getExternalMerchantId()).isEqualTo(externalMerchantId);
         assertThat(saved.getVerifiedDomain()).isEqualTo(verifiedDomain);
         assertThat(saved.getVerifiedShopIdentity()).isEqualTo(verifiedShopIdentity);
@@ -285,6 +291,32 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
             Set<MerchantIntegrationRole> roles,
             String verifiedShopIdentity
     ) {
+        return integration(
+                merchant,
+                provider,
+                externalMerchantId,
+                verifiedDomain,
+                endpoint,
+                authStrategy,
+                roles,
+                verifiedShopIdentity,
+                NOW,
+                NOW
+        );
+    }
+
+    private MerchantIntegration integration(
+            Merchant merchant,
+            MerchantIntegrationProvider provider,
+            String externalMerchantId,
+            String verifiedDomain,
+            String endpoint,
+            MerchantIntegrationAuthStrategy authStrategy,
+            Set<MerchantIntegrationRole> roles,
+            String verifiedShopIdentity,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
         return MerchantIntegration.builder()
                 .merchant(merchant)
                 .provider(provider)
@@ -300,8 +332,8 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
                 .source(MerchantIntegrationSource.DISCOVERY)
                 .rawMetadata("{\"captured\":true}")
                 .capturedAt(NOW)
-                .createdAt(NOW)
-                .updatedAt(NOW)
+                .createdAt(createdAt)
+                .updatedAt(updatedAt)
                 .build();
     }
 

@@ -55,6 +55,7 @@ public class MerchantIntegrationLookupService {
     }
 
     private String normalizeDomain(String domain) {
+        // This validated query input has a stricter contract than nullable persisted identities.
         String normalized = domain.trim().toLowerCase(Locale.ROOT);
         while (normalized.endsWith(".")) {
             normalized = normalized.substring(0, normalized.length() - 1);
