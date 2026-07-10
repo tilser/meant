@@ -6,10 +6,8 @@ import com.meant.api.module.merchant.constant.CapabilityIneligibilityReason;
 import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.constant.CommerceOperation;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public record MerchantExecutionPolicy(
         List<CommerceCapabilityDecision> decisions
@@ -45,26 +43,22 @@ public record MerchantExecutionPolicy(
     @Deprecated(forRemoval = true)
     public static MerchantExecutionPolicy legacyNativeCheckout(boolean enabled) {
         List<CommerceCapabilityDecision> values = Arrays.stream(CommerceOperation.values())
-                .map(MerchantExecutionPolicy::unavailableDecision)
-                .collect(Collectors.toCollection(ArrayList::new));
-        if (enabled) {
-            values.set(
-                    CommerceOperation.DIRECT_CHECKOUT_COMPLETION.ordinal(),
-                    new CommerceCapabilityDecision(
-                            CommerceOperation.DIRECT_CHECKOUT_COMPLETION,
-                            true,
-                            CapabilityAuthorizationDecision.notRequired(),
-                            true,
-                            CapabilityIntegrationHealth.HEALTHY,
-                            true,
-                            CapabilityAvailability.AVAILABLE,
-                            CommerceExecutionRail.DIRECT_CHECKOUT_COMPLETION,
-                            List.of(),
-                            null,
-                            null
-                    )
-            );
-        }
+                .map(operation -> enabled && operation == CommerceOperation.DIRECT_CHECKOUT_COMPLETION
+                        ? new CommerceCapabilityDecision(
+                                CommerceOperation.DIRECT_CHECKOUT_COMPLETION,
+                                true,
+                                CapabilityAuthorizationDecision.notRequired(),
+                                true,
+                                CapabilityIntegrationHealth.HEALTHY,
+                                true,
+                                CapabilityAvailability.AVAILABLE,
+                                CommerceExecutionRail.DIRECT_CHECKOUT_COMPLETION,
+                                List.of(),
+                                null,
+                                null
+                        )
+                        : unavailableDecision(operation))
+                .toList();
         return new MerchantExecutionPolicy(values);
     }
 
