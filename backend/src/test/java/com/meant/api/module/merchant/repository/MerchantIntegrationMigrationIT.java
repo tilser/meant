@@ -237,7 +237,7 @@ class MerchantIntegrationMigrationIT extends PostgresIntegrationTestSupport {
 
     private void runIntegrationMigration(String schema) throws Exception {
         try (Connection connection = dataSource.getConnection();
-             AutoCloseable ignored = selectSchema(connection, schema)) {
+             AutoCloseable _ = selectSchema(connection, schema)) {
             SingleConnectionDataSource schemaDataSource = new SingleConnectionDataSource(connection, true);
             SpringLiquibase liquibase = new SpringLiquibase();
             liquibase.setDataSource(schemaDataSource);
