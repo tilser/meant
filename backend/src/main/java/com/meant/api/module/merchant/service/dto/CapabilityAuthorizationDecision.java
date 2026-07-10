@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.service.dto;
 
 import com.meant.api.module.merchant.constant.CapabilityAuthorizationStatus;
+import java.util.Objects;
 import java.util.Set;
 
 public record CapabilityAuthorizationDecision(
@@ -12,6 +13,7 @@ public record CapabilityAuthorizationDecision(
 ) {
 
     public CapabilityAuthorizationDecision {
+        Objects.requireNonNull(status, "status must not be null");
         requiredScopes = requiredScopes == null ? Set.of() : Set.copyOf(requiredScopes);
         missingScopes = missingScopes == null ? Set.of() : Set.copyOf(missingScopes);
     }

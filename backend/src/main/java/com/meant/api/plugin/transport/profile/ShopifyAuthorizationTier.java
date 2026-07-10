@@ -1,7 +1,17 @@
 package com.meant.api.plugin.transport.profile;
 
 public enum ShopifyAuthorizationTier {
-    NONE,
-    STANDARD,
-    TOKEN
+    NONE(0),
+    STANDARD(1),
+    TOKEN(2);
+
+    private final int level;
+
+    ShopifyAuthorizationTier(int level) {
+        this.level = level;
+    }
+
+    public int level() {
+        return level;
+    }
 }

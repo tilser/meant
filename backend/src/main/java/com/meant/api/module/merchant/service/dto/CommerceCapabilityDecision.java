@@ -7,6 +7,7 @@ import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 public record CommerceCapabilityDecision(
@@ -24,6 +25,11 @@ public record CommerceCapabilityDecision(
 ) {
 
     public CommerceCapabilityDecision {
+        Objects.requireNonNull(operation, "operation must not be null");
+        Objects.requireNonNull(authorization, "authorization must not be null");
+        Objects.requireNonNull(integrationHealth, "integrationHealth must not be null");
+        Objects.requireNonNull(availability, "availability must not be null");
+        Objects.requireNonNull(selectedRail, "selectedRail must not be null");
         ineligibilityReasons = ineligibilityReasons == null ? List.of() : List.copyOf(ineligibilityReasons);
     }
 

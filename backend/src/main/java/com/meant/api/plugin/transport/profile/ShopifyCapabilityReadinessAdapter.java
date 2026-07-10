@@ -86,7 +86,7 @@ public class ShopifyCapabilityReadinessAdapter implements MerchantCapabilityRead
             return CapabilityAuthorizationDecision.unavailable(CapabilityAuthorizationStatus.NOT_AUTHORIZED);
         }
         ShopifyAuthorizationTier grantedTier = properties.authorizationTier();
-        if (grantedTier.ordinal() < requiredTier.ordinal()) {
+        if (grantedTier.level() < requiredTier.level()) {
             return CapabilityAuthorizationDecision.tierNotGranted(requiredTier.name(), grantedTier.name());
         }
         if (requiredTier == ShopifyAuthorizationTier.TOKEN
