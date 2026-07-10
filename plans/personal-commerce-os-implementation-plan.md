@@ -205,6 +205,7 @@ Create the provider-neutral result model required for grouped products and selec
 
 Priority: P0
 Dependencies: PCOS-004
+Implementation status: Complete
 
 **Goal**
 
