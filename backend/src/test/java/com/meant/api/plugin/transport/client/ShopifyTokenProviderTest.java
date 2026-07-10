@@ -269,6 +269,12 @@ class ShopifyTokenProviderTest {
         assertThat(result.header().orElseThrow().toString())
                 .contains("[redacted]")
                 .doesNotContain("private-token-value");
+        assertThatThrownBy(() -> result.applyTo(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("headers");
+        assertThatThrownBy(() -> result.header().orElseThrow().applyTo(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("headers");
         context.server().verify();
     }
 

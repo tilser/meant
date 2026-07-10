@@ -133,8 +133,12 @@ class ShopifyTokenProvider {
         try {
             return refresh.join();
         } catch (CompletionException exception) {
-            if (exception.getCause() instanceof RuntimeException runtimeException) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
             }
             throw new ShopifyTransientException("Shopify token refresh did not complete");
         }

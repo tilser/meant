@@ -4,11 +4,11 @@ import com.meant.api.plugin.transport.dto.ShopifyTokenRequest;
 import com.meant.api.plugin.transport.dto.ShopifyTokenResponse;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -123,7 +123,7 @@ public class ShopifyTokenClient {
                 Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
                 Duration duration = Duration.between(clock.instant(), retryAt);
                 return duration.isNegative() ? Duration.ZERO : duration;
-            } catch (DateTimeParseException invalidDate) {
+            } catch (DateTimeException | ArithmeticException invalidDate) {
                 return null;
             }
         }

@@ -1,5 +1,6 @@
 package com.meant.api.plugin.transport.client;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.http.HttpHeaders;
 
@@ -15,6 +16,7 @@ public final class ShopifyBearerHeader {
     }
 
     public void applyTo(HttpHeaders headers) {
+        Objects.requireNonNull(headers, "headers");
         headers.setBearerAuth(accessToken);
     }
 

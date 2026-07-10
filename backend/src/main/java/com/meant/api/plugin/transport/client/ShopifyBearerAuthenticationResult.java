@@ -16,6 +16,7 @@ public record ShopifyBearerAuthenticationResult(
     }
 
     public void applyTo(HttpHeaders headers) {
+        Objects.requireNonNull(headers, "headers");
         ShopifyBearerHeader bearerHeader = header.orElseThrow(
                 () -> new IllegalStateException("Shopify bearer authentication is unavailable: " + decision.availability())
         );

@@ -11,7 +11,17 @@ public record ShopifyTokenMetadata(
 ) {
 
     public ShopifyTokenMetadata {
-        scopes = scopes == null ? Set.of() : Set.copyOf(new TreeSet<>(scopes));
+        if (scopes == null) {
+            scopes = Set.of();
+        } else {
+            Set<String> clean = new TreeSet<>();
+            for (String scope : scopes) {
+                if (scope != null) {
+                    clean.add(scope);
+                }
+            }
+            scopes = Set.copyOf(clean);
+        }
         limits = limits == null ? ShopifyTokenLimits.none() : limits;
     }
 
