@@ -6,7 +6,17 @@ import java.util.TreeMap;
 public record ShopifyTokenLimits(Map<String, Long> values) {
 
     public ShopifyTokenLimits {
-        values = values == null ? Map.of() : Map.copyOf(new TreeMap<>(values));
+        if (values == null) {
+            values = Map.of();
+        } else {
+            Map<String, Long> clean = new TreeMap<>();
+            values.forEach((key, value) -> {
+                if (key != null && value != null) {
+                    clean.put(key, value);
+                }
+            });
+            values = Map.copyOf(clean);
+        }
     }
 
     public static ShopifyTokenLimits none() {

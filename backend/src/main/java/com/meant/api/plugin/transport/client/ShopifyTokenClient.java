@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -38,9 +39,9 @@ public class ShopifyTokenClient {
             ShopifyAgentAuthProperties properties,
             Clock clock
     ) {
-        this.restClient = restClientBuilder.clone().build();
-        this.properties = properties;
-        this.clock = clock;
+        this.restClient = Objects.requireNonNull(restClientBuilder, "restClientBuilder").clone().build();
+        this.properties = Objects.requireNonNull(properties, "properties");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     public ShopifyTokenResponse exchangeClientCredentials() {

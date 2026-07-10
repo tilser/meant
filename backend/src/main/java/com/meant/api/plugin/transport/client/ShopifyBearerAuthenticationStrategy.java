@@ -5,6 +5,7 @@ import com.meant.api.plugin.transport.dto.ShopifyTokenScopeDecision;
 import com.meant.api.plugin.transport.dto.ShopifyTokenScopeDecision.Availability;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -21,8 +22,8 @@ public class ShopifyBearerAuthenticationStrategy {
             ShopifyTokenProvider tokenProvider,
             ShopifyAgentAuthProperties properties
     ) {
-        this.tokenProvider = tokenProvider;
-        this.properties = properties;
+        this.tokenProvider = Objects.requireNonNull(tokenProvider, "tokenProvider");
+        this.properties = Objects.requireNonNull(properties, "properties");
     }
 
     public ShopifyBearerAuthenticationResult prepare(Set<String> requiredScopes) {

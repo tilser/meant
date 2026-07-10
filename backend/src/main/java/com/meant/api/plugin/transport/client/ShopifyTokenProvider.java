@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -58,10 +59,10 @@ class ShopifyTokenProvider {
             ObjectMapper objectMapper,
             Clock clock
     ) {
-        this.tokenClient = tokenClient;
-        this.properties = properties;
-        this.objectMapper = objectMapper;
-        this.clock = clock;
+        this.tokenClient = Objects.requireNonNull(tokenClient, "tokenClient");
+        this.properties = Objects.requireNonNull(properties, "properties");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     ShopifyAccessToken currentToken() {
@@ -250,7 +251,16 @@ class ShopifyTokenProvider {
         }
         try {
             Map<String, Long> values = objectMapper.convertValue(limits, LIMITS_TYPE);
-            return values == null ? Map.of() : Map.copyOf(new TreeMap<>(values));
+            if (values == null) {
+                return Map.of();
+            }
+            Map<String, Long> clean = new TreeMap<>();
+            values.forEach((key, value) -> {
+                if (key != null && value != null) {
+                    clean.put(key, value);
+                }
+            });
+            return Map.copyOf(clean);
         } catch (IllegalArgumentException exception) {
             return Map.of();
         }

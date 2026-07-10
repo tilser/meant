@@ -179,7 +179,11 @@ class ShopifyTokenProviderTest {
                 {
                   "exp": %d,
                   "scopes": ["catalog:read", "cart:write"],
-                  "limits": {"catalog_per_minute": 120, "checkout_per_minute": 20}
+                  "limits": {
+                    "catalog_per_minute": 120,
+                    "checkout_per_minute": 20,
+                    "temporarily_unavailable": null
+                  }
                 }
                 """.formatted(NOW.plusSeconds(120).getEpochSecond()));
         context.server().expect(requestTo(context.endpoint()))
@@ -191,7 +195,9 @@ class ShopifyTokenProviderTest {
         assertThat(result.decision().metadata()).hasValueSatisfying(metadata -> {
             assertThat(metadata.expiresAt()).isEqualTo(NOW.plusSeconds(120));
             assertThat(metadata.scopes()).containsExactlyInAnyOrder("catalog:read", "cart:write");
-            assertThat(metadata.limits().values()).containsEntry("catalog_per_minute", 120L);
+            assertThat(metadata.limits().values())
+                    .containsEntry("catalog_per_minute", 120L)
+                    .doesNotContainKey("temporarily_unavailable");
         });
         context.server().verify();
     }
