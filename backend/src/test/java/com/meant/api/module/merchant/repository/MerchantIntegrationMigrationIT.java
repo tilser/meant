@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTestSupport;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -235,20 +236,22 @@ class MerchantIntegrationMigrationIT extends PostgresIntegrationTestSupport {
     }
 
     private void runIntegrationMigration(String schema) throws Exception {
-        try (Connection connection = dataSource.getConnection()) {
-            String originalSchema = connection.getSchema();
-            try {
-                connection.setSchema(schema);
-                SingleConnectionDataSource schemaDataSource = new SingleConnectionDataSource(connection, true);
-                SpringLiquibase liquibase = new SpringLiquibase();
-                liquibase.setDataSource(schemaDataSource);
-                liquibase.setChangeLog("classpath:db/changelog/migration/029-add-merchant-integration.xml");
-                liquibase.setDefaultSchema(schema);
-                liquibase.setLiquibaseSchema(schema);
-                liquibase.afterPropertiesSet();
-            } finally {
-                connection.setSchema(originalSchema);
-            }
+        try (Connection connection = dataSource.getConnection();
+             AutoCloseable ignored = selectSchema(connection, schema)) {
+            SingleConnectionDataSource schemaDataSource = new SingleConnectionDataSource(connection, true);
+            SpringLiquibase liquibase = new SpringLiquibase();
+            liquibase.setDataSource(schemaDataSource);
+            liquibase.setChangeLog("classpath:db/changelog/migration/029-add-merchant-integration.xml");
+            liquibase.setDefaultSchema(schema);
+            liquibase.setLiquibaseSchema(schema);
+            liquibase.afterPropertiesSet();
         }
+    }
+
+    private AutoCloseable selectSchema(Connection connection, String schema) throws SQLException {
+        String currentSchema = connection.getSchema();
+        String schemaToRestore = currentSchema == null || currentSchema.isBlank() ? "public" : currentSchema;
+        connection.setSchema(schema);
+        return () -> connection.setSchema(schemaToRestore);
     }
 }
