@@ -56,9 +56,29 @@ export interface paths {
         put?: never;
         /**
          * Search grouped canonical products for the current user
-         * @description Returns version 1 provider-neutral products with exact merchant offers and provenance. The unversioned JSON and SSE routes remain flat during frontend migration; grouped SSE is not available because partial candidate events cannot yet guarantee stable canonical grouping.
+         * @description Federates provider catalogs and Meant merchant-semantic discovery, then returns version 1 provider-neutral products with exact merchant offers and provenance. The unversioned JSON and SSE routes remain flat during frontend migration.
          */
         post: operations["searchGroupedProductsV1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/product-searches:stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream federated product candidates for the current user
+         * @description Streams provider-neutral candidates, source completions, scoped degradations, and exactly one request terminal event. Every candidate retains provider and discovery provenance.
+         */
+        post: operations["streamFederatedProductsV1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1367,7 +1387,7 @@ export interface components {
             normalizedQuery: string;
             /** @description Taste and settings profile hash used for the search */
             profileHash: string;
-            /** @description Whether results came from the existing flat-search cache */
+            /** @description Whether results came from a source-approved cache */
             cached: boolean;
             /**
              * Format: int32
@@ -1388,6 +1408,24 @@ export interface components {
             hasMore: boolean;
             /** @description Deterministically ordered canonical products */
             products: components["schemas"]["CanonicalProductResponse"][];
+        };
+        CatalogSourceFailureResponse: {
+            /** @enum {string} */
+            kind: "AUTHENTICATION" | "INVALID_REQUEST" | "RATE_LIMITED" | "TIMEOUT" | "TRANSIENT_UPSTREAM" | "UNAVAILABLE" | "MALFORMED_RESPONSE";
+            message: string;
+            retryAfter?: string;
+            /** Format: int32 */
+            upstreamStatus?: number;
+        };
+        /** @description Provider-neutral federated discovery event with source provenance */
+        UserFederatedProductSearchStreamEventResponse: {
+            /** @enum {string} */
+            type: "CANDIDATE" | "SOURCE_COMPLETE" | "SOURCE_DEGRADED" | "COMPLETE" | "ERROR";
+            source?: components["schemas"]["DiscoverySourceIdentityResponse"];
+            candidate?: components["schemas"]["CanonicalProductResponse"];
+            failure?: components["schemas"]["CatalogSourceFailureResponse"];
+            /** @enum {string} */
+            terminalStatus?: "SUCCESS" | "PARTIAL" | "FAILED";
         };
         ShoppingFilterResponse: {
             id: string;
@@ -3070,6 +3108,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserGroupedProductSearchV1Response"];
+                };
+            };
+        };
+    };
+    streamFederatedProductsV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProductSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Federated discovery event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["UserFederatedProductSearchStreamEventResponse"];
                 };
             };
         };

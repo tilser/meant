@@ -3,7 +3,7 @@ package com.meant.api.module.merchant.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
@@ -17,9 +17,10 @@ import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.support.UcpDecimal;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
@@ -60,25 +61,46 @@ public class MerchantProductDetailsEnricher {
             CatalogSearchContext context,
             Consumer<MerchantSemanticProductResult> candidateConsumer
     ) {
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<CompletableFuture<MerchantSemanticProductResult>> futures = IntStream.range(0, rerankedProducts.size())
-                    .mapToObj(index -> CompletableFuture.supplyAsync(() -> toProductResult(
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            List<Future<MerchantSemanticProductResult>> futures = executor.invokeAll(
+                    IntStream.range(0, rerankedProducts.size())
+                    .<java.util.concurrent.Callable<MerchantSemanticProductResult>>mapToObj(index -> () -> {
+                        MerchantSemanticProductResult product = toProductResult(
                             filteredProductCandidates.get(rerankedProducts.get(index).index()),
                             rerankedProducts.get(index),
                             index + 1,
                             query,
                             context
-                    ), executor)
-                            .whenComplete((product, exception) -> emitProductUpdate(product, candidateConsumer))
-                            .exceptionally(exception -> {
-                                log.error("Parallel merchant product details search failed", exception);
-                                return null;
-                            }))
-                    .toList();
+                        );
+                        emitProductUpdate(product, candidateConsumer);
+                        return product;
+                    }).toList()
+            );
             return futures.stream()
-                    .map(CompletableFuture::join)
+                    .map(this::completedProduct)
                     .filter(Objects::nonNull)
                     .toList();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Merchant product enrichment was cancelled");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private MerchantSemanticProductResult completedProduct(Future<MerchantSemanticProductResult> future) {
+        try {
+            return future.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Merchant product enrichment was cancelled");
+        } catch (java.util.concurrent.ExecutionException exception) {
+            log.warn("Merchant product enrichment task failed. failureType={}",
+                    exception.getCause() == null
+                            ? exception.getClass().getName()
+                            : exception.getCause().getClass().getName());
+            return null;
         }
     }
 
@@ -93,21 +115,18 @@ public class MerchantProductDetailsEnricher {
             return toProductResult(productCandidate, rerankResult, rank, null, productDetails(productCandidate, context));
         } catch (RuntimeException exception) {
             MerchantSemanticSearchResult merchant = productCandidate.merchant();
-            log.error(
-                    "Merchant product details failed. merchantId={}, domain={}, endpoint={}, productId={}, query={}, rank={}",
+            log.warn(
+                    "Merchant product details failed. merchantId={}, domain={}, rank={}, failureType={}",
                     merchant.merchantId(),
                     merchant.domain(),
-                    productCandidate.endpoint(),
-                    productCandidate.product().id(),
-                    query,
                     rank,
-                    exception
+                    exception.getClass().getName()
             );
             return toProductResult(
                     productCandidate,
                     rerankResult,
                     rank,
-                    exception.getMessage(),
+                    "Product details unavailable",
                     (ProductDetailsResult) null
             );
         }
@@ -150,11 +169,8 @@ public class MerchantProductDetailsEnricher {
         try {
             candidateConsumer.accept(product);
         } catch (RuntimeException exception) {
-            log.debug(
-                    "Product search candidate consumer rejected an enrichment update. productId={}",
-                    product.productId(),
-                    exception
-            );
+            log.debug("Product search candidate consumer rejected an enrichment update. failureType={}",
+                    exception.getClass().getName());
         }
     }
 

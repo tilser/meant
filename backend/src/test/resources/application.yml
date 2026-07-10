@@ -40,6 +40,8 @@ app:
         - method: POST
           path: /api/v1/users/me/product-searches
         - method: POST
+          path: /api/v1/users/me/product-searches:stream
+        - method: POST
           path: /api/users/me/product-searches:stream
         - method: GET
           path: /api/users/me/product-search-suggestions
@@ -75,6 +77,9 @@ ucp:
     order-webhooks-authorized: false
 
 commerce:
+  catalog:
+    federation:
+      overall-deadline: 15s
   execution-policy:
     catalog-rollout-enabled: true
     cart-rollout-enabled: true

@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.hc.client5.http.config.Configurable;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,6 +39,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+@ExtendWith(OutputCaptureExtension.class)
 class MerchantMcpToolClientTest {
 
     @Test
@@ -268,13 +272,15 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
-    void doesNotFallbackToNextEndpointAfterRateLimit() {
+    void doesNotFallbackToNextEndpointAfterRateLimitOrLogResponsePayload(CapturedOutput output) {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
         server.expect(requestTo("https://advertised.example/advertised-mcp"))
                 .andExpect(method(HttpMethod.POST))
-                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .body("Bearer secret-token product-payload")
+                        .contentType(MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> client.callTool(
                 new MerchantSemanticSearchResult(
@@ -294,6 +300,7 @@ class MerchantMcpToolClientTest {
                 .isInstanceOf(MerchantMcpToolException.class)
                 .hasMessageContaining("failed for all endpoint candidates");
         server.verify();
+        assertThat(output.getAll()).doesNotContain("secret-token", "product-payload", "Bearer");
     }
 
     private MerchantMcpToolClient client(RestClient restClient, String resolvedAddress) {

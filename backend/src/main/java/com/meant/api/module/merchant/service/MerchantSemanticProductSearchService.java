@@ -1,8 +1,8 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchAttemptResult;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchOutcome;
@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -60,6 +61,14 @@ public class MerchantSemanticProductSearchService {
             @NotNull @Valid SemanticProductSearchQuery query,
             Consumer<MerchantSemanticProductResult> candidateConsumer
     ) {
+        return search(query, candidateConsumer, UnaryOperator.identity());
+    }
+
+    public MerchantSemanticProductSearchResult search(
+            @NotNull @Valid SemanticProductSearchQuery query,
+            Consumer<MerchantSemanticProductResult> candidateConsumer,
+            UnaryOperator<List<MerchantSemanticSearchResult>> merchantEligibility
+    ) {
         int merchantLimit = valueOrDefault(query.merchantLimit(), merchantCatalogSearchProperties.merchantLimit());
         int merchantCandidateLimit = Math.max(
                 valueOrDefault(
@@ -74,7 +83,9 @@ public class MerchantSemanticProductSearchService {
         );
         int productLimit = valueOrDefault(query.productLimit(), merchantCatalogSearchProperties.productLimit());
 
-        List<MerchantSemanticSearchResult> merchants = merchants(query, merchantCandidateLimit);
+        List<MerchantSemanticSearchResult> merchants = merchantEligibility.apply(
+                merchants(query, merchantCandidateLimit)
+        );
         List<MerchantSemanticSearchResult> topMerchants = merchants.stream()
                 .limit(merchantLimit)
                 .toList();

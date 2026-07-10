@@ -3,9 +3,9 @@ package com.meant.api.module.merchant.service;
 import static com.meant.api.common.util.CollectionUtils.safeList;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
-import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;

@@ -3,7 +3,7 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;

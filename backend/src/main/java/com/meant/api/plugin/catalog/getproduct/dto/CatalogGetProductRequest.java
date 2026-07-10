@@ -1,6 +1,6 @@
 package com.meant.api.plugin.catalog.getproduct.dto;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import java.util.List;
 

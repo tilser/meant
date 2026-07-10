@@ -2,11 +2,11 @@ package com.meant.api.plugin.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
-import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
-import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;

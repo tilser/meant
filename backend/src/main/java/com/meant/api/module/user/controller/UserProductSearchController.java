@@ -106,12 +106,16 @@ public class UserProductSearchController {
                 request.limit()
         );
         SseEmitter emitter = new SseEmitter(userProductSearchProperties.streamTimeout().toMillis());
-        UserProductSearchSseSession session = new UserProductSearchSseSession(
+        UserSseSession<UserProductSearchStreamEventResponse> session = new UserSseSession<>(
                 emitter,
                 userProductSearchProperties.streamQueueCapacity(),
                 authenticatedUser.id(),
                 command.merchantId(),
-                userStreamEventWriter
+                userStreamEventWriter::writeProductSearchEvent,
+                event -> "done".equals(event.type()) || "error".equals(event.type()),
+                ignored -> UserProductSearchStreamEventResponse.error(
+                        "Product search failed. Please try again."
+                )
         );
         session.start(() -> userProductSearchService.stream(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),

@@ -2,10 +2,10 @@ package com.meant.api.module.user.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
-import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
-import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;

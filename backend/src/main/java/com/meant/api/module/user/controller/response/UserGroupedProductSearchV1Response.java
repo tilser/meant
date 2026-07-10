@@ -45,7 +45,7 @@ public record UserGroupedProductSearchV1Response(
         String normalizedQuery,
         @Schema(description = "Taste and settings profile hash used for the search", requiredMode = Schema.RequiredMode.REQUIRED)
         String profileHash,
-        @Schema(description = "Whether results came from the existing flat-search cache", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "Whether results came from a source-approved cache", requiredMode = Schema.RequiredMode.REQUIRED)
         boolean cached,
         @Schema(description = "Flat-result offset used before grouping", requiredMode = Schema.RequiredMode.REQUIRED)
         int offset,
@@ -99,8 +99,8 @@ public record UserGroupedProductSearchV1Response(
             List<OfferResponse> offers
     ) {
 
-        static CanonicalProductResponse from(CanonicalProduct product) {
-            return new CanonicalProductResponse(
+        public static CanonicalProductResponse from(CanonicalProduct product) {
+            return product == null ? null : new CanonicalProductResponse(
                     product.key(),
                     product.title(),
                     product.description(),
@@ -513,8 +513,10 @@ public record UserGroupedProductSearchV1Response(
             String value
     ) {
 
-        static DiscoverySourceIdentityResponse from(DiscoverySourceIdentity source) {
-            return new DiscoverySourceIdentityResponse(source.provider().value(), source.type(), source.value());
+        public static DiscoverySourceIdentityResponse from(DiscoverySourceIdentity source) {
+            return source == null
+                    ? null
+                    : new DiscoverySourceIdentityResponse(source.provider().value(), source.type(), source.value());
         }
     }
 

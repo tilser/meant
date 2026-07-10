@@ -9,20 +9,61 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 class UserProductSearchSseSessionTest {
 
     @Test
-    void completeWithErrorCancelsRunningSearchFuture() throws Exception {
-        FailingProductSearchEventWriter writer = new FailingProductSearchEventWriter();
-        UserProductSearchSseSession session = new UserProductSearchSseSession(
+    void admitsExactlyOneTerminalEventAndSuppressesLateEvents() throws Exception {
+        CapturingProductSearchEventWriter writer = new CapturingProductSearchEventWriter();
+        UserSseSession<UserProductSearchStreamEventResponse> session = new UserSseSession<>(
                 new SseEmitter(10_000L),
                 4,
                 UUID.randomUUID(),
                 null,
-                writer
+                writer::writeProductSearchEvent,
+                event -> "done".equals(event.type()) || "error".equals(event.type()),
+                ignored -> UserProductSearchStreamEventResponse.error("search failed")
+        );
+        CountDownLatch releaseSearch = new CountDownLatch(1);
+        try {
+            session.start(() -> {
+                try {
+                    releaseSearch.await(2, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            session.send(UserProductSearchStreamEventResponse.error("first terminal"));
+            session.send(UserProductSearchStreamEventResponse.error("second terminal"));
+            session.send(UserProductSearchStreamEventResponse.from(
+                    com.meant.api.module.user.service.dto.UserProductSearchStreamEvent.phase("search", "late")
+            ));
+
+            assertThat(writer.written.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(writer.events).singleElement().satisfies(event -> {
+                assertThat(event.type()).isEqualTo("error");
+                assertThat(event.message()).isEqualTo("first terminal");
+            });
+        } finally {
+            releaseSearch.countDown();
+        }
+    }
+
+    @Test
+    void completeWithErrorCancelsRunningSearchFuture() throws Exception {
+        FailingProductSearchEventWriter writer = new FailingProductSearchEventWriter();
+        UserSseSession<UserProductSearchStreamEventResponse> session = new UserSseSession<>(
+                new SseEmitter(10_000L),
+                4,
+                UUID.randomUUID(),
+                null,
+                writer::writeProductSearchEvent,
+                event -> "done".equals(event.type()) || "error".equals(event.type()),
+                ignored -> UserProductSearchStreamEventResponse.error("search failed")
         );
         CountDownLatch searchStarted = new CountDownLatch(1);
         CountDownLatch searchInterrupted = new CountDownLatch(1);
@@ -52,10 +93,10 @@ class UserProductSearchSseSessionTest {
     }
 
     private static CompletableFuture<Void> future(
-            UserProductSearchSseSession session,
+            UserSseSession<?> session,
             String fieldName
     ) throws ReflectiveOperationException {
-        Field field = UserProductSearchSseSession.class.getDeclaredField(fieldName);
+        Field field = UserSseSession.class.getDeclaredField(fieldName);
         field.setAccessible(true);
         @SuppressWarnings("unchecked")
         CompletableFuture<Void> future = (CompletableFuture<Void>) field.get(session);
@@ -87,6 +128,22 @@ class UserProductSearchSseSessionTest {
         ) throws IOException {
             writeAttempted.countDown();
             throw new IOException("client disconnected");
+        }
+    }
+
+    private static final class CapturingProductSearchEventWriter extends UserStreamEventWriter {
+
+        private final CopyOnWriteArrayList<UserProductSearchStreamEventResponse> events = new CopyOnWriteArrayList<>();
+        private final CountDownLatch written = new CountDownLatch(1);
+
+        private CapturingProductSearchEventWriter() {
+            super(null);
+        }
+
+        @Override
+        void writeProductSearchEvent(SseEmitter emitter, UserProductSearchStreamEventResponse event) {
+            events.add(event);
+            written.countDown();
         }
     }
 }

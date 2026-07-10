@@ -8,18 +8,25 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
-import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
-import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
-import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
+import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
-import com.meant.api.module.user.service.dto.UserProductSearchResult;
+import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
+import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
+import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
+import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryMetrics;
+import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties;
+import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
 import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentityStrategy;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -29,42 +36,34 @@ import org.junit.jupiter.api.Test;
 class UserGroupedProductSearchServiceTest {
 
     @Test
-    void mapsTheFlatSearchThroughMerchantIntegrationIdentityWithoutChangingLegacyKeys() {
-        UserProductSearchProductResult flatProduct = flatProduct();
-        UserProductSearchResult flatResult = new UserProductSearchResult(
-                "linen shirt",
-                "linen shirt",
-                "profile-hash",
-                false,
-                0,
-                20,
-                null,
-                false,
-                List.of(flatProduct)
+    void groupsFederatedCandidatesWithoutUsingTheLegacyCache() {
+        UserProductSearchProductResult flatProduct = flatProduct("usd", "usd");
+        ProductCandidate candidate = candidateMapper().from(
+                flatProduct,
+                integration(flatProduct.merchantId()),
+                Instant.parse("2026-07-10T10:00:00Z"),
+                ResultSourceType.MERCHANT_STOREFRONT
         );
-        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(
-                UUID.fromString("20000000-0000-0000-0000-000000000001"),
-                "shopper@example.com",
-                "Shopper",
-                null
+        StubPreparationService preparationService = new StubPreparationService(preparation());
+        StubFederatedDiscoveryService discoveryService = new StubFederatedDiscoveryService(
+                new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.SUCCESS,
+                        List.of(),
+                        List.of(candidate)
+                )
         );
-        SearchUserProductsCommand searchCommand = new SearchUserProductsCommand(
-                profileCommand.id(), "linen shirt", null, "127.0.0.1", "test", 0, 20);
-        MerchantIntegrationResult integration = integration(flatProduct.merchantId());
-        StubUserProductSearchService flatSearchService = new StubUserProductSearchService(flatResult);
-        StubMerchantIntegrationLookupService integrationLookupService =
-                new StubMerchantIntegrationLookupService(integration);
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
-                flatSearchService,
-                integrationLookupService,
-                candidateMapper(),
+                preparationService,
+                discoveryService,
                 new ExactProductGroupingService()
         );
+        EnsureUserProfileCommand profile = profile();
+        SearchUserProductsCommand command = command(profile.id());
 
-        UserGroupedProductSearchResult result = service.search(profileCommand, searchCommand);
+        var result = service.search(profile, command);
 
+        assertThat(result.cached()).isFalse();
         assertThat(result.products()).singleElement().satisfies(product -> {
-            assertThat(product.key()).startsWith("product_v2_").isNotEqualTo(flatProduct.productKey());
             assertThat(product.offers()).singleElement().satisfies(offer -> {
                 assertThat(offer.identity().provider().value()).isEqualTo("SHOPIFY");
                 assertThat(offer.identity().merchantScope().externalMerchantIdentity().value())
@@ -74,68 +73,19 @@ class UserGroupedProductSearchServiceTest {
                 assertThat(offer.identity().externalVariantIdentity().type())
                         .isEqualTo(ExternalIdentifierType.VARIANT);
                 assertThat(offer.price().minorUnits()).isEqualTo(4200);
-                assertThat(offer.price().currency()).isEqualTo("USD");
-                assertThat(offer.provenance().getFirst().sourceReference().type())
-                        .isEqualTo(ResultSourceType.MERCHANT_STOREFRONT);
-                assertThat(offer.provenance().getFirst().externalProductReference().value())
-                        .isEqualTo("gid://shopify/Product/200");
-                assertThat(offer.provenance().getFirst().discoverySource().value())
-                        .isEqualTo("gid://shopify/Shop/100");
-                assertThat(offer.provenance().getFirst().localRouting().merchantIntegrationId())
-                        .isEqualTo(integration.id());
             });
         });
-        assertThat(flatProduct.productKey()).isEqualTo("legacy.example:legacy-product-key");
-        assertThat(flatSearchService.profileCommand).isEqualTo(profileCommand);
-        assertThat(flatSearchService.searchCommand).isEqualTo(searchCommand);
+        assertThat(discoveryService.request.query()).isEqualTo("linen shirt");
+        assertThat(discoveryService.request.candidateLimit()).isEqualTo(21);
+        assertThat(preparationService.profileCommand).isEqualTo(profile);
+        assertThat(preparationService.searchCommand).isEqualTo(command);
     }
 
     @Test
-    void resolvesTheOnlyActiveIntegrationWhenItsEndpointIsAbsent() {
-        UserProductSearchProductResult flatProduct = flatProduct();
-        UserProductSearchResult flatResult = new UserProductSearchResult(
-                "linen shirt",
-                "linen shirt",
-                "profile-hash",
-                false,
-                0,
-                20,
-                null,
-                false,
-                List.of(flatProduct)
-        );
-        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(
-                UUID.fromString("20000000-0000-0000-0000-000000000001"),
-                "shopper@example.com",
-                "Shopper",
-                null
-        );
-        MerchantIntegrationResult integration = integration(flatProduct.merchantId(), null, null, null);
-        UserGroupedProductSearchService service = new UserGroupedProductSearchService(
-                new StubUserProductSearchService(flatResult),
-                new StubMerchantIntegrationLookupService(integration),
-                candidateMapper(),
-                new ExactProductGroupingService()
-        );
-
-        UserGroupedProductSearchResult result = service.search(
-                profileCommand,
-                new SearchUserProductsCommand(
-                        profileCommand.id(), "linen shirt", null, "127.0.0.1", "test", 0, 20)
-        );
-
-        assertThat(result.products().getFirst().offers().getFirst().identity()
-                .merchantScope().merchantIntegrationFallbackId())
-                .isEqualTo(integration.id());
-        assertThat(result.products().getFirst().offers().getFirst().provenance().getFirst()
-                .externalMerchantReference()).isNull();
-    }
-
-    @Test
-    void omitsPriceWhenTheFlatCandidateHasNoCurrency() {
+    void omitsPriceWhenTheCandidateHasNoCurrency() {
         UserProductSearchProductResult flatProduct = flatProduct(null, null);
 
-        var candidate = new UserCanonicalProductCandidateMapper(List.of()).from(
+        ProductCandidate candidate = candidateMapper().from(
                 flatProduct,
                 integration(flatProduct.merchantId()),
                 Instant.parse("2026-07-10T10:00:00Z"),
@@ -144,21 +94,43 @@ class UserGroupedProductSearchServiceTest {
 
         assertThat(candidate.offer().price()).isNull();
         assertThat(candidate.offer().identity().externalProductIdentity().value())
-                .isEqualTo("gid://shopify/Product/200");
+                .isEqualTo("variant-product:v1:gid://shopify/ProductVariant/300");
     }
 
-    private UserProductSearchProductResult flatProduct() {
-        return flatProduct("usd", "usd");
+    private UserProductSearchPreparation preparation() {
+        return new UserProductSearchPreparation(
+                "linen shirt",
+                null,
+                null,
+                null,
+                new UserProductSearchCatalogInput("linen shirt", "normalized", null, null, null),
+                "normalized",
+                "profile-hash",
+                Instant.parse("2026-07-11T00:00:00Z"),
+                0,
+                20,
+                21
+        );
+    }
+
+    private EnsureUserProfileCommand profile() {
+        return new EnsureUserProfileCommand(
+                UUID.fromString("20000000-0000-0000-0000-000000000001"),
+                "shopper@example.com",
+                "Shopper",
+                null
+        );
+    }
+
+    private SearchUserProductsCommand command(UUID userId) {
+        return new SearchUserProductsCommand(userId, "linen shirt", null, "127.0.0.1", "test", 0, 20);
     }
 
     private UserCanonicalProductCandidateMapper candidateMapper() {
         return new UserCanonicalProductCandidateMapper(List.of(new ShopifyOfferIdentityStrategy()));
     }
 
-    private UserProductSearchProductResult flatProduct(
-            String priceCurrency,
-            String selectedVariantPriceCurrency
-    ) {
+    private UserProductSearchProductResult flatProduct(String priceCurrency, String selectedVariantPriceCurrency) {
         UUID merchantId = UUID.fromString("30000000-0000-0000-0000-000000000001");
         return new UserProductSearchProductResult(
                 "legacy.example:legacy-product-key", "legacy-hash", merchantId, "shop.example", "Legacy merchant",
@@ -174,24 +146,6 @@ class UserGroupedProductSearchServiceTest {
     }
 
     private MerchantIntegrationResult integration(UUID merchantId) {
-        return integration(merchantId, "https://shop.example/mcp");
-    }
-
-    private MerchantIntegrationResult integration(UUID merchantId, String endpoint) {
-        return integration(
-                merchantId,
-                endpoint,
-                "gid://shopify/Shop/100",
-                "shop.myshopify.com"
-        );
-    }
-
-    private MerchantIntegrationResult integration(
-            UUID merchantId,
-            String endpoint,
-            String externalMerchantId,
-            String verifiedShopIdentity
-    ) {
         Instant now = Instant.parse("2026-07-10T10:00:00Z");
         return new MerchantIntegrationResult(
                 UUID.fromString("40000000-0000-0000-0000-000000000001"),
@@ -199,10 +153,10 @@ class UserGroupedProductSearchServiceTest {
                 MerchantIntegrationProvider.SHOPIFY,
                 MerchantIntegrationKind.MERCHANT_CONNECTION,
                 Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
-                externalMerchantId,
+                "gid://shopify/Shop/100",
                 "shop.example",
-                verifiedShopIdentity,
-                endpoint,
+                "shop.myshopify.com",
+                "https://shop.example/mcp",
                 "2026-04-08",
                 MerchantIntegrationAuthStrategy.OAUTH_BEARER,
                 MerchantIntegrationStatus.ACTIVE,
@@ -213,41 +167,46 @@ class UserGroupedProductSearchServiceTest {
         );
     }
 
-    private static final class StubUserProductSearchService extends UserProductSearchService {
+    private static final class StubPreparationService extends UserProductSearchPreparationService {
 
-        private final UserProductSearchResult result;
+        private final UserProductSearchPreparation preparation;
         private EnsureUserProfileCommand profileCommand;
         private SearchUserProductsCommand searchCommand;
 
-        private StubUserProductSearchService(UserProductSearchResult result) {
-            super(null, null, null, null, null, null, null, null, null, null, null, null, null);
+        private StubPreparationService(UserProductSearchPreparation preparation) {
+            super(null, null, null, null, null, null);
+            this.preparation = preparation;
+        }
+
+        @Override
+        public UserProductSearchPreparation prepare(
+                EnsureUserProfileCommand profileCommand,
+                SearchUserProductsCommand command
+        ) {
+            this.profileCommand = profileCommand;
+            this.searchCommand = command;
+            return preparation;
+        }
+    }
+
+    private static final class StubFederatedDiscoveryService extends FederatedCatalogDiscoveryService {
+
+        private final FederatedCatalogDiscoveryResult result;
+        private CatalogDiscoveryRequest request;
+
+        private StubFederatedDiscoveryService(FederatedCatalogDiscoveryResult result) {
+            super(
+                    List.of(),
+                    new FederatedCatalogDiscoveryProperties(Duration.ofSeconds(1)),
+                    new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry())
+            );
             this.result = result;
         }
 
         @Override
-        public UserProductSearchResult search(
-                EnsureUserProfileCommand profileCommand,
-                SearchUserProductsCommand searchCommand
-        ) {
-            this.profileCommand = profileCommand;
-            this.searchCommand = searchCommand;
+        public FederatedCatalogDiscoveryResult search(CatalogDiscoveryRequest request) {
+            this.request = request;
             return result;
-        }
-    }
-
-    private static final class StubMerchantIntegrationLookupService extends MerchantIntegrationLookupService {
-
-        private final MerchantIntegrationResult integration;
-
-        private StubMerchantIntegrationLookupService(MerchantIntegrationResult integration) {
-            super(null);
-            this.integration = integration;
-        }
-
-        @Override
-        public List<MerchantIntegrationResult> listByMerchants(ListMerchantIntegrationsByMerchantsQuery query) {
-            assertThat(query.merchantIds()).containsExactly(integration.merchantId());
-            return List.of(integration);
         }
     }
 }

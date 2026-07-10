@@ -1,7 +1,7 @@
 package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;

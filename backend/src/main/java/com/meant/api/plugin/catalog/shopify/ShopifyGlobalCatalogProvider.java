@@ -323,12 +323,16 @@ public class ShopifyGlobalCatalogProvider {
         );
     }
 
-    private DiscoverySourceIdentity discoverySource() {
+    public DiscoverySourceIdentity discoverySourceIdentity() {
         return new DiscoverySourceIdentity(
                 ShopifyGlobalCatalogNormalizer.SHOPIFY,
                 ResultSourceType.PROVIDER_CATALOG,
                 properties.sourceIdentity()
         );
+    }
+
+    private DiscoverySourceIdentity discoverySource() {
+        return discoverySourceIdentity();
     }
 
     private CatalogSourcePage page(ShopifyGlobalCatalogResponse response) {

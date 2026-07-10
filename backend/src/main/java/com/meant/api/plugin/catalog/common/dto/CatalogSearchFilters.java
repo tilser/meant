@@ -1,4 +1,4 @@
-package com.meant.api.module.merchant.service.dto;
+package com.meant.api.plugin.catalog.common.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;

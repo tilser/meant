@@ -239,7 +239,7 @@ public class MerchantMcpToolClient {
                      | MerchantMcpToolException
                      | MerchantOutboundUrlException
                      | UcpMcpException exception) {
-                logEndpointFailure(domain, endpoint, operation, exception);
+                logEndpointFailure(domain, operation, exception);
                 failures.add(new MerchantMcpToolException(operation + " failed for " + endpoint, exception));
                 if (MerchantHttpFailureClassifier.isRateLimited(exception)) {
                     break;
@@ -251,29 +251,24 @@ public class MerchantMcpToolClient {
 
     private void logEndpointFailure(
             String domain,
-            String endpoint,
             String operation,
             RuntimeException exception
     ) {
         if (exception instanceof RestClientResponseException responseException) {
             log.warn(
-                    "UCP merchant HTTP failure domain={} endpoint={} operation={} status={} responseBody={}",
+                    "UCP merchant HTTP failure domain={} operation={} status={}",
                     domain,
-                    endpoint,
                     operation,
-                    responseException.getStatusCode().value(),
-                    responseException.getResponseBodyAsString()
+                    responseException.getStatusCode().value()
             );
             return;
         }
         if (exception instanceof UcpMcpException || exception instanceof MerchantMcpToolException) {
             log.warn(
-                    "UCP merchant MCP failure domain={} endpoint={} operation={} exception={} message={}",
+                    "UCP merchant MCP failure domain={} operation={} exception={}",
                     domain,
-                    endpoint,
                     operation,
-                    exception.getClass().getName(),
-                    exception.getMessage()
+                    exception.getClass().getName()
             );
         }
     }

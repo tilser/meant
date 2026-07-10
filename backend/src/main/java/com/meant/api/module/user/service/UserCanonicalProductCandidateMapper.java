@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
+import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
@@ -44,6 +45,29 @@ public class UserCanonicalProductCandidateMapper {
 
     public ProductCandidate from(
             UserProductSearchProductResult product,
+            MerchantIntegrationResult integration,
+            Instant observedAt,
+            ResultSourceType sourceType
+    ) {
+        return from(CandidateProduct.from(product), integration, observedAt, sourceType);
+    }
+
+    public ProductCandidate from(
+            MerchantSemanticProductResult product,
+            String productKey,
+            MerchantIntegrationResult integration,
+            Instant observedAt
+    ) {
+        return from(
+                CandidateProduct.from(product, productKey),
+                integration,
+                observedAt,
+                ResultSourceType.MERCHANT_STOREFRONT
+        );
+    }
+
+    private ProductCandidate from(
+            CandidateProduct product,
             MerchantIntegrationResult integration,
             Instant observedAt,
             ResultSourceType sourceType
@@ -171,7 +195,7 @@ public class UserCanonicalProductCandidateMapper {
         };
     }
 
-    private Money price(UserProductSearchProductResult product) {
+    private Money price(CandidateProduct product) {
         String currency = firstText(product.selectedVariantPriceCurrency(), product.priceCurrency());
         if (currency == null || currency.isBlank()) {
             return null;
@@ -189,7 +213,7 @@ public class UserCanonicalProductCandidateMapper {
                 : new Money(minorUnits, currency);
     }
 
-    private OfferAvailability availability(UserProductSearchProductResult product) {
+    private OfferAvailability availability(CandidateProduct product) {
         Boolean available = product.selectedVariantAvailable() == null
                 ? product.available()
                 : product.selectedVariantAvailable();
@@ -199,7 +223,7 @@ public class UserCanonicalProductCandidateMapper {
         return new OfferAvailability(status, null, null);
     }
 
-    private List<ProductMedia> media(UserProductSearchProductResult product) {
+    private List<ProductMedia> media(CandidateProduct product) {
         List<ProductMedia> richMedia = safeList(product.media()).stream()
                 .map(this::media)
                 .filter(Objects::nonNull)
@@ -257,5 +281,88 @@ public class UserCanonicalProductCandidateMapper {
 
     private <T> List<T> safeList(List<T> values) {
         return values == null ? List.of() : values.stream().filter(Objects::nonNull).toList();
+    }
+
+    private record CandidateProduct(
+            String productKey,
+            String productId,
+            String title,
+            String descriptionHtml,
+            String url,
+            String imageUrl,
+            Long priceMinAmount,
+            String priceCurrency,
+            Long listPriceAmount,
+            String listPriceCurrency,
+            List<ProductCatalogMedia> media,
+            List<String> certifications,
+            List<String> materials,
+            List<ProductCatalogAttribute> attributes,
+            Boolean available,
+            String detailDescription,
+            String detailImageUrl,
+            String selectedVariantId,
+            String selectedVariantTitle,
+            String selectedVariantPriceAmount,
+            String selectedVariantPriceCurrency,
+            Boolean selectedVariantAvailable,
+            String merchantName
+    ) {
+
+        private static CandidateProduct from(UserProductSearchProductResult product) {
+            return new CandidateProduct(
+                    product.productKey(),
+                    product.productId(),
+                    product.title(),
+                    product.descriptionHtml(),
+                    product.url(),
+                    product.imageUrl(),
+                    product.priceMinAmount(),
+                    product.priceCurrency(),
+                    product.listPriceAmount(),
+                    product.listPriceCurrency(),
+                    product.media(),
+                    product.certifications(),
+                    product.materials(),
+                    product.attributes(),
+                    product.available(),
+                    product.detailDescription(),
+                    product.detailImageUrl(),
+                    product.selectedVariantId(),
+                    product.selectedVariantTitle(),
+                    product.selectedVariantPriceAmount(),
+                    product.selectedVariantPriceCurrency(),
+                    product.selectedVariantAvailable(),
+                    product.merchantName()
+            );
+        }
+
+        private static CandidateProduct from(MerchantSemanticProductResult product, String productKey) {
+            return new CandidateProduct(
+                    productKey,
+                    product.productId(),
+                    product.title(),
+                    product.descriptionHtml(),
+                    product.url(),
+                    product.imageUrl(),
+                    product.priceMinAmount(),
+                    product.priceCurrency(),
+                    product.listPriceAmount(),
+                    product.listPriceCurrency(),
+                    product.media(),
+                    product.certifications(),
+                    product.materials(),
+                    product.attributes(),
+                    product.available(),
+                    product.detailDescription(),
+                    product.detailImageUrl(),
+                    product.selectedVariantId(),
+                    product.selectedVariantTitle(),
+                    product.selectedVariantPriceAmount(),
+                    product.selectedVariantPriceCurrency(),
+                    product.selectedVariantAvailable(),
+                    product.merchantName()
+            );
+        }
     }
 }

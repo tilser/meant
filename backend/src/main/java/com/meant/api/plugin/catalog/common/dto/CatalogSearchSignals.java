@@ -1,4 +1,4 @@
-package com.meant.api.module.merchant.service.dto;
+package com.meant.api.plugin.catalog.common.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -7,7 +7,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record CatalogSearchSignals(
         @JsonProperty("dev.ucp.buyer_ip")
         String buyerIp,
-
         @JsonProperty("dev.ucp.user_agent")
         String userAgent
 ) {

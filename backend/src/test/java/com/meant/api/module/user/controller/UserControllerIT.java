@@ -1294,7 +1294,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void openApiPublishesGroupedV1WithoutReplacingFlatOrAddingGroupedStreaming() {
+    void openApiPublishesFederatedGroupedAndStreamingV1WithoutReplacingFlatRoutes() {
         String openApi = client.get().uri("/v3/api-docs")
                 .exchange()
                 .expectStatus().isOk()
@@ -1307,9 +1307,12 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "\"/api/users/me/product-searches\"",
                         "\"/api/users/me/product-searches:stream\"",
                         "\"/api/v1/users/me/product-searches\"",
+                        "\"/api/v1/users/me/product-searches:stream\"",
                         "\"operationId\":\"searchProducts\"",
                         "\"operationId\":\"searchGroupedProductsV1\"",
+                        "\"operationId\":\"streamFederatedProductsV1\"",
                         "UserGroupedProductSearchV1Response",
+                        "UserFederatedProductSearchStreamEventResponse",
                         "CanonicalProductResponse",
                         "OfferResponse",
                         "OfferMerchantScopeResponse",
@@ -1317,8 +1320,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "LocalMerchantRoutingResponse",
                         "ResultProvenanceResponse",
                         "\"minorUnits\""
-                )
-                .doesNotContain("\"/api/v1/users/me/product-searches:stream\"");
+                );
     }
 
     private static void assertBefore(String value, String first, String second) {

@@ -1,4 +1,4 @@
-package com.meant.api.module.merchant.service.dto;
+package com.meant.api.plugin.catalog.common.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -7,17 +7,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record CatalogSearchContext(
         @JsonProperty("address_country")
         String addressCountry,
-
         @JsonProperty("address_region")
         String addressRegion,
-
         @JsonProperty("postal_code")
         String postalCode,
-
         String language,
-
         String currency,
-
         String intent
 ) {
 }

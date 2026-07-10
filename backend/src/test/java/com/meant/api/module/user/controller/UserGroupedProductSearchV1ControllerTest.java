@@ -33,7 +33,8 @@ class UserGroupedProductSearchV1ControllerTest {
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
         httpRequest.setRemoteAddr("192.0.2.10");
         httpRequest.addHeader("User-Agent", " grouped-client ");
-        UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(service);
+        UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
+                service, null, null, null);
 
         UserGroupedProductSearchV1Response response = controller.searchProducts(
                 jwt,
@@ -63,7 +64,7 @@ class UserGroupedProductSearchV1ControllerTest {
         private SearchUserProductsCommand searchCommand;
 
         private CapturingGroupedProductSearchService() {
-            super(null, null, null, null);
+            super(null, null, null);
         }
 
         @Override

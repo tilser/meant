@@ -1,8 +1,8 @@
 package com.meant.api.module.merchant.service.query;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
-import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;

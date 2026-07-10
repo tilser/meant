@@ -1,6 +1,5 @@
 package com.meant.api.module.user.controller;
 
-import com.meant.api.module.user.controller.response.UserProductSearchStreamEventResponse;
 import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -9,39 +8,48 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Slf4j
-final class UserProductSearchSseSession {
+final class UserSseSession<T> {
 
     private static final long DRAIN_POLL_MILLISECONDS = 250L;
 
     private final SseEmitter emitter;
-    private final ArrayBlockingQueue<UserProductSearchStreamEventResponse> events;
+    private final ArrayBlockingQueue<T> events;
     private final UUID userId;
     private final UUID merchantId;
-    private final UserStreamEventWriter userStreamEventWriter;
+    private final SseEventSender<T> eventSender;
+    private final Predicate<T> terminalPredicate;
+    private final Function<Throwable, T> errorEventFactory;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final AtomicBoolean cleanupStarted = new AtomicBoolean();
+    private final AtomicBoolean terminalAccepted = new AtomicBoolean();
 
     private CompletableFuture<Void> searchFuture;
     private CompletableFuture<Void> drainFuture;
 
-    UserProductSearchSseSession(
+    UserSseSession(
             SseEmitter emitter,
             int queueCapacity,
             UUID userId,
             UUID merchantId,
-            UserStreamEventWriter userStreamEventWriter
+            SseEventSender<T> eventSender,
+            Predicate<T> terminalPredicate,
+            Function<Throwable, T> errorEventFactory
     ) {
         this.emitter = emitter;
         this.events = new ArrayBlockingQueue<>(queueCapacity);
         this.userId = userId;
         this.merchantId = merchantId;
-        this.userStreamEventWriter = userStreamEventWriter;
+        this.eventSender = eventSender;
+        this.terminalPredicate = terminalPredicate;
+        this.errorEventFactory = errorEventFactory;
     }
 
     void start(Runnable searchTask) {
@@ -62,14 +70,12 @@ final class UserProductSearchSseSession {
                     .whenComplete((ignored, exception) -> {
                         if (exception != null && !cancelled.get()) {
                             log.warn(
-                                    "Product search stream failed. userId={}, merchantId={}",
+                                    "User stream failed. userId={}, merchantId={}, failureType={}",
                                     userId,
                                     merchantId,
-                                    exception
+                                    exception.getClass().getName()
                             );
-                            send(UserProductSearchStreamEventResponse.error(
-                                    "Product search failed. Please try again."
-                            ));
+                            send(errorEventFactory.apply(exception));
                         }
                         closed.set(true);
                     });
@@ -77,19 +83,22 @@ final class UserProductSearchSseSession {
         }
     }
 
-    void send(UserProductSearchStreamEventResponse event) {
+    void send(T event) {
         if (cancelled.get()) {
+            return;
+        }
+        if (terminalPredicate.test(event)) {
+            if (!terminalAccepted.compareAndSet(false, true)) {
+                return;
+            }
+        } else if (terminalAccepted.get()) {
             return;
         }
         if (events.offer(event)) {
             return;
         }
-        if (!isTerminal(event)) {
-            log.debug(
-                    "Dropping product search stream event because the client queue is full. userId={}, eventType={}",
-                    userId,
-                    event.type()
-            );
+        if (!terminalPredicate.test(event)) {
+            log.debug("Dropping user stream event because the client queue is full. userId={}", userId);
             return;
         }
         while (!events.offer(event)) {
@@ -100,12 +109,9 @@ final class UserProductSearchSseSession {
     private void drain() {
         try {
             while (!closed.get() || !events.isEmpty()) {
-                UserProductSearchStreamEventResponse event = events.poll(
-                        DRAIN_POLL_MILLISECONDS,
-                        TimeUnit.MILLISECONDS
-                );
+                T event = events.poll(DRAIN_POLL_MILLISECONDS, TimeUnit.MILLISECONDS);
                 if (event != null) {
-                    userStreamEventWriter.writeProductSearchEvent(emitter, event);
+                    eventSender.send(emitter, event);
                 }
             }
             emitter.complete();
@@ -156,7 +162,8 @@ final class UserProductSearchSseSession {
         executor.shutdownNow();
     }
 
-    private boolean isTerminal(UserProductSearchStreamEventResponse event) {
-        return "done".equals(event.type()) || "error".equals(event.type());
+    @FunctionalInterface
+    interface SseEventSender<T> {
+        void send(SseEmitter emitter, T event) throws IOException;
     }
 }

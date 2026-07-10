@@ -2,20 +2,21 @@ package com.meant.api.module.merchant.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
-import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchAttemptResult;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchOutcome;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,25 +37,36 @@ public class MerchantCatalogSearchExecutor {
             int productsPerMerchant,
             List<MerchantSemanticSearchResult> merchants
     ) {
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<CompletableFuture<MerchantCatalogSearchOutcome>> futures = merchants.stream()
-                    .map(merchant -> CompletableFuture.supplyAsync(() -> searchMerchantCatalog(
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            List<Future<MerchantCatalogSearchOutcome>> futures = executor.invokeAll(merchants.stream()
+                    .<java.util.concurrent.Callable<MerchantCatalogSearchOutcome>>map(merchant -> () -> searchMerchantCatalog(
                             query,
                             context,
                             signals,
                             filters,
                             productsPerMerchant,
                             merchant
-                    ), executor).exceptionally(exception -> merchantCatalogSearchFailure(
-                            merchant,
-                            query,
-                            productsPerMerchant,
-                            exception
-                    )))
-                    .toList();
+                    )).toList());
             return futures.stream()
-                    .map(CompletableFuture::join)
+                    .map(this::completedOutcome)
                     .toList();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Merchant catalog discovery was cancelled");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private MerchantCatalogSearchOutcome completedOutcome(Future<MerchantCatalogSearchOutcome> future) {
+        try {
+            return future.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Merchant catalog discovery was cancelled");
+        } catch (java.util.concurrent.ExecutionException exception) {
+            throw new IllegalStateException("Merchant catalog task failed without a scoped outcome", exception);
         }
     }
 
@@ -84,27 +96,24 @@ public class MerchantCatalogSearchExecutor {
                     productCandidates(merchant, catalogSearchResult)
             );
         } catch (RuntimeException exception) {
-            return merchantCatalogSearchFailure(merchant, query, productsPerMerchant, exception);
+            return merchantCatalogSearchFailure(merchant, exception);
         }
     }
 
     private MerchantCatalogSearchOutcome merchantCatalogSearchFailure(
             MerchantSemanticSearchResult merchant,
-            String query,
-            int productsPerMerchant,
             Throwable exception
     ) {
-        log.error(
-                "Merchant catalog search failed. merchantId={}, domain={}, rank={}, query={}, productsPerMerchant={}",
+        Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+        log.warn(
+                "Merchant catalog search failed. merchantId={}, domain={}, rank={}, failureType={}",
                 merchant.merchantId(),
                 merchant.domain(),
                 merchant.rank(),
-                query,
-                productsPerMerchant,
-                exception
+                cause.getClass().getName()
         );
         return new MerchantCatalogSearchOutcome(
-                MerchantCatalogSearchAttemptResult.failure(merchant, failureMessage(exception)),
+                MerchantCatalogSearchAttemptResult.failure(merchant, "Merchant catalog search failed"),
                 List.of()
         );
     }
@@ -125,12 +134,4 @@ public class MerchantCatalogSearchExecutor {
                 .toList();
     }
 
-    private String failureMessage(Throwable exception) {
-        Throwable cause = exception.getCause() == null ? exception : exception.getCause();
-        String message = cause.getMessage();
-        if (message == null || message.isBlank()) {
-            return cause.getClass().getSimpleName();
-        }
-        return message.trim();
-    }
 }

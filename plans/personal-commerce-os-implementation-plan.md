@@ -298,6 +298,7 @@ Search Shopify's cross-merchant catalog as a first-class discovery source.
 
 Priority: P0  
 Dependencies: PCOS-004, PCOS-006  
+Implementation status: Complete
 
 **Goal**
 

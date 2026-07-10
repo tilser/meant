@@ -7,7 +7,6 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchRe
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
 import com.meant.api.module.user.constant.UserProductSearchAgent;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
-import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.CurateUserProductSearchCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
@@ -41,50 +40,33 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserProductSearchService {
 
-    private final UserSettingsService userSettingsService;
     private final MerchantSemanticProductSearchService merchantSemanticProductSearchService;
-    private final UserProductSearchQueryUnderstandingService userProductSearchQueryUnderstandingService;
-    private final UserProductSearchCatalogInputBuilder userProductSearchCatalogInputBuilder;
     private final UserProductSearchHashService userProductSearchHashService;
     private final UserProductSearchPersistenceService userProductSearchPersistenceService;
     private final UserProductSearchEventService userProductSearchEventService;
-    private final UserInventoryService userInventoryService;
     private final UserTasteProfileService userTasteProfileService;
     private final UserProductSearchCuratorService userProductSearchCuratorService;
     private final UserProductSearchProductResultMapper userProductSearchProductResultMapper;
     private final UserProductSearchProperties userProductSearchProperties;
     private final OpenRouterProperties openRouterProperties;
+    private final UserProductSearchPreparationService userProductSearchPreparationService;
 
     public UserProductSearchResult search(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SearchUserProductsCommand command
     ) {
-        if (!profileCommand.id().equals(command.userId())) {
-            throw UserException.forbidden("Product search user does not match authenticated user");
-        }
-
-        String query = command.query().trim();
-        UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
-        UserProductSearchCatalogInput catalogInput =
-                userProductSearchCatalogInputBuilder.build(
-                        query,
-                        queryIntent,
-                        settings,
-                        command.buyerIp(),
-                        command.userAgent()
-                );
-        String normalizedQuery = catalogInput.cacheKey();
-        String profileHash = userProductSearchHashService.searchProfileHash(
-                settings,
-                userInventoryService.inventoryProfileHash(command.userId()),
-                tasteProfile.profileHash()
-        );
-        Instant now = Instant.now();
-        int offset = command.offset();
-        int limit = command.limit();
-        int fetchLimit = fetchLimit(offset, limit);
+        var preparation = userProductSearchPreparationService.prepare(profileCommand, command);
+        String query = preparation.query();
+        UserProductSearchQueryIntentResult queryIntent = preparation.queryIntent();
+        UserSettingsResult settings = preparation.settings();
+        UserTasteProfileResult tasteProfile = preparation.tasteProfile();
+        UserProductSearchCatalogInput catalogInput = preparation.catalogInput();
+        String normalizedQuery = preparation.normalizedQuery();
+        String profileHash = preparation.profileHash();
+        Instant now = preparation.now();
+        int offset = preparation.offset();
+        int limit = preparation.limit();
+        int fetchLimit = preparation.fetchLimit();
 
         UserProductSearchResult result;
         if (command.merchantId() != null) {
@@ -140,41 +122,27 @@ public class UserProductSearchService {
             @NotNull @Valid SearchUserProductsCommand command,
             @NotNull Consumer<UserProductSearchStreamEvent> eventConsumer
     ) {
-        if (!profileCommand.id().equals(command.userId())) {
-            throw UserException.forbidden("Product search user does not match authenticated user");
-        }
-
-        eventConsumer.accept(UserProductSearchStreamEvent.phase(
-                UserProductSearchAgent.DISCOVERY.getValue(),
-                "Understanding your request"
-        ));
-        String query = command.query().trim();
-        UserProductSearchQueryIntentResult queryIntent = userProductSearchQueryUnderstandingService.understand(query);
-
-        eventConsumer.accept(UserProductSearchStreamEvent.phase(
-                UserProductSearchAgent.DISCOVERY.getValue(),
-                "Loading your shopping context"
-        ));
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
-        UserProductSearchCatalogInput catalogInput =
-                userProductSearchCatalogInputBuilder.build(
-                        query,
-                        queryIntent,
-                        settings,
-                        command.buyerIp(),
-                        command.userAgent()
-                );
-        String normalizedQuery = catalogInput.cacheKey();
-        String profileHash = userProductSearchHashService.searchProfileHash(
-                settings,
-                userInventoryService.inventoryProfileHash(command.userId()),
-                tasteProfile.profileHash()
+        var preparation = userProductSearchPreparationService.prepare(
+                profileCommand,
+                command,
+                stage -> eventConsumer.accept(UserProductSearchStreamEvent.phase(
+                        UserProductSearchAgent.DISCOVERY.getValue(),
+                        stage == UserProductSearchPreparationService.Stage.UNDERSTANDING_REQUEST
+                                ? "Understanding your request"
+                                : "Loading your shopping context"
+                ))
         );
-        Instant now = Instant.now();
-        int offset = command.offset();
-        int limit = command.limit();
-        int fetchLimit = fetchLimit(offset, limit);
+        String query = preparation.query();
+        UserProductSearchQueryIntentResult queryIntent = preparation.queryIntent();
+        UserSettingsResult settings = preparation.settings();
+        UserTasteProfileResult tasteProfile = preparation.tasteProfile();
+        UserProductSearchCatalogInput catalogInput = preparation.catalogInput();
+        String normalizedQuery = preparation.normalizedQuery();
+        String profileHash = preparation.profileHash();
+        Instant now = preparation.now();
+        int offset = preparation.offset();
+        int limit = preparation.limit();
+        int fetchLimit = preparation.fetchLimit();
 
         if (command.merchantId() == null) {
             UserProductSearchResult cached = userProductSearchPersistenceService.findCachedSearch(
@@ -493,14 +461,6 @@ public class UserProductSearchService {
             MerchantSemanticProductSearchResult searchResult
     ) {
         return searchResult == null || searchResult.products() == null ? List.of() : searchResult.products();
-    }
-
-    private int fetchLimit(int offset, int limit) {
-        int pageEnd = pageEnd(offset, limit);
-        if (pageEnd >= UserProductSearchPagination.MAX_RESULT_WINDOW) {
-            return UserProductSearchPagination.MAX_RESULT_WINDOW;
-        }
-        return pageEnd + 1;
     }
 
     private boolean hasMoreProducts(int productCount, int fetchLimit) {

@@ -2,6 +2,7 @@ package com.meant.api.module.user.controller;
 
 import com.meant.api.module.user.controller.response.UserAssistantStreamEventResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchStreamEventResponse;
+import com.meant.api.module.user.controller.response.UserFederatedProductSearchStreamEventResponse;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
@@ -38,6 +39,16 @@ public class UserStreamEventWriter {
         String payload = objectMapper.writeValueAsString(event);
         emitter.send(SseEmitter.event()
                 .name(event.type())
+                .data(payload));
+    }
+
+    void writeFederatedProductSearchEvent(
+            SseEmitter emitter,
+            UserFederatedProductSearchStreamEventResponse event
+    ) throws IOException {
+        String payload = objectMapper.writeValueAsString(event);
+        emitter.send(SseEmitter.event()
+                .name(event.type().name().toLowerCase(java.util.Locale.ROOT))
                 .data(payload));
     }
 }

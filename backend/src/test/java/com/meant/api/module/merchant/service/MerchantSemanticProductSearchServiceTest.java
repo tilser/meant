@@ -7,12 +7,12 @@ import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.merchant.properties.MerchantCatalogSearchProperties;
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
-import com.meant.api.module.merchant.service.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchFilters;
-import com.meant.api.module.merchant.service.dto.CatalogSearchPriceFilter;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
-import com.meant.api.module.merchant.service.dto.CatalogSearchSignals;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
@@ -33,8 +33,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClient;
 
+@ExtendWith(OutputCaptureExtension.class)
 class MerchantSemanticProductSearchServiceTest {
 
     private FakeMerchantSemanticSearchService merchantSemanticSearchService;
@@ -124,32 +128,37 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(result.merchants()).hasSize(2);
-        assertThat(result.merchants().getFirst().error()).contains("catalog unavailable");
+        assertThat(result.merchants().getFirst().error()).isEqualTo("Merchant catalog search failed");
         assertThat(result.merchants().getLast().productCount()).isEqualTo(1);
         assertThat(result.products()).extracting("productId").containsExactly("runner");
     }
 
     @Test
-    void keepsSuccessfulProductsAndCompletesWhenMerchantPluginThrowsRuntimeException() {
+    void keepsSuccessfulProductsAndRedactsFailureDetailsWhenMerchantPluginThrowsRuntimeException(
+            CapturedOutput output
+    ) {
         MerchantSemanticSearchResult failingMerchant = merchant("failing.example", "Failing Store", 1);
         MerchantSemanticSearchResult workingMerchant = merchant("working.example", "Working Store", 2);
         merchantSemanticSearchService.results = List.of(failingMerchant, workingMerchant);
-        merchantCatalogPluginDispatchService.runtimeFailures.put(failingMerchant.domain(), "plugin exploded");
+        String secretFailure = "Bearer secret-token product-payload";
+        String privateQuery = "private-running-shoes-query";
+        merchantCatalogPluginDispatchService.runtimeFailures.put(failingMerchant.domain(), secretFailure);
         merchantCatalogPluginDispatchService.results.put(workingMerchant.domain(), catalogSearchResult(workingMerchant, List.of(
                 product("runner", "Running Shoe", "Light road shoe", "shoes")
         )));
 
         List<String> streamedProductIds = new CopyOnWriteArrayList<>();
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
-                new SemanticProductSearchQuery("running shoes", null, null, null, null, null),
+                new SemanticProductSearchQuery(privateQuery, null, null, null, null, null),
                 product -> streamedProductIds.add(product.productId() + ":" + product.selectedVariantId())
         );
 
         assertThat(result.merchants()).hasSize(2);
-        assertThat(result.merchants().getFirst().error()).contains("plugin exploded");
+        assertThat(result.merchants().getFirst().error()).isEqualTo("Merchant catalog search failed");
         assertThat(result.merchants().getLast().productCount()).isEqualTo(1);
         assertThat(result.products()).extracting("productId").containsExactly("runner");
         assertThat(streamedProductIds).containsExactly("runner:runner-variant", "runner:runner-selected");
+        assertThat(output.getAll()).doesNotContain(secretFailure, privateQuery, "product-payload", "secret-token");
     }
 
     @Test
@@ -167,7 +176,7 @@ class MerchantSemanticProductSearchServiceTest {
 
         assertThat(result.products()).hasSize(1);
         assertThat(result.products().getFirst().productId()).isEqualTo("runner");
-        assertThat(result.products().getFirst().detailError()).contains("details unavailable");
+        assertThat(result.products().getFirst().detailError()).isEqualTo("Product details unavailable");
         assertThat(result.products().getFirst().selectedVariantId()).isEqualTo("runner-variant");
         assertThat(result.products().getFirst().selectedVariantPriceAmount()).isEqualTo("10.00");
     }
