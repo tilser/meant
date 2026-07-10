@@ -19,14 +19,14 @@ public record MerchantExecutionPolicyProperties(
 
     public boolean rolloutEnabled(CommerceOperation operation, boolean legacyNativeCheckoutRollout) {
         return switch (operation) {
-            case CATALOG -> catalogRolloutEnabled;
-            case CART -> cartRolloutEnabled;
-            case CHECKOUT_SESSION -> checkoutSessionRolloutEnabled;
-            case EMBEDDED_CHECKOUT -> embeddedCheckoutRolloutEnabled;
-            case DIRECT_CHECKOUT_COMPLETION -> directCheckoutCompletionRolloutEnabled
+            case CATALOG -> Boolean.TRUE.equals(catalogRolloutEnabled);
+            case CART -> Boolean.TRUE.equals(cartRolloutEnabled);
+            case CHECKOUT_SESSION -> Boolean.TRUE.equals(checkoutSessionRolloutEnabled);
+            case EMBEDDED_CHECKOUT -> Boolean.TRUE.equals(embeddedCheckoutRolloutEnabled);
+            case DIRECT_CHECKOUT_COMPLETION -> Boolean.TRUE.equals(directCheckoutCompletionRolloutEnabled)
                     || legacyNativeCheckoutRollout;
-            case ORDER_READS -> orderReadsRolloutEnabled;
-            case ORDER_WEBHOOKS -> orderWebhooksRolloutEnabled;
+            case ORDER_READS -> Boolean.TRUE.equals(orderReadsRolloutEnabled);
+            case ORDER_WEBHOOKS -> Boolean.TRUE.equals(orderWebhooksRolloutEnabled);
         };
     }
 }

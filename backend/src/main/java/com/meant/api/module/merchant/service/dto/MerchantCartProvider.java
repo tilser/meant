@@ -62,7 +62,7 @@ public record MerchantCartProvider(
             return advertisedMcpEndpoint;
         }
         return integrations.stream()
-                .filter(integration -> integration.integrationId().equals(integrationId))
+                .filter(integration -> integrationId.equals(integration.integrationId()))
                 .map(MerchantIntegrationRouting::endpoint)
                 .filter(endpoint -> endpoint != null && !endpoint.isBlank())
                 .findFirst()
