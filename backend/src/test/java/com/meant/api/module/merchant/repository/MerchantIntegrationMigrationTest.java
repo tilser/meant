@@ -94,6 +94,62 @@ class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
         }
     }
 
+    @Test
+    void migrationBackfillsEveryMerchantWhenNormalizedLegacyDomainsCollide() throws Exception {
+        String schema = "pcos002_" + UUID.randomUUID().toString().replace("-", "");
+        UUID olderMerchantId = UUID.randomUUID();
+        UUID newerMerchantId = UUID.randomUUID();
+        String domainRoot = "collision-%s.example".formatted(UUID.randomUUID());
+        jdbcTemplate.execute("create schema " + schema);
+        try {
+            createLegacyTables(schema);
+            insertLegacyMerchant(
+                    schema,
+                    UUID.randomUUID(),
+                    olderMerchantId,
+                    domainRoot.toUpperCase(),
+                    "https://older.%s/api/ucp/mcp".formatted(domainRoot),
+                    false,
+                    CREATED_AT,
+                    CREATED_AT
+            );
+            insertLegacyMerchant(
+                    schema,
+                    UUID.randomUUID(),
+                    newerMerchantId,
+                    domainRoot + ".",
+                    "https://newer.%s/api/ucp/mcp".formatted(domainRoot),
+                    true,
+                    UPDATED_AT,
+                    UPDATED_AT
+            );
+
+            runIntegrationMigration(schema);
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from %s.merchant_integration".formatted(schema),
+                    Integer.class
+            )).isEqualTo(2);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from %s.merchant_integration where verified_domain = ?".formatted(schema),
+                    Integer.class,
+                    domainRoot
+            )).isOne();
+            assertThat(jdbcTemplate.queryForObject(
+                    "select merchant_id from %s.merchant_integration where verified_domain = ?".formatted(schema),
+                    UUID.class,
+                    domainRoot
+            )).isEqualTo(newerMerchantId);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select verified_domain from %s.merchant_integration where merchant_id = ?".formatted(schema),
+                    String.class,
+                    olderMerchantId
+            )).isNull();
+        } finally {
+            jdbcTemplate.execute("drop schema " + schema + " cascade");
+        }
+    }
+
     private void createLegacyTables(String schema) {
         jdbcTemplate.execute("""
                 create table %s.merchant_raw (
@@ -129,6 +185,28 @@ class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
             String domain,
             String endpoint
     ) {
+        insertLegacyMerchant(
+                schema,
+                merchantRawId,
+                merchantId,
+                domain,
+                endpoint,
+                true,
+                CREATED_AT,
+                UPDATED_AT
+        );
+    }
+
+    private void insertLegacyMerchant(
+            String schema,
+            UUID merchantRawId,
+            UUID merchantId,
+            String domain,
+            String endpoint,
+            boolean active,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
         jdbcTemplate.update(
                 "insert into %s.merchant_raw values (?, true, true, true)".formatted(schema),
                 merchantRawId
@@ -138,7 +216,7 @@ class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
                     id, merchant_raw_id, domain, ucp_url, ucp_version,
                     advertised_mcp_endpoint, profile_mcp_endpoint, profile_raw,
                     profile_captured_at, active, last_profiled_at, created_at, updated_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, true, ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)
                 """.formatted(schema),
                 merchantId,
                 merchantRawId,
@@ -149,9 +227,10 @@ class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
                 "https://%s/fallback/mcp".formatted(domain),
                 "{\"legacy\":true}",
                 Timestamp.from(CAPTURED_AT),
-                Timestamp.from(UPDATED_AT),
-                Timestamp.from(CREATED_AT),
-                Timestamp.from(UPDATED_AT)
+                active,
+                Timestamp.from(updatedAt),
+                Timestamp.from(createdAt),
+                Timestamp.from(updatedAt)
         );
     }
 

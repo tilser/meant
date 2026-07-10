@@ -83,6 +83,27 @@
 
     <changeSet id="002-backfill-generic-ucp-integrations" author="codex">
         <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            -- Legacy domain uniqueness is case-sensitive. Keep every merchant integration, but let only
+            -- the active/most-recent merchant claim a verified domain when normalization creates a collision.
+            WITH normalized_merchants AS (
+                SELECT
+                    merchant.*,
+                    nullif(lower(trim(trailing '.' from btrim(merchant.domain))), '') AS normalized_domain
+                FROM merchant
+            ),
+            ranked_merchants AS (
+                SELECT
+                    normalized_merchants.*,
+                    row_number() OVER (
+                        PARTITION BY normalized_domain
+                        ORDER BY
+                            active DESC,
+                            updated_at DESC NULLS LAST,
+                            created_at DESC NULLS LAST,
+                            id
+                    ) AS normalized_domain_rank
+                FROM normalized_merchants
+            )
             INSERT INTO merchant_integration (
                 id,
                 merchant_id,
@@ -107,7 +128,10 @@
                 'GENERIC_UCP',
                 'MERCHANT_CONNECTION',
                 NULL,
-                lower(trim(trailing '.' from btrim(merchant.domain))),
+                CASE
+                    WHEN merchant.normalized_domain_rank = 1 THEN merchant.normalized_domain
+                    ELSE NULL
+                END,
                 NULL,
                 coalesce(
                     nullif(btrim(merchant.advertised_mcp_endpoint), ''),
@@ -128,7 +152,7 @@
                 ),
                 coalesce(merchant.created_at, CURRENT_TIMESTAMP),
                 coalesce(merchant.updated_at, merchant.created_at, CURRENT_TIMESTAMP)
-            FROM merchant
+            FROM ranked_merchants merchant
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM merchant_integration existing
