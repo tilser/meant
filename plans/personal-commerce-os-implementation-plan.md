@@ -178,6 +178,7 @@ Remove the current conflation between an advertised checkout capability and auth
 
 Priority: P0  
 Dependencies: PCOS-002  
+Implementation status: Complete
 
 **Goal**
 

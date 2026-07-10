@@ -18,6 +18,7 @@ import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
 import com.meant.api.module.merchant.service.MerchantLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.query.GetMerchantIntegrationByProviderIdentityQuery;
+import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByVerifiedDomainQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsQuery;
 import jakarta.validation.ConstraintViolationException;
@@ -94,6 +95,9 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
         List<MerchantIntegrationResult> byMerchant = merchantIntegrationLookupService.listByMerchant(
                 new ListMerchantIntegrationsQuery(merchant.getId())
         );
+        List<MerchantIntegrationResult> byMerchants = merchantIntegrationLookupService.listByMerchants(
+                new ListMerchantIntegrationsByMerchantsQuery(Set.of(merchant.getId()))
+        );
         MerchantIntegrationResult byProviderIdentity = merchantIntegrationLookupService.findByProviderIdentity(
                 new GetMerchantIntegrationByProviderIdentityQuery(
                         MerchantIntegrationProvider.SHOPIFY,
@@ -113,6 +117,9 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
                         MerchantIntegrationAuthStrategy.NONE,
                         MerchantIntegrationAuthStrategy.OAUTH_BEARER
                 );
+        assertThat(byMerchants)
+                .extracting(MerchantIntegrationResult::id)
+                .containsExactlyInAnyOrder(genericUcp.getId(), shopify.getId());
         assertThat(byProviderIdentity.id()).isEqualTo(shopify.getId());
         assertThat(byProviderIdentity.roles()).contains(MerchantIntegrationRole.ORDERS);
         assertThat(byDomain)

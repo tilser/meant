@@ -1,0 +1,118 @@
+package com.meant.api.module.user.controller.response;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.Money;
+import com.meant.api.plugin.catalog.common.dto.Offer;
+import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
+import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
+import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
+import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
+import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.lang.reflect.RecordComponent;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+
+class UserGroupedProductSearchV1ResponseTest {
+
+    @Test
+    void mapsServiceContractsToSeparateVersionedControllerRecords() {
+        UUID integrationId = UUID.fromString("50000000-0000-0000-0000-000000000001");
+        ProviderIdentity provider = new ProviderIdentity("future_provider");
+        ExternalIdentifier merchant = new ExternalIdentifier(
+                ExternalIdentifierType.MERCHANT, provider.value(), "Merchant-1");
+        ExternalIdentifier product = new ExternalIdentifier(
+                ExternalIdentifierType.PRODUCT, provider.value(), "Product-1");
+        ResultSourceReference source = new ResultSourceReference(
+                ResultSourceType.PROVIDER_CATALOG, "fixture", null);
+        ResultProvenance provenance = new ResultProvenance(
+                provider,
+                integrationId,
+                merchant,
+                product,
+                null,
+                new ResultFreshness(Instant.parse("2026-07-10T10:00:00Z"), null),
+                source
+        );
+        Offer offer = new Offer(
+                new OfferIdentity(provider, integrationId, merchant, product, null, null),
+                "Future merchant",
+                null,
+                new Money(1234, "eur"),
+                null,
+                new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
+                List.of(),
+                null,
+                List.of(),
+                List.of(provenance)
+        );
+        CanonicalProduct canonicalProduct = new CanonicalProduct(
+                "product_v1_fixture",
+                "Future-provider product",
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(provenance),
+                List.of(offer)
+        );
+
+        UserGroupedProductSearchV1Response response = UserGroupedProductSearchV1Response.from(
+                new UserGroupedProductSearchResult(
+                        "product", "product", "profile", false, 0, 20, null, false,
+                        List.of(canonicalProduct)
+                )
+        );
+
+        assertThat(response.products()).singleElement().satisfies(mappedProduct -> {
+            assertThat(mappedProduct.key()).isEqualTo("product_v1_fixture");
+            assertThat(mappedProduct.offers()).singleElement().satisfies(mappedOffer -> {
+                assertThat(mappedOffer.key()).isEqualTo(offer.key());
+                assertThat(mappedOffer.price().minorUnits()).isEqualTo(1234);
+                assertThat(mappedOffer.price().currency()).isEqualTo("EUR");
+                assertThat(mappedOffer.provenance().getFirst().provider()).isEqualTo("FUTURE_PROVIDER");
+            });
+        });
+    }
+
+    @Test
+    void everyPublicGroupedResponseFieldDeclaresItsOpenApiRequiredMode() {
+        assertRecordSchemas(UserGroupedProductSearchV1Response.class);
+        for (Class<?> nested : UserGroupedProductSearchV1Response.class.getDeclaredClasses()) {
+            if (nested.isRecord()) {
+                assertRecordSchemas(nested);
+            }
+        }
+    }
+
+    private void assertRecordSchemas(Class<?> recordType) {
+        assertThat(recordType.getAnnotation(Schema.class))
+                .as("record-level @Schema on %s", recordType.getSimpleName())
+                .isNotNull();
+        for (RecordComponent component : recordType.getRecordComponents()) {
+            Schema schema = component.getAccessor().getAnnotation(Schema.class);
+            assertThat(schema)
+                    .as("@Schema on %s.%s", recordType.getSimpleName(), component.getName())
+                    .isNotNull();
+            assertThat(schema.requiredMode())
+                    .as("requiredMode on %s.%s", recordType.getSimpleName(), component.getName())
+                    .isNotEqualTo(Schema.RequiredMode.AUTO);
+            assertThat(schema.description())
+                    .as("description on %s.%s", recordType.getSimpleName(), component.getName())
+                    .isNotBlank();
+        }
+    }
+}

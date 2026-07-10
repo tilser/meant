@@ -1293,6 +1293,31 @@ class UserControllerIT extends PostgresIntegrationTest {
                 .expectStatus().isOk();
     }
 
+    @Test
+    void openApiPublishesGroupedV1WithoutReplacingFlatOrAddingGroupedStreaming() {
+        String openApi = client.get().uri("/v3/api-docs")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(openApi)
+                .contains(
+                        "\"/api/users/me/product-searches\"",
+                        "\"/api/users/me/product-searches:stream\"",
+                        "\"/api/v1/users/me/product-searches\"",
+                        "\"operationId\":\"searchProducts\"",
+                        "\"operationId\":\"searchGroupedProductsV1\"",
+                        "UserGroupedProductSearchV1Response",
+                        "CanonicalProductResponse",
+                        "OfferResponse",
+                        "ResultProvenanceResponse",
+                        "\"minorUnits\""
+                )
+                .doesNotContain("\"/api/v1/users/me/product-searches:stream\"");
+    }
+
     private static void assertBefore(String value, String first, String second) {
         assertThat(value).contains(first, second);
         assertThat(value.indexOf(first)).isLessThan(value.indexOf(second));

@@ -4,6 +4,7 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.entity.MerchantIntegration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,9 @@ public interface MerchantIntegrationRepository extends JpaRepository<MerchantInt
 
     @EntityGraph(attributePaths = {"roles", "merchant"})
     List<MerchantIntegration> findByMerchantIdOrderByCreatedAtAsc(UUID merchantId);
+
+    @EntityGraph(attributePaths = {"roles", "merchant"})
+    List<MerchantIntegration> findByMerchantIdInOrderByCreatedAtAsc(Set<UUID> merchantIds);
 
     @EntityGraph(attributePaths = {"roles", "merchant"})
     Optional<MerchantIntegration> findByProviderAndExternalMerchantId(
