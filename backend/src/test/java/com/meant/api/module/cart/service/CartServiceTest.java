@@ -11,9 +11,13 @@ import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
+import com.meant.api.module.merchant.properties.MerchantExecutionPolicyProperties;
+import com.meant.api.module.merchant.service.CapabilityExecutionPolicyEvaluator;
 import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
+import com.meant.api.module.merchant.service.MerchantExecutionPolicyService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
@@ -85,7 +89,13 @@ class CartServiceTest {
         cartService = new CartService(
                 new MerchantCartProviderLookupService(
                         merchantRepository.proxy(),
-                        merchantCapabilityRepositoryProxy()
+                        merchantCapabilityRepositoryProxy(),
+                        merchantIntegrationRepositoryProxy(),
+                        new MerchantExecutionPolicyService(
+                                new MerchantExecutionPolicyProperties(true, true, true, false, false, true, true),
+                                new CapabilityExecutionPolicyEvaluator(),
+                                List.of()
+                        )
                 ),
                 new CartBuyerContextService(userSettingsLocationRepositoryProxy()),
                 cartPersistenceService,
@@ -1225,6 +1235,18 @@ class CartServiceTest {
                 new Class<?>[]{MerchantCapabilityRepository.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "existsByMerchantIdAndName" -> false;
+                    case "findNamesByMerchantId" -> java.util.Set.of();
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
+    static MerchantIntegrationRepository merchantIntegrationRepositoryProxy() {
+        return (MerchantIntegrationRepository) Proxy.newProxyInstance(
+                MerchantIntegrationRepository.class.getClassLoader(),
+                new Class<?>[]{MerchantIntegrationRepository.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "findByMerchantIdOrderByCreatedAtAsc" -> List.of();
                     default -> throw new UnsupportedOperationException(method.getName());
                 }
         );

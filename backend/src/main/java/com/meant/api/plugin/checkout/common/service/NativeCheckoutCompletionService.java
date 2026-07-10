@@ -1,5 +1,6 @@
 package com.meant.api.plugin.checkout.common.service;
 
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentArtifact;
 import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
@@ -54,7 +55,7 @@ public class NativeCheckoutCompletionService {
             @NotNull @Valid NativeCheckoutCompletionCommand command,
             @NotNull UcpSession session
     ) {
-        if (!provider.nativeCheckoutEnabled()) {
+        if (!provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)) {
             return featureDisabledResult(provider, command.checkoutId(), ap2MandateBuilder.isRequired(command, session), session);
         }
 
@@ -153,7 +154,7 @@ public class NativeCheckoutCompletionService {
             @NotNull @Valid NativeCheckoutCancellationCommand command,
             @NotNull UcpSession session
     ) {
-        if (!provider.nativeCheckoutEnabled()) {
+        if (!provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)) {
             return featureDisabledResult(
                     provider,
                     command.checkoutId(),

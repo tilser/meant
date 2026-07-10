@@ -19,6 +19,7 @@ import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.user.service.UserInventoryService;
@@ -124,7 +125,7 @@ public class CartService {
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         if (!query.refresh() && hasText(cart.getCheckoutId())) {
             importCartInventory(cart);
-            return checkoutResultMapper.from(cart, provider.nativeCheckoutEnabled());
+            return checkoutResultMapper.from(cart, provider.executionPolicy());
         }
         UcpSession session = session(cart);
         Cart checkoutCart = hasText(cart.getCheckoutId())
@@ -143,7 +144,7 @@ public class CartService {
                 );
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(checkoutCart, query.userId(), result);
         importCartInventory(refreshedCart);
-        return checkoutResultMapper.from(refreshedCart, provider.nativeCheckoutEnabled());
+        return checkoutResultMapper.from(refreshedCart, provider.executionPolicy());
     }
 
     private Cart refreshEmptyCartBeforeCheckout(
@@ -223,7 +224,7 @@ public class CartService {
         }
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart, command.userId(), result);
         importCartInventory(refreshedCart);
-        return checkoutResultMapper.from(refreshedCart, provider.nativeCheckoutEnabled());
+        return checkoutResultMapper.from(refreshedCart, provider.executionPolicy());
     }
 
     private List<UpdateCheckoutRequest.LineItem> updateCheckoutLineItems(Cart cart) {
@@ -305,7 +306,12 @@ public class CartService {
     public CheckoutCompletionResult completeCheckout(@NotNull @Valid CompleteCheckoutCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        Cart checkoutCart = ensureHandoffWhenNativeDisabled(cart, command.userId(), provider, command.ap2SecurityLock());
+        Cart checkoutCart = ensureHandoffWhenDirectCompletionUnavailable(
+                cart,
+                command.userId(),
+                provider,
+                command.ap2SecurityLock()
+        );
         NativeCheckoutResult result = nativeCheckoutCompletionService.complete(
                 provider,
                 nativeCompletionCommand(command),
@@ -381,13 +387,15 @@ public class CartService {
         );
     }
 
-    private Cart ensureHandoffWhenNativeDisabled(
+    private Cart ensureHandoffWhenDirectCompletionUnavailable(
             Cart cart,
             UUID userId,
             MerchantCartProvider provider,
             boolean ap2SecurityLock
     ) {
-        if (provider.nativeCheckoutEnabled() || ap2SecurityLock || hasText(handoffUrl(cart))) {
+        if (provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)
+                || ap2SecurityLock
+                || hasText(handoffUrl(cart))) {
             return cart;
         }
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(

@@ -2,6 +2,7 @@ package com.meant.api.module.cart.service;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.support.UcpMoney;
 import java.util.ArrayList;
@@ -18,8 +19,9 @@ import tools.jackson.databind.ObjectMapper;
 public class CheckoutResultMapper {
 
     private final ObjectMapper objectMapper;
+    private final CheckoutExecutionPlanner checkoutExecutionPlanner = new CheckoutExecutionPlanner();
 
-    public CheckoutResult from(Cart cart, boolean nativeCheckoutEnabled) {
+    public CheckoutResult from(Cart cart, MerchantExecutionPolicy policy) {
         UcpCheckoutResponse response = parseStoredResponse(cart.getRawCheckoutResponse());
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         UcpMoney total = checkout == null ? null : checkout.resolvedTotal();
@@ -30,6 +32,12 @@ public class CheckoutResultMapper {
         );
         String continueUrl = firstText(checkout == null ? null : checkout.continueUrl(), cart.getContinueUrl());
         String checkoutUrl = firstText(checkout == null ? null : checkout.checkoutUrl(), cart.getCheckoutUrl());
+        List<CheckoutResult.Message> checkoutMessages = messages(response);
+        var execution = checkoutExecutionPlanner.resolve(
+                firstText(checkout == null ? null : checkout.status(), cart.getCheckoutStatus()),
+                checkoutMessages,
+                policy
+        );
         return new CheckoutResult(
                 cart.getId(),
                 cart.getRemoteCartId(),
@@ -40,8 +48,11 @@ public class CheckoutResultMapper {
                 response == null ? null : response.version(),
                 total == null ? null : total.amount(),
                 currency == null ? null : currency.toUpperCase(Locale.ROOT),
-                messages(response),
-                nativeCheckoutEnabled
+                checkoutMessages,
+                execution.nextAction(),
+                execution.selectedRail(),
+                execution.ineligibilityReasons(),
+                policy
         );
     }
 

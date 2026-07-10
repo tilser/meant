@@ -89,8 +89,7 @@ public class OrderService {
                 merchant.getId(),
                 merchant.getDomain(),
                 merchant.getAdvertisedMcpEndpoint(),
-                merchant.getProfileMcpEndpoint(),
-                merchant.isNativeCheckoutEnabled()
+                merchant.getProfileMcpEndpoint()
         );
     }
 }

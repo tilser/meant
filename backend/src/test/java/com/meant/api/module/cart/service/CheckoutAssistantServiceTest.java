@@ -11,7 +11,16 @@ import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.command.AssistCheckoutCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CheckoutAssistResult;
+import com.meant.api.module.cart.service.dto.CheckoutExecutionPlan;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.merchant.constant.CapabilityAvailability;
+import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
+import com.meant.api.module.merchant.constant.CommerceExecutionRail;
+import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision;
+import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import java.util.Arrays;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import java.util.List;
 import java.util.UUID;
@@ -304,6 +313,8 @@ class CheckoutAssistantServiceTest {
     }
 
     private static CheckoutResult checkoutResult(String status, List<CheckoutResult.Message> messages) {
+        MerchantExecutionPolicy policy = directCompletionPolicy();
+        CheckoutExecutionPlan execution = new CheckoutExecutionPlanner().resolve(status, messages, policy);
         return new CheckoutResult(
                 CART_ID,
                 "gid://shopify/Cart/1",
@@ -315,8 +326,31 @@ class CheckoutAssistantServiceTest {
                 5200L,
                 "USD",
                 messages,
-                true
+                execution.nextAction(),
+                execution.selectedRail(),
+                execution.ineligibilityReasons(),
+                policy
         );
+    }
+
+    private static MerchantExecutionPolicy directCompletionPolicy() {
+        return new MerchantExecutionPolicy(Arrays.stream(CommerceOperation.values())
+                .map(operation -> operation == CommerceOperation.DIRECT_CHECKOUT_COMPLETION
+                        ? new CommerceCapabilityDecision(
+                                operation,
+                                true,
+                                CapabilityAuthorizationDecision.notRequired(),
+                                true,
+                                CapabilityIntegrationHealth.HEALTHY,
+                                true,
+                                CapabilityAvailability.AVAILABLE,
+                                CommerceExecutionRail.DIRECT_CHECKOUT_COMPLETION,
+                                List.of(),
+                                UUID.randomUUID(),
+                                null
+                        )
+                        : MerchantExecutionPolicy.unavailable().decision(operation))
+                .toList());
     }
 
     static class FakeCartService extends CartService {

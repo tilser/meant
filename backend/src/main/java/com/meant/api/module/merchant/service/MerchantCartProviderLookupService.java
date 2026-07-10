@@ -2,9 +2,13 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,10 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class MerchantCartProviderLookupService {
 
-    private static final String UCP_CHECKOUT_CAPABILITY = "dev.ucp.shopping.checkout";
-
     private final MerchantRepository merchantRepository;
     private final MerchantCapabilityRepository merchantCapabilityRepository;
+    private final MerchantIntegrationRepository merchantIntegrationRepository;
+    private final MerchantExecutionPolicyService merchantExecutionPolicyService;
 
     @Transactional(readOnly = true)
     public Optional<MerchantCartProvider> findById(UUID merchantId) {
@@ -35,22 +39,31 @@ public class MerchantCartProviderLookupService {
     }
 
     private MerchantCartProvider toProvider(Merchant merchant) {
+        var integrations = merchantIntegrationRepository.findByMerchantIdOrderByCreatedAtAsc(merchant.getId());
+        Set<String> advertisedCapabilities = merchantCapabilityRepository.findNamesByMerchantId(merchant.getId());
+        MerchantExecutionPolicy executionPolicy = merchantExecutionPolicyService.evaluate(
+                merchant,
+                integrations,
+                advertisedCapabilities
+        );
         return new MerchantCartProvider(
                 merchant.getId(),
                 merchant.getDomain(),
                 merchant.getAdvertisedMcpEndpoint(),
                 merchant.getProfileMcpEndpoint(),
-                nativeCheckoutEnabled(merchant)
+                integrations.stream()
+                        .map(integration -> new MerchantIntegrationRouting(
+                                integration.getId(),
+                                integration.getProvider(),
+                                integration.getRoles(),
+                                integration.getStatus(),
+                                integration.getExternalMerchantId(),
+                                integration.getVerifiedDomain(),
+                                integration.getVerifiedShopIdentity(),
+                                integration.getEndpoint()
+                        ))
+                        .toList(),
+                executionPolicy
         );
-    }
-
-    /**
-     * UCP checkout runs natively in the platform whenever the merchant advertises the checkout
-     * capability in its /.well-known/ucp profile; the merchant flag stays as a manual override
-     * for merchants whose profile has not been enriched yet.
-     */
-    private boolean nativeCheckoutEnabled(Merchant merchant) {
-        return merchant.isNativeCheckoutEnabled()
-                || merchantCapabilityRepository.existsByMerchantIdAndName(merchant.getId(), UCP_CHECKOUT_CAPABILITY);
     }
 }

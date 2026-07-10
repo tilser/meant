@@ -3,6 +3,7 @@ package com.meant.api.plugin.checkout.common.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
@@ -45,6 +46,7 @@ public class MerchantCheckoutPluginDispatchService {
             CreateCheckoutRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CHECKOUT_SESSION);
         CreateCheckoutCapability capability = capability(
                 CreateCheckoutCapability.TOOL_NAME,
                 CreateCheckoutCapability.class
@@ -65,6 +67,7 @@ public class MerchantCheckoutPluginDispatchService {
             GetCheckoutRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CHECKOUT_SESSION);
         GetCheckoutCapability capability = capability(GetCheckoutCapability.TOOL_NAME, GetCheckoutCapability.class);
         MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
@@ -82,6 +85,7 @@ public class MerchantCheckoutPluginDispatchService {
             UpdateCheckoutRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CHECKOUT_SESSION);
         UpdateCheckoutCapability capability = capability(
                 UpdateCheckoutCapability.TOOL_NAME,
                 UpdateCheckoutCapability.class
@@ -103,6 +107,7 @@ public class MerchantCheckoutPluginDispatchService {
             UcpSession session,
             Map<String, String> signedHeaders
     ) {
+        provider = provider.forOperation(CommerceOperation.DIRECT_CHECKOUT_COMPLETION);
         CompleteCheckoutCapability capability = capability(
                 CompleteCheckoutCapability.TOOL_NAME,
                 CompleteCheckoutCapability.class
@@ -124,6 +129,7 @@ public class MerchantCheckoutPluginDispatchService {
             UcpSession session,
             Map<String, String> signedHeaders
     ) {
+        provider = provider.forOperation(CommerceOperation.DIRECT_CHECKOUT_COMPLETION);
         CancelCheckoutCapability capability = capability(CancelCheckoutCapability.TOOL_NAME, CancelCheckoutCapability.class);
         MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,

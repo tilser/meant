@@ -95,12 +95,12 @@ export function checkoutNeedsAddress(session: ActiveCheckoutSession): boolean {
 }
 
 export function checkoutReadyForPayment(session: ActiveCheckoutSession): boolean {
+  const nextAction = session.profile.nextAction
+  if (nextAction) {
+    return nextAction === 'COMPLETE_CHECKOUT' || nextAction === 'OPEN_EMBEDDED_CHECKOUT'
+  }
   const normalizedStatus = session.profile.status?.trim().toLowerCase() ?? ''
-  return (
-    session.profile.nextAction === 'COMPLETE_CHECKOUT' ||
-    normalizedStatus === 'ready_for_complete' ||
-    normalizedStatus === 'ready_for_payment'
-  )
+  return normalizedStatus === 'ready_for_complete' || normalizedStatus === 'ready_for_payment'
 }
 
 export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
@@ -109,19 +109,15 @@ export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
   if (session.completion?.status === 'SCA_REQUIRED') {
     return true
   }
-  if (nextAction === 'UPDATE_CHECKOUT' && session.profile.nativeCheckoutEnabled) {
-    return false
+  if (nextAction) {
+    return nextAction === 'HANDOFF' || session.profile.selectedRail === 'MERCHANT_HANDOFF'
   }
   return (
-    nextAction === 'HANDOFF' ||
-    (!nextAction &&
-      !checkoutNeedsAddress(session) &&
-      (Boolean(session.profile.requiresEscalation) ||
-        normalizedStatus === 'requires_escalation')) ||
-    (!session.profile.nativeCheckoutEnabled && !checkoutNeedsAddress(session)) ||
-    // Payment instruments are not collected inside Meant yet, so the final
-    // payment step continues on the merchant's secure checkout.
-    (checkoutReadyForPayment(session) && !checkoutNeedsAddress(session))
+    !checkoutNeedsAddress(session) &&
+    (Boolean(session.profile.requiresEscalation) ||
+      normalizedStatus === 'requires_escalation' ||
+      normalizedStatus === 'ready_for_complete' ||
+      normalizedStatus === 'ready_for_payment')
   )
 }
 
@@ -130,9 +126,15 @@ export function checkoutPhase(session: ActiveCheckoutSession): string {
     return 'address'
   }
   if (checkoutNeedsHandoff(session)) {
-    return session.profile.nativeCheckoutEnabled ? 'handoff' : 'merchant-native-missing'
+    return 'merchant-handoff'
   }
-  return 'native'
+  if (session.profile.selectedRail === 'EMBEDDED_CHECKOUT') {
+    return 'embedded-checkout'
+  }
+  if (session.profile.selectedRail === 'DIRECT_CHECKOUT_COMPLETION') {
+    return 'direct-checkout-completion'
+  }
+  return 'checkout-session'
 }
 
 export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string {
@@ -145,15 +147,11 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
       'Send them here in one message, for example: "Ship to 1531 Hyde St, San Francisco, CA 94109, US, David Test, david@test.cz, +420 731 958 653".',
     ].join(' ')
   }
-  if (!session.profile.nativeCheckoutEnabled) {
-    return merchantUrl
-      ? 'This merchant does not support native checkout inside Meant yet. I prepared the merchant checkout with the cart details we have; finish the order below.'
-      : 'This merchant does not support native checkout inside Meant yet, and it has not returned a checkout link I can open.'
+  if (session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT') {
+    return 'This merchant supports embedded checkout. The checkout is ready to continue on the embedded rail.'
   }
-  if (checkoutReadyForPayment(session)) {
-    return merchantUrl
-      ? 'All checkout details are confirmed — items, address, and delivery. Finish the secure payment below.'
-      : 'All checkout details are confirmed, but the merchant has not returned a payment link yet.'
+  if (session.profile.nextAction === 'COMPLETE_CHECKOUT') {
+    return 'This checkout is authorized and ready for direct completion inside Meant.'
   }
   if (checkoutNeedsHandoff(session)) {
     return merchantUrl
@@ -166,10 +164,19 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
 }
 
 export function merchantHandoffReason(session: ActiveCheckoutSession): string {
-  if (!session.profile.nativeCheckoutEnabled) {
-    return 'Native checkout is not available for this merchant yet.'
+  const reasons = new Set(session.profile.ineligibilityReasons ?? [])
+  if (
+    reasons.has('AUTHORIZATION_REQUIRED') ||
+    reasons.has('AUTHENTICATION_DISABLED') ||
+    reasons.has('TIER_NOT_GRANTED') ||
+    reasons.has('MISSING_SCOPES')
+  ) {
+    return 'Direct completion is not authorized for this checkout, so Meant selected the merchant handoff.'
   }
-  if (checkoutReadyForPayment(session)) {
+  if (reasons.has('ROLLOUT_DISABLED')) {
+    return 'Checkout completion inside Meant is not enabled for this merchant yet.'
+  }
+  if (session.profile.nextAction === 'HANDOFF' && checkoutReadyForPayment(session)) {
     return 'Everything is prepared — only the secure payment step remains with the merchant.'
   }
   if (checkoutHasExtensionInteraction(session.profile)) {

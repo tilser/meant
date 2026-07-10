@@ -3,6 +3,15 @@ package com.meant.api.module.cart.service.dto;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.cart.constant.CheckoutNextAction;
+import com.meant.api.module.cart.service.CheckoutExecutionPlanner;
+import com.meant.api.module.merchant.constant.CapabilityAvailability;
+import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
+import com.meant.api.module.merchant.constant.CommerceExecutionRail;
+import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision;
+import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -11,7 +20,7 @@ class CheckoutResultTest {
 
     @Test
     void recoverableMessageTakesPriorityBeforeBuyerHandoff() {
-        CheckoutResult result = checkout(
+        var result = checkout(
                 "requires_escalation",
                 List.of(
                         message("extension_interaction_required", "requires_buyer_input"),
@@ -24,7 +33,7 @@ class CheckoutResultTest {
 
     @Test
     void extensionInteractionRequiringBuyerInputHandsOffAfterRecoverableErrorsAreResolved() {
-        CheckoutResult result = checkout(
+        var result = checkout(
                 "requires_escalation",
                 List.of(message("extension_interaction_required", "requires_buyer_input"))
         );
@@ -42,23 +51,63 @@ class CheckoutResultTest {
                 .isEqualTo(CheckoutNextAction.COMPLETE_CHECKOUT);
     }
 
-    private CheckoutResult checkout(String status, List<CheckoutResult.Message> messages) {
-        return new CheckoutResult(
-                UUID.randomUUID(),
-                "cart-1",
-                "checkout-1",
+    @Test
+    void embeddedCheckoutIsSelectedBeforeUnavailableDirectCompletion() {
+        var result = new CheckoutExecutionPlanner().resolve(
+                "ready_for_complete",
+                List.of(),
+                availablePolicy(CommerceOperation.EMBEDDED_CHECKOUT, CommerceExecutionRail.EMBEDDED_CHECKOUT)
+        );
+
+        assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT);
+        assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
+    }
+
+    private com.meant.api.module.cart.service.dto.CheckoutExecutionPlan checkout(
+            String status,
+            List<CheckoutResult.Message> messages
+    ) {
+        return new CheckoutExecutionPlanner().resolve(
                 status,
-                null,
-                "https://merchant.example/continue",
-                "2026-04-08",
-                1000L,
-                "USD",
                 messages,
-                true
+                availablePolicy(
+                        CommerceOperation.DIRECT_CHECKOUT_COMPLETION,
+                        CommerceExecutionRail.DIRECT_CHECKOUT_COMPLETION
+                )
         );
     }
 
     private CheckoutResult.Message message(String code, String severity) {
         return new CheckoutResult.Message("error", code, severity, code, null);
+    }
+
+    private MerchantExecutionPolicy availablePolicy(
+            CommerceOperation availableOperation,
+            CommerceExecutionRail rail
+    ) {
+        return new MerchantExecutionPolicy(Arrays.stream(CommerceOperation.values())
+                .map(operation -> operation == availableOperation
+                        ? availableDecision(operation, rail)
+                        : MerchantExecutionPolicy.unavailable().decision(operation))
+                .toList());
+    }
+
+    private CommerceCapabilityDecision availableDecision(
+            CommerceOperation operation,
+            CommerceExecutionRail rail
+    ) {
+        return new CommerceCapabilityDecision(
+                operation,
+                true,
+                CapabilityAuthorizationDecision.notRequired(),
+                true,
+                CapabilityIntegrationHealth.HEALTHY,
+                true,
+                CapabilityAvailability.AVAILABLE,
+                rail,
+                List.of(),
+                UUID.randomUUID(),
+                null
+        );
     }
 }

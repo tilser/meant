@@ -2,6 +2,7 @@ package com.meant.api.plugin.order.common.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
@@ -39,6 +40,7 @@ public class MerchantOrderPluginDispatchService {
             String tokenType,
             String accessToken
     ) {
+        provider = provider.forOperation(CommerceOperation.ORDER_READS);
         GetOrderCapability capability = capability(GetOrderCapability.TOOL_NAME, GetOrderCapability.class);
         MerchantMcpToolCallResult result = merchantMcpToolClient.callTool(
                 provider,

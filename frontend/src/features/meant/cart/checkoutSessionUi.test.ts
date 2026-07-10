@@ -42,7 +42,8 @@ describe('checkout session UCP actions', () => {
           content: 'A destination address is required in order to continue.',
         },
       ],
-      nativeCheckoutEnabled: true,
+      selectedRail: 'PROVIDER_CHECKOUT_SESSION',
+      ineligibilityReasons: [],
     })
 
     expect(checkoutNeedsAddress(checkout)).toBe(true)
@@ -63,7 +64,8 @@ describe('checkout session UCP actions', () => {
           content: 'An extension interaction is required to complete the checkout.',
         },
       ],
-      nativeCheckoutEnabled: true,
+      selectedRail: 'MERCHANT_HANDOFF',
+      ineligibilityReasons: ['FALLBACK_SELECTED'],
     })
 
     expect(checkoutNeedsAddress(checkout)).toBe(false)
@@ -75,5 +77,45 @@ describe('checkout session UCP actions', () => {
     expect(merchantHandoffReason(checkout)).toContain(
       'requires additional interaction in its checkout',
     )
+  })
+
+  test('uses the explicit direct-completion action without inferring a handoff from status', () => {
+    const checkout = session({
+      status: 'ready_for_complete',
+      nextAction: 'COMPLETE_CHECKOUT',
+      selectedRail: 'DIRECT_CHECKOUT_COMPLETION',
+      ineligibilityReasons: [],
+      messages: [],
+    })
+
+    expect(checkoutNeedsHandoff(checkout)).toBe(false)
+    expect(checkoutAssistantPrompt(checkout)).toContain('ready for direct completion')
+  })
+
+  test('represents embedded checkout independently from disabled direct completion', () => {
+    const checkout = session({
+      status: 'ready_for_complete',
+      nextAction: 'OPEN_EMBEDDED_CHECKOUT',
+      selectedRail: 'EMBEDDED_CHECKOUT',
+      ineligibilityReasons: [],
+      messages: [],
+    })
+
+    expect(checkoutNeedsHandoff(checkout)).toBe(false)
+    expect(checkoutAssistantPrompt(checkout)).toContain('embedded checkout')
+  })
+
+  test('explains a scope-driven merchant fallback from typed policy reasons', () => {
+    const checkout = session({
+      status: 'ready_for_complete',
+      nextAction: 'HANDOFF',
+      selectedRail: 'MERCHANT_HANDOFF',
+      ineligibilityReasons: ['MISSING_SCOPES', 'FALLBACK_SELECTED'],
+      continueUrl: 'https://merchant.example/continue',
+      messages: [],
+    })
+
+    expect(checkoutNeedsHandoff(checkout)).toBe(true)
+    expect(merchantHandoffReason(checkout)).toContain('not authorized')
   })
 })

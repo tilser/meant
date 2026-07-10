@@ -1,0 +1,14 @@
+package com.meant.api.module.merchant.constant;
+
+public enum CapabilityIneligibilityReason {
+    NOT_ADVERTISED,
+    AUTHORIZATION_REQUIRED,
+    AUTHENTICATION_DISABLED,
+    TIER_NOT_GRANTED,
+    MISSING_SCOPES,
+    ROLLOUT_DISABLED,
+    INTEGRATION_UNHEALTHY,
+    OPERATION_UNSUPPORTED,
+    FALLBACK_SELECTED,
+    NO_FALLBACK
+}

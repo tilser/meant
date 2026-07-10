@@ -492,28 +492,77 @@ export interface components {
              */
             timestamp?: string;
         };
+        /** @description Effective availability of one provider-neutral commerce operation. */
+        CapabilityDecisionResponse: {
+            /** @description Commerce operation being evaluated. */
+            operation: "CATALOG" | "CART" | "CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "ORDER_READS" | "ORDER_WEBHOOKS";
+            /** @description Whether the selected merchant/provider integration advertises the operation. */
+            advertised: boolean;
+            /** @description Stable authorization, tier, and granted-scope readiness outcome. */
+            authorizationStatus: "NOT_REQUIRED" | "READY" | "NOT_AUTHORIZED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "UNSUPPORTED";
+            /** @description Whether product rollout enables this operation for the merchant. */
+            rolloutEnabled: boolean;
+            /** @description Current health of the integration selected for this operation. */
+            integrationHealth: "HEALTHY" | "PENDING" | "INACTIVE" | "SUSPENDED" | "REVOKED" | "NO_INTEGRATION";
+            /** @description Whether a supported fallback rail exists when the operation is ineligible. */
+            fallbackSupported: boolean;
+            /** @description Effective operation availability. */
+            availability: "AVAILABLE" | "FALLBACK_AVAILABLE" | "UNAVAILABLE";
+            /** @description Rail selected for this operation. */
+            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
+            /** @description Typed reasons explaining ineligibility or fallback selection. */
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+        };
         CheckoutResponse: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Meant cart identifier.
+             */
             cartId?: string;
+            /** @description Merchant/provider cart identifier. */
             remoteCartId?: string;
+            /** @description Merchant/provider checkout identifier. */
             checkoutId?: string;
+            /** @description Current provider checkout status. */
             status?: string;
+            /** @description Provider checkout URL when available. */
             checkoutUrl?: string;
+            /** @description Provider continuation URL when available. */
             continueUrl?: string;
+            /** @description Negotiated UCP protocol version. */
             ucpVersion?: string;
+            /** @description Checkout total in minor currency units. */
             totalAmountMinor?: number;
+            /** @description ISO 4217 checkout currency code. */
             currency?: string;
+            /** @description Whether the provider checkout state requires merchant or buyer escalation. */
             requiresEscalation?: boolean;
-            /** @description Next checkout action derived from UCP status and message severity. */
-            nextAction?: "UPDATE_CHECKOUT" | "HANDOFF" | "COMPLETE_CHECKOUT" | "WAIT" | "DONE" | "RESTART" | "UNKNOWN";
+            /** @description Authoritative next checkout action derived from session state and execution policy. */
+            nextAction: "UPDATE_CHECKOUT" | "OPEN_EMBEDDED_CHECKOUT" | "HANDOFF" | "COMPLETE_CHECKOUT" | "WAIT" | "DONE" | "RESTART" | "UNKNOWN";
+            /** @description Execution rail selected by the effective checkout policy. */
+            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
+            /** @description Typed reasons that made a preferred checkout rail ineligible or selected a fallback. */
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+            /** @description Independent effective capability decisions for the merchant's commerce operations. */
+            capabilities: components["schemas"]["CapabilityDecisionResponse"][];
+            /** @description Provider messages for checkout guidance. */
             messages?: components["schemas"]["CheckoutMessageResponse"][];
+            /**
+             * @deprecated
+             * @description Deprecated compatibility view derived only from direct checkout completion availability.
+             */
             nativeCheckoutEnabled?: boolean;
         };
         CheckoutMessageResponse: {
+            /** @description Provider message type. */
             type?: string;
+            /** @description Stable provider message code. */
             code?: string;
+            /** @description Provider message severity. */
             severity?: string;
+            /** @description Buyer-facing provider message content. */
             content?: string;
+            /** @description Payload path related to the message. */
             path?: string;
         };
         CheckoutConsentResponse: {

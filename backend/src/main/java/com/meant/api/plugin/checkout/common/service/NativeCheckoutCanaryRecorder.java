@@ -1,5 +1,6 @@
 package com.meant.api.plugin.checkout.common.service;
 
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.plugin.checkout.common.entity.CheckoutCanaryOutcome;
 import com.meant.api.plugin.checkout.common.service.CheckoutCanaryService.CanaryEventCommand;
@@ -42,7 +43,7 @@ public class NativeCheckoutCanaryRecorder {
                 remoteStatus,
                 errorCode,
                 chargeMismatch,
-                provider.nativeCheckoutEnabled()
+                provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)
         ));
     }
 }

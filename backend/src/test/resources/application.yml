@@ -66,6 +66,20 @@ ucp:
     signature-ttl: PT5M
     clock-skew: PT30S
     keys: []
+  capability-readiness:
+    direct-checkout-completion-authorized: false
+    order-reads-authorized: true
+    order-webhooks-authorized: false
+
+commerce:
+  execution-policy:
+    catalog-rollout-enabled: true
+    cart-rollout-enabled: true
+    checkout-session-rollout-enabled: true
+    embedded-checkout-rollout-enabled: false
+    direct-checkout-completion-rollout-enabled: false
+    order-reads-rollout-enabled: true
+    order-webhooks-rollout-enabled: true
 
 shopify:
   agent-auth:
@@ -76,6 +90,19 @@ shopify:
     token-endpoint: https://api.shopify.com/auth/access_token
     refresh-skew: 5m
     fallback-token-ttl: 60m
+  capability-readiness:
+    authorization-tier: NONE
+    granted-scopes: []
+    embedded-checkout-advertised: false
+    embedded-checkout-authorized: false
+    direct-checkout-completion-advertised: false
+    direct-checkout-completion-authorized: false
+    direct-checkout-completion-required-scopes:
+      - complete_checkout
+    order-reads-authorized: false
+    order-reads-required-scopes:
+      - read_orders
+    order-webhooks-authorized: false
 
 order:
   webhook:

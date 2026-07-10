@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.repository;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantCapability;
 import java.util.UUID;
+import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -18,4 +19,8 @@ public interface MerchantCapabilityRepository extends JpaRepository<MerchantCapa
             where merchantCapability.merchant.id = :merchantId and merchantCapability.name = :name
             """)
     boolean existsByMerchantIdAndName(UUID merchantId, String name);
+
+    @Query("select distinct merchantCapability.name from MerchantCapability merchantCapability "
+            + "where merchantCapability.merchant.id = :merchantId")
+    Set<String> findNamesByMerchantId(UUID merchantId);
 }

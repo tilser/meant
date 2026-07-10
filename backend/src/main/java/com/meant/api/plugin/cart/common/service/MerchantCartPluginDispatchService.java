@@ -3,6 +3,7 @@ package com.meant.api.plugin.cart.common.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
@@ -52,6 +53,7 @@ public class MerchantCartPluginDispatchService {
             CreateCartRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CART);
         CreateCartCapability capability = capability(CreateCartCapability.TOOL_NAME, CreateCartCapability.class);
         MerchantMcpToolCallResult result = callCreateCart(provider, request, session, capability);
         UcpCartResponse response = parseCartResponse(capability, result, "create cart");
@@ -65,6 +67,7 @@ public class MerchantCartPluginDispatchService {
             GetCartRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CART);
         GetCartCapability capability = capability(GetCartCapability.TOOL_NAME, GetCartCapability.class);
         MerchantMcpToolCallResult result = callWithLegacyCartIdFallback(
                 provider,
@@ -84,6 +87,7 @@ public class MerchantCartPluginDispatchService {
             UpdateCartRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CART);
         UpdateCartCapability capability = capability(UpdateCartCapability.TOOL_NAME, UpdateCartCapability.class);
         MerchantMcpToolCallResult result = callUpdateCart(provider, request, session, capability);
         UcpCartResponse response = parseCartResponse(capability, result, "update cart");
@@ -97,6 +101,7 @@ public class MerchantCartPluginDispatchService {
             CancelCartRequest request,
             UcpSession session
     ) {
+        provider = provider.forOperation(CommerceOperation.CART);
         CancelCartCapability capability = capability(CancelCartCapability.TOOL_NAME, CancelCartCapability.class);
         MerchantMcpToolCallResult result = callWithLegacyCartIdFallback(
                 provider,
