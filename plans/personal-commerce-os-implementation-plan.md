@@ -264,6 +264,7 @@ Authenticate Shopify traffic at Token tier without leaking credentials or coupli
 
 Priority: P0  
 Dependencies: PCOS-004A, PCOS-005
+Implementation status: Complete
 
 **Goal**
 

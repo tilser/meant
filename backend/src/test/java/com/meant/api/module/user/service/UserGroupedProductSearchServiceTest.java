@@ -69,13 +69,15 @@ class UserGroupedProductSearchServiceTest {
                 assertThat(offer.identity().merchantScope().externalMerchantIdentity().value())
                         .isEqualTo("gid://shopify/Shop/100");
                 assertThat(offer.identity().externalProductIdentity().value())
-                        .isEqualTo("gid://shopify/Product/200");
+                        .isEqualTo("shopify-variant-product:v1:gid://shopify/ProductVariant/300");
                 assertThat(offer.identity().externalVariantIdentity().type())
                         .isEqualTo(ExternalIdentifierType.VARIANT);
                 assertThat(offer.price().minorUnits()).isEqualTo(4200);
                 assertThat(offer.price().currency()).isEqualTo("USD");
                 assertThat(offer.provenance().getFirst().sourceReference().type())
                         .isEqualTo(ResultSourceType.MERCHANT_STOREFRONT);
+                assertThat(offer.provenance().getFirst().externalProductReference().value())
+                        .isEqualTo("gid://shopify/Product/200");
                 assertThat(offer.provenance().getFirst().discoverySource().value())
                         .isEqualTo("gid://shopify/Shop/100");
                 assertThat(offer.provenance().getFirst().localRouting().merchantIntegrationId())

@@ -15,9 +15,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -73,12 +75,34 @@ public class UcpMcpClient {
         return callTool(restClient, endpoint, toolName, arguments, headers, true);
     }
 
+    public UcpToolResponse callToolAuthenticatedAllowingJsonToolErrors(
+            RestClient restClient,
+            URI endpoint,
+            String toolName,
+            Object arguments,
+            Consumer<HttpHeaders> authentication
+    ) {
+        return callTool(restClient, endpoint, toolName, arguments, Map.of(), authentication, true);
+    }
+
     private UcpToolResponse callTool(
             RestClient restClient,
             URI endpoint,
             String toolName,
             Object arguments,
             Map<String, String> headers,
+            boolean allowJsonToolErrors
+    ) {
+        return callTool(restClient, endpoint, toolName, arguments, headers, ignored -> { }, allowJsonToolErrors);
+    }
+
+    private UcpToolResponse callTool(
+            RestClient restClient,
+            URI endpoint,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers,
+            Consumer<HttpHeaders> authentication,
             boolean allowJsonToolErrors
     ) {
         McpToolCallRequest request = request(
@@ -91,6 +115,7 @@ public class UcpMcpClient {
                     if (headers != null) {
                         headers.forEach(httpHeaders::set);
                     }
+                    authentication.accept(httpHeaders);
                 })
                 .body(request)
                 .retrieve()
@@ -187,7 +212,9 @@ public class UcpMcpClient {
             throw new UcpMcpException("MCP response was empty");
         }
         if (response.error() != null) {
-            throw new UcpMcpException("MCP error: " + UcpSensitiveValueRedactor.redact(response.error().message()));
+            throw new UcpMcpRemoteErrorException(
+                    "MCP error: " + UcpSensitiveValueRedactor.redact(response.error().message())
+            );
         }
     }
 
@@ -294,6 +321,15 @@ public class UcpMcpClient {
     }
 
     private String capabilityVersion(Object value) {
+        if (value instanceof Iterable<?> versions) {
+            for (Object version : versions) {
+                String resolved = capabilityVersion(version);
+                if (!resolved.isBlank()) {
+                    return resolved;
+                }
+            }
+            return "";
+        }
         if (value instanceof Map<?, ?> fields) {
             return text(firstMapValue(fields, "version", "ucp_version"));
         }

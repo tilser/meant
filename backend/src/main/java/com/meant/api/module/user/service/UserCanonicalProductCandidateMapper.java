@@ -26,6 +26,7 @@ import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentity;
 import com.meant.api.plugin.support.UcpMoney;
 import java.net.URI;
 import java.time.Instant;
@@ -48,7 +49,7 @@ public class UserCanonicalProductCandidateMapper {
         OfferMerchantScope merchantScope = merchantIdentity == null
                 ? OfferMerchantScope.localIntegrationFallback(integration.id())
                 : OfferMerchantScope.external(merchantIdentity);
-        ExternalIdentifier productIdentity = new ExternalIdentifier(
+        ExternalIdentifier provenanceProductIdentity = new ExternalIdentifier(
                 ExternalIdentifierType.PRODUCT,
                 provider.value(),
                 product.productId()
@@ -57,6 +58,11 @@ public class UserCanonicalProductCandidateMapper {
                 ExternalIdentifierType.VARIANT,
                 provider.value(),
                 product.selectedVariantId()
+        );
+        ExternalIdentifier offerProductIdentity = new ExternalIdentifier(
+                ExternalIdentifierType.PRODUCT,
+                provider.value(),
+                shopifyOfferProductAnchor(provider, provenanceProductIdentity.value(), variantIdentity)
         );
         ResultSourceReference sourceReference = new ResultSourceReference(
                 sourceType,
@@ -72,7 +78,7 @@ public class UserCanonicalProductCandidateMapper {
                 ),
                 new LocalMerchantRouting(integration.id()),
                 merchantIdentity,
-                productIdentity,
+                provenanceProductIdentity,
                 variantIdentity,
                 new ResultFreshness(observedAt, null),
                 sourceReference
@@ -80,7 +86,7 @@ public class UserCanonicalProductCandidateMapper {
         OfferIdentity offerIdentity = new OfferIdentity(
                 provider,
                 merchantScope,
-                productIdentity,
+                offerProductIdentity,
                 variantIdentity,
                 List.of(),
                 List.of(),
@@ -131,6 +137,19 @@ public class UserCanonicalProductCandidateMapper {
         return externalIdentity == null
                 ? null
                 : new ExternalIdentifier(ExternalIdentifierType.MERCHANT, provider.value(), externalIdentity);
+    }
+
+    private String shopifyOfferProductAnchor(
+            ProviderIdentity provider,
+            String externalProductId,
+            ExternalIdentifier variantIdentity
+    ) {
+        return "SHOPIFY".equals(provider.value())
+                ? ShopifyOfferIdentity.productAnchor(
+                        externalProductId,
+                        variantIdentity == null ? null : variantIdentity.value()
+                )
+                : externalProductId;
     }
 
     private String discoverySourceValue(

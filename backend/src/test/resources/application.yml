@@ -93,6 +93,29 @@ shopify:
     token-endpoint: https://api.shopify.com/auth/access_token
     refresh-skew: 5m
     fallback-token-ttl: 60m
+  global-catalog:
+    endpoint: https://catalog.shopify.test/api/ucp/mcp
+    allowed-hosts:
+      - catalog.shopify.test
+    source-identity: SHOPIFY_GLOBAL_CATALOG
+    protocol-version: 2026-04-08
+    extension-id: dev.shopify.catalog.global
+    extension-version: 2026-04-08
+    extension-spec: https://shopify.dev/docs/agents/catalog/global-catalog
+    extension-schema: https://shopify.dev/ucp/schemas/2026-04-08/shopify_catalog_global.json
+    required-scopes:
+      - read_global_api_catalog_search
+    view: offer
+    default-result-limit: 10
+    maximum-result-limit: 50
+    maximum-lookup-ids: 50
+    maximum-candidates: 200
+    maximum-concurrent-requests: 16
+    connect-timeout: 2s
+    read-timeout: 8s
+    request-deadline: 10s
+    circuit-failure-threshold: 3
+    circuit-open-duration: 30s
   capability-readiness:
     authorization-tier: NONE
     granted-scopes: []

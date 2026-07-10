@@ -128,6 +128,27 @@ shopify:
     token-endpoint: ${SHOPIFY_TOKEN_ENDPOINT:https://api.shopify.com/auth/access_token}
     refresh-skew: ${SHOPIFY_TOKEN_REFRESH_SKEW:5m}
     fallback-token-ttl: ${SHOPIFY_TOKEN_FALLBACK_TTL:60m}
+  global-catalog:
+    endpoint: ${SHOPIFY_GLOBAL_CATALOG_ENDPOINT:https://catalog.shopify.com/api/ucp/mcp}
+    allowed-hosts: ${SHOPIFY_GLOBAL_CATALOG_ALLOWED_HOSTS:catalog.shopify.com}
+    source-identity: ${SHOPIFY_GLOBAL_CATALOG_SOURCE_IDENTITY:SHOPIFY_GLOBAL_CATALOG}
+    protocol-version: ${SHOPIFY_GLOBAL_CATALOG_PROTOCOL_VERSION:2026-04-08}
+    extension-id: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_ID:dev.shopify.catalog.global}
+    extension-version: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_VERSION:2026-04-08}
+    extension-spec: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_SPEC:https://shopify.dev/docs/agents/catalog/global-catalog}
+    extension-schema: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_SCHEMA:https://shopify.dev/ucp/schemas/2026-04-08/shopify_catalog_global.json}
+    required-scopes: ${SHOPIFY_GLOBAL_CATALOG_REQUIRED_SCOPES:read_global_api_catalog_search}
+    view: ${SHOPIFY_GLOBAL_CATALOG_VIEW:offer}
+    default-result-limit: ${SHOPIFY_GLOBAL_CATALOG_DEFAULT_RESULT_LIMIT:10}
+    maximum-result-limit: ${SHOPIFY_GLOBAL_CATALOG_MAXIMUM_RESULT_LIMIT:50}
+    maximum-lookup-ids: ${SHOPIFY_GLOBAL_CATALOG_MAXIMUM_LOOKUP_IDS:50}
+    maximum-candidates: ${SHOPIFY_GLOBAL_CATALOG_MAXIMUM_CANDIDATES:200}
+    maximum-concurrent-requests: ${SHOPIFY_GLOBAL_CATALOG_MAXIMUM_CONCURRENT_REQUESTS:16}
+    connect-timeout: ${SHOPIFY_GLOBAL_CATALOG_CONNECT_TIMEOUT:2s}
+    read-timeout: ${SHOPIFY_GLOBAL_CATALOG_READ_TIMEOUT:8s}
+    request-deadline: ${SHOPIFY_GLOBAL_CATALOG_REQUEST_DEADLINE:10s}
+    circuit-failure-threshold: ${SHOPIFY_GLOBAL_CATALOG_CIRCUIT_FAILURE_THRESHOLD:3}
+    circuit-open-duration: ${SHOPIFY_GLOBAL_CATALOG_CIRCUIT_OPEN_DURATION:30s}
   capability-readiness:
     authorization-tier: ${SHOPIFY_AUTHORIZATION_TIER:NONE}
     granted-scopes: ${SHOPIFY_GRANTED_SCOPES:}

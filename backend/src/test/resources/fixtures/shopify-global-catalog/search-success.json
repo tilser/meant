@@ -1,0 +1,62 @@
+{
+  "ucp": {
+    "version": "2026-04-08",
+    "capabilities": {
+      "dev.ucp.shopping.catalog.search": [{"version": "2026-04-08"}],
+      "dev.ucp.shopping.catalog.lookup": [{"version": "2026-04-08"}],
+      "dev.shopify.catalog.global": [{"version": "2026-04-08"}]
+    }
+  },
+  "products": [{
+    "id": "gid://shopify/p/upid-1",
+    "title": "Trail Runner",
+    "description": {"html": "Lightweight trail shoe"},
+    "url": "https://seller-one.test/products/trail-runner",
+    "categories": [{"value": "Shoes", "taxonomy": "merchant"}],
+    "metadata": {
+      "tech_specs": ["250g"],
+      "top_features": ["grippy sole"],
+      "future_inferred_field": "ignored at provider boundary"
+    },
+    "media": [{"type": "image", "url": "https://cdn.shopify.test/trail.jpg", "alt_text": "Shoe"}],
+    "future_product_extension": {"version": 2},
+    "variants": [
+      {
+        "id": "gid://shopify/ProductVariant/variant-1",
+        "title": "Black / 10",
+        "url": "https://seller-one.test/products/trail-runner?variant=1",
+        "price": {"amount": 8999, "currency": "USD"},
+        "list_price": {"amount": 9999, "currency": "USD"},
+        "availability": {"available": true, "status": "in_stock"},
+        "options": [{"name": "Color", "label": "Black"}, {"name": "Size", "label": "10"}],
+        "seller": {
+          "id": "gid://shopify/Shop/1",
+          "name": "Seller One",
+          "url": "https://seller-one.test",
+          "domain": "seller-one.test",
+          "links": [{"type": "refund_policy", "url": "https://seller-one.test/policies/refunds"}]
+        },
+        "checkout_url": "https://seller-one.test/cart/variant-1:1",
+        "unknown_variant_extension": {"ignored": true}
+      },
+      {
+        "id": "gid://shopify/ProductVariant/variant-2",
+        "title": "Black / 10 from Seller Two",
+        "url": "https://seller-two.test/products/trail-runner?variant=2",
+        "price": {"amount": 8700, "currency": "USD"},
+        "availability": {"available": true, "status": "in_stock"},
+        "options": [{"name": "Color", "label": "Black"}, {"name": "Size", "label": "10"}],
+        "seller": {
+          "id": "gid://shopify/Shop/2",
+          "name": "Seller Two",
+          "url": "https://seller-two.test",
+          "domain": "seller-two.test",
+          "links": []
+        },
+        "checkout_url": "https://seller-two.test/cart/variant-2:1"
+      }
+    ]
+  }],
+  "pagination": {"cursor": "next", "has_next_page": true, "total_count": 100},
+  "future_root_extension": {"safe_to_ignore": true}
+}

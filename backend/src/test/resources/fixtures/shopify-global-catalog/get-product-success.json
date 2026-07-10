@@ -1,0 +1,28 @@
+{
+  "ucp": {
+    "version": "2026-04-08",
+    "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [{"version": "2026-04-08"}],
+      "dev.shopify.catalog.global": [{"version": "2026-04-08"}]
+    }
+  },
+  "product": {
+    "id": "gid://shopify/p/upid-1",
+    "title": "Trail Runner",
+    "selected": [{"name": "Color", "label": "Black"}],
+    "variants": [{
+      "id": "gid://shopify/ProductVariant/variant-1",
+      "title": "Black",
+      "price": {"amount": 8999, "currency": "USD"},
+      "availability": {"available": true, "status": "in_stock"},
+      "checkout_url": "https://seller-one.example/cart/variant-1:1",
+      "seller": {
+        "id": "gid://shopify/Shop/1",
+        "name": "Seller One",
+        "domain": "seller-one.example",
+        "url": "https://seller-one.example",
+        "links": []
+      }
+    }]
+  }
+}
