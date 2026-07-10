@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-merchant-integration" author="codex">
+        <createTable tableName="merchant_integration">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="kind" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="external_merchant_id" type="text"/>
+            <column name="verified_domain" type="text"/>
+            <column name="verified_shop_identity" type="text"/>
+            <column name="endpoint" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="protocol_version" type="text"/>
+            <column name="auth_strategy" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="raw_metadata" type="jsonb"/>
+            <column name="captured_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_integration"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_integration_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"/>
+        <addUniqueConstraint
+                tableName="merchant_integration"
+                columnNames="merchant_id, provider, endpoint"
+                constraintName="uk_merchant_integration_connection"/>
+        <createIndex tableName="merchant_integration" indexName="idx_merchant_integration_merchant">
+            <column name="merchant_id"/>
+        </createIndex>
+
+        <createTable tableName="merchant_integration_role">
+            <column name="merchant_integration_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="role" type="text">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addPrimaryKey
+                tableName="merchant_integration_role"
+                columnNames="merchant_integration_id, role"
+                constraintName="pk_merchant_integration_role"/>
+        <addForeignKeyConstraint
+                baseTableName="merchant_integration_role"
+                baseColumnNames="merchant_integration_id"
+                constraintName="fk_merchant_integration_role_integration"
+                referencedTableName="merchant_integration"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="002-backfill-generic-ucp-integrations" author="codex">
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            INSERT INTO merchant_integration (
+                id,
+                merchant_id,
+                provider,
+                kind,
+                external_merchant_id,
+                verified_domain,
+                verified_shop_identity,
+                endpoint,
+                protocol_version,
+                auth_strategy,
+                status,
+                source,
+                raw_metadata,
+                captured_at,
+                created_at,
+                updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                merchant.id,
+                'GENERIC_UCP',
+                'MERCHANT_CONNECTION',
+                NULL,
+                lower(trim(trailing '.' from btrim(merchant.domain))),
+                NULL,
+                coalesce(
+                    nullif(btrim(merchant.advertised_mcp_endpoint), ''),
+                    nullif(btrim(merchant.profile_mcp_endpoint), ''),
+                    btrim(merchant.ucp_url)
+                ),
+                nullif(btrim(merchant.ucp_version), ''),
+                'NONE',
+                CASE WHEN merchant.active THEN 'ACTIVE' ELSE 'INACTIVE' END,
+                'LEGACY_MERCHANT_BACKFILL',
+                merchant.profile_raw,
+                coalesce(
+                    merchant.profile_captured_at,
+                    merchant.last_profiled_at,
+                    merchant.updated_at,
+                    merchant.created_at,
+                    CURRENT_TIMESTAMP
+                ),
+                coalesce(merchant.created_at, CURRENT_TIMESTAMP),
+                coalesce(merchant.updated_at, merchant.created_at, CURRENT_TIMESTAMP)
+            FROM merchant
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM merchant_integration existing
+                WHERE existing.merchant_id = merchant.id
+                    AND existing.provider = 'GENERIC_UCP'
+                    AND existing.endpoint = coalesce(
+                        nullif(btrim(merchant.advertised_mcp_endpoint), ''),
+                        nullif(btrim(merchant.profile_mcp_endpoint), ''),
+                        btrim(merchant.ucp_url)
+                    )
+            );
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'STOREFRONT_CATALOG'
+            FROM merchant_integration integration
+            WHERE integration.provider = 'GENERIC_UCP'
+                AND integration.source = 'LEGACY_MERCHANT_BACKFILL'
+            ON CONFLICT DO NOTHING;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'CART'
+            FROM merchant_integration integration
+            JOIN merchant ON merchant.id = integration.merchant_id
+            JOIN merchant_raw ON merchant_raw.id = merchant.merchant_raw_id
+            WHERE integration.provider = 'GENERIC_UCP'
+                AND integration.source = 'LEGACY_MERCHANT_BACKFILL'
+                AND merchant_raw.has_cart_management
+            ON CONFLICT DO NOTHING;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'CHECKOUT'
+            FROM merchant_integration integration
+            JOIN merchant ON merchant.id = integration.merchant_id
+            JOIN merchant_raw ON merchant_raw.id = merchant.merchant_raw_id
+            WHERE integration.provider = 'GENERIC_UCP'
+                AND integration.source = 'LEGACY_MERCHANT_BACKFILL'
+                AND merchant_raw.has_checkout
+            ON CONFLICT DO NOTHING;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'ORDERS'
+            FROM merchant_integration integration
+            JOIN merchant ON merchant.id = integration.merchant_id
+            JOIN merchant_raw ON merchant_raw.id = merchant.merchant_raw_id
+            WHERE integration.provider = 'GENERIC_UCP'
+                AND integration.source = 'LEGACY_MERCHANT_BACKFILL'
+                AND merchant_raw.has_order
+            ON CONFLICT DO NOTHING;
+        ]]></sql>
+    </changeSet>
+
+    <changeSet id="003-add-merchant-integration-identity-indexes" author="codex">
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            CREATE UNIQUE INDEX uk_merchant_integration_provider_external_identity
+            ON merchant_integration (provider, external_merchant_id)
+            WHERE external_merchant_id IS NOT NULL;
+
+            CREATE UNIQUE INDEX uk_merchant_integration_provider_verified_domain
+            ON merchant_integration (provider, lower(verified_domain))
+            WHERE verified_domain IS NOT NULL;
+
+            CREATE UNIQUE INDEX uk_merchant_integration_provider_shop_identity
+            ON merchant_integration (provider, lower(verified_shop_identity))
+            WHERE verified_shop_identity IS NOT NULL;
+        ]]></sql>
+    </changeSet>
+</databaseChangeLog>

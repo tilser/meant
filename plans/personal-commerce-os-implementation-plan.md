@@ -117,6 +117,7 @@ Create the external Shopify prerequisites early because authorization lead time 
 
 Priority: P0  
 Dependencies: None  
+Implementation status: Complete
 
 **Goal**
 
