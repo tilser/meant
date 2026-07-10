@@ -201,6 +201,29 @@ Create the provider-neutral result model required for grouped products and selec
 - Adding a future provider does not require a new mandatory field on `CanonicalProduct`.
 - Shopify GIDs and UPIDs do not become universal identifiers in core DTOs; they are represented as typed external identity evidence/provenance.
 
+### PCOS-004A — Decouple offer identity, discovery provenance, and local merchant routing
+
+Priority: P0
+Dependencies: PCOS-004
+
+**Goal**
+
+Allow provider-wide discovery to represent offers from unknown external sellers without creating local merchant rows, while deduplicating the same commercial offer across discovery paths.
+
+**Work**
+
+- Separate commercial seller/product/variant/configuration identity from typed discovery-source identity and an optional local `MerchantIntegration` routing link.
+- Prefer provider-namespaced external merchant identity, with local integration identity only as an explicit fallback when a provider supplies no stable merchant identity.
+- Version the canonical offer key and include variant options, bundle components, and selling-plan context using deterministic collision-safe encoding.
+- Preserve the flat search API and legacy `productKey`/`productHash`; expose the richer model through the grouped V1 response and generated frontend OpenAPI types.
+
+**Acceptance criteria**
+
+- A Shopify Global Catalog offer is valid without a local merchant or integration, and the same external offer observed through Global and Storefront Catalog becomes one offer with both provenance records.
+- Resolving local routing later does not change an externally scoped offer key; generic UCP merchants without external seller identity remain collision-safe through the local fallback.
+- Sellers, variants, selected options, bundle components, and selling plans remain distinct, while semantically unordered identity inputs are canonicalized.
+- The grouped V1 OpenAPI route and nested source/routing contracts are checked into the frontend schema without replacing either flat search route.
+
 ## Phase 1 — Shopify Authentication and Global Discovery
 
 ### PCOS-005 — Implement Shopify bearer token management
@@ -237,7 +260,7 @@ Authenticate Shopify traffic at Token tier without leaking credentials or coupli
 ### PCOS-006 — Add the Shopify Global Catalog provider
 
 Priority: P0  
-Dependencies: PCOS-004, PCOS-005  
+Dependencies: PCOS-004A, PCOS-005
 
 **Goal**
 

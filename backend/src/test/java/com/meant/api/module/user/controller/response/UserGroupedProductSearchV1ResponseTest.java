@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
+import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -37,7 +40,8 @@ class UserGroupedProductSearchV1ResponseTest {
                 ResultSourceType.PROVIDER_CATALOG, "fixture", null);
         ResultProvenance provenance = new ResultProvenance(
                 provider,
-                integrationId,
+                new DiscoverySourceIdentity(provider, ResultSourceType.PROVIDER_CATALOG, "GLOBAL_CATALOG"),
+                new LocalMerchantRouting(integrationId),
                 merchant,
                 product,
                 null,
@@ -45,7 +49,15 @@ class UserGroupedProductSearchV1ResponseTest {
                 source
         );
         Offer offer = new Offer(
-                new OfferIdentity(provider, integrationId, merchant, product, null, null),
+                new OfferIdentity(
+                        provider,
+                        OfferMerchantScope.external(merchant),
+                        product,
+                        null,
+                        List.of(),
+                        List.of(),
+                        null
+                ),
                 "Future merchant",
                 null,
                 new Money(1234, "eur"),
@@ -53,7 +65,6 @@ class UserGroupedProductSearchV1ResponseTest {
                 new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
                 List.of(),
                 null,
-                List.of(),
                 List.of(provenance)
         );
         CanonicalProduct canonicalProduct = new CanonicalProduct(
@@ -84,6 +95,14 @@ class UserGroupedProductSearchV1ResponseTest {
                 assertThat(mappedOffer.price().minorUnits()).isEqualTo(1234);
                 assertThat(mappedOffer.price().currency()).isEqualTo("EUR");
                 assertThat(mappedOffer.provenance().getFirst().provider()).isEqualTo("FUTURE_PROVIDER");
+                assertThat(mappedOffer.identity().merchantIntegrationId()).isNull();
+                assertThat(mappedOffer.identity().merchantScope().externalMerchantIdentity().value())
+                        .isEqualTo("Merchant-1");
+                assertThat(mappedOffer.provenance().getFirst().merchantIntegrationId()).isEqualTo(integrationId);
+                assertThat(mappedOffer.provenance().getFirst().discoverySource().value())
+                        .isEqualTo("GLOBAL_CATALOG");
+                assertThat(mappedOffer.provenance().getFirst().localRouting().merchantIntegrationId())
+                        .isEqualTo(integrationId);
             });
         });
     }

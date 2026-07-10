@@ -63,11 +63,10 @@ class UserGroupedProductSearchServiceTest {
         UserGroupedProductSearchResult result = service.search(profileCommand, searchCommand);
 
         assertThat(result.products()).singleElement().satisfies(product -> {
-            assertThat(product.key()).startsWith("product_v1_").isNotEqualTo(flatProduct.productKey());
+            assertThat(product.key()).startsWith("product_v2_").isNotEqualTo(flatProduct.productKey());
             assertThat(product.offers()).singleElement().satisfies(offer -> {
                 assertThat(offer.identity().provider().value()).isEqualTo("SHOPIFY");
-                assertThat(offer.identity().merchantIntegrationId()).isEqualTo(integration.id());
-                assertThat(offer.identity().externalMerchantIdentity().value())
+                assertThat(offer.identity().merchantScope().externalMerchantIdentity().value())
                         .isEqualTo("gid://shopify/Shop/100");
                 assertThat(offer.identity().externalProductIdentity().value())
                         .isEqualTo("gid://shopify/Product/200");
@@ -77,6 +76,10 @@ class UserGroupedProductSearchServiceTest {
                 assertThat(offer.price().currency()).isEqualTo("USD");
                 assertThat(offer.provenance().getFirst().sourceReference().type())
                         .isEqualTo(ResultSourceType.MERCHANT_STOREFRONT);
+                assertThat(offer.provenance().getFirst().discoverySource().value())
+                        .isEqualTo("gid://shopify/Shop/100");
+                assertThat(offer.provenance().getFirst().localRouting().merchantIntegrationId())
+                        .isEqualTo(integration.id());
             });
         });
         assertThat(flatProduct.productKey()).isEqualTo("legacy.example:legacy-product-key");
@@ -104,7 +107,7 @@ class UserGroupedProductSearchServiceTest {
                 "Shopper",
                 null
         );
-        MerchantIntegrationResult integration = integration(flatProduct.merchantId(), null);
+        MerchantIntegrationResult integration = integration(flatProduct.merchantId(), null, null, null);
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
                 new StubUserProductSearchService(flatResult),
                 new StubMerchantIntegrationLookupService(integration),
@@ -118,8 +121,11 @@ class UserGroupedProductSearchServiceTest {
                         profileCommand.id(), "linen shirt", null, "127.0.0.1", "test", 0, 20)
         );
 
-        assertThat(result.products().getFirst().offers().getFirst().identity().merchantIntegrationId())
+        assertThat(result.products().getFirst().offers().getFirst().identity()
+                .merchantScope().merchantIntegrationFallbackId())
                 .isEqualTo(integration.id());
+        assertThat(result.products().getFirst().offers().getFirst().provenance().getFirst()
+                .externalMerchantReference()).isNull();
     }
 
     @Test
@@ -164,6 +170,20 @@ class UserGroupedProductSearchServiceTest {
     }
 
     private MerchantIntegrationResult integration(UUID merchantId, String endpoint) {
+        return integration(
+                merchantId,
+                endpoint,
+                "gid://shopify/Shop/100",
+                "shop.myshopify.com"
+        );
+    }
+
+    private MerchantIntegrationResult integration(
+            UUID merchantId,
+            String endpoint,
+            String externalMerchantId,
+            String verifiedShopIdentity
+    ) {
         Instant now = Instant.parse("2026-07-10T10:00:00Z");
         return new MerchantIntegrationResult(
                 UUID.fromString("40000000-0000-0000-0000-000000000001"),
@@ -171,9 +191,9 @@ class UserGroupedProductSearchServiceTest {
                 MerchantIntegrationProvider.SHOPIFY,
                 MerchantIntegrationKind.MERCHANT_CONNECTION,
                 Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
-                "gid://shopify/Shop/100",
+                externalMerchantId,
                 "shop.example",
-                "shop.myshopify.com",
+                verifiedShopIdentity,
                 endpoint,
                 "2026-04-08",
                 MerchantIntegrationAuthStrategy.OAUTH_BEARER,

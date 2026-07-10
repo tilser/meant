@@ -415,7 +415,7 @@ describe('cart recovery helpers', () => {
     const merged = mergeCartSnapshot(cart, 'merchant-1', {
       lines: [{ productVariantId: 'variant-1' }],
       deliveryGroups: [],
-    } as CartProfile)
+    } as unknown as CartProfile)
 
     expect(merged[0]).toMatchObject({
       cartId: 'old-cart',

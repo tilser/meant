@@ -4,13 +4,16 @@ import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
+import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribution;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
@@ -29,7 +32,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.stream.Stream;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -42,7 +44,10 @@ public class UserCanonicalProductCandidateMapper {
             ResultSourceType sourceType
     ) {
         ProviderIdentity provider = new ProviderIdentity(integration.provider().name());
-        ExternalIdentifier merchantIdentity = merchantIdentity(integration, provider);
+        ExternalIdentifier merchantIdentity = externalMerchantIdentity(integration, provider);
+        OfferMerchantScope merchantScope = merchantIdentity == null
+                ? OfferMerchantScope.localIntegrationFallback(integration.id())
+                : OfferMerchantScope.external(merchantIdentity);
         ExternalIdentifier productIdentity = new ExternalIdentifier(
                 ExternalIdentifierType.PRODUCT,
                 provider.value(),
@@ -60,7 +65,12 @@ public class UserCanonicalProductCandidateMapper {
         );
         ResultProvenance provenance = new ResultProvenance(
                 provider,
-                integration.id(),
+                new DiscoverySourceIdentity(
+                        provider,
+                        sourceType,
+                        discoverySourceValue(sourceType, integration, merchantIdentity)
+                ),
+                new LocalMerchantRouting(integration.id()),
                 merchantIdentity,
                 productIdentity,
                 variantIdentity,
@@ -69,10 +79,11 @@ public class UserCanonicalProductCandidateMapper {
         );
         OfferIdentity offerIdentity = new OfferIdentity(
                 provider,
-                integration.id(),
-                merchantIdentity,
+                merchantScope,
                 productIdentity,
                 variantIdentity,
+                List.of(),
+                List.of(),
                 null
         );
         Offer offer = new Offer(
@@ -84,7 +95,6 @@ public class UserCanonicalProductCandidateMapper {
                 availability(product),
                 List.of(),
                 null,
-                List.of(),
                 List.of(provenance)
         );
         return new ProductCandidate(
@@ -111,20 +121,32 @@ public class UserCanonicalProductCandidateMapper {
         );
     }
 
-    private ExternalIdentifier merchantIdentity(
+    private ExternalIdentifier externalMerchantIdentity(
             MerchantIntegrationResult integration,
             ProviderIdentity provider
     ) {
         String externalMerchantId = trimToNull(integration.externalMerchantId());
         String verifiedShopIdentity = trimToNull(integration.verifiedShopIdentity());
-        String externalIdentity = Stream.of(externalMerchantId, verifiedShopIdentity)
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(integration.id().toString());
-        String namespace = externalMerchantId == null && verifiedShopIdentity == null
-                ? "MEANT_INTEGRATION"
-                : provider.value();
-        return new ExternalIdentifier(ExternalIdentifierType.MERCHANT, namespace, externalIdentity);
+        String externalIdentity = externalMerchantId == null ? verifiedShopIdentity : externalMerchantId;
+        return externalIdentity == null
+                ? null
+                : new ExternalIdentifier(ExternalIdentifierType.MERCHANT, provider.value(), externalIdentity);
+    }
+
+    private String discoverySourceValue(
+            ResultSourceType sourceType,
+            MerchantIntegrationResult integration,
+            ExternalIdentifier externalMerchantIdentity
+    ) {
+        return switch (sourceType) {
+            case MERCHANT_STOREFRONT -> externalMerchantIdentity == null
+                    ? "LOCAL_STOREFRONT:" + integration.id()
+                    : externalMerchantIdentity.value();
+            case PROVIDER_CATALOG -> "PROVIDER_CATALOG";
+            case CACHED_OBSERVATION -> "USER_PRODUCT_SEARCH_CACHE";
+            case DATASET_IMPORT -> "DATASET_IMPORT";
+            case MANUAL_ASSERTION -> "MANUAL_ASSERTION";
+        };
     }
 
     private Money price(UserProductSearchProductResult product) {

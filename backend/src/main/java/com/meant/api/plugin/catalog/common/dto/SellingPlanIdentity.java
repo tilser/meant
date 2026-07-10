@@ -13,6 +13,10 @@ public record SellingPlanIdentity(
         if (groupReference == null && planReference == null) {
             throw new IllegalArgumentException("Selling-plan identity needs a group or plan reference");
         }
+        if ((groupReference != null && groupReference.type() != ExternalIdentifierType.SELLING_PLAN_GROUP)
+                || (planReference != null && planReference.type() != ExternalIdentifierType.SELLING_PLAN)) {
+            throw new IllegalArgumentException("Selling-plan references must use their expected identifier types");
+        }
         options = options == null
                 ? List.of()
                 : options.stream()

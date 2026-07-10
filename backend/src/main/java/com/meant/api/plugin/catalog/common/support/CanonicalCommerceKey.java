@@ -2,6 +2,9 @@ package com.meant.api.plugin.catalog.common.support;
 
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
+import com.meant.api.plugin.catalog.common.dto.OfferComponentIdentity;
+import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
+import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanIdentity;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanOption;
@@ -24,21 +27,21 @@ public final class CanonicalCommerceKey {
     public static String offerKey(OfferIdentity identity) {
         List<String> fields = new ArrayList<>();
         fields.add(identity.provider().value());
-        fields.add(identity.merchantIntegrationId().toString());
-        addIdentifier(fields, identity.externalMerchantIdentity());
-        addIdentifier(fields, identity.externalProductIdentity());
-        addIdentifier(fields, identity.externalVariantIdentity());
-        addSellingPlan(fields, identity.sellingPlanIdentity());
-        return "offer_v1_" + digest("offer", fields);
+        addMerchantScopeV2(fields, identity.merchantScope());
+        addIdentifierV2(fields, identity.externalProductIdentity());
+        addIdentifierV2(fields, identity.externalVariantIdentity());
+        addAttributesV2(fields, identity.selectedOptions());
+        addComponentsV2(fields, identity.components());
+        addSellingPlanV2(fields, identity.sellingPlanIdentity());
+        return "offer_v2_" + digest("offer-v2", fields);
     }
 
     public static String fallbackProductKey(OfferIdentity identity) {
         List<String> fields = new ArrayList<>();
         fields.add(identity.provider().value());
-        fields.add(identity.merchantIntegrationId().toString());
-        addIdentifier(fields, identity.externalMerchantIdentity());
-        addIdentifier(fields, identity.externalProductIdentity());
-        return "product_v1_" + digest("fallback-product", fields);
+        addMerchantScopeV2(fields, identity.merchantScope());
+        addIdentifierV2(fields, identity.externalProductIdentity());
+        return "product_v2_" + digest("fallback-product-v2", fields);
     }
 
     public static String evidenceGroupingKey(ProductIdentityEvidence evidence) {
@@ -69,13 +72,56 @@ public final class CanonicalCommerceKey {
         fields.add(identifier.value());
     }
 
-    private static void addSellingPlan(List<String> fields, SellingPlanIdentity sellingPlan) {
+    private static void addMerchantScopeV2(List<String> fields, OfferMerchantScope merchantScope) {
+        fields.add("merchant-scope");
+        fields.add(merchantScope.type().name());
+        if (merchantScope.externalMerchantIdentity() != null) {
+            addIdentifierV2(fields, merchantScope.externalMerchantIdentity());
+        } else {
+            fields.add(merchantScope.merchantIntegrationFallbackId().toString());
+        }
+    }
+
+    private static void addIdentifierV2(List<String> fields, ExternalIdentifier identifier) {
+        fields.add("identifier");
+        if (identifier == null) {
+            fields.add(null);
+            return;
+        }
+        fields.add(identifier.type().name());
+        fields.add(identifier.namespace());
+        fields.add(identifier.value());
+    }
+
+    private static void addAttributesV2(List<String> fields, List<ProductAttribute> attributes) {
+        fields.add("attributes");
+        fields.add(Integer.toString(attributes.size()));
+        for (ProductAttribute attribute : attributes) {
+            fields.add(attribute.group());
+            fields.add(attribute.name());
+            fields.add(attribute.value());
+        }
+    }
+
+    private static void addComponentsV2(List<String> fields, List<OfferComponentIdentity> components) {
+        fields.add("components");
+        fields.add(Integer.toString(components.size()));
+        for (OfferComponentIdentity component : components) {
+            addIdentifierV2(fields, component.externalProductIdentity());
+            addIdentifierV2(fields, component.externalVariantIdentity());
+            fields.add(Integer.toString(component.quantity()));
+            addAttributesV2(fields, component.selectedOptions());
+        }
+    }
+
+    private static void addSellingPlanV2(List<String> fields, SellingPlanIdentity sellingPlan) {
+        fields.add("selling-plan");
         if (sellingPlan == null) {
             fields.add(null);
             return;
         }
-        addIdentifier(fields, sellingPlan.groupReference());
-        addIdentifier(fields, sellingPlan.planReference());
+        addIdentifierV2(fields, sellingPlan.groupReference());
+        addIdentifierV2(fields, sellingPlan.planReference());
         fields.add(Integer.toString(sellingPlan.options().size()));
         for (SellingPlanOption option : sellingPlan.options()) {
             fields.add(option.name());

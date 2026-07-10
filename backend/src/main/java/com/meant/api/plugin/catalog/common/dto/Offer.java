@@ -12,7 +12,6 @@ public record Offer(
         OfferAvailability availability,
         List<OfferDelivery> delivery,
         URI checkoutUrl,
-        List<ProductAttribute> selectedOptions,
         List<ResultProvenance> provenance
 ) {
 
@@ -24,7 +23,6 @@ public record Offer(
         variantTitle = trimToNull(variantTitle);
         availability = availability == null ? OfferAvailability.unknown() : availability;
         delivery = delivery == null ? List.of() : List.copyOf(delivery);
-        selectedOptions = selectedOptions == null ? List.of() : List.copyOf(selectedOptions);
         provenance = provenance == null ? List.of() : List.copyOf(provenance);
         if (provenance.isEmpty()) {
             throw new IllegalArgumentException("Offer must retain at least one provenance observation");
@@ -37,6 +35,10 @@ public record Offer(
 
     public SellingPlanIdentity sellingPlanIdentity() {
         return identity.sellingPlanIdentity();
+    }
+
+    public List<ProductAttribute> selectedOptions() {
+        return identity.selectedOptions();
     }
 
     private static String trimToNull(String value) {

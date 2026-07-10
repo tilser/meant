@@ -483,7 +483,7 @@ export interface MerchantIdentityAuthorizationProfile {
 export type CartProfile = components['schemas']['CartResponse']
 export type CartDeliveryGroupProfile = NonNullable<CartProfile['deliveryGroups']>[number]
 export type CheckoutProfile = components['schemas']['CheckoutResponse']
-export type CheckoutMessageProfile = components['schemas']['CheckoutMessageResponse']
+export type CheckoutMessageProfile = components['schemas']['MessageResponse']
 export type CheckoutConsentProfile = components['schemas']['CheckoutConsentResponse']
 export type CheckoutCompletionProfile = components['schemas']['CheckoutCompletionResponse']
 

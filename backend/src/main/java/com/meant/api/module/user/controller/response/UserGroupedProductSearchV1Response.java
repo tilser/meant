@@ -3,15 +3,20 @@ package com.meant.api.module.user.controller.response;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.DeliveryMethod;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
+import com.meant.api.plugin.catalog.common.dto.OfferComponentIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferDelivery;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
+import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
+import com.meant.api.plugin.catalog.common.dto.OfferMerchantScopeType;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribution;
 import com.meant.api.plugin.catalog.common.dto.ProductCertification;
@@ -115,7 +120,7 @@ public record UserGroupedProductSearchV1Response(
     public record OfferResponse(
             @Schema(description = "Stable versioned offer key", requiredMode = Schema.RequiredMode.REQUIRED)
             String key,
-            @Schema(description = "Provider integration and external offer identity", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(description = "Provider and commercial offer identity", requiredMode = Schema.RequiredMode.REQUIRED)
             OfferIdentityResponse identity,
             @Schema(description = "Merchant display name", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantName,
@@ -158,14 +163,27 @@ public record UserGroupedProductSearchV1Response(
     public record OfferIdentityResponse(
             @Schema(description = "Commerce provider identity", requiredMode = Schema.RequiredMode.REQUIRED)
             String provider,
-            @Schema(description = "MerchantIntegration primary key", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Deprecated
+            @Schema(
+                    description = "Deprecated compatibility field populated only for a local-integration identity fallback",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                    deprecated = true
+            )
             UUID merchantIntegrationId,
-            @Schema(description = "External merchant reference", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                    description = "Deprecated compatibility view of the external merchant scope",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                    deprecated = true
+            )
             ExternalIdentifierResponse externalMerchantIdentity,
+            @Schema(description = "Authoritative external or local-fallback seller scope", requiredMode = Schema.RequiredMode.REQUIRED)
+            OfferMerchantScopeResponse merchantScope,
             @Schema(description = "External product reference", requiredMode = Schema.RequiredMode.REQUIRED)
             ExternalIdentifierResponse externalProductIdentity,
             @Schema(description = "External variant reference", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             ExternalIdentifierResponse externalVariantIdentity,
+            @Schema(description = "Order-independent bundle or composite component identity", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<OfferComponentIdentityResponse> components,
             @Schema(description = "Selling-plan identity and context", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             SellingPlanIdentityResponse sellingPlanIdentity
     ) {
@@ -173,11 +191,57 @@ public record UserGroupedProductSearchV1Response(
         static OfferIdentityResponse from(OfferIdentity identity) {
             return new OfferIdentityResponse(
                     identity.provider().value(),
-                    identity.merchantIntegrationId(),
-                    ExternalIdentifierResponse.from(identity.externalMerchantIdentity()),
+                    identity.merchantScope().merchantIntegrationFallbackId(),
+                    ExternalIdentifierResponse.from(identity.merchantScope().externalMerchantIdentity()),
+                    OfferMerchantScopeResponse.from(identity.merchantScope()),
                     ExternalIdentifierResponse.from(identity.externalProductIdentity()),
                     ExternalIdentifierResponse.from(identity.externalVariantIdentity()),
+                    identity.components().stream().map(OfferComponentIdentityResponse::from).toList(),
                     SellingPlanIdentityResponse.from(identity.sellingPlanIdentity())
+            );
+        }
+    }
+
+    @Schema(description = "Stable seller scope independent of discovery source and execution routing")
+    public record OfferMerchantScopeResponse(
+            @Schema(description = "Identity authority used for this seller scope", requiredMode = Schema.RequiredMode.REQUIRED)
+            OfferMerchantScopeType type,
+            @Schema(description = "Provider-namespaced stable external merchant identity", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            ExternalIdentifierResponse externalMerchantIdentity,
+            @Schema(
+                    description = "Local MerchantIntegration identity fallback when the provider exposes no stable merchant identity",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED
+            )
+            UUID merchantIntegrationFallbackId
+    ) {
+
+        static OfferMerchantScopeResponse from(OfferMerchantScope scope) {
+            return new OfferMerchantScopeResponse(
+                    scope.type(),
+                    ExternalIdentifierResponse.from(scope.externalMerchantIdentity()),
+                    scope.merchantIntegrationFallbackId()
+            );
+        }
+    }
+
+    @Schema(description = "Identity-bearing product component in a bundle or composite offer")
+    public record OfferComponentIdentityResponse(
+            @Schema(description = "External product identity for the component", requiredMode = Schema.RequiredMode.REQUIRED)
+            ExternalIdentifierResponse externalProductIdentity,
+            @Schema(description = "External variant identity for the component", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            ExternalIdentifierResponse externalVariantIdentity,
+            @Schema(description = "Positive component quantity", requiredMode = Schema.RequiredMode.REQUIRED)
+            int quantity,
+            @Schema(description = "Canonically ordered selected component options", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<ProductAttributeResponse> selectedOptions
+    ) {
+
+        static OfferComponentIdentityResponse from(OfferComponentIdentity component) {
+            return new OfferComponentIdentityResponse(
+                    ExternalIdentifierResponse.from(component.externalProductIdentity()),
+                    ExternalIdentifierResponse.from(component.externalVariantIdentity()),
+                    component.quantity(),
+                    component.selectedOptions().stream().map(ProductAttributeResponse::from).toList()
             );
         }
     }
@@ -397,13 +461,22 @@ public record UserGroupedProductSearchV1Response(
         }
     }
 
-    @Schema(description = "Provider, integration, external identities, freshness, and debugging source")
+    @Schema(description = "Provider evidence, discovery identity, optional local routing, freshness, and debugging source")
     public record ResultProvenanceResponse(
             @Schema(description = "Commerce provider identity", requiredMode = Schema.RequiredMode.REQUIRED)
             String provider,
-            @Schema(description = "MerchantIntegration primary key", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Deprecated
+            @Schema(
+                    description = "Deprecated compatibility view of localRouting.merchantIntegrationId",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                    deprecated = true
+            )
             UUID merchantIntegrationId,
-            @Schema(description = "External merchant reference", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(description = "Stable identity of the catalog, storefront, cache, or other observing path", requiredMode = Schema.RequiredMode.REQUIRED)
+            DiscoverySourceIdentityResponse discoverySource,
+            @Schema(description = "Optional resolved Meant MerchantIntegration execution link", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            LocalMerchantRoutingResponse localRouting,
+            @Schema(description = "External merchant reference when supplied by the provider", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             ExternalIdentifierResponse externalMerchantReference,
             @Schema(description = "External product reference", requiredMode = Schema.RequiredMode.REQUIRED)
             ExternalIdentifierResponse externalProductReference,
@@ -418,13 +491,41 @@ public record UserGroupedProductSearchV1Response(
         static ResultProvenanceResponse from(ResultProvenance provenance) {
             return new ResultProvenanceResponse(
                     provenance.provider().value(),
-                    provenance.merchantIntegrationId(),
+                    provenance.localRouting() == null ? null : provenance.localRouting().merchantIntegrationId(),
+                    DiscoverySourceIdentityResponse.from(provenance.discoverySource()),
+                    LocalMerchantRoutingResponse.from(provenance.localRouting()),
                     ExternalIdentifierResponse.from(provenance.externalMerchantReference()),
                     ExternalIdentifierResponse.from(provenance.externalProductReference()),
                     ExternalIdentifierResponse.from(provenance.externalVariantReference()),
                     ResultFreshnessResponse.from(provenance.freshness()),
                     ResultSourceReferenceResponse.from(provenance.sourceReference())
             );
+        }
+    }
+
+    @Schema(description = "Stable typed identity of one discovery path")
+    public record DiscoverySourceIdentityResponse(
+            @Schema(description = "Commerce provider that owns the discovery source", requiredMode = Schema.RequiredMode.REQUIRED)
+            String provider,
+            @Schema(description = "Discovery source category", requiredMode = Schema.RequiredMode.REQUIRED)
+            ResultSourceType type,
+            @Schema(description = "Stable provider-local source identifier", requiredMode = Schema.RequiredMode.REQUIRED)
+            String value
+    ) {
+
+        static DiscoverySourceIdentityResponse from(DiscoverySourceIdentity source) {
+            return new DiscoverySourceIdentityResponse(source.provider().value(), source.type(), source.value());
+        }
+    }
+
+    @Schema(description = "Resolved Meant merchant routing link used for later execution")
+    public record LocalMerchantRoutingResponse(
+            @Schema(description = "Merchant-owned MerchantIntegration primary key", requiredMode = Schema.RequiredMode.REQUIRED)
+            UUID merchantIntegrationId
+    ) {
+
+        static LocalMerchantRoutingResponse from(LocalMerchantRouting routing) {
+            return routing == null ? null : new LocalMerchantRoutingResponse(routing.merchantIntegrationId());
         }
     }
 

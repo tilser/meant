@@ -2,6 +2,7 @@ package com.meant.api.plugin.catalog.common.service;
 
 import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferDelivery;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
@@ -53,7 +54,9 @@ public class ExactProductGroupingService {
 
     private static final Comparator<ResultProvenance> PROVENANCE_ORDER = Comparator
             .comparing((ResultProvenance value) -> value.provider().value())
-            .thenComparing(value -> value.merchantIntegrationId().toString())
+            .thenComparing(value -> value.discoverySource().type())
+            .thenComparing(value -> value.discoverySource().value())
+            .thenComparing(value -> routingText(value.localRouting()))
             .thenComparing(value -> identifierText(value.externalMerchantReference()))
             .thenComparing(value -> identifierText(value.externalProductReference()))
             .thenComparing(value -> identifierText(value.externalVariantReference()))
@@ -177,7 +180,6 @@ public class ExactProductGroupingService {
                 preferred.availability(),
                 distinctSorted(ordered, Offer::delivery, deliveryOrder()),
                 firstNonNull(ordered, Offer::checkoutUrl),
-                distinctSorted(ordered, Offer::selectedOptions, attributeOrder()),
                 distinctSorted(ordered, Offer::provenance, PROVENANCE_ORDER)
         );
     }
@@ -269,7 +271,9 @@ public class ExactProductGroupingService {
                 .sorted(PROVENANCE_ORDER)
                 .map(value -> encodedText(
                         value.provider().value(),
-                        value.merchantIntegrationId().toString(),
+                        value.discoverySource().type().name(),
+                        value.discoverySource().value(),
+                        routingText(value.localRouting()),
                         identifierText(value.externalMerchantReference()),
                         identifierText(value.externalProductReference()),
                         identifierText(value.externalVariantReference()),
@@ -298,6 +302,10 @@ public class ExactProductGroupingService {
             return "";
         }
         return encodedText(identifier.type().name(), identifier.namespace(), identifier.value());
+    }
+
+    private static String routingText(LocalMerchantRouting routing) {
+        return routing == null ? "" : routing.merchantIntegrationId().toString();
     }
 
     private static String sourceText(com.meant.api.plugin.catalog.common.dto.ResultSourceReference source) {

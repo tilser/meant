@@ -4,6 +4,276 @@
  */
 
 export interface paths {
+    "/api/users/me/discover/conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save a Discover chat conversation
+         * @description Creates or replaces the persisted Discover chat snapshot for the authenticated user.
+         */
+        put: operations["saveDiscoverConversation"];
+        post?: never;
+        /**
+         * Delete a Discover chat conversation
+         * @description Permanently deletes a persisted Discover chat snapshot for the authenticated user.
+         */
+        delete: operations["deleteDiscoverConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/shopify/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive Shopify order webhook */
+        post: operations["receive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/product-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search grouped canonical products for the current user
+         * @description Returns version 1 provider-neutral products with exact merchant offers and provenance. The unversioned JSON and SSE routes remain flat during frontend migration; grouped SSE is not available because partial candidate events cannot yet guarantee stable canonical grouping.
+         */
+        post: operations["searchGroupedProductsV1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/taste-profile/suggestions/{filterId}:reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a learned filter suggestion */
+        post: operations["rejectTasteSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/taste-profile/suggestions/{filterId}:accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a learned filter suggestion
+         * @description Adds the suggested explicit filter to current settings in one tap.
+         */
+        post: operations["acceptTasteSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/taste-profile/behaviors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record product taste behavior
+         * @description Records a purchase or dismissal product snapshot so it can influence future ranking.
+         */
+        post: operations["recordTasteBehavior"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/saved-products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List saved products
+         * @description Returns the current user's saved product snapshots.
+         */
+        get: operations["savedProducts"];
+        put?: never;
+        /**
+         * Save a product
+         * @description Adds or refreshes a product snapshot in the current user's saved products.
+         */
+        post: operations["saveProduct"];
+        /**
+         * Remove a saved product
+         * @description Removes a product from the current user's saved products.
+         */
+        delete: operations["removeSavedProduct"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/product-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search products for the current user
+         * @description Searches merchant catalogs for the query, explains why products fit the user's shopping profile, and caches product snapshots and explanations for repeated searches.
+         */
+        post: operations["searchProducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/product-searches:stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream product search results for the current user
+         * @description Streams Discovery Agent catalog candidates, Meant Curator score and order updates, and final pagination metadata as soon as each piece is available.
+         */
+        post: operations["streamSearchProducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List current user inventory
+         * @description Returns owned wardrobe, pantry, home, and other items for the authenticated user.
+         */
+        get: operations["inventory"];
+        put?: never;
+        /**
+         * Add an owned inventory item
+         * @description Adds a manual wardrobe, pantry, home, or other owned item for the current user.
+         */
+        post: operations["addInventoryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/inventory/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an inventory item from a photo
+         * @description Adds an owned item from a photo URL or data URL. When AI recognition is available, recognized fields are merged with user-provided fallback fields.
+         */
+        post: operations["addInventoryPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/assistant/messages:stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream an Ask Meant response
+         * @description Persists the user's floating Ask Meant message, streams the assistant answer, and stores the completed assistant message.
+         */
+        post: operations["streamAssistantMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/merchants/{merchantId}/identity-link/authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start merchant account linking
+         * @description Creates a PKCE OAuth 2.0 authorization URL for merchants that advertise identity linking.
+         */
+        post: operations["startIdentityAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/merchants/semantic-search": {
         parameters: {
             query?: never;
@@ -44,6 +314,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/merchants/identity-links/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete merchant account linking
+         * @description Stores scoped merchant OAuth tokens after the client receives an authorization code.
+         */
+        post: operations["completeIdentityAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discounts/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search valid merchant discount codes
+         * @description Finds candidate discount codes with web search and validates them against a temporary merchant cart.
+         */
+        post: operations["search"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/carts": {
         parameters: {
             query?: never;
@@ -64,6 +374,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/carts/{cartId}/checkout/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record checkout consent
+         * @description Records buyer consent for the active UCP checkout session before native completion.
+         */
+        post: operations["recordCheckoutConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete cart checkout natively
+         * @description Completes checkout through the merchant UCP complete_checkout tool when native checkout is enabled for the merchant.
+         */
+        post: operations["completeCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel native cart checkout
+         * @description Cancels checkout through the merchant UCP cancel_checkout tool unless completion is already in flight.
+         */
+        post: operations["cancelCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat with the checkout assistant
+         * @description Conversational helper that asks the buyer for the pieces the merchant still needs (buyer identity, shipping destination) and applies them to the active UCP checkout session.
+         */
+        post: operations["assistCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me": {
         parameters: {
             query?: never;
@@ -73,7 +463,7 @@ export interface paths {
         };
         /**
          * Get current user
-         * @description Returns the profile of the authenticated user, creating it from the Supabase JWT on first call (upsert-on-read).
+         * @description Returns the profile of the authenticated user, creating it from the Supabase JWT on first call.
          */
         get: operations["me"];
         put?: never;
@@ -88,7 +478,28 @@ export interface paths {
         patch: operations["updateMe"];
         trace?: never;
     };
-    "/api/users/me/newsletter": {
+    "/api/users/me/taste-profile/signals/{signalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a learned taste signal */
+        delete: operations["removeTasteSignal"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a learned taste signal
+         * @description Updates the learned signal weight or disables/enables the signal for future ranking.
+         */
+        patch: operations["updateTasteSignal"];
+        trace?: never;
+    };
+    "/api/users/me/settings": {
         parameters: {
             query?: never;
             header?: never;
@@ -96,15 +507,88 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Update current user's newsletter subscription
-         * @description Stores whether the authenticated user wants newsletter updates.
+         * Get current user settings
+         * @description Returns the current user's shopping settings and canonical filter catalog.
          */
-        patch: operations["updateNewsletter"];
+        get: operations["settings"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Update current user settings
+         * @description Updates shopping settings. When preferenceDescription is present, it is parsed into canonical shopping filters and merged into the active filter set before saving.
+         */
+        patch: operations["updateSettings"];
+        trace?: never;
+    };
+    "/api/users/me/profile-picture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove current user profile picture
+         * @description Clears the stored profile picture object path for the authenticated user.
+         */
+        delete: operations["removeProfilePicture"];
+        options?: never;
+        head?: never;
+        /**
+         * Update current user profile picture
+         * @description Stores the Supabase Storage object path for the authenticated user's profile picture.
+         */
+        patch: operations["updateProfilePicture"];
+        trace?: never;
+    };
+    "/api/users/me/newsletter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update current user's newsletter subscription
+         * @description Stores whether the authenticated user wants newsletter updates.
+         */
+        patch: operations["updateNewsletter"];
+        trace?: never;
+    };
+    "/api/users/me/inventory/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an owned inventory item
+         * @description Deletes an inventory item owned by the current user.
+         */
+        delete: operations["deleteInventoryItem"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an owned inventory item
+         * @description Edits inventory item details, quantity, and restock settings for the current user.
+         */
+        patch: operations["updateInventoryItem"];
         trace?: never;
     };
     "/api/carts/{cartId}": {
@@ -121,7 +605,11 @@ export interface paths {
         get: operations["get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Cancel cart
+         * @description Cancels the remote UCP cart and deactivates the local cart snapshot.
+         */
+        delete: operations["cancel"];
         options?: never;
         head?: never;
         /**
@@ -129,6 +617,330 @@ export interface paths {
          * @description Adds items, updates line quantities, removes lines, and stores the refreshed remote cart snapshot.
          */
         patch: operations["update"];
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get cart checkout session
+         * @description Creates or refreshes a UCP checkout session for in-page checkout. continueUrl is returned for iframe escalation only.
+         */
+        get: operations["checkout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update cart checkout session
+         * @description Updates buyer and fulfillment details on the active UCP checkout session before native completion.
+         */
+        patch: operations["updateCheckout"];
+        trace?: never;
+    };
+    "/api/users/me/taste-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get learned taste profile
+         * @description Returns behavioral taste signals learned from saves, purchases, dismissals, and repeat searches.
+         */
+        get: operations["tasteProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/product-search-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Generate product search suggestions
+         * @description Generates four fresh product search suggestions from the current user's active shopping filters.
+         */
+        get: operations["productSearchSuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/product-discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get product discovery context
+         * @description Returns product snapshots the authenticated user already owns through saved products and valid recent search caches. This endpoint does not search other users' data.
+         */
+        get: operations["productDiscovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/popular-product-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List popular product searches
+         * @description Returns anonymized popular product search prompts from recent aggregate search events.
+         */
+        get: operations["popularProductSearches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/inventory/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export current user inventory
+         * @description Returns an exportable copy of all owned inventory data for the authenticated user.
+         */
+        get: operations["exportInventory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/discover/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Discover chat conversations
+         * @description Returns persisted Discover chat snapshots for the authenticated user.
+         */
+        get: operations["discoverConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/assistant/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ask Meant conversations
+         * @description Returns recent persisted Ask Meant conversations for the authenticated user.
+         */
+        get: operations["assistantConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/assistant/conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an Ask Meant conversation
+         * @description Returns one persisted Ask Meant conversation and its messages for the authenticated user.
+         */
+        get: operations["assistantConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/me/assistant/conversations/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get latest Ask Meant conversation
+         * @description Returns the latest persisted floating Ask Meant conversation for the authenticated user.
+         */
+        get: operations["latestAssistantConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/merchants/{merchantId}/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get product reviews
+         * @description Returns normalized product reviews from the discovered merchant review provider.
+         */
+        get: operations["getProductReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List orders
+         * @description Returns stored merchant order state for the authenticated user.
+         */
+        get: operations["list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get order
+         * @description Returns stored merchant order state, refreshing from UCP get_order only when requested.
+         */
+        get: operations["get_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/merchants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active merchants
+         * @description Returns active merchants available in Meant, ordered by merchant name.
+         */
+        get: operations["listActiveMerchants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/merchants/{merchantId}/product-details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get merchant product details
+         * @description Fetches the current product details from the merchant MCP product detail tool.
+         */
+        get: operations["productDetails"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/merchants/identity-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List connected merchant accounts
+         * @description Returns the current user's merchant identity-linking connection state.
+         */
+        get: operations["listIdentityLinks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/health": {
@@ -151,7 +963,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/carts/{cartId}/checkout": {
+    "/.well-known/ucp-agent.json": {
         parameters: {
             query?: never;
             header?: never;
@@ -159,13 +971,33 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get cart checkout URL
-         * @description Returns the stored checkout URL, or refreshes the cart from MCP when missing or requested.
+         * Get UCP agent profile
+         * @description Returns the immutable UCP agent profile generated from enabled plugins at startup.
          */
-        get: operations["checkout"];
+        get: operations["agentProfile"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/merchants/identity-links/{merchantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a connected merchant account
+         * @description Revokes the merchant token when supported and removes Meant's local encrypted credentials.
+         */
+        delete: operations["revokeIdentityLink"];
         options?: never;
         head?: never;
         patch?: never;
@@ -175,6 +1007,747 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Persisted Discover chat snapshot. */
+        UserDiscoverConversationRequest: {
+            title: string;
+            threadJson: string;
+        };
+        /** @description Persisted Discover chat snapshot. */
+        UserDiscoverConversationResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            title: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            threadJson: string;
+        };
+        UserProductSearchRequest: {
+            query: string;
+            /** Format: uuid */
+            merchantId?: string;
+            /** Format: int32 */
+            offset?: number;
+            /** Format: int32 */
+            limit?: number;
+        };
+        /** @description Shared product facts plus all exact distinct offers and source observations */
+        CanonicalProductResponse: {
+            /** @description Stable evidence-derived canonical product key */
+            key: string;
+            /** @description Shared product title */
+            title?: string;
+            /** @description Shared product description */
+            description?: string;
+            /** @description Shared product media */
+            media: components["schemas"]["ProductMediaResponse"][];
+            /** @description Shared typed product attributes */
+            attributes: components["schemas"]["ProductAttributeResponse"][];
+            /** @description Shared typed material facts */
+            materials: components["schemas"]["ProductMaterialResponse"][];
+            /** @description Shared typed certification facts */
+            certifications: components["schemas"]["ProductCertificationResponse"][];
+            /** @description Attribution for shared product facts */
+            attribution: components["schemas"]["ProductAttributionResponse"][];
+            /** @description Identity evidence retained for reconciliation */
+            identityEvidence: components["schemas"]["ProductIdentityEvidenceResponse"][];
+            /** @description All product-level source observations */
+            provenance: components["schemas"]["ResultProvenanceResponse"][];
+            /** @description Distinct merchant, variant, and selling-plan offers */
+            offers: components["schemas"]["OfferResponse"][];
+        };
+        /** @description Stable typed identity of one discovery path */
+        DiscoverySourceIdentityResponse: {
+            /** @description Commerce provider that owns the discovery source */
+            provider: string;
+            /**
+             * @description Discovery source category
+             * @enum {string}
+             */
+            type: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            /** @description Stable provider-local source identifier */
+            value: string;
+        };
+        /** @description Typed external reference; provider-defined values remain case-sensitive */
+        ExternalIdentifierResponse: {
+            /**
+             * @description Role or standard represented by the identifier
+             * @enum {string}
+             */
+            type: "MERCHANT" | "PRODUCT" | "VARIANT" | "SELLING_PLAN_GROUP" | "SELLING_PLAN" | "GTIN" | "UPC" | "EAN" | "BRAND" | "MPN" | "PROVIDER_GROUPING" | "UPID" | "CANONICAL_URL" | "SEMANTIC_FINGERPRINT";
+            /** @description Provider or standard namespace */
+            namespace?: string;
+            /** @description Case-sensitive external value */
+            value: string;
+        };
+        /** @description Resolved Meant merchant routing link used for later execution */
+        LocalMerchantRoutingResponse: {
+            /**
+             * Format: uuid
+             * @description Merchant-owned MerchantIntegration primary key
+             */
+            merchantIntegrationId: string;
+        };
+        /** @description Integer-minor-unit monetary value */
+        MoneyResponse: {
+            /**
+             * Format: int64
+             * @description Signed integer amount in currency minor units
+             */
+            minorUnits: number;
+            /** @description Uppercase ISO-style currency code */
+            currency: string;
+        };
+        /** @description Typed offer availability */
+        OfferAvailabilityResponse: {
+            /**
+             * @description Normalized availability state
+             * @enum {string}
+             */
+            status: "IN_STOCK" | "OUT_OF_STOCK" | "PREORDER" | "BACKORDER" | "DISCONTINUED" | "UNKNOWN";
+            /**
+             * Format: int32
+             * @description Observed available quantity
+             */
+            quantity?: number;
+            /**
+             * Format: date-time
+             * @description Future availability time
+             */
+            availableAt?: string;
+        };
+        /** @description Identity-bearing product component in a bundle or composite offer */
+        OfferComponentIdentityResponse: {
+            /** @description External product identity for the component */
+            externalProductIdentity: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External variant identity for the component */
+            externalVariantIdentity?: components["schemas"]["ExternalIdentifierResponse"];
+            /**
+             * Format: int32
+             * @description Positive component quantity
+             */
+            quantity: number;
+            /** @description Canonically ordered selected component options */
+            selectedOptions: components["schemas"]["ProductAttributeResponse"][];
+        };
+        /** @description Typed delivery method, estimate, destination, and cost */
+        OfferDeliveryResponse: {
+            /**
+             * @description Fulfillment method
+             * @enum {string}
+             */
+            method: "SHIPPING" | "PICKUP" | "DIGITAL" | "OTHER";
+            /** @description Destination region used for this estimate */
+            destinationRegion?: string;
+            /**
+             * Format: int32
+             * @description Minimum estimated business days
+             */
+            minimumBusinessDays?: number;
+            /**
+             * Format: int32
+             * @description Maximum estimated business days
+             */
+            maximumBusinessDays?: number;
+            /** @description Delivery cost */
+            cost?: components["schemas"]["MoneyResponse"];
+        };
+        /** @description Provider-defined identities that determine offer uniqueness */
+        OfferIdentityResponse: {
+            /** @description Commerce provider identity */
+            provider: string;
+            /**
+             * Format: uuid
+             * @deprecated
+             * @description Deprecated compatibility field populated only for a local-integration identity fallback
+             */
+            merchantIntegrationId?: string;
+            /**
+             * @deprecated
+             * @description Deprecated compatibility view of the external merchant scope
+             */
+            externalMerchantIdentity?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Authoritative external or local-fallback seller scope */
+            merchantScope: components["schemas"]["OfferMerchantScopeResponse"];
+            /** @description External product reference */
+            externalProductIdentity: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External variant reference */
+            externalVariantIdentity?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Order-independent bundle or composite component identity */
+            components: components["schemas"]["OfferComponentIdentityResponse"][];
+            /** @description Selling-plan identity and context */
+            sellingPlanIdentity?: components["schemas"]["SellingPlanIdentityResponse"];
+        };
+        /** @description Stable seller scope independent of discovery source and execution routing */
+        OfferMerchantScopeResponse: {
+            /**
+             * @description Identity authority used for this seller scope
+             * @enum {string}
+             */
+            type: "EXTERNAL_MERCHANT" | "LOCAL_MERCHANT_INTEGRATION_FALLBACK";
+            /** @description Provider-namespaced stable external merchant identity */
+            externalMerchantIdentity?: components["schemas"]["ExternalIdentifierResponse"];
+            /**
+             * Format: uuid
+             * @description Local MerchantIntegration identity fallback when the provider exposes no stable merchant identity
+             */
+            merchantIntegrationFallbackId?: string;
+        };
+        /** @description One selectable merchant, variant, and selling-plan offer */
+        OfferResponse: {
+            /** @description Stable versioned offer key */
+            key: string;
+            /** @description Provider and commercial offer identity */
+            identity: components["schemas"]["OfferIdentityResponse"];
+            /** @description Merchant display name */
+            merchantName?: string;
+            /** @description Variant display title */
+            variantTitle?: string;
+            /** @description Current offer price in integer minor units */
+            price?: components["schemas"]["MoneyResponse"];
+            /** @description Comparison/list price in integer minor units */
+            listPrice?: components["schemas"]["MoneyResponse"];
+            /** @description Typed availability for this offer */
+            availability: components["schemas"]["OfferAvailabilityResponse"];
+            /** @description Typed delivery options observed for this offer */
+            delivery: components["schemas"]["OfferDeliveryResponse"][];
+            /**
+             * Format: uri
+             * @description Checkout URL when the source explicitly supplies one
+             */
+            checkoutUrl?: string;
+            /** @description Selected variant and selling-plan options */
+            selectedOptions: components["schemas"]["ProductAttributeResponse"][];
+            /** @description Every source observation merged into this exact offer */
+            provenance: components["schemas"]["ResultProvenanceResponse"][];
+        };
+        ProductAttributeResponse: {
+            name: string;
+            value: string;
+        };
+        /** @description Attribution for shared product facts */
+        ProductAttributionResponse: {
+            /** @description Human-readable attribution label */
+            label: string;
+            /**
+             * Format: uri
+             * @description Attribution URL
+             */
+            url?: string;
+            /** @description Source behind the attribution */
+            sourceReference: components["schemas"]["ResultSourceReferenceResponse"];
+        };
+        /** @description Typed product certification */
+        ProductCertificationResponse: {
+            /** @description Certification name */
+            name: string;
+            /** @description Issuing organization */
+            issuer?: string;
+            /** @description Certificate identifier */
+            identifier?: string;
+            /**
+             * Format: uri
+             * @description Certificate verification URL
+             */
+            verificationUrl?: string;
+        };
+        /** @description Explicit-confidence product identity evidence */
+        ProductIdentityEvidenceResponse: {
+            /**
+             * @description Evidence kind
+             * @enum {string}
+             */
+            kind: "GTIN" | "UPC" | "EAN" | "BRAND_MPN" | "PROVIDER_GROUPING_ID" | "UPID" | "CANONICAL_URL" | "SEMANTIC";
+            /**
+             * @description Trust level controlling exact grouping eligibility
+             * @enum {string}
+             */
+            strength: "TRUSTED_EXACT" | "ASSERTED" | "SEMANTIC";
+            /**
+             * Format: int32
+             * @description Confidence in basis points from 0 to 10000
+             */
+            confidenceBasisPoints: number;
+            /** @description Typed identifiers carried by the evidence */
+            identifiers: components["schemas"]["ExternalIdentifierResponse"][];
+            /** @description Source that asserted the evidence */
+            sourceReference: components["schemas"]["ResultSourceReferenceResponse"];
+        };
+        /** @description Typed product material */
+        ProductMaterialResponse: {
+            /** @description Material name */
+            name: string;
+            /**
+             * Format: int32
+             * @description Composition percentage in basis points
+             */
+            percentageBasisPoints?: number;
+        };
+        ProductMediaResponse: {
+            type: string;
+            url: string;
+            altText: string;
+            previewImageUrl: string;
+        };
+        /** @description Observation timestamp and optional source-provided freshness deadline */
+        ResultFreshnessResponse: {
+            /**
+             * Format: date-time
+             * @description Time the source was observed
+             */
+            observedAt: string;
+            /**
+             * Format: date-time
+             * @description Time after which the observation is stale
+             */
+            freshUntil?: string;
+        };
+        /** @description Provider evidence, discovery identity, optional local routing, freshness, and debugging source */
+        ResultProvenanceResponse: {
+            /** @description Commerce provider identity */
+            provider: string;
+            /**
+             * Format: uuid
+             * @deprecated
+             * @description Deprecated compatibility view of localRouting.merchantIntegrationId
+             */
+            merchantIntegrationId?: string;
+            /** @description Stable identity of the catalog, storefront, cache, or other observing path */
+            discoverySource: components["schemas"]["DiscoverySourceIdentityResponse"];
+            /** @description Optional resolved Meant MerchantIntegration execution link */
+            localRouting?: components["schemas"]["LocalMerchantRoutingResponse"];
+            /** @description External merchant reference when supplied by the provider */
+            externalMerchantReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External product reference */
+            externalProductReference: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External variant reference */
+            externalVariantReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Observation timestamp and freshness */
+            freshness: components["schemas"]["ResultFreshnessResponse"];
+            /** @description Typed source reference for debugging */
+            sourceReference: components["schemas"]["ResultSourceReferenceResponse"];
+        };
+        /** @description Typed source path sufficient to debug or reconcile an observation */
+        ResultSourceReferenceResponse: {
+            /**
+             * @description Discovery source category
+             * @enum {string}
+             */
+            type: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            /** @description Source-local debugging reference */
+            reference: string;
+            /**
+             * Format: uri
+             * @description Source endpoint or document URL
+             */
+            uri?: string;
+        };
+        /** @description Typed selling-plan references and identity-bearing option context */
+        SellingPlanIdentityResponse: {
+            /** @description External selling-plan group reference */
+            groupReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External selling-plan reference */
+            planReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Canonically ordered selling-plan options */
+            options: components["schemas"]["SellingPlanOptionResponse"][];
+        };
+        /** @description One selling-plan option that participates in offer identity */
+        SellingPlanOptionResponse: {
+            /** @description Option name */
+            name: string;
+            /** @description Provider-defined option value */
+            value: string;
+        };
+        /** @description Version 1 grouped product-search response with canonical products and merchant offers */
+        UserGroupedProductSearchV1Response: {
+            /** @description Original user search query */
+            query: string;
+            /** @description Normalized cache identity for the search */
+            normalizedQuery: string;
+            /** @description Taste and settings profile hash used for the search */
+            profileHash: string;
+            /** @description Whether results came from the existing flat-search cache */
+            cached: boolean;
+            /**
+             * Format: int32
+             * @description Flat-result offset used before grouping
+             */
+            offset: number;
+            /**
+             * Format: int32
+             * @description Flat-result page size used before grouping
+             */
+            limit: number;
+            /**
+             * Format: int32
+             * @description Next flat-result offset, when another page exists
+             */
+            nextOffset?: number;
+            /** @description Whether another flat-result page exists */
+            hasMore: boolean;
+            /** @description Deterministically ordered canonical products */
+            products: components["schemas"]["CanonicalProductResponse"][];
+        };
+        ShoppingFilterResponse: {
+            id: string;
+            label: string;
+            description: string;
+            category: string;
+            polarity: string;
+            /** Format: int32 */
+            displayOrder: number;
+        };
+        UserLocationResponse: {
+            country: string;
+            code: string;
+            city: string;
+        };
+        UserSettingsResponse: {
+            /** Format: int32 */
+            budget: number;
+            clothingFit: string;
+            location: components["schemas"]["UserLocationResponse"];
+            locations: components["schemas"]["UserLocationResponse"][];
+            filters: components["schemas"]["ShoppingFilterResponse"][];
+            availableFilters: components["schemas"]["ShoppingFilterResponse"][];
+            parsedFilterIds: string[];
+            unmappedPreferences: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        Offer: {
+            merchant: string;
+            /** Format: double */
+            price: number;
+            delivery: string;
+            merchantId: string;
+            merchantDomain: string;
+            productVariantId: string;
+            variantTitle: string;
+            available: boolean;
+        };
+        RecordUserTasteBehaviorRequest: {
+            /** @enum {string} */
+            behavior: "SAVE" | "PURCHASE" | "DISMISS";
+            product: components["schemas"]["SaveUserProductRequest"];
+        };
+        Review: {
+            /** Format: double */
+            score: number;
+            /** Format: int32 */
+            count: number;
+            insight: string;
+        };
+        SaveUserProductRequest: {
+            id: string;
+            productHash?: string;
+            name: string;
+            brand: string;
+            category: string;
+            tone: string;
+            imageUrl?: string;
+            productUrl?: string;
+            remote: boolean;
+            /** Format: int32 */
+            match: number;
+            /** Format: double */
+            priceFrom: number;
+            /** Format: int32 */
+            merchants: number;
+            satisfies: string[];
+            misses: string[];
+            note: string;
+            pros: string[];
+            cons: string[];
+            review: components["schemas"]["Review"];
+            offers: components["schemas"]["Offer"][];
+            needs?: string;
+            provides: string[];
+        };
+        UserTasteProfileResponse: {
+            profileHash: string;
+            signals: components["schemas"]["UserTasteSignalResponse"][];
+            suggestions: components["schemas"]["UserTasteSuggestionResponse"][];
+        };
+        UserTasteSignalResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            signalType: "FILTER" | "BRAND" | "CATEGORY" | "MATERIAL" | "CERTIFICATION" | "QUERY";
+            signalKey: string;
+            label: string;
+            /** Format: double */
+            weight: number;
+            /** Format: int32 */
+            positiveCount: number;
+            /** Format: int32 */
+            negativeCount: number;
+            lastBehavior: string;
+            suggestedFilterId: string;
+            /** @enum {string} */
+            suggestionStatus: "PENDING" | "ACCEPTED" | "REJECTED";
+            /** @enum {string} */
+            status: "ACTIVE" | "DISABLED";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UserTasteSuggestionResponse: {
+            filterId: string;
+            label: string;
+            description: string;
+            reason: string;
+            /** Format: double */
+            score: number;
+        };
+        UserSavedProductResponse: {
+            id: string;
+            productHash: string;
+            name: string;
+            brand: string;
+            category: string;
+            tone: string;
+            imageUrl: string;
+            productUrl: string;
+            remote: boolean;
+            /** Format: int32 */
+            match: number;
+            /** Format: double */
+            priceFrom: number;
+            /** Format: int32 */
+            merchants: number;
+            satisfies: string[];
+            misses: string[];
+            note: string;
+            pros: string[];
+            cons: string[];
+            review: components["schemas"]["Review"];
+            offers: components["schemas"]["Offer"][];
+            needs: string;
+            provides: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ProductCategoryResponse: {
+            value: string;
+            taxonomy: string;
+        };
+        UserProductSearchProductResponse: {
+            productKey: string;
+            productHash: string;
+            /** Format: uuid */
+            merchantId: string;
+            merchantDomain: string;
+            merchantName: string;
+            endpoint: string;
+            /** Format: int32 */
+            merchantRank: number;
+            /** Format: double */
+            merchantSemanticScore: number;
+            /** Format: double */
+            merchantRerankScore: number;
+            productId: string;
+            title: string;
+            descriptionHtml: string;
+            url: string;
+            imageUrl: string;
+            /** Format: int64 */
+            priceMinAmount: number;
+            /** Format: int64 */
+            priceMaxAmount: number;
+            priceCurrency: string;
+            /** Format: int64 */
+            listPriceAmount: number;
+            listPriceCurrency: string;
+            /** Format: double */
+            ratingScore: number;
+            /** Format: int32 */
+            reviewCount: number;
+            media: components["schemas"]["ProductMediaResponse"][];
+            categories: components["schemas"]["ProductCategoryResponse"][];
+            certifications: string[];
+            materials: string[];
+            skus: string[];
+            collections: string[];
+            attributes: components["schemas"]["ProductAttributeResponse"][];
+            available: boolean;
+            detailError: string;
+            detailDescription: string;
+            detailImageUrl: string;
+            detailPriceMin: string;
+            detailPriceMax: string;
+            detailPriceCurrency: string;
+            selectedVariantId: string;
+            selectedVariantTitle: string;
+            selectedVariantPriceAmount: string;
+            selectedVariantPriceCurrency: string;
+            selectedVariantImageUrl: string;
+            selectedVariantImageAltText: string;
+            selectedVariantAvailable: boolean;
+            /** Format: int32 */
+            catalogRank: number;
+            /** Format: double */
+            productRerankScore: number;
+            /** Format: int32 */
+            rank: number;
+            /** Format: int32 */
+            matchScore: number;
+            whyMeantForYou: string;
+            matchedFilterIds: string[];
+            missedFilterIds: string[];
+            /** @enum {string} */
+            inventoryRelationship: "NONE" | "DUPLICATE" | "COMPLEMENT" | "RESTOCK";
+            /** Format: uuid */
+            inventoryItemId: string;
+            inventoryItemName: string;
+        };
+        UserProductSearchResponse: {
+            query: string;
+            normalizedQuery: string;
+            profileHash: string;
+            cached: boolean;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+            /** Format: int32 */
+            nextOffset: number;
+            hasMore: boolean;
+            products: components["schemas"]["UserProductSearchProductResponse"][];
+        };
+        SseEmitter: {
+            /** Format: int64 */
+            timeout?: number;
+        };
+        AddUserInventoryItemRequest: {
+            name: string;
+            brand?: string;
+            /** @enum {string} */
+            category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
+            description?: string;
+            imageUrl?: string;
+            productUrl?: string;
+            /** Format: int32 */
+            quantity?: number;
+            unit?: string;
+            location?: string;
+            notes?: string;
+            attributes: string[];
+            consumable?: boolean;
+            restockEnabled?: boolean;
+            /** Format: int32 */
+            restockThreshold?: number;
+        };
+        UserInventoryItemResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            source: "MANUAL" | "PHOTO" | "MEANT_PURCHASE";
+            sourceProductKey: string;
+            productHash: string;
+            name: string;
+            brand: string;
+            /** @enum {string} */
+            category: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
+            description: string;
+            imageUrl: string;
+            productUrl: string;
+            photoUrl: string;
+            /** Format: int32 */
+            quantity: number;
+            unit: string;
+            location: string;
+            notes: string;
+            attributes: string[];
+            consumable: boolean;
+            restockEnabled: boolean;
+            /** Format: int32 */
+            restockThreshold: number;
+            /** Format: date-time */
+            purchasedAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AddUserInventoryPhotoRequest: {
+            photoUrl: string;
+            name?: string;
+            brand?: string;
+            /** @enum {string} */
+            category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
+            description?: string;
+            /** Format: int32 */
+            quantity?: number;
+            unit?: string;
+            location?: string;
+            notes?: string;
+            attributes: string[];
+            consumable?: boolean;
+            restockEnabled?: boolean;
+            /** Format: int32 */
+            restockThreshold?: number;
+        };
+        CartItem: {
+            name?: string;
+            merchant?: string;
+            /** Format: int32 */
+            quantity?: number;
+            /** Format: double */
+            price?: number;
+        };
+        Order: {
+            id?: string;
+            date?: string;
+            status?: string;
+            statusNote?: string;
+            /** Format: int32 */
+            itemCount?: number;
+        };
+        Product: {
+            id?: string;
+            name?: string;
+            brand?: string;
+            category?: string;
+            /** Format: int32 */
+            match?: number;
+            /** Format: double */
+            priceFrom?: number;
+            note?: string;
+        };
+        UserAssistantChatContextRequest: {
+            view?: string;
+            contextLabel?: string;
+            currentSearchQuery?: string;
+            selectedMerchantName?: string;
+            /** Format: int32 */
+            savedProductCount?: number;
+            /** Format: int32 */
+            cartItemCount?: number;
+            visibleProducts?: components["schemas"]["Product"][];
+            cartItems?: components["schemas"]["CartItem"][];
+            orders?: components["schemas"]["Order"][];
+        };
+        UserAssistantChatRequest: {
+            /** Format: uuid */
+            conversationId?: string;
+            message: string;
+            context?: components["schemas"]["UserAssistantChatContextRequest"];
+        };
+        StreamingResponseBody: unknown;
+        MerchantIdentityAuthorizationResponse: {
+            /** Format: uuid */
+            merchantId: string;
+            authorizationUrl: string;
+            state: string;
+            scopes: string[];
+        };
         MerchantSemanticSearchRequest: {
             query: string;
             /** Format: int32 */
@@ -182,16 +1755,16 @@ export interface components {
         };
         MerchantSemanticSearchResponse: {
             /** Format: uuid */
-            merchantId?: string;
-            domain?: string;
-            name?: string;
-            retrievalContent?: string;
+            merchantId: string;
+            domain: string;
+            name: string;
+            retrievalContent: string;
             /** Format: double */
-            semanticScore?: number;
+            semanticScore: number;
             /** Format: double */
-            rerankScore?: number;
+            rerankScore: number;
             /** Format: int32 */
-            rank?: number;
+            rank: number;
         };
         MerchantSemanticProductSearchRequest: {
             query: string;
@@ -208,108 +1781,394 @@ export interface components {
         };
         MerchantCatalogSearchAttemptResponse: {
             /** Format: uuid */
-            merchantId?: string;
-            domain?: string;
-            name?: string;
+            merchantId: string;
+            domain: string;
+            name: string;
             /** Format: int32 */
-            merchantRank?: number;
-            endpoint?: string;
+            merchantRank: number;
+            endpoint: string;
             /** Format: int32 */
-            productCount?: number;
-            error?: string;
+            productCount: number;
+            error: string;
         };
         MerchantSemanticProductResponse: {
             /** Format: uuid */
-            merchantId?: string;
-            merchantDomain?: string;
-            merchantName?: string;
-            endpoint?: string;
+            merchantId: string;
+            merchantDomain: string;
+            merchantName: string;
+            endpoint: string;
             /** Format: int32 */
-            merchantRank?: number;
+            merchantRank: number;
             /** Format: double */
-            merchantSemanticScore?: number;
+            merchantSemanticScore: number;
             /** Format: double */
-            merchantRerankScore?: number;
-            productId?: string;
-            title?: string;
-            descriptionHtml?: string;
-            url?: string;
-            imageUrl?: string;
+            merchantRerankScore: number;
+            productId: string;
+            title: string;
+            descriptionHtml: string;
+            url: string;
+            imageUrl: string;
             /** Format: int64 */
-            priceMinAmount?: number;
+            priceMinAmount: number;
             /** Format: int64 */
-            priceMaxAmount?: number;
-            priceCurrency?: string;
+            priceMaxAmount: number;
+            priceCurrency: string;
             /** Format: int64 */
-            listPriceAmount?: number;
-            listPriceCurrency?: string;
+            listPriceAmount: number;
+            listPriceCurrency: string;
             /** Format: double */
-            ratingScore?: number;
+            ratingScore: number;
             /** Format: int32 */
-            reviewCount?: number;
-            media?: components["schemas"]["ProductMediaResponse"][];
-            categories?: components["schemas"]["ProductCategoryResponse"][];
-            certifications?: string[];
-            materials?: string[];
-            skus?: string[];
-            collections?: string[];
-            attributes?: components["schemas"]["ProductAttributeResponse"][];
-            available?: boolean;
-            detailError?: string;
-            detailDescription?: string;
-            detailImageUrl?: string;
-            detailImages?: components["schemas"]["ProductImageResponse"][];
-            detailOptions?: components["schemas"]["ProductOptionResponse"][];
-            detailPriceMin?: string;
-            detailPriceMax?: string;
-            detailPriceCurrency?: string;
+            reviewCount: number;
+            media: components["schemas"]["ProductMediaResponse"][];
+            categories: components["schemas"]["ProductCategoryResponse"][];
+            certifications: string[];
+            materials: string[];
+            skus: string[];
+            collections: string[];
+            attributes: components["schemas"]["ProductAttributeResponse"][];
+            available: boolean;
+            detailError: string;
+            detailDescription: string;
+            detailImageUrl: string;
+            detailImages: components["schemas"]["ProductImageResponse"][];
+            detailOptions: components["schemas"]["ProductOptionResponse"][];
+            detailPriceMin: string;
+            detailPriceMax: string;
+            detailPriceCurrency: string;
             /** Format: int32 */
-            totalVariants?: number;
-            requiresSellingPlan?: boolean;
-            sellingPlanGroups?: unknown[];
-            selectedVariantId?: string;
-            selectedVariantTitle?: string;
-            selectedOptions?: components["schemas"]["ProductSelectedOptionResponse"][];
-            selectedVariantPriceAmount?: string;
-            selectedVariantPriceCurrency?: string;
-            selectedVariantImageUrl?: string;
-            selectedVariantImageAltText?: string;
-            selectedVariantAvailable?: boolean;
+            totalVariants: number;
+            requiresSellingPlan: boolean;
+            sellingPlanGroups: unknown[];
+            selectedVariantId: string;
+            selectedVariantTitle: string;
+            selectedOptions: components["schemas"]["ProductSelectedOptionResponse"][];
+            selectedVariantPriceAmount: string;
+            selectedVariantPriceCurrency: string;
+            selectedVariantImageUrl: string;
+            selectedVariantImageAltText: string;
+            selectedVariantAvailable: boolean;
             /** Format: int32 */
-            catalogRank?: number;
+            catalogRank: number;
             /** Format: double */
-            productRerankScore?: number;
+            productRerankScore: number;
             /** Format: int32 */
-            rank?: number;
+            rank: number;
         };
         MerchantSemanticProductSearchResponse: {
-            merchants?: components["schemas"]["MerchantCatalogSearchAttemptResponse"][];
-            products?: components["schemas"]["MerchantSemanticProductResponse"][];
-        };
-        ProductMediaResponse: {
-            type?: string;
-            url?: string;
-            altText?: string;
-        };
-        ProductCategoryResponse: {
-            value?: string;
-            taxonomy?: string;
-        };
-        ProductAttributeResponse: {
-            name?: string;
-            value?: string;
+            merchants: components["schemas"]["MerchantCatalogSearchAttemptResponse"][];
+            products: components["schemas"]["MerchantSemanticProductResponse"][];
         };
         ProductImageResponse: {
-            url?: string;
-            altText?: string;
+            url: string;
+            altText: string;
         };
         ProductOptionResponse: {
-            name?: string;
-            values?: string[];
+            name: string;
+            values: string[];
         };
         ProductSelectedOptionResponse: {
-            name?: string;
-            value?: string;
+            name: string;
+            value: string;
+        };
+        MerchantIdentityCallbackRequest: {
+            state: string;
+            code: string;
+            issuer?: string;
+        };
+        MerchantIdentityLinkResponse: {
+            /** Format: uuid */
+            merchantId: string;
+            merchantDomain: string;
+            merchantName: string;
+            /** @enum {string} */
+            status: "PENDING" | "CONNECTED";
+            scope: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description Buyer identity fields accepted by cart providers. */
+        SearchDiscountCodesBuyerIdentityRequest: {
+            /**
+             * @description Buyer email address.
+             * @example buyer@example.com
+             */
+            email?: string;
+            /**
+             * @description Buyer phone number.
+             * @example +14155552671
+             */
+            phoneNumber?: string;
+            /**
+             * @description Buyer first name.
+             * @example Ada
+             */
+            firstName?: string;
+            /**
+             * @description Buyer last name.
+             * @example Lovelace
+             */
+            lastName?: string;
+            /**
+             * @description Buyer country code.
+             * @example US
+             */
+            countryCode?: string;
+        };
+        /** @description Delivery address fields accepted by cart providers. */
+        SearchDiscountCodesDeliveryAddressRequest: {
+            /**
+             * @description Recipient first name.
+             * @example Ada
+             */
+            firstName?: string;
+            /**
+             * @description Recipient last name.
+             * @example Lovelace
+             */
+            lastName?: string;
+            /**
+             * @description Recipient phone number.
+             * @example +14155552671
+             */
+            phoneNumber?: string;
+            /**
+             * @description Street address.
+             * @example 1
+             */
+            streetAddress?: string;
+            /**
+             * @description Apartment, suite, or other address detail.
+             * @example Suite 200
+             */
+            extendedAddress?: string;
+            /**
+             * @description City or locality.
+             * @example San Francisco
+             */
+            city?: string;
+            /**
+             * @description Province, state, or region code.
+             * @example CA
+             */
+            provinceCode?: string;
+            /**
+             * @description Postal code.
+             * @example 94105
+             */
+            postalCode?: string;
+            /**
+             * @description Country code.
+             * @example US
+             */
+            countryCode?: string;
+        };
+        /** @description Delivery address selection accepted by cart providers. */
+        SearchDiscountCodesDeliveryAddressSelectionRequest: {
+            /**
+             * @description Existing delivery destination id.
+             * @example delivery-destination-1
+             */
+            id?: string;
+            /** @description Whether this address should be selected. */
+            selected?: boolean;
+            /** @description Nested delivery address. Flat address fields are also accepted for compatibility. */
+            deliveryAddress?: components["schemas"]["SearchDiscountCodesDeliveryAddressRequest"];
+            /**
+             * @description Recipient first name.
+             * @example Ada
+             */
+            firstName?: string;
+            /**
+             * @description Recipient last name.
+             * @example Lovelace
+             */
+            lastName?: string;
+            /**
+             * @description Recipient phone number.
+             * @example +14155552671
+             */
+            phoneNumber?: string;
+            /**
+             * @description Street address.
+             * @example 1
+             */
+            streetAddress?: string;
+            /**
+             * @description Apartment, suite, or other address detail.
+             * @example Suite 200
+             */
+            extendedAddress?: string;
+            /**
+             * @description City or locality.
+             * @example San Francisco
+             */
+            city?: string;
+            /**
+             * @description Province, state, or region code.
+             * @example CA
+             */
+            provinceCode?: string;
+            /**
+             * @description Postal code.
+             * @example 94105
+             */
+            postalCode?: string;
+            /**
+             * @description Country code.
+             * @example US
+             */
+            countryCode?: string;
+        };
+        /** @description Delivery option selection accepted by cart providers. */
+        SearchDiscountCodesDeliveryOptionSelectionRequest: {
+            /**
+             * @description Delivery group id or handle.
+             * @example delivery-group-1
+             */
+            id?: string;
+            /**
+             * @description Delivery group id.
+             * @example delivery-group-1
+             */
+            groupId?: string;
+            /**
+             * @description Merchant delivery group id.
+             * @example delivery-group-1
+             */
+            deliveryGroupId?: string;
+            /**
+             * @description Delivery option handle.
+             * @example standard
+             */
+            optionHandle?: string;
+            /**
+             * @description Merchant delivery option handle.
+             * @example standard
+             */
+            deliveryOptionHandle?: string;
+            /**
+             * @description Selected delivery option id.
+             * @example standard
+             */
+            selectedOptionId?: string;
+        };
+        /** @description Product variant and quantity used for discount validation. */
+        SearchDiscountCodesItemRequest: {
+            /**
+             * @description Remote product variant id.
+             * @example gid://shopify/ProductVariant/1
+             */
+            productVariantId: string;
+            /**
+             * Format: int32
+             * @description Quantity of this product variant.
+             * @example 1
+             */
+            quantity: number;
+        };
+        /** @description Cart context used to discover and validate merchant discount codes. */
+        SearchDiscountCodesRequest: {
+            /**
+             * Format: uuid
+             * @description Local merchant UUID. Required when merchantDomain is omitted.
+             * @example 00000000-0000-0000-0000-000000000001
+             */
+            merchantId?: string;
+            /**
+             * @description Merchant storefront domain. Required when merchantId is omitted.
+             * @example merchant.example
+             */
+            merchantDomain?: string;
+            /** @description Cart items used to validate each candidate code. */
+            items: components["schemas"]["SearchDiscountCodesItemRequest"][];
+            /** @description Buyer identity forwarded to the merchant cart provider. */
+            buyerIdentity?: components["schemas"]["SearchDiscountCodesBuyerIdentityRequest"];
+            /** @description Delivery addresses to add before validating discount codes. */
+            deliveryAddressesToAdd?: components["schemas"]["SearchDiscountCodesDeliveryAddressSelectionRequest"][];
+            /** @description Delivery addresses to replace before validating discount codes. */
+            deliveryAddressesToReplace?: components["schemas"]["SearchDiscountCodesDeliveryAddressSelectionRequest"][];
+            /** @description Selected delivery options used during discount validation. */
+            selectedDeliveryOptions?: components["schemas"]["SearchDiscountCodesDeliveryOptionSelectionRequest"][];
+        };
+        /** @description Validated merchant discount code. */
+        DiscountCodeResponse: {
+            /**
+             * @description Discount code submitted to the merchant.
+             * @example SAVE10
+             */
+            code: string;
+            /**
+             * @description Human-readable code title.
+             * @example 10% off
+             */
+            title: string;
+            /**
+             * @description Code description from discovery source.
+             * @example Save 10% on your order.
+             */
+            description: string;
+            /**
+             * @description Source URL where the code was discovered.
+             * @example https://merchant.example/codes
+             */
+            sourceUrl: string;
+            /**
+             * Format: double
+             * @description Discovery confidence from 0 to 1.
+             * @example 0.9
+             */
+            confidence: number;
+            /**
+             * @description Known restrictions or eligibility notes.
+             * @example Valid for new customers only.
+             */
+            restrictions: string;
+            /**
+             * Format: date-time
+             * @description Best-effort code validity deadline parsed from source text.
+             */
+            validUntil: string;
+            /**
+             * Format: date-time
+             * @description Cache expiration timestamp for this validation result.
+             */
+            expiresAt: string;
+            /**
+             * @description Merchant validation result message.
+             * @example Discount code accepted by merchant.
+             */
+            validationMessage: string;
+        };
+        /** @description Discount code search and validation result. */
+        DiscountCodeSearchResponse: {
+            /**
+             * Format: uuid
+             * @description Local merchant UUID.
+             * @example 00000000-0000-0000-0000-000000000001
+             */
+            merchantId: string;
+            /**
+             * @description Merchant storefront domain.
+             * @example merchant.example
+             */
+            merchantDomain: string;
+            /** @description Whether this response was served from cache. */
+            cached: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp when the search was performed.
+             */
+            searchedAt: string;
+            /**
+             * Format: date-time
+             * @description Timestamp when this search result expires.
+             */
+            expiresAt: string;
+            /** @description Validated discount codes accepted by the merchant. */
+            codes: components["schemas"]["DiscountCodeResponse"][];
         };
         CartAddItemRequest: {
             productVariantId: string;
@@ -333,118 +2192,375 @@ export interface components {
             selectedDeliveryOptions?: {
                 [key: string]: unknown;
             }[];
-            discountCodes?: string[];
-            giftCardCodes?: string[];
+            discountCodes: string[];
+            giftCardCodes: string[];
             note?: string;
         };
         CartAppliedCodeResponse: {
             /** @enum {string} */
-            type?: "DISCOUNT" | "GIFT_CARD";
-            code?: string;
-            label?: string;
-            applicable?: boolean;
-            amount?: string;
-            currency?: string;
+            type: "DISCOUNT" | "GIFT_CARD";
+            code: string;
+            label: string;
+            applicable: boolean;
+            amount: string;
+            currency: string;
+        };
+        CartDeliveryGroupResponse: {
+            id: string;
+            handle: string;
+            deliveryOptions: components["schemas"]["CartDeliveryOptionResponse"][];
+            selectedDeliveryOption: components["schemas"]["CartDeliveryOptionResponse"];
+        };
+        CartDeliveryMoneyResponse: {
+            amount: string;
+            currency: string;
+        };
+        CartDeliveryOptionResponse: {
+            handle: string;
+            title: string;
+            description: string;
+            code: string;
+            cost: components["schemas"]["CartDeliveryMoneyResponse"];
+            deliveryMethodType: string;
+            deliveryEstimate: string;
+            estimatedDeliveryTime: string;
+            /** Format: date-time */
+            estimatedDeliveryAt: string;
+            selected: boolean;
         };
         CartLineResponse: {
             /** Format: uuid */
-            cartLineId?: string;
-            remoteCartLineId?: string;
-            productId?: string;
-            productTitle?: string;
-            productVariantId?: string;
-            variantTitle?: string;
+            cartLineId: string;
+            remoteCartLineId: string;
+            productId: string;
+            productTitle: string;
+            productVariantId: string;
+            variantTitle: string;
             /** Format: int32 */
-            quantity?: number;
-            totalAmount?: string;
-            subtotalAmount?: string;
-            currency?: string;
+            quantity: number;
+            totalAmount: string;
+            subtotalAmount: string;
+            currency: string;
             /** Format: date-time */
-            createdAt?: string;
+            createdAt: string;
             /** Format: date-time */
-            updatedAt?: string;
+            updatedAt: string;
         };
-        CartDeliveryMoneyResponse: {
-            amount?: string;
-            currency?: string;
-        };
-        CartDeliveryOptionResponse: {
-            handle?: string;
-            title?: string;
-            description?: string;
-            code?: string;
-            cost?: components["schemas"]["CartDeliveryMoneyResponse"];
-            deliveryMethodType?: string;
-            deliveryEstimate?: string;
-            estimatedDeliveryTime?: string;
-            /** Format: date-time */
-            estimatedDeliveryAt?: string;
-            selected?: boolean;
-        };
-        CartDeliveryGroupResponse: {
-            id?: string;
-            handle?: string;
-            deliveryOptions?: components["schemas"]["CartDeliveryOptionResponse"][];
-            selectedDeliveryOption?: components["schemas"]["CartDeliveryOptionResponse"];
+        CartMessageResponse: {
+            code: string;
+            severity: string;
+            type: string;
+            message: string;
+            target: string;
         };
         CartResponse: {
             /** Format: uuid */
-            cartId?: string;
+            cartId: string;
             /** Format: uuid */
-            merchantId?: string;
-            merchantDomain?: string;
-            endpoint?: string;
-            remoteCartId?: string;
-            checkoutUrl?: string;
-            continueUrl?: string;
-            instructions?: string;
+            merchantId: string;
+            merchantDomain: string;
+            endpoint: string;
+            remoteCartId: string;
+            checkoutUrl: string;
+            continueUrl: string;
+            instructions: string;
             /** Format: int32 */
-            totalQuantity?: number;
-            totalAmount?: string;
-            subtotalAmount?: string;
-            currency?: string;
-            active?: boolean;
+            totalQuantity: number;
+            totalAmount: string;
+            subtotalAmount: string;
+            currency: string;
+            active: boolean;
             /** Format: date-time */
-            remoteCreatedAt?: string;
+            remoteCreatedAt: string;
             /** Format: date-time */
-            remoteUpdatedAt?: string;
+            remoteUpdatedAt: string;
             /** Format: date-time */
-            createdAt?: string;
+            expiresAt: string;
             /** Format: date-time */
-            updatedAt?: string;
+            createdAt: string;
             /** Format: date-time */
-            refreshedAt?: string;
-            appliedCodes?: components["schemas"]["CartAppliedCodeResponse"][];
-            lines?: components["schemas"]["CartLineResponse"][];
-            deliveryGroups?: components["schemas"]["CartDeliveryGroupResponse"][];
-            messages?: components["schemas"]["CartMessageResponse"][];
+            updatedAt: string;
+            /** Format: date-time */
+            refreshedAt: string;
+            appliedCodes: components["schemas"]["CartAppliedCodeResponse"][];
+            lines: components["schemas"]["CartLineResponse"][];
+            deliveryGroups: components["schemas"]["CartDeliveryGroupResponse"][];
+            messages: components["schemas"]["CartMessageResponse"][];
         };
-        CartMessageResponse: {
-            code?: string;
-            severity?: string;
+        /** @description Buyer consent binding for a checkout session before native completion. */
+        CreateCheckoutConsentRequest: {
+            checkout_id: string;
+            payment_instrument_reference: string;
+            shipping_method?: string;
+            presented_terms_hash?: string;
+        };
+        /** @description Stored buyer consent artifact for a checkout session. */
+        CheckoutConsentResponse: {
+            /** Format: uuid */
+            buyerConsentId: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        CompleteCheckoutAp2MandateRequest: {
+            merchant_public_jwk: components["schemas"]["CompleteCheckoutJsonWebKeyRequest"];
+            expected_merchant_authorization_kid: string;
+            merchant_authorization_issuer: string;
+            agent_issuer: string;
+            audience: string;
+            nonce: string;
+            /** Format: date-time */
+            expires_at: string;
+            merchant_authorization_jws?: string;
+        };
+        CompleteCheckoutJsonWebKeyRequest: {
+            kty: string;
+            kid: string;
+            crv?: string;
+            x?: string;
+            y?: string;
+            n?: string;
+            e?: string;
+            alg?: string;
+            use?: string;
+            key_ops?: string[];
+        };
+        CompleteCheckoutPaymentCredentialDetailsRequest: {
+            source?: string;
+        };
+        CompleteCheckoutPaymentCredentialRequest: {
+            type: string;
+            token: string;
+            details: components["schemas"]["CompleteCheckoutPaymentCredentialDetailsRequest"];
+        };
+        CompleteCheckoutPaymentInstrumentRequest: {
+            handler: string;
+            /** Format: int64 */
+            amount: number;
+            currency: string;
+            credential: components["schemas"]["CompleteCheckoutPaymentCredentialRequest"];
+            sca_liability: components["schemas"]["CompleteCheckoutPaymentScaLiabilityRequest"];
+        };
+        CompleteCheckoutPaymentScaLiabilityRequest: {
+            liable_party: string;
+            liability_shifted?: boolean;
+            challenge_required?: boolean;
+            reason?: string;
+        };
+        CompleteCheckoutRequest: {
+            /** Format: uuid */
+            buyer_consent_id: string;
+            checkout_id: string;
+            payment_instruments: components["schemas"]["CompleteCheckoutPaymentInstrumentRequest"][];
+            idempotency_key?: string;
+            ap2_security_lock?: boolean;
+            ap2_mandate?: components["schemas"]["CompleteCheckoutAp2MandateRequest"];
+            signals?: components["schemas"]["CompleteCheckoutSignalsRequest"];
+        };
+        CompleteCheckoutSignalsRequest: {
+            "dev.meant.checkout_surface"?: string;
+            user_agent?: string;
+        };
+        CheckoutCompletionResponse: {
+            /** Format: uuid */
+            cartId: string;
+            remoteCartId: string;
+            /** @enum {string} */
+            status: "COMPLETED" | "PROCESSING" | "SCA_REQUIRED" | "CANCELED" | "HANDOFF_FALLBACK" | "RECOVERABLE_ERROR" | "UNRECOVERABLE_ERROR" | "SECURITY_LOCKED";
+            checkoutId: string;
+            orderRef: string;
+            continueUrl: string;
+            messages: string[];
+            nativeAttempted: boolean;
+        };
+        CancelCheckoutRequest: {
+            checkout_id: string;
+            reason?: string;
+            ap2_security_lock?: boolean;
+        };
+        /** @description Buyer message for the conversational checkout assistant. */
+        AssistCheckoutRequest: {
+            message: string;
+            /** @description Known merchant delivery coverage text to help the assistant suggest a retry destination. */
+            merchantDeliveryHint?: string;
+            /** @description Prior conversation turns, oldest first. */
+            history?: components["schemas"]["HistoryMessageRequest"][];
+        };
+        /** @description One prior conversation turn. */
+        HistoryMessageRequest: {
+            /** @enum {string} */
+            role: "user" | "assistant";
+            content: string;
+        };
+        /** @description Effective availability of one provider-neutral commerce operation. */
+        CapabilityDecisionResponse: {
+            /**
+             * @description Commerce operation being evaluated.
+             * @enum {string}
+             */
+            operation: "CATALOG" | "CART" | "CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "ORDER_READS" | "ORDER_WEBHOOKS";
+            /** @description Whether the selected merchant/provider integration advertises the operation. */
+            advertised: boolean;
+            /**
+             * @description Stable authorization, tier, and granted-scope readiness outcome.
+             * @enum {string}
+             */
+            authorizationStatus: "NOT_REQUIRED" | "READY" | "NOT_AUTHORIZED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "UNSUPPORTED";
+            /** @description Whether product rollout enables this operation for the merchant. */
+            rolloutEnabled: boolean;
+            /**
+             * @description Current health of the integration selected for this operation.
+             * @enum {string}
+             */
+            integrationHealth: "HEALTHY" | "PENDING" | "INACTIVE" | "SUSPENDED" | "REVOKED" | "NO_INTEGRATION";
+            /** @description Whether a supported fallback rail exists when the operation is ineligible. */
+            fallbackSupported: boolean;
+            /**
+             * @description Effective operation availability.
+             * @enum {string}
+             */
+            availability: "AVAILABLE" | "FALLBACK_AVAILABLE" | "UNAVAILABLE";
+            /**
+             * @description Rail selected for this operation.
+             * @enum {string}
+             */
+            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
+            /** @description Typed reasons explaining ineligibility or fallback selection. */
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+        };
+        /** @description Checkout assistant reply, with the checkout session it acted on. */
+        CheckoutAssistResponse: {
+            reply: string;
+            /** @description True when the assistant applied collected details to the merchant checkout. */
+            checkoutUpdated: boolean;
+            checkout: components["schemas"]["CheckoutResponse"];
+        };
+        /** @description Status-aware UCP checkout session for an in-page checkout flow. */
+        CheckoutResponse: {
+            /**
+             * Format: uuid
+             * @description Meant cart identifier.
+             */
+            cartId: string;
+            /** @description Merchant/provider cart identifier. */
+            remoteCartId: string;
+            /** @description Merchant/provider checkout identifier. */
+            checkoutId?: string;
+            /** @description Current provider checkout status. */
+            status?: string;
+            /** @description Provider checkout URL when available. */
+            checkoutUrl?: string;
+            /** @description Provider continuation URL when available. */
+            continueUrl?: string;
+            /** @description Negotiated UCP protocol version. */
+            ucpVersion?: string;
+            /**
+             * Format: int64
+             * @description Checkout total in minor currency units.
+             */
+            totalAmountMinor?: number;
+            /** @description ISO 4217 checkout currency code. */
+            currency?: string;
+            /** @description Whether the provider checkout state requires merchant or buyer escalation. */
+            requiresEscalation: boolean;
+            /**
+             * @description Authoritative next checkout action derived from session state and execution policy.
+             * @enum {string}
+             */
+            nextAction: "UPDATE_CHECKOUT" | "OPEN_EMBEDDED_CHECKOUT" | "HANDOFF" | "COMPLETE_CHECKOUT" | "WAIT" | "DONE" | "RESTART" | "UNKNOWN";
+            /**
+             * @description Execution rail selected by the effective checkout policy.
+             * @enum {string}
+             */
+            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
+            /** @description Typed reasons that made a preferred checkout rail ineligible or selected a fallback. */
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+            /** @description Independent effective capability decisions for the merchant's commerce operations. */
+            capabilities: components["schemas"]["CapabilityDecisionResponse"][];
+            /** @description Provider messages for checkout guidance. */
+            messages: components["schemas"]["MessageResponse"][];
+            /**
+             * @deprecated
+             * @description Deprecated compatibility view derived only from direct checkout completion availability.
+             */
+            nativeCheckoutEnabled: boolean;
+        };
+        /** @description UCP checkout message to present in the in-page checkout UI. */
+        MessageResponse: {
+            /** @description Provider message type. */
             type?: string;
-            message?: string;
-            target?: string;
+            /** @description Stable provider message code. */
+            code?: string;
+            /** @description Provider message severity. */
+            severity?: string;
+            /** @description Buyer-facing provider message content. */
+            content: string;
+            /** @description Payload path related to the message. */
+            path?: string;
         };
         UpdateUserProfileRequest: {
             firstName: string;
             surname?: string;
         };
+        /** @description Authenticated user profile. */
+        UserResponse: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            firstName: string;
+            surname: string;
+            profilePicturePath: string;
+            newsletter: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpdateUserTasteSignalRequest: {
+            /** Format: double */
+            weight?: number;
+            disabled?: boolean;
+        };
+        UpdateUserSettingsRequest: {
+            /** Format: int32 */
+            budget?: number;
+            budgetUnlimited?: boolean;
+            clothingFit?: string;
+            location?: components["schemas"]["UserLocationRequest"];
+            locations: components["schemas"]["UserLocationRequest"][];
+            filterIds: string[];
+            preferenceDescription?: string;
+        };
+        UserLocationRequest: {
+            country: string;
+            code: string;
+            city: string;
+        };
+        UpdateUserProfilePictureRequest: {
+            profilePicturePath: string;
+        };
+        /** @description Newsletter subscription update for the authenticated user. */
         UpdateUserNewsletterRequest: {
             newsletter: boolean;
         };
-        UserResponse: {
-            /** Format: uuid */
-            id?: string;
-            email?: string;
-            firstName?: string;
-            surname?: string;
-            profilePicturePath?: string;
-            newsletter?: boolean;
-            /** Format: date-time */
-            createdAt?: string;
-            /** Format: date-time */
-            updatedAt?: string;
+        UpdateUserInventoryItemRequest: {
+            name?: string;
+            brand?: string;
+            /** @enum {string} */
+            category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
+            description?: string;
+            imageUrl?: string;
+            productUrl?: string;
+            photoUrl?: string;
+            /** Format: int32 */
+            quantity?: number;
+            unit?: string;
+            location?: string;
+            notes?: string;
+            attributes?: string[];
+            consumable?: boolean;
+            restockEnabled?: boolean;
+            /** Format: int32 */
+            restockThreshold?: number;
         };
         CartUpdateItemRequest: {
             /** Format: uuid */
@@ -470,9 +2586,322 @@ export interface components {
             selectedDeliveryOptions?: {
                 [key: string]: unknown;
             }[];
-            discountCodes?: string[];
-            giftCardCodes?: string[];
+            discountCodes: string[];
+            giftCardCodes: string[];
             note?: string;
+        };
+        /** @description Buyer identity for checkout calculation and confirmation. */
+        BuyerRequest: {
+            /** Format: email */
+            email: string;
+            firstName: string;
+            lastName: string;
+            phoneNumber?: string;
+        };
+        /** @description Buyer-provided fields used to update a native UCP checkout session. */
+        CheckoutUpdateRequest: {
+            buyer: components["schemas"]["BuyerRequest"];
+            shippingAddress: components["schemas"]["PostalAddressRequest"];
+            discountCodes?: string[];
+        };
+        /** @description UCP postal address for physical fulfillment. */
+        PostalAddressRequest: {
+            streetAddress: string;
+            extendedAddress?: string;
+            addressLocality: string;
+            addressRegion?: string;
+            postalCode: string;
+            addressCountry: string;
+        };
+        UserProductSearchSuggestionsResponse: {
+            suggestions: string[];
+        };
+        UserProductDiscoveryResponse: {
+            savedProducts: components["schemas"]["UserSavedProductResponse"][];
+            recentProducts: components["schemas"]["UserProductSearchProductResponse"][];
+        };
+        UserPopularProductSearchResponse: {
+            displayQuery: string;
+            query: string;
+        };
+        UserInventoryExportResponse: {
+            /** Format: date-time */
+            exportedAt: string;
+            items: components["schemas"]["UserInventoryItemResponse"][];
+        };
+        UserAssistantConversationSummaryResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            title: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UserAssistantConversationResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            title: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            messages: components["schemas"]["UserAssistantMessageResponse"][];
+        };
+        UserAssistantMessageResponse: {
+            /** Format: uuid */
+            id: string;
+            role: string;
+            content: string;
+            products: components["schemas"]["UserProductSearchProductResponse"][];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description Single product review returned by a merchant review provider. */
+        ProductReviewResponse: {
+            /**
+             * @description Provider review id.
+             * @example review-123
+             */
+            externalId: string;
+            /**
+             * @description Displayed review author.
+             * @example Ada L.
+             */
+            author: string;
+            /**
+             * Format: int32
+             * @description Review rating.
+             * @example 5
+             */
+            rating: number;
+            /**
+             * @description Review body.
+             * @example Great fit and fast shipping.
+             */
+            content: string;
+            /** @description Whether the review provider marks this review as verified. */
+            verified: boolean;
+            /**
+             * Format: date-time
+             * @description Review creation timestamp.
+             */
+            createdAt: string;
+            /**
+             * @description Reviewed product variant id.
+             * @example gid://shopify/ProductVariant/1
+             */
+            variantId: string;
+            /**
+             * @description Reviewed product variant title.
+             * @example Black / Medium
+             */
+            variantTitle: string;
+        };
+        /** @description Product reviews and aggregate rating from a merchant review provider. */
+        ProductReviewsResponse: {
+            /**
+             * Format: uuid
+             * @description Local merchant UUID.
+             * @example 00000000-0000-0000-0000-000000000001
+             */
+            merchantId: string;
+            /**
+             * @description Remote product id.
+             * @example gid://shopify/Product/1
+             */
+            productId: string;
+            /**
+             * @description Review provider used for this product.
+             * @enum {string}
+             */
+            provider: "KLAVIYO" | "YOTPO" | "OKENDO" | "JUDGE_ME" | "BAZAARVOICE" | "STAMPED" | "REVIEWS_IO" | "LOOX" | "JUNIP" | "POWER_REVIEWS" | "TRUSTPILOT" | "OPINEW" | "AIR_REVIEWS" | "SHOPIFY_PRODUCT_REVIEWS" | "UNKNOWN" | "NONE";
+            /**
+             * Format: double
+             * @description Aggregate product rating.
+             * @example 4.7
+             */
+            rating: number;
+            /**
+             * Format: int32
+             * @description Total provider review count.
+             * @example 128
+             */
+            reviewCount: number;
+            /** @description Whether more reviews are available after this page. */
+            hasMore: boolean;
+            /** @description Reviews returned for the requested page. */
+            reviews: components["schemas"]["ProductReviewResponse"][];
+            /** @description Whether this response was served from cache. */
+            cached: boolean;
+            /** @description Whether the merchant has a supported review provider. */
+            supported: boolean;
+            /**
+             * @description User-safe status message.
+             * @example Reviews are temporarily unavailable.
+             */
+            message: string;
+        };
+        /** @description Paged order summary list. */
+        OrderListResponse: {
+            orders: components["schemas"]["OrderSummaryResponse"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            limit: number;
+            hasNext: boolean;
+        };
+        /** @description Summary order state for order list pages. */
+        OrderSummaryResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            merchantId: string;
+            merchantDomain: string;
+            merchantName: string;
+            remoteOrderId: string;
+            displayId: string;
+            orderNumber: string;
+            state: string;
+            status: string;
+            statusNote: string;
+            date: string;
+            totalAmount: string;
+            subtotalAmount: string;
+            currency: string;
+            /** Format: int32 */
+            totalQuantity: number;
+            orderStatusUrl: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        OrderLineResponse: {
+            /** Format: uuid */
+            id: string;
+            productKey: string;
+            productId: string;
+            productTitle: string;
+            merchantName: string;
+            productVariantId: string;
+            variantTitle: string;
+            sku: string;
+            imageUrl: string;
+            productUrl: string;
+            /** Format: int32 */
+            quantity: number;
+            unitAmount: string;
+            totalAmount: string;
+            currency: string;
+        };
+        OrderResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            merchantId: string;
+            merchantDomain: string;
+            merchantName: string;
+            remoteOrderId: string;
+            displayId: string;
+            orderNumber: string;
+            state: string;
+            status: string;
+            statusNote: string;
+            date: string;
+            totalAmount: string;
+            subtotalAmount: string;
+            currency: string;
+            /** Format: int32 */
+            totalQuantity: number;
+            orderStatusUrl: string;
+            lines: components["schemas"]["OrderLineResponse"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        MerchantListItemResponse: {
+            /** Format: uuid */
+            id: string;
+            domain: string;
+            name: string;
+            description: string;
+            advertisedMcpEndpoint: string;
+            profileMcpEndpoint: string;
+            supportsIdentityLinking: boolean;
+        };
+        MerchantProductDetailsResponse: {
+            endpoint: string;
+            productId: string;
+            handle: string;
+            title: string;
+            description: string;
+            url: string;
+            imageUrl: string;
+            images: components["schemas"]["ProductImageResponse"][];
+            media: components["schemas"]["ProductMediaResponse"][];
+            categories: components["schemas"]["ProductCategoryResponse"][];
+            tags: string[];
+            options: components["schemas"]["ProductOptionResponse"][];
+            variants: components["schemas"]["ProductVariantResponse"][];
+            /** Format: int32 */
+            totalVariants: number;
+            priceMin: string;
+            priceMax: string;
+            priceCurrency: string;
+            listPriceMin: string;
+            listPriceMax: string;
+            listPriceCurrency: string;
+            requiresSellingPlan: boolean;
+            selectedVariantId: string;
+            selectedVariantTitle: string;
+            selectedVariantPriceAmount: string;
+            selectedVariantPriceCurrency: string;
+            selectedVariantSku: string;
+            selectedVariantListPriceAmount: string;
+            selectedVariantListPriceCurrency: string;
+            selectedVariantImageUrl: string;
+            selectedVariantImageAltText: string;
+            selectedVariantAvailable: boolean;
+            selectedOptions: components["schemas"]["ProductSelectedOptionResponse"][];
+            skus: string[];
+            certifications: string[];
+            materials: string[];
+            collections: string[];
+            attributes: components["schemas"]["ProductAttributeResponse"][];
+            messages: components["schemas"]["ProductMessageResponse"][];
+        };
+        ProductMessageResponse: {
+            type: string;
+            code: string;
+            path: string;
+            contentType: string;
+            content: string;
+            severity: string;
+            presentation: string;
+            imageUrl: string;
+            url: string;
+        };
+        ProductVariantResponse: {
+            variantId: string;
+            handle: string;
+            title: string;
+            description: string;
+            url: string;
+            priceAmount: string;
+            priceCurrency: string;
+            listPriceAmount: string;
+            listPriceCurrency: string;
+            sku: string;
+            imageUrl: string;
+            imageAltText: string;
+            media: components["schemas"]["ProductMediaResponse"][];
+            available: boolean;
+            selectedOptions: components["schemas"]["ProductSelectedOptionResponse"][];
+            categories: components["schemas"]["ProductCategoryResponse"][];
+            tags: string[];
+            attributes: components["schemas"]["ProductAttributeResponse"][];
         };
         /** @description Current API health status. */
         HealthResponse: {
@@ -480,107 +2909,64 @@ export interface components {
              * @description Service name.
              * @example Meant API
              */
-            service?: string;
+            service: string;
             /**
              * @description Service status.
              * @example ok
              */
-            status?: string;
+            status: string;
             /**
              * Format: date-time
              * @description Response timestamp.
              */
-            timestamp?: string;
+            timestamp: string;
         };
-        /** @description Effective availability of one provider-neutral commerce operation. */
-        CapabilityDecisionResponse: {
-            /** @description Commerce operation being evaluated. */
-            operation: "CATALOG" | "CART" | "CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "ORDER_READS" | "ORDER_WEBHOOKS";
-            /** @description Whether the selected merchant/provider integration advertises the operation. */
-            advertised: boolean;
-            /** @description Stable authorization, tier, and granted-scope readiness outcome. */
-            authorizationStatus: "NOT_REQUIRED" | "READY" | "NOT_AUTHORIZED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "UNSUPPORTED";
-            /** @description Whether product rollout enables this operation for the merchant. */
-            rolloutEnabled: boolean;
-            /** @description Current health of the integration selected for this operation. */
-            integrationHealth: "HEALTHY" | "PENDING" | "INACTIVE" | "SUSPENDED" | "REVOKED" | "NO_INTEGRATION";
-            /** @description Whether a supported fallback rail exists when the operation is ineligible. */
-            fallbackSupported: boolean;
-            /** @description Effective operation availability. */
-            availability: "AVAILABLE" | "FALLBACK_AVAILABLE" | "UNAVAILABLE";
-            /** @description Rail selected for this operation. */
-            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
-            /** @description Typed reasons explaining ineligibility or fallback selection. */
-            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+        AgentProfile: {
+            /** Format: uri */
+            profile_url: string;
+            protocol_version: string;
+            supported_versions: {
+                [key: string]: string;
+            };
+            signing_key_id: string;
+            signing_keys?: components["schemas"]["PublicSigningKey"][];
+            capabilities?: components["schemas"]["CapabilityAdvertisement"][];
         };
-        CheckoutResponse: {
-            /**
-             * Format: uuid
-             * @description Meant cart identifier.
-             */
-            cartId?: string;
-            /** @description Merchant/provider cart identifier. */
-            remoteCartId?: string;
-            /** @description Merchant/provider checkout identifier. */
-            checkoutId?: string;
-            /** @description Current provider checkout status. */
-            status?: string;
-            /** @description Provider checkout URL when available. */
-            checkoutUrl?: string;
-            /** @description Provider continuation URL when available. */
-            continueUrl?: string;
-            /** @description Negotiated UCP protocol version. */
-            ucpVersion?: string;
-            /** @description Checkout total in minor currency units. */
-            totalAmountMinor?: number;
-            /** @description ISO 4217 checkout currency code. */
-            currency?: string;
-            /** @description Whether the provider checkout state requires merchant or buyer escalation. */
-            requiresEscalation?: boolean;
-            /** @description Authoritative next checkout action derived from session state and execution policy. */
-            nextAction: "UPDATE_CHECKOUT" | "OPEN_EMBEDDED_CHECKOUT" | "HANDOFF" | "COMPLETE_CHECKOUT" | "WAIT" | "DONE" | "RESTART" | "UNKNOWN";
-            /** @description Execution rail selected by the effective checkout policy. */
-            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
-            /** @description Typed reasons that made a preferred checkout rail ineligible or selected a fallback. */
-            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
-            /** @description Independent effective capability decisions for the merchant's commerce operations. */
-            capabilities: components["schemas"]["CapabilityDecisionResponse"][];
-            /** @description Provider messages for checkout guidance. */
-            messages?: components["schemas"]["CheckoutMessageResponse"][];
-            /**
-             * @deprecated
-             * @description Deprecated compatibility view derived only from direct checkout completion availability.
-             */
-            nativeCheckoutEnabled?: boolean;
+        CapabilityAdvertisement: {
+            id: string;
+            version: string;
+            tools?: string[];
+            required: boolean;
+            protocol_versions: components["schemas"]["ProtocolVersions"];
+            requires?: components["schemas"]["Requirements"];
+            /** Format: uri */
+            spec: string;
+            /** Format: uri */
+            schema: string;
+            extends?: string[];
+            config?: {
+                [key: string]: unknown;
+            };
         };
-        CheckoutMessageResponse: {
-            /** @description Provider message type. */
-            type?: string;
-            /** @description Stable provider message code. */
-            code?: string;
-            /** @description Provider message severity. */
-            severity?: string;
-            /** @description Buyer-facing provider message content. */
-            content?: string;
-            /** @description Payload path related to the message. */
-            path?: string;
+        ProtocolVersions: {
+            min: string;
+            max: string;
         };
-        CheckoutConsentResponse: {
-            /** Format: uuid */
-            buyerConsentId?: string;
+        PublicSigningKey: {
+            kid: string;
+            /** @enum {string} */
+            purpose: "transport" | "ap2_issuer" | "sd_jwt_holder";
+            /** @enum {string} */
+            status: "active" | "retiring" | "revoked";
+            jwk: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
-            expiresAt?: string;
+            advertiseUntil?: string;
         };
-        CheckoutCompletionResponse: {
-            /** Format: uuid */
-            cartId?: string;
-            remoteCartId?: string;
-            status?: "COMPLETED" | "PROCESSING" | "SCA_REQUIRED" | "CANCELED" | "HANDOFF_FALLBACK" | "RECOVERABLE_ERROR" | "UNRECOVERABLE_ERROR" | "SECURITY_LOCKED";
-            checkoutId?: string;
-            orderRef?: string;
-            continueUrl?: string;
-            messages?: string[];
-            nativeAttempted?: boolean;
+        Requirements: {
+            required_capabilities?: string[];
+            optional_capabilities?: string[];
         };
     };
     responses: never;
@@ -591,6 +2977,403 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    saveDiscoverConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserDiscoverConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description Persisted Discover chat snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserDiscoverConversationResponse"];
+                };
+            };
+        };
+    };
+    deleteDiscoverConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discover chat deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    receive: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Shopify-Shop-Domain": string;
+                "X-Shopify-Topic": string;
+                "X-Shopify-Webhook-Id"?: string;
+                "X-Shopify-Hmac-Sha256": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": string;
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    searchGroupedProductsV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProductSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Version 1 grouped product search results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserGroupedProductSearchV1Response"];
+                };
+            };
+        };
+    };
+    rejectTasteSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                filterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Learned filter suggestion rejected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    acceptTasteSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                filterId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated user settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSettingsResponse"];
+                };
+            };
+        };
+    };
+    recordTasteBehavior: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordUserTasteBehaviorRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated learned taste profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserTasteProfileResponse"];
+                };
+            };
+        };
+    };
+    savedProducts: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved products for the current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSavedProductResponse"][];
+                };
+            };
+        };
+    };
+    saveProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveUserProductRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved product snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSavedProductResponse"];
+                };
+            };
+        };
+    };
+    removeSavedProduct: {
+        parameters: {
+            query: {
+                productKey: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved product removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    searchProducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProductSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Product search results for the current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserProductSearchResponse"];
+                };
+            };
+        };
+    };
+    streamSearchProducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProductSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["SseEmitter"];
+                };
+            };
+        };
+    };
+    inventory: {
+        parameters: {
+            query?: {
+                category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
+                restockOnly?: boolean;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inventory items for the current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserInventoryItemResponse"][];
+                };
+            };
+        };
+    };
+    addInventoryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddUserInventoryItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Created inventory item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserInventoryItemResponse"];
+                };
+            };
+        };
+    };
+    addInventoryPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddUserInventoryPhotoRequest"];
+            };
+        };
+        responses: {
+            /** @description Created inventory item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserInventoryItemResponse"];
+                };
+            };
+        };
+    };
+    streamAssistantMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAssistantChatRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["StreamingResponseBody"];
+                };
+            };
+        };
+    };
+    startIdentityAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                merchantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Merchant OAuth authorization URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["MerchantIdentityAuthorizationResponse"];
+                };
+            };
+        };
+    };
     semanticSearch: {
         parameters: {
             query?: never;
@@ -639,6 +3422,54 @@ export interface operations {
             };
         };
     };
+    completeIdentityAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MerchantIdentityCallbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Connected merchant account state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["MerchantIdentityLinkResponse"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchDiscountCodesRequest"];
+            };
+        };
+        responses: {
+            /** @description Validated merchant discount codes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["DiscountCodeSearchResponse"];
+                };
+            };
+        };
+    };
     create: {
         parameters: {
             query?: never;
@@ -659,6 +3490,114 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["CartResponse"];
+                };
+            };
+        };
+    };
+    recordCheckoutConsent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCheckoutConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description Checkout consent artifact */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutConsentResponse"];
+                };
+            };
+        };
+    };
+    completeCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Native checkout completion result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutCompletionResponse"];
+                };
+            };
+        };
+    };
+    cancelCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Native checkout cancellation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutCompletionResponse"];
+                };
+            };
+        };
+    };
+    assistCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Assistant reply with the current checkout session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutAssistResponse"];
                 };
             };
         };
@@ -707,6 +3646,140 @@ export interface operations {
             };
         };
     };
+    removeTasteSignal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                signalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Learned taste signal removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateTasteSignal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                signalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserTasteSignalRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated learned taste signal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserTasteSignalResponse"];
+                };
+            };
+        };
+    };
+    settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current user settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSettingsResponse"];
+                };
+            };
+        };
+    };
+    updateSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated user settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSettingsResponse"];
+                };
+            };
+        };
+    };
+    removeProfilePicture: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated user profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
+    updateProfilePicture: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfilePictureRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated user profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
     updateNewsletter: {
         parameters: {
             query?: never;
@@ -727,6 +3800,52 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
+    deleteInventoryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inventory item deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateInventoryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserInventoryItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated inventory item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserInventoryItemResponse"];
                 };
             };
         };
@@ -757,6 +3876,27 @@ export interface operations {
             };
         };
     };
+    cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cart canceled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     update: {
         parameters: {
             query?: never;
@@ -784,6 +3924,396 @@ export interface operations {
             };
         };
     };
+    checkout: {
+        parameters: {
+            query?: {
+                /** @description Refresh the checkout session from the remote UCP checkout when possible. */
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cart checkout session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutResponse"];
+                };
+            };
+        };
+    };
+    updateCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Local cart UUID. */
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated cart checkout session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutResponse"];
+                };
+            };
+        };
+    };
+    tasteProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Learned taste profile for the current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserTasteProfileResponse"];
+                };
+            };
+        };
+    };
+    productSearchSuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Generated product search suggestions for the current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserProductSearchSuggestionsResponse"];
+                };
+            };
+        };
+    };
+    productDiscovery: {
+        parameters: {
+            query?: {
+                search?: string;
+                sortBy?: string;
+                sortDirection?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Product discovery context for the current user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserProductDiscoveryResponse"];
+                };
+            };
+        };
+    };
+    popularProductSearches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Popular product search prompts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserPopularProductSearchResponse"][];
+                };
+            };
+        };
+    };
+    exportInventory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exportable inventory payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserInventoryExportResponse"];
+                };
+            };
+        };
+    };
+    discoverConversations: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted Discover chat snapshots */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserDiscoverConversationResponse"][];
+                };
+            };
+        };
+    };
+    assistantConversations: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent Ask Meant conversations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserAssistantConversationSummaryResponse"][];
+                };
+            };
+        };
+    };
+    assistantConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ask Meant conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserAssistantConversationResponse"];
+                };
+            };
+        };
+    };
+    latestAssistantConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest Ask Meant conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserAssistantConversationResponse"];
+                };
+            };
+        };
+    };
+    getProductReviews: {
+        parameters: {
+            query: {
+                /** @description Remote product id. */
+                productId: string;
+                /** @description Maximum reviews to return. Defaults to provider configuration when omitted. */
+                limit?: number;
+                /** @description Review pagination offset. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Merchant UUID. */
+                merchantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Product reviews */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ProductReviewsResponse"];
+                };
+            };
+        };
+    };
+    list: {
+        parameters: {
+            query?: {
+                /** @description Zero-based page number. */
+                page?: number;
+                /** @description Maximum number of order summaries to return. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stored merchant order summaries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OrderListResponse"];
+                };
+            };
+        };
+    };
+    get_1: {
+        parameters: {
+            query?: {
+                /** @description Refresh the local snapshot from the merchant UCP get_order tool before returning. */
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Local order UUID. */
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stored merchant order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OrderResponse"];
+                };
+            };
+        };
+    };
+    listActiveMerchants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active merchants */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["MerchantListItemResponse"][];
+                };
+            };
+        };
+    };
+    productDetails: {
+        parameters: {
+            query: {
+                productId: string;
+                addressCountry?: string;
+                language?: string;
+            };
+            header?: never;
+            path: {
+                merchantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Merchant MCP product details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["MerchantProductDetailsResponse"];
+                };
+            };
+        };
+    };
+    listIdentityLinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connected merchant account states */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["MerchantIdentityLinkResponse"][];
+                };
+            };
+        };
+    };
     health: {
         parameters: {
             query?: never;
@@ -804,29 +4334,43 @@ export interface operations {
             };
         };
     };
-    checkout: {
+    agentProfile: {
         parameters: {
-            query?: {
-                /** @description Refresh the local snapshot from the remote MCP cart before returning checkout. */
-                refresh?: boolean;
-            };
+            query?: never;
             header?: never;
-            path: {
-                /** @description Local cart UUID. */
-                cartId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Cart checkout URL */
+            /** @description UCP agent profile */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["CheckoutResponse"];
+                    "application/json": components["schemas"]["AgentProfile"];
                 };
+            };
+        };
+    };
+    revokeIdentityLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                merchantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Merchant account connection revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

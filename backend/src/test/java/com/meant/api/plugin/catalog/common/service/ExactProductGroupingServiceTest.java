@@ -4,14 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
+import com.meant.api.plugin.catalog.common.dto.OfferComponentIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
+import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
+import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribution;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
@@ -37,69 +42,139 @@ class ExactProductGroupingServiceTest {
     private final ExactProductGroupingService service = new ExactProductGroupingService();
 
     @Test
-    void groupsOneTrustedProductAcrossThreeMerchantsAndPreservesDuplicateOfferObservations() {
-        ProductIdentityEvidence gtin = evidence(
-                ProductIdentityEvidenceKind.GTIN,
-                IdentityEvidenceStrength.TRUSTED_EXACT,
-                ExternalIdentifierType.GTIN,
-                "00012345678905",
-                "manufacturer-feed"
-        );
-        UUID firstIntegration = id(1);
-        List<ProductCandidate> candidates = List.of(
-                candidate("SHOPIFY", firstIntegration, "merchant-1", "gid://shopify/Product/10", "variant-1", null,
-                        gtin, "merchant-search", OBSERVED_AT),
-                candidate("SHOPIFY", firstIntegration, "merchant-1", "gid://shopify/Product/10", "variant-1", null,
-                        gtin, "provider-catalog", OBSERVED_AT.plusSeconds(1)),
-                candidate("GENERIC_UCP", id(2), "merchant-2", "product-20", "variant-2", null,
-                        gtin, "merchant-search", OBSERVED_AT),
-                candidate("FUTURE_PROVIDER", id(3), "merchant-3", "product-30", "variant-3", null,
-                        gtin, "merchant-search", OBSERVED_AT)
+    void acceptsGlobalCatalogOfferForUnknownSellerWithoutLocalMerchantRouting() {
+        ProductCandidate globalOffer = externalCandidate(
+                "SHOPIFY",
+                "gid://shopify/Shop/42",
+                "gid://shopify/Product/10",
+                "gid://shopify/ProductVariant/100",
+                List.of(),
+                List.of(),
+                null,
+                null,
+                ResultSourceType.PROVIDER_CATALOG,
+                "SHOPIFY_GLOBAL_CATALOG",
+                null,
+                OBSERVED_AT
         );
 
-        List<CanonicalProduct> products = service.group(candidates);
-        List<ProductCandidate> reversedCandidates = new ArrayList<>(candidates);
-        Collections.reverse(reversedCandidates);
+        CanonicalProduct grouped = service.group(List.of(globalOffer)).getFirst();
 
-        assertThat(products).singleElement().satisfies(product -> {
-            assertThat(product.key()).startsWith("product_v1_");
-            assertThat(product.offers()).hasSize(3);
-            assertThat(product.provenance()).hasSize(4);
-            assertThat(product.offers())
-                    .filteredOn(offer -> offer.identity().merchantIntegrationId().equals(firstIntegration))
-                    .singleElement()
-                    .satisfies(offer -> assertThat(offer.provenance()).hasSize(2));
+        assertThat(grouped.offers()).singleElement().satisfies(offer -> {
+            assertThat(offer.key()).startsWith("offer_v2_");
+            assertThat(offer.identity().merchantScope().externalMerchantIdentity().value())
+                    .isEqualTo("gid://shopify/Shop/42");
+            assertThat(offer.provenance()).singleElement().satisfies(provenance -> {
+                assertThat(provenance.discoverySource().value()).isEqualTo("SHOPIFY_GLOBAL_CATALOG");
+                assertThat(provenance.localRouting()).isNull();
+            });
         });
-        assertThat(service.group(reversedCandidates)).isEqualTo(products);
     }
 
     @Test
-    void variantAndSellingPlanContextRemainDistinctOffers() {
-        UUID integration = id(10);
+    void mergesGlobalAndStorefrontObservationsWithoutChangingExternalSellerOfferKey() {
+        UUID localIntegrationId = id(1);
+        SellingPlanIdentity monthly = sellingPlan("monthly");
         ProductIdentityEvidence upid = evidence(
                 ProductIdentityEvidenceKind.UPID,
                 IdentityEvidenceStrength.TRUSTED_EXACT,
                 ExternalIdentifierType.UPID,
-                "upid:example:product-1",
-                "provider-catalog"
+                "gid://shopify/p/upid-1",
+                "global-catalog"
         );
-        SellingPlanIdentity monthly = sellingPlan("monthly");
-        SellingPlanIdentity yearly = sellingPlan("yearly");
+        ProductCandidate global = externalCandidate(
+                "SHOPIFY", "gid://shopify/Shop/42", "gid://shopify/Product/10",
+                "gid://shopify/ProductVariant/100", List.of(), List.of(), monthly, upid,
+                ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL_CATALOG", null, OBSERVED_AT);
+        ProductCandidate storefront = externalCandidate(
+                "SHOPIFY", "gid://shopify/Shop/42", "gid://shopify/Product/10",
+                "gid://shopify/ProductVariant/100", List.of(), List.of(), monthly, upid,
+                ResultSourceType.MERCHANT_STOREFRONT, "gid://shopify/Shop/42",
+                localIntegrationId, OBSERVED_AT.plusSeconds(1));
+
+        assertThat(global.offer().key()).isEqualTo(storefront.offer().key());
+        CanonicalProduct grouped = service.group(List.of(global, storefront)).getFirst();
+
+        assertThat(grouped.offers()).singleElement().satisfies(offer -> {
+            assertThat(offer.key()).isEqualTo(global.offer().key());
+            assertThat(offer.provenance()).hasSize(2);
+            assertThat(offer.provenance())
+                    .extracting(value -> value.discoverySource().type())
+                    .containsExactly(ResultSourceType.MERCHANT_STOREFRONT, ResultSourceType.PROVIDER_CATALOG);
+            assertThat(offer.provenance())
+                    .filteredOn(value -> value.localRouting() != null)
+                    .singleElement()
+                    .extracting(value -> value.localRouting().merchantIntegrationId())
+                    .isEqualTo(localIntegrationId);
+        });
+    }
+
+    @Test
+    void localIntegrationFallbackSupportsGenericUcpMerchantsAndRemainsCollisionSafe() {
+        ProductCandidate first = localFallbackCandidate(id(10), "product", "variant");
+        ProductCandidate second = localFallbackCandidate(id(11), "product", "variant");
+
+        assertThat(first.offer().identity().merchantScope().externalMerchantIdentity()).isNull();
+        assertThat(first.offer().key()).isNotEqualTo(second.offer().key());
+        assertThat(service.group(List.of(first, second))).hasSize(2);
+    }
+
+    @Test
+    void differentExternalSellersRemainDistinctOffersInsideOneTrustedProduct() {
+        ProductIdentityEvidence upid = evidence(
+                ProductIdentityEvidenceKind.UPID,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                ExternalIdentifierType.UPID,
+                "gid://shopify/p/upid-2",
+                "global-catalog"
+        );
+        ProductCandidate first = externalCandidate(
+                "SHOPIFY", "gid://shopify/Shop/1", "shared-product", "shared-variant",
+                List.of(), List.of(), null, upid, ResultSourceType.PROVIDER_CATALOG,
+                "SHOPIFY_GLOBAL_CATALOG", null, OBSERVED_AT);
+        ProductCandidate second = externalCandidate(
+                "SHOPIFY", "gid://shopify/Shop/2", "shared-product", "shared-variant",
+                List.of(), List.of(), null, upid, ResultSourceType.PROVIDER_CATALOG,
+                "SHOPIFY_GLOBAL_CATALOG", null, OBSERVED_AT);
+
+        assertThat(service.group(List.of(first, second))).singleElement()
+                .satisfies(product -> assertThat(product.offers()).hasSize(2));
+    }
+
+    @Test
+    void variantSelectedOptionComponentAndSellingPlanDifferencesRemainDistinctOffers() {
+        ProductIdentityEvidence upid = evidence(
+                ProductIdentityEvidenceKind.UPID,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                ExternalIdentifierType.UPID,
+                "gid://shopify/p/upid-3",
+                "global-catalog"
+        );
+        ProductAttribute blue = new ProductAttribute(null, "Color", "Blue");
+        ProductAttribute red = new ProductAttribute(null, "Color", "Red");
+        OfferComponentIdentity belt = component("belt", "brown-belt", 1);
+        OfferComponentIdentity hat = component("hat", "blue-hat", 1);
 
         CanonicalProduct product = service.group(List.of(
-                candidate("SHOPIFY", integration, "gid://shopify/Shop/1", "gid://shopify/Product/1",
-                        "gid://shopify/ProductVariant/1", monthly, upid, "source-1", OBSERVED_AT),
-                candidate("SHOPIFY", integration, "gid://shopify/Shop/1", "gid://shopify/Product/1",
-                        "gid://shopify/ProductVariant/2", monthly, upid, "source-2", OBSERVED_AT),
-                candidate("SHOPIFY", integration, "gid://shopify/Shop/1", "gid://shopify/Product/1",
-                        "gid://shopify/ProductVariant/1", yearly, upid, "source-3", OBSERVED_AT)
+                externalCandidate("SHOPIFY", "shop", "product", "variant-1", List.of(blue),
+                        List.of(belt), sellingPlan("monthly"), upid, ResultSourceType.PROVIDER_CATALOG,
+                        "global", null, OBSERVED_AT),
+                externalCandidate("SHOPIFY", "shop", "product", "variant-2", List.of(blue),
+                        List.of(belt), sellingPlan("monthly"), upid, ResultSourceType.PROVIDER_CATALOG,
+                        "global", null, OBSERVED_AT),
+                externalCandidate("SHOPIFY", "shop", "product", "variant-1", List.of(red),
+                        List.of(belt), sellingPlan("monthly"), upid, ResultSourceType.PROVIDER_CATALOG,
+                        "global", null, OBSERVED_AT),
+                externalCandidate("SHOPIFY", "shop", "product", "variant-1", List.of(blue),
+                        List.of(hat), sellingPlan("monthly"), upid, ResultSourceType.PROVIDER_CATALOG,
+                        "global", null, OBSERVED_AT),
+                externalCandidate("SHOPIFY", "shop", "product", "variant-1", List.of(blue),
+                        List.of(belt), sellingPlan("yearly"), upid, ResultSourceType.PROVIDER_CATALOG,
+                        "global", null, OBSERVED_AT)
         )).getFirst();
 
-        assertThat(product.offers()).hasSize(3);
-        assertThat(product.identityEvidence().getFirst().identifiers().getFirst().type())
-                .isEqualTo(ExternalIdentifierType.UPID);
-        assertThat(product.offers().getFirst().identity().externalProductIdentity().value())
-                .startsWith("gid://shopify/");
+        assertThat(product.offers()).hasSize(5);
+        assertThat(product.offers()).extracting(Offer::key).doesNotHaveDuplicates();
     }
 
     @Test
@@ -111,12 +186,12 @@ class ExactProductGroupingServiceTest {
                 "same-looking-product",
                 "semantic-model-v1"
         );
-        ProductCandidate first = candidate(
-                "GENERIC_UCP", id(20), "merchant-a", "product-a", null, null,
-                semantic, "source-a", OBSERVED_AT);
-        ProductCandidate second = candidate(
-                "FUTURE_PROVIDER", id(21), "merchant-b", "product-b", null, null,
-                semantic, "source-b", OBSERVED_AT);
+        ProductCandidate first = externalCandidate(
+                "GENERIC_UCP", "merchant-a", "product-a", null, List.of(), List.of(), null,
+                semantic, ResultSourceType.MERCHANT_STOREFRONT, "merchant-a", id(20), OBSERVED_AT);
+        ProductCandidate second = externalCandidate(
+                "FUTURE_PROVIDER", "merchant-b", "product-b", null, List.of(), List.of(), null,
+                semantic, ResultSourceType.MERCHANT_STOREFRONT, "merchant-b", id(21), OBSERVED_AT);
 
         List<CanonicalProduct> forward = service.group(List.of(first, second));
         List<CanonicalProduct> reversed = service.group(List.of(second, first));
@@ -128,9 +203,10 @@ class ExactProductGroupingServiceTest {
     @Test
     void contractCollectionsAreDefensivelyCopiedAndGroupedOutputsAreImmutable() {
         List<ProductIdentityEvidence> mutableEvidence = new ArrayList<>();
-        ProductCandidate candidate = candidate(
-                "GENERIC_UCP", id(30), "merchant", "product", null, null,
-                null, "source", OBSERVED_AT, mutableEvidence);
+        ProductCandidate candidate = externalCandidate(
+                "GENERIC_UCP", "merchant", "product", null, List.of(), List.of(), null,
+                null, ResultSourceType.MERCHANT_STOREFRONT, "merchant", id(30), OBSERVED_AT,
+                mutableEvidence);
 
         mutableEvidence.add(evidence(
                 ProductIdentityEvidenceKind.GTIN,
@@ -148,57 +224,107 @@ class ExactProductGroupingServiceTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
-    private ProductCandidate candidate(
+    private ProductCandidate externalCandidate(
             String providerValue,
-            UUID integrationId,
             String merchant,
             String product,
             String variant,
+            List<ProductAttribute> selectedOptions,
+            List<OfferComponentIdentity> components,
             SellingPlanIdentity sellingPlan,
             ProductIdentityEvidence evidence,
-            String source,
+            ResultSourceType sourceType,
+            String sourceIdentity,
+            UUID localRoutingId,
             Instant observedAt
     ) {
-        return candidate(
-                providerValue,
-                integrationId,
-                merchant,
-                product,
-                variant,
-                sellingPlan,
-                evidence,
-                source,
-                observedAt,
-                evidence == null ? List.of() : List.of(evidence)
-        );
+        return externalCandidate(
+                providerValue, merchant, product, variant, selectedOptions, components, sellingPlan,
+                evidence, sourceType, sourceIdentity, localRoutingId, observedAt,
+                evidence == null ? List.of() : List.of(evidence));
     }
 
-    private ProductCandidate candidate(
+    private ProductCandidate externalCandidate(
             String providerValue,
-            UUID integrationId,
             String merchant,
             String product,
             String variant,
+            List<ProductAttribute> selectedOptions,
+            List<OfferComponentIdentity> components,
             SellingPlanIdentity sellingPlan,
             ProductIdentityEvidence evidence,
-            String source,
+            ResultSourceType sourceType,
+            String sourceIdentity,
+            UUID localRoutingId,
             Instant observedAt,
             List<ProductIdentityEvidence> evidenceValues
     ) {
         ProviderIdentity provider = new ProviderIdentity(providerValue);
         ExternalIdentifier merchantIdentity = identifier(ExternalIdentifierType.MERCHANT, provider, merchant);
+        return candidate(
+                provider,
+                OfferMerchantScope.external(merchantIdentity),
+                merchantIdentity,
+                product,
+                variant,
+                selectedOptions,
+                components,
+                sellingPlan,
+                evidenceValues,
+                sourceType,
+                sourceIdentity,
+                localRoutingId,
+                observedAt
+        );
+    }
+
+    private ProductCandidate localFallbackCandidate(UUID integrationId, String product, String variant) {
+        ProviderIdentity provider = new ProviderIdentity("GENERIC_UCP");
+        return candidate(
+                provider,
+                OfferMerchantScope.localIntegrationFallback(integrationId),
+                null,
+                product,
+                variant,
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                ResultSourceType.MERCHANT_STOREFRONT,
+                "LOCAL_STOREFRONT:" + integrationId,
+                integrationId,
+                OBSERVED_AT
+        );
+    }
+
+    private ProductCandidate candidate(
+            ProviderIdentity provider,
+            OfferMerchantScope merchantScope,
+            ExternalIdentifier externalMerchantReference,
+            String product,
+            String variant,
+            List<ProductAttribute> selectedOptions,
+            List<OfferComponentIdentity> components,
+            SellingPlanIdentity sellingPlan,
+            List<ProductIdentityEvidence> evidenceValues,
+            ResultSourceType sourceType,
+            String sourceIdentity,
+            UUID localRoutingId,
+            Instant observedAt
+    ) {
         ExternalIdentifier productIdentity = identifier(ExternalIdentifierType.PRODUCT, provider, product);
         ExternalIdentifier variantIdentity = ExternalIdentifier.optional(
                 ExternalIdentifierType.VARIANT, provider.value(), variant);
         ResultSourceReference sourceReference = new ResultSourceReference(
-                ResultSourceType.PROVIDER_CATALOG,
-                source,
-                URI.create("https://catalog.example/" + source)
+                sourceType,
+                sourceIdentity + ":" + product,
+                URI.create("https://catalog.example/" + product)
         );
         ResultProvenance provenance = new ResultProvenance(
                 provider,
-                integrationId,
-                merchantIdentity,
+                new DiscoverySourceIdentity(provider, sourceType, sourceIdentity),
+                localRoutingId == null ? null : new LocalMerchantRouting(localRoutingId),
+                externalMerchantReference,
                 productIdentity,
                 variantIdentity,
                 new ResultFreshness(observedAt, observedAt.plusSeconds(300)),
@@ -207,20 +333,20 @@ class ExactProductGroupingServiceTest {
         Offer offer = new Offer(
                 new OfferIdentity(
                         provider,
-                        integrationId,
-                        merchantIdentity,
+                        merchantScope,
                         productIdentity,
                         variantIdentity,
+                        selectedOptions,
+                        components,
                         sellingPlan
                 ),
-                merchant,
+                externalMerchantReference == null ? "Generic merchant" : externalMerchantReference.value(),
                 variant,
                 new Money(2999, "usd"),
                 null,
                 new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, 5, null),
                 List.of(),
-                URI.create("https://checkout.example/" + source),
-                List.of(),
+                URI.create("https://checkout.example/" + product),
                 List.of(provenance)
         );
         return new ProductCandidate(
@@ -251,6 +377,16 @@ class ExactProductGroupingServiceTest {
                 strength == IdentityEvidenceStrength.SEMANTIC ? 8_500 : 10_000,
                 List.of(identifier(identifierType, provider, value)),
                 new ResultSourceReference(ResultSourceType.PROVIDER_CATALOG, source, null)
+        );
+    }
+
+    private OfferComponentIdentity component(String product, String variant, int quantity) {
+        ProviderIdentity provider = new ProviderIdentity("SHOPIFY");
+        return new OfferComponentIdentity(
+                identifier(ExternalIdentifierType.PRODUCT, provider, product),
+                identifier(ExternalIdentifierType.VARIANT, provider, variant),
+                quantity,
+                List.of()
         );
     }
 
