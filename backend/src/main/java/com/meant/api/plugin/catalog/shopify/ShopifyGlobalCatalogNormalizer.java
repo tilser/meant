@@ -1,15 +1,9 @@
 package com.meant.api.plugin.catalog.shopify;
 
-import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
-import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
-import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
-import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
-import com.meant.api.module.merchant.service.query.GetMerchantIntegrationByProviderIdentityQuery;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
-import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
@@ -43,41 +37,30 @@ import java.net.URISyntaxException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-@Slf4j
 public class ShopifyGlobalCatalogNormalizer {
 
-    public static final ProviderIdentity SHOPIFY = new ProviderIdentity("SHOPIFY");
+    public static final ProviderIdentity SHOPIFY = ShopifyOfferIdentityStrategy.PROVIDER;
     private static final String UPID_PREFIX = "gid://shopify/p/";
 
-    private final MerchantIntegrationLookupService integrationLookupService;
     private final ShopifyGlobalCatalogProperties properties;
     private final Clock clock;
 
     @Autowired
-    public ShopifyGlobalCatalogNormalizer(
-            MerchantIntegrationLookupService integrationLookupService,
-            ShopifyGlobalCatalogProperties properties
-    ) {
-        this(integrationLookupService, properties, Clock.systemUTC());
+    public ShopifyGlobalCatalogNormalizer(ShopifyGlobalCatalogProperties properties) {
+        this(properties, Clock.systemUTC());
     }
 
     ShopifyGlobalCatalogNormalizer(
-            MerchantIntegrationLookupService integrationLookupService,
             ShopifyGlobalCatalogProperties properties,
             Clock clock
     ) {
-        this.integrationLookupService = integrationLookupService;
         this.properties = properties;
         this.clock = clock;
     }
@@ -85,7 +68,6 @@ public class ShopifyGlobalCatalogNormalizer {
     public NormalizedCandidates normalize(ShopifyGlobalCatalogResponse response) {
         Instant observedAt = clock.instant();
         ResultSourceReference sourceReference = sourceReference();
-        Map<String, Optional<LocalMerchantRouting>> routing = new LinkedHashMap<>();
         List<ProductCandidate> candidates = new ArrayList<>();
         boolean truncated = false;
 
@@ -96,7 +78,7 @@ public class ShopifyGlobalCatalogNormalizer {
                     truncated = true;
                     break outer;
                 }
-                candidates.add(candidate(product, variant, observedAt, sourceReference, routing));
+                candidates.add(candidate(product, variant, observedAt, sourceReference));
             }
         }
         return new NormalizedCandidates(candidates, truncated);
@@ -106,8 +88,7 @@ public class ShopifyGlobalCatalogNormalizer {
             Product product,
             Variant variant,
             Instant observedAt,
-            ResultSourceReference sourceReference,
-            Map<String, Optional<LocalMerchantRouting>> routing
+            ResultSourceReference sourceReference
     ) {
         ExternalIdentifier merchant = identifier(ExternalIdentifierType.MERCHANT, variant.seller().id());
         ExternalIdentifier provenanceProductIdentity = identifier(
@@ -115,18 +96,15 @@ public class ShopifyGlobalCatalogNormalizer {
                 firstText(variant.productId(), product.id())
         );
         ExternalIdentifier variantIdentity = identifier(ExternalIdentifierType.VARIANT, variant.id());
-        ExternalIdentifier offerProductIdentity = identifier(
-                ExternalIdentifierType.PRODUCT,
-                ShopifyOfferIdentity.productAnchor(provenanceProductIdentity.value(), variantIdentity.value())
+        ExternalIdentifier offerProductIdentity = ShopifyOfferIdentityStrategy.productIdentity(
+                SHOPIFY,
+                provenanceProductIdentity,
+                variantIdentity
         );
-        LocalMerchantRouting localRouting = routing.computeIfAbsent(
-                merchant.value(),
-                ignored -> Optional.ofNullable(resolveRouting(merchant.value()))
-        ).orElse(null);
         ResultProvenance provenance = new ResultProvenance(
                 SHOPIFY,
                 discoverySource(),
-                localRouting,
+                null,
                 merchant,
                 provenanceProductIdentity,
                 variantIdentity,
@@ -366,25 +344,6 @@ public class ShopifyGlobalCatalogNormalizer {
         return price == null || price.amount() == null || !hasText(price.currency())
                 ? null
                 : new Money(price.amount(), price.currency());
-    }
-
-    private LocalMerchantRouting resolveRouting(String sellerId) {
-        try {
-            return integrationLookupService.findByProviderIdentity(
-                            new GetMerchantIntegrationByProviderIdentityQuery(
-                                    MerchantIntegrationProvider.SHOPIFY,
-                                    sellerId
-                            )
-                    )
-                    .filter(integration -> integration.status() == MerchantIntegrationStatus.ACTIVE)
-                    .map(MerchantIntegrationResult::id)
-                    .map(LocalMerchantRouting::new)
-                    .orElse(null);
-        } catch (RuntimeException exception) {
-            // Local routing is optional provenance. Provider-wide offers remain valid if lookup is unavailable.
-            log.warn("Could not resolve optional local Shopify routing for external seller {}", sellerId);
-            return null;
-        }
     }
 
     private ExternalIdentifier identifier(ExternalIdentifierType type, String value) {

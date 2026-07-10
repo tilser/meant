@@ -19,14 +19,7 @@ import org.springframework.validation.annotation.Validated;
 public record ShopifyGlobalCatalogProperties(
         @NotNull URI endpoint,
         @NotEmpty Set<@NotBlank String> allowedHosts,
-        @NotBlank String sourceIdentity,
         @NotBlank String protocolVersion,
-        @NotBlank String extensionId,
-        @NotBlank String extensionVersion,
-        @NotNull URI extensionSpec,
-        @NotNull URI extensionSchema,
-        @NotEmpty Set<@NotBlank String> requiredScopes,
-        @NotBlank String view,
         @Min(1) @Max(50) int defaultResultLimit,
         @Min(1) @Max(50) int maximumResultLimit,
         @Min(1) @Max(50) int maximumLookupIds,
@@ -39,9 +32,14 @@ public record ShopifyGlobalCatalogProperties(
         @NotNull Duration circuitOpenDuration
 ) {
 
+    private static final String SOURCE_IDENTITY = "SHOPIFY_GLOBAL_CATALOG";
+    private static final String EXTENSION_ID = "dev.shopify.catalog.global";
+    private static final URI EXTENSION_SPEC = URI.create("https://shopify.dev/docs/agents/catalog/global-catalog");
+    private static final Set<String> REQUIRED_SCOPES = Set.of("read_global_api_catalog_search");
+    private static final String VIEW = "offer";
+
     public ShopifyGlobalCatalogProperties {
         allowedHosts = allowedHosts == null ? Set.of() : Set.copyOf(allowedHosts);
-        requiredScopes = requiredScopes == null ? Set.of() : Set.copyOf(requiredScopes);
     }
 
     @AssertTrue(message = "endpoint must be an allowlisted HTTPS endpoint without credentials or a fragment")
@@ -71,10 +69,32 @@ public record ShopifyGlobalCatalogProperties(
                 && positive(circuitOpenDuration);
     }
 
-    @AssertTrue(message = "extension metadata URIs must be absolute")
-    public boolean hasAbsoluteExtensionMetadata() {
-        return extensionSpec != null && extensionSpec.isAbsolute()
-                && extensionSchema != null && extensionSchema.isAbsolute();
+    public String sourceIdentity() {
+        return SOURCE_IDENTITY;
+    }
+
+    public String extensionId() {
+        return EXTENSION_ID;
+    }
+
+    public String extensionVersion() {
+        return protocolVersion;
+    }
+
+    public URI extensionSpec() {
+        return EXTENSION_SPEC;
+    }
+
+    public URI extensionSchema() {
+        return URI.create("https://shopify.dev/ucp/schemas/%s/shopify_catalog_global.json".formatted(protocolVersion));
+    }
+
+    public Set<String> requiredScopes() {
+        return REQUIRED_SCOPES;
+    }
+
+    public String view() {
+        return VIEW;
     }
 
     private static boolean positive(Duration duration) {

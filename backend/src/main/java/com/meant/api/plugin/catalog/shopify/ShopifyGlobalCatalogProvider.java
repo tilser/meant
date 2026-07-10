@@ -2,7 +2,6 @@ package com.meant.api.plugin.catalog.shopify;
 
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailure;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
-import com.meant.api.plugin.catalog.common.dto.CatalogSourceMessage;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceOperation;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourcePage;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
@@ -32,8 +31,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -194,7 +191,6 @@ public class ShopifyGlobalCatalogProvider {
             }
             UcpToolResponse toolResponse = client.callTool(requestOptions(), toolName, arguments);
             ParsedResponse parsed = parser.parse(toolResponse, requiredCapability, operation);
-            List<CatalogSourceMessage> messages = messages(parsed.payload());
             if ("error".equalsIgnoreCase(parsed.payload().ucp().status())) {
                 circuitBreaker.recordSuccess();
                 return new CatalogSourceResult(
@@ -204,7 +200,6 @@ public class ShopifyGlobalCatalogProvider {
                         parsed.payload().ucp().version(),
                         parsed.negotiatedCapabilities(),
                         List.of(),
-                        messages,
                         page(parsed.payload()),
                         false,
                         new CatalogSourceFailure(
@@ -224,7 +219,6 @@ public class ShopifyGlobalCatalogProvider {
                     parsed.payload().ucp().version(),
                     parsed.negotiatedCapabilities(),
                     normalized.candidates(),
-                    messages,
                     page(parsed.payload()),
                     normalized.truncated(),
                     null
@@ -307,7 +301,6 @@ public class ShopifyGlobalCatalogProvider {
                 properties.protocolVersion(),
                 NegotiatedCapabilities.none(),
                 List.of(),
-                List.of(),
                 null,
                 false,
                 failure
@@ -331,22 +324,6 @@ public class ShopifyGlobalCatalogProvider {
                 ResultSourceType.PROVIDER_CATALOG,
                 properties.sourceIdentity()
         );
-    }
-
-    private List<CatalogSourceMessage> messages(ShopifyGlobalCatalogResponse response) {
-        return response.messages() == null
-                ? List.of()
-                : response.messages().stream()
-                        .filter(message -> message != null)
-                        .map(message -> new CatalogSourceMessage(
-                                message.type(),
-                                message.code(),
-                                message.path(),
-                                message.content(),
-                                message.presentation(),
-                                safeHttpsUri(message.url())
-                        ))
-                        .toList();
     }
 
     private CatalogSourcePage page(ShopifyGlobalCatalogResponse response) {
@@ -389,28 +366,15 @@ public class ShopifyGlobalCatalogProvider {
             case RATE_LIMITED -> CatalogSourceFailureKind.RATE_LIMITED;
             case TIMEOUT -> CatalogSourceFailureKind.TIMEOUT;
             case TRANSIENT_UPSTREAM -> CatalogSourceFailureKind.TRANSIENT_UPSTREAM;
-            case UNAVAILABLE -> CatalogSourceFailureKind.UNAVAILABLE;
             case MALFORMED_RESPONSE -> CatalogSourceFailureKind.MALFORMED_RESPONSE;
         };
     }
 
     private boolean breakerFailure(ShopifyUcpTransportFailure failure) {
         return switch (failure) {
-            case RATE_LIMITED, TIMEOUT, TRANSIENT_UPSTREAM, UNAVAILABLE, MALFORMED_RESPONSE -> true;
+            case RATE_LIMITED, TIMEOUT, TRANSIENT_UPSTREAM, MALFORMED_RESPONSE -> true;
             case AUTHENTICATION, INVALID_REQUEST -> false;
         };
-    }
-
-    private URI safeHttpsUri(String value) {
-        if (!hasText(value)) {
-            return null;
-        }
-        try {
-            URI uri = new URI(value.trim());
-            return uri.isAbsolute() && "https".equalsIgnoreCase(uri.getScheme()) ? uri : null;
-        } catch (URISyntaxException exception) {
-            return null;
-        }
     }
 
     private boolean hasText(String value) {

@@ -6,23 +6,18 @@ import jakarta.annotation.PreDestroy;
 import java.io.InterruptedIOException;
 import java.net.SocketTimeoutException;
 import java.time.Clock;
-import java.time.DateTimeException;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -126,58 +121,50 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
     }
 
     private ShopifyBearerAuthenticationResult prepare(ShopifyUcpRequestOptions options) {
-        try {
-            ShopifyBearerAuthenticationResult result = authenticationStrategy.prepare(options.requiredScopes());
-            if (!result.decision().available()) {
-                throw failure(
-                        ShopifyUcpTransportFailure.AUTHENTICATION,
-                        "Shopify bearer authentication is unavailable: " + result.decision().availability(),
-                        null,
-                        null,
-                        null
-                );
-            }
-            return result;
-        } catch (ShopifyRateLimitException exception) {
-            throw failure(ShopifyUcpTransportFailure.RATE_LIMITED, "Shopify authentication was rate limited",
-                    exception.retryAfter().orElse(null), 429, exception);
-        } catch (ShopifyAuthenticationException exception) {
-            throw failure(ShopifyUcpTransportFailure.AUTHENTICATION, "Shopify authentication failed", null, null,
-                    exception);
-        } catch (ShopifyTransientException exception) {
-            throw failure(ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM,
-                    "Shopify authentication was temporarily unavailable", null, null, exception);
-        }
+        return authenticate(
+                () -> authenticationStrategy.prepare(options.requiredScopes()),
+                "authentication",
+                null
+        );
     }
 
     private ShopifyBearerAuthenticationResult refresh(
             ShopifyBearerAuthenticationResult rejected,
             ShopifyUcpRequestOptions options
     ) {
+        return authenticate(
+                () -> authenticationStrategy.refreshAfterUnauthorized(rejected, options.requiredScopes()),
+                "authentication refresh",
+                401
+        );
+    }
+
+    private ShopifyBearerAuthenticationResult authenticate(
+            Supplier<ShopifyBearerAuthenticationResult> authentication,
+            String phase,
+            Integer upstreamStatus
+    ) {
         try {
-            ShopifyBearerAuthenticationResult refreshed = authenticationStrategy.refreshAfterUnauthorized(
-                    rejected,
-                    options.requiredScopes()
-            );
-            if (!refreshed.decision().available()) {
+            ShopifyBearerAuthenticationResult result = authentication.get();
+            if (!result.decision().available()) {
                 throw failure(
                         ShopifyUcpTransportFailure.AUTHENTICATION,
-                        "Shopify bearer refresh is unavailable: " + refreshed.decision().availability(),
+                        "Shopify bearer " + phase + " is unavailable: " + result.decision().availability(),
                         null,
-                        401,
+                        upstreamStatus,
                         null
                 );
             }
-            return refreshed;
+            return result;
         } catch (ShopifyRateLimitException exception) {
-            throw failure(ShopifyUcpTransportFailure.RATE_LIMITED, "Shopify authentication refresh was rate limited",
+            throw failure(ShopifyUcpTransportFailure.RATE_LIMITED, "Shopify " + phase + " was rate limited",
                     exception.retryAfter().orElse(null), 429, exception);
         } catch (ShopifyAuthenticationException exception) {
-            throw failure(ShopifyUcpTransportFailure.AUTHENTICATION, "Shopify authentication refresh failed",
-                    null, 401, exception);
+            throw failure(ShopifyUcpTransportFailure.AUTHENTICATION, "Shopify " + phase + " failed",
+                    null, upstreamStatus, exception);
         } catch (ShopifyTransientException exception) {
             throw failure(ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM,
-                    "Shopify authentication refresh was temporarily unavailable", null, null, exception);
+                    "Shopify " + phase + " was temporarily unavailable", null, upstreamStatus, exception);
         }
     }
 
@@ -207,7 +194,7 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
             }
             if (status == 429) {
                 throw failure(ShopifyUcpTransportFailure.RATE_LIMITED, "Shopify Global Catalog rate limited the request",
-                        retryAfter(exception.getResponseHeaders()), status, null);
+                        ShopifyHttpResponseSupport.retryAfter(exception.getResponseHeaders(), clock), status, null);
             }
             if (status == 408) {
                 throw failure(ShopifyUcpTransportFailure.TIMEOUT, "Shopify Global Catalog timed out the request",
@@ -231,13 +218,13 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
     }
 
     private ShopifyUcpTransportException classify(Throwable throwable) {
-        if (hasCause(throwable, HttpMessageConversionException.class)) {
+        if (ShopifyHttpResponseSupport.hasCause(throwable, HttpMessageConversionException.class)) {
             return failure(ShopifyUcpTransportFailure.MALFORMED_RESPONSE,
                     "Shopify Global Catalog response was not valid JSON", null, null, null);
         }
         if (throwable instanceof ResourceAccessException
-                && (hasCause(throwable, SocketTimeoutException.class)
-                || hasCause(throwable, InterruptedIOException.class))) {
+                && (ShopifyHttpResponseSupport.hasCause(throwable, SocketTimeoutException.class)
+                || ShopifyHttpResponseSupport.hasCause(throwable, InterruptedIOException.class))) {
             return failure(ShopifyUcpTransportFailure.TIMEOUT, "Shopify Global Catalog request timed out",
                     null, null, throwable);
         }
@@ -254,39 +241,6 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
                 options.readTimeout()
         );
         return restClientBuilder.clone().requestFactory(requestFactory).build();
-    }
-
-    private Duration retryAfter(HttpHeaders headers) {
-        if (headers == null) {
-            return null;
-        }
-        String value = headers.getFirst(HttpHeaders.RETRY_AFTER);
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        try {
-            long seconds = Long.parseLong(value.trim());
-            return seconds < 0 ? null : Duration.ofSeconds(seconds);
-        } catch (NumberFormatException ignored) {
-            try {
-                Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
-                Duration duration = Duration.between(clock.instant(), retryAt);
-                return duration.isNegative() ? Duration.ZERO : duration;
-            } catch (DateTimeException | ArithmeticException invalidDate) {
-                return null;
-            }
-        }
-    }
-
-    private boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (type.isInstance(current)) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
     }
 
     private ShopifyUcpTransportException failure(

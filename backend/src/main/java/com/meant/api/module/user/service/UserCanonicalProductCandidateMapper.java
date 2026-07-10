@@ -26,17 +26,21 @@ import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
-import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentity;
+import com.meant.api.plugin.catalog.common.support.OfferIdentityStrategy;
 import com.meant.api.plugin.support.UcpMoney;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class UserCanonicalProductCandidateMapper {
+
+    private final List<OfferIdentityStrategy> offerIdentityStrategies;
 
     public ProductCandidate from(
             UserProductSearchProductResult product,
@@ -59,10 +63,10 @@ public class UserCanonicalProductCandidateMapper {
                 provider.value(),
                 product.selectedVariantId()
         );
-        ExternalIdentifier offerProductIdentity = new ExternalIdentifier(
-                ExternalIdentifierType.PRODUCT,
-                provider.value(),
-                shopifyOfferProductAnchor(provider, provenanceProductIdentity.value(), variantIdentity)
+        ExternalIdentifier offerProductIdentity = offerProductIdentity(
+                provider,
+                provenanceProductIdentity,
+                variantIdentity
         );
         ResultSourceReference sourceReference = new ResultSourceReference(
                 sourceType,
@@ -139,17 +143,16 @@ public class UserCanonicalProductCandidateMapper {
                 : new ExternalIdentifier(ExternalIdentifierType.MERCHANT, provider.value(), externalIdentity);
     }
 
-    private String shopifyOfferProductAnchor(
+    private ExternalIdentifier offerProductIdentity(
             ProviderIdentity provider,
-            String externalProductId,
+            ExternalIdentifier productIdentity,
             ExternalIdentifier variantIdentity
     ) {
-        return "SHOPIFY".equals(provider.value())
-                ? ShopifyOfferIdentity.productAnchor(
-                        externalProductId,
-                        variantIdentity == null ? null : variantIdentity.value()
-                )
-                : externalProductId;
+        return offerIdentityStrategies.stream()
+                .filter(strategy -> strategy.supports(provider))
+                .findFirst()
+                .map(strategy -> strategy.product(provider, productIdentity, variantIdentity))
+                .orElse(productIdentity);
     }
 
     private String discoverySourceValue(

@@ -4,14 +4,8 @@ import com.meant.api.plugin.transport.dto.ShopifyTokenRequest;
 import com.meant.api.plugin.transport.dto.ShopifyTokenResponse;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
 import java.time.Clock;
-import java.time.DateTimeException;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConversionException;
@@ -65,7 +59,8 @@ public class ShopifyTokenClient {
                         throw new ShopifyAuthenticationException("Shopify rejected the configured client credentials");
                     })
                     .onStatus(status -> status.value() == 429, (httpRequest, httpResponse) -> {
-                        throw new ShopifyRateLimitException(retryAfter(httpResponse.getHeaders()));
+                        throw new ShopifyRateLimitException(ShopifyHttpResponseSupport.retryAfter(
+                                httpResponse.getHeaders(), clock));
                     })
                     .onStatus(HttpStatusCode::is5xxServerError, (httpRequest, httpResponse) -> {
                         throw new ShopifyTransientException("Shopify token endpoint returned a server failure");
@@ -79,7 +74,7 @@ public class ShopifyTokenClient {
         } catch (ShopifyTokenClientException exception) {
             throw exception;
         } catch (RestClientException exception) {
-            if (hasConversionCause(exception)) {
+            if (ShopifyHttpResponseSupport.hasCause(exception, HttpMessageConversionException.class)) {
                 throw new ShopifyMalformedTokenResponseException("Shopify token response was not valid JSON");
             }
             throw new ShopifyTransientException("Could not reach the Shopify token endpoint");
@@ -99,33 +94,4 @@ public class ShopifyTokenClient {
         }
     }
 
-    private boolean hasConversionCause(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof HttpMessageConversionException) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    private Duration retryAfter(HttpHeaders headers) {
-        String value = headers.getFirst(HttpHeaders.RETRY_AFTER);
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        try {
-            long seconds = Long.parseLong(value.trim());
-            return seconds < 0 ? null : Duration.ofSeconds(seconds);
-        } catch (NumberFormatException ignored) {
-            try {
-                Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
-                Duration duration = Duration.between(clock.instant(), retryAt);
-                return duration.isNegative() ? Duration.ZERO : duration;
-            } catch (DateTimeException | ArithmeticException invalidDate) {
-                return null;
-            }
-        }
-    }
 }

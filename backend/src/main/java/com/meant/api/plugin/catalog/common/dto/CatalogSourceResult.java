@@ -11,7 +11,6 @@ public record CatalogSourceResult(
         String protocolVersion,
         NegotiatedCapabilities negotiatedCapabilities,
         List<ProductCandidate> candidates,
-        List<CatalogSourceMessage> messages,
         CatalogSourcePage page,
         boolean truncated,
         CatalogSourceFailure failure
@@ -29,7 +28,6 @@ public record CatalogSourceResult(
                 ? NegotiatedCapabilities.none()
                 : negotiatedCapabilities;
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
-        messages = messages == null ? List.of() : List.copyOf(messages);
         if (failure != null && !candidates.isEmpty()) {
             throw new IllegalArgumentException("A failed source result must not expose partial unvalidated candidates");
         }

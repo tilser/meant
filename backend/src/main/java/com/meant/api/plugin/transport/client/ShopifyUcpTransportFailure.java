@@ -6,6 +6,5 @@ public enum ShopifyUcpTransportFailure {
     RATE_LIMITED,
     TIMEOUT,
     TRANSIENT_UPSTREAM,
-    UNAVAILABLE,
     MALFORMED_RESPONSE
 }

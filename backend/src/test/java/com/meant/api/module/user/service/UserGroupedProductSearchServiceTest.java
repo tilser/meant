@@ -19,6 +19,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
+import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentityStrategy;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -56,7 +57,7 @@ class UserGroupedProductSearchServiceTest {
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
                 flatSearchService,
                 integrationLookupService,
-                new UserCanonicalProductCandidateMapper(),
+                candidateMapper(),
                 new ExactProductGroupingService()
         );
 
@@ -69,7 +70,7 @@ class UserGroupedProductSearchServiceTest {
                 assertThat(offer.identity().merchantScope().externalMerchantIdentity().value())
                         .isEqualTo("gid://shopify/Shop/100");
                 assertThat(offer.identity().externalProductIdentity().value())
-                        .isEqualTo("shopify-variant-product:v1:gid://shopify/ProductVariant/300");
+                        .isEqualTo("variant-product:v1:gid://shopify/ProductVariant/300");
                 assertThat(offer.identity().externalVariantIdentity().type())
                         .isEqualTo(ExternalIdentifierType.VARIANT);
                 assertThat(offer.price().minorUnits()).isEqualTo(4200);
@@ -113,7 +114,7 @@ class UserGroupedProductSearchServiceTest {
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
                 new StubUserProductSearchService(flatResult),
                 new StubMerchantIntegrationLookupService(integration),
-                new UserCanonicalProductCandidateMapper(),
+                candidateMapper(),
                 new ExactProductGroupingService()
         );
 
@@ -134,19 +135,24 @@ class UserGroupedProductSearchServiceTest {
     void omitsPriceWhenTheFlatCandidateHasNoCurrency() {
         UserProductSearchProductResult flatProduct = flatProduct(null, null);
 
-        assertThat(new UserCanonicalProductCandidateMapper()
-                .from(
-                        flatProduct,
-                        integration(flatProduct.merchantId()),
-                        Instant.parse("2026-07-10T10:00:00Z"),
-                        ResultSourceType.MERCHANT_STOREFRONT
-                )
-                .offer()
-                .price()).isNull();
+        var candidate = new UserCanonicalProductCandidateMapper(List.of()).from(
+                flatProduct,
+                integration(flatProduct.merchantId()),
+                Instant.parse("2026-07-10T10:00:00Z"),
+                ResultSourceType.MERCHANT_STOREFRONT
+        );
+
+        assertThat(candidate.offer().price()).isNull();
+        assertThat(candidate.offer().identity().externalProductIdentity().value())
+                .isEqualTo("gid://shopify/Product/200");
     }
 
     private UserProductSearchProductResult flatProduct() {
         return flatProduct("usd", "usd");
+    }
+
+    private UserCanonicalProductCandidateMapper candidateMapper() {
+        return new UserCanonicalProductCandidateMapper(List.of(new ShopifyOfferIdentityStrategy()));
     }
 
     private UserProductSearchProductResult flatProduct(

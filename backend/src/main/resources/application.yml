@@ -131,14 +131,7 @@ shopify:
   global-catalog:
     endpoint: ${SHOPIFY_GLOBAL_CATALOG_ENDPOINT:https://catalog.shopify.com/api/ucp/mcp}
     allowed-hosts: ${SHOPIFY_GLOBAL_CATALOG_ALLOWED_HOSTS:catalog.shopify.com}
-    source-identity: ${SHOPIFY_GLOBAL_CATALOG_SOURCE_IDENTITY:SHOPIFY_GLOBAL_CATALOG}
     protocol-version: ${SHOPIFY_GLOBAL_CATALOG_PROTOCOL_VERSION:2026-04-08}
-    extension-id: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_ID:dev.shopify.catalog.global}
-    extension-version: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_VERSION:2026-04-08}
-    extension-spec: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_SPEC:https://shopify.dev/docs/agents/catalog/global-catalog}
-    extension-schema: ${SHOPIFY_GLOBAL_CATALOG_EXTENSION_SCHEMA:https://shopify.dev/ucp/schemas/2026-04-08/shopify_catalog_global.json}
-    required-scopes: ${SHOPIFY_GLOBAL_CATALOG_REQUIRED_SCOPES:read_global_api_catalog_search}
-    view: ${SHOPIFY_GLOBAL_CATALOG_VIEW:offer}
     default-result-limit: ${SHOPIFY_GLOBAL_CATALOG_DEFAULT_RESULT_LIMIT:10}
     maximum-result-limit: ${SHOPIFY_GLOBAL_CATALOG_MAXIMUM_RESULT_LIMIT:50}
     maximum-lookup-ids: ${SHOPIFY_GLOBAL_CATALOG_MAXIMUM_LOOKUP_IDS:50}

@@ -1,11 +1,6 @@
 package com.meant.api.plugin.catalog.shopify;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
-import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
-import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
-import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
-import com.meant.api.module.merchant.service.query.GetMerchantIntegrationByProviderIdentityQuery;
 import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
@@ -41,7 +36,6 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -150,13 +144,14 @@ class ShopifyGlobalCatalogProviderTest {
         OfferIdentity storefrontIdentity = new OfferIdentity(
                 global.offer().identity().provider(),
                 global.offer().identity().merchantScope(),
-                new ExternalIdentifier(
-                        ExternalIdentifierType.PRODUCT,
-                        global.offer().identity().provider().value(),
-                        ShopifyOfferIdentity.productAnchor(
-                                "gid://shopify/Product/merchant-product-1",
-                                global.offer().identity().externalVariantIdentity().value()
-                        )
+                ShopifyOfferIdentityStrategy.productIdentity(
+                        global.offer().identity().provider(),
+                        new ExternalIdentifier(
+                                ExternalIdentifierType.PRODUCT,
+                                global.offer().identity().provider().value(),
+                                "gid://shopify/Product/merchant-product-1"
+                        ),
+                        global.offer().identity().externalVariantIdentity()
                 ),
                 global.offer().identity().externalVariantIdentity(),
                 global.offer().identity().selectedOptions(),
@@ -405,39 +400,6 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
-    void attachesKnownLocalRoutingOnlyAsOptionalProvenance() throws Exception {
-        ShopifyGlobalCatalogProperties properties = properties(3);
-        UUID integrationId = UUID.fromString("00000000-0000-0000-0000-000000000099");
-        MerchantIntegrationResult integration = integration(integrationId, "gid://shopify/Shop/1");
-        MerchantIntegrationLookupService lookup = new StubMerchantIntegrationLookupService(
-                Map.of("gid://shopify/Shop/1", integration)
-        );
-        ShopifyGlobalCatalogResponseParser parser = new ShopifyGlobalCatalogResponseParser(objectMapper, properties);
-        var parsed = parser.parse(
-                response(globalResponse()),
-                com.meant.api.plugin.catalog.search.CatalogSearchCapability.ID
-        );
-        ShopifyGlobalCatalogNormalizer normalizer = new ShopifyGlobalCatalogNormalizer(
-                lookup,
-                properties,
-                Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
-        );
-
-        List<ProductCandidate> candidates = normalizer.normalize(parsed.payload()).candidates();
-
-        assertThat(candidates).filteredOn(candidate -> candidate.offer().merchantName().equals("Seller One"))
-                .singleElement()
-                .satisfies(candidate -> {
-                    assertThat(candidate.offer().identity().merchantScope().externalMerchantIdentity()).isNotNull();
-                    assertThat(candidate.offer().provenance().getFirst().localRouting().merchantIntegrationId())
-                            .isEqualTo(integrationId);
-                });
-        assertThat(candidates).filteredOn(candidate -> candidate.offer().merchantName().equals("Seller Two"))
-                .singleElement()
-                .satisfies(candidate -> assertThat(candidate.offer().provenance().getFirst().localRouting()).isNull());
-    }
-
-    @Test
     void boundsConcurrentCallsToTheSharedUpstream() throws Exception {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -488,10 +450,8 @@ class ShopifyGlobalCatalogProviderTest {
             ShopifyGlobalCatalogProperties properties,
             ShopifyGlobalCatalogCircuitBreaker circuitBreaker
     ) {
-        MerchantIntegrationLookupService lookup = new StubMerchantIntegrationLookupService(Map.of());
         ShopifyGlobalCatalogResponseParser parser = new ShopifyGlobalCatalogResponseParser(objectMapper, properties);
         ShopifyGlobalCatalogNormalizer normalizer = new ShopifyGlobalCatalogNormalizer(
-                lookup,
                 properties,
                 Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
         );
@@ -502,14 +462,7 @@ class ShopifyGlobalCatalogProviderTest {
         return new ShopifyGlobalCatalogProperties(
                 URI.create("https://catalog.shopify.test/api/ucp/mcp"),
                 Set.of("catalog.shopify.test"),
-                "SHOPIFY_GLOBAL_CATALOG",
                 "2026-04-08",
-                "dev.shopify.catalog.global",
-                "2026-04-08",
-                URI.create("https://shopify.dev/docs/agents/catalog/global-catalog"),
-                URI.create("https://shopify.dev/ucp/schemas/2026-04-08/shopify_catalog_global.json"),
-                Set.of("read_global_api_catalog_search"),
-                "offer",
                 10,
                 50,
                 50,
@@ -546,27 +499,6 @@ class ShopifyGlobalCatalogProviderTest {
         }
     }
 
-    private MerchantIntegrationResult integration(UUID id, String externalMerchantId) {
-        return new MerchantIntegrationResult(
-                id,
-                null,
-                MerchantIntegrationProvider.SHOPIFY,
-                null,
-                Set.of(),
-                externalMerchantId,
-                null,
-                null,
-                null,
-                "2026-04-08",
-                null,
-                MerchantIntegrationStatus.ACTIVE,
-                null,
-                OBSERVED_AT,
-                OBSERVED_AT,
-                OBSERVED_AT
-        );
-    }
-
     private static final class ShopifyGlobalCatalogExtensionCapabilityId {
         private static final com.meant.api.plugin.spi.CapabilityId ID =
                 com.meant.api.plugin.spi.CapabilityId.of("dev.shopify.catalog.global");
@@ -600,23 +532,6 @@ class ShopifyGlobalCatalogProviderTest {
                 throw exception;
             }
             return responses.getOrDefault(toolName, responses.get("*"));
-        }
-    }
-
-    private static final class StubMerchantIntegrationLookupService extends MerchantIntegrationLookupService {
-
-        private final Map<String, MerchantIntegrationResult> integrations;
-
-        private StubMerchantIntegrationLookupService(Map<String, MerchantIntegrationResult> integrations) {
-            super(null);
-            this.integrations = integrations;
-        }
-
-        @Override
-        public Optional<MerchantIntegrationResult> findByProviderIdentity(
-                GetMerchantIntegrationByProviderIdentityQuery query
-        ) {
-            return Optional.ofNullable(integrations.get(query.externalMerchantId()));
         }
     }
 
