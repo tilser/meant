@@ -149,6 +149,7 @@ Represent a merchant's zero-to-many commerce integrations instead of assuming on
 
 Priority: P0  
 Dependencies: PCOS-002  
+Implementation status: Complete
 
 **Goal**
 
