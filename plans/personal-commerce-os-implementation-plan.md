@@ -77,6 +77,8 @@ External continue_url fallback when required
 - Do not log access tokens, ECP auth values, checkout payload credentials, payment credentials, buyer addresses, signatures, or complete raw checkout responses.
 - Every remote provider call has explicit connect/read/overall deadlines, concurrency limits, retry classification, and metrics.
 - A provider failure produces partial results or a scoped checkout fallback; it must not fail unrelated providers or merchant carts.
+- Contract, failure-path, security, redaction, and observability coverage ships with the capability that introduces the behavior. It is not deferred to a later hardening phase.
+- The first milestone needs coarse independent kill switches for Shopify discovery, embedded checkout, direct completion, and ECP delegations. Percentage rollouts, user cohorts, shadow traffic, dashboards, and scheduled live journeys are post-milestone release work.
 
 ## Phase 0 — Access and Domain Foundations
 
@@ -283,6 +285,8 @@ Search Shopify's cross-merchant catalog as a first-class discovery source.
 - A Shopify UPID group becomes one product candidate with independent seller offers.
 - A failure returns a source-scoped error and allows other discovery providers to complete.
 - Provider endpoint and protocol version are configuration/negotiation data rather than hard-coded throughout orchestration code.
+- Deterministic, redacted contract fixtures cover required fields, unknown extensions, supported protocol versions, malformed responses, throttling, authentication failures, and permission failures without live Shopify credentials.
+- Endpoint allowlisting and credential-redaction tests prove that Shopify authentication cannot be sent to an untrusted or generic UCP endpoint.
 
 **References**
 
@@ -307,6 +311,7 @@ Run Shopify Global Catalog and current Meant merchant discovery in parallel unde
 - Preserve the existing streamed candidate path and attach source/provenance to every event.
 - Prevent double-searching a Shopify merchant through the generic path when the same query is already covered by Global Catalog, except for explicit fallback/enrichment policy.
 - Define deterministic completion and cancellation when the frontend disconnects.
+- Emit provider-scoped latency, timeout, rate-limit, auth-refresh, candidate-count, and partial-success metrics.
 
 **Acceptance criteria**
 
@@ -314,6 +319,7 @@ Run Shopify Global Catalog and current Meant merchant discovery in parallel unde
 - A failing or slow provider does not block successful source results beyond the overall search deadline.
 - The same Shopify merchant is not redundantly fanned out by default.
 - Search cancellation stops outstanding provider work.
+- Operators can identify the provider and failure class for partial and failed searches without logging result payloads or credentials.
 
 ### PCOS-008 — Implement same-merchant deduplication and cross-merchant product grouping
 
@@ -498,6 +504,8 @@ Run the full Shopify Cart MCP and Checkout MCP lifecycle through typed, token-au
 - Persist remote cart/checkout IDs, status, `continue_url`, protocol version, integration ID, and last synchronization timestamp.
 - Map `incomplete`, `requires_escalation`, `ready_for_complete`, processing, completed, cancelled, and failure states explicitly.
 - Keep remote I/O outside database transactions.
+- Add redacted contract fixtures for Shopify cart and checkout requests/responses, including unknown extensions, protocol-version changes, throttling, permission failures, and malformed responses.
+- Emit provider/integration-scoped cart and checkout latency, timeout, rate-limit, auth-refresh, state-transition, and failure metrics.
 
 **Acceptance criteria**
 
@@ -505,6 +513,7 @@ Run the full Shopify Cart MCP and Checkout MCP lifecycle through typed, token-au
 - Repeating checkout creation for the same cart returns/reuses the same logical checkout.
 - Unknown or new provider fields do not break typed core mapping; raw transport archives stay at the adapter boundary where permitted.
 - No cart or checkout request/response containing buyer or credential data is logged in full.
+- Deterministic tests cover timeout, retry classification, stale state, idempotency, unknown outcomes, and token redaction without live Shopify credentials.
 
 **Reference**
 
@@ -527,6 +536,7 @@ Give the frontend the short-lived information required to open Checkout Kit with
 - Bind the session to the authenticated Meant user, cart, merchant integration, checkout ID, allowed origin, and expiration.
 - Validate every completion/cancel callback against the session binding.
 - Return an explicit external `continue_url` fallback when embedded checkout is unavailable.
+- Add security tests for session ownership, expiration, replay, allowed origins, endpoint/redirect validation, and redaction of `ec_auth` and buyer data.
 
 **Acceptance criteria**
 
@@ -554,6 +564,8 @@ Keep the buyer inside Meant while Shopify renders and operates the merchant chec
 - Configure CSP, allowed origins, referrer policy, and logging redaction.
 - Fall back to the external `continue_url` without losing cart state when Checkout Kit is unsupported or fails before purchase.
 - Record checkout start, ready latency, completion, cancellation, SDK error, recovery, and fallback metrics.
+- Add an independently configurable embedded-checkout kill switch that preserves external handoff and active checkout state.
+- Add a protected manual or CI environment journey against a Shopify development shop for selected offer → cart → Checkout Kit/ECP → verified completion or fallback.
 
 **Acceptance criteria**
 
@@ -561,6 +573,7 @@ Keep the buyer inside Meant while Shopify renders and operates the merchant chec
 - `ec.complete` produces a verified completed state in Meant, not only a frontend success screen.
 - Closing or reloading the surface can resume or reconcile the active checkout.
 - Unsupported browsers receive a safe handoff.
+- The real development-shop journey can be run before release, while deterministic CI remains independent of live Shopify credentials.
 
 **References**
 
@@ -610,6 +623,8 @@ Use the existing checkout safety foundation to finalize eligible Shopify checkou
 - On timeout or unknown outcome, call `get_checkout` before any retry. Never blindly repeat a money-moving request.
 - Interpret completed, processing, escalation/SCA, recoverable, cancelled, and terminal failure states.
 - Record an immutable completion attempt/outcome without storing payment credentials.
+- Keep direct completion behind an independent kill switch so embedded checkout and external handoff remain usable when it is disabled.
+- Add security and failure-path tests for permission denial, total mismatch, replay, idempotency, timeout, processing, and unknown outcomes.
 
 **Acceptance criteria**
 
@@ -643,65 +658,21 @@ Make checkout progressively more convenient while advertising only delegations M
 - Disabling a handler removes the advertised delegation without disabling embedded checkout.
 - Security review approves payment delegation before production enablement.
 
-## Phase 4 — Production Hardening and Release
+## First-Milestone Validation and Release Boundary
 
-### PCOS-020 — Add provider conformance, security, and observability coverage
+Phase 3 completes the functional Shopify milestone. A production-like user can test the complete discovery → grouped product → selected offer → cart → embedded checkout journey as soon as the relevant Phase 3 tickets are complete; there is no separate hardening phase blocking that test.
 
-Priority: P0 before production rollout  
-Dependencies: PCOS-006 through PCOS-019  
+Quality is delivered continuously:
 
-**Goal**
+- Each provider, cart, checkout, and ECP ticket owns its deterministic contract fixtures, failure-path tests, security tests, redaction checks, and operational metrics.
+- PCOS-016 owns the protected Shopify development-shop journey for the base embedded checkout flow. PCOS-017 extends that journey to multiple merchants. PCOS-018 and PCOS-019 add direct completion and progressive delegations without blocking the first ECP test.
+- Shopify discovery, embedded checkout, direct completion, and ECP delegations each retain a coarse independent kill switch and a safe fallback. Granular cohort/percentage rollout infrastructure is not part of the first functional milestone.
 
-Make provider compatibility and checkout safety measurable rather than relying on manual happy-path testing.
+The following work is intentionally deferred until Meant is preparing for broader production rollout: shadow traffic, cohort and percentage rollouts, formal rollback thresholds, scheduled live journeys, production dashboards, and alerting. These are release operations, not missing product functionality.
 
-**Work**
+## Post-Milestone Backlog — Deferred but Designed In
 
-- Build recorded, redacted contract fixtures for Shopify auth, catalog, cart, checkout, and ECP lifecycle messages.
-- Add adapter conformance tests for required fields, unknown extensions, protocol versions, malformed responses, throttling, and permission failures.
-- Add an end-to-end test against a Shopify development shop for discovery → offer → cart → Checkout Kit/ECP → completion/fallback.
-- Add security tests for SSRF/endpoint allowlisting, session ownership, token redaction, replay, idempotency, CSP/origin restrictions, and unsafe redirects.
-- Emit metrics by provider/integration for latency, timeout, rate limiting, auth refresh, candidate counts, dedupe rate/confidence, source diversity, cart errors, checkout ready time, completion, cancellation, and fallback.
-- Add dashboards and alerts for token failures, Global Catalog degradation, checkout failure rate, and completion reconciliation backlog.
-
-**Acceptance criteria**
-
-- CI runs deterministic contract tests without live Shopify credentials.
-- A protected scheduled/manual environment runs the real development-shop journey.
-- Logs and traces pass a secret/PII leakage test.
-- Release owners can identify which provider, merchant, capability, and stage caused a failure.
-
-### PCOS-021 — Roll out Shopify end-to-end behind granular flags
-
-Priority: P0  
-Dependencies: PCOS-020  
-
-**Goal**
-
-Release the flow incrementally with independent rollback for discovery, embedded checkout, delegations, and direct completion.
-
-**Work**
-
-- Add environment, percentage, user cohort, and integration-level rollout controls.
-- Roll out in this order:
-  1. shadow Global Catalog calls and compare coverage,
-  2. visible Shopify grouped results,
-  3. Shopify cart and checkout session creation,
-  4. Checkout Kit/ECP for internal users,
-  5. embedded checkout canary,
-  6. direct completion canary after permission approval,
-  7. individual ECP delegations.
-- Define rollback thresholds for latency, dedupe errors, stale offers, cart failures, embedded checkout failures, and completion mismatch.
-- Keep external handoff available throughout the rollout.
-
-**Acceptance criteria**
-
-- Each execution rail can be disabled without redeploying or disabling all Shopify discovery.
-- Rollback preserves active cart/checkout state and gives the user a safe continuation path.
-- Product and engineering sign off against the exit metrics below.
-
-## Phase 5 — Deferred but Designed In
-
-### PCOS-022 — Preserve order-readiness data without building order monitoring yet
+### PCOS-020 — Preserve order-readiness data without building order monitoring yet
 
 Priority: P1 foundation; full orders phase deferred  
 Dependencies: PCOS-014, PCOS-018  
@@ -723,10 +694,10 @@ Avoid losing the identifiers and consent boundaries required for later order too
 - No payment credential or reusable bearer token is stored with the checkout.
 - The schema supports multiple merchant orders within one Meant checkout journey.
 
-### PCOS-023 — Stabilize the headless Commerce Runtime and next-provider kit
+### PCOS-021 — Stabilize the headless Commerce Runtime and next-provider kit
 
 Priority: P2 after Shopify production proof  
-Dependencies: PCOS-021  
+Dependencies: PCOS-019 and Shopify production proof
 
 **Goal**
 
