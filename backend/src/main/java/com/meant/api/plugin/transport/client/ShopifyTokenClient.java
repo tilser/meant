@@ -3,11 +3,13 @@ package com.meant.api.plugin.transport.client;
 import com.meant.api.plugin.transport.dto.ShopifyTokenRequest;
 import com.meant.api.plugin.transport.dto.ShopifyTokenResponse;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -24,10 +26,21 @@ public class ShopifyTokenClient {
 
     private final RestClient restClient;
     private final ShopifyAgentAuthProperties properties;
+    private final Clock clock;
 
+    @Autowired
     public ShopifyTokenClient(RestClient.Builder restClientBuilder, ShopifyAgentAuthProperties properties) {
+        this(restClientBuilder, properties, Clock.systemUTC());
+    }
+
+    ShopifyTokenClient(
+            RestClient.Builder restClientBuilder,
+            ShopifyAgentAuthProperties properties,
+            Clock clock
+    ) {
         this.restClient = restClientBuilder.clone().build();
         this.properties = properties;
+        this.clock = clock;
     }
 
     public ShopifyTokenResponse exchangeClientCredentials() {
@@ -107,7 +120,7 @@ public class ShopifyTokenClient {
         } catch (NumberFormatException ignored) {
             try {
                 Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
-                Duration duration = Duration.between(Instant.now(), retryAt);
+                Duration duration = Duration.between(clock.instant(), retryAt);
                 return duration.isNegative() ? Duration.ZERO : duration;
             } catch (DateTimeParseException invalidDate) {
                 return null;

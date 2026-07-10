@@ -15,7 +15,10 @@ import com.meant.api.plugin.transport.dto.ShopifyTokenRequest;
 import com.meant.api.plugin.transport.dto.ShopifyTokenResponse;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
 import java.net.URI;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -78,6 +81,20 @@ class ShopifyTokenClientTest {
         assertThatThrownBy(() -> new ShopifyTokenClient(builder, properties()).exchangeClientCredentials())
                 .isInstanceOfSatisfying(ShopifyRateLimitException.class, exception ->
                         assertThat(exception.retryAfter()).contains(Duration.ofSeconds(7)));
+        server.verify();
+    }
+
+    @Test
+    void calculatesDateBasedRetryAfterFromInjectedClock() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.shopify.test/auth/access_token"))
+                .andRespond(withRawStatus(429).header(HttpHeaders.RETRY_AFTER, "Fri, 10 Jul 2026 12:00:30 GMT"));
+        Clock clock = Clock.fixed(Instant.parse("2026-07-10T12:00:00Z"), ZoneOffset.UTC);
+
+        assertThatThrownBy(() -> new ShopifyTokenClient(builder, properties(), clock).exchangeClientCredentials())
+                .isInstanceOfSatisfying(ShopifyRateLimitException.class, exception ->
+                        assertThat(exception.retryAfter()).contains(Duration.ofSeconds(30)));
         server.verify();
     }
 

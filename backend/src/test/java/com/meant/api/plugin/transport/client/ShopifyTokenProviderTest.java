@@ -1,10 +1,12 @@
 package com.meant.api.plugin.transport.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.plugin.transport.dto.ShopifyTokenScopeDecision.Availability;
+import com.meant.api.plugin.transport.dto.ShopifyTokenResponse;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -142,6 +145,34 @@ class ShopifyTokenProviderTest {
     }
 
     @Test
+    void clearsFailedSingleFlightWhenTokenAcquisitionThrowsAnError() {
+        ShopifyAgentAuthProperties properties = properties(Duration.ofSeconds(5));
+        AtomicInteger attempts = new AtomicInteger();
+        ShopifyTokenClient client = new ShopifyTokenClient(RestClient.builder(), properties) {
+            @Override
+            public ShopifyTokenResponse exchangeClientCredentials() {
+                if (attempts.getAndIncrement() == 0) {
+                    throw new AssertionError("simulated acquisition error");
+                }
+                return new ShopifyTokenResponse("recovered-token", "Bearer", 60L, "catalog:read");
+            }
+        };
+        ShopifyTokenProvider provider = new ShopifyTokenProvider(
+                client,
+                properties,
+                new ObjectMapper(),
+                new MutableClock(NOW)
+        );
+
+        assertThatThrownBy(provider::currentToken)
+                .isInstanceOf(AssertionError.class)
+                .hasMessage("simulated acquisition error");
+
+        assertThat(provider.currentToken().value()).isEqualTo("recovered-token");
+        assertThat(attempts).hasValue(2);
+    }
+
+    @Test
     void extractsOptionalJwtExpiryScopesAndLimitsWithoutTreatingClaimsAsVerification() {
         TestContext context = context(Duration.ofSeconds(5));
         String token = jwt("""
@@ -239,15 +270,7 @@ class ShopifyTokenProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         URI endpoint = URI.create("https://api.shopify.test/auth/access_token");
-        ShopifyAgentAuthProperties properties = new ShopifyAgentAuthProperties(
-                true,
-                "test",
-                "configured-client",
-                "configured-secret",
-                endpoint,
-                refreshSkew,
-                Duration.ofHours(1)
-        );
+        ShopifyAgentAuthProperties properties = properties(refreshSkew);
         MutableClock clock = new MutableClock(NOW);
         ShopifyTokenClient client = new ShopifyTokenClient(builder, properties);
         ShopifyTokenProvider provider = new ShopifyTokenProvider(client, properties, new ObjectMapper(), clock);
@@ -256,6 +279,18 @@ class ShopifyTokenProviderTest {
                 server,
                 clock,
                 new ShopifyBearerAuthenticationStrategy(provider, properties)
+        );
+    }
+
+    private ShopifyAgentAuthProperties properties(Duration refreshSkew) {
+        return new ShopifyAgentAuthProperties(
+                true,
+                "test",
+                "configured-client",
+                "configured-secret",
+                URI.create("https://api.shopify.test/auth/access_token"),
+                refreshSkew,
+                Duration.ofHours(1)
         );
     }
 

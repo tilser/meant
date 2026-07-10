@@ -4,7 +4,6 @@ import com.meant.api.plugin.transport.dto.ShopifyTokenLimits;
 import com.meant.api.plugin.transport.dto.ShopifyTokenMetadata;
 import com.meant.api.plugin.transport.dto.ShopifyTokenResponse;
 import com.meant.api.plugin.transport.profile.ShopifyAgentAuthProperties;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Duration;
@@ -118,11 +117,14 @@ class ShopifyTokenProvider {
                 inFlightRefresh = null;
             }
             refresh.complete(token);
-        } catch (RuntimeException exception) {
+        } catch (Throwable throwable) {
             synchronized (refreshMonitor) {
                 inFlightRefresh = null;
             }
-            refresh.completeExceptionally(exception);
+            refresh.completeExceptionally(throwable);
+            if (throwable instanceof Error error) {
+                throw error;
+            }
         }
     }
 
@@ -200,8 +202,8 @@ class ShopifyTokenProvider {
             return JwtMetadata.empty();
         }
         try {
-            byte[] decoded = Base64.getUrlDecoder().decode(padded(segments[1]));
-            JsonNode claims = objectMapper.readTree(new String(decoded, StandardCharsets.UTF_8));
+            byte[] decoded = Base64.getUrlDecoder().decode(segments[1]);
+            JsonNode claims = objectMapper.readTree(decoded);
             return new JwtMetadata(
                     expiryClaim(claims.path("exp")),
                     scopeClaims(claims.path("scopes")),
@@ -247,9 +249,9 @@ class ShopifyTokenProvider {
             return Map.of();
         }
         try {
-            Map<String, Long> values = objectMapper.readValue(limits.toString(), LIMITS_TYPE);
+            Map<String, Long> values = objectMapper.convertValue(limits, LIMITS_TYPE);
             return values == null ? Map.of() : Map.copyOf(new TreeMap<>(values));
-        } catch (IllegalArgumentException | JacksonException exception) {
+        } catch (IllegalArgumentException exception) {
             return Map.of();
         }
     }
@@ -265,11 +267,6 @@ class ShopifyTokenProvider {
             }
         }
         return Set.copyOf(values);
-    }
-
-    private String padded(String value) {
-        int padding = (4 - value.length() % 4) % 4;
-        return value + "=".repeat(padding);
     }
 
     private void requireEnabled() {
