@@ -56,7 +56,9 @@ public class ShopifyGlobalCatalogCircuitBreaker {
     }
 
     public synchronized void recordIgnoredFailure() {
-        recordSuccess();
+        if (halfOpenProbeInFlight) {
+            recordSuccess();
+        }
     }
 
     public synchronized boolean isOpen() {

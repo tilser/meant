@@ -330,6 +330,21 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
+    void ignoredClosedCircuitFailurePreservesTransientFailureCount() {
+        ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
+                2,
+                Duration.ofSeconds(30),
+                Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
+        );
+        circuitBreaker.recordFailure(null);
+
+        circuitBreaker.recordIgnoredFailure();
+        circuitBreaker.recordFailure(null);
+
+        assertThat(circuitBreaker.isOpen()).isTrue();
+    }
+
+    @Test
     void classifiesMalformedNegotiationAndBoundsLookupAndSearchLimits() throws Exception {
         CapturingClient malformed = new CapturingClient(response("""
                 {"ucp":{"version":"2026-04-08","capabilities":{}},"products":[]}
