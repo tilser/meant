@@ -1,5 +1,7 @@
 # Meant
 
+![Meant logo](frontend/public/assets/meant-logo.png)
+
 **Everything meant for you.**
 
 Meant is a **Personal Commerce OS**: one intelligent, user-first system for discovering, comparing, buying, and managing products across independent merchants.
