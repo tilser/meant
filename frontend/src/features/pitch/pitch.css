@@ -1789,8 +1789,8 @@
   border-left: 2px solid var(--pcos-lavender);
 }
 
-.pcos-revenue-result strong {
-  color: var(--pcos-lavender) !important;
+.pcos-model-result .pcos-revenue-result strong {
+  color: var(--pcos-lavender);
 }
 
 .pcos-model-controls {

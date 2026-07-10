@@ -177,19 +177,14 @@ export function calculateRevenueScenario({
 }
 
 export function formatCompactUsd(value: number): string {
-  const units = [
-    { threshold: 1_000_000_000_000, suffix: 'T' },
-    { threshold: 1_000_000_000, suffix: 'B' },
-    { threshold: 1_000_000, suffix: 'M' },
-    { threshold: 1_000, suffix: 'K' },
-  ] as const
-  const unit = units.find(({ threshold }) => Math.abs(value) >= threshold)
-
-  if (!unit) return `$${Math.round(value).toLocaleString('en-US')}`
-
-  const scaled = value / unit.threshold
-  const maximumFractionDigits = Number.isInteger(scaled) ? 0 : 1
-  return `$${scaled.toLocaleString('en-US', { maximumFractionDigits })}${unit.suffix}`
+  return new Intl.NumberFormat('en-US', {
+    compactDisplay: 'short',
+    currency: 'USD',
+    currencyDisplay: 'narrowSymbol',
+    maximumFractionDigits: 1,
+    notation: 'compact',
+    style: 'currency',
+  }).format(value)
 }
 
 export const revenueScenarioPresets = [

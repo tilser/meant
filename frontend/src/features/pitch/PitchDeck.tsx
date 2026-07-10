@@ -634,7 +634,9 @@ export function PitchDeck() {
                   sharePercent: preset.sharePercent,
                   takeRatePercent: DEFAULT_TAKE_RATE_PERCENT,
                 })
-                const selected = sharePercent === preset.sharePercent && takeRatePercent === 2
+                const selected =
+                  sharePercent === preset.sharePercent &&
+                  takeRatePercent === DEFAULT_TAKE_RATE_PERCENT
                 return (
                   <button
                     aria-pressed={selected}
