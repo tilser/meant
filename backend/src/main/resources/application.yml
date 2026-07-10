@@ -103,6 +103,16 @@ ucp:
     clock-skew: ${UCP_SIGNING_CLOCK_SKEW:PT30S}
     keys: []
 
+shopify:
+  agent-auth:
+    enabled: ${SHOPIFY_AGENT_AUTH_ENABLED:false}
+    environment: ${SHOPIFY_AGENT_AUTH_ENVIRONMENT:local}
+    client-id: ${SHOPIFY_CLIENT_ID:}
+    client-secret: ${SHOPIFY_CLIENT_SECRET:}
+    token-endpoint: ${SHOPIFY_TOKEN_ENDPOINT:https://api.shopify.com/auth/access_token}
+    refresh-skew: ${SHOPIFY_TOKEN_REFRESH_SKEW:5m}
+    fallback-token-ttl: ${SHOPIFY_TOKEN_FALLBACK_TTL:60m}
+
 order:
   webhook:
     shopify-secret: ${ORDER_SHOPIFY_WEBHOOK_SECRET:}

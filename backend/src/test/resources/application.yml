@@ -65,6 +65,16 @@ ucp:
     clock-skew: PT30S
     keys: []
 
+shopify:
+  agent-auth:
+    enabled: false
+    environment: test
+    client-id: ""
+    client-secret: ""
+    token-endpoint: https://api.shopify.com/auth/access_token
+    refresh-skew: 5m
+    fallback-token-ttl: 60m
+
 order:
   webhook:
     shopify-secret: test-shopify-webhook-secret

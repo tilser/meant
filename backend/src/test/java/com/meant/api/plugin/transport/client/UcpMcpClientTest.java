@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -34,6 +35,7 @@ class UcpMcpClientTest {
         UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
         server.expect(requestTo("https://merchant.example/api/mcp"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(headerDoesNotExist("Authorization"))
                 .andExpect(content().string(containsString("\"method\":\"tools/call\"")))
                 .andExpect(jsonPath("$.meta").doesNotExist())
                 .andExpect(jsonPath("$.params.name").value("search_catalog"))
@@ -196,6 +198,50 @@ class UcpMcpClientTest {
         assertThat(output).contains("tool=create_checkout");
         assertThat(output).contains("cart_1");
         assertThat(output).contains("Cross-border checkout is not supported for this channel.");
+        server.verify();
+    }
+
+    @Test
+    void callToolRedactsSensitiveCheckoutValuesFromLogs(CapturedOutput output) {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\\"ec_auth\\\":\\\"response-ec-secret\\\",\\\"authorization\\\":\\\"Bearer response-token\\\"}"
+                              }
+                            ],
+                            "isError": false
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        client.callTool(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "create_checkout",
+                Map.of(
+                        "ec_auth", "request-ec-secret",
+                        "client_secret", "request-client-secret",
+                        "access_token", "request-access-token"
+                )
+        );
+
+        assertThat(output).contains("[redacted]");
+        assertThat(output).doesNotContain(
+                "request-ec-secret",
+                "request-client-secret",
+                "request-access-token",
+                "response-ec-secret",
+                "response-token"
+        );
         server.verify();
     }
 

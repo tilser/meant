@@ -104,7 +104,10 @@ public class UcpMcpClient {
             boolean canReturnToolError = allowJsonToolErrors
                     && (hasJsonTextPayload || hasResultStructuredContent(result.structuredContent()));
             if (!canReturnToolError) {
-                throw new UcpMcpException("MCP result was marked as error: " + contentText(result.content()));
+                throw new UcpMcpException(
+                        "MCP result was marked as error: "
+                                + UcpSensitiveValueRedactor.redact(contentText(result.content()))
+                );
             }
             if (!hasJsonTextPayload) {
                 textContent = null;
@@ -135,7 +138,7 @@ public class UcpMcpClient {
                 toolName,
                 request.id(),
                 json(request.params() == null ? null : request.params().arguments()),
-                result == null ? null : firstContentText(result.content()),
+                UcpSensitiveValueRedactor.redact(result == null ? null : firstContentText(result.content())),
                 json(result == null ? null : result.structuredContent()),
                 json(response)
         };
@@ -184,7 +187,7 @@ public class UcpMcpClient {
             throw new UcpMcpException("MCP response was empty");
         }
         if (response.error() != null) {
-            throw new UcpMcpException("MCP error: " + response.error().message());
+            throw new UcpMcpException("MCP error: " + UcpSensitiveValueRedactor.redact(response.error().message()));
         }
     }
 
@@ -193,7 +196,7 @@ public class UcpMcpClient {
             throw new UcpMcpException("MCP response was empty");
         }
         if (response.error() != null) {
-            throw new UcpMcpException("MCP error: " + response.error().message());
+            throw new UcpMcpException("MCP error: " + UcpSensitiveValueRedactor.redact(response.error().message()));
         }
     }
 
@@ -362,9 +365,9 @@ public class UcpMcpClient {
             return null;
         }
         try {
-            return objectMapper.writeValueAsString(value);
+            return UcpSensitiveValueRedactor.redact(objectMapper.writeValueAsString(value));
         } catch (IllegalArgumentException | JacksonException exception) {
-            return value.toString();
+            return UcpSensitiveValueRedactor.redact(value.toString());
         }
     }
 }
