@@ -1,612 +1,807 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-type PitchSource = {
-  readonly label: string
-  readonly href: string
-}
+import {
+  DEFAULT_SHARE_PERCENT,
+  DEFAULT_TAKE_RATE_PERCENT,
+  MARKET_ANCHOR_GMV,
+  MODEL_ASSUMPTION_LABEL,
+  calculateRevenueScenario,
+  formatCompactUsd,
+  pitchSourceGroups,
+  pitchSources,
+  revenueScenarioPresets,
+  type PitchSource,
+} from './pitchModel'
+import './pitch.css'
 
-type EvidenceCard = {
-  readonly value: string
-  readonly label: string
-  readonly text: string
-  readonly source: PitchSource
-}
-
-type MarketMove = {
-  readonly layer: string
-  readonly title: string
-  readonly text: string
-  readonly source: PitchSource
-}
-
-type MeantLayer = {
-  readonly label: string
-  readonly title: string
-  readonly text: string
-  readonly source: PitchSource
-}
-
-type DemoStep = {
-  readonly id: string
-  readonly label: string
-  readonly title: string
-  readonly prompt: string
-  readonly agent: string
-  readonly primary: string
-  readonly secondary: string
-  readonly metrics: readonly string[]
-}
-
-type RevenueScenario = {
-  readonly name: string
-  readonly share: string
-  readonly gmv: string
-  readonly takeRate: string
-  readonly revenue: string
-}
-
-const SOURCES = {
-  mckinseyViaIbd: {
-    label: 'McKinsey forecast via Investors.com',
-    href: 'https://www.investors.com/news/technology/shopify-stock-nrf-news-ai-agentic-shopping/',
-  },
-  adobeViaAxios: {
-    label: 'Adobe holiday data via Axios',
-    href: 'https://www.axios.com/2026/01/08/microsoft-ai-copilot-checkout',
-  },
-  ap2: {
-    label: 'Google AP2 coverage via Axios',
-    href: 'https://www.axios.com/2025/09/16/google-ai-agents-ecommerce-online-shopping',
-  },
-  aces: {
-    label: 'ACES agentic e-commerce paper',
-    href: 'https://arxiv.org/abs/2508.02630',
-  },
-  nrfForecast: {
-    label: 'NRF 2025 retail forecast via Investopedia',
-    href: 'https://www.investopedia.com/consumer-anxiety-could-mean-slower-retail-sales-growth-this-year-nrf-forecast-11707350',
-  },
-  openAiCheckout: {
-    label: 'ChatGPT checkout via AP',
-    href: 'https://apnews.com/article/3434f1b86b90b59de0baa43a8f28f380',
-  },
-  googleUcp: {
-    label: 'Google UCP via The Verge',
-    href: 'https://www.theverge.com/news/860446/google-ai-shopping-standard-buy-button-gemini',
-  },
-  walmartGemini: {
-    label: 'Walmart + Gemini via Axios',
-    href: 'https://www.axios.com/2026/01/11/walmart-google-gemini-ai-shopping',
-  },
-  amazonBuyForMe: {
-    label: 'Amazon Buy for Me via The Verge',
-    href: 'https://www.theverge.com/news/642947/amazon-ai-buy-products-other-websites',
-  },
-  visaTrustedAgent: {
-    label: 'Visa Trusted Agent Protocol via Axios',
-    href: 'https://www.axios.com/2025/10/14/visa-ai-shopping-agent-protocol-bot',
-  },
-  perplexityComet: {
-    label: 'Perplexity Comet shopping via The Verge',
-    href: 'https://www.theverge.com/news/813755/amazon-perplexity-ai-shopping-agent-block',
-  },
-  meantReadme: {
-    label: 'Meant README',
-    href: 'https://github.com/davidtilser/meant/blob/main/README.md',
-  },
-  meantUcpSpike: {
-    label: 'Meant UCP checkout spike',
-    href: 'https://github.com/davidtilser/meant/blob/main/docs/spikes/MEA-35-ucp-embedded-transport-feasibility.md',
-  },
-  ucpSpec: {
-    label: 'UCP specification',
-    href: 'https://ucp.dev/latest/specification/overview/',
-  },
-} satisfies Record<string, PitchSource>
-
-const agendaItems = [
-  'Prediction: buying becomes delegated',
-  'Present: the ecosystem is already moving',
-  'Meant: personal commerce OS + agent infrastructure',
-  'Prototype: what the future feels like',
-  'Potential: GMV, take rate, revenue',
-  'Team: why we can own this layer',
+const chapters = [
+  { id: 'future', label: 'Future' },
+  { id: 'present', label: 'Present' },
+  { id: 'meant', label: 'Meant' },
+  { id: 'lifecycle', label: 'Lifecycle' },
+  { id: 'moat', label: 'Moat' },
+  { id: 'platform', label: 'Platform' },
+  { id: 'potential', label: 'Potential' },
 ] as const
 
-const futureCards: readonly EvidenceCard[] = [
-  {
-    value: '$3T-5T',
-    label: 'global annual agentic commerce by 2030',
-    text: 'McKinsey is cited as forecasting a multi-trillion-dollar agentic commerce opportunity as agents begin orchestrating buying journeys.',
-    source: SOURCES.mckinseyViaIbd,
-  },
-  {
-    value: '$1T',
-    label: 'U.S. B2C retail potentially agent-orchestrated',
-    text: 'The same McKinsey-cited forecast frames U.S. consumer retail as large enough for agentic commerce to become its own distribution channel.',
-    source: SOURCES.mckinseyViaIbd,
-  },
-  {
-    value: '+693%',
-    label: 'GenAI traffic to retail sites',
-    text: 'Adobe data cited by Axios shows generative-AI referral traffic to retail sites jumped during the 2025 holiday season.',
-    source: SOURCES.adobeViaAxios,
-  },
-  {
-    value: '60+',
-    label: 'payment ecosystem partners around AP2',
-    text: 'Google AP2 is a signal that delegated buying needs proof of user intent, payment authorization, and agent accountability.',
-    source: SOURCES.ap2,
-  },
-]
+type ChapterId = (typeof chapters)[number]['id']
 
-const presentMoves: readonly MarketMove[] = [
-  {
-    layer: 'Surface',
-    title: 'ChatGPT is moving from answers to checkout.',
-    text: 'OpenAI introduced direct purchases in ChatGPT, starting with Etsy sellers and planned Shopify merchant support.',
-    source: SOURCES.openAiCheckout,
-  },
-  {
-    layer: 'Protocol',
-    title: 'Google and Shopify are pushing UCP.',
-    text: 'Universal Commerce Protocol is being positioned as a shared language for agent-to-merchant discovery, checkout, and support.',
-    source: SOURCES.googleUcp,
-  },
-  {
-    layer: 'Retail',
-    title: 'Walmart is putting shopping inside Gemini.',
-    text: 'Walmart announced Gemini integration so customers can discover products, build carts, and buy inside the assistant surface.',
-    source: SOURCES.walmartGemini,
-  },
-  {
-    layer: 'Marketplace',
-    title: 'Amazon is testing off-Amazon buying.',
-    text: 'Buy for Me lets selected U.S. app users purchase products from third-party brand sites through an Amazon-managed handoff.',
-    source: SOURCES.amazonBuyForMe,
-  },
-  {
-    layer: 'Trust',
-    title: 'Visa is building agent legitimacy rails.',
-    text: 'Visa Trusted Agent Protocol focuses on separating legitimate shopping agents from malicious bot traffic.',
-    source: SOURCES.visaTrustedAgent,
-  },
-  {
-    layer: 'Conflict',
-    title: 'Perplexity shows the access fight is real.',
-    text: 'Comet can buy products for users, but Amazon objected, showing that merchant permissions and agent identity are unresolved.',
-    source: SOURCES.perplexityComet,
-  },
-]
+const futureFragments = [
+  'Running shoes · 8 stores',
+  'Carry-on · 214 offers',
+  'Refill · low stock',
+  'Size 42 · remembered',
+  'Warranty · 21 days',
+  'Cotton · no polyester',
+  'Delivery · before Friday',
+  'Charger · already owned',
+  'Return · outcome saved',
+  'Coffee · best offer',
+  'Headphones · compare 12',
+  'Lamp · warm light',
+  'Jacket · waterproof',
+  'Desk · fits 120 cm',
+  'Filters · compatible',
+  'Price · under €100',
+  'Merchant · trusted',
+  'Resale · value known',
+] as const
 
-const meantLayers: readonly MeantLayer[] = [
-  {
-    label: 'Consumer OS',
-    title: 'The buyer owns persistent preferences.',
-    text: 'Meant stores durable shopping constraints, taste, budget, saved products, inventory, cart, and order context.',
-    source: SOURCES.meantReadme,
-  },
-  {
-    label: 'Decision engine',
-    title: 'Search becomes personalized ranking.',
-    text: 'Meant finds relevant merchants, searches products live, reranks candidates, and explains why each item matches.',
-    source: SOURCES.meantReadme,
-  },
-  {
-    label: 'Commerce rails',
-    title: 'Agents need safe checkout primitives.',
-    text: 'The UCP path points to catalog, cart, checkout, order, identity-linking, and payment-handler orchestration.',
-    source: SOURCES.meantUcpSpike,
-  },
-  {
-    label: 'Infrastructure',
-    title: 'Other agents can buy through Meant.',
-    text: 'Meant can expose buying capabilities to agents that need commerce execution without rebuilding merchant integrations.',
-    source: SOURCES.ucpSpec,
-  },
-]
+const lifecycleSteps = [
+  'Discover',
+  'Decide',
+  'Buy',
+  'Deliver',
+  'Own',
+  'Maintain',
+  'Replenish',
+  'Return / Resell',
+  'Replace',
+] as const
 
-const demoSteps: readonly DemoStep[] = [
-  {
-    id: 'intent',
-    label: 'Intent',
-    title: 'User asks once.',
-    prompt: 'Find me a durable organic cotton tee under $50. No polyester. Ships this week.',
-    agent:
-      'Meant converts the ask into constraints, budget, delivery, merchant, and taste signals.',
-    primary: 'Personal profile loaded',
-    secondary: 'Organic cotton, natural materials, no polyester, value-first, highly rated',
-    metrics: ['6 constraints', '4 preference groups', '1 buyer profile'],
-  },
-  {
-    id: 'search',
-    label: 'Search',
-    title: 'Meant searches the merchant graph.',
-    prompt: 'Searching merchants that can satisfy apparel + organic cotton + delivery constraints.',
-    agent:
-      'The agent narrows the merchant set before product search, so results start relevant instead of broad.',
-    primary: 'Field & Loom selected',
-    secondary: 'Merchant profile matches sustainable apparel, stock availability, cart support',
-    metrics: ['23 merchants scanned', '5 searched live', '41 candidates'],
-  },
-  {
-    id: 'rank',
-    label: 'Rank',
-    title: 'Products are ranked against the person.',
-    prompt: 'Heavyweight Organic Cotton Tee is the top match.',
-    agent:
-      'Meant prefers exact materials, review quality, budget fit, and delivery speed over sponsored placement.',
-    primary: '94% match',
-    secondary: '100% organic cotton, GOTS certified, holds shape after wash, $38',
-    metrics: ['$38 best offer', '4.7 rating', '3-day delivery'],
-  },
-  {
-    id: 'checkout',
-    label: 'Checkout',
-    title: 'The agent prepares a safe purchase.',
-    prompt: 'Add the best offer to cart and prepare checkout with user consent.',
-    agent:
-      'Meant keeps payment and checkout state bounded: quote, consent, idempotency, and merchant handoff.',
-    primary: 'Checkout ready',
-    secondary: '1 item, $38 subtotal, delivery selected, buyer consent pending',
-    metrics: ['Cart created', 'Quote verified', 'Consent required'],
-  },
-  {
-    id: 'order',
-    label: 'Order',
-    title: 'Post-purchase becomes agent memory.',
-    prompt: 'Track the order and remember what worked for the next purchase.',
-    agent:
-      'Meant turns the completed purchase into inventory, order status, and better future recommendations.',
-    primary: 'Order tracking active',
-    secondary: 'ETA in 3 days, merchant order linked, preference outcome saved',
-    metrics: ['Order event', 'Inventory signal', 'Preference feedback'],
-  },
-]
+const ownershipSignals = [
+  'orders',
+  'inventory',
+  'sizes + fit',
+  'warranties',
+  'consumables',
+  'compatibility',
+  'maintenance',
+  'return windows',
+  'delivery',
+  'satisfaction',
+  'replacement timing',
+  'resale context',
+] as const
 
-const revenueScenarios: readonly RevenueScenario[] = [
-  {
-    name: 'Conservative',
-    share: '0.02%',
-    gmv: '$200M',
-    takeRate: '3%',
-    revenue: '$6M',
-  },
-  {
-    name: 'Base',
-    share: '0.10%',
-    gmv: '$1B',
-    takeRate: '3%',
-    revenue: '$30M',
-  },
-  {
-    name: 'Upside',
-    share: '0.50%',
-    gmv: '$5B',
-    takeRate: '3%',
-    revenue: '$150M',
-  },
-]
+const lifecycleMoments = [
+  'These filters fit; remember the size.',
+  'The detergent is running low; reorder the best offer.',
+  'The warranty expires in 21 days.',
+  'You already own the compatible charger.',
+  'This purchase was returned; reduce future ranking.',
+] as const
 
-const sourceGroups: readonly {
-  readonly title: string
-  readonly sources: readonly PitchSource[]
-}[] = [
-  {
-    title: 'Future and market',
-    sources: [
-      SOURCES.mckinseyViaIbd,
-      SOURCES.adobeViaAxios,
-      SOURCES.ap2,
-      SOURCES.aces,
-      SOURCES.nrfForecast,
-    ],
-  },
-  {
-    title: 'What exists now',
-    sources: [
-      SOURCES.openAiCheckout,
-      SOURCES.googleUcp,
-      SOURCES.walmartGemini,
-      SOURCES.amazonBuyForMe,
-      SOURCES.visaTrustedAgent,
-      SOURCES.perplexityComet,
-    ],
-  },
-  {
-    title: 'Meant and protocol',
-    sources: [SOURCES.meantReadme, SOURCES.meantUcpSpike, SOURCES.ucpSpec],
-  },
-]
+const flywheelStages = [
+  'Better intent understanding',
+  'Better product + offer ranking',
+  'Higher completion + trust',
+  'Richer ownership + outcome data',
+  'A better next decision',
+] as const
+
+const moatAssets = [
+  'Personal preference graph',
+  'Ownership + outcome graph',
+  'Cross-merchant product + offer identity graph',
+  'Merchant capability + integration graph',
+  'Checkout + reliability execution data',
+] as const
 
 export function PitchDeck() {
-  const [activeDemoStep, setActiveDemoStep] = useState(demoSteps[0])
+  const [activeChapter, setActiveChapter] = useState<ChapterId>('future')
+  const [sharePercent, setSharePercent] = useState(DEFAULT_SHARE_PERCENT)
+  const [takeRatePercent, setTakeRatePercent] = useState(DEFAULT_TAKE_RATE_PERCENT)
+  const activeIndexRef = useRef(0)
+  const sourceDialogRef = useRef<HTMLDialogElement>(null)
+  const sourceTriggerRef = useRef<HTMLButtonElement>(null)
+
+  const activeIndex = chapters.findIndex(({ id }) => id === activeChapter)
+  const revenue = useMemo(
+    () =>
+      calculateRevenueScenario({
+        marketGmv: MARKET_ANCHOR_GMV,
+        sharePercent,
+        takeRatePercent,
+      }),
+    [sharePercent, takeRatePercent],
+  )
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex
+  }, [activeIndex])
+
+  useEffect(() => {
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('[data-pitch-chapter]'))
+    const ratios = new Map<Element, number>()
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) ratios.set(entry.target, entry.intersectionRatio)
+        const mostVisible = sections.reduce<HTMLElement | null>((best, section) => {
+          if (!best) return section
+          return (ratios.get(section) ?? 0) > (ratios.get(best) ?? 0) ? section : best
+        }, null)
+        if (!mostVisible || (ratios.get(mostVisible) ?? 0) <= 0.12) return
+        const chapter = mostVisible.dataset.pitchChapter as ChapterId | undefined
+        if (chapter) setActiveChapter(chapter)
+      },
+      { threshold: [0, 0.12, 0.3, 0.5, 0.72, 0.9] },
+    )
+
+    sections.forEach((section) => observer.observe(section))
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (sourceDialogRef.current?.open) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, select, textarea, button, a, [contenteditable="true"]')) return
+
+      const forwardKeys = ['ArrowDown', 'ArrowRight', 'PageDown']
+      const backwardKeys = ['ArrowUp', 'ArrowLeft', 'PageUp']
+      let nextIndex: number | null = null
+      if (forwardKeys.includes(event.key)) nextIndex = activeIndexRef.current + 1
+      if (backwardKeys.includes(event.key)) nextIndex = activeIndexRef.current - 1
+      if (event.key === 'Home') nextIndex = 0
+      if (event.key === 'End') nextIndex = chapters.length - 1
+      if (nextIndex === null) return
+
+      event.preventDefault()
+      scrollToChapter(Math.max(0, Math.min(chapters.length - 1, nextIndex)))
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  const chapterClass = (id: ChapterId, extra = '') =>
+    `pcos-chapter ${extra} ${activeChapter === id ? 'is-active' : ''}`.trim()
+
+  const openSources = () => sourceDialogRef.current?.showModal()
+  const closeSources = () => sourceDialogRef.current?.close()
 
   return (
-    <main className="pitch-deck">
-      <header className="pitch-topbar">
-        <a className="pitch-brand" href="/">
+    <main className="pcos-deck" tabIndex={-1}>
+      <header className="pcos-topbar">
+        <a className="pcos-brand" href="/" aria-label="Meant home">
           <img src="/assets/meant-logo.png" alt="Meant" />
-          <span>Meant</span>
         </a>
-        <nav className="pitch-nav" aria-label="Pitch deck">
-          <a href="#future">Future</a>
-          <a href="#present">Present</a>
-          <a href="#meant">Meant</a>
-          <a href="#demo">Prototype</a>
-          <a href="#potential">Potential</a>
-          <a href="#team">Team</a>
+
+        <nav className="pcos-progress" aria-label="Investor deck chapters">
+          <span className="pcos-progress-count" aria-live="polite">
+            {String(activeIndex + 1).padStart(2, '0')} / {String(chapters.length).padStart(2, '0')}
+          </span>
+          <span className="pcos-progress-track" aria-hidden="true">
+            <span style={{ width: `${((activeIndex + 1) / chapters.length) * 100}%` }} />
+          </span>
+          <span className="pcos-progress-dots">
+            {chapters.map((chapter, index) => (
+              <button
+                aria-current={activeChapter === chapter.id ? 'step' : undefined}
+                aria-label={`Go to ${chapter.label}, chapter ${index + 1}`}
+                className={activeChapter === chapter.id ? 'is-current' : ''}
+                key={chapter.id}
+                onClick={() => scrollToChapter(index)}
+                type="button"
+              />
+            ))}
+          </span>
         </nav>
+
+        <button
+          className="pcos-sources-trigger"
+          onClick={openSources}
+          ref={sourceTriggerRef}
+          type="button"
+        >
+          Sources
+        </button>
       </header>
 
-      <section className="pitch-slide pitch-cover" aria-labelledby="cover-title">
-        <div className="pitch-cover-copy">
-          <p className="pitch-kicker">Investor pitch / Agentic commerce</p>
-          <h1 id="cover-title">Meant is the personal commerce OS for the agent economy.</h1>
-          <p>
-            The next commerce interface is not a storefront. It is an agent that knows what the
-            buyer means, can safely execute, and remembers the outcome.
-          </p>
-        </div>
-        <div className="pitch-agenda" aria-label="Deck outline">
-          {agendaItems.map((item, index) => (
-            <a
-              href={`#${['future', 'present', 'meant', 'demo', 'potential', 'team'][index]}`}
-              key={item}
-            >
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              {item}
-            </a>
-          ))}
-        </div>
-      </section>
+      <section
+        className={chapterClass('future', 'pcos-future')}
+        data-pitch-chapter="future"
+        id="future"
+        aria-labelledby="future-title"
+      >
+        <div className="pcos-chapter-inner pcos-future-layout">
+          <div className="pcos-heading pcos-future-copy">
+            <p className="pcos-kicker">2030 / The interface shift</p>
+            <h1 id="future-title">Commerce is becoming intent, not navigation.</h1>
+            <div className="pcos-hero-proof">
+              <strong>$3T–$5T</strong>
+              <p>
+                of global consumer commerce could be mediated by agents in 2030—even under moderate
+                scenarios.
+              </p>
+              <SourceLink source={pitchSources.mckinseyArticle} />
+            </div>
+          </div>
 
-      <section className="pitch-slide pitch-evidence" id="future" aria-labelledby="future-title">
-        <div className="pitch-section-head">
-          <p className="pitch-kicker">01 / Prediction</p>
-          <h2 id="future-title">Buying moves from search pages to delegated intent.</h2>
-          <p>
-            The user will stop browsing endless product grids. Agents will negotiate constraints,
-            compare options, and complete purchases through trusted commerce rails.
-          </p>
-        </div>
-        <div className="pitch-evidence-grid">
-          {futureCards.map((card) => (
-            <article className="pitch-evidence-card" key={card.value}>
-              <strong>{card.value}</strong>
-              <span>{card.label}</span>
-              <p>{card.text}</p>
-              <SourceLink source={card.source} />
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="pitch-slide pitch-present" id="present" aria-labelledby="present-title">
-        <div className="pitch-section-head">
-          <p className="pitch-kicker">02 / Present</p>
-          <h2 id="present-title">The category is already forming.</h2>
-          <p>
-            Surfaces, retailers, protocols, and payment networks are racing toward the same
-            end-state: authenticated agents that can shop.
-          </p>
-        </div>
-        <div className="pitch-market-stack">
-          {presentMoves.map((move) => (
-            <article className="pitch-market-card" key={move.title}>
-              <span>{move.layer}</span>
+          <figure className="pcos-intent-figure" aria-labelledby="intent-caption">
+            <div className="pcos-fragment-field" aria-hidden="true">
+              {futureFragments.map((fragment) => (
+                <span className="pcos-fragment" key={fragment}>
+                  {fragment}
+                </span>
+              ))}
+            </div>
+            <div className="pcos-intent-object">
+              <span>One person · one intent</span>
+              <p>“Find the carry-on that fits my trips, my budget, and what I already own.”</p>
               <div>
-                <h3>{move.title}</h3>
-                <p>{move.text}</p>
-              </div>
-              <SourceLink source={move.source} />
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="pitch-slide pitch-meant" id="meant" aria-labelledby="meant-title">
-        <div className="pitch-section-head">
-          <p className="pitch-kicker">03 / Meant</p>
-          <h2 id="meant-title">Meant owns the buyer layer and exposes the buying rails.</h2>
-          <p>
-            Meant starts as the consumer app people use to buy across the internet, then becomes the
-            commerce infrastructure other agents call when they need to buy safely.
-          </p>
-        </div>
-        <div className="pitch-architecture">
-          <div className="pitch-architecture-core">
-            <span>Personal commerce OS</span>
-            <strong>Preference memory + merchant graph + checkout orchestration</strong>
-          </div>
-          {meantLayers.map((layer) => (
-            <article className="pitch-layer-card" key={layer.title}>
-              <span>{layer.label}</span>
-              <h3>{layer.title}</h3>
-              <p>{layer.text}</p>
-              <SourceLink source={layer.source} />
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="pitch-slide pitch-demo" id="demo" aria-labelledby="demo-title">
-        <div className="pitch-section-head">
-          <p className="pitch-kicker">04 / Prototype</p>
-          <h2 id="demo-title">A future purchase with Meant.</h2>
-          <p>
-            Click through the flow. This is the same product logic Meant already has, compressed
-            into the interaction an agentic shopper expects.
-          </p>
-        </div>
-        <div className="pitch-demo-shell">
-          <div className="pitch-demo-controls" role="tablist" aria-label="Prototype steps">
-            {demoSteps.map((step) => (
-              <button
-                aria-selected={activeDemoStep.id === step.id}
-                className={activeDemoStep.id === step.id ? 'active' : ''}
-                key={step.id}
-                onClick={() => setActiveDemoStep(step)}
-                role="tab"
-                type="button"
-              >
-                {step.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="pitch-demo-board">
-            <div className="pitch-demo-chat">
-              <div className="pitch-chat-bubble user">
-                <span>User</span>
-                <p>{activeDemoStep.prompt}</p>
-              </div>
-              <div className="pitch-chat-bubble meant">
-                <span>Meant</span>
-                <p>{activeDemoStep.agent}</p>
-              </div>
-              <div className="pitch-agent-log">
-                {activeDemoStep.metrics.map((metric) => (
-                  <span key={metric}>{metric}</span>
-                ))}
+                <i />
+                Meant is considering 214 offers across compatible merchants
               </div>
             </div>
+            <figcaption id="intent-caption">
+              Storefronts become supply. Intent becomes the interface.
+            </figcaption>
+          </figure>
 
-            <div className="pitch-demo-phone" aria-live="polite">
-              <div className="pitch-phone-top">
-                <span>Meant</span>
-                <strong>{activeDemoStep.label}</strong>
+          <div className="pcos-future-evidence" aria-label="Supporting evidence">
+            <article>
+              <strong>$900B–$1T</strong>
+              <p>US B2C goods commerce by 2030. Services and significant B2B are excluded.</p>
+              <SourceLink source={pitchSources.mckinseyReport} />
+            </article>
+            <article>
+              <strong>+693.4%</strong>
+              <p>
+                YoY GenAI referral traffic to US retail sites in the 2025 holiday season. The base
+                remains modest.
+              </p>
+              <SourceLink source={pitchSources.adobeHoliday} />
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className={chapterClass('present', 'pcos-present')}
+        data-pitch-chapter="present"
+        id="present"
+        aria-labelledby="present-title"
+      >
+        <div className="pcos-chapter-inner pcos-split-heading">
+          <div className="pcos-heading">
+            <p className="pcos-kicker">Now / The protocol moment</p>
+            <h2 id="present-title">The foundations are being laid at the same time.</h2>
+          </div>
+
+          <div className="pcos-rail-stack" aria-label="The emerging agentic commerce stack">
+            <svg className="pcos-stack-lines" viewBox="0 0 760 430" aria-hidden="true">
+              <path d="M70 58 C220 58 235 90 378 90 S545 58 690 58" />
+              <path d="M70 142 C220 142 235 174 378 174 S545 142 690 142" />
+              <path d="M70 226 C220 226 235 258 378 258 S545 226 690 226" />
+              <path d="M70 310 C220 310 235 342 378 342 S545 310 690 310" />
+              <path d="M378 58 L378 366" />
+            </svg>
+
+            <article className="pcos-rail-layer">
+              <span>01 · Surfaces</span>
+              <h3>Agentic shopping is already in market.</h3>
+              <p>Amazon Buy for Me; ChatGPT product discovery with merchant-controlled checkout.</p>
+              <div className="pcos-inline-sources">
+                <SourceLink source={pitchSources.amazonBuyForMe} compact />
+                <SourceLink source={pitchSources.openAiDiscovery} compact />
               </div>
-              <div className="pitch-product-visual">
-                <span>{activeDemoStep.primary}</span>
+            </article>
+
+            <article className="pcos-rail-layer">
+              <span>02 · Commerce language</span>
+              <h3>UCP gives agents and merchants a common contract.</h3>
+              <p>Developed with five commerce leaders and endorsed by 20+ ecosystem partners.</p>
+              <SourceLink source={pitchSources.googleUcp} compact />
+            </article>
+
+            <article className="pcos-rail-layer">
+              <span>03 · Catalog + checkout</span>
+              <h3>Shopify exposes discovery through embedded checkout.</h3>
+              <p>Global Catalog, cart, checkout, Checkout Kit, ECP, completion, and orders.</p>
+              <div className="pcos-inline-sources">
+                <SourceLink source={pitchSources.shopifyAgents} compact />
+                <SourceLink source={pitchSources.shopifyCheckoutKit} compact />
               </div>
-              <h3>{activeDemoStep.title}</h3>
-              <p>{activeDemoStep.secondary}</p>
-              <div className="pitch-phone-actions">
-                <button type="button">Approve</button>
-                <button type="button">Compare</button>
+            </article>
+
+            <article className="pcos-rail-layer">
+              <span>04 · Authorization</span>
+              <h3>AP2 makes intent and cart approval verifiable.</h3>
+              <p>60+ organizations; signed mandates create an authorization trail.</p>
+              <SourceLink source={pitchSources.googleAp2} compact />
+            </article>
+
+            <article className="pcos-rail-layer pcos-trust-layer">
+              <span>05 · Agent trust</span>
+              <h3>Payment networks are identifying trusted agents.</h3>
+              <p>Visa Trusted Agent Protocol and Mastercard Agent Pay.</p>
+              <div className="pcos-inline-sources">
+                <SourceLink source={pitchSources.visaTrustedAgent} compact />
+                <SourceLink source={pitchSources.mastercardAgentPay} compact />
               </div>
+            </article>
+          </div>
+
+          <p className="pcos-bridge">
+            Standards make transactions possible. <strong>They do not know the buyer.</strong>
+          </p>
+        </div>
+      </section>
+
+      <section
+        className={chapterClass('meant', 'pcos-meant')}
+        data-pitch-chapter="meant"
+        id="meant"
+        aria-labelledby="meant-title"
+      >
+        <div className="pcos-chapter-inner pcos-split-heading">
+          <div className="pcos-heading">
+            <p className="pcos-kicker">The missing layer</p>
+            <h2 id="meant-title">Meant is the Personal Commerce OS.</h2>
+            <p className="pcos-lede">
+              One person. Every compatible merchant. One continuous commerce memory.
+            </p>
+            <div className="pcos-inline-sources">
+              <SourceLink source={pitchSources.meantReadme} />
+              <SourceLink source={pitchSources.meantPlan} />
+            </div>
+          </div>
+
+          <div
+            className="pcos-os-diagram"
+            aria-label="The three layers of the Personal Commerce OS"
+          >
+            <div className="pcos-os-person">
+              <span>You</span>
+              <p>Intent + durable context</p>
+            </div>
+            <div className="pcos-os-layer pcos-os-surfaces">
+              <div>
+                <span>Commerce surfaces</span>
+                <strong>Meant web + mobile</strong>
+              </div>
+              <div>
+                <strong>APIs + SDKs</strong>
+                <span>Third-party agents</span>
+              </div>
+            </div>
+            <div className="pcos-os-layer pcos-os-intelligence">
+              <span>Commerce intelligence</span>
+              <p>
+                intent · preferences · product identity · grouped offers · personalization · ranking
+                · explanations
+              </p>
+            </div>
+            <div className="pcos-os-layer pcos-os-runtime">
+              <span>Commerce runtime</span>
+              <p>
+                UCP core · provider extensions · auth · cart · embedded checkout · completion ·
+                orders · fallbacks · observability
+              </p>
+              <small>Provider-specific complexity stops here</small>
+            </div>
+            <div className="pcos-os-providers" aria-label="Compatible provider rails">
+              <span>Shopify</span>
+              <span>UCP merchant</span>
+              <span>Provider extension</span>
+              <span>Future rail</span>
             </div>
           </div>
         </div>
       </section>
 
       <section
-        className="pitch-slide pitch-potential"
+        className={chapterClass('lifecycle', 'pcos-lifecycle')}
+        data-pitch-chapter="lifecycle"
+        id="lifecycle"
+        aria-labelledby="lifecycle-title"
+      >
+        <div className="pcos-chapter-inner">
+          <div className="pcos-heading pcos-heading-row">
+            <div>
+              <p className="pcos-kicker">Beyond checkout</p>
+              <h2 id="lifecycle-title">Checkout is not the end. It is the first durable signal.</h2>
+            </div>
+            <SourceLink source={pitchSources.meantReadme} />
+          </div>
+
+          <div className="pcos-lifecycle-layout">
+            <figure className="pcos-lifecycle-orbit" aria-labelledby="lifecycle-caption">
+              <div className="pcos-orbit-rings" aria-hidden="true">
+                <i />
+                <i />
+              </div>
+              <ol>
+                {lifecycleSteps.map((step, index) => (
+                  <li key={step}>
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+              <div className="pcos-ownership-core">
+                <span>Living ownership graph</span>
+                <div>
+                  {ownershipSignals.map((signal) => (
+                    <small key={signal}>{signal}</small>
+                  ))}
+                </div>
+              </div>
+              <figcaption id="lifecycle-caption">
+                Each outcome changes the next discovery, decision, and execution.
+              </figcaption>
+            </figure>
+
+            <div className="pcos-lifecycle-moments" aria-label="Lifecycle examples">
+              <p className="pcos-moment-intro">Meant remembers what the receipt cannot.</p>
+              {lifecycleMoments.map((moment, index) => (
+                <blockquote key={moment}>
+                  <span>{index < 2 ? 'Meant' : 'Ownership signal'}</span>
+                  {moment}
+                </blockquote>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className={chapterClass('moat', 'pcos-moat')}
+        data-pitch-chapter="moat"
+        id="moat"
+        aria-labelledby="moat-title"
+      >
+        <div className="pcos-chapter-inner pcos-split-heading">
+          <div className="pcos-heading">
+            <p className="pcos-kicker">The compounding advantage</p>
+            <h2 id="moat-title">Every completed lifecycle makes Meant harder to replace.</h2>
+            <p className="pcos-lede">
+              The moat is normalized compatibility + longitudinal buyer context + execution
+              outcomes—not the LLM, and not connector count alone.
+            </p>
+            <div className="pcos-principles">
+              <span>Privacy-controlled</span>
+              <span>Provider-neutral</span>
+            </div>
+            <div className="pcos-inline-sources">
+              <SourceLink source={pitchSources.meantReadme} />
+              <SourceLink source={pitchSources.meantPlan} />
+            </div>
+          </div>
+
+          <div className="pcos-moat-visual">
+            <figure className="pcos-flywheel" aria-label="Meant data flywheel">
+              <svg viewBox="0 0 520 520" aria-hidden="true">
+                <defs>
+                  <marker
+                    id="pcos-arrow"
+                    markerHeight="8"
+                    markerWidth="8"
+                    orient="auto"
+                    refX="6"
+                    refY="3"
+                  >
+                    <path d="M0,0 L0,6 L7,3 z" />
+                  </marker>
+                </defs>
+                <path d="M260 54 A206 206 0 0 1 456 196" markerEnd="url(#pcos-arrow)" />
+                <path d="M466 245 A206 206 0 0 1 356 433" markerEnd="url(#pcos-arrow)" />
+                <path d="M316 458 A206 206 0 0 1 106 389" markerEnd="url(#pcos-arrow)" />
+                <path d="M74 348 A206 206 0 0 1 86 140" markerEnd="url(#pcos-arrow)" />
+                <path d="M121 104 A206 206 0 0 1 239 55" markerEnd="url(#pcos-arrow)" />
+              </svg>
+              <ol>
+                {flywheelStages.map((stage, index) => (
+                  <li key={stage}>
+                    <span>{index + 1}</span>
+                    {stage}
+                  </li>
+                ))}
+              </ol>
+              <div>
+                <span>Outcome</span>
+                <strong>becomes context</strong>
+              </div>
+            </figure>
+
+            <ol className="pcos-asset-ledger" aria-label="Five compounding assets">
+              {moatAssets.map((asset, index) => (
+                <li key={asset}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  {asset}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className={chapterClass('platform', 'pcos-platform')}
+        data-pitch-chapter="platform"
+        id="platform"
+        aria-labelledby="platform-title"
+      >
+        <div className="pcos-chapter-inner">
+          <div className="pcos-heading pcos-heading-row">
+            <div>
+              <p className="pcos-kicker">Consumer product + infrastructure</p>
+              <h2 id="platform-title">One commerce runtime. Every shopping surface.</h2>
+            </div>
+            <div className="pcos-inline-sources">
+              <SourceLink source={pitchSources.meantReadme} />
+              <SourceLink source={pitchSources.googleUcp} />
+            </div>
+          </div>
+
+          <div
+            className="pcos-runtime-map"
+            aria-label="One runtime powering consumer and infrastructure products"
+          >
+            <div className="pcos-runtime-surface pcos-consumer-surface">
+              <span>Meant consumer OS · free to the user</span>
+              <strong>Discover → cart → embedded checkout → lifecycle</strong>
+              <small>Personalized for one continuous buyer</small>
+            </div>
+            <div className="pcos-runtime-surface pcos-agent-surface">
+              <span>Meant infrastructure</span>
+              <strong>APIs + SDKs for third-party agents</strong>
+              <small>Discovery, identity, ranking, checkout, and orders</small>
+            </div>
+
+            <div className="pcos-runtime-flow pcos-flow-in" aria-hidden="true">
+              <i />
+              <i />
+            </div>
+
+            <div className="pcos-runtime-core">
+              <span>Shared headless core</span>
+              <strong>Meant Commerce Runtime</strong>
+              <div>
+                <small>intent</small>
+                <small>offers</small>
+                <small>capabilities</small>
+                <small>execution</small>
+                <small>outcomes</small>
+              </div>
+            </div>
+
+            <div className="pcos-runtime-flow pcos-flow-out" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+
+            <div className="pcos-provider-rails">
+              <span>Shopify</span>
+              <span>Generic UCP</span>
+              <span>Provider extensions</span>
+              <p>Merchants remain merchants of record.</p>
+            </div>
+
+            <aside className="pcos-business-model">
+              <span>Business model</span>
+              <p>
+                <strong>Consumer:</strong> commissions, affiliate, or execution revenue on completed
+                purchases.
+              </p>
+              <p>
+                <strong>Infrastructure:</strong> API, usage, or execution fees from third-party
+                agents.
+              </p>
+              <small>No current contracts or revenue implied.</small>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className={chapterClass('potential', 'pcos-potential')}
+        data-pitch-chapter="potential"
         id="potential"
         aria-labelledby="potential-title"
       >
-        <div className="pitch-section-head">
-          <p className="pitch-kicker">05 / Potential</p>
-          <h2 id="potential-title">A small share of agentic GMV is a large business.</h2>
-          <p>
-            Meant monetizes completed purchases through merchant commissions today, then can add
-            infrastructure fees for agents that need catalog, cart, checkout, and order rails.
-          </p>
-        </div>
-        <div className="pitch-potential-grid">
-          <article className="pitch-market-size">
-            <span>Market anchor</span>
-            <strong>$1T</strong>
-            <p>U.S. B2C retail potentially orchestrated by agents by 2030.</p>
-            <SourceLink source={SOURCES.mckinseyViaIbd} />
-          </article>
-          <article className="pitch-market-size">
-            <span>Current retail base</span>
-            <strong>$5.42T-$5.48T</strong>
-            <p>NRF forecast for 2025 U.S. core retail sales.</p>
-            <SourceLink source={SOURCES.nrfForecast} />
-          </article>
-          <article className="pitch-market-size">
-            <span>Monetization</span>
-            <strong>GMV x take rate</strong>
-            <p>
-              Meant's current stated revenue model is merchant commissions on completed purchases.
-            </p>
-            <SourceLink source={SOURCES.meantReadme} />
-          </article>
-        </div>
-        <div className="pitch-scenario-table" aria-label="Revenue scenarios">
-          <div className="pitch-scenario-row header">
-            <span>Scenario</span>
-            <span>Share of $1T GMV</span>
-            <span>GMV</span>
-            <span>Take rate</span>
-            <span>Annual revenue</span>
-          </div>
-          {revenueScenarios.map((scenario) => (
-            <div className="pitch-scenario-row" key={scenario.name}>
-              <span>{scenario.name}</span>
-              <span>{scenario.share}</span>
-              <span>{scenario.gmv}</span>
-              <span>{scenario.takeRate}</span>
-              <span>{scenario.revenue}</span>
+        <div className="pcos-chapter-inner pcos-potential-layout">
+          <div className="pcos-heading">
+            <p className="pcos-kicker">The outcome</p>
+            <h2 id="potential-title">0.1% can be a category-defining company.</h2>
+            <div className="pcos-market-anchor">
+              <span>Market-model anchor</span>
+              <strong>$4T</strong>
+              <p>Midpoint of McKinsey’s $3T–$5T 2030 global estimate.</p>
+              <SourceLink source={pitchSources.mckinseyArticle} />
             </div>
-          ))}
-        </div>
-        <p className="pitch-assumption">
-          Scenario math is illustrative: GMV share and 3% take rate are assumptions, while market
-          anchor and commission model are sourced above.
-        </p>
-      </section>
+          </div>
 
-      <section className="pitch-slide pitch-team" id="team" aria-labelledby="team-title">
-        <div className="pitch-section-head">
-          <p className="pitch-kicker">06 / Team</p>
-          <h2 id="team-title">Founder-led, protocol-native, built close to the transaction.</h2>
-          <p>
-            The company is being built where the hard parts are: buyer memory, merchant capability
-            discovery, checkout, consent, and post-purchase state.
-          </p>
-        </div>
-        <div className="pitch-team-grid">
-          <article>
-            <span>Founder</span>
-            <h3>David Tilser</h3>
-            <p>Product, engineering, and agentic commerce architecture.</p>
-            <SourceLink source={SOURCES.meantUcpSpike} />
-          </article>
-          <article>
-            <span>Built</span>
-            <h3>Full-stack personal commerce app</h3>
-            <p>
-              Search, preferences, merchant registry, product ranking, cart, checkout, and orders.
-            </p>
-            <SourceLink source={SOURCES.meantReadme} />
-          </article>
-          <article>
-            <span>Next</span>
-            <h3>Design partners and integrations</h3>
-            <p>Merchant onboarding, UCP checkout, payment handlers, and external agent APIs.</p>
-            <SourceLink source={SOURCES.meantUcpSpike} />
-          </article>
-        </div>
-      </section>
+          <div className="pcos-model" aria-label="Illustrative revenue model">
+            <div className="pcos-model-label">{MODEL_ASSUMPTION_LABEL}</div>
+            <div className="pcos-scenario-presets" aria-label="Scenario presets">
+              {revenueScenarioPresets.map((preset) => {
+                const presetResult = calculateRevenueScenario({
+                  marketGmv: MARKET_ANCHOR_GMV,
+                  sharePercent: preset.sharePercent,
+                  takeRatePercent: DEFAULT_TAKE_RATE_PERCENT,
+                })
+                const selected = sharePercent === preset.sharePercent && takeRatePercent === 2
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={selected ? 'is-selected' : ''}
+                    key={preset.id}
+                    onClick={() => {
+                      setSharePercent(preset.sharePercent)
+                      setTakeRatePercent(DEFAULT_TAKE_RATE_PERCENT)
+                    }}
+                    type="button"
+                  >
+                    <span>{preset.label}</span>
+                    <strong>{formatPercent(preset.sharePercent)} share</strong>
+                    <small>
+                      {formatCompactUsd(presetResult.gmv)} GMV →{' '}
+                      {formatCompactUsd(presetResult.revenue)} revenue
+                    </small>
+                  </button>
+                )
+              })}
+            </div>
 
-      <section className="pitch-sources" id="sources" aria-labelledby="sources-title">
-        <p className="pitch-kicker">Appendix</p>
-        <h2 id="sources-title">Sources</h2>
-        <div className="pitch-source-groups">
-          {sourceGroups.map((group) => (
-            <section className="pitch-source-group" key={group.title}>
-              <h3>{group.title}</h3>
+            <div className="pcos-model-result" aria-live="polite">
+              <p>
+                <strong>{formatPercent(sharePercent)}</strong> of{' '}
+                {formatCompactUsd(MARKET_ANCHOR_GMV)}
+              </p>
+              <span>=</span>
               <div>
+                <strong>{formatCompactUsd(revenue.gmv)}</strong>
+                <small>agent-mediated GMV</small>
+              </div>
+              <span>× {formatPercent(takeRatePercent)}</span>
+              <div className="pcos-revenue-result">
+                <strong>{formatCompactUsd(revenue.revenue)}</strong>
+                <small>illustrative annual revenue</small>
+              </div>
+            </div>
+
+            <div className="pcos-model-controls">
+              <label>
+                <span>
+                  GMV share assumption <strong>{formatPercent(sharePercent)}</strong>
+                </span>
+                <input
+                  aria-label="GMV share assumption"
+                  max="0.5"
+                  min="0.02"
+                  onChange={(event) => setSharePercent(Number(event.currentTarget.value))}
+                  step="0.01"
+                  type="range"
+                  value={sharePercent}
+                />
+              </label>
+              <label>
+                <span>
+                  Blended transaction take assumption{' '}
+                  <strong>{formatPercent(takeRatePercent)}</strong>
+                </span>
+                <input
+                  aria-label="Blended transaction take assumption"
+                  max="5"
+                  min="1"
+                  onChange={(event) => setTakeRatePercent(Number(event.currentTarget.value))}
+                  step="0.25"
+                  type="range"
+                  value={takeRatePercent}
+                />
+              </label>
+            </div>
+            <p className="pcos-model-note">
+              Share and take rate are Meant assumptions, not sourced facts or a forecast.
+              Infrastructure revenue is upside and is not included.
+            </p>
+          </div>
+
+          <blockquote className="pcos-closing-line">
+            Meant does not need to own commerce. It needs to become the layer commerce flows
+            through.
+          </blockquote>
+        </div>
+      </section>
+
+      <dialog
+        aria-labelledby="pcos-sources-title"
+        className="pcos-sources-dialog"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) closeSources()
+        }}
+        onClose={() => sourceTriggerRef.current?.focus()}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            closeSources()
+          }
+        }}
+        ref={sourceDialogRef}
+      >
+        <div className="pcos-sources-drawer">
+          <header>
+            <div>
+              <p className="pcos-kicker">Primary material</p>
+              <h2 id="pcos-sources-title">Sources</h2>
+            </div>
+            <button aria-label="Close sources" onClick={closeSources} type="button">
+              <CloseIcon />
+            </button>
+          </header>
+          <p className="pcos-sources-intro">
+            External facts link to direct primary sources. Market share and take-rate inputs are
+            explicitly labeled as Meant model assumptions.
+          </p>
+          <div className="pcos-source-groups">
+            {pitchSourceGroups.map((group) => (
+              <div className="pcos-source-group" key={group.title}>
+                <h3>{group.title}</h3>
                 {group.sources.map((source) => (
-                  <SourceLink key={source.href} source={source} />
+                  <a href={source.href} key={source.id} rel="noreferrer" target="_blank">
+                    <span>{source.title}</span>
+                    <p>{source.note}</p>
+                    <small>{new URL(source.href).hostname.replace('www.', '')}</small>
+                  </a>
                 ))}
               </div>
-            </section>
-          ))}
+            ))}
+          </div>
         </div>
-      </section>
+      </dialog>
     </main>
   )
 }
 
-function SourceLink({ source }: Readonly<{ source: PitchSource }>) {
+function scrollToChapter(index: number) {
+  const chapter = chapters[index]
+  if (!chapter) return
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  document
+    .getElementById(chapter.id)
+    ?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+}
+
+function formatPercent(value: number) {
+  return `${value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: value < 1 ? 2 : 0 })}%`
+}
+
+function SourceLink({
+  source,
+  compact = false,
+}: Readonly<{ source: PitchSource; compact?: boolean }>) {
   return (
-    <a className="pitch-source-link" href={source.href} target="_blank" rel="noreferrer">
+    <a
+      aria-label={`Source: ${source.title}`}
+      className={`pcos-source-link ${compact ? 'is-compact' : ''}`}
+      href={source.href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      <span aria-hidden="true">↗</span>
       {source.label}
     </a>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   )
 }
