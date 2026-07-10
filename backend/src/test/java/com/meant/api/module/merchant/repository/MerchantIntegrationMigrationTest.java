@@ -82,6 +82,13 @@ class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
                     Integer.class,
                     merchantId
             )).isOne();
+            assertThat(jdbcTemplate.queryForObject("""
+                    select indexdef
+                    from pg_indexes
+                    where schemaname = ?
+                        and indexname = 'uk_merchant_integration_provider_verified_domain'
+                    """, String.class, schema))
+                    .contains("(lower(verified_domain), provider)");
         } finally {
             jdbcTemplate.execute("drop schema " + schema + " cascade");
         }

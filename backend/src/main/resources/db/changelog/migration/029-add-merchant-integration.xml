@@ -187,7 +187,7 @@
             WHERE external_merchant_id IS NOT NULL;
 
             CREATE UNIQUE INDEX uk_merchant_integration_provider_verified_domain
-            ON merchant_integration (provider, lower(verified_domain))
+            ON merchant_integration (lower(verified_domain), provider)
             WHERE verified_domain IS NOT NULL;
 
             CREATE UNIQUE INDEX uk_merchant_integration_provider_shop_identity
