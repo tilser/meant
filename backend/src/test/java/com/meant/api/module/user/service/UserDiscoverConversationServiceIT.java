@@ -2,7 +2,7 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserAssistantMessageRepository;
 import com.meant.api.module.user.service.command.DeleteUserDiscoverConversationCommand;
@@ -19,7 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class UserDiscoverConversationServiceTest extends PostgresIntegrationTest {
+class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private UserDiscoverConversationService userDiscoverConversationService;

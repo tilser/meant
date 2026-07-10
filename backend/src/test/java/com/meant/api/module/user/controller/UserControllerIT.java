@@ -2,7 +2,7 @@ package com.meant.api.module.user.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
@@ -73,7 +73,7 @@ import org.springframework.web.client.RestClient;
  * exercise the resource-server filter chain without standing up Supabase or signing real tokens.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class UserControllerIT extends PostgresIntegrationTest {
+class UserControllerIT extends PostgresIntegrationTestSupport {
 
     /** Mirrors the assistant conversations controller limit; kept local to avoid exposing the constant. */
     private static final int MAX_CONVERSATION_LIMIT_FIXTURE = 50;

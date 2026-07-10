@@ -2,7 +2,7 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
@@ -47,7 +47,7 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest
-class UserAssistantChatServiceTest extends PostgresIntegrationTest {
+class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private UserAssistantChatService userAssistantChatService;

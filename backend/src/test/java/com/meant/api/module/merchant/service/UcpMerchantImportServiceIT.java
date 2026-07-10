@@ -3,7 +3,7 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.CrawlingProperties;
@@ -22,8 +22,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.web.client.RestClient;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class UcpMerchantImportServiceTest extends PostgresIntegrationTest {
+@SpringBootTest
+class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private UcpMerchantImportService service;

@@ -3,7 +3,7 @@ package com.meant.api.module.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
@@ -31,7 +31,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 
 @SpringBootTest
-class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTest {
+class ShopifyOrderWebhookServiceIT extends PostgresIntegrationTestSupport {
 
     private static final String SECRET = "test-shopify-webhook-secret";
 

@@ -2,7 +2,7 @@ package com.meant.api.module.merchant.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import java.sql.Connection;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -17,8 +17,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
+@SpringBootTest
+class MerchantIntegrationMigrationIT extends PostgresIntegrationTestSupport {
 
     private static final Instant CREATED_AT = Instant.parse("2026-06-01T10:00:00Z");
     private static final Instant UPDATED_AT = Instant.parse("2026-07-01T11:00:00Z");
@@ -236,14 +236,19 @@ class MerchantIntegrationMigrationTest extends PostgresIntegrationTest {
 
     private void runIntegrationMigration(String schema) throws Exception {
         try (Connection connection = dataSource.getConnection()) {
-            connection.setSchema(schema);
-            SingleConnectionDataSource schemaDataSource = new SingleConnectionDataSource(connection, true);
-            SpringLiquibase liquibase = new SpringLiquibase();
-            liquibase.setDataSource(schemaDataSource);
-            liquibase.setChangeLog("classpath:db/changelog/migration/029-add-merchant-integration.xml");
-            liquibase.setDefaultSchema(schema);
-            liquibase.setLiquibaseSchema(schema);
-            liquibase.afterPropertiesSet();
+            String originalSchema = connection.getSchema();
+            try {
+                connection.setSchema(schema);
+                SingleConnectionDataSource schemaDataSource = new SingleConnectionDataSource(connection, true);
+                SpringLiquibase liquibase = new SpringLiquibase();
+                liquibase.setDataSource(schemaDataSource);
+                liquibase.setChangeLog("classpath:db/changelog/migration/029-add-merchant-integration.xml");
+                liquibase.setDefaultSchema(schema);
+                liquibase.setLiquibaseSchema(schema);
+                liquibase.afterPropertiesSet();
+            } finally {
+                connection.setSchema(originalSchema);
+            }
         }
     }
 }

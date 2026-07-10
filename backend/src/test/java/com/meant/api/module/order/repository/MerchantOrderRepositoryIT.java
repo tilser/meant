@@ -2,7 +2,7 @@ package com.meant.api.module.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
@@ -24,8 +24,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class MerchantOrderRepositoryIT extends PostgresIntegrationTest {
+@SpringBootTest
+class MerchantOrderRepositoryIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private MerchantOrderRepository orderRepository;

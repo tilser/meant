@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class MeantApiApplicationTests extends PostgresIntegrationTest {
+class MeantApiApplicationIT extends PostgresIntegrationTestSupport {
 
     @Test
     void contextLoads() {

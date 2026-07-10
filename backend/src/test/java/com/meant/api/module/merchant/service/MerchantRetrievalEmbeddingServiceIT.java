@@ -2,7 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantCategory;
 import com.meant.api.module.merchant.entity.MerchantPopularSearch;
@@ -34,8 +34,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.RestClient;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class MerchantRetrievalEmbeddingServiceTest extends PostgresIntegrationTest {
+@SpringBootTest
+class MerchantRetrievalEmbeddingServiceIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private MerchantRetrievalEmbeddingService merchantRetrievalEmbeddingService;

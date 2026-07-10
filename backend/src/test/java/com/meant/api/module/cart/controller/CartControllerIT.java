@@ -2,7 +2,7 @@ package com.meant.api.module.cart.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
@@ -51,7 +51,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class CartControllerIT extends PostgresIntegrationTest {
+class CartControllerIT extends PostgresIntegrationTestSupport {
 
     @LocalServerPort
     private int port;

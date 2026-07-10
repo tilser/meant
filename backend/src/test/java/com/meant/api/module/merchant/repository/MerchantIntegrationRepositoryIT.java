@@ -3,7 +3,7 @@ package com.meant.api.module.merchant.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
 import com.meant.api.module.merchant.constant.MerchantIntegrationKind;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
@@ -32,8 +32,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
+@SpringBootTest
+class MerchantIntegrationRepositoryIT extends PostgresIntegrationTestSupport {
 
     private static final Instant NOW = Instant.parse("2026-07-10T09:00:00Z");
 

@@ -3,7 +3,7 @@ package com.meant.api.plugin.checkout.common.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.plugin.checkout.common.entity.CheckoutCompletionStatus;
 import com.meant.api.plugin.checkout.common.service.command.AuthorizeCheckoutCompletionCommand;
 import com.meant.api.plugin.checkout.common.service.command.StartCheckoutCompletionCommand;
@@ -21,7 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class CheckoutCompletionStateStoreIT extends PostgresIntegrationTest {
+class CheckoutCompletionStateStoreIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private CheckoutCompletionStateStore store;

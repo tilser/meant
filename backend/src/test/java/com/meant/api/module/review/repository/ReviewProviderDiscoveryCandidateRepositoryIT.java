@@ -2,7 +2,7 @@ package com.meant.api.module.review.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
@@ -19,8 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-class ReviewProviderDiscoveryCandidateRepositoryIT extends PostgresIntegrationTest {
+@SpringBootTest
+class ReviewProviderDiscoveryCandidateRepositoryIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private ReviewProviderDiscoveryCandidateRepository candidateRepository;

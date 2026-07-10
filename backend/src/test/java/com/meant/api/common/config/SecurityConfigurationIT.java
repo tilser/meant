@@ -1,6 +1,6 @@
 package com.meant.api.common.config;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,11 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "spring.task.scheduling.enabled=false"
-)
-class SecurityConfigurationIT extends PostgresIntegrationTest {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class SecurityConfigurationIT extends PostgresIntegrationTestSupport {
 
     @LocalServerPort
     private int port;

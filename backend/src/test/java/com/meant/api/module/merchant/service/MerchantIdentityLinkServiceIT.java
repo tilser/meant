@@ -11,7 +11,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.meant.api.PostgresIntegrationTest;
+import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.merchant.constant.MerchantIdentityLinkStatus;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantIdentityLink;
@@ -57,9 +57,9 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.UnorderedRequestExpectationManager;
 import org.springframework.web.client.RestClient;
 
-@SpringBootTest(properties = "spring.task.scheduling.enabled=false")
-@Import(MerchantIdentityLinkServiceTest.MockRestClientConfiguration.class)
-class MerchantIdentityLinkServiceTest extends PostgresIntegrationTest {
+@SpringBootTest
+@Import(MerchantIdentityLinkServiceIT.MockRestClientConfiguration.class)
+class MerchantIdentityLinkServiceIT extends PostgresIntegrationTestSupport {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000040");
     private static final String METADATA_URL = "https://merchant.example/.well-known/oauth-authorization-server";

@@ -167,6 +167,9 @@ cd backend && mvn test
 cd frontend && bun run build
 ```
 
+The backend `mvn test` command runs the fast unit-test suite and does not start Docker.
+Use `mvn verify` when you also want the Postgres integration tests.
+
 ## Continuous Integration
 
 GitHub Actions runs CI on every pull request and on pushes to `main`.
@@ -179,6 +182,16 @@ mvn verify
 ```
 
 `mvn verify` runs unit tests and the Testcontainers-backed integration tests named `*IT`.
+All integration tests share one Postgres container for the duration of the Failsafe test process.
+
+For repeated local integration runs, Testcontainers reuse can keep Postgres running between Maven invocations:
+
+```sh
+cd backend
+TESTCONTAINERS_REUSE_ENABLE=true mvn verify
+```
+
+Reuse is a local-only, experimental Testcontainers feature and leaves the container running. Do not enable it in CI.
 
 Reproduce the frontend job locally:
 
