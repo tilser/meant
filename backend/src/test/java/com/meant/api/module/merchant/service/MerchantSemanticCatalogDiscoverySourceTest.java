@@ -41,12 +41,16 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 class MerchantSemanticCatalogDiscoverySourceTest {
 
     private static final UUID MERCHANT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
+    private static final ScheduledExecutorService DEADLINE_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon(true).factory());
 
     @Test
     void streamsPreliminaryAndEnrichedCandidateWithinOneUniqueBudgetAndModelsBothSourceSemantics() {
@@ -165,7 +169,8 @@ class MerchantSemanticCatalogDiscoverySourceTest {
                 new com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties(
                         Duration.ofSeconds(1)
                 ),
-                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry())
+                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry()),
+                DEADLINE_SCHEDULER
         );
     }
 

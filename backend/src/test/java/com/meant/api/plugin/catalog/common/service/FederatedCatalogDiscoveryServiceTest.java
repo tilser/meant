@@ -35,12 +35,19 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 class FederatedCatalogDiscoveryServiceTest {
+
+    private static final ScheduledExecutorService DEADLINE_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(
+                    Thread.ofPlatform().daemon(true).factory()
+            );
 
     @Test
     void startsBothSourcesConcurrentlyAndCompletesExactlyOnce() {
@@ -75,6 +82,36 @@ class FederatedCatalogDiscoveryServiceTest {
                 .isEqualTo(CatalogDiscoveryTerminalStatus.SUCCESS);
         assertThat(generic.calls()).isOne();
         assertThat(shopify.calls()).isOne();
+    }
+
+    @Test
+    void reusesTheInjectedDeadlineSchedulerAcrossRequests() {
+        ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(
+                1,
+                Thread.ofPlatform().daemon(true).factory()
+        );
+        try {
+            FakeSource source = source(
+                    "GENERIC_UCP",
+                    ResultSourceType.MERCHANT_STOREFRONT,
+                    "GENERIC",
+                    (identity, request, consumer) -> success(identity, List.of())
+            );
+            FederatedCatalogDiscoveryService service = new FederatedCatalogDiscoveryService(
+                    List.of(source),
+                    Duration.ofSeconds(1),
+                    new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry()),
+                    scheduler
+            );
+
+            service.search(request(2));
+            service.search(request(2));
+
+            assertThat(scheduler.isShutdown()).isFalse();
+            assertThat(source.calls()).isEqualTo(2);
+        } finally {
+            scheduler.shutdownNow();
+        }
     }
 
     @Test
@@ -313,7 +350,7 @@ class FederatedCatalogDiscoveryServiceTest {
         );
 
         FederatedCatalogDiscoveryResult result = new FederatedCatalogDiscoveryService(
-                List.of(shopify, generic), Duration.ofSeconds(1), metrics
+                List.of(shopify, generic), Duration.ofSeconds(1), metrics, DEADLINE_SCHEDULER
         ).search(request(8));
 
         assertThat(result.status()).isEqualTo(CatalogDiscoveryTerminalStatus.PARTIAL);
@@ -455,7 +492,7 @@ class FederatedCatalogDiscoveryServiceTest {
                 "SHOPIFY", ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL", Duration.ofMillis(50), blocked);
 
         FederatedCatalogDiscoveryResult failed = new FederatedCatalogDiscoveryService(
-                List.of(generic, shopify), Duration.ofMillis(500), metrics
+                List.of(generic, shopify), Duration.ofMillis(500), metrics, DEADLINE_SCHEDULER
         ).search(request(4));
 
         assertThat(failed.status()).isEqualTo(CatalogDiscoveryTerminalStatus.FAILED);
@@ -493,7 +530,7 @@ class FederatedCatalogDiscoveryServiceTest {
         );
 
         FederatedCatalogDiscoveryResult result = new FederatedCatalogDiscoveryService(
-                List.of(generic, shopify), Duration.ofMillis(500), metrics
+                List.of(generic, shopify), Duration.ofMillis(500), metrics, DEADLINE_SCHEDULER
         ).search(request(4));
 
         assertThat(result.status()).isEqualTo(CatalogDiscoveryTerminalStatus.PARTIAL);
@@ -543,7 +580,8 @@ class FederatedCatalogDiscoveryServiceTest {
         return new FederatedCatalogDiscoveryService(
                 sources,
                 deadline,
-                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry())
+                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry()),
+                DEADLINE_SCHEDULER
         );
     }
 

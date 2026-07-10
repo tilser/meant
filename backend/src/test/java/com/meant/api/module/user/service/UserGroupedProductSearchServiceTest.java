@@ -38,11 +38,16 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import org.junit.jupiter.api.Test;
 
 class UserGroupedProductSearchServiceTest {
+
+    private static final ScheduledExecutorService DEADLINE_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon(true).factory());
 
     @Test
     void groupsFederatedCandidatesWithoutUsingTheLegacyCache() {
@@ -252,7 +257,8 @@ class UserGroupedProductSearchServiceTest {
         FederatedCatalogDiscoveryService discoveryService = new FederatedCatalogDiscoveryService(
                 List.of(sources),
                 new FederatedCatalogDiscoveryProperties(Duration.ofSeconds(1)),
-                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry())
+                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry()),
+                DEADLINE_SCHEDULER
         );
         return new UserGroupedProductSearchService(
                 new PagingPreparationService(),
@@ -410,7 +416,8 @@ class UserGroupedProductSearchServiceTest {
             super(
                     List.of(),
                     new FederatedCatalogDiscoveryProperties(Duration.ofSeconds(1)),
-                    new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry())
+                    new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry()),
+                    DEADLINE_SCHEDULER
             );
             this.result = result;
         }

@@ -41,24 +41,28 @@ public class FederatedCatalogDiscoveryService {
     private final List<CatalogDiscoverySource> sources;
     private final Duration overallDeadline;
     private final FederatedCatalogDiscoveryMetrics metrics;
+    private final ScheduledExecutorService deadlineScheduler;
 
     @Autowired
     public FederatedCatalogDiscoveryService(
             List<CatalogDiscoverySource> sources,
             FederatedCatalogDiscoveryProperties properties,
-            FederatedCatalogDiscoveryMetrics metrics
+            FederatedCatalogDiscoveryMetrics metrics,
+            ScheduledExecutorService catalogDiscoveryDeadlineScheduler
     ) {
-        this(sources, properties.overallDeadline(), metrics);
+        this(sources, properties.overallDeadline(), metrics, catalogDiscoveryDeadlineScheduler);
     }
 
     FederatedCatalogDiscoveryService(
             List<CatalogDiscoverySource> sources,
             Duration overallDeadline,
-            FederatedCatalogDiscoveryMetrics metrics
+            FederatedCatalogDiscoveryMetrics metrics,
+            ScheduledExecutorService deadlineScheduler
     ) {
         this.sources = sources == null ? List.of() : sources.stream().sorted(SOURCE_ORDER).toList();
         this.overallDeadline = overallDeadline;
         this.metrics = metrics;
+        this.deadlineScheduler = deadlineScheduler;
     }
 
     public FederatedCatalogDiscoveryResult search(CatalogDiscoveryRequest request) {
@@ -92,7 +96,6 @@ public class FederatedCatalogDiscoveryService {
 
         BlockingQueue<Completion> completions = new LinkedBlockingQueue<>();
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
         List<FederatedCatalogSourceTask> tasks = new ArrayList<>();
         Set<ProviderIdentity> coveredProviders = eligibleSources.stream()
                 .map(CatalogDiscoverySource::sourceIdentity)
@@ -110,7 +113,7 @@ public class FederatedCatalogDiscoveryService {
                         completions
                 );
                 tasks.add(task);
-                task.start(executor, scheduler, deadlineNanos);
+                task.start(executor, deadlineScheduler, deadlineNanos);
             }
 
             List<Completion> completed = await(tasks, completions, deadlineNanos);
@@ -126,7 +129,6 @@ public class FederatedCatalogDiscoveryService {
             throw new CancellationException("Federated catalog discovery was cancelled");
         } finally {
             tasks.forEach(FederatedCatalogSourceTask::cancel);
-            scheduler.shutdownNow();
             executor.shutdownNow();
         }
     }
