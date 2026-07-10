@@ -6,6 +6,7 @@ import {
   checkoutAssistantPrompt,
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
+  checkoutReadyForPayment,
   merchantHandoffReason,
 } from './checkoutSessionUi'
 
@@ -90,6 +91,19 @@ describe('checkout session UCP actions', () => {
 
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
     expect(checkoutAssistantPrompt(checkout)).toContain('ready for direct completion')
+  })
+
+  test('keeps an explicit unknown action authoritative instead of inferring from status', () => {
+    const checkout = session({
+      status: 'ready_for_complete',
+      nextAction: 'UNKNOWN',
+      selectedRail: 'NONE',
+      ineligibilityReasons: [],
+      messages: [],
+    })
+
+    expect(checkoutReadyForPayment(checkout)).toBe(false)
+    expect(checkoutNeedsHandoff(checkout)).toBe(false)
   })
 
   test('represents embedded checkout independently from disabled direct completion', () => {
