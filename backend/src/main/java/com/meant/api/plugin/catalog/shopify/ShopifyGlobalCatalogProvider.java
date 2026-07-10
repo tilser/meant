@@ -250,6 +250,14 @@ public class ShopifyGlobalCatalogProvider {
                     null,
                     null
             ));
+        } catch (RuntimeException exception) {
+            circuitBreaker.recordFailure(null);
+            return failure(operation, new CatalogSourceFailure(
+                    CatalogSourceFailureKind.TRANSIENT_UPSTREAM,
+                    "Shopify Global Catalog request failed unexpectedly",
+                    null,
+                    null
+            ));
         } finally {
             concurrency.release();
         }

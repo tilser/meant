@@ -273,6 +273,42 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
+    void unexpectedHalfOpenProbeFailureDoesNotPermanentlyLockCircuit() throws Exception {
+        ShopifyGlobalCatalogProperties properties = properties(1);
+        MutableClock clock = new MutableClock(OBSERVED_AT);
+        ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
+                properties.circuitFailureThreshold(),
+                properties.circuitOpenDuration(),
+                clock
+        );
+        AtomicInteger calls = new AtomicInteger();
+        UcpToolResponse success = response(globalResponse());
+        ShopifyUcpClient client = (options, toolName, arguments) -> switch (calls.getAndIncrement()) {
+            case 0 -> throw new ShopifyUcpTransportException(
+                    ShopifyUcpTransportFailure.TRANSIENT_UPSTREAM,
+                    "Shopify Global Catalog returned a server failure",
+                    null,
+                    503,
+                    null
+            );
+            case 1 -> throw new NullPointerException("unexpected provider bug");
+            default -> success;
+        };
+        ShopifyGlobalCatalogProvider provider = provider(client, properties, circuitBreaker);
+
+        assertThat(provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null))
+                .failure().kind()).isEqualTo(CatalogSourceFailureKind.TRANSIENT_UPSTREAM);
+        clock.advance(properties.circuitOpenDuration());
+        assertThat(provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null))
+                .failure().kind()).isEqualTo(CatalogSourceFailureKind.TRANSIENT_UPSTREAM);
+        clock.advance(properties.circuitOpenDuration());
+
+        assertThat(provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null)).successful())
+                .isTrue();
+        assertThat(calls).hasValue(3);
+    }
+
+    @Test
     void classifiesMalformedNegotiationAndBoundsLookupAndSearchLimits() throws Exception {
         CapturingClient malformed = new CapturingClient(response("""
                 {"ucp":{"version":"2026-04-08","capabilities":{}},"products":[]}
@@ -438,16 +474,24 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     private ShopifyGlobalCatalogProvider provider(ShopifyUcpClient client, ShopifyGlobalCatalogProperties properties) {
+        ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
+                properties.circuitFailureThreshold(),
+                properties.circuitOpenDuration(),
+                Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
+        );
+        return provider(client, properties, circuitBreaker);
+    }
+
+    private ShopifyGlobalCatalogProvider provider(
+            ShopifyUcpClient client,
+            ShopifyGlobalCatalogProperties properties,
+            ShopifyGlobalCatalogCircuitBreaker circuitBreaker
+    ) {
         MerchantIntegrationLookupService lookup = new StubMerchantIntegrationLookupService(Map.of());
         ShopifyGlobalCatalogResponseParser parser = new ShopifyGlobalCatalogResponseParser(objectMapper, properties);
         ShopifyGlobalCatalogNormalizer normalizer = new ShopifyGlobalCatalogNormalizer(
                 lookup,
                 properties,
-                Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
-        );
-        ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
-                properties.circuitFailureThreshold(),
-                properties.circuitOpenDuration(),
                 Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
         );
         return new ShopifyGlobalCatalogProvider(client, parser, normalizer, circuitBreaker, properties);
@@ -576,5 +620,33 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     private record Call(ShopifyUcpRequestOptions options, String toolName, Object arguments) {
+    }
+
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override
+        public ZoneOffset getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
     }
 }
