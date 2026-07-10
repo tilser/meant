@@ -140,39 +140,59 @@ export const pitchSourceGroups = [
   },
 ] as const
 
-export const MARKET_ANCHOR_GMV = 4_000_000_000_000
-export const DEFAULT_SHARE_PERCENT = 0.1
-export const DEFAULT_TAKE_RATE_PERCENT = 2
-export const MODEL_ASSUMPTION_LABEL = 'Meant model assumption · illustrative, not a forecast'
+export const MODEL_ASSUMPTION_LABEL = 'Meant model assumptions · illustrative, not a forecast'
 
-export type RevenueInputs = {
-  readonly marketGmv: number
-  readonly sharePercent: number
-  readonly takeRatePercent: number
+export type CommerceScenarioInputs = {
+  readonly activeUsers: number
+  readonly purchasesPerUser: number
+  readonly gmvPerPurchase: number
+  readonly monetizationPercent: number
+  readonly agentTransactions: number
+  readonly infrastructureFee: number
 }
 
-export type RevenueResult = RevenueInputs & {
-  readonly gmv: number
-  readonly revenue: number
+export type CommerceScenarioResult = CommerceScenarioInputs & {
+  readonly consumerGmv: number
+  readonly transactionRevenue: number
+  readonly infrastructureRevenue: number
+  readonly totalRevenue: number
 }
 
-export function calculateRevenueScenario({
-  marketGmv,
-  sharePercent,
-  takeRatePercent,
-}: RevenueInputs): RevenueResult {
-  const inputs = [marketGmv, sharePercent, takeRatePercent]
+export function calculateCommerceScenario({
+  activeUsers,
+  purchasesPerUser,
+  gmvPerPurchase,
+  monetizationPercent,
+  agentTransactions,
+  infrastructureFee,
+}: CommerceScenarioInputs): CommerceScenarioResult {
+  const inputs = [
+    activeUsers,
+    purchasesPerUser,
+    gmvPerPurchase,
+    monetizationPercent,
+    agentTransactions,
+    infrastructureFee,
+  ]
   if (inputs.some((value) => !Number.isFinite(value) || value < 0)) {
-    throw new RangeError('Revenue scenario inputs must be finite and non-negative')
+    throw new RangeError('Commerce scenario inputs must be finite and non-negative')
   }
 
-  const gmv = marketGmv * (sharePercent / 100)
+  const consumerGmv = activeUsers * purchasesPerUser * gmvPerPurchase
+  const transactionRevenue = consumerGmv * (monetizationPercent / 100)
+  const infrastructureRevenue = agentTransactions * infrastructureFee
+
   return {
-    marketGmv,
-    sharePercent,
-    takeRatePercent,
-    gmv,
-    revenue: gmv * (takeRatePercent / 100),
+    activeUsers,
+    purchasesPerUser,
+    gmvPerPurchase,
+    monetizationPercent,
+    agentTransactions,
+    infrastructureFee,
+    consumerGmv,
+    transactionRevenue,
+    infrastructureRevenue,
+    totalRevenue: transactionRevenue + infrastructureRevenue,
   }
 }
 
@@ -187,8 +207,37 @@ export function formatCompactUsd(value: number): string {
   }).format(value)
 }
 
-export const revenueScenarioPresets = [
-  { id: 'focused', label: 'Focused', sharePercent: 0.02 },
-  { id: 'base', label: 'Illustrative', sharePercent: 0.1 },
-  { id: 'scale', label: 'Scale', sharePercent: 0.5 },
-] as const
+export const commerceScenarioPresets = [
+  {
+    id: 'launch',
+    label: 'Launch',
+    activeUsers: 1_000_000,
+    purchasesPerUser: 6,
+    gmvPerPurchase: 100,
+    monetizationPercent: 1.5,
+    agentTransactions: 10_000_000,
+    infrastructureFee: 0.1,
+  },
+  {
+    id: 'scale',
+    label: 'Scale',
+    activeUsers: 10_000_000,
+    purchasesPerUser: 8,
+    gmvPerPurchase: 120,
+    monetizationPercent: 2,
+    agentTransactions: 100_000_000,
+    infrastructureFee: 0.1,
+  },
+  {
+    id: 'global',
+    label: 'Global',
+    activeUsers: 50_000_000,
+    purchasesPerUser: 10,
+    gmvPerPurchase: 150,
+    monetizationPercent: 2.5,
+    agentTransactions: 500_000_000,
+    infrastructureFee: 0.12,
+  },
+] as const satisfies ReadonlyArray<{ id: string; label: string } & CommerceScenarioInputs>
+
+export type CommerceScenarioId = (typeof commerceScenarioPresets)[number]['id']

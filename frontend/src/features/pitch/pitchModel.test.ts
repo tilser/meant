@@ -1,61 +1,51 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
-  MARKET_ANCHOR_GMV,
   MODEL_ASSUMPTION_LABEL,
-  calculateRevenueScenario,
+  calculateCommerceScenario,
+  commerceScenarioPresets,
   formatCompactUsd,
   pitchSourceGroups,
-  revenueScenarioPresets,
   type PitchSource,
 } from './pitchModel'
 
-describe('pitch revenue model', () => {
-  test.each([
-    [0.02, 800_000_000, 16_000_000],
-    [0.1, 4_000_000_000, 80_000_000],
-    [0.5, 20_000_000_000, 400_000_000],
-  ])('models a %s%% share of the $4T anchor', (sharePercent, gmv, revenue) => {
-    expect(
-      calculateRevenueScenario({
-        marketGmv: MARKET_ANCHOR_GMV,
-        sharePercent,
-        takeRatePercent: 2,
-      }),
-    ).toMatchObject({ gmv, revenue })
+describe('pitch bottom-up commerce model', () => {
+  test('models consumer GMV and agent infrastructure revenue independently', () => {
+    expect(calculateCommerceScenario(commerceScenarioPresets[1])).toMatchObject({
+      consumerGmv: 9_600_000_000,
+      transactionRevenue: 192_000_000,
+      infrastructureRevenue: 10_000_000,
+      totalRevenue: 202_000_000,
+    })
   })
 
   test('rejects negative inputs instead of producing misleading output', () => {
     expect(() =>
-      calculateRevenueScenario({
-        marketGmv: MARKET_ANCHOR_GMV,
-        sharePercent: -0.1,
-        takeRatePercent: 2,
+      calculateCommerceScenario({
+        ...commerceScenarioPresets[1],
+        activeUsers: -1,
       }),
     ).toThrow(RangeError)
   })
 
   test('rejects non-finite inputs instead of rendering invalid market math', () => {
     expect(() =>
-      calculateRevenueScenario({
-        marketGmv: MARKET_ANCHOR_GMV,
-        sharePercent: Number.NaN,
-        takeRatePercent: 2,
+      calculateCommerceScenario({
+        ...commerceScenarioPresets[1],
+        infrastructureFee: Number.NaN,
       }),
     ).toThrow(RangeError)
   })
 
   test('formats scenario values without false precision', () => {
-    expect(formatCompactUsd(MARKET_ANCHOR_GMV)).toBe('$4T')
-    expect(formatCompactUsd(800_000_000)).toBe('$800M')
-    expect(formatCompactUsd(4_000_000_000)).toBe('$4B')
-    expect(formatCompactUsd(16_000_000)).toBe('$16M')
-    expect(formatCompactUsd(80_000_000)).toBe('$80M')
-    expect(formatCompactUsd(400_000_000)).toBe('$400M')
+    expect(formatCompactUsd(9_600_000_000)).toBe('$9.6B')
+    expect(formatCompactUsd(192_000_000)).toBe('$192M')
+    expect(formatCompactUsd(10_000_000)).toBe('$10M')
+    expect(formatCompactUsd(202_000_000)).toBe('$202M')
   })
 
-  test('ships the three required scenario shares and explicit assumption language', () => {
-    expect(revenueScenarioPresets.map(({ sharePercent }) => sharePercent)).toEqual([0.02, 0.1, 0.5])
+  test('ships three bottom-up scenarios and explicit assumption language', () => {
+    expect(commerceScenarioPresets.map(({ id }) => id)).toEqual(['launch', 'scale', 'global'])
     expect(MODEL_ASSUMPTION_LABEL).toContain('not a forecast')
   })
 })
