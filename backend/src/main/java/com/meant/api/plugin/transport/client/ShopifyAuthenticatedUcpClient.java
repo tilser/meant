@@ -8,6 +8,8 @@ import java.net.SocketTimeoutException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,6 +34,7 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
     private final ShopifyBearerAuthenticationStrategy authenticationStrategy;
     private final ExecutorService executor;
     private final Clock clock;
+    private final ConcurrentMap<ClientTimeouts, RestClient> restClients = new ConcurrentHashMap<>();
 
     @Autowired
     public ShopifyAuthenticatedUcpClient(
@@ -236,11 +239,15 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
         if (fixedRestClient != null) {
             return fixedRestClient;
         }
-        ShopifyUcpClientHttpRequestFactory requestFactory = new ShopifyUcpClientHttpRequestFactory(
-                options.connectTimeout(),
-                options.readTimeout()
+        return restClients.computeIfAbsent(
+                new ClientTimeouts(options.connectTimeout(), options.readTimeout()),
+                timeouts -> restClientBuilder.clone()
+                        .requestFactory(new ShopifyUcpClientHttpRequestFactory(
+                                timeouts.connectTimeout(),
+                                timeouts.readTimeout()
+                        ))
+                        .build()
         );
-        return restClientBuilder.clone().requestFactory(requestFactory).build();
     }
 
     private ShopifyUcpTransportException failure(
@@ -259,5 +266,8 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
     }
 
     private static final class UnauthorizedResponseException extends RuntimeException {
+    }
+
+    private record ClientTimeouts(Duration connectTimeout, Duration readTimeout) {
     }
 }
