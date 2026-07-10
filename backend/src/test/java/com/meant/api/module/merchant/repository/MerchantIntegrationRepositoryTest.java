@@ -190,6 +190,42 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void generatedIdAndNormalizedIdentitiesSupportCanonicalLookup() {
+        Merchant merchant = saveMerchant("canonical-%s.example".formatted(UUID.randomUUID()));
+        String externalMerchantId = "gid://shopify/Shop/" + UUID.randomUUID();
+        String verifiedDomain = "canonical-shop-%s.example".formatted(UUID.randomUUID());
+        String verifiedShopIdentity = "canonical-%s.myshopify.com".formatted(UUID.randomUUID());
+        MerchantIntegration integration = integration(
+                merchant,
+                MerchantIntegrationProvider.SHOPIFY,
+                "  " + externalMerchantId + "  ",
+                "  " + verifiedDomain.toUpperCase() + ".  ",
+                "https://canonical-shop.example/api/ucp/mcp",
+                MerchantIntegrationAuthStrategy.OAUTH_BEARER,
+                Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
+                "  " + verifiedShopIdentity.toUpperCase() + ".  "
+        );
+
+        assertThat(integration.getId()).isNull();
+
+        MerchantIntegration saved = merchantIntegrationRepository.saveAndFlush(integration);
+
+        assertThat(saved.getId()).isNotNull();
+        assertThat(saved.getExternalMerchantId()).isEqualTo(externalMerchantId);
+        assertThat(saved.getVerifiedDomain()).isEqualTo(verifiedDomain);
+        assertThat(saved.getVerifiedShopIdentity()).isEqualTo(verifiedShopIdentity);
+        assertThat(merchantIntegrationLookupService.findByProviderIdentity(
+                new GetMerchantIntegrationByProviderIdentityQuery(
+                        MerchantIntegrationProvider.SHOPIFY,
+                        "  " + externalMerchantId + "  "
+                )
+        )).get().extracting(MerchantIntegrationResult::id).isEqualTo(saved.getId());
+        assertThat(merchantIntegrationLookupService.listByVerifiedDomain(
+                new ListMerchantIntegrationsByVerifiedDomainQuery(verifiedDomain.toUpperCase() + ".")
+        )).extracting(MerchantIntegrationResult::id).containsExactly(saved.getId());
+    }
+
+    @Test
     void lookupServiceRejectsMalformedVerifiedDomain() {
         assertThatThrownBy(() -> merchantIntegrationLookupService.listByVerifiedDomain(
                 new ListMerchantIntegrationsByVerifiedDomainQuery("https://shop.example/path")
@@ -225,6 +261,30 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
             MerchantIntegrationAuthStrategy authStrategy,
             Set<MerchantIntegrationRole> roles
     ) {
+        return integration(
+                merchant,
+                provider,
+                externalMerchantId,
+                verifiedDomain,
+                endpoint,
+                authStrategy,
+                roles,
+                provider == MerchantIntegrationProvider.SHOPIFY
+                        ? "shop-%s.myshopify.com".formatted(UUID.randomUUID())
+                        : null
+        );
+    }
+
+    private MerchantIntegration integration(
+            Merchant merchant,
+            MerchantIntegrationProvider provider,
+            String externalMerchantId,
+            String verifiedDomain,
+            String endpoint,
+            MerchantIntegrationAuthStrategy authStrategy,
+            Set<MerchantIntegrationRole> roles,
+            String verifiedShopIdentity
+    ) {
         return MerchantIntegration.builder()
                 .merchant(merchant)
                 .provider(provider)
@@ -232,9 +292,7 @@ class MerchantIntegrationRepositoryTest extends PostgresIntegrationTest {
                 .roles(roles)
                 .externalMerchantId(externalMerchantId)
                 .verifiedDomain(verifiedDomain)
-                .verifiedShopIdentity(provider == MerchantIntegrationProvider.SHOPIFY
-                        ? "shop-%s.myshopify.com".formatted(UUID.randomUUID())
-                        : null)
+                .verifiedShopIdentity(verifiedShopIdentity)
                 .endpoint(endpoint)
                 .protocolVersion("2026-04-08")
                 .authStrategy(authStrategy)

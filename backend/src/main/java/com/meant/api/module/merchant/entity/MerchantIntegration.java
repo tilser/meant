@@ -13,13 +13,17 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -52,9 +56,9 @@ import org.hibernate.type.SqlTypes;
 public class MerchantIntegration {
 
     @Id
-    @Builder.Default
+    @GeneratedValue
     @Column(nullable = false, updatable = false)
-    private UUID id = UUID.randomUUID();
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "merchant_id", nullable = false)
@@ -112,4 +116,32 @@ public class MerchantIntegration {
 
     @Column(nullable = false)
     private Instant updatedAt;
+
+    @PrePersist
+    @PreUpdate
+    private void normalizeIdentities() {
+        externalMerchantId = trimToNull(externalMerchantId);
+        verifiedDomain = normalizeVerifiedIdentity(verifiedDomain);
+        verifiedShopIdentity = normalizeVerifiedIdentity(verifiedShopIdentity);
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String normalizeVerifiedIdentity(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        normalized = normalized.toLowerCase(Locale.ROOT);
+        while (normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.isEmpty() ? null : normalized;
+    }
 }
