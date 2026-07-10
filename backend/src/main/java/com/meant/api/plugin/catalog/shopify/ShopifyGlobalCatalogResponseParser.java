@@ -115,6 +115,13 @@ public class ShopifyGlobalCatalogResponseParser {
                 if (variant.price().amount() < 0) {
                     throw new ShopifyGlobalCatalogContractException("Shopify catalog variant price was negative");
                 }
+                if (variant.listPrice() != null
+                        && variant.listPrice().amount() != null
+                        && variant.listPrice().amount() < 0) {
+                    throw new ShopifyGlobalCatalogContractException(
+                            "Shopify catalog variant list price was negative"
+                    );
+                }
             }
         }
     }

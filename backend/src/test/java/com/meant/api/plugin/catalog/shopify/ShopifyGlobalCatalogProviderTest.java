@@ -304,6 +304,25 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
+    void ignoredHalfOpenFailureClosesTheUpstreamCircuit() {
+        MutableClock clock = new MutableClock(OBSERVED_AT);
+        ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
+                1,
+                Duration.ofSeconds(30),
+                clock
+        );
+        circuitBreaker.recordFailure(null);
+        clock.advance(Duration.ofSeconds(30));
+
+        assertThat(circuitBreaker.tryAcquire()).isTrue();
+        circuitBreaker.recordIgnoredFailure();
+
+        assertThat(circuitBreaker.isOpen()).isFalse();
+        assertThat(circuitBreaker.tryAcquire()).isTrue();
+        assertThat(circuitBreaker.tryAcquire()).isTrue();
+    }
+
+    @Test
     void classifiesMalformedNegotiationAndBoundsLookupAndSearchLimits() throws Exception {
         CapturingClient malformed = new CapturingClient(response("""
                 {"ucp":{"version":"2026-04-08","capabilities":{}},"products":[]}
@@ -361,6 +380,16 @@ class ShopifyGlobalCatalogProviderTest {
                 properties(3)
         ).searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null));
         assertThat(missingRequiredField.failure().kind()).isEqualTo(CatalogSourceFailureKind.MALFORMED_RESPONSE);
+
+        String negativeListPrice = globalResponse().replace(
+                "\"list_price\": {\"amount\": 9999, \"currency\": \"USD\"}",
+                "\"list_price\": {\"amount\": -1, \"currency\": \"USD\"}"
+        );
+        var invalidListPrice = provider(
+                new CapturingClient(response(negativeListPrice)),
+                properties(3)
+        ).searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null));
+        assertThat(invalidListPrice.failure().kind()).isEqualTo(CatalogSourceFailureKind.MALFORMED_RESPONSE);
 
         String missingGetProduct = """
                 {
