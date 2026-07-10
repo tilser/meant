@@ -2,95 +2,110 @@
 
 **Everything meant for you.**
 
-Meant is a personalized shopping platform that lets users search and buy products across multiple online stores from one place.
+Meant is a **Personal Commerce OS**: one intelligent, user-first system for discovering, comparing, buying, and managing products across independent merchants.
 
-Instead of showing users everything, Meant shows only products that match their preferences, goals, and values. It is not another marketplace. It is a personalized shopping layer on top of the internet.
+Meant is not a marketplace and it is not a frontend for any single commerce platform. It connects to merchants through the Universal Commerce Protocol (UCP), provider catalogs, and provider-specific extensions, then turns those fragmented systems into one consistent shopping experience.
 
-## Product
+## Vision
 
-Users can define persistent shopping preferences, such as:
+Online shopping is organized around stores. People have to repeat the same search, filters, preferences, address details, and checkout decisions on every site.
 
-- only organic food
-- no polyester
-- cotton clothing only
-- healthy products
-- sustainable brands
-- specific budget limits
-- highly rated products only
+Meant reorganizes commerce around the person.
 
-These preferences are applied automatically across every search.
+Meant understands what a user wants, remembers their durable preferences, searches every compatible merchant, identifies when multiple merchants sell the same product, ranks both products and offers, and completes the purchase through the best capability each merchant supports.
 
-## User Experience
+The merchant remains the seller of record. Meant provides the intelligence and orchestration that connects the user to that merchant.
 
-1. The user enters a shopping request, for example: "Find me a durable organic cotton hoodie under €100."
-2. Meant searches relevant merchants and products.
-3. Results are filtered and ranked based on the user's explicit preferences, product relevance, price, availability, reviews, and merchant quality.
-4. Each result explains why it is recommended, such as matching material preferences, staying within budget, having strong durability reviews, or shipping to the user's location.
-5. The user selects a product and is redirected to the merchant checkout.
+## The Meant Experience
 
-## Merchant Discovery
+1. The user describes an intent, such as: "Find me a durable organic cotton hoodie under EUR 100."
+2. Meant searches multiple sources in parallel, including provider-wide catalogs and individual UCP merchants.
+3. Results from the same merchant are deduplicated. The same product sold by different merchants is grouped into one canonical product with multiple offers.
+4. Products are ranked for personal relevance. Offers are ranked independently using price, availability, delivery, merchant quality, and checkout reliability.
+5. The product detail shows why the product fits, which merchants sell it, and which offer Meant recommends.
+6. The user builds one coordinated cart experience. Merchant boundaries remain explicit because each merchant owns its own inventory, totals, and transaction.
+7. Checkout stays inside Meant whenever the merchant supports embedded checkout. Meant progressively uses native or delegated capabilities when they are available and safe.
+8. Meant monitors orders, delivery, returns, and recurring shopping needs after purchase.
 
-Meant maintains an index of merchants that support UCP and Shopify Storefront MCP.
+A multi-merchant cart is a unified user experience, not a single cross-merchant transaction. Meant coordinates a separate checkout for each merchant and makes the sequence feel continuous.
 
-For each merchant, Meant stores:
+## Personalization
 
-- store description
-- product categories
-- target audience
-- sustainability signals
-- popular searches
-- supported capabilities
-- checkout endpoint
+Users can define persistent preferences and goals, for example:
 
-Merchant profiles are embedded for semantic search.
+- materials and ingredients to include or avoid
+- health, sustainability, and ethical requirements
+- preferred brands, sizes, fit, and categories
+- budget and delivery constraints
+- quality and review expectations
+- products they already own and items they need to replenish
 
-## Product Search
+Meant applies these preferences to every search and explains why each recommendation is meant for that user.
 
-Search happens in two stages:
+## Platform Architecture
 
-1. Find the most relevant merchants using semantic search over merchant profiles.
-2. Search products live only across those merchants.
+Meant consists of three layers:
 
-Product results are cached and gradually indexed to improve speed and quality over time.
+### Commerce Intelligence
 
-## Reviews
+- intent understanding and query planning
+- cross-source product identity and offer grouping
+- hard filtering and personalized product ranking
+- offer ranking across merchants
+- recommendation explanations, review insights, and user memory
 
-Reviews are a key part of Meant.
+### Commerce Runtime
 
-Meant aggregates available ratings and review data and generates concise AI insights:
+- UCP profile and capability negotiation
+- provider catalogs and provider-specific extensions
+- merchant and integration registry
+- authentication, scopes, token lifecycle, and rate-limit handling
+- cart, checkout, embedded checkout, and payment orchestration
+- retries, fallbacks, conformance testing, and observability
+- order lifecycle and webhooks
 
-- common advantages
-- common complaints
-- product quality signals
-- recurring issues
-- fit with the user's preferences
+### Commerce Surfaces
 
-## Ranking
+- the Meant web and mobile shopping experience
+- APIs and SDKs for third-party agents
+- partner and white-label experiences
 
-The ranking pipeline:
+Every Meant and partner surface runs on the same headless, provider-neutral Commerce Runtime. Third-party agents use the same merchant infrastructure without rebuilding every catalog, authentication, cart, checkout, and order integration.
 
-1. Hard filters, such as excluding polyester or products above budget.
-2. Semantic retrieval to find relevant merchants and products.
-3. Reranking to rank the best candidates against the user query.
-4. Personalization based on the user's long-term profile and goals.
+## Commerce Compatibility
 
-## Monetization
+UCP defines the common commerce contract. Providers can add capabilities, extensions, authentication requirements, and operational constraints. Meant supports the shared protocol while preserving those richer provider-specific features instead of reducing every merchant to the lowest common denominator.
 
-Meant is free for users.
+Merchant support is capability-based rather than binary. A merchant integration can independently support:
 
-Revenue comes from merchant commissions when users complete purchases through Meant.
+- catalog search and product lookup
+- cart creation and updates
+- checkout session management
+- embedded checkout
+- address, fulfillment, or payment delegation
+- direct checkout completion
+- order reads and lifecycle webhooks
 
-## MVP Scope
+Meant provides gold-standard compatibility with Shopify through Global Catalog discovery, Shopify UCP catalog extensions, authenticated cart and checkout tools, Checkout Kit with the Embedded Checkout Protocol (ECP), direct checkout completion when authorized, and order lifecycle tools. Other UCP providers and commerce platforms integrate through the same architecture.
 
-- merchant registry from public UCP merchants
-- merchant profiling through Shopify Storefront MCP
-- semantic merchant search
-- live product search
-- user preferences
-- personalized filtering and ranking
-- product detail with AI explanation
-- aggregated ratings and basic review insights
-- redirect to merchant checkout
+Production integrations use Meant's HTTP clients and runtime services directly. Shopify's CLI and tutorial tooling are useful for exploration and conformance checks, but they are not runtime dependencies.
+
+## Product Principles
+
+- **User-first:** Optimize for the user's intent and long-term interests, not for one merchant or provider.
+- **Provider-neutral:** Provider-specific code ends at an adapter boundary and does not define the core product model.
+- **Capability-aware:** Negotiate what each merchant can do and progressively enhance the experience.
+- **Products plus offers:** Group equivalent products while preserving every merchant offer as an independent purchase option.
+- **Trustworthy ranking:** Make recommendations explainable and prevent one source, affiliate relationship, or large catalog from dominating unfairly.
+- **Money safety:** Reconcile totals, preserve idempotency, protect credentials, and fail safely during checkout.
+- **Current data:** Refresh price, availability, and fulfillment before purchase and respect every provider's data-use rules.
+- **Observable execution:** Measure discovery quality, provider reliability, checkout completion, latency, and fallbacks.
+
+## Business Model
+
+The consumer product is free for users. Revenue comes from merchant or affiliate commissions on completed purchases and from infrastructure used by third-party commerce agents and surfaces.
+
+The Meant experience and external clients share the same Commerce Runtime, making provider coverage, reliability, and checkout infrastructure reusable across the entire ecosystem.
 
 ## Repository
 
@@ -107,6 +122,7 @@ This repository is a monorepo with a Java Spring Boot backend and a TanStack Sta
 ```text
 backend/   Spring Boot API
 frontend/  TanStack Start app
+plans/     Product and engineering implementation plans
 ```
 
 ## Local Development
@@ -142,10 +158,6 @@ bun run dev
 The backend listens on `http://localhost:8080`.
 The frontend listens on `http://localhost:3000`.
 
-Initial API endpoints:
-
-- `GET /api/health`
-
 ## Useful Commands
 
 ```sh
@@ -164,7 +176,7 @@ cd backend
 mvn verify
 ```
 
-`mvn verify` runs both unit tests and the Testcontainers-backed integration tests named `*IT`.
+`mvn verify` runs unit tests and the Testcontainers-backed integration tests named `*IT`.
 
 Reproduce the frontend job locally:
 
