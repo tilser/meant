@@ -134,6 +134,7 @@ shopify:
     refresh-skew: ${SHOPIFY_TOKEN_REFRESH_SKEW:5m}
     fallback-token-ttl: ${SHOPIFY_TOKEN_FALLBACK_TTL:60m}
   global-catalog:
+    discovery-enabled: ${SHOPIFY_GLOBAL_CATALOG_DISCOVERY_ENABLED:false}
     endpoint: ${SHOPIFY_GLOBAL_CATALOG_ENDPOINT:https://catalog.shopify.com/api/ucp/mcp}
     allowed-hosts: ${SHOPIFY_GLOBAL_CATALOG_ALLOWED_HOSTS:catalog.shopify.com}
     protocol-version: ${SHOPIFY_GLOBAL_CATALOG_PROTOCOL_VERSION:2026-04-08}

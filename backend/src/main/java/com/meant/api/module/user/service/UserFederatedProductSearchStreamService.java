@@ -48,6 +48,7 @@ public class UserFederatedProductSearchStreamService {
         return new UserFederatedProductSearchStreamEvent(
                 event.type(),
                 event.source(),
+                event.observationSources(),
                 candidate,
                 event.failure(),
                 event.terminalStatus()

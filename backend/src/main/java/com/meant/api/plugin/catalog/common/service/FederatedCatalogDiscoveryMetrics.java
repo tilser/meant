@@ -22,9 +22,9 @@ public class FederatedCatalogDiscoveryMetrics {
                 .increment();
     }
 
-    void partialFailure(CatalogSourceResult result) {
+    void sourceFailure(CatalogSourceResult result) {
         CatalogSourceFailureKind kind = result.failure().kind();
-        Counter.builder("commerce.catalog.federation.partial")
+        Counter.builder("commerce.catalog.federation.source.failures")
                 .tag("provider", result.provider().value().toLowerCase(Locale.ROOT))
                 .tag("source", result.discoverySource().value())
                 .tag("failure", kind.name().toLowerCase(Locale.ROOT))

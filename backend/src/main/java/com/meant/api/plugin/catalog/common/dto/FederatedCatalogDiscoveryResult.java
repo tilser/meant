@@ -6,7 +6,8 @@ import java.util.List;
 public record FederatedCatalogDiscoveryResult(
         CatalogDiscoveryTerminalStatus status,
         List<CatalogSourceResult> sources,
-        List<ProductCandidate> candidates
+        List<ProductCandidate> candidates,
+        boolean truncated
 ) {
 
     public FederatedCatalogDiscoveryResult {
@@ -17,6 +18,9 @@ public record FederatedCatalogDiscoveryResult(
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
         if (status == CatalogDiscoveryTerminalStatus.FAILED && !candidates.isEmpty()) {
             throw new IllegalArgumentException("Failed catalog discovery cannot contain candidates");
+        }
+        if (status == CatalogDiscoveryTerminalStatus.FAILED && truncated) {
+            throw new IllegalArgumentException("Failed catalog discovery cannot advertise a result continuation");
         }
     }
 }

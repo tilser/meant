@@ -4,6 +4,7 @@ import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryEvent;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
@@ -21,8 +22,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,10 +31,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class FederatedCatalogDiscoveryService {
 
-    private static final Comparator<CatalogDiscoverySource> SOURCE_ORDER = Comparator
-            .comparing((CatalogDiscoverySource source) -> source.sourceIdentity().provider().value())
-            .thenComparing(source -> source.sourceIdentity().type().name())
-            .thenComparing(source -> source.sourceIdentity().value());
+    private static final Comparator<DiscoverySourceIdentity> DISCOVERY_SOURCE_ORDER = Comparator
+            .comparing((DiscoverySourceIdentity source) -> source.provider().value())
+            .thenComparing(source -> source.type().name())
+            .thenComparing(DiscoverySourceIdentity::value);
+    private static final Comparator<CatalogDiscoverySource> SOURCE_ORDER =
+            Comparator.comparing(CatalogDiscoverySource::sourceIdentity, DISCOVERY_SOURCE_ORDER);
 
     private final List<CatalogDiscoverySource> sources;
     private final Duration overallDeadline;
@@ -68,62 +69,62 @@ public class FederatedCatalogDiscoveryService {
             CatalogDiscoveryRequest request,
             Consumer<CatalogDiscoveryEvent> eventConsumer
     ) {
+        long deadlineNanos = System.nanoTime() + overallDeadline.toNanos();
         List<CatalogDiscoverySource> eligibleSources = sources.stream()
                 .filter(source -> source.supports(request))
                 .toList();
+        FederatedCatalogEventDispatcher eventDispatcher = new FederatedCatalogEventDispatcher(
+                eventConsumer,
+                request.candidateLimit()
+        );
         if (eligibleSources.isEmpty()) {
             FederatedCatalogDiscoveryResult failed = new FederatedCatalogDiscoveryResult(
                     CatalogDiscoveryTerminalStatus.FAILED,
                     List.of(),
-                    List.of()
+                    List.of(),
+                    false
             );
-            eventConsumer.accept(CatalogDiscoveryEvent.terminal(failed.status()));
+            eventDispatcher.requestTerminal(failed.status());
             metrics.requestCompleted(failed.status());
+            awaitTerminal(eventDispatcher, deadlineNanos);
             return failed;
         }
 
-        AtomicBoolean acceptingEvents = new AtomicBoolean(true);
         BlockingQueue<Completion> completions = new LinkedBlockingQueue<>();
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
         List<FederatedCatalogSourceTask> tasks = new ArrayList<>();
-        long deadlineNanos = System.nanoTime() + overallDeadline.toNanos();
-        int sourceCandidateLimit = Math.max(1,
-                (request.candidateLimit() + eligibleSources.size() - 1) / eligibleSources.size());
         Set<ProviderIdentity> coveredProviders = eligibleSources.stream()
                 .map(CatalogDiscoverySource::sourceIdentity)
                 .filter(identity -> identity.type() == ResultSourceType.PROVIDER_CATALOG)
                 .map(identity -> identity.provider())
                 .collect(Collectors.toUnmodifiableSet());
         CatalogDiscoveryRequest coveredRequest = request.withCoveredProviders(coveredProviders);
-        AtomicInteger acceptedCandidates = new AtomicInteger();
 
         try {
             for (CatalogDiscoverySource source : eligibleSources) {
                 FederatedCatalogSourceTask task = new FederatedCatalogSourceTask(
                         source,
-                        coveredRequest.withCandidateLimit(sourceCandidateLimit),
-                        eventConsumer,
-                        acceptingEvents,
-                        completions,
-                        acceptedCandidates,
-                        request.candidateLimit()
+                        coveredRequest,
+                        eventDispatcher,
+                        completions
                 );
                 tasks.add(task);
                 task.start(executor, scheduler, deadlineNanos);
             }
 
             List<Completion> completed = await(tasks, completions, deadlineNanos);
-            acceptingEvents.set(false);
-            return finish(completed, request.candidateLimit(), eventConsumer);
+            FederatedCatalogDiscoveryResult result = finish(completed, request.candidateLimit());
+            eventDispatcher.requestTerminal(result.status());
+            eventDispatcher.awaitTerminal(deadlineNanos);
+            return result;
         } catch (InterruptedException exception) {
-            acceptingEvents.set(false);
             tasks.forEach(FederatedCatalogSourceTask::cancel);
+            eventDispatcher.cancel();
             metrics.cancelled();
             Thread.currentThread().interrupt();
             throw new CancellationException("Federated catalog discovery was cancelled");
         } finally {
-            acceptingEvents.set(false);
             tasks.forEach(FederatedCatalogSourceTask::cancel);
             scheduler.shutdownNow();
             executor.shutdownNow();
@@ -154,11 +155,13 @@ public class FederatedCatalogDiscoveryService {
 
     private FederatedCatalogDiscoveryResult finish(
             List<Completion> completed,
-            int candidateLimit,
-            Consumer<CatalogDiscoveryEvent> eventConsumer
+            int candidateLimit
     ) {
         List<CatalogSourceResult> results = completed.stream()
-                .sorted(Comparator.comparing(completion -> completion.result().discoverySource().value()))
+                .sorted(Comparator.comparing(
+                        completion -> completion.result().discoverySource(),
+                        DISCOVERY_SOURCE_ORDER
+                ))
                 .map(Completion::result)
                 .toList();
         long successfulSources = results.stream().filter(CatalogSourceResult::successful).count();
@@ -167,20 +170,53 @@ public class FederatedCatalogDiscoveryService {
                 : successfulSources == 0
                         ? CatalogDiscoveryTerminalStatus.FAILED
                         : CatalogDiscoveryTerminalStatus.PARTIAL;
+        List<CatalogSourceResult> successfulResults = results.stream()
+                .filter(CatalogSourceResult::successful)
+                .toList();
         List<ProductCandidate> candidates = status == CatalogDiscoveryTerminalStatus.FAILED
                 ? List.of()
-                : results.stream()
-                        .filter(CatalogSourceResult::successful)
-                        .flatMap(result -> result.candidates().stream())
-                        .limit(candidateLimit)
-                        .toList();
+                : roundRobin(successfulResults, candidateLimit);
+        boolean truncated = status != CatalogDiscoveryTerminalStatus.FAILED
+                && (successfulResults.stream().mapToInt(result -> result.candidates().size()).sum() > candidateLimit
+                        || successfulResults.stream().anyMatch(this::sourceHasMore));
 
-        if (status == CatalogDiscoveryTerminalStatus.PARTIAL) {
-            results.stream().filter(result -> !result.successful()).forEach(metrics::partialFailure);
-        }
+        results.stream().filter(result -> !result.successful()).forEach(metrics::sourceFailure);
         metrics.requestCompleted(status);
-        eventConsumer.accept(CatalogDiscoveryEvent.terminal(status));
-        return new FederatedCatalogDiscoveryResult(status, results, candidates);
+        return new FederatedCatalogDiscoveryResult(status, results, candidates, truncated);
+    }
+
+    private List<ProductCandidate> roundRobin(List<CatalogSourceResult> results, int candidateLimit) {
+        List<ProductCandidate> merged = new ArrayList<>(candidateLimit);
+        for (int index = 0; merged.size() < candidateLimit; index++) {
+            boolean added = false;
+            for (CatalogSourceResult result : results) {
+                if (index < result.candidates().size()) {
+                    merged.add(result.candidates().get(index));
+                    added = true;
+                    if (merged.size() == candidateLimit) {
+                        break;
+                    }
+                }
+            }
+            if (!added) {
+                break;
+            }
+        }
+        return List.copyOf(merged);
+    }
+
+    private boolean sourceHasMore(CatalogSourceResult result) {
+        return result.truncated() || result.page() != null && result.page().hasNextPage();
+    }
+
+    private void awaitTerminal(FederatedCatalogEventDispatcher eventDispatcher, long deadlineNanos) {
+        try {
+            eventDispatcher.awaitTerminal(deadlineNanos);
+        } catch (InterruptedException exception) {
+            eventDispatcher.cancel();
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Federated catalog discovery was cancelled");
+        }
     }
 
 }

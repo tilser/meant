@@ -99,6 +99,7 @@ shopify:
     refresh-skew: 5m
     fallback-token-ttl: 60m
   global-catalog:
+    discovery-enabled: false
     endpoint: https://catalog.shopify.test/api/ucp/mcp
     allowed-hosts:
       - catalog.shopify.test

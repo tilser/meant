@@ -38,7 +38,7 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
 
     @Override
     public boolean supports(CatalogDiscoveryRequest request) {
-        return request.broad() && authProperties.isEnabled();
+        return request.broad() && properties.discoveryEnabled() && authProperties.isEnabled();
     }
 
     @Override

@@ -510,6 +510,7 @@ class ShopifyGlobalCatalogProviderTest {
 
     private ShopifyGlobalCatalogProperties properties(int failureThreshold) {
         return new ShopifyGlobalCatalogProperties(
+                true,
                 URI.create("https://catalog.shopify.test/api/ucp/mcp"),
                 Set.of("catalog.shopify.test"),
                 "2026-04-08",

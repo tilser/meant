@@ -22,7 +22,11 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'UserFederatedProductSearchStreamEventResponse',
     'CatalogSourceFailureResponse',
   ]
+  const federatedEventFields: Array<
+    keyof components['schemas']['UserFederatedProductSearchStreamEventResponse']
+  > = ['type', 'source', 'observationSources', 'candidate', 'failure', 'terminalStatus']
 
   expect(expectedPaths).toHaveLength(4)
   expect(expectedSchemas).toHaveLength(11)
+  expect(federatedEventFields).toContain('observationSources')
 })

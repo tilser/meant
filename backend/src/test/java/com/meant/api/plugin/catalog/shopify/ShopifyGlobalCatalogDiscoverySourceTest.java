@@ -81,8 +81,46 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
         ))).isFalse();
     }
 
+    @Test
+    void authEnabledDiscoveryDisabledDoesNotScheduleGlobalCatalog() {
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                new FakeProvider(properties(false), null, null),
+                properties(false),
+                authProperties(true)
+        );
+
+        assertThat(adapter.supports(broadRequest())).isFalse();
+    }
+
+    @Test
+    void discoveryEnabledAuthDisabledDoesNotScheduleGlobalCatalog() {
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                new FakeProvider(properties(true), null, null),
+                properties(true),
+                authProperties(false)
+        );
+
+        assertThat(adapter.supports(broadRequest())).isFalse();
+    }
+
+    @Test
+    void discoveryAndAuthEnabledScheduleGlobalCatalog() {
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                new FakeProvider(properties(true), null, null),
+                properties(true),
+                authProperties(true)
+        );
+
+        assertThat(adapter.supports(broadRequest())).isTrue();
+    }
+
     private ShopifyGlobalCatalogProperties properties() {
+        return properties(true);
+    }
+
+    private ShopifyGlobalCatalogProperties properties(boolean discoveryEnabled) {
         return new ShopifyGlobalCatalogProperties(
+                discoveryEnabled,
                 java.net.URI.create("https://catalog.shopify.test/api/ucp/mcp"),
                 Set.of("catalog.shopify.test"),
                 "2026-04-08",
@@ -97,6 +135,10 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
                 3,
                 Duration.ofSeconds(30)
         );
+    }
+
+    private CatalogDiscoveryRequest broadRequest() {
+        return new CatalogDiscoveryRequest("linen shirt", null, 10, null, null, null);
     }
 
     private ShopifyAgentAuthProperties authProperties(boolean enabled) {

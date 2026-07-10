@@ -54,6 +54,58 @@ class UserProductSearchSseSessionTest {
     }
 
     @Test
+    void atomicallyOrdersConcurrentNonterminalAndTerminalAdmission() throws Exception {
+        CapturingProductSearchEventWriter writer = new CapturingProductSearchEventWriter(2);
+        CountDownLatch nonterminalClassified = new CountDownLatch(1);
+        CountDownLatch releaseNonterminal = new CountDownLatch(1);
+        CountDownLatch nonterminalDone = new CountDownLatch(1);
+        CountDownLatch terminalDone = new CountDownLatch(1);
+        UserSseSession<UserProductSearchStreamEventResponse> session = new UserSseSession<>(
+                new SseEmitter(10_000L),
+                4,
+                UUID.randomUUID(),
+                null,
+                writer::writeProductSearchEvent,
+                event -> {
+                    if ("phase".equals(event.type())) {
+                        nonterminalClassified.countDown();
+                        await(releaseNonterminal);
+                    }
+                    return "done".equals(event.type()) || "error".equals(event.type());
+                },
+                ignored -> UserProductSearchStreamEventResponse.error("search failed")
+        );
+        CountDownLatch releaseSearch = new CountDownLatch(1);
+        try {
+            session.start(() -> await(releaseSearch));
+            Thread.ofVirtual().start(() -> {
+                session.send(UserProductSearchStreamEventResponse.from(
+                        com.meant.api.module.user.service.dto.UserProductSearchStreamEvent.phase("search", "first")
+                ));
+                nonterminalDone.countDown();
+            });
+            assertThat(nonterminalClassified.await(1, TimeUnit.SECONDS)).isTrue();
+            Thread.ofVirtual().start(() -> {
+                session.send(UserProductSearchStreamEventResponse.error("terminal"));
+                terminalDone.countDown();
+            });
+
+            releaseNonterminal.countDown();
+
+            assertThat(nonterminalDone.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(terminalDone.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(writer.written.await(1, TimeUnit.SECONDS)).isTrue();
+            session.send(UserProductSearchStreamEventResponse.from(
+                    com.meant.api.module.user.service.dto.UserProductSearchStreamEvent.phase("search", "late")
+            ));
+            assertThat(writer.events).extracting(UserProductSearchStreamEventResponse::type)
+                    .containsExactly("phase", "error");
+        } finally {
+            releaseSearch.countDown();
+        }
+    }
+
+    @Test
     void completeWithErrorCancelsRunningSearchFuture() throws Exception {
         FailingProductSearchEventWriter writer = new FailingProductSearchEventWriter();
         UserSseSession<UserProductSearchStreamEventResponse> session = new UserSseSession<>(
@@ -113,6 +165,14 @@ class UserProductSearchSseSessionTest {
         return false;
     }
 
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static final class FailingProductSearchEventWriter extends UserStreamEventWriter {
 
         private final CountDownLatch writeAttempted = new CountDownLatch(1);
@@ -134,10 +194,15 @@ class UserProductSearchSseSessionTest {
     private static final class CapturingProductSearchEventWriter extends UserStreamEventWriter {
 
         private final CopyOnWriteArrayList<UserProductSearchStreamEventResponse> events = new CopyOnWriteArrayList<>();
-        private final CountDownLatch written = new CountDownLatch(1);
+        private final CountDownLatch written;
 
         private CapturingProductSearchEventWriter() {
+            this(1);
+        }
+
+        private CapturingProductSearchEventWriter(int expectedEvents) {
             super(null);
+            written = new CountDownLatch(expectedEvents);
         }
 
         @Override

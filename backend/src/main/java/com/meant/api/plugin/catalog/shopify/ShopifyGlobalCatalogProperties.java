@@ -17,6 +17,7 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "shopify.global-catalog")
 public record ShopifyGlobalCatalogProperties(
+        boolean discoveryEnabled,
         @NotNull URI endpoint,
         @NotEmpty Set<@NotBlank String> allowedHosts,
         @NotBlank String protocolVersion,

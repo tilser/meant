@@ -29,10 +29,11 @@ final class UserSseSession<T> {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final AtomicBoolean cleanupStarted = new AtomicBoolean();
-    private final AtomicBoolean terminalAccepted = new AtomicBoolean();
+    private final Object eventAdmissionLock = new Object();
 
     private CompletableFuture<Void> searchFuture;
     private CompletableFuture<Void> drainFuture;
+    private boolean terminalAccepted;
 
     UserSseSession(
             SseEmitter emitter,
@@ -84,25 +85,24 @@ final class UserSseSession<T> {
     }
 
     void send(T event) {
-        if (cancelled.get()) {
-            return;
-        }
-        if (terminalPredicate.test(event)) {
-            if (!terminalAccepted.compareAndSet(false, true)) {
+        synchronized (eventAdmissionLock) {
+            boolean terminal = terminalPredicate.test(event);
+            if (cancelled.get() || terminalAccepted) {
                 return;
             }
-        } else if (terminalAccepted.get()) {
-            return;
-        }
-        if (events.offer(event)) {
-            return;
-        }
-        if (!terminalPredicate.test(event)) {
-            log.debug("Dropping user stream event because the client queue is full. userId={}", userId);
-            return;
-        }
-        while (!events.offer(event)) {
-            events.poll();
+            if (terminal) {
+                terminalAccepted = true;
+            }
+            if (events.offer(event)) {
+                return;
+            }
+            if (!terminal) {
+                log.debug("Dropping user stream event because the client queue is full. userId={}", userId);
+                return;
+            }
+            while (!events.offer(event)) {
+                events.poll();
+            }
         }
     }
 

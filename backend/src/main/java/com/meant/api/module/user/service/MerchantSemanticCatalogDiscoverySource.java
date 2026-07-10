@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -95,7 +96,7 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
             CatalogDiscoveryRequest request,
             Consumer<ProductCandidate> candidateConsumer
     ) {
-        Map<UUID, MerchantIntegrationResult> integrations = new ConcurrentHashMap<>();
+        Map<UUID, Optional<MerchantIntegrationResult>> integrations = new ConcurrentHashMap<>();
         Instant observedAt = Instant.now();
         try {
             MerchantSemanticProductSearchResult result = searchService.search(
@@ -153,18 +154,18 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
 
     private java.util.Optional<ProductCandidate> candidate(
             MerchantSemanticProductResult product,
-            Map<UUID, MerchantIntegrationResult> integrations,
+            Map<UUID, Optional<MerchantIntegrationResult>> integrations,
             Instant observedAt
     ) {
-        MerchantIntegrationResult integration = integrations.computeIfAbsent(
+        Optional<MerchantIntegrationResult> integration = integrations.computeIfAbsent(
                 product.merchantId(),
-                merchantId -> integration(product)
+                merchantId -> Optional.ofNullable(integration(product))
         );
-        if (integration == null) {
+        if (integration.isEmpty()) {
             return java.util.Optional.empty();
         }
         String productKey = hashService.productKey(product);
-        return java.util.Optional.of(candidateMapper.from(product, productKey, integration, observedAt));
+        return java.util.Optional.of(candidateMapper.from(product, productKey, integration.get(), observedAt));
     }
 
     private MerchantIntegrationResult integration(MerchantSemanticProductResult product) {

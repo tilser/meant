@@ -49,7 +49,7 @@ public class UserGroupedProductSearchService {
                 .limit(preparation.limit())
                 .toList();
         boolean hasMore = preparation.fetchLimit() < UserProductSearchPagination.MAX_RESULT_WINDOW
-                && discovery.candidates().size() >= preparation.fetchLimit();
+                && (discovery.truncated() || discovery.candidates().size() >= preparation.fetchLimit());
         return new UserGroupedProductSearchResult(
                 preparation.query(),
                 preparation.normalizedQuery(),

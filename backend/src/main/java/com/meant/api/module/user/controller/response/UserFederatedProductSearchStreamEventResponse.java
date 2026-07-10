@@ -9,13 +9,22 @@ import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailure;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Duration;
+import java.util.List;
 
 @Schema(description = "Provider-neutral federated discovery event with source provenance")
 public record UserFederatedProductSearchStreamEventResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         CatalogDiscoveryEventType type,
-        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Schema(
+                description = "Federated acquisition source that emitted this event",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
         DiscoverySourceIdentityResponse source,
+        @Schema(
+                description = "Provider observation sources in candidate provenance; source is the acquisition path",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        List<DiscoverySourceIdentityResponse> observationSources,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         CanonicalProductResponse candidate,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -30,6 +39,9 @@ public record UserFederatedProductSearchStreamEventResponse(
         return new UserFederatedProductSearchStreamEventResponse(
                 event.type(),
                 DiscoverySourceIdentityResponse.from(event.source()),
+                event.observationSources().stream()
+                        .map(DiscoverySourceIdentityResponse::from)
+                        .toList(),
                 CanonicalProductResponse.from(event.candidate()),
                 CatalogSourceFailureResponse.from(event.failure()),
                 event.terminalStatus()
@@ -40,6 +52,7 @@ public record UserFederatedProductSearchStreamEventResponse(
         return new UserFederatedProductSearchStreamEventResponse(
                 CatalogDiscoveryEventType.ERROR,
                 null,
+                List.of(),
                 null,
                 null,
                 CatalogDiscoveryTerminalStatus.FAILED

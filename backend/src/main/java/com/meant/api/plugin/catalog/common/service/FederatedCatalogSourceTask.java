@@ -1,6 +1,5 @@
 package com.meant.api.plugin.catalog.common.service;
 
-import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryEvent;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailure;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
@@ -16,21 +15,15 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 /** One independently cancellable source execution with per-source event and deadline admission. */
 final class FederatedCatalogSourceTask {
 
     private final CatalogDiscoverySource source;
     private final CatalogDiscoveryRequest request;
-    private final Consumer<CatalogDiscoveryEvent> eventConsumer;
-    private final AtomicBoolean acceptingEvents;
+    private final FederatedCatalogEventDispatcher eventDispatcher;
     private final BlockingQueue<Completion> completions;
-    private final AtomicInteger acceptedCandidates;
-    private final int overallCandidateLimit;
     private final AtomicBoolean terminal = new AtomicBoolean();
-    private final AtomicInteger emittedCandidates = new AtomicInteger();
 
     private volatile Future<?> future;
     private volatile ScheduledFuture<?> timeoutFuture;
@@ -38,19 +31,13 @@ final class FederatedCatalogSourceTask {
     FederatedCatalogSourceTask(
             CatalogDiscoverySource source,
             CatalogDiscoveryRequest request,
-            Consumer<CatalogDiscoveryEvent> eventConsumer,
-            AtomicBoolean acceptingEvents,
-            BlockingQueue<Completion> completions,
-            AtomicInteger acceptedCandidates,
-            int overallCandidateLimit
+            FederatedCatalogEventDispatcher eventDispatcher,
+            BlockingQueue<Completion> completions
     ) {
         this.source = source;
         this.request = request;
-        this.eventConsumer = eventConsumer;
-        this.acceptingEvents = acceptingEvents;
+        this.eventDispatcher = eventDispatcher;
         this.completions = completions;
-        this.acceptedCandidates = acceptedCandidates;
-        this.overallCandidateLimit = overallCandidateLimit;
     }
 
     void start(ExecutorService executor, ScheduledExecutorService scheduler, long overallDeadlineNanos) {
@@ -89,16 +76,7 @@ final class FederatedCatalogSourceTask {
     }
 
     private void emitCandidate(ProductCandidate candidate) {
-        if (candidate == null || terminal.get() || !acceptingEvents.get()) {
-            return;
-        }
-        if (emittedCandidates.incrementAndGet() > request.candidateLimit()) {
-            return;
-        }
-        if (acceptedCandidates.incrementAndGet() > overallCandidateLimit) {
-            return;
-        }
-        eventConsumer.accept(CatalogDiscoveryEvent.candidate(source.sourceIdentity(), candidate));
+        eventDispatcher.candidate(source.sourceIdentity(), candidate);
     }
 
     private void complete(CatalogSourceResult result) {
@@ -106,12 +84,15 @@ final class FederatedCatalogSourceTask {
             return;
         }
         cancelTimeout();
-        if (acceptingEvents.get()) {
-            eventConsumer.accept(result.successful()
-                    ? CatalogDiscoveryEvent.sourceComplete(source.sourceIdentity())
-                    : CatalogDiscoveryEvent.sourceDegraded(source.sourceIdentity(), result.failure()));
+        try {
+            if (result.successful()) {
+                eventDispatcher.sourceComplete(source.sourceIdentity());
+            } else {
+                eventDispatcher.sourceDegraded(source.sourceIdentity(), result.failure());
+            }
+        } finally {
+            completions.add(new Completion(result));
         }
-        completions.add(new Completion(result));
     }
 
     void timeout() {
@@ -126,10 +107,11 @@ final class FederatedCatalogSourceTask {
                 CatalogSourceFailureKind.TIMEOUT,
                 "Catalog discovery source exceeded its deadline"
         );
-        if (acceptingEvents.get()) {
-            eventConsumer.accept(CatalogDiscoveryEvent.sourceDegraded(source.sourceIdentity(), result.failure()));
+        try {
+            eventDispatcher.sourceDegraded(source.sourceIdentity(), result.failure());
+        } finally {
+            completions.add(new Completion(result));
         }
-        completions.add(new Completion(result));
     }
 
     private CatalogSourceResult failure(CatalogSourceFailureKind kind, String message) {

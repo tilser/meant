@@ -16,10 +16,17 @@ import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryTerminalStatus;
+import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailure;
+import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
+import com.meant.api.plugin.catalog.common.dto.CatalogSourceOperation;
+import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
+import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySource;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryMetrics;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties;
@@ -31,6 +38,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import org.junit.jupiter.api.Test;
 
 class UserGroupedProductSearchServiceTest {
@@ -49,7 +58,8 @@ class UserGroupedProductSearchServiceTest {
                 new FederatedCatalogDiscoveryResult(
                         CatalogDiscoveryTerminalStatus.SUCCESS,
                         List.of(),
-                        List.of(candidate)
+                        List.of(candidate),
+                        false
                 )
         );
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
@@ -97,6 +107,63 @@ class UserGroupedProductSearchServiceTest {
                 .isEqualTo("variant-product:v1:gid://shopify/ProductVariant/300");
     }
 
+    @Test
+    void successiveNonzeroOffsetsRemainPrefixStableWithoutDuplicatesOrGaps() {
+        List<ProductCandidate> generic = pageCandidates("generic", 8);
+        List<ProductCandidate> shopify = pageCandidates("shopify", 8);
+        UserGroupedProductSearchService service = pagingService(
+                new PrefixSource("GENERIC_UCP", ResultSourceType.MERCHANT_STOREFRONT, "GENERIC", generic, false),
+                new PrefixSource("SHOPIFY", ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL", shopify, false)
+        );
+        EnsureUserProfileCommand profile = profile();
+
+        var first = service.search(profile, command(profile.id(), 0, 2));
+        var second = service.search(profile, command(profile.id(), 2, 2));
+        var third = service.search(profile, command(profile.id(), 4, 2));
+
+        assertThat(java.util.stream.Stream.of(first, second, third)
+                .flatMap(page -> page.products().stream())
+                .map(product -> product.title())
+                .toList())
+                .containsExactlyInAnyOrder(
+                        "Product generic-0",
+                        "Product shopify-0",
+                        "Product generic-1",
+                        "Product shopify-1",
+                        "Product generic-2",
+                        "Product shopify-2"
+                )
+                .doesNotHaveDuplicates();
+        assertThat(first.hasMore()).isTrue();
+        assertThat(second.hasMore()).isTrue();
+        assertThat(third.hasMore()).isTrue();
+    }
+
+    @Test
+    void sparseAndFailedSourcesStillPageTheTruncatedSuccessfulPrefix() {
+        List<ProductCandidate> sparse = pageCandidates("generic", 1);
+        List<ProductCandidate> shopify = pageCandidates("shopify", 8);
+        EnsureUserProfileCommand profile = profile();
+        UserGroupedProductSearchService sparseService = pagingService(
+                new PrefixSource("GENERIC_UCP", ResultSourceType.MERCHANT_STOREFRONT, "GENERIC", sparse, false),
+                new PrefixSource("SHOPIFY", ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL", shopify, false)
+        );
+        UserGroupedProductSearchService partialService = pagingService(
+                new PrefixSource("GENERIC_UCP", ResultSourceType.MERCHANT_STOREFRONT, "GENERIC", List.of(), true),
+                new PrefixSource("SHOPIFY", ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL", shopify, false)
+        );
+
+        var sparsePage = sparseService.search(profile, command(profile.id(), 2, 2));
+        var partialPage = partialService.search(profile, command(profile.id(), 2, 2));
+
+        assertThat(sparsePage.products()).extracting(product -> product.title())
+                .containsExactlyInAnyOrder("Product shopify-1", "Product shopify-2");
+        assertThat(partialPage.products()).extracting(product -> product.title())
+                .containsExactlyInAnyOrder("Product shopify-2", "Product shopify-3");
+        assertThat(sparsePage.hasMore()).isTrue();
+        assertThat(partialPage.hasMore()).isTrue();
+    }
+
     private UserProductSearchPreparation preparation() {
         return new UserProductSearchPreparation(
                 "linen shirt",
@@ -123,7 +190,12 @@ class UserGroupedProductSearchServiceTest {
     }
 
     private SearchUserProductsCommand command(UUID userId) {
-        return new SearchUserProductsCommand(userId, "linen shirt", null, "127.0.0.1", "test", 0, 20);
+        return command(userId, 0, 20);
+    }
+
+    private SearchUserProductsCommand command(UUID userId, int offset, int limit) {
+        return new SearchUserProductsCommand(
+                userId, "linen shirt", null, "127.0.0.1", "test", offset, limit);
     }
 
     private UserCanonicalProductCandidateMapper candidateMapper() {
@@ -131,17 +203,61 @@ class UserGroupedProductSearchServiceTest {
     }
 
     private UserProductSearchProductResult flatProduct(String priceCurrency, String selectedVariantPriceCurrency) {
+        return flatProduct(priceCurrency, selectedVariantPriceCurrency, "legacy");
+    }
+
+    private UserProductSearchProductResult flatProduct(
+            String priceCurrency,
+            String selectedVariantPriceCurrency,
+            String suffix
+    ) {
         UUID merchantId = UUID.fromString("30000000-0000-0000-0000-000000000001");
+        boolean legacy = "legacy".equals(suffix);
+        String productId = legacy ? "200" : suffix;
+        String variantId = legacy ? "300" : suffix;
+        String title = legacy ? "Linen shirt" : "Product " + suffix;
+        String productPath = legacy ? "linen-shirt" : suffix;
         return new UserProductSearchProductResult(
-                "legacy.example:legacy-product-key", "legacy-hash", merchantId, "shop.example", "Legacy merchant",
-                "https://shop.example/mcp", 1, 0.9, 0.8, "gid://shopify/Product/200", "Linen shirt",
-                "<p>A linen shirt</p>", "https://shop.example/products/linen-shirt",
+                "legacy.example:" + suffix, "legacy-hash", merchantId, "shop.example", "Legacy merchant",
+                "https://shop.example/mcp", 1, 0.9, 0.8, "gid://shopify/Product/" + productId, title,
+                "<p>A linen shirt</p>", "https://shop.example/products/" + productPath,
                 "https://shop.example/linen-shirt.jpg", 4200L, 4200L, priceCurrency, null, null, null, null,
                 List.of(), List.of(), List.of("OEKO-TEX"), List.of("linen"), List.of(), List.of(), List.of(), true,
                 null, "A linen shirt", "https://shop.example/linen-shirt.jpg", "42.00", "42.00", "usd",
-                "gid://shopify/ProductVariant/300", "Natural / Medium", "42.00", selectedVariantPriceCurrency,
+                "gid://shopify/ProductVariant/" + variantId, "Natural / Medium", "42.00", selectedVariantPriceCurrency,
                 "https://shop.example/linen-shirt.jpg", "Linen shirt", true, 1, 0.8, 1, 90, "Matches",
                 List.of(), List.of(), null, null, null
+        );
+    }
+
+    private List<ProductCandidate> pageCandidates(String prefix, int count) {
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(index -> {
+                    UserProductSearchProductResult product = flatProduct(
+                            "USD",
+                            "USD",
+                            prefix + "-" + index
+                    );
+                    return candidateMapper().from(
+                            product,
+                            integration(product.merchantId()),
+                            Instant.parse("2026-07-10T10:00:00Z"),
+                            ResultSourceType.MERCHANT_STOREFRONT
+                    );
+                })
+                .toList();
+    }
+
+    private UserGroupedProductSearchService pagingService(CatalogDiscoverySource... sources) {
+        FederatedCatalogDiscoveryService discoveryService = new FederatedCatalogDiscoveryService(
+                List.of(sources),
+                new FederatedCatalogDiscoveryProperties(Duration.ofSeconds(1)),
+                new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry())
+        );
+        return new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                discoveryService,
+                new ExactProductGroupingService()
         );
     }
 
@@ -165,6 +281,102 @@ class UserGroupedProductSearchServiceTest {
                 now,
                 now
         );
+    }
+
+    private static final class PagingPreparationService extends UserProductSearchPreparationService {
+
+        private PagingPreparationService() {
+            super(null, null, null, null, null, null);
+        }
+
+        @Override
+        public UserProductSearchPreparation prepare(
+                EnsureUserProfileCommand profileCommand,
+                SearchUserProductsCommand command
+        ) {
+            return new UserProductSearchPreparation(
+                    command.query(),
+                    null,
+                    null,
+                    null,
+                    new UserProductSearchCatalogInput(command.query(), "normalized", null, null, null),
+                    "normalized",
+                    "profile-hash",
+                    Instant.parse("2026-07-11T00:00:00Z"),
+                    command.offset(),
+                    command.limit(),
+                    command.offset() + command.limit() + 1
+            );
+        }
+    }
+
+    private static final class PrefixSource implements CatalogDiscoverySource {
+
+        private final DiscoverySourceIdentity source;
+        private final List<ProductCandidate> candidates;
+        private final boolean fail;
+
+        private PrefixSource(
+                String provider,
+                ResultSourceType type,
+                String value,
+                List<ProductCandidate> candidates,
+                boolean fail
+        ) {
+            this.source = new DiscoverySourceIdentity(new ProviderIdentity(provider), type, value);
+            this.candidates = candidates;
+            this.fail = fail;
+        }
+
+        @Override
+        public DiscoverySourceIdentity sourceIdentity() {
+            return source;
+        }
+
+        @Override
+        public Duration timeout() {
+            return Duration.ofSeconds(1);
+        }
+
+        @Override
+        public CatalogSourceResult search(
+                CatalogDiscoveryRequest request,
+                Consumer<ProductCandidate> candidateConsumer
+        ) {
+            if (fail) {
+                return new CatalogSourceResult(
+                        source.provider(),
+                        source,
+                        CatalogSourceOperation.SEARCH,
+                        null,
+                        NegotiatedCapabilities.none(),
+                        List.of(),
+                        null,
+                        false,
+                        new CatalogSourceFailure(
+                                CatalogSourceFailureKind.TRANSIENT_UPSTREAM,
+                                "Safe failure",
+                                null,
+                                null
+                        )
+                );
+            }
+            List<ProductCandidate> page = candidates.stream()
+                    .limit(request.candidateLimit())
+                    .toList();
+            page.forEach(candidateConsumer);
+            return new CatalogSourceResult(
+                    source.provider(),
+                    source,
+                    CatalogSourceOperation.SEARCH,
+                    "2026-04-08",
+                    NegotiatedCapabilities.none(),
+                    page,
+                    null,
+                    candidates.size() > page.size(),
+                    null
+            );
+        }
     }
 
     private static final class StubPreparationService extends UserProductSearchPreparationService {

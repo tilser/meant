@@ -1421,7 +1421,10 @@ export interface components {
         UserFederatedProductSearchStreamEventResponse: {
             /** @enum {string} */
             type: "CANDIDATE" | "SOURCE_COMPLETE" | "SOURCE_DEGRADED" | "COMPLETE" | "ERROR";
+            /** @description Federated acquisition source that emitted this event */
             source?: components["schemas"]["DiscoverySourceIdentityResponse"];
+            /** @description Provider observation sources in candidate provenance; source is the acquisition path */
+            observationSources: components["schemas"]["DiscoverySourceIdentityResponse"][];
             candidate?: components["schemas"]["CanonicalProductResponse"];
             failure?: components["schemas"]["CatalogSourceFailureResponse"];
             /** @enum {string} */
