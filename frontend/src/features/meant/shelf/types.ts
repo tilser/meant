@@ -21,7 +21,8 @@ export interface ShelfProductSnapshot {
   brand: string
   category: string
   tone: string
-  priceFrom: number
+  priceFrom: number | null
+  priceCurrency?: string | null
   merchants: number
   imageUrl?: string | null
 }

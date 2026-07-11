@@ -16,6 +16,13 @@ import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
 import com.meant.api.module.user.service.command.RecordUserTasteBehaviorCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
+import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
+import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
+import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.UpdateUserNewsletterCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
@@ -131,7 +138,44 @@ public final class UserCommandMapper {
                                 offer.available()))
                         .toList(),
                 request.needs(),
-                request.provides());
+                request.provides(),
+                catalogReference(request));
+    }
+
+    private static CatalogProductReference catalogReference(SaveUserProductRequest request) {
+        SaveUserProductRequest.CatalogReference reference = request.catalogReference();
+        if (reference == null) {
+            return null;
+        }
+        ProviderIdentity provider = new ProviderIdentity(reference.provider());
+        return new CatalogProductReference(
+                request.id(),
+                new DiscoverySourceIdentity(provider, reference.sourceType(), reference.sourceIdentity()),
+                reference.localMerchantId(),
+                reference.merchantIntegrationId() == null
+                        ? null
+                        : new LocalMerchantRouting(reference.merchantIntegrationId()),
+                ExternalIdentifier.optional(
+                        ExternalIdentifierType.MERCHANT,
+                        provider.value(),
+                        reference.externalMerchantId()
+                ),
+                new ExternalIdentifier(
+                        ExternalIdentifierType.PRODUCT,
+                        provider.value(),
+                        reference.externalProductId()
+                ),
+                ExternalIdentifier.optional(
+                        ExternalIdentifierType.VARIANT,
+                        provider.value(),
+                        reference.externalVariantId()
+                ),
+                reference.selectedOptions() == null
+                        ? List.of()
+                        : reference.selectedOptions().stream()
+                                .map(option -> new ProductAttribute(option.group(), option.name(), option.value()))
+                                .toList()
+        );
     }
 
     public static RecordUserTasteBehaviorCommand toRecordUserTasteBehaviorCommand(

@@ -3,6 +3,9 @@ package com.meant.api.module.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
+import com.meant.api.module.merchant.service.GenericUcpCatalogDataUsePolicy;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
@@ -18,11 +21,15 @@ import com.meant.api.module.user.service.dto.UserProductRecommendationExplanatio
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyMetrics;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -62,7 +69,8 @@ class UserProductSearchPersistenceServiceTest {
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
                 new UserTasteRankingService(),
                 new UserProductSearchCurationPolicy(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                cachePolicy()
         );
         UserProductRecommendationExplanationResult explanation = new UserProductRecommendationExplanationResult(
                 "merchant.example:tee",
@@ -135,7 +143,8 @@ class UserProductSearchPersistenceServiceTest {
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
                 new UserTasteRankingService(),
                 new UserProductSearchCurationPolicy(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                cachePolicy()
         );
         UserProductRecommendationExplanationResult teeExplanation = new UserProductRecommendationExplanationResult(
                 "merchant.example:tee",
@@ -287,7 +296,8 @@ class UserProductSearchPersistenceServiceTest {
                 unusedRepository(UserProductRecommendationFilterMatchRepository.class),
                 new UserTasteRankingService(),
                 new UserProductSearchCurationPolicy(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                cachePolicy()
         );
 
         Optional<UserProductSearchResult> result = service.findCachedSearch(
@@ -487,7 +497,8 @@ class UserProductSearchPersistenceServiceTest {
                 filterMatchRepository(),
                 new UserTasteRankingService(),
                 new UserProductSearchCurationPolicy(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                cachePolicy()
         );
 
         List<UserProductSearchProductResult> result = service.findRecentProducts(
@@ -527,7 +538,8 @@ class UserProductSearchPersistenceServiceTest {
                 savingFilterMatchRepository(savedMatches),
                 new UserTasteRankingService(),
                 new UserProductSearchCurationPolicy(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                cachePolicy()
         );
 
         Map<String, UserProductRecommendationExplanationResult> result = service.saveExplanations(
@@ -584,7 +596,8 @@ class UserProductSearchPersistenceServiceTest {
                 filterMatchRepository(),
                 new UserTasteRankingService(),
                 new UserProductSearchCurationPolicy(),
-                new ObjectMapper()
+                new ObjectMapper(),
+                cachePolicy()
         );
     }
 
@@ -857,7 +870,23 @@ class UserProductSearchPersistenceServiceTest {
                 SEARCH_VERSION,
                 NOW,
                 NOW.plusSeconds(3600),
+                cachePolicyResolver()
+                        .admitSearch(List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE))
+                        .policyFingerprint(),
                 hasMoreProducts
+        );
+    }
+
+    private UserProductSearchCachePolicy cachePolicy() {
+        return new UserProductSearchCachePolicy(cachePolicyResolver());
+    }
+
+    private CatalogDataUsePolicyResolver cachePolicyResolver() {
+        return new CatalogDataUsePolicyResolver(
+                List.of(new GenericUcpCatalogDataUsePolicy(
+                        new GenericUcpCatalogDataUseProperties(Duration.ofHours(24), Duration.ofMinutes(2))
+                )),
+                new CatalogDataUsePolicyMetrics(new SimpleMeterRegistry())
         );
     }
 

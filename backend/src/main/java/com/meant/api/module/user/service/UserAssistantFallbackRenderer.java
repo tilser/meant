@@ -66,15 +66,17 @@ public class UserAssistantFallbackRenderer {
 
     private String savedProductsFallbackAnswer(List<UserSavedProductResult> savedProducts) {
         UserSavedProductResult product = savedProducts.stream()
-                .max((left, right) -> Integer.compare(left.match(), right.match()))
+                .max((left, right) -> Integer.compare(score(left.match()), score(right.match())))
                 .orElseThrow();
         StringBuilder answer = new StringBuilder();
         answer.append("From your saved products, I would start with ")
-                .append(product.name())
-                .append(". It has the strongest saved match at ")
-                .append(product.match())
-                .append("%");
-        if (product.priceFrom() > 0) {
+                .append(value(product.name()));
+        if (product.match() != null) {
+            answer.append(". It has the strongest saved match at ")
+                    .append(product.match())
+                    .append("%");
+        }
+        if (product.commercialFactsAuthoritative() && product.priceFrom() != null) {
             answer.append(" and starts around ")
                     .append(savedProductPrice(product));
         }
@@ -92,7 +94,7 @@ public class UserAssistantFallbackRenderer {
     }
 
     private String savedProductPrice(UserSavedProductResult product) {
-        return String.format(Locale.US, "$%.2f", product.priceFrom());
+        return product.priceFrom() == null ? "price unavailable" : String.format(Locale.US, "$%.2f", product.priceFrom());
     }
 
     private String value(String value) {

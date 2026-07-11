@@ -2,6 +2,8 @@ package com.meant.api.module.user.service;
 
 import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.MerchantCatalogDiscoveryEligibilityPolicy;
 import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
@@ -19,7 +21,6 @@ import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
-import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySource;
 import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySourceMetrics;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -38,12 +39,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoverySource {
 
-    private static final ProviderIdentity PROVIDER = new ProviderIdentity("GENERIC_UCP");
-    private static final DiscoverySourceIdentity SOURCE = new DiscoverySourceIdentity(
-            PROVIDER,
-            ResultSourceType.MERCHANT_STOREFRONT,
-            "MEANT_MERCHANT_SEMANTIC"
-    );
+    private static final ProviderIdentity PROVIDER = MerchantCatalogSourceIdentity.PROVIDER;
+    private static final DiscoverySourceIdentity SOURCE = MerchantCatalogSourceIdentity.DISCOVERY_SOURCE;
 
     private final MerchantSemanticProductSearchService searchService;
     private final MerchantCatalogDiscoveryEligibilityPolicy eligibilityPolicy;
@@ -172,6 +169,7 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
         List<MerchantIntegrationResult> integrations = integrationLookupService.listByMerchant(
                         new ListMerchantIntegrationsQuery(product.merchantId())
                 ).stream()
+                .filter(integration -> integration.provider() == MerchantIntegrationProvider.GENERIC_UCP)
                 .filter(integration -> integration.status() == MerchantIntegrationStatus.ACTIVE)
                 .filter(integration -> integration.roles().contains(MerchantIntegrationRole.STOREFRONT_CATALOG)
                         || integration.roles().contains(MerchantIntegrationRole.CATALOG_PROVENANCE))

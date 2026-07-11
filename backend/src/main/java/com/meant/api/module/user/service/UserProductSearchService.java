@@ -2,6 +2,7 @@ package com.meant.api.module.user.service;
 
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
+import com.meant.api.module.merchant.service.MerchantCatalogProductSourceResolver;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
@@ -21,6 +22,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserProductSearchStreamEvent;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -50,6 +52,7 @@ public class UserProductSearchService {
     private final UserProductSearchProperties userProductSearchProperties;
     private final OpenRouterProperties openRouterProperties;
     private final UserProductSearchPreparationService userProductSearchPreparationService;
+    private final MerchantCatalogProductSourceResolver productSourceResolver;
 
     public UserProductSearchResult search(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -259,6 +262,7 @@ public class UserProductSearchService {
                         now,
                         now.plus(userProductSearchProperties.cacheTtl()),
                         products,
+                        List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE),
                         curated.explanations(),
                         tasteProfile,
                         settings,
@@ -375,6 +379,7 @@ public class UserProductSearchService {
                 now,
                 now.plus(userProductSearchProperties.cacheTtl()),
                 products,
+                List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE),
                 curated.explanations(),
                 tasteProfile,
                 settings,
@@ -400,7 +405,10 @@ public class UserProductSearchService {
     ) {
         Consumer<MerchantSemanticProductResult> merchantCandidateConsumer = candidateConsumer == null
                 ? null
-                : candidate -> candidateConsumer.accept(productSnapshot(candidate));
+                : candidate -> candidateConsumer.accept(productSnapshot(
+                        candidate,
+                        MerchantCatalogProductSourceResolver.UNRESOLVED_SOURCE
+                ));
         MerchantSemanticProductSearchResult searchResult = merchantSemanticProductSearchService.search(
                 new SemanticProductSearchQuery(
                         catalogInput.searchQuery(),
@@ -415,16 +423,29 @@ public class UserProductSearchService {
                 ),
                 merchantCandidateConsumer
         );
-        return safeProducts(searchResult).stream()
-                .map(this::productSnapshot)
+        List<MerchantSemanticProductResult> products = safeProducts(searchResult);
+        Map<UUID, com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity> sources =
+                productSourceResolver.resolve(products);
+        return products.stream()
+                .map(product -> productSnapshot(
+                        product,
+                        sources.getOrDefault(
+                                product.merchantId(),
+                                MerchantCatalogProductSourceResolver.UNRESOLVED_SOURCE
+                        )
+                ))
                 .toList();
     }
 
-    private UserProductSearchProductSnapshot productSnapshot(MerchantSemanticProductResult product) {
+    private UserProductSearchProductSnapshot productSnapshot(
+            MerchantSemanticProductResult product,
+            com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity source
+    ) {
         return new UserProductSearchProductSnapshot(
                 userProductSearchHashService.productKey(product),
                 userProductSearchHashService.productHash(product),
-                product
+                product,
+                source
         );
     }
 

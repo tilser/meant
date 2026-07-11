@@ -1,4 +1,8 @@
 spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 0
   task:
     scheduling:
       enabled: false
@@ -80,6 +84,10 @@ commerce:
   catalog:
     federation:
       overall-deadline: 15s
+    data-use:
+      generic-ucp:
+        search-cache-ttl: 24h
+        rehydrated-facts-ttl: 2m
   execution-policy:
     catalog-rollout-enabled: true
     cart-rollout-enabled: true
@@ -99,6 +107,10 @@ shopify:
     refresh-skew: 5m
     fallback-token-ttl: 60m
   global-catalog:
+    data-use:
+      search-persistence-approved: false
+      approved-search-cache-ttl: 15m
+      rehydrated-facts-ttl: 2m
     discovery-enabled: false
     endpoint: https://catalog.shopify.test/api/ucp/mcp
     allowed-hosts:

@@ -8,46 +8,70 @@ import java.util.List;
 public record UserSavedProductResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String id,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String productHash,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String name,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String brand,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String category,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String tone,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String imageUrl,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String productUrl,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        boolean remote,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        int match,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        double priceFrom,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        int merchants,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        Boolean remote,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        Integer match,
+        @Schema(
+                description = "Current rehydrated price, or null when unavailable",
+                nullable = true,
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        Double priceFrom,
+        @Schema(
+                description = "Current rehydrated price in ISO currency minor units, or null when unavailable",
+                nullable = true,
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        Long priceFromMinorUnits,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String priceCurrency,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        Integer merchants,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> satisfies,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> misses,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String note,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> pros,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> cons,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        SavedReview review,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        Review review,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        List<Offer> offers,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        List<SavedOffer> offers,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String needs,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> provides,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String marketCountry,
+        @Schema(
+                description = "True when the provider lookup used the returned ISO market country",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        boolean marketContextApplied,
+        @Schema(
+                description = "True only when response facts came from current provider rehydration",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        boolean commercialFactsAuthoritative,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -67,58 +91,71 @@ public record UserSavedProductResponse(
                 result.remote(),
                 result.match(),
                 result.priceFrom(),
+                result.priceFromMinorUnits(),
+                result.priceCurrency(),
                 result.merchants(),
                 result.satisfies(),
                 result.misses(),
                 result.note(),
                 result.pros(),
                 result.cons(),
-                Review.from(result.review()),
-                result.offers().stream().map(Offer::from).toList(),
+                result.review() == null ? null : SavedReview.from(result.review()),
+                result.offers().stream().map(SavedOffer::from).toList(),
                 result.needs(),
                 result.provides(),
+                result.marketCountry(),
+                result.marketContextApplied(),
+                result.commercialFactsAuthoritative(),
                 result.createdAt(),
                 result.updatedAt()
         );
     }
 
-    public record Review(
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-            double score,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-            int count,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(name = "UserSavedProductReview")
+    public record SavedReview(
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Double score,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Integer count,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String insight
     ) {
 
-        private static Review from(UserSavedProductResult.Review result) {
-            return new Review(result.score(), result.count(), result.insight());
+        private static SavedReview from(UserSavedProductResult.Review result) {
+            return new SavedReview(result.score(), result.count(), result.insight());
         }
     }
 
-    public record Offer(
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(name = "UserSavedProductOffer")
+    public record SavedOffer(
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchant,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-            double price,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Double price,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Long priceMinorUnits,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String priceCurrency,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String delivery,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantId,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantDomain,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String productVariantId,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String variantTitle,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             Boolean available
     ) {
 
-        private static Offer from(UserSavedProductResult.Offer result) {
-            return new Offer(
+        private static SavedOffer from(UserSavedProductResult.Offer result) {
+            return new SavedOffer(
                     result.merchant(),
                     result.price(),
+                    result.priceMinorUnits(),
+                    result.priceCurrency(),
                     result.delivery(),
                     result.merchantId(),
                     result.merchantDomain(),

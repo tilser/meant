@@ -1565,11 +1565,11 @@ export interface components {
             /** Format: double */
             price: number;
             delivery: string;
-            merchantId: string;
-            merchantDomain: string;
-            productVariantId: string;
-            variantTitle: string;
-            available: boolean;
+            merchantId?: string;
+            merchantDomain?: string;
+            productVariantId?: string;
+            variantTitle?: string;
+            available?: boolean;
         };
         RecordUserTasteBehaviorRequest: {
             /** @enum {string} */
@@ -1582,6 +1582,25 @@ export interface components {
             /** Format: int32 */
             count: number;
             insight: string;
+        };
+        CatalogReference: {
+            provider: string;
+            /** @enum {string} */
+            sourceType: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            sourceIdentity: string;
+            /** Format: uuid */
+            localMerchantId?: string;
+            /** Format: uuid */
+            merchantIntegrationId?: string;
+            externalMerchantId?: string;
+            externalProductId: string;
+            externalVariantId?: string;
+            selectedOptions: components["schemas"]["SelectedOption"][];
+        };
+        SelectedOption: {
+            group?: string;
+            name: string;
+            value: string;
         };
         SaveUserProductRequest: {
             id: string;
@@ -1596,7 +1615,7 @@ export interface components {
             /** Format: int32 */
             match: number;
             /** Format: double */
-            priceFrom: number;
+            priceFrom?: number | null;
             /** Format: int32 */
             merchants: number;
             satisfies: string[];
@@ -1608,6 +1627,8 @@ export interface components {
             offers: components["schemas"]["Offer"][];
             needs?: string;
             provides: string[];
+            /** @description Provider identifiers for session-only results; omitted only when the server can resolve an admitted cache row */
+            catalogReference?: components["schemas"]["CatalogReference"];
         };
         UserTasteProfileResponse: {
             profileHash: string;
@@ -1648,33 +1669,66 @@ export interface components {
         };
         UserSavedProductResponse: {
             id: string;
-            productHash: string;
-            name: string;
-            brand: string;
-            category: string;
-            tone: string;
-            imageUrl: string;
-            productUrl: string;
-            remote: boolean;
+            productHash?: string | null;
+            name?: string | null;
+            brand?: string | null;
+            category?: string | null;
+            tone?: string | null;
+            imageUrl?: string | null;
+            productUrl?: string | null;
+            remote?: boolean | null;
             /** Format: int32 */
-            match: number;
-            /** Format: double */
-            priceFrom: number;
+            match?: number | null;
+            /** @description Current rehydrated price, or null when unavailable
+             * Format: double
+             */
+            priceFrom?: number | null;
+            /** @description Current rehydrated price in ISO currency minor units, or null when unavailable
+             * Format: int64
+             */
+            priceFromMinorUnits?: number | null;
+            priceCurrency?: string | null;
             /** Format: int32 */
-            merchants: number;
+            merchants?: number | null;
             satisfies: string[];
             misses: string[];
-            note: string;
+            note?: string | null;
             pros: string[];
             cons: string[];
-            review: components["schemas"]["Review"];
-            offers: components["schemas"]["Offer"][];
-            needs: string;
+            review?: components["schemas"]["UserSavedProductReview"] | null;
+            offers: components["schemas"]["UserSavedProductOffer"][];
+            needs?: string | null;
             provides: string[];
+            marketCountry?: string | null;
+            /** @description True when the provider lookup used the returned ISO market country */
+            marketContextApplied: boolean;
+            /** @description True only when response facts came from current provider rehydration */
+            commercialFactsAuthoritative: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        UserSavedProductReview: {
+            /** Format: double */
+            score?: number | null;
+            /** Format: int32 */
+            count?: number | null;
+            insight?: string | null;
+        };
+        UserSavedProductOffer: {
+            merchant?: string | null;
+            /** Format: double */
+            price?: number | null;
+            /** Format: int64 */
+            priceMinorUnits?: number | null;
+            priceCurrency?: string | null;
+            delivery?: string | null;
+            merchantId?: string | null;
+            merchantDomain?: string | null;
+            productVariantId?: string | null;
+            variantTitle?: string | null;
+            available?: boolean | null;
         };
         ProductCategoryResponse: {
             value: string;

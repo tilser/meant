@@ -113,8 +113,16 @@ function ShelfCard({
   if (item.kind === 'product') {
     const snapshot = item.snapshot
     const title = product?.name ?? snapshot.name
-    const thumbUrl = product?.imageUrl ?? snapshot.imageUrl
+    const authoritative = product?.commercialFactsAuthoritative !== false
+    const thumbUrl = product ? (authoritative ? product.imageUrl : null) : snapshot.imageUrl
     const tone = product?.tone ?? snapshot.tone
+    const price = product ? (authoritative ? product.priceFrom : null) : snapshot.priceFrom
+    const priceCurrency = product ? product.priceCurrency : snapshot.priceCurrency
+    const merchantSummary = product
+      ? authoritative
+        ? `from ${product.merchants} stores`
+        : 'current store count unavailable'
+      : `from ${snapshot.merchants} stores`
     return (
       <DustingContainer dusting={dusting} onGone={() => onRemove(item.uid)}>
         <div className="mt-shelf-card product">
@@ -154,11 +162,8 @@ function ShelfCard({
                   </span>
                   <span className="mt-shelf-prod-name">{title}</span>
                   <span className="mt-shelf-prod-price">
-                    {money(product?.priceFrom ?? snapshot.priceFrom)}
-                    <span className="mt-shelf-prod-from">
-                      {' '}
-                      from {product?.merchants ?? snapshot.merchants} stores
-                    </span>
+                    {money(price, priceCurrency)}
+                    <span className="mt-shelf-prod-from"> {merchantSummary}</span>
                   </span>
                 </span>
               </button>

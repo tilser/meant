@@ -40,9 +40,10 @@ export function CompareView({
     gridTemplateColumns: `180px repeat(${compareColumnCount}, minmax(180px, 240px))`,
   }
   const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
-  const bestPrice = enough
-    ? Math.min(...items.map((product) => productPriceFrom(product, deliveryLocations)))
-    : null
+  const knownPrices = items
+    .map((product) => productPriceFrom(product, deliveryLocations))
+    .filter((price): price is number => price != null)
+  const bestPrice = enough && knownPrices.length > 0 ? Math.min(...knownPrices) : null
   const bestMerchantCount = enough
     ? Math.max(...items.map((product) => productMerchantCount(product, deliveryLocations)))
     : null
@@ -50,7 +51,8 @@ export function CompareView({
     ? [...items].sort(
         (left, right) =>
           right.match - left.match ||
-          productPriceFrom(left, deliveryLocations) - productPriceFrom(right, deliveryLocations),
+          (productPriceFrom(left, deliveryLocations) ?? Number.POSITIVE_INFINITY) -
+            (productPriceFrom(right, deliveryLocations) ?? Number.POSITIVE_INFINITY),
       )[0]
     : null
   const comparisonPreferenceIds = preferences
@@ -110,7 +112,7 @@ export function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: money(productPriceFrom(product, deliveryLocations)),
+                value: money(productPriceFrom(product, deliveryLocations), product.priceCurrency),
                 win:
                   bestPrice !== null && productPriceFrom(product, deliveryLocations) === bestPrice,
               }))}
@@ -189,7 +191,7 @@ export function CompareView({
                   <div key={product.id} className="mt-cmp-cell">
                     <span className="mt-cmp-store">{offer.merchant}</span>
                     <span className="mt-mono mt-cmp-sub">
-                      {money(offer.price)} · {offer.delivery}
+                      {money(offer.price, offer.priceCurrency)} · {offer.delivery}
                     </span>
                   </div>
                 )

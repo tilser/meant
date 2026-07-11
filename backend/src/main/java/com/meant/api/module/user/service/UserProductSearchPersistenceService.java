@@ -22,6 +22,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -53,6 +54,7 @@ public class UserProductSearchPersistenceService {
     private final UserTasteRankingService userTasteRankingService;
     private final UserProductSearchCurationPolicy userProductSearchCurationPolicy;
     private final ObjectMapper objectMapper;
+    private final UserProductSearchCachePolicy cachePolicy;
 
     @Transactional(readOnly = true)
     public Optional<UserProductSearchResult> findCachedSearch(
@@ -80,6 +82,9 @@ public class UserProductSearchPersistenceService {
                 .flatMap(search -> {
                     List<UserProductSearchResultItem> items = userProductSearchResultItemRepository
                             .findBySearchIdOrderByRankAsc(search.getId());
+                    if (!cachePolicy.isCurrent(search, items)) {
+                        return Optional.empty();
+                    }
                     if (!canServePage(items.size(), search.isHasMoreProducts(), offset, limit)) {
                         return Optional.empty();
                     }
@@ -160,6 +165,9 @@ public class UserProductSearchPersistenceService {
         Map<String, UserProductSearchProductResult> products = new LinkedHashMap<>();
         for (UserProductSearch search : searches) {
             List<UserProductSearchResultItem> items = itemsBySearchId.getOrDefault(search.getId(), List.of());
+            if (!cachePolicy.isCurrent(search, items)) {
+                continue;
+            }
             List<UserProductSearchProductResult> recentProducts = visibleRankedProducts(
                     productResults(items, explanationsForSearch(search, items, explanations)),
                     null,
@@ -275,6 +283,64 @@ public class UserProductSearchPersistenceService {
             int offset,
             int limit
     ) {
+        return saveSearch(
+                userId,
+                query,
+                normalizedQuery,
+                profileHash,
+                searchVersion,
+                now,
+                expiresAt,
+                products,
+                products.stream().map(UserProductSearchProductSnapshot::discoverySource).distinct().toList(),
+                explanations,
+                tasteProfile,
+                settings,
+                hasMoreProducts,
+                offset,
+                limit
+        );
+    }
+
+    @Transactional
+    public UserProductSearchResult saveSearch(
+            UUID userId,
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            String searchVersion,
+            Instant now,
+            Instant expiresAt,
+            List<UserProductSearchProductSnapshot> products,
+            Collection<DiscoverySourceIdentity> discoverySources,
+            Map<String, UserProductRecommendationExplanationResult> explanations,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
+            boolean hasMoreProducts,
+            int offset,
+            int limit
+    ) {
+        UserProductSearchCachePolicy.WriteDecision retention = cachePolicy.decide(
+                products,
+                discoverySources,
+                now,
+                expiresAt
+        );
+        if (!retention.persist()) {
+            return resultWithoutPersistence(
+                    query,
+                    normalizedQuery,
+                    profileHash,
+                    products,
+                    explanations,
+                    tasteProfile,
+                    settings,
+                    hasMoreProducts,
+                    offset,
+                    limit,
+                    now
+            );
+        }
         UserProductSearch search = userProductSearchRepository
                 .findByUserIdAndNormalizedQueryAndProfileHashAndSearchVersion(
                         userId,
@@ -283,7 +349,13 @@ public class UserProductSearchPersistenceService {
                         searchVersion
                 )
                 .map(existing -> {
-                    existing.refresh(query, now, expiresAt, hasMoreProducts);
+                    existing.refresh(
+                            query,
+                            now,
+                            retention.expiresAt(),
+                            retention.policyFingerprint(),
+                            hasMoreProducts
+                    );
                     return existing;
                 })
                 .orElseGet(() -> UserProductSearch.create(
@@ -293,7 +365,8 @@ public class UserProductSearchPersistenceService {
                         profileHash,
                         searchVersion,
                         now,
-                        expiresAt,
+                        retention.expiresAt(),
+                        retention.policyFingerprint(),
                         hasMoreProducts
                 ));
         UserProductSearch savedSearch = userProductSearchRepository.save(search);
@@ -305,10 +378,48 @@ public class UserProductSearchPersistenceService {
                         product.productHash(),
                         product.product(),
                         now,
-                        richCatalogSnapshot(product.product())
+                        richCatalogSnapshot(product.product()),
+                        product.discoverySource()
                 ))
                 .toList();
         userProductSearchResultItemRepository.saveAll(items);
+        return result(
+                query,
+                normalizedQuery,
+                profileHash,
+                false,
+                offset,
+                limit,
+                hasMoreProducts,
+                visibleRankedProducts(productResults(items, explanations), tasteProfile, settings)
+        );
+    }
+
+    private UserProductSearchResult resultWithoutPersistence(
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            List<UserProductSearchProductSnapshot> products,
+            Map<String, UserProductRecommendationExplanationResult> explanations,
+            UserTasteProfileResult tasteProfile,
+            UserSettingsResult settings,
+            boolean hasMoreProducts,
+            int offset,
+            int limit,
+            Instant now
+    ) {
+        UUID transientSearchId = UUID.randomUUID();
+        List<UserProductSearchResultItem> items = uniqueProducts(products).stream()
+                .map(product -> UserProductSearchResultItem.from(
+                        transientSearchId,
+                        product.productKey(),
+                        product.productHash(),
+                        product.product(),
+                        now,
+                        richCatalogSnapshot(product.product()),
+                        product.discoverySource()
+                ))
+                .toList();
         return result(
                 query,
                 normalizedQuery,

@@ -13,7 +13,12 @@ function productWasPrice(
   deliveryLocations: readonly UserLocation[],
 ): number | null {
   const price = productPriceFrom(product, deliveryLocations)
-  if (product.listPrice === null || product.listPrice === undefined || product.listPrice <= price) {
+  if (
+    price == null ||
+    product.listPrice === null ||
+    product.listPrice === undefined ||
+    product.listPrice <= price
+  ) {
     return null
   }
   return product.listPrice
@@ -33,8 +38,11 @@ export function ProductPriceLine({
 
   return (
     <span className={className}>
-      <span className="mt-mono mt-card-from">from</span> <span>{money(price)}</span>
-      {wasPrice ? <span className="mt-was-price">{money(wasPrice)}</span> : null}
+      <span className="mt-mono mt-card-from">from</span>{' '}
+      <span>{money(price, product.priceCurrency)}</span>
+      {wasPrice ? (
+        <span className="mt-was-price">{money(wasPrice, product.priceCurrency)}</span>
+      ) : null}
     </span>
   )
 }

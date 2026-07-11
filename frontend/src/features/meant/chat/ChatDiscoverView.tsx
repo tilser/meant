@@ -654,6 +654,7 @@ function shelfProductSnapshot(product: Product): ShelfProductSnapshot {
     category: product.category,
     tone: product.tone,
     priceFrom: product.priceFrom,
+    priceCurrency: product.priceCurrency,
     merchants: product.merchants,
     imageUrl: product.imageUrl,
   }
@@ -1909,11 +1910,15 @@ export function ChatDiscoverView({
       onFallbackAddToCart(product, merchantOffer)
       return
     }
+    const fallbackPrice = price ?? productPriceFrom(product, deliveryLocations)
+    if (fallbackPrice == null) {
+      return
+    }
     onFallbackAddToCart(
       product,
       merchantOffer ?? {
         merchant,
-        price: price ?? productPriceFrom(product, deliveryLocations),
+        price: fallbackPrice,
         delivery: 'Available from merchant',
         available: true,
       },

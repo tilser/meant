@@ -54,8 +54,46 @@ class ShopifyGlobalCatalogPropertiesTest {
                 });
     }
 
+    @Test
+    void bindsSessionOnlyDataUseDefaultAndExplicitBoundedDurations() {
+        new ApplicationContextRunner()
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))
+                .withUserConfiguration(TestConfiguration.class)
+                .withPropertyValues("spring.config.location=classpath:/application.yml")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    ShopifyCatalogDataUseProperties properties = context.getBean(
+                            ShopifyCatalogDataUseProperties.class
+                    );
+                    assertThat(properties.searchPersistenceApproved()).isFalse();
+                    assertThat(properties.approvedSearchCacheTtl()).isEqualTo(Duration.ofMinutes(15));
+                    assertThat(properties.rehydratedFactsTtl()).isEqualTo(Duration.ofMinutes(2));
+                });
+    }
+
+    @Test
+    void rejectsZeroOrNegativeDataUseDurationsAtStartup() {
+        for (String property : Set.of(
+                "shopify.global-catalog.data-use.approved-search-cache-ttl",
+                "shopify.global-catalog.data-use.rehydrated-facts-ttl"
+        )) {
+            for (String value : Set.of("0s", "-1s")) {
+                new ApplicationContextRunner()
+                        .withInitializer(new ConfigDataApplicationContextInitializer())
+                        .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))
+                        .withUserConfiguration(TestConfiguration.class)
+                        .withPropertyValues(
+                                "spring.config.location=classpath:/application.yml",
+                                property + "=" + value
+                        )
+                        .run(context -> assertThat(context).hasFailed());
+            }
+        }
+    }
+
     @Configuration
-    @EnableConfigurationProperties(ShopifyGlobalCatalogProperties.class)
+    @EnableConfigurationProperties({ShopifyGlobalCatalogProperties.class, ShopifyCatalogDataUseProperties.class})
     static class TestConfiguration {
     }
 }

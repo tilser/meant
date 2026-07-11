@@ -414,7 +414,7 @@ export function DiscoverChatBlockView({
               const liveLine = cart.find(
                 (item) => item.id === block.product.id && item.merchant === block.merchant,
               )
-              if (!liveLine) {
+              if (!liveLine && addedPrice != null) {
                 onRestoreCartLine(block.product, block.merchant, addedPrice)
               }
               onReviewCartHere(

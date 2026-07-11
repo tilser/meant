@@ -9,11 +9,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserSavedProductRepository extends JpaRepository<UserSavedProduct, UUID> {
 
-    List<UserSavedProduct> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+    List<UserSavedProduct> findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDescIdDesc(
+            UUID userId,
+            Pageable pageable
+    );
 
     Optional<UserSavedProduct> findByUserIdAndProductKey(UUID userId, String productKey);
 
-    long countByUserId(UUID userId);
+    long countByUserIdAndReferenceVerifiedAtIsNotNull(UUID userId);
 
     long deleteByUserIdAndProductKey(UUID userId, String productKey);
 }

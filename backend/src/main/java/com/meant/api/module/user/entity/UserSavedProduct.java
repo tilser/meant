@@ -13,6 +13,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/** Retention-safe saved interaction containing identifiers and provenance, never provider payload. */
 @Entity
 @Getter
 @Builder
@@ -39,67 +40,27 @@ public class UserSavedProduct {
     @Column(nullable = false)
     private String productKey;
 
-    private String productHash;
+    private String sourceProvider;
 
-    @Column(nullable = false)
-    private String name;
+    private String sourceType;
 
-    @Column(nullable = false)
-    private String brand;
+    private String sourceIdentity;
 
-    @Column(nullable = false)
-    private String category;
+    private UUID localMerchantId;
 
-    @Column(nullable = false)
-    private String tone;
+    private UUID merchantIntegrationId;
 
-    private String imageUrl;
+    private String externalMerchantId;
 
-    private String productUrl;
+    private String externalProductId;
 
-    @Column(nullable = false)
-    private boolean remote;
+    private String externalVariantId;
 
-    @Column(nullable = false)
-    private int matchScore;
+    private String selectedOptionsJson;
 
-    @Column(nullable = false)
-    private double priceFrom;
+    private String retentionPolicyKey;
 
-    @Column(nullable = false)
-    private int merchantCount;
-
-    @Column(nullable = false)
-    private String satisfies;
-
-    @Column(nullable = false)
-    private String misses;
-
-    @Column(nullable = false)
-    private String note;
-
-    @Column(nullable = false)
-    private String pros;
-
-    @Column(nullable = false)
-    private String cons;
-
-    @Column(nullable = false)
-    private double reviewScore;
-
-    @Column(nullable = false)
-    private int reviewCount;
-
-    @Column(nullable = false)
-    private String reviewInsight;
-
-    @Column(nullable = false)
-    private String offers;
-
-    private String needs;
-
-    @Column(nullable = false)
-    private String provides;
+    private Instant referenceVerifiedAt;
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -109,73 +70,47 @@ public class UserSavedProduct {
 
     public static UserSavedProduct create(
             UUID userId,
-            SavedProductSnapshot snapshot,
+            String productKey,
+            DurableReferenceSnapshot reference,
             Instant now
     ) {
         return UserSavedProduct.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
-                .productKey(snapshot.productKey())
+                .productKey(productKey)
                 .createdAt(now)
                 .updatedAt(now)
                 .build()
-                .replaceSnapshot(snapshot, now);
+                .replaceReference(reference, now);
     }
 
-    public UserSavedProduct replaceSnapshot(
-            SavedProductSnapshot snapshot,
-            Instant now
-    ) {
-        this.productHash = snapshot.productHash();
-        this.name = snapshot.name();
-        this.brand = snapshot.brand();
-        this.category = snapshot.category();
-        this.tone = snapshot.tone();
-        this.imageUrl = snapshot.imageUrl();
-        this.productUrl = snapshot.productUrl();
-        this.remote = snapshot.remote();
-        this.matchScore = snapshot.matchScore();
-        this.priceFrom = snapshot.priceFrom();
-        this.merchantCount = snapshot.merchantCount();
-        this.satisfies = snapshot.satisfies();
-        this.misses = snapshot.misses();
-        this.note = snapshot.note();
-        this.pros = snapshot.pros();
-        this.cons = snapshot.cons();
-        this.reviewScore = snapshot.reviewScore();
-        this.reviewCount = snapshot.reviewCount();
-        this.reviewInsight = snapshot.reviewInsight();
-        this.offers = snapshot.offers();
-        this.needs = snapshot.needs();
-        this.provides = snapshot.provides();
+    public UserSavedProduct replaceReference(DurableReferenceSnapshot reference, Instant now) {
+        this.sourceProvider = reference.sourceProvider();
+        this.sourceType = reference.sourceType();
+        this.sourceIdentity = reference.sourceIdentity();
+        this.localMerchantId = reference.localMerchantId();
+        this.merchantIntegrationId = reference.merchantIntegrationId();
+        this.externalMerchantId = reference.externalMerchantId();
+        this.externalProductId = reference.externalProductId();
+        this.externalVariantId = reference.externalVariantId();
+        this.selectedOptionsJson = reference.selectedOptionsJson();
+        this.retentionPolicyKey = reference.retentionPolicyKey();
+        this.referenceVerifiedAt = now;
         this.updatedAt = now;
         return this;
     }
 
-    public record SavedProductSnapshot(
-            String productKey,
-            String productHash,
-            String name,
-            String brand,
-            String category,
-            String tone,
-            String imageUrl,
-            String productUrl,
-            boolean remote,
-            int matchScore,
-            double priceFrom,
-            int merchantCount,
-            String satisfies,
-            String misses,
-            String note,
-            String pros,
-            String cons,
-            double reviewScore,
-            int reviewCount,
-            String reviewInsight,
-            String offers,
-            String needs,
-            String provides
+    public record DurableReferenceSnapshot(
+            String sourceProvider,
+            String sourceType,
+            String sourceIdentity,
+            UUID localMerchantId,
+            UUID merchantIntegrationId,
+            String externalMerchantId,
+            String externalProductId,
+            String externalVariantId,
+            String selectedOptionsJson,
+            String retentionPolicyKey
     ) {
     }
 }

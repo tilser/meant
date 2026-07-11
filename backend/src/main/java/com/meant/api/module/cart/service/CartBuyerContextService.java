@@ -1,10 +1,10 @@
 package com.meant.api.module.cart.service;
 
+import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.entity.UserSettingsLocation;
 import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -22,10 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class CartBuyerContextService {
 
     static final String DEFAULT_COUNTRY = "US";
-
-    private static final Map<String, String> COUNTRY_CODE_ALIASES = Map.of(
-            "UK", "GB"
-    );
 
     private final UserSettingsLocationRepository userSettingsLocationRepository;
 
@@ -53,14 +49,6 @@ public class CartBuyerContextService {
         if (location == null || location.getId() == null) {
             return null;
         }
-        String code = location.getId().getLocationCode();
-        if (code == null || code.isBlank()) {
-            return null;
-        }
-        String normalized = code.trim().toUpperCase(Locale.ROOT);
-        if (normalized.length() != 2) {
-            return null;
-        }
-        return COUNTRY_CODE_ALIASES.getOrDefault(normalized, normalized);
+        return CountryCodeNormalizer.normalizeAlpha2(location.getId().getLocationCode());
     }
 }

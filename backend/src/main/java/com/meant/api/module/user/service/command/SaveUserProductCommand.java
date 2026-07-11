@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.command;
 
+import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -52,7 +53,6 @@ public record SaveUserProductCommand(
         @Max(100)
         Integer matchScore,
 
-        @NotNull
         @PositiveOrZero
         Double priceFrom,
 
@@ -81,8 +81,39 @@ public record SaveUserProductCommand(
         @Size(max = 100)
         String needs,
 
-        List<@NotBlank @Size(max = 100) String> provides
+        List<@NotBlank @Size(max = 100) String> provides,
+
+        @Valid CatalogProductReference catalogReference
 ) {
+
+    public SaveUserProductCommand(
+            UUID userId,
+            String productKey,
+            String productHash,
+            String name,
+            String brand,
+            String category,
+            String tone,
+            String imageUrl,
+            String productUrl,
+            Boolean remote,
+            Integer matchScore,
+            Double priceFrom,
+            Integer merchantCount,
+            List<String> satisfies,
+            List<String> misses,
+            String note,
+            List<String> pros,
+            List<String> cons,
+            Review review,
+            List<Offer> offers,
+            String needs,
+            List<String> provides
+    ) {
+        this(userId, productKey, productHash, name, brand, category, tone, imageUrl, productUrl, remote,
+                matchScore, priceFrom, merchantCount, satisfies, misses, note, pros, cons, review, offers,
+                needs, provides, null);
+    }
 
     public record Review(
             @NotNull

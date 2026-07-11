@@ -1057,7 +1057,9 @@ export function ProductModal({
                     </div>
                     <div className="mt-offer-right">
                       <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
-                      <span className="mt-offer-price">{money(offer.price)}</span>
+                      <span className="mt-offer-price">
+                        {money(offer.price, offer.priceCurrency)}
+                      </span>
                     </div>
                   </div>
                 ))}

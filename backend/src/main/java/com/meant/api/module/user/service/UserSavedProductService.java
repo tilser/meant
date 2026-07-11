@@ -1,94 +1,131 @@
 package com.meant.api.module.user.service;
 
-import static com.meant.api.common.util.CollectionUtils.safeList;
-
+import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.entity.UserSavedProduct;
-import com.meant.api.module.user.entity.UserSavedProduct.SavedProductSnapshot;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
-import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
+import com.meant.api.plugin.catalog.common.dto.CatalogPayloadClass;
+import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
+import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
+import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationStatus;
+import com.meant.api.plugin.catalog.common.dto.CatalogRetentionDecision;
+import com.meant.api.plugin.catalog.common.dto.CatalogRetentionMode;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
+import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
 
 @Service
 @Validated
 @RequiredArgsConstructor
 public class UserSavedProductService {
-
-    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
-    };
-    private static final TypeReference<List<UserSavedProductResult.Offer>> OFFER_LIST_TYPE = new TypeReference<>() {
-    };
-
     private final UserService userService;
+    private final UserSettingsService userSettingsService;
     private final UserSavedProductRepository userSavedProductRepository;
-    private final UserTasteProfileService userTasteProfileService;
     private final UserCollectionProperties userCollectionProperties;
-    private final ObjectMapper objectMapper;
+    private final UserSavedProductReferenceResolver referenceResolver;
+    private final CatalogDataUsePolicyResolver policyResolver;
+    private final CatalogProductRehydrationService rehydrationService;
+    private final UserSavedProductPersistenceService persistenceService;
+    private final UserSavedProductResultMapper resultMapper;
 
-    @Transactional
     public List<UserSavedProductResult> list(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid ListSavedProductsQuery query
     ) {
         validateUser(profileCommand, query.userId());
-        userService.ensureProfile(profileCommand);
-        return userSavedProductRepository.findByUserIdOrderByCreatedAtDesc(
-                        query.userId(),
-                        PageRequest.of(query.page(), boundedLimit(
-                                query.limit(),
-                                userCollectionProperties.savedProducts().maxLimit())))
-                .stream()
-                .map(this::toResult)
+        CatalogRehydrationContext context = context(userSettingsService.get(profileCommand));
+        List<UserSavedProduct> saved = persistenceService.findVerified(
+                query.userId(),
+                userCollectionProperties.savedProducts().quota()
+        );
+        Map<UserSavedProduct, CatalogProductReference> references = new LinkedHashMap<>();
+        for (UserSavedProduct entity : saved) {
+            CatalogProductReference reference = resultMapper.reference(entity);
+            if (reference != null) {
+                references.put(entity, reference);
+            }
+        }
+        Map<DiscoverySourceIdentity, CatalogRetentionDecision> policies =
+                references.values().stream()
+                        .map(CatalogProductReference::discoverySource)
+                        .distinct()
+                        .collect(Collectors.toMap(
+                                source -> source,
+                                source -> policyResolver.resolve(source, CatalogPayloadClass.SAVED_INTERACTION)
+                        ));
+        references.entrySet().removeIf(entry -> {
+            CatalogRetentionDecision policy = policies.get(entry.getValue().discoverySource());
+            return policy.mode() != CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY
+                    || !policy.policyKey().equals(entry.getKey().getRetentionPolicyKey());
+        });
+        int limit = boundedLimit(query.limit(), userCollectionProperties.savedProducts().maxLimit());
+        long offset = (long) query.page() * limit;
+        Map<UserSavedProduct, CatalogProductReference> visibleReferences = references.entrySet().stream()
+                .skip(offset)
+                .limit(limit)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        Map<CatalogProductReference, CatalogProductRehydrationResult> results = new LinkedHashMap<>();
+        if (!visibleReferences.isEmpty()) {
+            rehydrationService.rehydrate(
+                    List.copyOf(visibleReferences.values()),
+                    context
+            ).forEach(result -> results.put(result.reference(), result));
+        }
+        return visibleReferences.entrySet().stream()
+                .map(entry -> resultMapper.result(entry.getKey(), results.get(entry.getValue()), context))
                 .toList();
     }
 
-    @Transactional
     public UserSavedProductResult save(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SaveUserProductCommand command
     ) {
         validateUser(profileCommand, command.userId());
-        userService.ensureProfile(profileCommand);
+        CatalogRehydrationContext context = context(userSettingsService.get(profileCommand));
         Instant now = Instant.now();
-        SavedProductSnapshot snapshot = snapshot(command);
-        UserSavedProduct savedProduct = userSavedProductRepository
-                .findByUserIdAndProductKey(command.userId(), command.productKey())
-                .map(existing -> existing.replaceSnapshot(snapshot, now))
-                .orElseGet(() -> {
-                    validateSavedProductQuota(command.userId());
-                    return UserSavedProduct.create(command.userId(), snapshot, now);
-                });
-        UserSavedProductResult result = toResult(userSavedProductRepository.save(savedProduct));
-        userTasteProfileService.recordSavedProduct(command.userId(), command, now);
-        return result;
-    }
-
-    private void validateSavedProductQuota(UUID userId) {
-        int quota = userCollectionProperties.savedProducts().quota();
-        if (userSavedProductRepository.countByUserId(userId) >= quota) {
-            throw new UserException("Saved product quota exceeded for user " + userId);
+        CatalogProductReference requested = referenceResolver.resolve(command, now);
+        CatalogProductRehydrationResult rehydrated = rehydrationService.rehydrate(
+                requested,
+                context
+        );
+        if (rehydrated.status() != CatalogRehydrationStatus.FRESH || rehydrated.resolvedReference() == null) {
+            throw new UserException("Saved product could not be verified from current provider facts");
         }
-    }
-
-    private int boundedLimit(int limit, int maxLimit) {
-        return Math.min(limit, maxLimit);
+        CatalogProductReference verified = rehydrated.resolvedReference();
+        CatalogRetentionDecision policy = policyResolver.resolve(
+                verified.discoverySource(),
+                CatalogPayloadClass.SAVED_INTERACTION
+        );
+        if (policy.mode() != CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY) {
+            throw new UserException("Provider policy does not permit a durable saved-product reference");
+        }
+        UserSavedProduct saved = persistenceService.save(command, verified, policy.policyKey(), now);
+        return resultMapper.result(saved, rehydrated, context);
     }
 
     @Transactional
@@ -101,103 +138,20 @@ public class UserSavedProductService {
         userSavedProductRepository.deleteByUserIdAndProductKey(command.userId(), command.productKey());
     }
 
-    private SavedProductSnapshot snapshot(SaveUserProductCommand command) {
-        return new SavedProductSnapshot(
-                command.productKey(),
-                blankToNull(command.productHash()),
-                command.name(),
-                command.brand(),
-                command.category(),
-                command.tone(),
-                blankToNull(command.imageUrl()),
-                blankToNull(command.productUrl()),
-                command.remote(),
-                command.matchScore(),
-                command.priceFrom(),
-                command.merchantCount(),
-                toJson(safeList(command.satisfies())),
-                toJson(safeList(command.misses())),
-                command.note(),
-                toJson(safeList(command.pros())),
-                toJson(safeList(command.cons())),
-                command.review().score(),
-                command.review().count(),
-                command.review().insight(),
-                toJson(safeList(command.offers()).stream()
-                        .map(offer -> new UserSavedProductResult.Offer(
-                                offer.merchant(),
-                                offer.price(),
-                                offer.delivery(),
-                                blankToNull(offer.merchantId()),
-                                blankToNull(offer.merchantDomain()),
-                                blankToNull(offer.productVariantId()),
-                                blankToNull(offer.variantTitle()),
-                                offer.available()
-                        ))
-                        .toList()),
-                blankToNull(command.needs()),
-                toJson(safeList(command.provides()))
-        );
+    private int boundedLimit(int limit, int maxLimit) {
+        return Math.min(limit, maxLimit);
     }
 
-    private UserSavedProductResult toResult(UserSavedProduct entity) {
-        return new UserSavedProductResult(
-                entity.getProductKey(),
-                entity.getProductHash(),
-                entity.getName(),
-                entity.getBrand(),
-                entity.getCategory(),
-                entity.getTone(),
-                entity.getImageUrl(),
-                entity.getProductUrl(),
-                entity.isRemote(),
-                entity.getMatchScore(),
-                entity.getPriceFrom(),
-                entity.getMerchantCount(),
-                fromJson(entity.getSatisfies(), STRING_LIST_TYPE, List.<String>of()),
-                fromJson(entity.getMisses(), STRING_LIST_TYPE, List.<String>of()),
-                entity.getNote(),
-                fromJson(entity.getPros(), STRING_LIST_TYPE, List.<String>of()),
-                fromJson(entity.getCons(), STRING_LIST_TYPE, List.<String>of()),
-                new UserSavedProductResult.Review(
-                        entity.getReviewScore(),
-                        entity.getReviewCount(),
-                        entity.getReviewInsight()
-                ),
-                fromJson(entity.getOffers(), OFFER_LIST_TYPE, List.<UserSavedProductResult.Offer>of()),
-                entity.getNeeds(),
-                fromJson(entity.getProvides(), STRING_LIST_TYPE, List.<String>of()),
-                entity.getCreatedAt(),
-                entity.getUpdatedAt()
-        );
+    private CatalogRehydrationContext context(UserSettingsResult settings) {
+        String countryCode = settings == null || settings.location() == null
+                ? null
+                : CountryCodeNormalizer.normalizeAlpha2(settings.location().code());
+        return new CatalogRehydrationContext(countryCode, null);
     }
 
     private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {
         if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden("Saved product user does not match authenticated user");
         }
-    }
-
-    private String toJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JacksonException exception) {
-            throw new UserException("Could not serialize saved product snapshot", exception);
-        }
-    }
-
-    private <T> T fromJson(String value, TypeReference<T> type, T defaultValue) {
-        if (value == null || value.isBlank()) {
-            return defaultValue;
-        }
-        try {
-            return objectMapper.readValue(value, type);
-        } catch (JacksonException exception) {
-            throw new UserException("Could not parse saved product snapshot", exception);
-        }
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
     }
 }

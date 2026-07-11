@@ -33,6 +33,8 @@ export interface Profile {
 export interface Offer {
   merchant: string
   price: number
+  priceMinorUnits?: number | null
+  priceCurrency?: string | null
   delivery: string
   merchantId?: string | null
   merchantDomain?: string | null
@@ -87,7 +89,9 @@ export interface Product {
   productUrl?: string | null
   remote?: boolean
   match: number
-  priceFrom: number
+  priceFrom: number | null
+  priceFromMinorUnits?: number | null
+  priceCurrency?: string | null
   listPrice?: number | null
   merchants: number
   satisfies: readonly PreferenceId[]
@@ -118,6 +122,7 @@ export interface Product {
   inventoryItemName?: string | null
   agentStage?: ProductAgentStage
   agentUpdatedAt?: number
+  commercialFactsAuthoritative?: boolean
 }
 
 export interface Reply {
