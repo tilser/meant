@@ -23,6 +23,7 @@ import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
+import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.text.Normalizer;
@@ -238,10 +239,30 @@ public class UserInventoryService {
         return products.stream()
                 .collect(Collectors.toMap(
                         UserProductSearchProductSnapshot::productKey,
-                        product -> signal(product, items),
+                        product -> signal(InventoryCandidate.from(product), items),
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
+    }
+
+    /** Resolves grouped-product inventory relationships with one inventory read for the whole window. */
+    @Transactional(readOnly = true)
+    public Map<String, UserInventoryRecommendationSignal> canonicalRecommendationSignals(
+            UUID userId,
+            List<CanonicalProduct> products
+    ) {
+        if (products == null || products.isEmpty()) {
+            return Map.of();
+        }
+        List<UserInventoryItem> items = userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(userId);
+        return products.stream().collect(Collectors.toMap(
+                CanonicalProduct::key,
+                product -> items.isEmpty()
+                        ? UserInventoryRecommendationSignal.none(product.key())
+                        : signal(InventoryCandidate.from(product), items),
+                (left, right) -> left,
+                LinkedHashMap::new
+        ));
     }
 
     private List<UserInventoryItem> inventoryItems(ListUserInventoryItemsQuery query) {
@@ -406,19 +427,16 @@ public class UserInventoryService {
         return purchasedItem.purchasedAt() == null ? now : purchasedItem.purchasedAt();
     }
 
-    private UserInventoryRecommendationSignal signal(
-            UserProductSearchProductSnapshot snapshot,
-            List<UserInventoryItem> items
-    ) {
-        UserInventoryCategory productCategory = categoryFor(snapshot.product());
+    private UserInventoryRecommendationSignal signal(InventoryCandidate candidate, List<UserInventoryItem> items) {
+        UserInventoryCategory productCategory = categoryFor(candidate.evidenceText());
         Optional<UserInventoryItem> restock = items.stream()
                 .filter(UserInventoryItem::isRestockEnabled)
-                .filter(item -> similar(item, snapshot))
+                .filter(item -> similar(item, candidate))
                 .findFirst();
         if (restock.isPresent()) {
             UserInventoryItem item = restock.get();
             return new UserInventoryRecommendationSignal(
-                    snapshot.productKey(),
+                    candidate.productKey(),
                     UserInventoryRecommendationRelationship.RESTOCK,
                     item.getId(),
                     item.getName(),
@@ -427,12 +445,12 @@ public class UserInventoryService {
         }
 
         Optional<UserInventoryItem> duplicate = items.stream()
-                .filter(item -> similar(item, snapshot))
+                .filter(item -> similar(item, candidate))
                 .findFirst();
         if (duplicate.isPresent()) {
             UserInventoryItem item = duplicate.get();
             return new UserInventoryRecommendationSignal(
-                    snapshot.productKey(),
+                    candidate.productKey(),
                     UserInventoryRecommendationRelationship.DUPLICATE,
                     item.getId(),
                     item.getName(),
@@ -446,7 +464,7 @@ public class UserInventoryService {
         if (complement.isPresent()) {
             UserInventoryItem item = complement.get();
             return new UserInventoryRecommendationSignal(
-                    snapshot.productKey(),
+                    candidate.productKey(),
                     UserInventoryRecommendationRelationship.COMPLEMENT,
                     item.getId(),
                     item.getName(),
@@ -454,15 +472,15 @@ public class UserInventoryService {
             );
         }
 
-        return UserInventoryRecommendationSignal.none(snapshot.productKey());
+        return UserInventoryRecommendationSignal.none(candidate.productKey());
     }
 
-    private boolean similar(UserInventoryItem item, UserProductSearchProductSnapshot snapshot) {
-        if (item.getSourceProductKey() != null && item.getSourceProductKey().equals(snapshot.productKey())) {
+    private boolean similar(UserInventoryItem item, InventoryCandidate candidate) {
+        if (item.getSourceProductKey() != null && item.getSourceProductKey().equals(candidate.productKey())) {
             return true;
         }
         String itemName = normalize(item.getName());
-        String productName = normalize(snapshot.product().title());
+        String productName = normalize(candidate.title());
         if (itemName.isBlank() || productName.isBlank()) {
             return false;
         }
@@ -489,6 +507,33 @@ public class UserInventoryService {
                 )
                 .filter(value -> value != null && !value.isBlank())
                 .collect(Collectors.joining(" ")));
+    }
+
+    private record InventoryCandidate(String productKey, String title, String evidenceText) {
+
+        private static InventoryCandidate from(UserProductSearchProductSnapshot snapshot) {
+            MerchantSemanticProductResult product = snapshot.product();
+            return new InventoryCandidate(
+                    snapshot.productKey(),
+                    product.title(),
+                    Stream.of(product.title(), product.detailDescription(), product.descriptionHtml())
+                            .filter(value -> value != null && !value.isBlank())
+                            .collect(Collectors.joining(" "))
+            );
+        }
+
+        private static InventoryCandidate from(CanonicalProduct product) {
+            String attributes = product.attributes().stream()
+                    .map(attribute -> attribute.value())
+                    .collect(Collectors.joining(" "));
+            return new InventoryCandidate(
+                    product.key(),
+                    product.title(),
+                    Stream.of(product.title(), product.description(), attributes)
+                            .filter(value -> value != null && !value.isBlank())
+                            .collect(Collectors.joining(" "))
+            );
+        }
     }
 
     private UserInventoryCategory categoryFor(String text) {

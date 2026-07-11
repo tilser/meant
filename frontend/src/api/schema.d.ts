@@ -1074,6 +1074,8 @@ export interface components {
             identityEvidence: components["schemas"]["ProductIdentityEvidenceResponse"][];
             /** @description All product-level source observations */
             provenance: components["schemas"]["ResultProvenanceResponse"][];
+            /** @description Typed, redacted explanation of canonical-product relevance */
+            rankingExplanation?: components["schemas"]["ProductRankingExplanationResponse"];
             /** @description Distinct merchant, variant, and selling-plan offers */
             offers: components["schemas"]["OfferResponse"][];
         };
@@ -1239,8 +1241,36 @@ export interface components {
             checkoutUrl?: string;
             /** @description Selected variant and selling-plan options */
             selectedOptions: components["schemas"]["ProductAttributeResponse"][];
+            /** @description Typed, redacted explanation of this offer's independent ordering */
+            rankingExplanation?: components["schemas"]["OfferRankingExplanationResponse"];
             /** @description Every source observation merged into this exact offer */
             provenance: components["schemas"]["ResultProvenanceResponse"][];
+        };
+        /** @description One named offer-ranking feature */
+        OfferRankingFeatureResponse: {
+            /** @description Controlled offer feature name */
+            name: "LANDED_PRICE" | "ITEM_PRICE" | "AVAILABILITY" | "DELIVERY_EVIDENCE" | "MERCHANT_TRUST" | "HISTORICAL_RELIABILITY" | "RETURN_POLICY" | "CHECKOUT_CAPABILITY" | "FRESHNESS" | "DATA_COMPLETENESS";
+            /** @description Whether this fact was known */
+            availability: "AVAILABLE" | "UNKNOWN";
+            /** Format: int32 @description Normalized feature value in basis points */
+            valueBasisPoints?: number;
+            /** Format: int32 @description Versioned policy weight */
+            weight: number;
+        };
+        /** @description Reproducible offer-ranking trace with unknown facts preserved */
+        OfferRankingExplanationResponse: {
+            /** @description Deterministic offer-ranking version */
+            rankingVersion: string;
+            /** Format: int32 @description Final offer score in basis points */
+            scoreBasisPoints: number;
+            /** Format: int32 @description Final one-based rank inside the canonical product */
+            finalRank: number;
+            /** @description Disclosed commercial tie-break policy */
+            commercialTieBreakPolicy: "NONE";
+            /** @description Stable offer key used only after offer-feature ties */
+            deterministicTieBreakKey: string;
+            /** @description Typed offer features; unavailable facts have no numeric value */
+            features: components["schemas"]["OfferRankingFeatureResponse"][];
         };
         ProductAttributeResponse: {
             name: string;
@@ -1297,6 +1327,40 @@ export interface components {
             evidence: components["schemas"]["ProductIdentityEvidenceResponse"][];
             /** @description Typed contradictory facts that vetoed or qualified the match */
             contradictions: ("SIZE" | "COLOR" | "BUNDLE" | "PACK_QUANTITY" | "GENERATION" | "MODEL" | "SELLING_PLAN")[];
+        };
+        /** @description One named product-ranking feature */
+        ProductRankingFeatureResponse: {
+            /** @description Controlled product feature name */
+            name: "CALIBRATED_SOURCE_INTENT_FIT" | "LEXICAL_INTENT_FIT" | "DURABLE_PREFERENCE_FIT" | "INVENTORY_RELATIONSHIP" | "QUALITY_EVIDENCE" | "IDENTITY_CONFIDENCE" | "FRESHNESS" | "MODEL_RERANK";
+            /** @description Whether this feature was known */
+            availability: "AVAILABLE" | "UNKNOWN";
+            /** Format: int32 @description Normalized feature value in basis points */
+            valueBasisPoints?: number;
+            /** Format: int32 @description Versioned policy weight */
+            weight: number;
+            /** @description Provider-adapter calibration or model versions used */
+            evidenceVersions: string[];
+        };
+        /** @description Reproducible product-ranking trace without prompts or personal raw text */
+        ProductRankingExplanationResponse: {
+            /** @description Deterministic product-ranking version */
+            rankingVersion: string;
+            /** @description Bounded source and merchant diversity policy version */
+            diversityPolicyVersion: string;
+            /** @description Whether diversity caps were strict or relaxed because no full feasible window existed */
+            diversityPolicyOutcome: "STRICT" | "RELAXED_INFEASIBLE";
+            /** Format: int32 @description Final product relevance score in basis points */
+            scoreBasisPoints: number;
+            /** Format: int32 @description Final one-based rank after diversity control */
+            finalRank: number;
+            /** @description Deterministic, model-augmented, or safe fallback execution */
+            execution: "DETERMINISTIC" | "MODEL_AUGMENTED" | "MODEL_FALLBACK";
+            /** @description Whether diversity control promoted or deferred this product */
+            diversityDecision: "NONE" | "PROMOTED" | "DEFERRED";
+            /** @description Stable canonical key used only after relevance ties */
+            deterministicTieBreakKey: string;
+            /** @description Typed product feature values and calibration versions */
+            features: components["schemas"]["ProductRankingFeatureResponse"][];
         };
         /** @description Explicit-confidence product identity evidence */
         ProductIdentityEvidenceResponse: {

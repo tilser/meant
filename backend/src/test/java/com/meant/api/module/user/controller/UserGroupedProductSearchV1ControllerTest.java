@@ -64,7 +64,7 @@ class UserGroupedProductSearchV1ControllerTest {
         private SearchUserProductsCommand searchCommand;
 
         private CapturingGroupedProductSearchService() {
-            super(null, null, null);
+            super(null, null, null, null, null);
         }
 
         @Override

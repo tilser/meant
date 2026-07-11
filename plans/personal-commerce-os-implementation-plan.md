@@ -362,6 +362,7 @@ Produce one product cluster with independent offers while avoiding false merges 
 
 Priority: P0  
 Dependencies: PCOS-008  
+Implementation status: Complete
 
 **Goal**
 

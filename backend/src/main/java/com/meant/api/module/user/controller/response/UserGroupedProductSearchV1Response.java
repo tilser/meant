@@ -17,6 +17,7 @@ import com.meant.api.plugin.catalog.common.dto.OfferDelivery;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScopeType;
+import com.meant.api.plugin.catalog.common.dto.OfferRankingExplanation;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribution;
 import com.meant.api.plugin.catalog.common.dto.ProductCertification;
@@ -29,6 +30,7 @@ import com.meant.api.plugin.catalog.common.dto.ProductIdentityContradictionKind;
 import com.meant.api.plugin.catalog.common.dto.ProductMaterial;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
+import com.meant.api.plugin.catalog.common.dto.ProductRankingExplanation;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
@@ -39,6 +41,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Schema(description = "Version 1 grouped product-search response with canonical products and merchant offers")
@@ -85,7 +88,13 @@ public record UserGroupedProductSearchV1Response(
                 result.nextOffset(),
                 result.hasMore(),
                 result.upstreamTruncated(),
-                result.products().stream().map(CanonicalProductResponse::from).toList(),
+                result.products().stream()
+                        .map(product -> CanonicalProductResponse.from(
+                                product,
+                                result.productRankingExplanations().get(product.key()),
+                                result.offerRankingExplanations()
+                        ))
+                        .toList(),
                 result.groupingDecisionCount(),
                 result.groupingDecisionsTruncated(),
                 result.groupingDecisions().stream().map(ProductGroupingDecisionResponse::from).toList()
@@ -145,15 +154,23 @@ public record UserGroupedProductSearchV1Response(
             List<ProductIdentityEvidenceResponse> identityEvidence,
             @Schema(description = "All product-level source observations", requiredMode = Schema.RequiredMode.REQUIRED)
             List<ResultProvenanceResponse> provenance,
+            @Schema(description = "Typed, redacted explanation of canonical-product relevance", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            ProductRankingExplanationResponse rankingExplanation,
             @Schema(description = "Distinct merchant, variant, and selling-plan offers", requiredMode = Schema.RequiredMode.REQUIRED)
             List<OfferResponse> offers
     ) {
 
         public static CanonicalProductResponse from(CanonicalProduct product) {
+            return from(product, null, java.util.Map.of());
+        }
+
+        static CanonicalProductResponse from(
+                CanonicalProduct product,
+                ProductRankingExplanation explanation,
+                Map<String, OfferRankingExplanation> offerExplanations
+        ) {
             return product == null ? null : new CanonicalProductResponse(
-                    product.key(),
-                    product.title(),
-                    product.description(),
+                    product.key(), product.title(), product.description(),
                     product.media().stream().map(ProductMediaResponse::from).toList(),
                     product.attributes().stream().map(ProductAttributeResponse::from).toList(),
                     product.materials().stream().map(ProductMaterialResponse::from).toList(),
@@ -161,7 +178,10 @@ public record UserGroupedProductSearchV1Response(
                     product.attribution().stream().map(ProductAttributionResponse::from).toList(),
                     product.identityEvidence().stream().map(ProductIdentityEvidenceResponse::from).toList(),
                     product.provenance().stream().map(ResultProvenanceResponse::from).toList(),
-                    product.offers().stream().map(OfferResponse::from).toList()
+                    ProductRankingExplanationResponse.from(explanation),
+                    product.offers().stream()
+                            .map(offer -> OfferResponse.from(offer, offerExplanations.get(offer.key())))
+                            .toList()
             );
         }
     }
@@ -188,22 +208,24 @@ public record UserGroupedProductSearchV1Response(
             URI checkoutUrl,
             @Schema(description = "Selected variant and selling-plan options", requiredMode = Schema.RequiredMode.REQUIRED)
             List<ProductAttributeResponse> selectedOptions,
+            @Schema(description = "Typed, redacted explanation of this offer's independent ordering", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            OfferRankingExplanationResponse rankingExplanation,
             @Schema(description = "Every source observation merged into this exact offer", requiredMode = Schema.RequiredMode.REQUIRED)
             List<ResultProvenanceResponse> provenance
     ) {
 
         static OfferResponse from(Offer offer) {
+            return from(offer, null);
+        }
+
+        static OfferResponse from(Offer offer, OfferRankingExplanation explanation) {
             return new OfferResponse(
-                    offer.key(),
-                    OfferIdentityResponse.from(offer.identity()),
-                    offer.merchantName(),
-                    offer.variantTitle(),
-                    MoneyResponse.from(offer.price()),
-                    MoneyResponse.from(offer.listPrice()),
+                    offer.key(), OfferIdentityResponse.from(offer.identity()), offer.merchantName(), offer.variantTitle(),
+                    MoneyResponse.from(offer.price()), MoneyResponse.from(offer.listPrice()),
                     OfferAvailabilityResponse.from(offer.availability()),
-                    offer.delivery().stream().map(OfferDeliveryResponse::from).toList(),
-                    offer.checkoutUrl(),
+                    offer.delivery().stream().map(OfferDeliveryResponse::from).toList(), offer.checkoutUrl(),
                     offer.selectedOptions().stream().map(ProductAttributeResponse::from).toList(),
+                    OfferRankingExplanationResponse.from(explanation),
                     offer.provenance().stream().map(ResultProvenanceResponse::from).toList()
             );
         }

@@ -16,6 +16,10 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'OfferIdentityResponse',
     'OfferMerchantScopeResponse',
     'OfferComponentIdentityResponse',
+    'ProductRankingExplanationResponse',
+    'ProductRankingFeatureResponse',
+    'OfferRankingExplanationResponse',
+    'OfferRankingFeatureResponse',
     'ProductGroupingDecisionResponse',
     'ResultProvenanceResponse',
     'DiscoverySourceIdentityResponse',
@@ -26,8 +30,15 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
   const federatedEventFields: Array<
     keyof components['schemas']['UserFederatedProductSearchStreamEventResponse']
   > = ['type', 'source', 'observationSources', 'candidate', 'failure', 'terminalStatus']
+  const rankingFields: Array<keyof components['schemas']['ProductRankingExplanationResponse']> = [
+    'diversityPolicyVersion',
+    'diversityPolicyOutcome',
+    'execution',
+    'features',
+  ]
 
   expect(expectedPaths).toHaveLength(4)
-  expect(expectedSchemas).toHaveLength(12)
+  expect(expectedSchemas).toHaveLength(16)
   expect(federatedEventFields).toContain('observationSources')
+  expect(rankingFields).toContain('diversityPolicyOutcome')
 })

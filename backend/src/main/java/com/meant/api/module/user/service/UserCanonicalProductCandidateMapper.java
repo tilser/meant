@@ -24,6 +24,7 @@ import com.meant.api.plugin.catalog.common.dto.ProductCertification;
 import com.meant.api.plugin.catalog.common.dto.ProductMaterial;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
+import com.meant.api.plugin.catalog.common.dto.ProductRetrievalSignal;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
@@ -156,6 +157,13 @@ public class UserCanonicalProductCandidateMapper {
                 )),
                 canonicalUrlEvidence(provider, product.url(), sourceReference),
                 List.of(provenance),
+                List.of(new ProductRetrievalSignal(
+                        provenance.discoverySource(),
+                        offer.identity().merchantScope(),
+                        ProductRetrievalSignal.Feature.INTENT_FIT,
+                        product.retrievalIntentFitBasisPoints(),
+                        "merchant-semantic-voyage-rerank-v1"
+                )),
                 offer
         );
     }
@@ -343,7 +351,8 @@ public class UserCanonicalProductCandidateMapper {
             String selectedVariantPriceAmount,
             String selectedVariantPriceCurrency,
             Boolean selectedVariantAvailable,
-            String merchantName
+            String merchantName,
+            int retrievalIntentFitBasisPoints
     ) {
 
         private static CandidateProduct from(UserProductSearchProductResult product) {
@@ -371,7 +380,8 @@ public class UserCanonicalProductCandidateMapper {
                     product.selectedVariantPriceAmount(),
                     product.selectedVariantPriceCurrency(),
                     product.selectedVariantAvailable(),
-                    product.merchantName()
+                    product.merchantName(),
+                    calibratedRetrievalScore(product.productRerankScore(), product.rank())
             );
         }
 
@@ -400,8 +410,18 @@ public class UserCanonicalProductCandidateMapper {
                     product.selectedVariantPriceAmount(),
                     product.selectedVariantPriceCurrency(),
                     product.selectedVariantAvailable(),
-                    product.merchantName()
+                    product.merchantName(),
+                    calibratedRetrievalScore(product.productRerankScore(), product.rank())
             );
+        }
+
+        private static int calibratedRetrievalScore(double sourceScore, int sourceRank) {
+            double boundedScore = Double.isFinite(sourceScore)
+                    ? Math.max(0.0d, Math.min(1.0d, sourceScore))
+                    : 0.0d;
+            int boundedRank = Math.max(1, Math.min(100, sourceRank));
+            double ordinalScore = 1.0d - ((boundedRank - 1) / 99.0d);
+            return (int) Math.round((boundedScore * 0.7d + ordinalScore * 0.3d) * 10_000.0d);
         }
     }
 }

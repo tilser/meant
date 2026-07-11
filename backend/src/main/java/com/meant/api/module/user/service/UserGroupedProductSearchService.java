@@ -11,11 +11,14 @@ import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingResult;
+import com.meant.api.plugin.catalog.common.dto.ProductRankingResult;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
+import com.meant.api.plugin.catalog.common.service.ProductRankingService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +35,8 @@ public class UserGroupedProductSearchService {
     private final UserProductSearchPreparationService preparationService;
     private final FederatedCatalogDiscoveryService federatedDiscoveryService;
     private final ExactProductGroupingService exactProductGroupingService;
+    private final ProductRankingService productRankingService;
+    private final UserProductRankingContextFactory rankingContextFactory;
 
     public UserGroupedProductSearchResult search(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -51,7 +56,11 @@ public class UserGroupedProductSearchService {
         }
 
         ProductGroupingResult grouping = exactProductGroupingService.evaluate(discovery.candidates());
-        List<CanonicalProduct> page = grouping.products().stream()
+        ProductRankingResult ranking = productRankingService.rank(
+                grouping.products(),
+                rankingContextFactory.create(command.userId(), preparation, grouping.products())
+        );
+        List<CanonicalProduct> page = ranking.products().stream()
                 .skip(preparation.offset())
                 .limit(preparation.limit())
                 .toList();
@@ -59,7 +68,7 @@ public class UserGroupedProductSearchService {
                 preparation.offset() + preparation.limit(),
                 UserProductSearchPagination.MAX_RESULT_WINDOW
         );
-        boolean hasMore = grouping.products().size() > pageEnd;
+        boolean hasMore = ranking.products().size() > pageEnd;
         Set<String> visibleOfferKeys = page.stream()
                 .flatMap(product -> product.offers().stream())
                 .map(offer -> offer.key())
@@ -80,6 +89,12 @@ public class UserGroupedProductSearchService {
                 hasMore,
                 discovery.truncated(),
                 page,
+                ranking.productExplanations().entrySet().stream()
+                        .filter(entry -> page.stream().anyMatch(product -> product.key().equals(entry.getKey())))
+                        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
+                ranking.offerExplanations().entrySet().stream()
+                        .filter(entry -> visibleOfferKeys.contains(entry.getKey()))
+                        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
                 grouping.decisions().size(),
                 grouping.decisions().size() > visibleDecisions.size(),
                 visibleDecisions

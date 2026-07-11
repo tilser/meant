@@ -12,6 +12,7 @@ public record Offer(
         OfferAvailability availability,
         List<OfferDelivery> delivery,
         URI checkoutUrl,
+        OfferRankingEvidence rankingEvidence,
         List<ResultProvenance> provenance
 ) {
 
@@ -23,10 +24,36 @@ public record Offer(
         variantTitle = trimToNull(variantTitle);
         availability = availability == null ? OfferAvailability.unknown() : availability;
         delivery = delivery == null ? List.of() : List.copyOf(delivery);
+        rankingEvidence = rankingEvidence == null ? OfferRankingEvidence.unknown() : rankingEvidence;
         provenance = provenance == null ? List.of() : List.copyOf(provenance);
         if (provenance.isEmpty()) {
             throw new IllegalArgumentException("Offer must retain at least one provenance observation");
         }
+    }
+
+    public Offer(
+            OfferIdentity identity,
+            String merchantName,
+            String variantTitle,
+            Money price,
+            Money listPrice,
+            OfferAvailability availability,
+            List<OfferDelivery> delivery,
+            URI checkoutUrl,
+            List<ResultProvenance> provenance
+    ) {
+        this(
+                identity,
+                merchantName,
+                variantTitle,
+                price,
+                listPrice,
+                availability,
+                delivery,
+                checkoutUrl,
+                OfferRankingEvidence.unknown(),
+                provenance
+        );
     }
 
     public String key() {

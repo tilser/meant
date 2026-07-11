@@ -18,6 +18,7 @@ import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
+import com.meant.api.plugin.catalog.common.dto.ProductRetrievalSignal;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -72,14 +73,16 @@ public class ShopifyGlobalCatalogNormalizer {
         List<ProductCandidate> candidates = new ArrayList<>();
         boolean truncated = false;
 
+        int productRank = 0;
         outer:
         for (Product product : response.resolvedProducts()) {
+            productRank++;
             for (Variant variant : safe(product.variants())) {
                 if (candidates.size() >= properties.maximumCandidates()) {
                     truncated = true;
                     break outer;
                 }
-                candidates.add(candidate(product, variant, observedAt, sourceReference));
+                candidates.add(candidate(product, variant, productRank, observedAt, sourceReference));
             }
         }
         return new NormalizedCandidates(candidates, truncated);
@@ -88,6 +91,7 @@ public class ShopifyGlobalCatalogNormalizer {
     private ProductCandidate candidate(
             Product product,
             Variant variant,
+            int productRank,
             Instant observedAt,
             ResultSourceReference sourceReference
     ) {
@@ -145,8 +149,19 @@ public class ShopifyGlobalCatalogNormalizer {
                 attribution(product, variant, sourceReference),
                 evidence(product, variant, sourceReference),
                 List.of(provenance),
+                List.of(new ProductRetrievalSignal(
+                        discoverySource(),
+                        offer.identity().merchantScope(),
+                        ProductRetrievalSignal.Feature.INTENT_FIT,
+                        calibratedProductRank(productRank),
+                        "shopify-global-catalog-ordinal-v1"
+                )),
                 offer
         );
+    }
+
+    private int calibratedProductRank(int productRank) {
+        return Math.max(100, 10_000 - (Math.max(1, Math.min(100, productRank)) - 1) * 100);
     }
 
     private List<ProductIdentityEvidence> evidence(

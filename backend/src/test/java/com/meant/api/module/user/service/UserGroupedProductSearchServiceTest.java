@@ -15,6 +15,8 @@ import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailure;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
@@ -28,6 +30,7 @@ import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
+import com.meant.api.plugin.catalog.common.dto.ProductRankingContext;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
@@ -37,6 +40,7 @@ import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryMetr
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
 import com.meant.api.plugin.catalog.common.service.ProductGroupingMetrics;
+import com.meant.api.plugin.catalog.common.service.ProductRankingTestFactory;
 import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentityStrategy;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -76,7 +80,9 @@ class UserGroupedProductSearchServiceTest {
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
                 preparationService,
                 discoveryService,
-                new ExactProductGroupingService()
+                new ExactProductGroupingService(),
+                ProductRankingTestFactory.service(),
+                new StubRankingContextFactory()
         );
         EnsureUserProfileCommand profile = profile();
         SearchUserProductsCommand command = command(profile.id());
@@ -239,7 +245,9 @@ class UserGroupedProductSearchServiceTest {
                 new PagingPreparationService(),
                 new StubFederatedDiscoveryService(new FederatedCatalogDiscoveryResult(
                         CatalogDiscoveryTerminalStatus.SUCCESS, List.of(), candidates, false)),
-                new ExactProductGroupingService(new ProductGroupingMetrics(registry))
+                new ExactProductGroupingService(new ProductGroupingMetrics(registry)),
+                ProductRankingTestFactory.service(),
+                new StubRankingContextFactory()
         );
 
         var result = service.search(profile(), command(profile().id(), 0, 20));
@@ -282,7 +290,9 @@ class UserGroupedProductSearchServiceTest {
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
                 new PagingPreparationService(),
                 discovery,
-                new ExactProductGroupingService()
+                new ExactProductGroupingService(),
+                ProductRankingTestFactory.service(),
+                new StubRankingContextFactory()
         );
 
         var result = service.search(profile(), command(profile().id(), 40, 20));
@@ -404,8 +414,33 @@ class UserGroupedProductSearchServiceTest {
         return new UserGroupedProductSearchService(
                 new PagingPreparationService(),
                 discoveryService,
-                new ExactProductGroupingService()
+                new ExactProductGroupingService(),
+                ProductRankingTestFactory.service(),
+                new StubRankingContextFactory()
         );
+    }
+
+    private static final class StubRankingContextFactory extends UserProductRankingContextFactory {
+        private StubRankingContextFactory() {
+            super(null);
+        }
+
+        @Override
+        public ProductRankingContext create(
+                UUID userId,
+                UserProductSearchPreparation preparation,
+                List<CanonicalProduct> products
+        ) {
+            return new ProductRankingContext(
+                    preparation.catalogInput().searchQuery(),
+                    new CatalogSearchContext(null, null, null, "en", "USD", null),
+                    preparation.catalogInput().filters(),
+                    List.of(),
+                    java.util.Map.of(),
+                    preparation.now(),
+                    100
+            );
+        }
     }
 
     private MerchantIntegrationResult integration(UUID merchantId) {

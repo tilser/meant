@@ -14,6 +14,7 @@ public record ProductCandidate(
         List<ProductAttribution> attribution,
         List<ProductIdentityEvidence> identityEvidence,
         List<ResultProvenance> provenance,
+        List<ProductRetrievalSignal> retrievalSignals,
         Offer offer
 ) {
 
@@ -27,9 +28,37 @@ public record ProductCandidate(
         attribution = immutable(attribution);
         identityEvidence = immutable(identityEvidence);
         provenance = immutable(provenance);
+        retrievalSignals = immutable(retrievalSignals);
         if (offer == null || provenance.isEmpty()) {
             throw new IllegalArgumentException("Product candidate needs an offer and provenance");
         }
+    }
+
+    public ProductCandidate(
+            String title,
+            String description,
+            List<ProductMedia> media,
+            List<ProductAttribute> attributes,
+            List<ProductMaterial> materials,
+            List<ProductCertification> certifications,
+            List<ProductAttribution> attribution,
+            List<ProductIdentityEvidence> identityEvidence,
+            List<ResultProvenance> provenance,
+            Offer offer
+    ) {
+        this(
+                title,
+                description,
+                media,
+                attributes,
+                materials,
+                certifications,
+                attribution,
+                identityEvidence,
+                provenance,
+                List.of(),
+                offer
+        );
     }
 
     public String fallbackProductKey() {

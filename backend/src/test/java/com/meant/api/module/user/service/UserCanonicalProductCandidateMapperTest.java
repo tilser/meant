@@ -38,6 +38,11 @@ class UserCanonicalProductCandidateMapperTest {
                         org.assertj.core.groups.Tuple.tuple("Color", "Blue"),
                         org.assertj.core.groups.Tuple.tuple("Size", "M")
                 );
+        assertThat(medium.retrievalSignals()).singleElement().satisfies(signal -> {
+            assertThat(signal.valueBasisPoints()).isBetween(0, 10_000);
+            assertThat(signal.calibrationVersion()).isEqualTo("merchant-semantic-voyage-rerank-v1");
+            assertThat(signal.merchantScope()).isSameAs(medium.offer().identity().merchantScope());
+        });
         assertThat(new ExactProductGroupingService().group(List.of(medium, large))).singleElement()
                 .satisfies(canonical -> assertThat(canonical.offers()).hasSize(2));
     }
