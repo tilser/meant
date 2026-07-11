@@ -122,8 +122,8 @@ public class FederatedCatalogDiscoveryService {
             eventDispatcher.awaitTerminal(deadlineNanos);
             return result;
         } catch (InterruptedException exception) {
-            tasks.forEach(FederatedCatalogSourceTask::cancel);
             eventDispatcher.cancel();
+            tasks.forEach(FederatedCatalogSourceTask::cancel);
             metrics.cancelled();
             Thread.currentThread().interrupt();
             throw new CancellationException("Federated catalog discovery was cancelled");
