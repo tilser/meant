@@ -1316,10 +1316,13 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "CanonicalProductResponse",
                         "OfferResponse",
                         "OfferMerchantScopeResponse",
+                        "ProductGroupingDecisionResponse",
                         "DiscoverySourceIdentityResponse",
                         "LocalMerchantRoutingResponse",
                         "ResultProvenanceResponse",
-                        "\"minorUnits\""
+                        "\"minorUnits\"",
+                        "\"groupingDecisions\"",
+                        "\"CONTRADICTION_VETO\""
                 );
     }
 

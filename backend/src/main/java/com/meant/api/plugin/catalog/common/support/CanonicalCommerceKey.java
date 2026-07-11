@@ -6,6 +6,8 @@ import com.meant.api.plugin.catalog.common.dto.OfferComponentIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
+import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanIdentity;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanOption;
 import java.io.ByteArrayOutputStream;
@@ -51,6 +53,40 @@ public final class CanonicalCommerceKey {
 
     public static String canonicalProductKey(ProductIdentityEvidence evidence) {
         return "product_v1_" + digest("canonical-product", evidenceFields(evidence));
+    }
+
+    public static String groupedProductKey(
+            String identityKind,
+            String normalizedIdentity,
+            String compatibilityFingerprint
+    ) {
+        return "product_v3_" + digest(
+                "grouped-product-v3",
+                List.of(identityKind, normalizedIdentity, compatibilityFingerprint)
+        );
+    }
+
+    public static String clusteredProductKey(List<String> stableMemberIdentities) {
+        return "product_v3_" + digest(
+                "clustered-product-v3",
+                stableMemberIdentities.stream().sorted().distinct().toList()
+        );
+    }
+
+    public static String merchantScopeKey(OfferMerchantScope merchantScope) {
+        List<String> fields = new ArrayList<>();
+        addMerchantScopeV2(fields, merchantScope);
+        return digest("merchant-scope-v1", fields);
+    }
+
+    public static String upidAuthorityScopeKey(
+            ProviderIdentity provider,
+            ResultSourceReference sourceReference
+    ) {
+        return digest(
+                "upid-authority-scope-v1",
+                List.of(provider.value(), sourceReference.type().name(), sourceReference.reference())
+        );
     }
 
     private static List<String> evidenceFields(ProductIdentityEvidence evidence) {

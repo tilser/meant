@@ -190,6 +190,28 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
+    void emitsTrustedBarcodeEvidenceOnlyForValidGs1Identifiers() throws Exception {
+        String withBarcodes = globalResponse().replace(
+                "\"availability\": {\"available\": true, \"status\": \"in_stock\"}",
+                "\"availability\": {\"available\": true, \"status\": \"in_stock\"},"
+                        + "\"barcodes\":["
+                        + "{\"type\":\"UPC\",\"value\":\"036000291452\"},"
+                        + "{\"type\":\"GTIN\",\"value\":\"00000000000000\"},"
+                        + "{\"type\":\"EAN\",\"value\":\"4006381333930\"}]"
+        );
+
+        var result = provider(new CapturingClient(response(withBarcodes)), properties(3))
+                .searchCatalog(new ShopifyGlobalCatalogSearchRequest("shoe", null, null));
+
+        assertThat(result.candidates()).hasSize(2).allSatisfy(candidate ->
+                assertThat(candidate.identityEvidence()).extracting(evidence -> evidence.kind())
+                        .containsExactly(
+                                com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind.UPID,
+                                com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind.UPC
+                        ));
+    }
+
+    @Test
     void lookupAndGetProductUseDeterministicToolsWithoutSearchFanout() throws Exception {
         CapturingClient client = new CapturingClient(Map.of(
                 "lookup_catalog", response(globalResponse()),

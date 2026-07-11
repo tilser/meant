@@ -21,17 +21,24 @@ import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceOperation;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
+import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySource;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryMetrics;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
+import com.meant.api.plugin.catalog.common.service.ProductGroupingMetrics;
 import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentityStrategy;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +48,6 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
-import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import org.junit.jupiter.api.Test;
 
 class UserGroupedProductSearchServiceTest {
@@ -91,7 +97,7 @@ class UserGroupedProductSearchServiceTest {
             });
         });
         assertThat(discoveryService.request.query()).isEqualTo("linen shirt");
-        assertThat(discoveryService.request.candidateLimit()).isEqualTo(21);
+        assertThat(discoveryService.request.candidateLimit()).isEqualTo(100);
         assertThat(preparationService.profileCommand).isEqualTo(profile);
         assertThat(preparationService.searchCommand).isEqualTo(command);
     }
@@ -126,18 +132,17 @@ class UserGroupedProductSearchServiceTest {
         var second = service.search(profile, command(profile.id(), 2, 2));
         var third = service.search(profile, command(profile.id(), 4, 2));
 
+        List<String> expectedPrefix = new ExactProductGroupingService().group(
+                        java.util.stream.Stream.concat(generic.stream(), shopify.stream()).toList())
+                .stream()
+                .limit(6)
+                .map(product -> product.title())
+                .toList();
         assertThat(java.util.stream.Stream.of(first, second, third)
                 .flatMap(page -> page.products().stream())
                 .map(product -> product.title())
                 .toList())
-                .containsExactlyInAnyOrder(
-                        "Product generic-0",
-                        "Product shopify-0",
-                        "Product generic-1",
-                        "Product shopify-1",
-                        "Product generic-2",
-                        "Product shopify-2"
-                )
+                .containsExactlyElementsOf(expectedPrefix)
                 .doesNotHaveDuplicates();
         assertThat(first.hasMore()).isTrue();
         assertThat(second.hasMore()).isTrue();
@@ -161,12 +166,133 @@ class UserGroupedProductSearchServiceTest {
         var sparsePage = sparseService.search(profile, command(profile.id(), 2, 2));
         var partialPage = partialService.search(profile, command(profile.id(), 2, 2));
 
+        List<String> sparseExpected = new ExactProductGroupingService().group(
+                        java.util.stream.Stream.concat(sparse.stream(), shopify.stream()).toList())
+                .stream().skip(2).limit(2).map(product -> product.title()).toList();
+        List<String> partialExpected = new ExactProductGroupingService().group(shopify)
+                .stream().skip(2).limit(2).map(product -> product.title()).toList();
         assertThat(sparsePage.products()).extracting(product -> product.title())
-                .containsExactlyInAnyOrder("Product shopify-1", "Product shopify-2");
+                .containsExactlyElementsOf(sparseExpected);
         assertThat(partialPage.products()).extracting(product -> product.title())
-                .containsExactlyInAnyOrder("Product shopify-2", "Product shopify-3");
+                .containsExactlyElementsOf(partialExpected);
         assertThat(sparsePage.hasMore()).isTrue();
         assertThat(partialPage.hasMore()).isTrue();
+    }
+
+    @Test
+    void groupsBeforeProductPaginationWithoutSplittingOffersAcrossSuccessivePages() {
+        ProductCandidate shared = pageCandidates("shared", 1).getFirst();
+        List<ProductCandidate> candidates = new java.util.ArrayList<>();
+        candidates.add(pageCandidates("unique-a", 1).getFirst());
+        candidates.add(shared);
+        candidates.add(shared);
+        candidates.addAll(pageCandidates("unique-b", 4));
+        UserGroupedProductSearchService service = pagingService(
+                new PrefixSource("SHOPIFY", ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL", candidates, false)
+        );
+        EnsureUserProfileCommand profile = profile();
+
+        var first = service.search(profile, command(profile.id(), 0, 2));
+        var second = service.search(profile, command(profile.id(), 2, 2));
+        var third = service.search(profile, command(profile.id(), 4, 2));
+        List<String> successiveKeys = java.util.stream.Stream.of(first, second, third)
+                .flatMap(page -> page.products().stream())
+                .map(product -> product.key())
+                .toList();
+        List<String> expectedKeys = new ExactProductGroupingService().group(candidates).stream()
+                .map(product -> product.key())
+                .toList();
+
+        assertThat(successiveKeys).containsExactlyElementsOf(expectedKeys).doesNotHaveDuplicates();
+        assertThat(java.util.stream.Stream.of(first, second, third)
+                .flatMap(page -> page.products().stream())
+                .flatMap(product -> product.offers().stream())
+                .filter(offer -> offer.key().equals(shared.offer().key())))
+                .hasSize(1);
+        assertThat(first.hasMore()).isTrue();
+        assertThat(second.hasMore()).isTrue();
+        assertThat(third.hasMore()).isFalse();
+    }
+
+    @Test
+    void boundsPublicDiagnosticsButCountsEveryWindowDecision() {
+        ProductIdentityEvidence semantic = new ProductIdentityEvidence(
+                ProductIdentityEvidenceKind.SEMANTIC,
+                IdentityEvidenceStrength.SEMANTIC,
+                9_900,
+                List.of(new ExternalIdentifier(
+                        ExternalIdentifierType.SEMANTIC_FINGERPRINT,
+                        "MEASURED",
+                        "redacted-fingerprint"
+                )),
+                new ResultSourceReference(
+                        ResultSourceType.PROVIDER_CATALOG,
+                        "measured-similarity-v1",
+                        null
+                )
+        );
+        List<ProductCandidate> candidates = pageCandidates("diagnostic", 100).stream()
+                .map(candidate -> withEvidence(candidate, semantic))
+                .toList();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        UserGroupedProductSearchService service = new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                new StubFederatedDiscoveryService(new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.SUCCESS, List.of(), candidates, false)),
+                new ExactProductGroupingService(new ProductGroupingMetrics(registry))
+        );
+
+        var result = service.search(profile(), command(profile().id(), 0, 20));
+
+        assertThat(result.groupingDecisionCount()).isEqualTo(4_950);
+        assertThat(result.groupingDecisions()).hasSize(UserGroupedProductSearchService.MAX_PUBLIC_GROUPING_DECISIONS);
+        assertThat(result.groupingDecisionsTruncated()).isTrue();
+        assertThat(registry.get("commerce.catalog.grouping.decisions")
+                .tags("outcome", "separate", "reason", "semantic_evidence_only")
+                .counter().count()).isEqualTo(4_950d);
+    }
+
+    @Test
+    void shopifyUpstreamTruncationNeverAdvertisesAnUnreachableContinuation() {
+        List<ProductCandidate> candidates = pageCandidates("shopify-upstream", 50);
+        DiscoverySourceIdentity shopify = new DiscoverySourceIdentity(
+                new ProviderIdentity("SHOPIFY"),
+                ResultSourceType.PROVIDER_CATALOG,
+                "SHOPIFY_GLOBAL"
+        );
+        CatalogSourceResult source = new CatalogSourceResult(
+                shopify.provider(),
+                shopify,
+                CatalogSourceOperation.SEARCH,
+                "2026-04-08",
+                NegotiatedCapabilities.none(),
+                candidates,
+                null,
+                true,
+                null
+        );
+        StubFederatedDiscoveryService discovery = new StubFederatedDiscoveryService(
+                new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.SUCCESS,
+                        List.of(source),
+                        candidates,
+                        true
+                )
+        );
+        UserGroupedProductSearchService service = new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                discovery,
+                new ExactProductGroupingService()
+        );
+
+        var result = service.search(profile(), command(profile().id(), 40, 20));
+
+        assertThat(result.products()).hasSize(10);
+        assertThat(result.hasMore()).isFalse();
+        assertThat(result.nextOffset()).isNull();
+        assertThat(result.upstreamTruncated()).isTrue();
+        assertThat(discovery.calls).isEqualTo(1);
+        assertThat(discovery.request.candidateLimit()).isEqualTo(100);
     }
 
     private UserProductSearchPreparation preparation() {
@@ -251,6 +377,21 @@ class UserGroupedProductSearchServiceTest {
                     );
                 })
                 .toList();
+    }
+
+    private ProductCandidate withEvidence(ProductCandidate candidate, ProductIdentityEvidence evidence) {
+        return new ProductCandidate(
+                candidate.title(),
+                candidate.description(),
+                candidate.media(),
+                candidate.attributes(),
+                candidate.materials(),
+                candidate.certifications(),
+                candidate.attribution(),
+                List.of(evidence),
+                candidate.provenance(),
+                candidate.offer()
+        );
     }
 
     private UserGroupedProductSearchService pagingService(CatalogDiscoverySource... sources) {
@@ -411,6 +552,7 @@ class UserGroupedProductSearchServiceTest {
 
         private final FederatedCatalogDiscoveryResult result;
         private CatalogDiscoveryRequest request;
+        private int calls;
 
         private StubFederatedDiscoveryService(FederatedCatalogDiscoveryResult result) {
             super(
@@ -424,6 +566,7 @@ class UserGroupedProductSearchServiceTest {
 
         @Override
         public FederatedCatalogDiscoveryResult search(CatalogDiscoveryRequest request) {
+            calls++;
             this.request = request;
             return result;
         }

@@ -1095,7 +1095,7 @@ export interface components {
              * @description Role or standard represented by the identifier
              * @enum {string}
              */
-            type: "MERCHANT" | "PRODUCT" | "VARIANT" | "SELLING_PLAN_GROUP" | "SELLING_PLAN" | "GTIN" | "UPC" | "EAN" | "BRAND" | "MPN" | "PROVIDER_GROUPING" | "UPID" | "CANONICAL_URL" | "SEMANTIC_FINGERPRINT";
+            type: "MERCHANT" | "PRODUCT" | "VARIANT" | "SELLING_PLAN_GROUP" | "SELLING_PLAN" | "GTIN" | "UPC" | "EAN" | "UNIVERSAL_PRODUCT_ID" | "BRAND" | "MPN" | "PROVIDER_GROUPING" | "UPID" | "CANONICAL_URL" | "SEMANTIC_FINGERPRINT";
             /** @description Provider or standard namespace */
             namespace?: string;
             /** @description Case-sensitive external value */
@@ -1272,13 +1272,39 @@ export interface components {
              */
             verificationUrl?: string;
         };
+        /** @description Typed, redacted explanation of a measurable product grouping comparison */
+        ProductGroupingDecisionResponse: {
+            /** @description Stable first offer key */
+            leftOfferKey: string;
+            /** @description Stable second offer key */
+            rightOfferKey: string;
+            /**
+             * @description Whether the observations grouped or remained separate
+             * @enum {string}
+             */
+            outcome: "GROUPED" | "SEPARATE";
+            /**
+             * @description Stable grouping explanation code
+             * @enum {string}
+             */
+            reason: "EXACT_OFFER" | "SAME_MERCHANT_PRODUCT" | "TRUSTED_PROVIDER_GROUP" | "UNIVERSAL_IDENTIFIER" | "VERIFIED_BRAND_MODEL" | "VERIFIED_PROVIDER_MAPPING" | "SAME_MERCHANT_CANONICAL_URL" | "CONTRADICTION_VETO" | "TRANSITIVE_CONTRADICTION_VETO" | "LOW_CONFIDENCE_EVIDENCE" | "SEMANTIC_EVIDENCE_ONLY";
+            /**
+             * Format: int32
+             * @description Decision confidence in basis points
+             */
+            confidenceBasisPoints: number;
+            /** @description Identity evidence used by the decision */
+            evidence: components["schemas"]["ProductIdentityEvidenceResponse"][];
+            /** @description Typed contradictory facts that vetoed or qualified the match */
+            contradictions: ("SIZE" | "COLOR" | "BUNDLE" | "PACK_QUANTITY" | "GENERATION" | "MODEL" | "SELLING_PLAN")[];
+        };
         /** @description Explicit-confidence product identity evidence */
         ProductIdentityEvidenceResponse: {
             /**
              * @description Evidence kind
              * @enum {string}
              */
-            kind: "GTIN" | "UPC" | "EAN" | "BRAND_MPN" | "PROVIDER_GROUPING_ID" | "UPID" | "CANONICAL_URL" | "SEMANTIC";
+            kind: "GTIN" | "UPC" | "EAN" | "UNIVERSAL_PRODUCT_ID" | "BRAND_MPN" | "PROVIDER_GROUPING_ID" | "UPID" | "CANONICAL_URL" | "SEMANTIC";
             /**
              * @description Trust level controlling exact grouping eligibility
              * @enum {string}
@@ -1391,23 +1417,34 @@ export interface components {
             cached: boolean;
             /**
              * Format: int32
-             * @description Flat-result offset used before grouping
+             * @description Canonical-product offset applied after grouping
              */
             offset: number;
             /**
              * Format: int32
-             * @description Flat-result page size used before grouping
+             * @description Canonical-product page size applied after grouping
              */
             limit: number;
             /**
              * Format: int32
-             * @description Next flat-result offset, when another page exists
+             * @description Next canonical-product offset, when another page exists
              */
             nextOffset?: number;
-            /** @description Whether another flat-result page exists */
+            /** @description Whether another canonical-product page exists in the deterministic result window */
             hasMore: boolean;
+            /** @description Whether an upstream source reported more candidates than this live search request could materialize */
+            upstreamTruncated: boolean;
             /** @description Deterministically ordered canonical products */
             products: components["schemas"]["CanonicalProductResponse"][];
+            /**
+             * Format: int32
+             * @description Total typed reconciliation decisions in the fetched candidate window
+             */
+            groupingDecisionCount: number;
+            /** @description Whether grouping decisions were omitted by page filtering or the public diagnostic bound */
+            groupingDecisionsTruncated: boolean;
+            /** @description Typed exact-match and conservative non-match decisions for this page */
+            groupingDecisions: components["schemas"]["ProductGroupingDecisionResponse"][];
         };
         CatalogSourceFailureResponse: {
             /** @enum {string} */

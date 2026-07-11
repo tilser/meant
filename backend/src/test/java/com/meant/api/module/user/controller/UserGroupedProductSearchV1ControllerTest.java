@@ -75,7 +75,8 @@ class UserGroupedProductSearchV1ControllerTest {
             this.profileCommand = profileCommand;
             this.searchCommand = searchCommand;
             return new UserGroupedProductSearchResult(
-                    "linen", "linen", "profile", false, 5, 10, 15, true, List.of());
+                    "linen", "linen", "profile", false, 5, 10, 15, true, false,
+                    List.of(), 0, false, List.of());
         }
     }
 }

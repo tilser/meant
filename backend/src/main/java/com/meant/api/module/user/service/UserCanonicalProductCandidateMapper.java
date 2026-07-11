@@ -4,11 +4,13 @@ import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
+import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
+import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
@@ -22,6 +24,8 @@ import com.meant.api.plugin.catalog.common.dto.ProductCertification;
 import com.meant.api.plugin.catalog.common.dto.ProductMaterial;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -37,6 +41,7 @@ import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+/** Maps typed source fields without inferring trusted brand/model or semantic identity from free text. */
 @Component
 @RequiredArgsConstructor
 public class UserCanonicalProductCandidateMapper {
@@ -116,7 +121,7 @@ public class UserCanonicalProductCandidateMapper {
                 merchantScope,
                 offerProductIdentity,
                 variantIdentity,
-                List.of(),
+                selectedOptions(product.selectedOptions()),
                 List.of(),
                 null
         );
@@ -149,10 +154,32 @@ public class UserCanonicalProductCandidateMapper {
                         uri(product.url()),
                         sourceReference
                 )),
-                List.of(),
+                canonicalUrlEvidence(provider, product.url(), sourceReference),
                 List.of(provenance),
                 offer
         );
+    }
+
+    private List<ProductIdentityEvidence> canonicalUrlEvidence(
+            ProviderIdentity provider,
+            String productUrl,
+            ResultSourceReference sourceReference
+    ) {
+        URI url = uri(productUrl);
+        if (url == null || !url.isAbsolute() || url.getHost() == null) {
+            return List.of();
+        }
+        return List.of(new ProductIdentityEvidence(
+                ProductIdentityEvidenceKind.CANONICAL_URL,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                9_500,
+                List.of(new ExternalIdentifier(
+                        ExternalIdentifierType.CANONICAL_URL,
+                        provider.value(),
+                        url.toString()
+                )),
+                sourceReference
+        ));
     }
 
     private ExternalIdentifier externalMerchantIdentity(
@@ -260,6 +287,15 @@ public class UserCanonicalProductCandidateMapper {
                 .toList();
     }
 
+    private List<ProductAttribute> selectedOptions(List<ProductDetailsResponse.SelectedOption> selectedOptions) {
+        return safeList(selectedOptions).stream()
+                .filter(value -> value.name() != null && !value.name().isBlank()
+                        && value.value() != null && !value.value().isBlank())
+                .map(value -> new ProductAttribute("variant-option", value.name(), value.value()))
+                .distinct()
+                .toList();
+    }
+
     private URI uri(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -303,6 +339,7 @@ public class UserCanonicalProductCandidateMapper {
             String detailImageUrl,
             String selectedVariantId,
             String selectedVariantTitle,
+            List<ProductDetailsResponse.SelectedOption> selectedOptions,
             String selectedVariantPriceAmount,
             String selectedVariantPriceCurrency,
             Boolean selectedVariantAvailable,
@@ -330,6 +367,7 @@ public class UserCanonicalProductCandidateMapper {
                     product.detailImageUrl(),
                     product.selectedVariantId(),
                     product.selectedVariantTitle(),
+                    List.of(),
                     product.selectedVariantPriceAmount(),
                     product.selectedVariantPriceCurrency(),
                     product.selectedVariantAvailable(),
@@ -358,6 +396,7 @@ public class UserCanonicalProductCandidateMapper {
                     product.detailImageUrl(),
                     product.selectedVariantId(),
                     product.selectedVariantTitle(),
+                    product.selectedOptions(),
                     product.selectedVariantPriceAmount(),
                     product.selectedVariantPriceCurrency(),
                     product.selectedVariantAvailable(),

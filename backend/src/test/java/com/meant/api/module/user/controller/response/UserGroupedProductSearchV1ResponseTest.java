@@ -14,6 +14,10 @@ import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
+import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionOutcome;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionReason;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -54,7 +58,10 @@ class UserGroupedProductSearchV1ResponseTest {
                         OfferMerchantScope.external(merchant),
                         product,
                         null,
-                        List.of(),
+                        List.of(
+                                new ProductAttribute("variant-option", "Size", "M"),
+                                new ProductAttribute("variant-option", "Color", "Blue")
+                        ),
                         List.of(),
                         null
                 ),
@@ -83,8 +90,19 @@ class UserGroupedProductSearchV1ResponseTest {
 
         UserGroupedProductSearchV1Response response = UserGroupedProductSearchV1Response.from(
                 new UserGroupedProductSearchResult(
-                        "product", "product", "profile", false, 0, 20, null, false,
-                        List.of(canonicalProduct)
+                        "product", "product", "profile", false, 0, 20, null, false, false,
+                        List.of(canonicalProduct),
+                        1,
+                        false,
+                        List.of(new ProductGroupingDecision(
+                                offer.key(),
+                                offer.key(),
+                                ProductGroupingDecisionOutcome.GROUPED,
+                                ProductGroupingDecisionReason.EXACT_OFFER,
+                                10_000,
+                                List.of(),
+                                List.of()
+                        ))
                 )
         );
 
@@ -94,6 +112,13 @@ class UserGroupedProductSearchV1ResponseTest {
                 assertThat(mappedOffer.key()).isEqualTo(offer.key());
                 assertThat(mappedOffer.price().minorUnits()).isEqualTo(1234);
                 assertThat(mappedOffer.price().currency()).isEqualTo("EUR");
+                assertThat(mappedOffer.selectedOptions()).extracting(
+                        UserGroupedProductSearchV1Response.ProductAttributeResponse::name,
+                        UserGroupedProductSearchV1Response.ProductAttributeResponse::value
+                ).containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("Color", "Blue"),
+                        org.assertj.core.groups.Tuple.tuple("Size", "M")
+                );
                 assertThat(mappedOffer.provenance().getFirst().provider()).isEqualTo("FUTURE_PROVIDER");
                 assertThat(mappedOffer.identity().merchantIntegrationId()).isNull();
                 assertThat(mappedOffer.identity().merchantScope().externalMerchantIdentity().value())
@@ -104,6 +129,11 @@ class UserGroupedProductSearchV1ResponseTest {
                 assertThat(mappedOffer.provenance().getFirst().localRouting().merchantIntegrationId())
                         .isEqualTo(integrationId);
             });
+        });
+        assertThat(response.groupingDecisions()).singleElement().satisfies(decision -> {
+            assertThat(decision.outcome()).isEqualTo(ProductGroupingDecisionOutcome.GROUPED);
+            assertThat(decision.reason()).isEqualTo(ProductGroupingDecisionReason.EXACT_OFFER);
+            assertThat(decision.leftOfferKey()).isEqualTo(offer.key());
         });
     }
 

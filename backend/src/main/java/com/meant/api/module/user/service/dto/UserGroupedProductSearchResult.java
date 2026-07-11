@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service.dto;
 
 import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
 import java.util.List;
 
 public record UserGroupedProductSearchResult(
@@ -12,10 +13,15 @@ public record UserGroupedProductSearchResult(
         int limit,
         Integer nextOffset,
         boolean hasMore,
-        List<CanonicalProduct> products
+        boolean upstreamTruncated,
+        List<CanonicalProduct> products,
+        int groupingDecisionCount,
+        boolean groupingDecisionsTruncated,
+        List<ProductGroupingDecision> groupingDecisions
 ) {
 
     public UserGroupedProductSearchResult {
         products = products == null ? List.of() : List.copyOf(products);
+        groupingDecisions = groupingDecisions == null ? List.of() : List.copyOf(groupingDecisions);
     }
 }

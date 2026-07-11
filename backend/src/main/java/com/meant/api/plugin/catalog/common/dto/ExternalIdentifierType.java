@@ -9,6 +9,7 @@ public enum ExternalIdentifierType {
     GTIN,
     UPC,
     EAN,
+    UNIVERSAL_PRODUCT_ID,
     BRAND,
     MPN,
     PROVIDER_GROUPING,

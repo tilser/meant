@@ -25,6 +25,7 @@ import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanIdentity;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanOption;
+import com.meant.api.plugin.catalog.common.support.ProductIdentityNormalizationSupport;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyGlobalCatalogResponse;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyGlobalCatalogResponse.Barcode;
 import com.meant.api.plugin.catalog.shopify.dto.ShopifyGlobalCatalogResponse.Category;
@@ -165,7 +166,8 @@ public class ShopifyGlobalCatalogNormalizer {
         }
         for (Barcode barcode : safe(variant.barcodes())) {
             EvidenceType type = barcodeType(barcode);
-            if (type != null && hasText(barcode.value())) {
+            if (type != null && ProductIdentityNormalizationSupport
+                    .universalTradeItemNumber(type.kind(), barcode.value()).isPresent()) {
                 evidence.add(new ProductIdentityEvidence(
                         type.kind(),
                         IdentityEvidenceStrength.TRUSTED_EXACT,
