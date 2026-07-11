@@ -29,12 +29,19 @@ public record ProductRankingContext(
         }
     }
 
-    public record PreferenceSignal(Type type, String normalizedValue, int weightBasisPoints) {
+    public record PreferenceSignal(
+            Type type,
+            String identity,
+            String normalizedValue,
+            int weightBasisPoints
+    ) {
 
         public PreferenceSignal {
-            if (type == null || normalizedValue == null || normalizedValue.isBlank()) {
-                throw new IllegalArgumentException("Preference type and normalized value are required");
+            if (type == null || identity == null || identity.isBlank()
+                    || normalizedValue == null || normalizedValue.isBlank()) {
+                throw new IllegalArgumentException("Preference type, identity, and normalized value are required");
             }
+            identity = identity.trim();
             normalizedValue = normalizedValue.trim();
             if (weightBasisPoints < -10_000 || weightBasisPoints > 10_000) {
                 throw new IllegalArgumentException("Preference weight must be between -10000 and 10000");

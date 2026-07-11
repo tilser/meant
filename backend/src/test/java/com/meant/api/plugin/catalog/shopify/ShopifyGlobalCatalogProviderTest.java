@@ -92,6 +92,7 @@ class ShopifyGlobalCatalogProviderTest {
             assertThat(candidate.retrievalSignals()).singleElement().satisfies(signal -> {
                 assertThat(signal.valueBasisPoints()).isBetween(0, 10_000);
                 assertThat(signal.calibrationVersion()).isEqualTo("shopify-global-catalog-ordinal-v1");
+                assertThat(signal.merchantScope()).isSameAs(candidate.offer().identity().merchantScope());
             });
             assertThat(candidate.offer().identity().provider().value()).isEqualTo("SHOPIFY");
             assertThat(candidate.offer().provenance()).singleElement()

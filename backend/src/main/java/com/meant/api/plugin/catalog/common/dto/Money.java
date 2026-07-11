@@ -6,6 +6,9 @@ import java.util.Locale;
 public record Money(long minorUnits, String currency) {
 
     public Money {
+        if (minorUnits < 0) {
+            throw new IllegalArgumentException("Money amount must not be negative");
+        }
         if (currency == null || currency.isBlank()) {
             throw new IllegalArgumentException("Money currency must not be blank");
         }

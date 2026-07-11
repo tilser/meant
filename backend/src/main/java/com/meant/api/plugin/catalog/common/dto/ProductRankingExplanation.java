@@ -9,6 +9,7 @@ public record ProductRankingExplanation(
         int scoreBasisPoints,
         int finalRank,
         Execution execution,
+        DiversityPolicyOutcome diversityPolicyOutcome,
         DiversityDecision diversityDecision,
         String deterministicTieBreakKey,
         List<Feature> features
@@ -17,7 +18,7 @@ public record ProductRankingExplanation(
     public ProductRankingExplanation {
         if (rankingVersion == null || rankingVersion.isBlank()
                 || diversityPolicyVersion == null || diversityPolicyVersion.isBlank()
-                || execution == null || diversityDecision == null
+                || execution == null || diversityPolicyOutcome == null || diversityDecision == null
                 || deterministicTieBreakKey == null || deterministicTieBreakKey.isBlank()) {
             throw new IllegalArgumentException("Product ranking explanation metadata is required");
         }
@@ -27,13 +28,18 @@ public record ProductRankingExplanation(
         features = features == null ? List.of() : List.copyOf(features);
     }
 
-    public ProductRankingExplanation withFinalRank(int rank, DiversityDecision decision) {
+    public ProductRankingExplanation withFinalRank(
+            int rank,
+            DiversityPolicyOutcome policyOutcome,
+            DiversityDecision decision
+    ) {
         return new ProductRankingExplanation(
                 rankingVersion,
                 diversityPolicyVersion,
                 scoreBasisPoints,
                 rank,
                 execution,
+                policyOutcome,
                 decision,
                 deterministicTieBreakKey,
                 features
@@ -97,5 +103,10 @@ public record ProductRankingExplanation(
         NONE,
         PROMOTED,
         DEFERRED
+    }
+
+    public enum DiversityPolicyOutcome {
+        STRICT,
+        RELAXED_INFEASIBLE
     }
 }

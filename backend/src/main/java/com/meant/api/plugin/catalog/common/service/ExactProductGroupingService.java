@@ -80,9 +80,17 @@ public class ExactProductGroupingService {
             .comparing((ProductRetrievalSignal value) -> value.source().provider().value())
             .thenComparing(value -> value.source().type())
             .thenComparing(value -> value.source().value())
+            .thenComparing(value -> merchantScopeText(value.merchantScope()))
             .thenComparing(ProductRetrievalSignal::feature)
             .thenComparing(ProductRetrievalSignal::calibrationVersion)
             .thenComparingInt(ProductRetrievalSignal::valueBasisPoints);
+
+    private static String merchantScopeText(com.meant.api.plugin.catalog.common.dto.OfferMerchantScope scope) {
+        if (scope == null) return "";
+        return scope.externalMerchantIdentity() == null
+                ? "local:" + scope.merchantIntegrationFallbackId()
+                : "external:" + identifierText(scope.externalMerchantIdentity());
+    }
 
     public ExactProductGroupingService() {
         this(ProductGroupingMetrics.noop());

@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Test;
 class ProductRankingGoldenFixtureTest {
 
     private static final Instant NOW = Instant.parse("2026-07-11T12:00:00Z");
-    private final ProductRankingService service = new ProductRankingService();
+    private final ProductRankingService service = ProductRankingTestFactory.service();
 
     @Test
     void calibratedProviderNeutralSignalsPreventRawScoreScaleCompetition() {
@@ -109,6 +109,7 @@ class ProductRankingGoldenFixtureTest {
                 null,
                 List.of(new ProductRankingContext.PreferenceSignal(
                         ProductRankingContext.PreferenceSignal.Type.MATERIAL,
+                        "material:linen",
                         "linen",
                         8_000
                 )),
@@ -250,8 +251,7 @@ class ProductRankingGoldenFixtureTest {
                 ));
             }
         };
-        ProductRankingService tiedService = new ProductRankingService(
-                new OfferRankingService(), ProductRankingMetrics.noop(), List.of(tied));
+        ProductRankingService tiedService = ProductRankingTestFactory.service(List.of(tied));
         CanonicalProduct first = product("a", "shirt", "SOURCE_A", "source-a", 5_000,
                 offer("SOURCE_A", "m-a", "a", "v", 1_000, OfferAvailabilityStatus.IN_STOCK, null));
         CanonicalProduct second = product("b", "shirt", "SOURCE_B", "source-b", 5_000,
@@ -318,8 +318,7 @@ class ProductRankingGoldenFixtureTest {
                 throw new IllegalStateException("redacted fixture failure");
             }
         };
-        ProductRankingService withFailingModel = new ProductRankingService(
-                new OfferRankingService(), ProductRankingMetrics.noop(), List.of(failing));
+        ProductRankingService withFailingModel = ProductRankingTestFactory.service(List.of(failing));
         CanonicalProduct eligible = product(
                 "eligible", "linen shirt", "SOURCE_A", "source-a", 7_000,
                 offer("SOURCE_A", "m-a", "eligible", "v", 5_000, OfferAvailabilityStatus.IN_STOCK, null)

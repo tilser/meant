@@ -12,14 +12,16 @@ class ProductRankingArchitectureTest {
 
     @Test
     void providerNeutralRankingAndUserContextContainNoShopifyTypesOrProviderBranches() throws IOException {
-        List<Path> sources = List.of(
-                Path.of("src/main/java/com/meant/api/plugin/catalog/common/service/ProductRankingService.java"),
-                Path.of("src/main/java/com/meant/api/plugin/catalog/common/service/ProductRankingFeatureExtractor.java"),
-                Path.of("src/main/java/com/meant/api/plugin/catalog/common/service/OfferRankingService.java"),
-                Path.of("src/main/java/com/meant/api/plugin/catalog/common/service/ProductRankingModel.java"),
-                Path.of("src/main/java/com/meant/api/plugin/catalog/common/dto/ProductRankingContext.java"),
-                Path.of("src/main/java/com/meant/api/module/user/service/UserProductRankingContextFactory.java")
-        );
+        Path rankingServices = Path.of("src/main/java/com/meant/api/plugin/catalog/common/service");
+        List<Path> sources;
+        try (var files = Files.list(rankingServices)) {
+            sources = new java.util.ArrayList<>(files
+                    .filter(path -> path.getFileName().toString().contains("Ranking")
+                            || path.getFileName().toString().contains("Diversity"))
+                    .toList());
+        }
+        sources.add(Path.of("src/main/java/com/meant/api/plugin/catalog/common/dto/ProductRankingContext.java"));
+        sources.add(Path.of("src/main/java/com/meant/api/module/user/service/UserProductRankingContextFactory.java"));
 
         assertThat(sources).allSatisfy(source -> {
             assertThat(source).exists();

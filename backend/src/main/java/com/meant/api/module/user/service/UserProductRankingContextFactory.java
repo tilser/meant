@@ -50,14 +50,10 @@ public class UserProductRankingContextFactory {
                         entry -> relationship(entry.getValue()),
                         (left, right) -> left
                 ));
-        return basic(preparation, preferences(preparation), inventory);
+        return context(preparation, preferences(preparation), inventory);
     }
 
-    static ProductRankingContext basic(UserProductSearchPreparation preparation) {
-        return basic(preparation, List.of(), Map.of());
-    }
-
-    private static ProductRankingContext basic(
+    private static ProductRankingContext context(
             UserProductSearchPreparation preparation,
             List<PreferenceSignal> preferences,
             Map<String, ProductRankingContext.InventoryRelationship> inventory
@@ -81,7 +77,7 @@ public class UserProductRankingContextFactory {
         Set<String> explicitFilterIds = new HashSet<>();
         if (preparation.settings() != null && preparation.settings().filters() != null) {
             for (ShoppingFilterResult filter : preparation.settings().filters()) {
-                if (filter == null) {
+                if (filter == null || filter.id() == null || filter.id().isBlank()) {
                     continue;
                 }
                 explicitFilterIds.add(filter.id());
@@ -94,6 +90,7 @@ public class UserProductRankingContextFactory {
                     }
                     signals.add(new PreferenceSignal(
                             PreferenceSignal.Type.FILTER,
+                            filter.id(),
                             target,
                             weight
                     ));
@@ -113,13 +110,18 @@ public class UserProductRankingContextFactory {
     }
 
     private PreferenceSignal preference(UserTasteSignalResult signal) {
-        String value = normalized(firstText(signal.signalKey(), signal.label()));
-        if (value == null || signal.weight() == 0.0d) {
+        PreferenceSignal.Type type = PreferenceSignal.Type.valueOf(signal.signalType().name());
+        String value = normalized(type == PreferenceSignal.Type.FILTER
+                ? signal.label()
+                : firstText(signal.label(), signal.signalKey()));
+        if (signal.signalKey() == null || signal.signalKey().isBlank()
+                || value == null || signal.weight() == 0.0d) {
             return null;
         }
         int weight = Math.max(-10_000, Math.min(10_000, (int) Math.round(signal.weight() * 2_500.0d)));
         return weight == 0 ? null : new PreferenceSignal(
-                PreferenceSignal.Type.valueOf(signal.signalType().name()),
+                type,
+                signal.signalKey(),
                 value,
                 weight
         );

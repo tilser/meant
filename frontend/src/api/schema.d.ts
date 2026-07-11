@@ -1347,6 +1347,8 @@ export interface components {
             rankingVersion: string;
             /** @description Bounded source and merchant diversity policy version */
             diversityPolicyVersion: string;
+            /** @description Whether diversity caps were strict or relaxed because no full feasible window existed */
+            diversityPolicyOutcome: "STRICT" | "RELAXED_INFEASIBLE";
             /** Format: int32 @description Final product relevance score in basis points */
             scoreBasisPoints: number;
             /** Format: int32 @description Final one-based rank after diversity control */

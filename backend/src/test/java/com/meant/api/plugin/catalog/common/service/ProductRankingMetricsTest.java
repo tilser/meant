@@ -33,11 +33,8 @@ class ProductRankingMetricsTest {
     @Test
     void metricsUseOnlyControlledOutcomeFeatureAvailabilityAndVersionTags() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ProductRankingService service = new ProductRankingService(
-                new OfferRankingService(),
-                new ProductRankingMetrics(registry),
-                List.of()
-        );
+        ProductRankingService service = ProductRankingTestFactory.service(
+                List.of(), new ProductRankingMetrics(registry));
 
         service.rank(List.of(product()), context());
 
@@ -61,7 +58,7 @@ class ProductRankingMetricsTest {
 
     @Test
     void rankingExplanationsExcludeRawIntentCredentialsEndpointsAndPayloadText() {
-        ProductRankingService service = new ProductRankingService();
+        ProductRankingService service = ProductRankingTestFactory.service();
         var result = service.rank(List.of(product()), context());
         String explanation = result.productExplanations().values().toString()
                 + result.offerExplanations().values();

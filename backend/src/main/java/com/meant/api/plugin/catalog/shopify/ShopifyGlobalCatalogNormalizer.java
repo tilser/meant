@@ -151,6 +151,7 @@ public class ShopifyGlobalCatalogNormalizer {
                 List.of(provenance),
                 List.of(new ProductRetrievalSignal(
                         discoverySource(),
+                        offer.identity().merchantScope(),
                         ProductRetrievalSignal.Feature.INTENT_FIT,
                         calibratedProductRank(productRank),
                         "shopify-global-catalog-ordinal-v1"

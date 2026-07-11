@@ -5,6 +5,7 @@ import java.util.regex.Pattern;
 /** Provider-adapter calibrated retrieval evidence; raw source scores never cross this boundary. */
 public record ProductRetrievalSignal(
         DiscoverySourceIdentity source,
+        OfferMerchantScope merchantScope,
         Feature feature,
         int valueBasisPoints,
         String calibrationVersion
@@ -23,6 +24,15 @@ public record ProductRetrievalSignal(
             throw new IllegalArgumentException("Retrieval signal calibration version must be a bounded identifier");
         }
         calibrationVersion = calibrationVersion.trim();
+    }
+
+    public ProductRetrievalSignal(
+            DiscoverySourceIdentity source,
+            Feature feature,
+            int valueBasisPoints,
+            String calibrationVersion
+    ) {
+        this(source, null, feature, valueBasisPoints, calibrationVersion);
     }
 
     public enum Feature {

@@ -41,6 +41,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Schema(description = "Version 1 grouped product-search response with canonical products and merchant offers")
@@ -160,10 +161,16 @@ public record UserGroupedProductSearchV1Response(
     ) {
 
         public static CanonicalProductResponse from(CanonicalProduct product) {
+            return from(product, null, java.util.Map.of());
+        }
+
+        static CanonicalProductResponse from(
+                CanonicalProduct product,
+                ProductRankingExplanation explanation,
+                Map<String, OfferRankingExplanation> offerExplanations
+        ) {
             return product == null ? null : new CanonicalProductResponse(
-                    product.key(),
-                    product.title(),
-                    product.description(),
+                    product.key(), product.title(), product.description(),
                     product.media().stream().map(ProductMediaResponse::from).toList(),
                     product.attributes().stream().map(ProductAttributeResponse::from).toList(),
                     product.materials().stream().map(ProductMaterialResponse::from).toList(),
@@ -171,28 +178,6 @@ public record UserGroupedProductSearchV1Response(
                     product.attribution().stream().map(ProductAttributionResponse::from).toList(),
                     product.identityEvidence().stream().map(ProductIdentityEvidenceResponse::from).toList(),
                     product.provenance().stream().map(ResultProvenanceResponse::from).toList(),
-                    null,
-                    product.offers().stream().map(OfferResponse::from).toList()
-            );
-        }
-
-        static CanonicalProductResponse from(
-                CanonicalProduct product,
-                ProductRankingExplanation explanation,
-                java.util.Map<String, OfferRankingExplanation> offerExplanations
-        ) {
-            CanonicalProductResponse base = from(product);
-            return base == null ? null : new CanonicalProductResponse(
-                    base.key(),
-                    base.title(),
-                    base.description(),
-                    base.media(),
-                    base.attributes(),
-                    base.materials(),
-                    base.certifications(),
-                    base.attribution(),
-                    base.identityEvidence(),
-                    base.provenance(),
                     ProductRankingExplanationResponse.from(explanation),
                     product.offers().stream()
                             .map(offer -> OfferResponse.from(offer, offerExplanations.get(offer.key())))
@@ -230,146 +215,18 @@ public record UserGroupedProductSearchV1Response(
     ) {
 
         static OfferResponse from(Offer offer) {
-            return new OfferResponse(
-                    offer.key(),
-                    OfferIdentityResponse.from(offer.identity()),
-                    offer.merchantName(),
-                    offer.variantTitle(),
-                    MoneyResponse.from(offer.price()),
-                    MoneyResponse.from(offer.listPrice()),
-                    OfferAvailabilityResponse.from(offer.availability()),
-                    offer.delivery().stream().map(OfferDeliveryResponse::from).toList(),
-                    offer.checkoutUrl(),
-                    offer.selectedOptions().stream().map(ProductAttributeResponse::from).toList(),
-                    null,
-                    offer.provenance().stream().map(ResultProvenanceResponse::from).toList()
-            );
+            return from(offer, null);
         }
 
         static OfferResponse from(Offer offer, OfferRankingExplanation explanation) {
-            OfferResponse base = from(offer);
             return new OfferResponse(
-                    base.key(),
-                    base.identity(),
-                    base.merchantName(),
-                    base.variantTitle(),
-                    base.price(),
-                    base.listPrice(),
-                    base.availability(),
-                    base.delivery(),
-                    base.checkoutUrl(),
-                    base.selectedOptions(),
+                    offer.key(), OfferIdentityResponse.from(offer.identity()), offer.merchantName(), offer.variantTitle(),
+                    MoneyResponse.from(offer.price()), MoneyResponse.from(offer.listPrice()),
+                    OfferAvailabilityResponse.from(offer.availability()),
+                    offer.delivery().stream().map(OfferDeliveryResponse::from).toList(), offer.checkoutUrl(),
+                    offer.selectedOptions().stream().map(ProductAttributeResponse::from).toList(),
                     OfferRankingExplanationResponse.from(explanation),
-                    base.provenance()
-            );
-        }
-    }
-
-    @Schema(description = "Reproducible product-ranking trace without prompts or personal raw text")
-    public record ProductRankingExplanationResponse(
-            @Schema(description = "Deterministic product-ranking version", requiredMode = Schema.RequiredMode.REQUIRED)
-            String rankingVersion,
-            @Schema(description = "Bounded source and merchant diversity policy version", requiredMode = Schema.RequiredMode.REQUIRED)
-            String diversityPolicyVersion,
-            @Schema(description = "Final product relevance score in basis points", requiredMode = Schema.RequiredMode.REQUIRED)
-            int scoreBasisPoints,
-            @Schema(description = "Final one-based rank after diversity control", requiredMode = Schema.RequiredMode.REQUIRED)
-            int finalRank,
-            @Schema(description = "Deterministic, model-augmented, or safe fallback execution", requiredMode = Schema.RequiredMode.REQUIRED)
-            ProductRankingExplanation.Execution execution,
-            @Schema(description = "Whether diversity control promoted or deferred this product", requiredMode = Schema.RequiredMode.REQUIRED)
-            ProductRankingExplanation.DiversityDecision diversityDecision,
-            @Schema(description = "Stable canonical key used only after relevance ties", requiredMode = Schema.RequiredMode.REQUIRED)
-            String deterministicTieBreakKey,
-            @Schema(description = "Typed product feature values and calibration versions", requiredMode = Schema.RequiredMode.REQUIRED)
-            List<ProductRankingFeatureResponse> features
-    ) {
-
-        static ProductRankingExplanationResponse from(ProductRankingExplanation explanation) {
-            return explanation == null ? null : new ProductRankingExplanationResponse(
-                    explanation.rankingVersion(),
-                    explanation.diversityPolicyVersion(),
-                    explanation.scoreBasisPoints(),
-                    explanation.finalRank(),
-                    explanation.execution(),
-                    explanation.diversityDecision(),
-                    explanation.deterministicTieBreakKey(),
-                    explanation.features().stream().map(ProductRankingFeatureResponse::from).toList()
-            );
-        }
-    }
-
-    @Schema(description = "One named product-ranking feature")
-    public record ProductRankingFeatureResponse(
-            @Schema(description = "Controlled product feature name", requiredMode = Schema.RequiredMode.REQUIRED)
-            ProductRankingExplanation.Name name,
-            @Schema(description = "Whether this feature was known", requiredMode = Schema.RequiredMode.REQUIRED)
-            ProductRankingExplanation.Availability availability,
-            @Schema(description = "Normalized feature value in basis points", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-            Integer valueBasisPoints,
-            @Schema(description = "Versioned policy weight", requiredMode = Schema.RequiredMode.REQUIRED)
-            int weight,
-            @Schema(description = "Provider-adapter calibration or model versions used", requiredMode = Schema.RequiredMode.REQUIRED)
-            List<String> evidenceVersions
-    ) {
-
-        static ProductRankingFeatureResponse from(ProductRankingExplanation.Feature feature) {
-            return new ProductRankingFeatureResponse(
-                    feature.name(),
-                    feature.availability(),
-                    feature.valueBasisPoints(),
-                    feature.weight(),
-                    feature.evidenceVersions()
-            );
-        }
-    }
-
-    @Schema(description = "Reproducible offer-ranking trace with unknown facts preserved")
-    public record OfferRankingExplanationResponse(
-            @Schema(description = "Deterministic offer-ranking version", requiredMode = Schema.RequiredMode.REQUIRED)
-            String rankingVersion,
-            @Schema(description = "Final offer score in basis points", requiredMode = Schema.RequiredMode.REQUIRED)
-            int scoreBasisPoints,
-            @Schema(description = "Final one-based rank inside the canonical product", requiredMode = Schema.RequiredMode.REQUIRED)
-            int finalRank,
-            @Schema(description = "Disclosed commercial tie-break policy", requiredMode = Schema.RequiredMode.REQUIRED)
-            OfferRankingExplanation.CommercialTieBreakPolicy commercialTieBreakPolicy,
-            @Schema(description = "Stable offer key used only after offer-feature ties", requiredMode = Schema.RequiredMode.REQUIRED)
-            String deterministicTieBreakKey,
-            @Schema(description = "Typed offer features; unavailable facts have no numeric value", requiredMode = Schema.RequiredMode.REQUIRED)
-            List<OfferRankingFeatureResponse> features
-    ) {
-
-        static OfferRankingExplanationResponse from(OfferRankingExplanation explanation) {
-            return explanation == null ? null : new OfferRankingExplanationResponse(
-                    explanation.rankingVersion(),
-                    explanation.scoreBasisPoints(),
-                    explanation.finalRank(),
-                    explanation.commercialTieBreakPolicy(),
-                    explanation.deterministicTieBreakKey(),
-                    explanation.features().stream().map(OfferRankingFeatureResponse::from).toList()
-            );
-        }
-    }
-
-    @Schema(description = "One named offer-ranking feature")
-    public record OfferRankingFeatureResponse(
-            @Schema(description = "Controlled offer feature name", requiredMode = Schema.RequiredMode.REQUIRED)
-            OfferRankingExplanation.Name name,
-            @Schema(description = "Whether this fact was known", requiredMode = Schema.RequiredMode.REQUIRED)
-            OfferRankingExplanation.Availability availability,
-            @Schema(description = "Normalized feature value in basis points", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-            Integer valueBasisPoints,
-            @Schema(description = "Versioned policy weight", requiredMode = Schema.RequiredMode.REQUIRED)
-            int weight
-    ) {
-
-        static OfferRankingFeatureResponse from(OfferRankingExplanation.Feature feature) {
-            return new OfferRankingFeatureResponse(
-                    feature.name(),
-                    feature.availability(),
-                    feature.valueBasisPoints(),
-                    feature.weight()
+                    offer.provenance().stream().map(ResultProvenanceResponse::from).toList()
             );
         }
     }

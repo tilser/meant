@@ -100,8 +100,9 @@ class UserGroupedProductSearchV1ResponseTest {
                                 "source-merchant-window-v1",
                                 8_000,
                                 1,
-                                ProductRankingExplanation.Execution.DETERMINISTIC,
-                                ProductRankingExplanation.DiversityDecision.NONE,
+                    ProductRankingExplanation.Execution.DETERMINISTIC,
+                    ProductRankingExplanation.DiversityPolicyOutcome.STRICT,
+                    ProductRankingExplanation.DiversityDecision.NONE,
                                 canonicalProduct.key(),
                                 List.of(ProductRankingExplanation.Feature.available(
                                         ProductRankingExplanation.Name.LEXICAL_INTENT_FIT,

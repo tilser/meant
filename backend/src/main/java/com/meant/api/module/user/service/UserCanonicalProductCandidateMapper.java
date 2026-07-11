@@ -159,6 +159,7 @@ public class UserCanonicalProductCandidateMapper {
                 List.of(provenance),
                 List.of(new ProductRetrievalSignal(
                         provenance.discoverySource(),
+                        offer.identity().merchantScope(),
                         ProductRetrievalSignal.Feature.INTENT_FIT,
                         product.retrievalIntentFitBasisPoints(),
                         "merchant-semantic-voyage-rerank-v1"
