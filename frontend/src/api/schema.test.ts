@@ -16,6 +16,10 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'OfferIdentityResponse',
     'OfferMerchantScopeResponse',
     'OfferComponentIdentityResponse',
+    'ProductRankingExplanationResponse',
+    'ProductRankingFeatureResponse',
+    'OfferRankingExplanationResponse',
+    'OfferRankingFeatureResponse',
     'ProductGroupingDecisionResponse',
     'ResultProvenanceResponse',
     'DiscoverySourceIdentityResponse',
@@ -28,6 +32,6 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
   > = ['type', 'source', 'observationSources', 'candidate', 'failure', 'terminalStatus']
 
   expect(expectedPaths).toHaveLength(4)
-  expect(expectedSchemas).toHaveLength(12)
+  expect(expectedSchemas).toHaveLength(16)
   expect(federatedEventFields).toContain('observationSources')
 })

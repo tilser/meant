@@ -14,10 +14,12 @@ import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
+import com.meant.api.plugin.catalog.common.dto.OfferRankingExplanation;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionOutcome;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionReason;
+import com.meant.api.plugin.catalog.common.dto.ProductRankingExplanation;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -27,6 +29,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.lang.reflect.RecordComponent;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -92,6 +95,33 @@ class UserGroupedProductSearchV1ResponseTest {
                 new UserGroupedProductSearchResult(
                         "product", "product", "profile", false, 0, 20, null, false, false,
                         List.of(canonicalProduct),
+                        Map.of(canonicalProduct.key(), new ProductRankingExplanation(
+                                "product-v1",
+                                "source-merchant-window-v1",
+                                8_000,
+                                1,
+                                ProductRankingExplanation.Execution.DETERMINISTIC,
+                                ProductRankingExplanation.DiversityDecision.NONE,
+                                canonicalProduct.key(),
+                                List.of(ProductRankingExplanation.Feature.available(
+                                        ProductRankingExplanation.Name.LEXICAL_INTENT_FIT,
+                                        8_000,
+                                        30,
+                                        List.of()
+                                ))
+                        )),
+                        Map.of(offer.key(), new OfferRankingExplanation(
+                                "offer-v1",
+                                9_000,
+                                1,
+                                OfferRankingExplanation.CommercialTieBreakPolicy.NONE,
+                                offer.key(),
+                                List.of(OfferRankingExplanation.Feature.available(
+                                        OfferRankingExplanation.Name.AVAILABILITY,
+                                        10_000,
+                                        30
+                                ))
+                        )),
                         1,
                         false,
                         List.of(new ProductGroupingDecision(
@@ -108,6 +138,7 @@ class UserGroupedProductSearchV1ResponseTest {
 
         assertThat(response.products()).singleElement().satisfies(mappedProduct -> {
             assertThat(mappedProduct.key()).isEqualTo("product_v1_fixture");
+            assertThat(mappedProduct.rankingExplanation().rankingVersion()).isEqualTo("product-v1");
             assertThat(mappedProduct.offers()).singleElement().satisfies(mappedOffer -> {
                 assertThat(mappedOffer.key()).isEqualTo(offer.key());
                 assertThat(mappedOffer.price().minorUnits()).isEqualTo(1234);
@@ -128,6 +159,8 @@ class UserGroupedProductSearchV1ResponseTest {
                         .isEqualTo("GLOBAL_CATALOG");
                 assertThat(mappedOffer.provenance().getFirst().localRouting().merchantIntegrationId())
                         .isEqualTo(integrationId);
+                assertThat(mappedOffer.rankingExplanation().commercialTieBreakPolicy())
+                        .isEqualTo(OfferRankingExplanation.CommercialTieBreakPolicy.NONE);
             });
         });
         assertThat(response.groupingDecisions()).singleElement().satisfies(decision -> {

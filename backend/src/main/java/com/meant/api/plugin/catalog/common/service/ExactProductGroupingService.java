@@ -4,6 +4,7 @@ import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
 import com.meant.api.plugin.catalog.common.dto.Offer;
+import com.meant.api.plugin.catalog.common.dto.OfferRankingEvidence;
 import com.meant.api.plugin.catalog.common.dto.OfferDelivery;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribution;
@@ -17,6 +18,7 @@ import com.meant.api.plugin.catalog.common.dto.ProductGroupingResult;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityContradictionKind;
 import com.meant.api.plugin.catalog.common.dto.ProductMaterial;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
+import com.meant.api.plugin.catalog.common.dto.ProductRetrievalSignal;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
 import com.meant.api.plugin.catalog.common.support.CanonicalCommerceKey;
 import java.time.Instant;
@@ -73,6 +75,14 @@ public class ExactProductGroupingService {
             .thenComparing(value -> identifierText(value.externalVariantReference()))
             .thenComparing(value -> value.freshness().observedAt())
             .thenComparing(value -> sourceText(value.sourceReference()));
+
+    private static final Comparator<ProductRetrievalSignal> RETRIEVAL_SIGNAL_ORDER = Comparator
+            .comparing((ProductRetrievalSignal value) -> value.source().provider().value())
+            .thenComparing(value -> value.source().type())
+            .thenComparing(value -> value.source().value())
+            .thenComparing(ProductRetrievalSignal::feature)
+            .thenComparing(ProductRetrievalSignal::calibrationVersion)
+            .thenComparingInt(ProductRetrievalSignal::valueBasisPoints);
 
     public ExactProductGroupingService() {
         this(ProductGroupingMetrics.noop());
@@ -170,6 +180,7 @@ public class ExactProductGroupingService {
                 distinctSorted(ordered, ProductCandidate::attribution, attributionOrder()),
                 evidence,
                 provenance,
+                distinctSorted(ordered, ProductCandidate::retrievalSignals, RETRIEVAL_SIGNAL_ORDER),
                 assembleOffers(orderedEntries)
         );
     }
@@ -257,7 +268,17 @@ public class ExactProductGroupingService {
                 preferred.availability(),
                 distinctSorted(ordered, Offer::delivery, deliveryOrder()),
                 firstNonNull(ordered, Offer::checkoutUrl),
+                mergeRankingEvidence(ordered),
                 distinctSorted(ordered, Offer::provenance, PROVENANCE_ORDER)
+        );
+    }
+
+    private OfferRankingEvidence mergeRankingEvidence(List<Offer> ordered) {
+        return new OfferRankingEvidence(
+                firstNonNull(ordered, offer -> offer.rankingEvidence().merchantTrustBasisPoints()),
+                firstNonNull(ordered, offer -> offer.rankingEvidence().historicalReliabilityBasisPoints()),
+                firstNonNull(ordered, offer -> offer.rankingEvidence().returnPolicyBasisPoints()),
+                firstNonNull(ordered, offer -> offer.rankingEvidence().checkoutCapable())
         );
     }
 
