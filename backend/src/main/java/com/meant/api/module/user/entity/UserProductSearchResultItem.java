@@ -4,7 +4,7 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -160,7 +160,7 @@ public class UserProductSearchResultItem {
             Instant now
     ) {
         return from(searchId, productKey, productHash, result, now, RichCatalogSnapshot.empty(),
-                GenericUcpCatalogDataUsePolicy.SOURCE);
+                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE);
     }
 
     public static UserProductSearchResultItem from(
@@ -172,7 +172,7 @@ public class UserProductSearchResultItem {
             RichCatalogSnapshot richCatalogSnapshot
     ) {
         return from(searchId, productKey, productHash, result, now, richCatalogSnapshot,
-                GenericUcpCatalogDataUsePolicy.SOURCE);
+                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE);
     }
 
     public static UserProductSearchResultItem from(

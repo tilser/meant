@@ -10,6 +10,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
+import com.meant.api.module.merchant.service.GenericUcpCatalogDataUsePolicy;
 import com.meant.api.module.user.entity.UserProductSearch;
 import com.meant.api.module.user.entity.UserProductSearchResultItem;
 import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
@@ -21,8 +24,6 @@ import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyMetrics;
 import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUseProperties;
 import com.meant.api.plugin.catalog.shopify.ShopifyCatalogDataUsePolicy;
 import com.meant.api.plugin.catalog.shopify.ShopifyCatalogDataUseProperties;
 import com.meant.api.plugin.catalog.shopify.ShopifyGlobalCatalogNormalizer;
@@ -60,14 +61,13 @@ class UserProductSearchRetentionPolicyTest {
         CatalogDataUsePolicyResolver resolver = new CatalogDataUsePolicyResolver(
                 List.of(
                         new GenericUcpCatalogDataUsePolicy(new GenericUcpCatalogDataUseProperties(
-                                Duration.ofHours(6), Duration.ofMinutes(2), Duration.ofDays(30))),
+                                Duration.ofHours(6), Duration.ofMinutes(2))),
                         new ShopifyCatalogDataUsePolicy(
                                 shopifyProperties,
                                 new ShopifyCatalogDataUseProperties(
                                         false,
                                         Duration.ofMinutes(15),
-                                        Duration.ofMinutes(2),
-                                        Duration.ofDays(30)
+                                        Duration.ofMinutes(2)
                                 )
                         )
                 ),
@@ -81,7 +81,7 @@ class UserProductSearchRetentionPolicyTest {
                 ranking,
                 curation,
                 new ObjectMapper(),
-                resolver
+                new UserProductSearchCachePolicy(resolver)
         );
     }
 
@@ -92,7 +92,7 @@ class UserProductSearchRetentionPolicyTest {
                 Map.of(), null, null, false, 0, 10);
         service.saveSearch(USER_ID, "boots", "boots", "profile", "v1", NOW, NOW.plus(Duration.ofHours(24)),
                 List.of(
-                        snapshot("generic", GenericUcpCatalogDataUsePolicy.SOURCE, "https://merchant.test/boot.jpg"),
+                        snapshot("generic", MerchantCatalogSourceIdentity.DISCOVERY_SOURCE, "https://merchant.test/boot.jpg"),
                         snapshot("shopify", shopifySource(), "https://cdn.shopify.test/boot.jpg")
                 ), Map.of(), null, null, false, 0, 10);
         service.saveSearch(
@@ -104,7 +104,7 @@ class UserProductSearchRetentionPolicyTest {
                 NOW,
                 NOW.plus(Duration.ofHours(24)),
                 List.of(snapshot("shopify", shopifySource(), "https://cdn.shopify.test/boot.jpg")),
-                List.of(GenericUcpCatalogDataUsePolicy.SOURCE),
+                List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE),
                 Map.of(),
                 null,
                 null,
@@ -124,7 +124,7 @@ class UserProductSearchRetentionPolicyTest {
         when(items.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.saveSearch(USER_ID, "boots", "boots", "profile", "v1", NOW, NOW.plus(Duration.ofHours(24)),
-                List.of(snapshot("generic", GenericUcpCatalogDataUsePolicy.SOURCE, "https://merchant.test/boot.jpg")),
+                List.of(snapshot("generic", MerchantCatalogSourceIdentity.DISCOVERY_SOURCE, "https://merchant.test/boot.jpg")),
                 Map.of(), null, null, false, 0, 10);
 
         var searchCaptor = org.mockito.ArgumentCaptor.forClass(UserProductSearch.class);
@@ -149,7 +149,7 @@ class UserProductSearchRetentionPolicyTest {
                 NOW,
                 NOW.plus(Duration.ofHours(24)),
                 List.of(),
-                List.of(GenericUcpCatalogDataUsePolicy.SOURCE),
+                List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE),
                 Map.of(),
                 null,
                 null,

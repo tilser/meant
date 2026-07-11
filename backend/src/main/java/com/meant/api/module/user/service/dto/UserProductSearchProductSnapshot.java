@@ -2,7 +2,7 @@ package com.meant.api.module.user.service.dto;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import jakarta.validation.constraints.NotNull;
 
 public record UserProductSearchProductSnapshot(
@@ -16,6 +16,6 @@ public record UserProductSearchProductSnapshot(
             String productHash,
             MerchantSemanticProductResult product
     ) {
-        this(productKey, productHash, product, GenericUcpCatalogDataUsePolicy.SOURCE);
+        this(productKey, productHash, product, MerchantCatalogSourceIdentity.DISCOVERY_SOURCE);
     }
 }

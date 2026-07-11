@@ -6,8 +6,8 @@ import com.meant.api.module.user.repository.UserProductSearchResultItemRepositor
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -40,11 +40,7 @@ public class UserSavedProductReferenceResolver {
                 source,
                 item.getMerchantId(),
                 null,
-                ExternalIdentifier.optional(
-                        ExternalIdentifierType.MERCHANT,
-                        source.provider().value(),
-                        item.getMerchantDomain()
-                ),
+                null,
                 new ExternalIdentifier(ExternalIdentifierType.PRODUCT, source.provider().value(), item.getProductId()),
                 ExternalIdentifier.optional(
                         ExternalIdentifierType.VARIANT,

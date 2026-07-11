@@ -119,7 +119,6 @@ commerce:
       generic-ucp:
         search-cache-ttl: ${GENERIC_UCP_SEARCH_CACHE_TTL:24h}
         rehydrated-facts-ttl: ${GENERIC_UCP_REHYDRATED_FACTS_TTL:2m}
-        transaction-snapshot-ttl: ${GENERIC_UCP_TRANSACTION_SNAPSHOT_TTL:30d}
   execution-policy:
     catalog-rollout-enabled: ${COMMERCE_CATALOG_ROLLOUT_ENABLED:true}
     cart-rollout-enabled: ${COMMERCE_CART_ROLLOUT_ENABLED:true}
@@ -144,7 +143,6 @@ shopify:
       search-persistence-approved: ${SHOPIFY_GLOBAL_CATALOG_SEARCH_PERSISTENCE_APPROVED:false}
       approved-search-cache-ttl: ${SHOPIFY_GLOBAL_CATALOG_APPROVED_SEARCH_CACHE_TTL:15m}
       rehydrated-facts-ttl: ${SHOPIFY_GLOBAL_CATALOG_REHYDRATED_FACTS_TTL:2m}
-      transaction-snapshot-ttl: ${SHOPIFY_GLOBAL_CATALOG_TRANSACTION_SNAPSHOT_TTL:30d}
     discovery-enabled: ${SHOPIFY_GLOBAL_CATALOG_DISCOVERY_ENABLED:false}
     endpoint: ${SHOPIFY_GLOBAL_CATALOG_ENDPOINT:https://catalog.shopify.com/api/ucp/mcp}
     allowed-hosts: ${SHOPIFY_GLOBAL_CATALOG_ALLOWED_HOSTS:catalog.shopify.com}

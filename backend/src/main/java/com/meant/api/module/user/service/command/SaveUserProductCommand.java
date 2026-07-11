@@ -53,7 +53,6 @@ public record SaveUserProductCommand(
         @Max(100)
         Integer matchScore,
 
-        @NotNull
         @PositiveOrZero
         Double priceFrom,
 

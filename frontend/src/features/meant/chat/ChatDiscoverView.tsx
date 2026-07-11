@@ -1909,11 +1909,15 @@ export function ChatDiscoverView({
       onFallbackAddToCart(product, merchantOffer)
       return
     }
+    const fallbackPrice = price ?? productPriceFrom(product, deliveryLocations)
+    if (fallbackPrice == null) {
+      return
+    }
     onFallbackAddToCart(
       product,
       merchantOffer ?? {
         merchant,
-        price: price ?? productPriceFrom(product, deliveryLocations),
+        price: fallbackPrice,
         delivery: 'Available from merchant',
         available: true,
       },

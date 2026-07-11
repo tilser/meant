@@ -107,14 +107,24 @@ public class UserProductDiscoveryService {
             UserProductDiscoverySortField sortBy,
             UserProductDiscoverySortDirection sortDirection
     ) {
-        Comparator<UserSavedProductResult> comparator = switch (sortBy) {
-            case MATCH -> Comparator.comparingInt(UserSavedProductResult::match);
-            case RECENT -> Comparator.comparing(UserSavedProductResult::createdAt);
-            case NAME -> Comparator.comparing(product -> normalized(product.name()));
-            case PRICE -> Comparator.comparingDouble(UserSavedProductResult::priceFrom);
-            case RATING -> Comparator.comparingDouble(product -> product.review().score());
+        if (sortBy == UserProductDiscoverySortField.RECENT) {
+            return sorted(products, Comparator.comparing(UserSavedProductResult::createdAt), sortDirection);
+        }
+        return switch (sortBy) {
+            case MATCH -> sortedNullsLast(products, UserSavedProductResult::match, sortDirection);
+            case RECENT -> throw new IllegalStateException("Handled above");
+            case NAME -> sortedNullsLast(
+                    products,
+                    product -> product.name() == null ? null : normalized(product.name()),
+                    sortDirection
+            );
+            case PRICE -> sortedNullsLast(products, UserSavedProductResult::priceFrom, sortDirection);
+            case RATING -> sortedNullsLast(
+                    products,
+                    product -> product.review() == null ? null : product.review().score(),
+                    sortDirection
+            );
         };
-        return sorted(products, comparator, sortDirection);
     }
 
     private List<UserProductSearchProductResult> sortedRecentProducts(
@@ -192,7 +202,7 @@ public class UserProductDiscoveryService {
                 product.category(),
                 product.tone(),
                 product.note(),
-                product.review().insight(),
+                product.review() == null ? null : product.review().insight(),
                 product.needs(),
                 String.join(" ", product.satisfies()),
                 String.join(" ", product.misses()),

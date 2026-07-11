@@ -22,18 +22,11 @@ import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchRetentionAdmission;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyMetrics;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUseProperties;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,7 +35,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
-@RequiredArgsConstructor(onConstructor_ = @Autowired)
+@RequiredArgsConstructor
 public class UserProductSearchPersistenceService {
 
     private static final TypeReference<List<ProductCatalogMedia>> MEDIA_LIST_TYPE = new TypeReference<>() {
@@ -61,28 +54,7 @@ public class UserProductSearchPersistenceService {
     private final UserTasteRankingService userTasteRankingService;
     private final UserProductSearchCurationPolicy userProductSearchCurationPolicy;
     private final ObjectMapper objectMapper;
-    private final CatalogDataUsePolicyResolver catalogDataUsePolicyResolver;
-
-    UserProductSearchPersistenceService(
-            UserProductSearchRepository userProductSearchRepository,
-            UserProductSearchResultItemRepository userProductSearchResultItemRepository,
-            UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository,
-            UserProductRecommendationFilterMatchRepository userProductRecommendationFilterMatchRepository,
-            UserTasteRankingService userTasteRankingService,
-            UserProductSearchCurationPolicy userProductSearchCurationPolicy,
-            ObjectMapper objectMapper
-    ) {
-        this(
-                userProductSearchRepository,
-                userProductSearchResultItemRepository,
-                userProductRecommendationExplanationRepository,
-                userProductRecommendationFilterMatchRepository,
-                userTasteRankingService,
-                userProductSearchCurationPolicy,
-                objectMapper,
-                testPolicyResolver()
-        );
-    }
+    private final UserProductSearchCachePolicy cachePolicy;
 
     @Transactional(readOnly = true)
     public Optional<UserProductSearchResult> findCachedSearch(
@@ -110,7 +82,7 @@ public class UserProductSearchPersistenceService {
                 .flatMap(search -> {
                     List<UserProductSearchResultItem> items = userProductSearchResultItemRepository
                             .findBySearchIdOrderByRankAsc(search.getId());
-                    if (!hasCurrentPolicy(search, items)) {
+                    if (!cachePolicy.isCurrent(search, items)) {
                         return Optional.empty();
                     }
                     if (!canServePage(items.size(), search.isHasMoreProducts(), offset, limit)) {
@@ -193,7 +165,7 @@ public class UserProductSearchPersistenceService {
         Map<String, UserProductSearchProductResult> products = new LinkedHashMap<>();
         for (UserProductSearch search : searches) {
             List<UserProductSearchResultItem> items = itemsBySearchId.getOrDefault(search.getId(), List.of());
-            if (!hasCurrentPolicy(search, items)) {
+            if (!cachePolicy.isCurrent(search, items)) {
                 continue;
             }
             List<UserProductSearchProductResult> recentProducts = visibleRankedProducts(
@@ -348,15 +320,13 @@ public class UserProductSearchPersistenceService {
             int offset,
             int limit
     ) {
-        List<DiscoverySourceIdentity> observedSources = new ArrayList<>();
-        if (discoverySources != null) {
-            observedSources.addAll(discoverySources);
-        }
-        products.stream().map(UserProductSearchProductSnapshot::discoverySource).forEach(observedSources::add);
-        CatalogSearchRetentionAdmission admission = catalogDataUsePolicyResolver.admitSearch(
-                observedSources.stream().distinct().toList()
+        UserProductSearchCachePolicy.WriteDecision retention = cachePolicy.decide(
+                products,
+                discoverySources,
+                now,
+                expiresAt
         );
-        if (!admission.admitted()) {
+        if (!retention.persist()) {
             return resultWithoutPersistence(
                     query,
                     normalizedQuery,
@@ -371,8 +341,6 @@ public class UserProductSearchPersistenceService {
                     now
             );
         }
-        Instant policyExpiresAt = now.plus(admission.maximumRetention());
-        Instant effectiveExpiresAt = expiresAt.isBefore(policyExpiresAt) ? expiresAt : policyExpiresAt;
         UserProductSearch search = userProductSearchRepository
                 .findByUserIdAndNormalizedQueryAndProfileHashAndSearchVersion(
                         userId,
@@ -384,8 +352,8 @@ public class UserProductSearchPersistenceService {
                     existing.refresh(
                             query,
                             now,
-                            effectiveExpiresAt,
-                            admission.policyFingerprint(),
+                            retention.expiresAt(),
+                            retention.policyFingerprint(),
                             hasMoreProducts
                     );
                     return existing;
@@ -397,8 +365,8 @@ public class UserProductSearchPersistenceService {
                         profileHash,
                         searchVersion,
                         now,
-                        effectiveExpiresAt,
-                        admission.policyFingerprint(),
+                        retention.expiresAt(),
+                        retention.policyFingerprint(),
                         hasMoreProducts
                 ));
         UserProductSearch savedSearch = userProductSearchRepository.save(search);
@@ -462,39 +430,6 @@ public class UserProductSearchPersistenceService {
                 hasMoreProducts,
                 visibleRankedProducts(productResults(items, explanations), tasteProfile, settings)
         );
-    }
-
-    private boolean hasCurrentPolicy(
-            UserProductSearch search,
-            List<UserProductSearchResultItem> items
-    ) {
-        if (search.getRetentionPolicyFingerprint() == null) {
-            return false;
-        }
-        // An admitted empty result contains no provider payload to revalidate; historical rows have no fingerprint.
-        if (items.isEmpty()) {
-            return true;
-        }
-        List<DiscoverySourceIdentity> sources = items.stream()
-                .map(UserProductSearchResultItem::discoverySource)
-                .distinct()
-                .toList();
-        CatalogSearchRetentionAdmission admission = catalogDataUsePolicyResolver.admitSearch(sources);
-        return admission.admitted()
-                && search.getRetentionPolicyFingerprint().equals(admission.policyFingerprint());
-    }
-
-    static CatalogDataUsePolicyResolver testPolicyResolver() {
-        var registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-        var metrics = new CatalogDataUsePolicyMetrics(registry);
-        var policy = new GenericUcpCatalogDataUsePolicy(
-                new GenericUcpCatalogDataUseProperties(
-                        Duration.ofHours(24),
-                        Duration.ofMinutes(2),
-                        Duration.ofDays(30)
-                )
-        );
-        return new CatalogDataUsePolicyResolver(List.of(policy), metrics);
     }
 
     private List<UserProductSearchProductSnapshot> uniqueProducts(

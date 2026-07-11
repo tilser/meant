@@ -29,11 +29,64 @@
             <column name="external_variant_id" type="text"/>
             <column name="selected_options_json" type="text"/>
             <column name="retention_policy_key" type="text"/>
+            <column name="reference_verified_at" type="timestamp with time zone"/>
         </addColumn>
-        <dropNotNullConstraint
-                tableName="user_saved_products"
-                columnName="price_from"
-                columnDataType="double precision"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="name" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="brand" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="category" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="tone" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="remote" columnDataType="boolean"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="match_score" columnDataType="integer"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="price_from" columnDataType="double precision"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="merchant_count" columnDataType="integer"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="satisfies" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="misses" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="note" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="pros" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="cons" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="review_score" columnDataType="double precision"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="review_count" columnDataType="integer"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="review_insight" columnDataType="text"/>
         <dropNotNullConstraint tableName="user_saved_products" columnName="offers" columnDataType="text"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="provides" columnDataType="text"/>
+        <!-- Historical rows have no reviewed reference. Erase all catalog/search/commercial/media/review snapshots. -->
+        <update tableName="user_saved_products">
+            <column name="product_hash" valueComputed="NULL"/>
+            <column name="name" valueComputed="NULL"/>
+            <column name="brand" valueComputed="NULL"/>
+            <column name="category" valueComputed="NULL"/>
+            <column name="tone" valueComputed="NULL"/>
+            <column name="image_url" valueComputed="NULL"/>
+            <column name="product_url" valueComputed="NULL"/>
+            <column name="remote" valueComputed="NULL"/>
+            <column name="match_score" valueComputed="NULL"/>
+            <column name="price_from" valueComputed="NULL"/>
+            <column name="merchant_count" valueComputed="NULL"/>
+            <column name="satisfies" valueComputed="NULL"/>
+            <column name="misses" valueComputed="NULL"/>
+            <column name="note" valueComputed="NULL"/>
+            <column name="pros" valueComputed="NULL"/>
+            <column name="cons" valueComputed="NULL"/>
+            <column name="review_score" valueComputed="NULL"/>
+            <column name="review_count" valueComputed="NULL"/>
+            <column name="review_insight" valueComputed="NULL"/>
+            <column name="offers" valueComputed="NULL"/>
+            <column name="needs" valueComputed="NULL"/>
+            <column name="provides" valueComputed="NULL"/>
+        </update>
+        <sql>
+            ALTER TABLE user_saved_products
+            ADD CONSTRAINT ck_user_saved_products_verified_reference
+            CHECK (
+                reference_verified_at IS NULL OR (
+                    source_provider IS NOT NULL
+                    AND source_type IS NOT NULL
+                    AND source_identity IS NOT NULL
+                    AND external_product_id IS NOT NULL
+                    AND selected_options_json IS NOT NULL
+                    AND retention_policy_key IS NOT NULL
+                )
+            )
+        </sql>
     </changeSet>
 </databaseChangeLog>

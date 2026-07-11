@@ -11,9 +11,8 @@ import org.springframework.stereotype.Component;
 public class CatalogProductRehydrationMetrics {
     private final MeterRegistry meterRegistry;
 
-    public void record(String providerKey, CatalogProductRehydrationResult result) {
+    public void record(CatalogProductRehydrationResult result) {
         Counter.builder("commerce.catalog.rehydration.results")
-                .tag("provider", providerKey)
                 .tag("status", result.status().name().toLowerCase(java.util.Locale.ROOT))
                 .tag("failure", result.failure() == null
                         ? "none"

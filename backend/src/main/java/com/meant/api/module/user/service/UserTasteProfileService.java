@@ -99,13 +99,15 @@ public class UserTasteProfileService {
         validateUser(profileCommand, command.userId(), "Taste behavior user does not match authenticated user");
         validateUser(profileCommand, command.product().userId(), "Taste behavior product user does not match authenticated user");
         userService.ensureProfile(profileCommand);
-        recordProductSignals(command.userId(), command.behavior(), command.product(), Instant.now());
+        recordProductSignals(command.userId(), command.behavior(), command.product(), true, Instant.now());
         return profile(command.userId(), userSettingsService.get(profileCommand));
     }
 
     @Transactional
     public void recordSavedProduct(UUID userId, SaveUserProductCommand command, Instant now) {
-        recordProductSignals(userId, UserTasteBehaviorType.SAVE, command, now);
+        // Saved-product retention is identifiers-only. Reinforce only server-known preference ids;
+        // never copy client/provider brand, category, review, or commercial payload into taste state.
+        recordProductSignals(userId, UserTasteBehaviorType.SAVE, command, false, now);
     }
 
     @Transactional
@@ -225,6 +227,7 @@ public class UserTasteProfileService {
             UUID userId,
             UserTasteBehaviorType behavior,
             SaveUserProductCommand product,
+            boolean includeCatalogText,
             Instant now
     ) {
         double weight = behaviorWeight(behavior);
@@ -241,8 +244,15 @@ public class UserTasteProfileService {
                 addMutation(mutations, filterSignal(filters, filterId, behaviorName, weight * 0.8d)));
         safeList(product.misses()).forEach(filterId ->
                 addMutation(mutations, filterSignal(filters, filterId, behaviorName, -weight)));
-        addMutation(mutations, textSignal(UserTasteSignalType.BRAND, product.brand(), behaviorName, weight * 0.7d));
-        addMutation(mutations, textSignal(UserTasteSignalType.CATEGORY, product.category(), behaviorName, weight * 0.6d));
+        if (includeCatalogText) {
+            addMutation(mutations, textSignal(UserTasteSignalType.BRAND, product.brand(), behaviorName, weight * 0.7d));
+            addMutation(mutations, textSignal(
+                    UserTasteSignalType.CATEGORY,
+                    product.category(),
+                    behaviorName,
+                    weight * 0.6d
+            ));
+        }
         upsertSignals(userId, mutations, now);
     }
 

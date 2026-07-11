@@ -1615,7 +1615,7 @@ export interface components {
             /** Format: int32 */
             match: number;
             /** Format: double */
-            priceFrom: number;
+            priceFrom?: number | null;
             /** Format: int32 */
             merchants: number;
             satisfies: string[];
@@ -1669,35 +1669,55 @@ export interface components {
         };
         UserSavedProductResponse: {
             id: string;
-            productHash?: string;
-            name: string;
-            brand: string;
-            category: string;
-            tone: string;
-            imageUrl?: string;
-            productUrl?: string;
-            remote: boolean;
+            productHash?: string | null;
+            name?: string | null;
+            brand?: string | null;
+            category?: string | null;
+            tone?: string | null;
+            imageUrl?: string | null;
+            productUrl?: string | null;
+            remote?: boolean | null;
             /** Format: int32 */
-            match: number;
-            /** Format: double */
-            priceFrom: number;
+            match?: number | null;
+            /** @description Current rehydrated price, or null when unavailable
+             * Format: double
+             */
+            priceFrom?: number | null;
             /** Format: int32 */
-            merchants: number;
+            merchants?: number | null;
             satisfies: string[];
             misses: string[];
-            note: string;
+            note?: string | null;
             pros: string[];
             cons: string[];
-            review: components["schemas"]["Review"];
-            offers: components["schemas"]["Offer"][];
-            needs?: string;
+            review?: components["schemas"]["UserSavedProductReview"] | null;
+            offers: components["schemas"]["UserSavedProductOffer"][];
+            needs?: string | null;
             provides: string[];
-            /** @description False for persisted display hints; current price and availability require rehydration */
+            /** @description True only when response facts came from current provider rehydration */
             commercialFactsAuthoritative: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        UserSavedProductReview: {
+            /** Format: double */
+            score?: number | null;
+            /** Format: int32 */
+            count?: number | null;
+            insight?: string | null;
+        };
+        UserSavedProductOffer: {
+            merchant?: string | null;
+            /** Format: double */
+            price?: number | null;
+            delivery?: string | null;
+            merchantId?: string | null;
+            merchantDomain?: string | null;
+            productVariantId?: string | null;
+            variantTitle?: string | null;
+            available?: boolean | null;
         };
         ProductCategoryResponse: {
             value: string;

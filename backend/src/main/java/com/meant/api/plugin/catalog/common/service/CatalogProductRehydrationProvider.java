@@ -8,8 +8,6 @@ import java.util.List;
 
 /** Adapter port implemented with the provider's existing lookup/get-product client. */
 public interface CatalogProductRehydrationProvider {
-    String metricsKey();
-
     boolean supports(DiscoverySourceIdentity source);
 
     List<CatalogProductRehydrationResult> rehydrate(

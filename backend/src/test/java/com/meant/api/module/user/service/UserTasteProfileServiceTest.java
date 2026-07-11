@@ -47,7 +47,7 @@ class UserTasteProfileServiceTest {
         assertThat(signals.singleLookupCount).isZero();
         assertThat(signals.batchLookupCount).isEqualTo(2);
         assertThat(signals.saveAllCount).isEqualTo(2);
-        assertThat(signals.savedInLastSaveAll).isEqualTo(3);
+        assertThat(signals.savedInLastSaveAll).isOne();
 
         UserTasteProfileResult learnedProfile = service.profile(USER_ID, settings(List.of()));
 
@@ -88,7 +88,7 @@ class UserTasteProfileServiceTest {
         assertThat(signals.singleLookupCount).isZero();
         assertThat(signals.batchLookupCount).isEqualTo(1);
         assertThat(signals.saveAllCount).isEqualTo(1);
-        assertThat(signals.savedInLastSaveAll).isEqualTo(3);
+        assertThat(signals.savedInLastSaveAll).isOne();
         assertThat(profile.signals())
                 .filteredOn(signal -> "linen".equals(signal.signalKey()))
                 .singleElement()

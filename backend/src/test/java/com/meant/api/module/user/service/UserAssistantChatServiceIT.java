@@ -890,7 +890,19 @@ class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
         private static UserProductSearchResult nextResult;
 
         FakeUserProductSearchService() {
-            super(null, null, null, null, null, null, null, null, null, null);
+            super(
+                    org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantSemanticProductSearchService.class),
+                    org.mockito.Mockito.mock(UserProductSearchHashService.class),
+                    org.mockito.Mockito.mock(UserProductSearchPersistenceService.class),
+                    org.mockito.Mockito.mock(UserProductSearchEventService.class),
+                    org.mockito.Mockito.mock(UserTasteProfileService.class),
+                    org.mockito.Mockito.mock(UserProductSearchCuratorService.class),
+                    org.mockito.Mockito.mock(UserProductSearchProductResultMapper.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.properties.UserProductSearchProperties.class),
+                    org.mockito.Mockito.mock(com.meant.api.common.properties.OpenRouterProperties.class),
+                    org.mockito.Mockito.mock(UserProductSearchPreparationService.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantCatalogProductSourceResolver.class)
+            );
         }
 
         void reset() {
@@ -924,7 +936,16 @@ class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
         private static ListSavedProductsQuery lastQuery;
 
         FakeUserSavedProductService() {
-            super(null, null, null, null, null);
+            super(
+                    org.mockito.Mockito.mock(UserService.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserSavedProductRepository.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.properties.UserCollectionProperties.class),
+                    org.mockito.Mockito.mock(UserSavedProductReferenceResolver.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationService.class),
+                    org.mockito.Mockito.mock(UserSavedProductPersistenceService.class),
+                    org.mockito.Mockito.mock(UserSavedProductResultMapper.class)
+            );
         }
 
         void reset() {

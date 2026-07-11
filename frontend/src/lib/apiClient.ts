@@ -331,7 +331,7 @@ export interface AssistantProductContextInput {
   brand: string
   category: string
   match: number
-  priceFrom: number
+  priceFrom: number | null
   note: string
 }
 
@@ -409,9 +409,9 @@ export interface UserAssistantStreamHandlers {
 }
 
 export interface UserSavedProductOfferProfile {
-  merchant: string
-  price: number
-  delivery: string
+  merchant: string | null
+  price: number | null
+  delivery: string | null
   merchantId: string | null
   merchantDomain: string | null
   productVariantId: string | null
@@ -420,30 +420,30 @@ export interface UserSavedProductOfferProfile {
 }
 
 export interface UserSavedProductReviewProfile {
-  score: number
-  count: number
-  insight: string
+  score: number | null
+  count: number | null
+  insight: string | null
 }
 
 export interface UserSavedProductProfile {
   id: string
   productHash: string | null
-  name: string
-  brand: string
-  category: string
-  tone: string
+  name: string | null
+  brand: string | null
+  category: string | null
+  tone: string | null
   imageUrl: string | null
   productUrl: string | null
-  remote: boolean
-  match: number
-  priceFrom: number
-  merchants: number
+  remote: boolean | null
+  match: number | null
+  priceFrom: number | null
+  merchants: number | null
   satisfies: string[]
   misses: string[]
-  note: string
+  note: string | null
   pros: string[]
   cons: string[]
-  review: UserSavedProductReviewProfile
+  review: UserSavedProductReviewProfile | null
   offers: UserSavedProductOfferProfile[]
   needs: string | null
   provides: string[]

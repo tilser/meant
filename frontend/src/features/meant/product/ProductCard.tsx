@@ -13,7 +13,12 @@ function productWasPrice(
   deliveryLocations: readonly UserLocation[],
 ): number | null {
   const price = productPriceFrom(product, deliveryLocations)
-  if (product.listPrice === null || product.listPrice === undefined || product.listPrice <= price) {
+  if (
+    price == null ||
+    product.listPrice === null ||
+    product.listPrice === undefined ||
+    product.listPrice <= price
+  ) {
     return null
   }
   return product.listPrice

@@ -294,9 +294,9 @@ public class UserAssistantPromptContextBuilder {
                         .append("; category ")
                         .append(promptValue(product.category()))
                         .append("; match ")
-                        .append(product.match())
-                        .append("%; price ")
-                        .append(savedProductPrice(product))
+                        .append(product.match() == null ? "unknown" : product.match() + "%")
+                        .append("; price ")
+                        .append(product.commercialFactsAuthoritative() ? savedProductPrice(product) : "unavailable")
                         .append("; merchants ")
                         .append(product.merchants())
                         .append("; note ")
@@ -353,7 +353,7 @@ public class UserAssistantPromptContextBuilder {
     }
 
     private String savedProductPrice(UserSavedProductResult product) {
-        return String.format(Locale.US, "$%.2f", product.priceFrom());
+        return product.priceFrom() == null ? "unknown" : String.format(Locale.US, "$%.2f", product.priceFrom());
     }
 
     private boolean shouldLoadSavedProducts(

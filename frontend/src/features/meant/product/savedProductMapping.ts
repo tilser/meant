@@ -7,29 +7,51 @@ export function savedProductFromProfile(
   product: UserSavedProductProfile,
   preferences: readonly Preference[] = [],
 ): Product {
+  const authoritative = product.commercialFactsAuthoritative
   const snapshot: Product = {
     id: product.id,
     productHash: product.productHash,
-    name: product.name,
-    brand: product.brand,
+    name: product.name ?? 'Saved product unavailable',
+    brand: product.brand ?? 'Unavailable',
     category: displayProductCategoryValue(product.category) ?? 'Product',
-    tone: product.tone,
-    imageUrl: product.imageUrl,
+    tone: product.tone ?? '#e7ebef',
+    imageUrl: authoritative ? product.imageUrl : null,
     productUrl: product.productUrl,
-    remote: product.remote,
-    match: product.match,
-    priceFrom: product.priceFrom,
-    merchants: product.merchants,
+    remote: product.remote ?? false,
+    match: product.match ?? 0,
+    priceFrom: authoritative ? product.priceFrom : null,
+    merchants: product.merchants ?? 0,
     satisfies: product.satisfies,
     misses: product.misses,
-    note: product.note,
+    note: product.note ?? 'Current product details are unavailable.',
     pros: product.pros,
     cons: product.cons,
-    review: product.review,
-    offers: product.offers,
+    review: product.review
+      ? {
+          score: product.review.score,
+          count: product.review.count ?? 0,
+          insight: product.review.insight ?? 'Current review facts are unavailable.',
+        }
+      : { score: null, count: 0, insight: 'Current review facts are unavailable.' },
+    offers: authoritative
+      ? product.offers
+          .filter(
+            (
+              offer,
+            ): offer is typeof offer & { merchant: string; price: number; delivery: string } =>
+              offer.merchant != null && offer.price != null && offer.delivery != null,
+          )
+          .map((offer) => ({
+            ...offer,
+            merchant: offer.merchant,
+            price: offer.price,
+            delivery: offer.delivery,
+          }))
+      : [],
     needs: product.needs ? (product.needs as Product['needs']) : undefined,
     provides:
       (product.provides?.length ?? 0) > 0 ? (product.provides as Product['provides']) : undefined,
+    commercialFactsAuthoritative: authoritative,
   }
   return productWithCuratedFields(snapshot, preferences)
 }

@@ -2,6 +2,7 @@ package com.meant.api.plugin.catalog.common.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
@@ -70,13 +71,8 @@ class CatalogProductRehydrationServiceTest {
     private CatalogProductRehydrationProvider provider(AtomicInteger calls, boolean fail) {
         return new CatalogProductRehydrationProvider() {
             @Override
-            public String metricsKey() {
-                return "generic_ucp";
-            }
-
-            @Override
             public boolean supports(com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity source) {
-                return GenericUcpCatalogDataUsePolicy.SOURCE.equals(source);
+                return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
             }
 
             @Override
@@ -93,7 +89,7 @@ class CatalogProductRehydrationServiceTest {
                         Instant.parse("2026-07-11T00:02:00Z")
                 );
                 return references.stream()
-                        .map(reference -> CatalogProductRehydrationResult.fresh(reference,
+                        .map(reference -> CatalogProductRehydrationResult.fresh(reference, reference,
                                 new RehydratedCommercialFacts(
                                         "Fresh product",
                                         null,
@@ -113,7 +109,7 @@ class CatalogProductRehydrationServiceTest {
     private CatalogProductReference reference(String key) {
         return new CatalogProductReference(
                 key,
-                GenericUcpCatalogDataUsePolicy.SOURCE,
+                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
                 java.util.UUID.fromString("00000000-0000-0000-0000-000000000010"),
                 null,
                 new ExternalIdentifier(ExternalIdentifierType.MERCHANT, "GENERIC_UCP", "merchant-1"),

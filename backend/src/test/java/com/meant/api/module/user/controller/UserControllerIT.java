@@ -7,7 +7,18 @@ import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
+import com.meant.api.module.merchant.constant.MerchantIntegrationKind;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
+import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
+import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
+import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
+import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsQuery;
 import com.meant.api.module.merchant.service.MerchantProductDetailsService;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
@@ -45,12 +56,12 @@ import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -220,6 +231,47 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                               ]
                             }
                             """;
+                }
+            };
+        }
+
+        @Bean
+        @Primary
+        MerchantIntegrationLookupService testMerchantIntegrationLookupService() {
+            return new MerchantIntegrationLookupService(org.mockito.Mockito.mock(
+                    com.meant.api.module.merchant.repository.MerchantIntegrationRepository.class)) {
+                @Override
+                public List<MerchantIntegrationResult> listByMerchant(ListMerchantIntegrationsQuery query) {
+                    return List.of(integration(query.merchantId()));
+                }
+
+                @Override
+                public List<MerchantIntegrationResult> listByMerchants(
+                        ListMerchantIntegrationsByMerchantsQuery query
+                ) {
+                    return query.merchantIds().stream().map(this::integration).toList();
+                }
+
+                private MerchantIntegrationResult integration(UUID merchantId) {
+                    Instant now = Instant.parse("2026-07-11T00:00:00Z");
+                    return new MerchantIntegrationResult(
+                            UUID.fromString("00000000-0000-0000-0000-000000000097"),
+                            merchantId,
+                            MerchantIntegrationProvider.GENERIC_UCP,
+                            MerchantIntegrationKind.MERCHANT_CONNECTION,
+                            Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
+                            null,
+                            "merchant.example",
+                            null,
+                            "https://merchant.example/mcp",
+                            "2026-04-08",
+                            MerchantIntegrationAuthStrategy.NONE,
+                            MerchantIntegrationStatus.ACTIVE,
+                            MerchantIntegrationSource.MANUAL,
+                            now,
+                            now,
+                            now
+                    );
                 }
             };
         }
@@ -768,7 +820,6 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                             "sourceType": "MERCHANT_STOREFRONT",
                             "sourceIdentity": "MEANT_MERCHANT_SEMANTIC",
                             "localMerchantId": "00000000-0000-0000-0000-000000000099",
-                            "externalMerchantId": "shop.example",
                             "externalProductId": "gid://shopify/Product/123",
                             "externalVariantId": "variant-1",
                             "selectedOptions": []
@@ -783,9 +834,10 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(saved).isNotNull();
         assertThat(saved.id()).isEqualTo(productKey);
-        assertThat(saved.commercialFactsAuthoritative()).isFalse();
-        assertThat(saved.offers()).isEmpty();
-        assertThat(saved.imageUrl()).isNull();
+        assertThat(saved.commercialFactsAuthoritative()).isTrue();
+        assertThat(saved.name()).isEqualTo("Current saved product");
+        assertThat(saved.priceFrom()).isEqualTo(7.4d);
+        assertThat(saved.imageUrl()).isEqualTo("https://merchant.example/media/current.jpg");
 
         UserSavedProductResponse[] listed = client.get().uri("/api/users/me/saved-products")
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
@@ -1159,7 +1211,6 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                             "sourceType": "MERCHANT_STOREFRONT",
                             "sourceIdentity": "MEANT_MERCHANT_SEMANTIC",
                             "localMerchantId": "00000000-0000-0000-0000-000000000099",
-                            "externalMerchantId": "merchant.example",
                             "externalProductId": "product-tee",
                             "externalVariantId": "variant-1",
                             "selectedOptions": []
@@ -1392,6 +1443,8 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "ResultProvenanceResponse",
                         "CatalogReference",
                         "SelectedOption",
+                        "UserSavedProductReview",
+                        "UserSavedProductOffer",
                         "commercialFactsAuthoritative",
                         "\"minorUnits\"",
                         "\"groupingDecisions\"",
@@ -1405,7 +1458,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     private String currentSearchPolicyFingerprint() {
-        return catalogDataUsePolicyResolver.admitSearch(List.of(GenericUcpCatalogDataUsePolicy.SOURCE))
+        return catalogDataUsePolicyResolver.admitSearch(List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE))
                 .policyFingerprint();
     }
 

@@ -51,8 +51,7 @@ public record SaveUserProductRequest(
         @Min(0)
         @Max(100)
         Integer match,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotNull
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @PositiveOrZero
         Double priceFrom,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

@@ -87,7 +87,7 @@ export interface Product {
   productUrl?: string | null
   remote?: boolean
   match: number
-  priceFrom: number
+  priceFrom: number | null
   listPrice?: number | null
   merchants: number
   satisfies: readonly PreferenceId[]
@@ -118,6 +118,7 @@ export interface Product {
   inventoryItemName?: string | null
   agentStage?: ProductAgentStage
   agentUpdatedAt?: number
+  commercialFactsAuthoritative?: boolean
 }
 
 export interface Reply {

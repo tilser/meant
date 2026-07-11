@@ -17,7 +17,6 @@ public class CatalogDataUsePolicyMetrics {
         Counter.builder("commerce.catalog.data_use.decisions")
                 .tag("payload_class", payloadClass.name().toLowerCase(java.util.Locale.ROOT))
                 .tag("mode", decision.mode().name().toLowerCase(java.util.Locale.ROOT))
-                .tag("policy", decision.policyKey())
                 .tag("resolution", resolution)
                 .register(meterRegistry)
                 .increment();

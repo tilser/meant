@@ -51,7 +51,7 @@ public class CatalogProductRehydrationService {
                                 : CatalogRehydrationFailureKind.AMBIGUOUS_PROVIDER
                 );
                 results.put(reference, failure);
-                metrics.record("unknown", failure);
+                metrics.record(failure);
             } else {
                 batches.computeIfAbsent(matching.getFirst(), ignored -> new ArrayList<>()).add(reference);
             }
@@ -63,7 +63,7 @@ public class CatalogProductRehydrationService {
                     for (CatalogProductRehydrationResult result : providerResults) {
                         if (result != null && batch.contains(result.reference())) {
                             results.put(result.reference(), result);
-                            metrics.record(provider.metricsKey(), result);
+                            metrics.record(result);
                         }
                     }
                 }
@@ -75,7 +75,7 @@ public class CatalogProductRehydrationService {
                             CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
                     );
                     results.put(reference, failure);
-                    metrics.record(provider.metricsKey(), failure);
+                    metrics.record(failure);
                 }
             }
             for (CatalogProductReference reference : batch) {
@@ -85,7 +85,7 @@ public class CatalogProductRehydrationService {
                             CatalogRehydrationStatus.DEGRADED,
                             CatalogRehydrationFailureKind.INVALID_RESPONSE
                     );
-                    metrics.record(provider.metricsKey(), missing);
+                    metrics.record(missing);
                     return missing;
                 });
             }

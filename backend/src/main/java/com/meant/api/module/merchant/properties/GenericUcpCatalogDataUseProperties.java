@@ -1,4 +1,4 @@
-package com.meant.api.plugin.catalog.common.service;
+package com.meant.api.module.merchant.properties;
 
 import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
@@ -9,7 +9,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "commerce.catalog.data-use.generic-ucp")
 public record GenericUcpCatalogDataUseProperties(
         @NotNull Duration searchCacheTtl,
-        @NotNull Duration rehydratedFactsTtl,
-        @NotNull Duration transactionSnapshotTtl
+        @NotNull Duration rehydratedFactsTtl
 ) {
 }

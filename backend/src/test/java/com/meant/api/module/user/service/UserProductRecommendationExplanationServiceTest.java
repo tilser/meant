@@ -524,7 +524,8 @@ class UserProductRecommendationExplanationServiceTest {
                     null,
                     new UserTasteRankingService(),
                     new UserProductSearchCurationPolicy(),
-                    new ObjectMapper()
+                    new ObjectMapper(),
+                    org.mockito.Mockito.mock(UserProductSearchCachePolicy.class)
             );
         }
 

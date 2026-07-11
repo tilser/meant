@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
+import com.meant.api.module.merchant.service.GenericUcpCatalogDataUsePolicy;
 import com.meant.api.plugin.catalog.common.dto.CatalogPayloadClass;
 import com.meant.api.plugin.catalog.common.dto.CatalogRetentionMode;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
@@ -27,7 +30,7 @@ class CatalogDataUsePolicyResolverTest {
         CatalogDataUsePolicyResolver resolver = resolver(genericPolicy(), shopifyPolicy(false));
 
         assertThat(resolver.admitSearch(List.of(shopifySource())).admitted()).isFalse();
-        assertThat(resolver.admitSearch(List.of(GenericUcpCatalogDataUsePolicy.SOURCE, shopifySource())).admitted())
+        assertThat(resolver.admitSearch(List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE, shopifySource())).admitted())
                 .isFalse();
     }
 
@@ -40,9 +43,13 @@ class CatalogDataUsePolicyResolverTest {
         );
         CatalogDataUsePolicyResolver resolver = resolver(genericPolicy());
 
-        assertThat(resolver.resolve(unknown, CatalogPayloadClass.SEARCH_FACTS).mode())
-                .isEqualTo(CatalogRetentionMode.SESSION_ONLY);
-        assertThat(registry.get("commerce.catalog.data_use.decisions").counter().getId().getTags())
+        for (CatalogPayloadClass payloadClass : CatalogPayloadClass.values()) {
+            assertThat(resolver.resolve(unknown, payloadClass).mode())
+                    .as(payloadClass.name())
+                    .isEqualTo(CatalogRetentionMode.SESSION_ONLY);
+        }
+        assertThat(registry.find("commerce.catalog.data_use.decisions").counters())
+                .flatExtracting(counter -> counter.getId().getTags())
                 .extracting(tag -> tag.getValue())
                 .doesNotContain("UNREVIEWED_PROVIDER", "user-controlled-source-value");
     }
@@ -51,11 +58,23 @@ class CatalogDataUsePolicyResolverTest {
     void approvedGenericSourceGetsItsSourceSpecificBoundedTtl() {
         CatalogDataUsePolicyResolver resolver = resolver(genericPolicy());
 
-        var admission = resolver.admitSearch(List.of(GenericUcpCatalogDataUsePolicy.SOURCE));
+        var admission = resolver.admitSearch(List.of(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE));
 
         assertThat(admission.admitted()).isTrue();
         assertThat(admission.maximumRetention()).isEqualTo(Duration.ofHours(6));
         assertThat(admission.policyFingerprint()).hasSize(64);
+    }
+
+    @Test
+    void transactionSnapshotsRemainSessionOnlyUntilTheirOwningTicketAddsApproval() {
+        CatalogDataUsePolicyResolver resolver = resolver(genericPolicy(), shopifyPolicy(false));
+
+        assertThat(resolver.resolve(
+                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
+                CatalogPayloadClass.TRANSACTION_SNAPSHOT
+        ).mode()).isEqualTo(CatalogRetentionMode.SESSION_ONLY);
+        assertThat(resolver.resolve(shopifySource(), CatalogPayloadClass.TRANSACTION_SNAPSHOT).mode())
+                .isEqualTo(CatalogRetentionMode.SESSION_ONLY);
     }
 
     @Test
@@ -64,7 +83,7 @@ class CatalogDataUsePolicyResolverTest {
         CatalogDataUsePolicy policy = new CatalogDataUsePolicy() {
             @Override
             public boolean supports(DiscoverySourceIdentity source) {
-                return GenericUcpCatalogDataUsePolicy.SOURCE.equals(source);
+                return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
             }
 
             @Override
@@ -81,7 +100,7 @@ class CatalogDataUsePolicyResolverTest {
         };
         CatalogDataUsePolicyResolver resolver = resolver(policy);
 
-        resolver.admitSearch(java.util.Collections.nCopies(100, GenericUcpCatalogDataUsePolicy.SOURCE));
+        resolver.admitSearch(java.util.Collections.nCopies(100, MerchantCatalogSourceIdentity.DISCOVERY_SOURCE));
 
         assertThat(decisions).hasValue(2);
     }
@@ -90,8 +109,7 @@ class CatalogDataUsePolicyResolverTest {
         return new GenericUcpCatalogDataUsePolicy(
                 new GenericUcpCatalogDataUseProperties(
                         Duration.ofHours(6),
-                        Duration.ofMinutes(2),
-                        Duration.ofDays(30)
+                        Duration.ofMinutes(2)
                 )
         );
     }
@@ -104,8 +122,7 @@ class CatalogDataUsePolicyResolverTest {
                 new ShopifyCatalogDataUseProperties(
                         approved,
                         Duration.ofMinutes(15),
-                        Duration.ofMinutes(2),
-                        Duration.ofDays(30)
+                        Duration.ofMinutes(2)
                 )
         );
     }

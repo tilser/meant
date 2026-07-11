@@ -25,8 +25,8 @@ export const IMPORT_ASK = `Based on everything you know about me from our past c
 
 Write it as a short list of clear, specific statements (one per line) that a shopping app could use to filter products for me.`
 
-export function money(value: number): string {
-  return `$${value.toFixed(2)}`
+export function money(value: number | null | undefined): string {
+  return value == null ? 'Price unavailable' : `$${value.toFixed(2)}`
 }
 
 export function productById(id: ProductId): Product {
@@ -217,7 +217,7 @@ function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>)
   return product.satisfies.filter((id) => activeIds.has(id)).length
 }
 
-export function productPriceFrom(product: Product, locations: DeliveryLocations): number {
+export function productPriceFrom(product: Product, locations: DeliveryLocations): number | null {
   const offers = availableOffers(product, locations)
   const prices = offers.map((offer) => offer.price)
   return prices.length > 0 ? Math.min(...prices) : product.priceFrom

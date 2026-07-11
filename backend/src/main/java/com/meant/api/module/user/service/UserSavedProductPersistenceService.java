@@ -1,47 +1,63 @@
 package com.meant.api.module.user.service;
 
-import static com.meant.api.common.util.CollectionUtils.safeList;
-
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.entity.UserSavedProduct.DurableReferenceSnapshot;
-import com.meant.api.module.user.entity.UserSavedProduct.SavedProductSnapshot;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
+import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-/** Short write boundary invoked only after remote rehydration has completed. */
+/** Short database boundaries for identifier-only saved interactions. */
 @Service
 @RequiredArgsConstructor
 public class UserSavedProductPersistenceService {
     private final UserSavedProductRepository repository;
     private final UserCollectionProperties properties;
+    private final UserTasteProfileService userTasteProfileService;
     private final ObjectMapper objectMapper;
+
+    @Transactional(readOnly = true)
+    public List<UserSavedProduct> findVerified(UUID userId, int page, int limit) {
+        return repository.findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDesc(
+                userId,
+                PageRequest.of(page, limit)
+        );
+    }
 
     @Transactional
     public UserSavedProduct save(
             SaveUserProductCommand command,
-            CatalogProductReference reference,
+            CatalogProductReference verifiedReference,
             String retentionPolicyKey,
             Instant now
     ) {
+        if (!command.productKey().equals(verifiedReference.interactionKey())) {
+            throw new UserException("Verified saved-product reference did not match the interaction key");
+        }
+        DurableReferenceSnapshot reference = referenceSnapshot(verifiedReference, retentionPolicyKey);
         UserSavedProduct entity = repository.findByUserIdAndProductKey(command.userId(), command.productKey())
-                .map(existing -> existing.replaceSnapshot(displayHint(command), now))
+                .map(existing -> existing.replaceReference(reference, now))
                 .orElseGet(() -> {
-                    if (repository.countByUserId(command.userId()) >= properties.savedProducts().quota()) {
+                    if (repository.countByUserIdAndReferenceVerifiedAtIsNotNull(command.userId())
+                            >= properties.savedProducts().quota()) {
                         throw new UserException("Saved product quota exceeded for user " + command.userId());
                     }
-                    return UserSavedProduct.create(command.userId(), displayHint(command), now);
+                    return UserSavedProduct.create(command.userId(), command.productKey(), reference, now);
                 });
-        entity.replaceReference(referenceSnapshot(reference, retentionPolicyKey), now);
-        return repository.save(entity);
+        UserSavedProduct saved = repository.save(entity);
+        userTasteProfileService.recordSavedProduct(command.userId(), command, now);
+        return saved;
     }
 
     private DurableReferenceSnapshot referenceSnapshot(CatalogProductReference reference, String policyKey) {
@@ -59,37 +75,9 @@ public class UserSavedProductPersistenceService {
         );
     }
 
-    private SavedProductSnapshot displayHint(SaveUserProductCommand command) {
-        return new SavedProductSnapshot(
-                command.productKey(),
-                null,
-                command.name(),
-                command.brand(),
-                command.category(),
-                command.tone(),
-                null,
-                null,
-                command.remote(),
-                command.matchScore(),
-                null,
-                command.merchantCount(),
-                json(safeList(command.satisfies())),
-                json(safeList(command.misses())),
-                command.note(),
-                json(safeList(command.pros())),
-                json(safeList(command.cons())),
-                command.review().score(),
-                command.review().count(),
-                command.review().insight(),
-                null,
-                command.needs(),
-                json(safeList(command.provides()))
-        );
-    }
-
-    private String json(Object value) {
+    private String json(List<ProductAttribute> options) {
         try {
-            return objectMapper.writeValueAsString(value);
+            return objectMapper.writeValueAsString(options);
         } catch (JacksonException exception) {
             throw new UserException("Could not serialize saved product identifiers", exception);
         }

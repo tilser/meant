@@ -15,6 +15,7 @@ public record RehydratedCommercialFacts(
         CommercialFactsFreshness purchaseFreshness
 ) {
     public RehydratedCommercialFacts {
+        availability = availability == null ? OfferAvailability.unknown() : availability;
         selectedOptions = selectedOptions == null ? List.of() : List.copyOf(selectedOptions);
         fulfillment = fulfillment == null ? List.of() : List.copyOf(fulfillment);
         sourceMedia = sourceMedia == null ? List.of() : List.copyOf(sourceMedia);

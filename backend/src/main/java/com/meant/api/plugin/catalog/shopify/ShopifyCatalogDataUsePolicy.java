@@ -37,8 +37,7 @@ public class ShopifyCatalogDataUsePolicy implements CatalogDataUsePolicy {
                     : CatalogRetentionDecision.sessionOnly(POLICY_KEY);
             case IDENTIFIERS_PROVENANCE, SAVED_INTERACTION ->
                     CatalogRetentionDecision.identifiersOnly(POLICY_KEY);
-            case TRANSACTION_SNAPSHOT ->
-                    CatalogRetentionDecision.bounded(POLICY_KEY, dataUseProperties.transactionSnapshotTtl());
+            case TRANSACTION_SNAPSHOT -> CatalogRetentionDecision.sessionOnly(POLICY_KEY);
         };
     }
 }

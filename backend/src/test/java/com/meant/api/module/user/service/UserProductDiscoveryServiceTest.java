@@ -152,7 +152,16 @@ class UserProductDiscoveryServiceTest {
     private static class FakeUserSavedProductService extends UserSavedProductService {
 
         FakeUserSavedProductService() {
-            super(null, null, null, null, null);
+            super(
+                    org.mockito.Mockito.mock(UserService.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserSavedProductRepository.class),
+                    org.mockito.Mockito.mock(UserCollectionProperties.class),
+                    org.mockito.Mockito.mock(UserSavedProductReferenceResolver.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationService.class),
+                    org.mockito.Mockito.mock(UserSavedProductPersistenceService.class),
+                    org.mockito.Mockito.mock(UserSavedProductResultMapper.class)
+            );
         }
 
         @Override
@@ -175,7 +184,16 @@ class UserProductDiscoveryServiceTest {
         private int productLimit;
 
         CapturingUserProductSearchPersistenceService() {
-            super(null, null, null, null, null, null, null);
+            super(
+                    org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserProductSearchRepository.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserProductSearchResultItemRepository.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserProductRecommendationFilterMatchRepository.class),
+                    org.mockito.Mockito.mock(UserTasteRankingService.class),
+                    org.mockito.Mockito.mock(UserProductSearchCurationPolicy.class),
+                    new tools.jackson.databind.ObjectMapper(),
+                    org.mockito.Mockito.mock(UserProductSearchCachePolicy.class)
+            );
         }
 
         @Override

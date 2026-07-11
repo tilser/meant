@@ -2,30 +2,47 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
-import com.meant.api.module.user.entity.User;
+import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
+import com.meant.api.module.merchant.service.GenericUcpCatalogDataUsePolicy;
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
+import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
-import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationFailureKind;
+import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationStatus;
 import com.meant.api.plugin.catalog.common.dto.CommercialFactsFreshness;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
+import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
+import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
+import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
+import com.meant.api.plugin.catalog.common.dto.ProductMedia;
+import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
 import com.meant.api.plugin.catalog.common.dto.RehydratedCommercialFacts;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyMetrics;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
 import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationMetrics;
 import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationProvider;
 import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationService;
-import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Proxy;
+import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -33,200 +50,218 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 class UserSavedProductServiceTest {
-
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000016");
+    private static final UUID MERCHANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000099");
+    private static final UUID INTEGRATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000098");
 
-    private FakeUserSavedProductRepository repository;
+    private FakeRepository repository;
+    private FakeRehydrationProvider provider;
+    private UserTasteProfileService tasteService;
     private UserSavedProductService service;
 
     @BeforeEach
     void setUp() {
-        repository = new FakeUserSavedProductRepository();
+        repository = new FakeRepository();
+        provider = new FakeRehydrationProvider();
+        tasteService = mock(UserTasteProfileService.class);
         service = service(50);
+    }
+
+    @Test
+    void listBatchesFreshRehydrationOutsideTransactionAndReturnsCurrentFacts() {
+        service.save(profile(), product("product-1", "Client title"));
+        service.save(profile(), product("product-2", "Other client title"));
+        provider.batchSizes.clear();
+
+        List<UserSavedProductResult> results = service.list(profile(), new ListSavedProductsQuery(USER_ID, 0, 10));
+
+        assertThat(provider.batchSizes).containsExactly(2);
+        assertThat(provider.transactionActive).containsOnly(false);
+        assertThat(results).allSatisfy(result -> {
+            assertThat(result.name()).startsWith("Current ");
+            assertThat(result.priceFrom()).isEqualTo(42.0d);
+            assertThat(result.imageUrl()).startsWith("https://provider.test/");
+            assertThat(result.commercialFactsAuthoritative()).isTrue();
+        });
+    }
+
+    @Test
+    void degradedListReturnsExplicitUnknownFactsNeverZeroOrStoredHints() {
+        service.save(profile(), product("product-1", "Forbidden stored title"));
+        provider.available = false;
+
+        UserSavedProductResult result = service.list(
+                profile(), new ListSavedProductsQuery(USER_ID, 0, 10)).getFirst();
+
+        assertThat(result.name()).isNull();
+        assertThat(result.priceFrom()).isNull();
+        assertThat(result.imageUrl()).isNull();
+        assertThat(result.review()).isNull();
+        assertThat(result.offers()).isEmpty();
+        assertThat(result.commercialFactsAuthoritative()).isFalse();
+    }
+
+    @Test
+    void listInvalidatesRowsWhoseStoredPolicyNoLongerMatchesTheReviewedPolicy() {
+        service.save(profile(), product("product-1", "Forbidden stored title"));
+        UserSavedProduct stored = repository.products.getFirst();
+        stored.replaceReference(new UserSavedProduct.DurableReferenceSnapshot(
+                stored.getSourceProvider(),
+                stored.getSourceType(),
+                stored.getSourceIdentity(),
+                stored.getLocalMerchantId(),
+                stored.getMerchantIntegrationId(),
+                stored.getExternalMerchantId(),
+                stored.getExternalProductId(),
+                stored.getExternalVariantId(),
+                stored.getSelectedOptionsJson(),
+                "historical-or-unknown-policy"
+        ), Instant.now());
+        provider.batchSizes.clear();
+
+        assertThat(service.list(profile(), new ListSavedProductsQuery(USER_ID, 0, 10))).isEmpty();
+        assertThat(provider.batchSizes).isEmpty();
+    }
+
+    @Test
+    void savedEntityContainsOnlyVerifiedIdentifiersAndNoProviderPayloadFields() {
+        service.save(profile(), product("product-1", "Forbidden stored title"));
+
+        UserSavedProduct stored = repository.products.getFirst();
+        assertThat(stored.getSourceProvider()).isEqualTo("GENERIC_UCP");
+        assertThat(stored.getExternalProductId()).isEqualTo("product-1");
+        assertThat(stored.getExternalVariantId()).isEqualTo("variant-verified");
+        assertThat(stored.getMerchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(stored.getReferenceVerifiedAt()).isNotNull();
+        assertThat(UserSavedProduct.class.getDeclaredFields())
+                .extracting(java.lang.reflect.Field::getName)
+                .doesNotContain(
+                        "name", "brand", "category", "tone", "imageUrl", "productUrl", "remote",
+                        "matchScore", "priceFrom", "merchantCount", "satisfies", "misses", "note",
+                        "pros", "cons", "reviewScore", "reviewCount", "reviewInsight", "offers", "needs", "provides"
+                );
+        verify(tasteService).recordSavedProduct(org.mockito.ArgumentMatchers.eq(USER_ID),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void persistenceUsesCanonicalReferenceRatherThanClientRoutingTuple() {
+        SaveUserProductCommand command = product("product-1", "Client title");
+
+        service.save(profile(), command);
+
+        UserSavedProduct stored = repository.products.getFirst();
+        assertThat(command.catalogReference().localRouting()).isNull();
+        assertThat(stored.getMerchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(stored.getExternalMerchantId()).isEqualTo("merchant-verified");
+        assertThat(stored.getExternalVariantId()).isEqualTo("variant-verified");
+    }
+
+    @Test
+    void quotaAllowsReferenceRefreshButRejectsAnotherInteraction() {
+        UserSavedProductService quotaService = service(1);
+
+        quotaService.save(profile(), product("product-1", "One"));
+        quotaService.save(profile(), product("product-1", "Updated"));
+
+        assertThat(repository.products).hasSize(1);
+        assertThatThrownBy(() -> quotaService.save(profile(), product("product-2", "Two")))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("quota exceeded");
+    }
+
+    @Test
+    void remoteWorkAndShortWriteBoundariesAreExplicit() throws Exception {
+        assertThat(UserSavedProductService.class
+                .getMethod("save", EnsureUserProfileCommand.class, SaveUserProductCommand.class)
+                .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
+        assertThat(UserSavedProductService.class
+                .getMethod("list", EnsureUserProfileCommand.class, ListSavedProductsQuery.class)
+                .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
+        assertThat(UserSavedProductPersistenceService.class
+                .getMethod("findVerified", UUID.class, int.class, int.class)
+                .getAnnotation(org.springframework.transaction.annotation.Transactional.class).readOnly()).isTrue();
+        assertThat(UserSavedProductPersistenceService.class
+                .getMethod("save", SaveUserProductCommand.class, CatalogProductReference.class, String.class, Instant.class)
+                .getAnnotation(org.springframework.transaction.annotation.Transactional.class)).isNotNull();
     }
 
     private UserSavedProductService service(int quota) {
         ObjectMapper objectMapper = new ObjectMapper();
-        UserCollectionProperties properties = collectionProperties(quota);
-        var registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        UserCollectionProperties properties = properties(quota);
+        SimpleMeterRegistry metrics = new SimpleMeterRegistry();
+        UserSavedProductRepository repositoryProxy = repository.proxy();
+        UserSavedProductPersistenceService persistence = new UserSavedProductPersistenceService(
+                repositoryProxy, properties, tasteService, objectMapper);
+        CatalogDataUsePolicyResolver policies = new CatalogDataUsePolicyResolver(
+                List.of(new GenericUcpCatalogDataUsePolicy(
+                        new GenericUcpCatalogDataUseProperties(Duration.ofHours(24), Duration.ofMinutes(2)))),
+                new CatalogDataUsePolicyMetrics(metrics)
+        );
         return new UserSavedProductService(
-                new FakeUserService(),
-                repository.proxy(),
-                new NoopUserTasteProfileService(),
+                mock(UserService.class),
+                repositoryProxy,
                 properties,
-                objectMapper,
-                new UserSavedProductReferenceResolver(null),
-                UserProductSearchPersistenceService.testPolicyResolver(),
+                new UserSavedProductReferenceResolver(mock(UserProductSearchResultItemRepository.class)),
+                policies,
                 new CatalogProductRehydrationService(
-                        List.of(new FakeRehydrationProvider()),
-                        new CatalogProductRehydrationMetrics(registry)
+                        List.of(provider),
+                        new CatalogProductRehydrationMetrics(metrics)
                 ),
-                new UserSavedProductPersistenceService(repository.proxy(), properties, objectMapper)
+                persistence,
+                new UserSavedProductResultMapper(objectMapper)
         );
     }
 
-    @Test
-    void listAppliesPageAndLimitAtRepositoryBoundary() {
-        service.save(profileCommand(), product("merchant.example:one", "One"));
-        service.save(profileCommand(), product("merchant.example:two", "Two"));
-        service.save(profileCommand(), product("merchant.example:three", "Three"));
-
-        List<UserSavedProductResult> firstPage = service.list(
-                profileCommand(),
-                new ListSavedProductsQuery(USER_ID, 0, 2)
-        );
-        List<UserSavedProductResult> secondPage = service.list(
-                profileCommand(),
-                new ListSavedProductsQuery(USER_ID, 1, 2)
-        );
-
-        assertThat(firstPage).hasSize(2);
-        assertThat(secondPage).hasSize(1);
-    }
-
-    @Test
-    void saveRejectsNewProductsPastUserQuotaButAllowsRefreshes() {
-        UserSavedProductService quotaService = service(1);
-
-        quotaService.save(profileCommand(), product("merchant.example:one", "One"));
-        UserSavedProductResult refreshed = quotaService.save(
-                profileCommand(),
-                product("merchant.example:one", "Updated One")
-        );
-
-        assertThat(refreshed.name()).isEqualTo("Updated One");
-        assertThatThrownBy(() -> quotaService.save(profileCommand(), product("merchant.example:two", "Two")))
-                .isInstanceOf(UserException.class)
-                .hasMessageContaining("Saved product quota exceeded");
-    }
-
-    @Test
-    void savePersistsOnlyRehydrationIdentifiersNotCommercialPayloadOrRemoteMedia() {
-        service.save(profileCommand(), product("merchant.example:one", "One"));
-
-        UserSavedProduct stored = repository.products.getFirst();
-        assertThat(stored.getSourceProvider()).isEqualTo("GENERIC_UCP");
-        assertThat(stored.getExternalProductId()).isEqualTo("merchant.example:one");
-        assertThat(stored.getExternalVariantId()).isEqualTo("variant-1");
-        assertThat(stored.getPriceFrom()).isNull();
-        assertThat(stored.getOffers()).isNull();
-        assertThat(stored.getImageUrl()).isNull();
-        assertThat(stored.getProductUrl()).isNull();
-    }
-
-    @Test
-    void remoteRefreshAndPersistenceUseSeparateTransactionBoundaries() throws Exception {
-        assertThat(UserSavedProductService.class
-                .getMethod("save", EnsureUserProfileCommand.class, SaveUserProductCommand.class)
-                .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
-        assertThat(UserSavedProductPersistenceService.class
-                .getMethod(
-                        "save",
-                        SaveUserProductCommand.class,
-                        CatalogProductReference.class,
-                        String.class,
-                        java.time.Instant.class
-                )
-                .getAnnotation(org.springframework.transaction.annotation.Transactional.class)).isNotNull();
-    }
-
-    private SaveUserProductCommand product(String productKey, String name) {
+    private SaveUserProductCommand product(String productId, String clientTitle) {
         return new SaveUserProductCommand(
-                USER_ID,
-                productKey,
-                "hash-" + name,
-                name,
-                "Field Loom",
-                "Clothing",
-                "#f3f0e8",
-                "https://example.test/" + name + ".jpg",
-                "https://example.test/" + name,
-                false,
-                90,
-                42.0d,
-                1,
-                List.of("organic"),
-                List.of(),
-                "A strong saved match.",
-                List.of("Durable"),
-                List.of("Limited colors"),
-                new SaveUserProductCommand.Review(4.8d, 200, "Well reviewed."),
+                USER_ID, productId, "hash", clientTitle, "Client brand", "Client category", "#fff",
+                "https://client.test/image.jpg", "https://client.test/product", true, 99, 0.0d, 9,
+                List.of("organic"), List.of(), "Generated note", List.of("pro"), List.of("con"),
+                new SaveUserProductCommand.Review(5.0d, 500, "Generated review"),
                 List.of(new SaveUserProductCommand.Offer(
-                        "Field Loom",
-                        42.0d,
-                        "Tomorrow",
-                        "merchant-1",
-                        "merchant.example",
-                        "variant-1",
-                        "Default",
-                        true
-                )),
-                null,
-                List.of(),
-                reference(productKey)
+                        "Client merchant", 0.0d, "Now", "tampered", "tampered.test", "tampered", "Bad", true)),
+                null, List.of(), requestedReference(productId)
         );
     }
 
-    private CatalogProductReference reference(String productKey) {
+    private CatalogProductReference requestedReference(String productId) {
         return new CatalogProductReference(
-                productKey,
-                GenericUcpCatalogDataUsePolicy.SOURCE,
-                UUID.fromString("00000000-0000-0000-0000-000000000099"),
+                productId,
+                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
+                MERCHANT_ID,
                 null,
-                new ExternalIdentifier(ExternalIdentifierType.MERCHANT, "GENERIC_UCP", "merchant.example"),
-                new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "GENERIC_UCP", productKey),
-                new ExternalIdentifier(ExternalIdentifierType.VARIANT, "GENERIC_UCP", "variant-1"),
+                null,
+                new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "GENERIC_UCP", productId),
+                new ExternalIdentifier(ExternalIdentifierType.VARIANT, "GENERIC_UCP", "variant-requested"),
                 List.of()
         );
     }
 
-    private EnsureUserProfileCommand profileCommand() {
+    private EnsureUserProfileCommand profile() {
         return new EnsureUserProfileCommand(USER_ID, "saved@example.com", "Saved", "User");
     }
 
-    private UserCollectionProperties collectionProperties(int savedProductQuota) {
-        int safeLimit = Math.min(50, savedProductQuota);
+    private UserCollectionProperties properties(int quota) {
+        int limit = Math.min(50, quota);
         return new UserCollectionProperties(
-                new UserCollectionProperties.SavedProducts(safeLimit, 100, savedProductQuota, safeLimit, safeLimit),
+                new UserCollectionProperties.SavedProducts(limit, 100, quota, limit, limit),
                 new UserCollectionProperties.Inventory(50, 100, 500)
         );
     }
 
-    static class FakeUserService extends UserService {
-
-        FakeUserService() {
-            super(null);
-        }
-
-        @Override
-        public User ensureProfile(EnsureUserProfileCommand command) {
-            return null;
-        }
-    }
-
-    static class NoopUserTasteProfileService extends UserTasteProfileService {
-
-        NoopUserTasteProfileService() {
-            super(null, null, null, null);
-        }
-
-        @Override
-        public void recordSavedProduct(UUID userId, SaveUserProductCommand command, java.time.Instant now) {
-        }
-    }
-
-    static class FakeRehydrationProvider implements CatalogProductRehydrationProvider {
-        @Override
-        public String metricsKey() {
-            return "generic_ucp";
-        }
+    private final class FakeRehydrationProvider implements CatalogProductRehydrationProvider {
+        private final List<Integer> batchSizes = new ArrayList<>();
+        private final List<Boolean> transactionActive = new ArrayList<>();
+        private boolean available = true;
 
         @Override
         public boolean supports(com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity source) {
-            return GenericUcpCatalogDataUsePolicy.SOURCE.equals(source);
+            return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
         }
 
         @Override
@@ -234,31 +269,49 @@ class UserSavedProductServiceTest {
                 List<CatalogProductReference> references,
                 CatalogRehydrationContext context
         ) {
-            ResultFreshness freshness = new ResultFreshness(
-                    java.time.Instant.parse("2026-07-11T00:00:00Z"),
-                    java.time.Instant.parse("2026-07-11T00:05:00Z")
+            batchSizes.add(references.size());
+            transactionActive.add(TransactionSynchronizationManager.isActualTransactionActive());
+            return references.stream().map(this::result).toList();
+        }
+
+        private CatalogProductRehydrationResult result(CatalogProductReference requested) {
+            if (!available) {
+                return CatalogProductRehydrationResult.failed(
+                        requested, CatalogRehydrationStatus.DEGRADED, CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE);
+            }
+            CatalogProductReference resolved = new CatalogProductReference(
+                    requested.interactionKey(),
+                    MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
+                    MERCHANT_ID,
+                    new LocalMerchantRouting(INTEGRATION_ID),
+                    new ExternalIdentifier(ExternalIdentifierType.MERCHANT, "GENERIC_UCP", "merchant-verified"),
+                    requested.externalProductReference(),
+                    new ExternalIdentifier(ExternalIdentifierType.VARIANT, "GENERIC_UCP", "variant-verified"),
+                    List.of()
             );
-            return references.stream()
-                    .map(reference -> CatalogProductRehydrationResult.fresh(
-                            reference,
-                            new RehydratedCommercialFacts(
-                                    "Current product",
-                                    null,
-                                    OfferAvailability.unknown(),
-                                    reference.externalVariantReference(),
-                                    List.of(),
-                                    List.of(),
-                                    List.of(),
-                                    freshness,
-                                    CommercialFactsFreshness.fromSingleObservation(freshness)
-                            )
-                    ))
-                    .toList();
+            ResultFreshness freshness = new ResultFreshness(
+                    Instant.parse("2026-07-11T00:00:00Z"), Instant.parse("2026-07-11T00:05:00Z"));
+            return CatalogProductRehydrationResult.fresh(requested, resolved, new RehydratedCommercialFacts(
+                    "Current " + requested.externalProductReference().value(),
+                    new Money(4200, "USD"),
+                    new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
+                    resolved.externalVariantReference(),
+                    List.of(),
+                    List.of(),
+                    List.of(new ProductMedia(
+                            ProductMediaType.IMAGE,
+                            URI.create("https://provider.test/" + requested.interactionKey() + ".jpg"),
+                            null,
+                            null,
+                            null
+                    )),
+                    freshness,
+                    CommercialFactsFreshness.fromSingleObservation(freshness)
+            ));
         }
     }
 
-    static class FakeUserSavedProductRepository {
-
+    private static final class FakeRepository {
         private final List<UserSavedProduct> products = new ArrayList<>();
 
         UserSavedProductRepository proxy() {
@@ -267,15 +320,14 @@ class UserSavedProductServiceTest {
                     new Class<?>[]{UserSavedProductRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
                         case "save" -> save((UserSavedProduct) args[0]);
-                        case "findByUserIdOrderByCreatedAtDesc" -> page(byUser((UUID) args[0]), (Pageable) args[1]);
+                        case "findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDesc" ->
+                                page(byUser((UUID) args[0]), (Pageable) args[1]);
                         case "findByUserIdAndProductKey" -> products.stream()
                                 .filter(product -> product.getUserId().equals(args[0]))
                                 .filter(product -> product.getProductKey().equals(args[1]))
                                 .findFirst();
-                        case "countByUserId" -> (long) byUser((UUID) args[0]).size();
-                        case "deleteByUserIdAndProductKey" -> deleteByUserIdAndProductKey(
-                                (UUID) args[0],
-                                (String) args[1]);
+                        case "countByUserIdAndReferenceVerifiedAtIsNotNull" -> (long) byUser((UUID) args[0]).size();
+                        case "deleteByUserIdAndProductKey" -> delete((UUID) args[0], (String) args[1]);
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
             );
@@ -290,23 +342,20 @@ class UserSavedProductServiceTest {
         private List<UserSavedProduct> byUser(UUID userId) {
             return products.stream()
                     .filter(product -> product.getUserId().equals(userId))
+                    .filter(product -> product.getReferenceVerifiedAt() != null)
                     .sorted(Comparator.comparing(UserSavedProduct::getCreatedAt).reversed())
                     .toList();
         }
 
         private List<UserSavedProduct> page(List<UserSavedProduct> source, Pageable pageable) {
             int start = (int) pageable.getOffset();
-            if (start >= source.size()) {
-                return List.of();
-            }
-            int end = Math.min(start + pageable.getPageSize(), source.size());
-            return source.subList(start, end);
+            return start >= source.size() ? List.of()
+                    : source.subList(start, Math.min(start + pageable.getPageSize(), source.size()));
         }
 
-        private long deleteByUserIdAndProductKey(UUID userId, String productKey) {
-            boolean removed = products.removeIf(product -> product.getUserId().equals(userId)
-                    && product.getProductKey().equals(productKey));
-            return removed ? 1L : 0L;
+        private long delete(UUID userId, String productKey) {
+            return products.removeIf(product -> product.getUserId().equals(userId)
+                    && product.getProductKey().equals(productKey)) ? 1L : 0L;
         }
     }
 }

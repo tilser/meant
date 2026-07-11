@@ -11,7 +11,6 @@ import org.springframework.validation.annotation.Validated;
 public record ShopifyCatalogDataUseProperties(
         boolean searchPersistenceApproved,
         @NotNull Duration approvedSearchCacheTtl,
-        @NotNull Duration rehydratedFactsTtl,
-        @NotNull Duration transactionSnapshotTtl
+        @NotNull Duration rehydratedFactsTtl
 ) {
 }

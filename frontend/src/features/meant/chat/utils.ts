@@ -105,9 +105,15 @@ export function deleteStoredDiscoverChatThread(threadId: string): void {
   }
 }
 
-function winningIndex(values: readonly number[], higherIsBetter: boolean): number {
-  return values.reduce((bestIndex, value, index) => {
-    const bestValue = values[bestIndex] ?? value
+function winningIndex(values: readonly (number | null)[], higherIsBetter: boolean): number {
+  return values.reduce<number>((bestIndex, value, index) => {
+    if (value == null) {
+      return bestIndex
+    }
+    const bestValue = values[bestIndex]
+    if (bestValue == null) {
+      return index
+    }
     return higherIsBetter
       ? value > bestValue
         ? index
