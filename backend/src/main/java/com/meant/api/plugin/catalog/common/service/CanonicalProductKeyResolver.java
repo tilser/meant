@@ -17,17 +17,24 @@ final class CanonicalProductKeyResolver {
     private final ProductIdentityCompatibility compatibility = new ProductIdentityCompatibility();
 
     String resolve(List<ProductCandidate> candidates) {
+        long exactOfferClassCount = candidates.stream()
+                .map(candidate -> candidate.offer().key())
+                .distinct()
+                .count();
         Map<String, SignalCoverage> coverage = new HashMap<>();
         for (int index = 0; index < candidates.size(); index++) {
-            for (ProductIdentitySignal signal : signalExtractor.signals(candidates.get(index))) {
+            ProductCandidate candidate = candidates.get(index);
+            for (ProductIdentitySignal signal : signalExtractor.signals(candidate)) {
                 if (signal.trustedMergeEvidence()) {
-                    coverage.computeIfAbsent(signal.key(), ignored -> new SignalCoverage(signal))
-                            .candidateIndexes().add(index);
+                    SignalCoverage signalCoverage = coverage.computeIfAbsent(
+                            signal.key(), ignored -> new SignalCoverage(signal));
+                    signalCoverage.candidateIndexes().add(index);
+                    signalCoverage.exactOfferKeys().add(candidate.offer().key());
                 }
             }
         }
         return coverage.values().stream()
-                .filter(value -> value.candidateIndexes().size() == candidates.size())
+                .filter(value -> value.exactOfferKeys().size() == exactOfferClassCount)
                 .filter(value -> scopeAllowed(value.signal(), candidates, value.candidateIndexes()))
                 .sorted(Comparator.comparing(SignalCoverage::signal, ProductIdentitySignal.ORDER)
                         .thenComparing(value -> value.signal().key()))
@@ -72,10 +79,14 @@ final class CanonicalProductKeyResolver {
         );
     }
 
-    private record SignalCoverage(ProductIdentitySignal signal, Set<Integer> candidateIndexes) {
+    private record SignalCoverage(
+            ProductIdentitySignal signal,
+            Set<Integer> candidateIndexes,
+            Set<String> exactOfferKeys
+    ) {
 
         private SignalCoverage(ProductIdentitySignal signal) {
-            this(signal, new HashSet<>());
+            this(signal, new HashSet<>(), new HashSet<>());
         }
     }
 }

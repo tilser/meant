@@ -22,18 +22,21 @@ final class ProductIdentitySignalExtractor {
     List<ProductIdentitySignal> signals(ProductCandidate candidate) {
         return candidate.identityEvidence().stream()
                 .flatMap(evidence -> signals(evidence).stream())
-                .map(signal -> merchantScoped(signal, candidate))
+                .map(signal -> candidateScoped(signal, candidate))
                 .sorted(ProductIdentitySignal.ORDER)
                 .toList();
     }
 
-    private ProductIdentitySignal merchantScoped(ProductIdentitySignal signal, ProductCandidate candidate) {
-        if (signal.kind() != ProductIdentityEvidenceKind.CANONICAL_URL) {
-            return signal;
-        }
+    private ProductIdentitySignal candidateScoped(ProductIdentitySignal signal, ProductCandidate candidate) {
+        String scopedKey = switch (signal.kind()) {
+            case CANONICAL_URL -> signal.key() + ":merchant:" + CanonicalCommerceKey.merchantScopeKey(
+                    candidate.offer().identity().merchantScope());
+            case UPID -> signal.key() + ":authority:" + CanonicalCommerceKey.upidAuthorityScopeKey(
+                    candidate.offer().identity().provider(), signal.evidence().sourceReference());
+            default -> signal.key();
+        };
         return new ProductIdentitySignal(
-                signal.key() + ":merchant:" + CanonicalCommerceKey.merchantScopeKey(
-                        candidate.offer().identity().merchantScope()),
+                scopedKey,
                 signal.kind(),
                 signal.evidence(),
                 signal.precedence(),

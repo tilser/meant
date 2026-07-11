@@ -6,6 +6,8 @@ import com.meant.api.plugin.catalog.common.dto.OfferComponentIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
+import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanIdentity;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanOption;
 import java.io.ByteArrayOutputStream;
@@ -75,6 +77,16 @@ public final class CanonicalCommerceKey {
         List<String> fields = new ArrayList<>();
         addMerchantScopeV2(fields, merchantScope);
         return digest("merchant-scope-v1", fields);
+    }
+
+    public static String upidAuthorityScopeKey(
+            ProviderIdentity provider,
+            ResultSourceReference sourceReference
+    ) {
+        return digest(
+                "upid-authority-scope-v1",
+                List.of(provider.value(), sourceReference.type().name(), sourceReference.reference())
+        );
     }
 
     private static List<String> evidenceFields(ProductIdentityEvidence evidence) {

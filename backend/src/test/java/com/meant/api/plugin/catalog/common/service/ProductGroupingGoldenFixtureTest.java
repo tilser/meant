@@ -93,7 +93,9 @@ class ProductGroupingGoldenFixtureTest {
                 .option("Color", "Red").evidence(upid).build();
 
         ProductGroupingResult result = service.evaluate(List.of(blue, red));
+        ProductGroupingResult reversed = service.evaluate(List.of(red, blue));
 
+        assertThat(result).isEqualTo(reversed);
         assertThat(result.products()).singleElement()
                 .satisfies(product -> assertThat(product.offers()).hasSize(2));
         assertThat(result.decisions()).singleElement().satisfies(decision -> {
@@ -101,6 +103,68 @@ class ProductGroupingGoldenFixtureTest {
             assertThat(decision.reason()).isEqualTo(ProductGroupingDecisionReason.TRUSTED_PROVIDER_GROUP);
             assertThat(decision.contradictions()).containsExactly(ProductIdentityContradictionKind.COLOR);
         });
+    }
+
+    @Test
+    void weakerExactOfferObservationDoesNotDowngradeTrustedUpidCanonicalKey() {
+        ProductIdentityEvidence upid = evidence(
+                ProductIdentityEvidenceKind.UPID,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                10_000,
+                "SHOPIFY_GLOBAL",
+                id(ExternalIdentifierType.UPID, "SHOPIFY", "gid://shopify/p/exact-offer-upid")
+        );
+        ProductCandidate global = fixture("SHOPIFY", "seller-a", "product-a", "variant-a")
+                .source(ResultSourceType.PROVIDER_CATALOG, "shopify-global")
+                .evidence(upid)
+                .build();
+        ProductCandidate storefront = fixture("SHOPIFY", "seller-a", "product-a", "variant-a")
+                .source(ResultSourceType.MERCHANT_STOREFRONT, "targeted-storefront")
+                .build();
+        String globalKey = service.evaluate(List.of(global)).products().getFirst().key();
+
+        ProductGroupingResult combined = service.evaluate(List.of(global, storefront));
+
+        assertThat(global.offer().key()).isEqualTo(storefront.offer().key());
+        assertThat(combined).isEqualTo(service.evaluate(List.of(storefront, global)));
+        assertThat(combined.products()).singleElement().satisfies(product -> {
+            assertThat(product.key()).isEqualTo(globalKey);
+            assertThat(product.offers()).singleElement()
+                    .satisfies(offer -> assertThat(offer.provenance()).hasSize(2));
+        });
+    }
+
+    @Test
+    void sameUpidFromDifferentAuthoritiesRemainsSeparateWithDistinctStableKeys() {
+        ExternalIdentifier sharedUpid = id(
+                ExternalIdentifierType.UPID,
+                "SHOPIFY",
+                "gid://shopify/p/authority-scoped-upid"
+        );
+        ProductIdentityEvidence firstAuthority = evidence(
+                ProductIdentityEvidenceKind.UPID,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                10_000,
+                "SHOPIFY_GLOBAL_A",
+                sharedUpid
+        );
+        ProductIdentityEvidence secondAuthority = evidence(
+                ProductIdentityEvidenceKind.UPID,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                10_000,
+                "SHOPIFY_GLOBAL_B",
+                sharedUpid
+        );
+        ProductCandidate first = fixture("SHOPIFY", "seller-a", "product-a", "variant-a")
+                .evidence(firstAuthority).build();
+        ProductCandidate second = fixture("SHOPIFY", "seller-b", "product-b", "variant-b")
+                .evidence(secondAuthority).build();
+
+        ProductGroupingResult result = service.evaluate(List.of(first, second));
+
+        assertThat(result).isEqualTo(service.evaluate(List.of(second, first)));
+        assertThat(result.products()).hasSize(2).extracting(CanonicalProduct::key).doesNotHaveDuplicates();
+        assertThat(result.decisions()).isEmpty();
     }
 
     @Test
