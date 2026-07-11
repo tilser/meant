@@ -19,6 +19,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class UserCanonicalProductSessionStore {
     private final Cache<Key, Entry> entries;
+    private final Cache<OfferKey, OfferEntry> offers;
+    private final Cache<String, UUID> recentOfferOwners;
 
     @Autowired
     public UserCanonicalProductSessionStore(UserProductSearchProperties properties) {
@@ -29,6 +31,14 @@ public class UserCanonicalProductSessionStore {
         entries = Caffeine.newBuilder()
                 .expireAfterAccess(ttl)
                 .maximumSize(maximumSize)
+                .build();
+        offers = Caffeine.newBuilder()
+                .expireAfterAccess(ttl)
+                .maximumSize(maximumSize * 8)
+                .build();
+        recentOfferOwners = Caffeine.newBuilder()
+                .expireAfterAccess(ttl)
+                .maximumSize(maximumSize * 8)
                 .build();
     }
 
@@ -50,11 +60,28 @@ public class UserCanonicalProductSessionStore {
                     visibleOffers,
                     sourceStates
             ));
+            product.offers().forEach(offer -> offers.put(
+                    new OfferKey(userId, offer.key()),
+                    new OfferEntry(product.key(), offer)
+            ));
+            product.offers().forEach(offer -> recentOfferOwners.put(offer.key(), userId));
         }
     }
 
     Optional<Entry> find(UUID userId, String canonicalProductKey) {
         return Optional.ofNullable(entries.getIfPresent(new Key(userId, canonicalProductKey)));
+    }
+
+    public Optional<OfferEntry> findOffer(UUID userId, String offerKey) {
+        return Optional.ofNullable(offers.getIfPresent(new OfferKey(userId, offerKey)));
+    }
+
+    public boolean isOfferOwnedByAnotherUser(UUID userId, String offerKey) {
+        UUID recentOwner = recentOfferOwners.getIfPresent(offerKey);
+        return recentOwner != null && !recentOwner.equals(userId);
+    }
+
+    public record OfferEntry(String canonicalProductKey, com.meant.api.module.catalog.service.dto.Offer offer) {
     }
 
     record Entry(
@@ -70,5 +97,8 @@ public class UserCanonicalProductSessionStore {
     }
 
     private record Key(UUID userId, String canonicalProductKey) {
+    }
+
+    private record OfferKey(UUID userId, String offerKey) {
     }
 }

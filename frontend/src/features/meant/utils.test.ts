@@ -297,6 +297,7 @@ describe('cart recovery helpers', () => {
         merchantId: 'merchant-1',
         qty: 2,
         productVariantId: 'variant-1',
+        offerKey: 'offer-1',
       },
       {
         id: 'oil',
@@ -304,6 +305,7 @@ describe('cart recovery helpers', () => {
         merchantId: 'merchant-1',
         qty: 0,
         productVariantId: 'variant-2',
+        offerKey: 'offer-2',
       },
       {
         id: 'tee',
@@ -311,13 +313,14 @@ describe('cart recovery helpers', () => {
         merchantId: 'merchant-2',
         qty: 3,
         productVariantId: 'variant-3',
+        offerKey: 'offer-3',
       },
       { id: 'missing', merchant: 'Whole Foods', merchantId: 'merchant-1', qty: 4 },
     ]
 
     expect(cartRebuildItems(items, 'merchant-1')).toEqual([
-      { productVariantId: 'variant-1', quantity: 2 },
-      { productVariantId: 'variant-2', quantity: 1 },
+      { offerKey: 'offer-1', quantity: 2 },
+      { offerKey: 'offer-2', quantity: 1 },
     ])
     expect(cartRebuildItems(items, 'merchant-3')).toEqual([])
   })

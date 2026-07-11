@@ -61,7 +61,8 @@ public class CartController {
     @PostMapping
     @Operation(
             summary = "Create cart",
-            description = "Creates a remote MCP cart with initial items and stores the local cart snapshot."
+            description = "Resolves server-issued offer keys from the authenticated user's live catalog session, "
+                    + "revalidates exact commercial identity, and creates one merchant-scoped remote cart."
     )
     @ApiResponse(
             responseCode = "200",
@@ -101,7 +102,8 @@ public class CartController {
     @PatchMapping("/{cartId}")
     @Operation(
             summary = "Update cart",
-            description = "Adds items, updates line quantities, removes lines, and stores the refreshed remote cart snapshot."
+            description = "Adds server-resolved offers only when they match the cart's immutable provider and merchant scope, "
+                    + "updates quantities, and removes lines."
     )
     @ApiResponse(
             responseCode = "200",

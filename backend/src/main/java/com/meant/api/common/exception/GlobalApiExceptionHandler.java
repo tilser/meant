@@ -13,6 +13,7 @@ import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.review.exception.ReviewException;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.exception.UserProductSearchException;
+import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
@@ -151,6 +152,7 @@ public class GlobalApiExceptionHandler {
             DiscountCodeException.class,
             MerchantIdentityLinkException.class,
             OrderException.class,
+            SelectedOfferResolutionException.class,
             UserException.class
     })
     ResponseEntity<ProblemDetail> handleBusinessException(RuntimeException exception, HttpServletRequest request) {

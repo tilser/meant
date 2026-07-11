@@ -2501,14 +2501,12 @@ export interface components {
             codes: components["schemas"]["DiscountCodeResponse"][];
         };
         CartAddItemRequest: {
-            productVariantId: string;
+            /** @description Server-issued exact offer key from the authenticated user's live product session */
+            offerKey: string;
             /** Format: int32 */
             quantity?: number;
         };
         CartCreateRequest: {
-            /** Format: uuid */
-            merchantId?: string;
-            merchantDomain?: string;
             addItems: components["schemas"]["CartAddItemRequest"][];
             buyerIdentity?: {
                 [key: string]: unknown;
@@ -2562,15 +2560,23 @@ export interface components {
             /** Format: uuid */
             cartLineId: string;
             remoteCartLineId: string;
-            productId: string;
-            productTitle: string;
+            productId?: string;
+            productTitle?: string;
             productVariantId: string;
-            variantTitle: string;
+            variantTitle?: string;
             /** Format: int32 */
             quantity: number;
-            totalAmount: string;
-            subtotalAmount: string;
-            currency: string;
+            totalAmount?: string;
+            subtotalAmount?: string;
+            currency?: string;
+            /** @description Server-issued exact offer key bound to this line */
+            offerKey?: string;
+            /** @description Immutable commerce provider scope */
+            provider?: string;
+            /** Format: uuid */
+            merchantIntegrationId?: string;
+            /** @description Provider-scoped external seller identity */
+            externalMerchantId?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2587,25 +2593,33 @@ export interface components {
             /** Format: uuid */
             cartId: string;
             /** Format: uuid */
-            merchantId: string;
-            merchantDomain: string;
+            merchantId?: string;
+            merchantDomain?: string;
+            /** @description Immutable commerce provider scope */
+            provider?: string;
+            /** Format: uuid */
+            merchantIntegrationId?: string;
+            /** @description Provider-scoped external seller identity */
+            externalMerchantId?: string;
+            /** @description Opaque immutable remote-cart seller/provider scope */
+            routingScopeKey?: string;
             endpoint: string;
             remoteCartId: string;
-            checkoutUrl: string;
-            continueUrl: string;
-            instructions: string;
+            checkoutUrl?: string;
+            continueUrl?: string;
+            instructions?: string;
             /** Format: int32 */
             totalQuantity: number;
-            totalAmount: string;
-            subtotalAmount: string;
-            currency: string;
+            totalAmount?: string;
+            subtotalAmount?: string;
+            currency?: string;
             active: boolean;
             /** Format: date-time */
-            remoteCreatedAt: string;
+            remoteCreatedAt?: string;
             /** Format: date-time */
-            remoteUpdatedAt: string;
+            remoteUpdatedAt?: string;
             /** Format: date-time */
-            expiresAt: string;
+            expiresAt?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

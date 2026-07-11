@@ -46,3 +46,15 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
 })
+
+test('cart creation accepts only server-issued offer identity for line selection', () => {
+  type CartCreate = components['schemas']['CartCreateRequest']
+  type CartAddItem = components['schemas']['CartAddItemRequest']
+  const createFields: Array<keyof CartCreate> = ['addItems', 'discountCodes', 'giftCardCodes']
+  const addFields: Array<keyof CartAddItem> = ['offerKey', 'quantity']
+
+  expect(createFields as string[]).not.toContain('merchantId')
+  expect(createFields as string[]).not.toContain('merchantDomain')
+  expect(addFields as string[]).not.toContain('productVariantId')
+  expect(addFields).toContain('offerKey')
+})

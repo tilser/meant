@@ -29,11 +29,11 @@ public final class CartCommandMapper {
     public static CreateCartCommand toCommand(UUID userId, CartCreateRequest request) {
         return new CreateCartCommand(
                 userId,
-                request.merchantId(),
-                request.merchantDomain(),
+                null,
+                null,
                 safeList(request.addItems()).stream()
                         .map(item -> new CreateCartCommand.AddItem(
-                                item.productVariantId(),
+                                item.offerKey(),
                                 item.quantity()
                         ))
                         .toList(),
@@ -53,7 +53,7 @@ public final class CartCommandMapper {
                 userId,
                 safeList(request.addItems()).stream()
                         .map(item -> new UpdateCartCommand.AddItem(
-                                item.productVariantId(),
+                                item.offerKey(),
                                 item.quantity()
                         ))
                         .toList(),

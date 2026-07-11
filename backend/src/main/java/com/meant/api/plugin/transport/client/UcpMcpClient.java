@@ -129,10 +129,7 @@ public class UcpMcpClient {
             boolean canReturnToolError = allowJsonToolErrors
                     && (hasJsonTextPayload || hasResultStructuredContent(result.structuredContent()));
             if (!canReturnToolError) {
-                throw new UcpMcpException(
-                        "MCP result was marked as error: "
-                                + UcpSensitiveValueRedactor.redact(contentText(result.content()))
-                );
+                throw new UcpMcpException("MCP tool result was marked as error");
             }
             if (!hasJsonTextPayload) {
                 textContent = null;
@@ -155,23 +152,37 @@ public class UcpMcpClient {
             return;
         }
         McpToolResult result = response == null ? null : response.result();
-        boolean failed = response == null || response.error() != null || result == null || result.isError();
-        String message = "UCP merchant tool response endpoint={} tool={} requestId={} arguments={} "
-                + "resultText={} structuredContent={} jsonRpcResponse={}";
+        String outcome = exchangeOutcome(response, result);
+        boolean failed = !"success".equals(outcome);
+        String message = "UCP merchant tool exchange endpointHost={} endpointPath={} tool={} requestId={} "
+                + "outcome={} textPresent={} structuredPresent={}";
         Object[] values = {
-                endpoint,
+                endpoint == null ? null : endpoint.getHost(),
+                endpoint == null ? null : endpoint.getPath(),
                 toolName,
                 request.id(),
-                json(request.params() == null ? null : request.params().arguments()),
-                UcpSensitiveValueRedactor.redact(result == null ? null : firstContentText(result.content())),
-                json(result == null ? null : result.structuredContent()),
-                json(response)
+                outcome,
+                result != null && firstContentText(result.content()) != null,
+                result != null && result.structuredContent() != null
         };
         if (failed) {
             log.warn(message, values);
         } else {
             log.info(message, values);
         }
+    }
+
+    private String exchangeOutcome(McpToolCallResponse response, McpToolResult result) {
+        if (response == null) {
+            return "empty_response";
+        }
+        if (response.error() != null) {
+            return "json_rpc_error";
+        }
+        if (result == null) {
+            return "missing_result";
+        }
+        return result.isError() ? "tool_error" : "success";
     }
 
     private boolean isCartOrCheckoutTool(String toolName) {
@@ -212,9 +223,7 @@ public class UcpMcpClient {
             throw new UcpMcpException("MCP response was empty");
         }
         if (response.error() != null) {
-            throw new UcpMcpRemoteErrorException(
-                    "MCP error: " + UcpSensitiveValueRedactor.redact(response.error().message())
-            );
+            throw new UcpMcpRemoteErrorException("MCP JSON-RPC response contained an error");
         }
     }
 
@@ -223,7 +232,7 @@ public class UcpMcpClient {
             throw new UcpMcpException("MCP response was empty");
         }
         if (response.error() != null) {
-            throw new UcpMcpException("MCP error: " + UcpSensitiveValueRedactor.redact(response.error().message()));
+            throw new UcpMcpException("MCP tools/list JSON-RPC response contained an error");
         }
     }
 
@@ -358,11 +367,6 @@ public class UcpMcpClient {
         return value instanceof Map<?, ?> map ? map.get(key) : null;
     }
 
-    private String contentText(List<McpContent> content) {
-        String text = firstContentText(content);
-        return text == null ? "" : text;
-    }
-
     private String firstContentText(List<McpContent> content) {
         if (content == null) {
             return null;
@@ -396,14 +400,4 @@ public class UcpMcpClient {
         return value == null ? "" : value.toString().trim();
     }
 
-    private String json(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return UcpSensitiveValueRedactor.redact(objectMapper.writeValueAsString(value));
-        } catch (IllegalArgumentException | JacksonException exception) {
-            return UcpSensitiveValueRedactor.redact(value.toString());
-        }
-    }
 }

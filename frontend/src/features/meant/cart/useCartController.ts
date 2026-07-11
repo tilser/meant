@@ -107,12 +107,10 @@ export function useCartController(products: readonly Product[]) {
 
   const cartAddItemsForMerchant = (
     merchantKey: string,
-    fallbackProductVariantId: string,
-  ): { productVariantId: string; quantity: number }[] => {
+    fallbackOfferKey: string,
+  ): { offerKey: string; quantity: number }[] => {
     const addItems = cartRebuildItems(cartRef.current, merchantKey)
-    return addItems.length > 0
-      ? addItems
-      : [{ productVariantId: fallbackProductVariantId, quantity: 1 }]
+    return addItems.length > 0 ? addItems : [{ offerKey: fallbackOfferKey, quantity: 1 }]
   }
 
   /**
@@ -130,8 +128,6 @@ export function useCartController(products: readonly Product[]) {
       return null
     }
     const snapshot = await createCart({
-      merchantId: merchantItem?.merchantId,
-      merchantDomain: merchantItem?.merchantDomain,
       addItems: rebuildItems,
     })
     updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
@@ -153,7 +149,8 @@ export function useCartController(products: readonly Product[]) {
 
   const addProductOfferToCart = async (product: Product, offer: Offer): Promise<boolean> => {
     const productVariantId = offer.productVariantId
-    if (!productVariantId || !offerCartable(offer)) {
+    const offerKey = offer.offerKey?.trim()
+    if (!offerKey || !productVariantId || !offerCartable(offer)) {
       return false
     }
 
@@ -173,6 +170,7 @@ export function useCartController(products: readonly Product[]) {
                 merchantId: offer.merchantId ?? item.merchantId,
                 merchantDomain: offer.merchantDomain ?? item.merchantDomain,
                 productVariantId,
+                offerKey,
                 variantTitle: offer.variantTitle ?? item.variantTitle,
                 cartId: existingGroup?.cartId ?? item.cartId,
                 remoteCartId: existingGroup?.remoteCartId ?? item.remoteCartId,
@@ -193,6 +191,7 @@ export function useCartController(products: readonly Product[]) {
           merchantId: offer.merchantId,
           merchantDomain: offer.merchantDomain,
           productVariantId,
+          offerKey,
           variantTitle: offer.variantTitle,
           cartId: existingGroup?.cartId,
           remoteCartId: existingGroup?.remoteCartId,
@@ -211,12 +210,10 @@ export function useCartController(products: readonly Product[]) {
         snapshot = existingGroup?.cartId
           ? await updateCart({
               cartId: existingGroup.cartId,
-              addItems: [{ productVariantId, quantity: 1 }],
+              addItems: [{ offerKey, quantity: 1 }],
             })
           : await createCart({
-              merchantId: offer.merchantId,
-              merchantDomain: offer.merchantDomain,
-              addItems: [{ productVariantId, quantity: 1 }],
+              addItems: [{ offerKey, quantity: 1 }],
             })
       } catch (error) {
         if (!existingGroup?.cartId || !isCartNotFoundError(error)) {
@@ -224,9 +221,7 @@ export function useCartController(products: readonly Product[]) {
         }
         clearMerchantCartState(merchantKey)
         snapshot = await createCart({
-          merchantId: offer.merchantId,
-          merchantDomain: offer.merchantDomain,
-          addItems: cartAddItemsForMerchant(merchantKey, productVariantId),
+          addItems: cartAddItemsForMerchant(merchantKey, offerKey),
         })
       }
       updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))

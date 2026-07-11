@@ -25,6 +25,7 @@ class PackageOwnershipArchitectureTest {
     private static final Pattern PROVIDER_EXTENSION_IMPORT = Pattern.compile(
             "^import com\\.meant\\.api\\.plugin\\.catalog\\.extension\\.[^.]+\\..*"
     );
+    private static final Pattern SHOPIFY_LITERAL = Pattern.compile(".*\\\"SHOPIFY\\\".*");
 
     @Test
     void productionPackagesRespectPluginProviderAndModuleOwnership() throws IOException {
@@ -42,6 +43,14 @@ class PackageOwnershipArchitectureTest {
             if (relative.startsWith("com/meant/api/module/")) {
                 addMatchingImports(violations, relative, lines, MODULE_PROVIDER_IMPORT,
                         "module must not import provider");
+            }
+            if (isProviderNeutralCommerceModule(relative)) {
+                for (int index = 0; index < lines.size(); index++) {
+                    if (SHOPIFY_LITERAL.matcher(lines.get(index)).matches()) {
+                        violations.add(relative + ":" + (index + 1)
+                                + ": provider-neutral commerce module must not branch on Shopify");
+                    }
+                }
             }
             if (relative.startsWith("com/meant/api/provider/")) {
                 addMatchingImports(violations, relative, lines, PROVIDER_INTERNAL_MODULE_IMPORT,
@@ -97,6 +106,12 @@ class PackageOwnershipArchitectureTest {
         return relative.startsWith("com/meant/api/plugin/catalog/search/")
                 || relative.startsWith("com/meant/api/plugin/catalog/lookup/")
                 || relative.startsWith("com/meant/api/plugin/catalog/getproduct/");
+    }
+
+    private boolean isProviderNeutralCommerceModule(String relative) {
+        return relative.startsWith("com/meant/api/module/user/")
+                || relative.startsWith("com/meant/api/module/cart/")
+                || relative.startsWith("com/meant/api/module/catalog/");
     }
 
     private String sourceTypeName(String relative) {

@@ -128,6 +128,8 @@ shopify:
     request-deadline: 10s
     circuit-failure-threshold: 3
     circuit-open-duration: 30s
+  cart:
+    profile-freshness: 840h
   capability-readiness:
     authorization-tier: NONE
     granted-scopes: []
@@ -232,6 +234,9 @@ merchant:
     batch-size: 25
     fixed-delay: 60000
     retry-delay: 1d
+  ucp-profile-observation:
+    ttl: 10m
+    maximum-size: 500
   mcp-tool:
     connect-timeout-milliseconds: 5000
     read-timeout-milliseconds: 5000

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -27,6 +28,47 @@ import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(OutputCaptureExtension.class)
 class UcpMcpClientTest {
+
+    @Test
+    void jsonRpcErrorPayloadIsAbsentFromLogsAndException(CapturedOutput output) {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        String secret = "buyer-secret@example.test GIFT-CARD-999";
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andRespond(withSuccess("""
+                        {"jsonrpc":"2.0","id":1,"error":{"code":-32000,
+                        "message":"buyer-secret@example.test GIFT-CARD-999"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.callTool(
+                restClientBuilder.build(), URI.create("https://merchant.example/api/mcp"),
+                "create_checkout", Map.of("buyer", secret)))
+                .isInstanceOf(UcpMcpRemoteErrorException.class)
+                .hasMessage("MCP JSON-RPC response contained an error")
+                .hasMessageNotContaining(secret);
+        assertThat(output).contains("outcome=json_rpc_error").doesNotContain(secret);
+        server.verify();
+    }
+
+    @Test
+    void cancelSerializesStableUuidIdempotencyKeyInHeaderAndEnvelope() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        String key = "123e4567-e89b-12d3-a456-426614174000";
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(header("Idempotency-Key", key))
+                .andExpect(jsonPath("$.params.arguments.meta['idempotency-key']").value(key))
+                .andRespond(withSuccess("""
+                        {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"isError":false}}
+                        """, MediaType.APPLICATION_JSON));
+
+        client.callTool(restClientBuilder.build(), URI.create("https://merchant.example/api/mcp"),
+                "cancel_cart", Map.of("cart_id", "cart"), Map.of("Idempotency-Key", key));
+
+        server.verify();
+    }
 
     @Test
     void callToolSendsAgentProfileMetaAndExtractsStructuredContentNegotiation() {
@@ -160,7 +202,7 @@ class UcpMcpClientTest {
     }
 
     @Test
-    void callToolLogsCheckoutPayloadAndMerchantResponse(CapturedOutput output) {
+    void callToolLogsOnlySafeCheckoutExchangeMetadata(CapturedOutput output) {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
@@ -193,16 +235,17 @@ class UcpMcpClientTest {
         );
 
         assertThat(response.textContent()).contains("Cross-border checkout is not supported for this channel.");
-        assertThat(output).contains("UCP merchant tool response");
-        assertThat(output).contains("endpoint=https://merchant.example/api/mcp");
+        assertThat(output).contains("UCP merchant tool exchange");
+        assertThat(output).contains("endpointHost=merchant.example");
+        assertThat(output).contains("endpointPath=/api/mcp");
         assertThat(output).contains("tool=create_checkout");
-        assertThat(output).contains("cart_1");
-        assertThat(output).contains("Cross-border checkout is not supported for this channel.");
+        assertThat(output).contains("outcome=tool_error");
+        assertThat(output).doesNotContain("cart_1", "Cross-border checkout is not supported for this channel.");
         server.verify();
     }
 
     @Test
-    void callToolRedactsSensitiveCheckoutValuesFromLogs(CapturedOutput output) {
+    void callToolNeverSerializesSensitiveCheckoutValuesToLogs(CapturedOutput output) {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
@@ -234,7 +277,7 @@ class UcpMcpClientTest {
                 )
         );
 
-        assertThat(output).contains("[redacted]");
+        assertThat(output).contains("outcome=success");
         assertThat(output).doesNotContain(
                 "request-ec-secret",
                 "request-client-secret",
@@ -323,7 +366,7 @@ class UcpMcpClientTest {
                 Map.of()
         ))
                 .isInstanceOf(UcpMcpException.class)
-                .hasMessageContaining("Missing required arguments: checkout");
+                .hasMessage("MCP tool result was marked as error");
         server.verify();
     }
 

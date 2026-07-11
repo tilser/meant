@@ -150,6 +150,26 @@ public class MerchantMcpToolClient {
         );
     }
 
+    /** Executes one tool call against the provider's verified advertised endpoint with no candidate fallback. */
+    public MerchantMcpToolCallResult callToolExactEndpoint(
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers
+    ) {
+        String endpoint = provider.advertisedMcpEndpoint();
+        try {
+            URI endpointUri = merchantOutboundUrlValidator.validateOutboundUrl(endpoint);
+            UcpToolResponse response = ucpMcpClient.callTool(restClient, endpointUri, toolName, arguments, headers);
+            return new MerchantMcpToolCallResult(
+                    endpointUri.toString(), response.textContent(), response.structuredContent(),
+                    response.negotiatedCapabilities());
+        } catch (RestClientException | MerchantOutboundUrlException | UcpMcpException exception) {
+            logEndpointFailure(provider.domain(), "exact MCP tool " + toolName, exception);
+            throw new MerchantMcpToolException("Exact MCP tool " + toolName + " failed", exception);
+        }
+    }
+
     public MerchantMcpToolCallResult callToolReturningJsonToolErrors(
             MerchantCartProvider provider,
             String toolName,

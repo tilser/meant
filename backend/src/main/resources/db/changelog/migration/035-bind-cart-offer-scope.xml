@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="035-bind-cart-routing-scope" author="codex">
+        <dropNotNullConstraint tableName="cart" columnName="merchant_id" columnDataType="uuid"/>
+        <dropNotNullConstraint tableName="cart" columnName="merchant_domain" columnDataType="text"/>
+        <addColumn tableName="cart">
+            <column name="provider" type="text"/>
+            <column name="merchant_integration_id" type="uuid"/>
+            <column name="external_merchant_id" type="text"/>
+            <column name="routing_scope_key" type="text"/>
+        </addColumn>
+        <createIndex tableName="cart" indexName="idx_cart_user_routing_scope">
+            <column name="user_id"/>
+            <column name="routing_scope_key"/>
+        </createIndex>
+        <addForeignKeyConstraint
+                baseTableName="cart"
+                baseColumnNames="merchant_integration_id"
+                constraintName="fk_cart_merchant_integration"
+                referencedTableName="merchant_integration"
+                referencedColumnNames="id"/>
+    </changeSet>
+
+    <changeSet id="036-bind-cart-line-offer-identity" author="codex">
+        <addColumn tableName="cart_line">
+            <column name="provider" type="text"/>
+            <column name="merchant_integration_id" type="uuid"/>
+            <column name="external_merchant_id" type="text"/>
+            <column name="external_product_id" type="text"/>
+            <column name="external_variant_id" type="text"/>
+            <column name="offer_product_id" type="text"/>
+            <column name="offer_variant_id" type="text"/>
+            <column name="offer_key" type="text"/>
+            <column name="source_type" type="text"/>
+            <column name="source_identity" type="text"/>
+            <column name="selected_options_json" type="text"/>
+            <column name="components_json" type="text"/>
+            <column name="selling_plan_json" type="text"/>
+            <column name="selected_at" type="timestamp with time zone"/>
+        </addColumn>
+        <createIndex tableName="cart_line" indexName="idx_cart_line_offer_key">
+            <column name="offer_key"/>
+        </createIndex>
+        <addForeignKeyConstraint
+                baseTableName="cart_line"
+                baseColumnNames="merchant_integration_id"
+                constraintName="fk_cart_line_merchant_integration"
+                referencedTableName="merchant_integration"
+                referencedColumnNames="id"/>
+    </changeSet>
+
+    <changeSet id="037-enforce-cart-offer-binding-shapes" author="codex">
+        <sql>
+            ALTER TABLE cart
+            ADD CONSTRAINT ck_cart_legacy_or_bound_scope
+            CHECK (
+                (
+                    provider IS NULL AND routing_scope_key IS NULL
+                    AND merchant_integration_id IS NULL AND external_merchant_id IS NULL
+                    AND merchant_id IS NOT NULL AND merchant_domain IS NOT NULL
+                ) OR (
+                    provider IS NOT NULL AND routing_scope_key IS NOT NULL
+                    AND merchant_integration_id IS NOT NULL
+                    AND merchant_id IS NOT NULL AND merchant_domain IS NOT NULL
+                ) OR (
+                    provider IS NOT NULL AND routing_scope_key IS NOT NULL
+                    AND merchant_integration_id IS NULL AND merchant_id IS NULL
+                    AND external_merchant_id IS NOT NULL AND merchant_domain IS NOT NULL
+                )
+            )
+        </sql>
+        <sql>
+            ALTER TABLE cart_line
+            ADD CONSTRAINT ck_cart_line_offer_binding_shape
+            CHECK (
+                (
+                    offer_key IS NULL
+                    AND provider IS NULL AND merchant_integration_id IS NULL
+                    AND external_merchant_id IS NULL AND external_product_id IS NULL
+                    AND external_variant_id IS NULL AND offer_product_id IS NULL
+                    AND offer_variant_id IS NULL AND source_type IS NULL
+                    AND source_identity IS NULL AND selected_options_json IS NULL
+                    AND components_json IS NULL AND selling_plan_json IS NULL
+                    AND selected_at IS NULL
+                ) OR (
+                    offer_key IS NOT NULL AND provider IS NOT NULL
+                    AND (merchant_integration_id IS NOT NULL OR external_merchant_id IS NOT NULL)
+                    AND external_product_id IS NOT NULL AND offer_product_id IS NOT NULL
+                    AND source_type IS NOT NULL AND source_identity IS NOT NULL
+                    AND selected_options_json IS NOT NULL AND components_json IS NOT NULL
+                    AND selected_at IS NOT NULL
+                    AND ((external_variant_id IS NULL AND offer_variant_id IS NULL)
+                        OR (external_variant_id IS NOT NULL AND offer_variant_id IS NOT NULL))
+                )
+            )
+        </sql>
+    </changeSet>
+
+    <changeSet id="038-allow-observed-merchants-without-dataset-row" author="codex">
+        <dropNotNullConstraint
+                tableName="merchant_raw"
+                columnName="dataset_row_idx"
+                columnDataType="integer"/>
+    </changeSet>
+</databaseChangeLog>

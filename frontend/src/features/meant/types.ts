@@ -31,6 +31,7 @@ export interface Profile {
 }
 
 export interface Offer {
+  offerKey?: string | null
   merchant: string
   price: number
   priceMinorUnits?: number | null
@@ -154,6 +155,7 @@ export interface CartItem {
   merchantId?: string | null
   merchantDomain?: string | null
   productVariantId?: string | null
+  offerKey?: string | null
   variantTitle?: string | null
   cartId?: string | null
   remoteCartId?: string | null

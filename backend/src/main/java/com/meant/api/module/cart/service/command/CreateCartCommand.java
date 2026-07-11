@@ -15,7 +15,7 @@ public record CreateCartCommand(
         UUID merchantId,
         String merchantDomain,
         @NotEmpty
-        List<@Valid AddItem> addItems,
+        List<@NotNull @Valid AddItem> addItems,
         Map<String, Object> buyerIdentity,
         List<Map<String, Object>> deliveryAddressesToAdd,
         List<Map<String, Object>> deliveryAddressesToReplace,
@@ -27,7 +27,7 @@ public record CreateCartCommand(
 
     public record AddItem(
             @NotBlank
-            String productVariantId,
+            String offerKey,
             @Positive
             Integer quantity
     ) {

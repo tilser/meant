@@ -52,6 +52,7 @@ public class ShopifyCatalogReferenceMatcher {
         ExternalIdentifier variant = offer.externalVariantIdentity();
         if (!requested.discoverySource().equals(provenance.discoverySource())
                 || !requested.externalMerchantReference().equals(merchant)
+                || !Objects.equals(requested.externalMerchantDomain(), provenance.externalMerchantDomain())
                 || !requested.externalProductReference().equals(provenance.externalProductReference())
                 || !requested.externalVariantReference().equals(variant)
                 || !optionsMatch(requested.selectedOptions(), offer.selectedOptions())) {
@@ -63,6 +64,7 @@ public class ShopifyCatalogReferenceMatcher {
                 null,
                 null,
                 merchant,
+                provenance.externalMerchantDomain(),
                 provenance.externalProductReference(),
                 variant,
                 offer.selectedOptions()

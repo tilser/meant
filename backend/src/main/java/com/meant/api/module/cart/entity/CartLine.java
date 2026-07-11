@@ -59,6 +59,34 @@ public class CartLine {
 
     private String currency;
 
+    private String provider;
+
+    private UUID merchantIntegrationId;
+
+    private String externalMerchantId;
+
+    private String externalProductId;
+
+    private String externalVariantId;
+
+    private String offerProductId;
+
+    private String offerVariantId;
+
+    private String offerKey;
+
+    private String sourceType;
+
+    private String sourceIdentity;
+
+    private String selectedOptionsJson;
+
+    private String componentsJson;
+
+    private String sellingPlanJson;
+
+    private Instant selectedAt;
+
     @Column(nullable = false)
     private String rawLineResponse;
 
@@ -83,5 +111,41 @@ public class CartLine {
         this.currency = other.currency;
         this.rawLineResponse = other.rawLineResponse;
         this.updatedAt = other.updatedAt;
+        if (this.offerKey == null && other.offerKey != null) {
+            this.provider = other.provider;
+            this.merchantIntegrationId = other.merchantIntegrationId;
+            this.externalMerchantId = other.externalMerchantId;
+            this.externalProductId = other.externalProductId;
+            this.externalVariantId = other.externalVariantId;
+            this.offerProductId = other.offerProductId;
+            this.offerVariantId = other.offerVariantId;
+            this.offerKey = other.offerKey;
+            this.sourceType = other.sourceType;
+            this.sourceIdentity = other.sourceIdentity;
+            this.selectedOptionsJson = other.selectedOptionsJson;
+            this.componentsJson = other.componentsJson;
+            this.sellingPlanJson = other.sellingPlanJson;
+            this.selectedAt = other.selectedAt;
+        }
+    }
+
+    public void inheritOfferBinding(CartLine other) {
+        if (other.offerKey == null) {
+            throw new IllegalArgumentException("Cannot inherit an unbound cart line");
+        }
+        this.provider = other.provider;
+        this.merchantIntegrationId = other.merchantIntegrationId;
+        this.externalMerchantId = other.externalMerchantId;
+        this.externalProductId = other.externalProductId;
+        this.externalVariantId = other.externalVariantId;
+        this.offerProductId = other.offerProductId;
+        this.offerVariantId = other.offerVariantId;
+        this.offerKey = other.offerKey;
+        this.sourceType = other.sourceType;
+        this.sourceIdentity = other.sourceIdentity;
+        this.selectedOptionsJson = other.selectedOptionsJson;
+        this.componentsJson = other.componentsJson;
+        this.sellingPlanJson = other.sellingPlanJson;
+        this.selectedAt = other.selectedAt;
     }
 }

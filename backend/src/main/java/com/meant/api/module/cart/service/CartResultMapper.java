@@ -26,6 +26,10 @@ public class CartResultMapper {
         return CartResult.from(cart, deliveryGroups(response), messages(response));
     }
 
+    public CartResult from(Cart cart, UcpCartResponse currentResponse) {
+        return CartResult.from(cart, currentResponse, deliveryGroups(currentResponse), messages(currentResponse));
+    }
+
     private UcpCartResponse storedResponse(Cart cart) {
         String rawCartResponse = cart.getRawCartResponse();
         if (rawCartResponse == null || rawCartResponse.isBlank()) {

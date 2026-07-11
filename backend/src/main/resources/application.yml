@@ -159,6 +159,8 @@ shopify:
     request-deadline: ${SHOPIFY_GLOBAL_CATALOG_REQUEST_DEADLINE:10s}
     circuit-failure-threshold: ${SHOPIFY_GLOBAL_CATALOG_CIRCUIT_FAILURE_THRESHOLD:3}
     circuit-open-duration: ${SHOPIFY_GLOBAL_CATALOG_CIRCUIT_OPEN_DURATION:30s}
+  cart:
+    profile-freshness: ${SHOPIFY_CART_PROFILE_FRESHNESS:840h}
   capability-readiness:
     authorization-tier: ${SHOPIFY_AUTHORIZATION_TIER:NONE}
     granted-scopes: ${SHOPIFY_GRANTED_SCOPES:}
@@ -261,6 +263,9 @@ merchant:
     batch-size: ${MERCHANT_ENRICHMENT_BATCH_SIZE:50}
     fixed-delay: ${MERCHANT_ENRICHMENT_FIXED_DELAY:60000}
     retry-delay: ${MERCHANT_ENRICHMENT_RETRY_DELAY:1d}
+  ucp-profile-observation:
+    ttl: ${MERCHANT_UCP_PROFILE_OBSERVATION_TTL:10m}
+    maximum-size: ${MERCHANT_UCP_PROFILE_OBSERVATION_MAXIMUM_SIZE:500}
   mcp-tool:
     connect-timeout-milliseconds: ${MERCHANT_MCP_TOOL_CONNECT_TIMEOUT_MILLISECONDS:5000}
     read-timeout-milliseconds: ${MERCHANT_MCP_TOOL_READ_TIMEOUT_MILLISECONDS:5000}

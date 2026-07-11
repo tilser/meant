@@ -1,6 +1,7 @@
 package com.meant.api.module.cart.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
@@ -360,7 +361,19 @@ class CheckoutAssistantServiceTest {
         private CheckoutResult updatedCheckout;
 
         FakeCartService() {
-            super(null, null, null, null, null, null, null, null, null, null);
+            super(
+                    mock(com.meant.api.module.merchant.service.MerchantCartProviderLookupService.class),
+                    mock(CartBuyerContextService.class), mock(CartPersistenceService.class),
+                    mock(MerchantCartPluginDispatchService.class),
+                    mock(com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService.class),
+                    mock(com.meant.api.module.checkout.service.NativeCheckoutCompletionService.class),
+                    mock(com.meant.api.module.user.service.UserInventoryService.class),
+                    mock(CartResultMapper.class), mock(CheckoutResultMapper.class),
+                    mock(CartCheckoutConsentService.class),
+                    mock(com.meant.api.module.user.service.UserSelectedOfferResolutionService.class),
+                    mock(SelectedOfferCartRoutingService.class), mock(CartOfferRevalidationService.class),
+                    new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
+                    mock(com.meant.api.module.user.service.UserCommerceContextService.class));
         }
 
         @Override

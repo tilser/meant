@@ -5,9 +5,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 
 public record CartAddItemRequest(
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
-        String productVariantId,
+        @Schema(description = "Server-issued exact offer key from the authenticated user's live product session",
+                requiredMode = Schema.RequiredMode.REQUIRED)
+        String offerKey,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Positive
         Integer quantity

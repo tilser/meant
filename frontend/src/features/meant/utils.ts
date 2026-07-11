@@ -139,11 +139,11 @@ export function isCartNotFoundError(error: unknown): boolean {
 export function cartRebuildItems(
   items: readonly CartItem[],
   merchantKey: string,
-): { productVariantId: string; quantity: number }[] {
+): { offerKey: string; quantity: number }[] {
   return items
-    .filter((item) => cartMerchantKey(item) === merchantKey && item.productVariantId)
+    .filter((item) => cartMerchantKey(item) === merchantKey && item.offerKey)
     .map((item) => ({
-      productVariantId: item.productVariantId as string,
+      offerKey: item.offerKey as string,
       quantity: item.qty > 0 ? item.qty : 1,
     }))
 }

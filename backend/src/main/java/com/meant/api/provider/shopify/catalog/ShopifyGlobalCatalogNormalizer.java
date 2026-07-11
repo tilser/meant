@@ -111,6 +111,7 @@ public class ShopifyGlobalCatalogNormalizer {
                 discoverySource(),
                 null,
                 merchant,
+                merchantDomain(variant.seller().domain()),
                 provenanceProductIdentity,
                 variantIdentity,
                 new ResultFreshness(observedAt, null),
@@ -158,6 +159,27 @@ public class ShopifyGlobalCatalogNormalizer {
                 )),
                 offer
         );
+    }
+
+    private String merchantDomain(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String candidate = value.trim();
+        try {
+            java.net.URI uri = candidate.contains("://")
+                    ? java.net.URI.create(candidate)
+                    : java.net.URI.create("https://" + candidate);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
+                    || uri.getUserInfo() != null || uri.getPort() != -1
+                    || (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))
+                    || uri.getQuery() != null || uri.getFragment() != null) {
+                return null;
+            }
+            return java.net.IDN.toASCII(uri.getHost()).toLowerCase(java.util.Locale.ROOT);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private int calibratedProductRank(int productRank) {

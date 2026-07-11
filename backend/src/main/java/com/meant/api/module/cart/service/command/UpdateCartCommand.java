@@ -13,7 +13,7 @@ public record UpdateCartCommand(
         UUID cartId,
         @NotNull
         UUID userId,
-        List<@Valid AddItem> addItems,
+        List<@NotNull @Valid AddItem> addItems,
         List<@Valid UpdateItem> updateItems,
         List<UUID> removeCartLineIds,
         List<String> removeRemoteCartLineIds,
@@ -28,7 +28,7 @@ public record UpdateCartCommand(
 
     public record AddItem(
             @NotBlank
-            String productVariantId,
+            String offerKey,
             @Positive
             Integer quantity
     ) {

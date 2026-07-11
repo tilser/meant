@@ -80,9 +80,22 @@ public record CartToolArguments(
 
     private static List<LineItem> addLineItems(List<CartAddItem> addItems) {
         return safeList(addItems).stream()
-                .filter(item -> item != null && hasText(item.productVariantId()))
-                .map(item -> new LineItem(null, item.quantity(), new Item(item.productVariantId())))
+                .map(CartToolArguments::requireVariant)
+                .map(item -> new LineItem(null, item.quantity(), new Item(
+                        item.productVariantId(),
+                        item.productId(),
+                        item.selectedOptions(),
+                        item.components(),
+                        item.sellingPlan()
+                )))
                 .toList();
+    }
+
+    private static CartAddItem requireVariant(CartAddItem item) {
+        if (item == null || !hasText(item.productVariantId())) {
+            throw new IllegalArgumentException("Cart add item requires an exact variant id");
+        }
+        return item;
     }
 
     private static Discounts discounts(List<String> discountCodes) {
@@ -216,9 +229,17 @@ public record CartToolArguments(
     ) {
     }
 
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Item(
-            String id
+            String id,
+            @JsonProperty("product_id") String productId,
+            @JsonProperty("selected_options") List<CartAddItem.SelectedOption> selectedOptions,
+            List<CartAddItem.Component> components,
+            @JsonProperty("selling_plan") CartAddItem.SellingPlan sellingPlan
     ) {
+        public Item(String id) {
+            this(id, null, List.of(), List.of(), null);
+        }
     }
 
     public record Discounts(

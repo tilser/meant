@@ -14,6 +14,7 @@ import com.meant.api.module.cart.service.command.CreateCheckoutConsentCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CheckoutConsentResult;
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
@@ -23,6 +24,12 @@ import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.user.service.UserInventoryService;
+import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
+import com.meant.api.module.user.exception.SelectedOfferResolutionException;
+import com.meant.api.module.user.service.UserCommerceContextService;
+import com.meant.api.module.user.service.dto.UserCommerceContextResult;
+import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
+import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
 import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
@@ -56,6 +63,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -75,19 +84,29 @@ public class CartService {
     private final CartResultMapper cartResultMapper;
     private final CheckoutResultMapper checkoutResultMapper;
     private final CartCheckoutConsentService cartCheckoutConsentService;
+    private final UserSelectedOfferResolutionService selectedOfferResolutionService;
+    private final SelectedOfferCartRoutingService selectedOfferCartRoutingService;
+    private final CartOfferRevalidationService cartOfferRevalidationService;
+    private final CartBindingMetrics cartBindingMetrics;
+    private final UserCommerceContextService userCommerceContextService;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
-        MerchantCartProvider provider = findProvider(command.merchantId(), command.merchantDomain());
-        CreateCartRequest request = createCartRequest(command);
+        UserCommerceContextResult commerceContext = userCommerceContextService.find(command.userId());
+        ResolvedItems resolved = resolveCreate(command.userId(), command.addItems(), commerceContext);
+        validateExactVariantSelections(resolved.offers());
+        CartRoutingTarget target = routingTarget(resolved.offers());
+        validateUnambiguousConfigurations(List.of(), resolved.offers());
+        CreateCartRequest request = createCartRequest(command, resolved, commerceContext);
         UcpSession session = UcpSession.start();
-        UcpCartToolResult result = merchantCartPluginDispatchService.createCart(provider, request, session);
+        UcpCartToolResult result = merchantCartPluginDispatchService.createCart(target, request, session);
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
-                (UUID) null,
+                (Cart) null,
                 command.userId(),
-                provider,
+                target,
                 result,
-                request.giftCardCodes()
-        ));
+                request.giftCardCodes(),
+                resolved.offers()
+        ), result.response());
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
@@ -95,29 +114,40 @@ public class CartService {
         if (!query.refresh()) {
             return cartResultMapper.from(cart);
         }
-        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         UcpSession session = session(cart);
-        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
-                provider,
-                new GetCartRequest(cart.getRemoteCartId()),
-                session
-        );
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart, query.userId(), provider, result));
+        GetCartRequest request = new GetCartRequest(cart.getRemoteCartId());
+        CartRoutingTarget target = routingTarget(cart);
+        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(target, request, session);
+        return cartResultMapper.from(cartPersistenceService.saveSnapshot(cart, query.userId(), target, result, null,
+                List.of()), result.response());
     }
 
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
-        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        UpdateCartRequest request = updateCartRequest(cart, command);
+        UserCommerceContextResult commerceContext = userCommerceContextService.find(command.userId());
+        ResolvedItems resolved = resolveUpdate(command.userId(), command.addItems(), commerceContext);
+        validateExactVariantSelections(resolved.offers());
+        CartRoutingTarget target = routingTarget(cart);
+        cartOfferRevalidationService.revalidate(cart, commerceContext.countryCode());
+        if (!resolved.offers().isEmpty()
+                && !routingTarget(resolved.offers()).scopeKey().equals(target.scopeKey())) {
+            cartBindingMetrics.record(CartException.BindingFailure.CROSS_SCOPE_REPLAY);
+            throw CartException.binding(
+                    CartException.BindingFailure.CROSS_SCOPE_REPLAY,
+                    "Selected offer belongs to a different merchant/provider cart");
+        }
+        validateUnambiguousConfigurations(cart.getLines(), resolved.offers());
+        UpdateCartRequest request = updateCartRequest(cart, command, resolved, commerceContext);
         UcpSession session = session(cart);
-        UcpCartToolResult result = merchantCartPluginDispatchService.updateCart(provider, request, session);
+        UcpCartToolResult result = merchantCartPluginDispatchService.updateCart(target, request, session);
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
                 cart,
                 command.userId(),
-                provider,
+                target,
                 result,
-                request.giftCardCodes()
-        ));
+                request.giftCardCodes(),
+                resolved.offers()
+        ), result.response());
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
@@ -346,12 +376,9 @@ public class CartService {
 
     public void cancel(@NotNull @Valid CancelCartCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
-        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
-        merchantCartPluginDispatchService.cancelCart(
-                provider,
-                new CancelCartRequest(cart.getRemoteCartId()),
-                session(cart)
-        );
+        CancelCartRequest request = new CancelCartRequest(cart.getRemoteCartId());
+        CartRoutingTarget target = routingTarget(cart);
+        merchantCartPluginDispatchService.cancelCart(target, request, session(cart), cart.getId());
         cartPersistenceService.deactivate(cart.getId(), command.userId());
     }
 
@@ -371,13 +398,14 @@ public class CartService {
         return cartPersistenceService.findCart(cartId, userId);
     }
 
-    private CreateCartRequest createCartRequest(CreateCartCommand command) {
+    private CreateCartRequest createCartRequest(
+            CreateCartCommand command, ResolvedItems resolved, UserCommerceContextResult commerceContext) {
         return new CreateCartRequest(
-                safeList(command.addItems()).stream()
-                        .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
+                resolved.items().entrySet().stream()
+                        .map(entry -> cartAddItem(resolved.byKey().get(entry.getKey()), entry.getValue()))
                         .toList(),
                 command.buyerIdentity(),
-                cartBuyerContextService.buyerContext(command.userId()),
+                cartBuyerContextService.buyerContext(commerceContext),
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
                 safeList(command.selectedDeliveryOptions()),
@@ -654,7 +682,20 @@ public class CartService {
         );
     }
 
-    private UpdateCartRequest updateCartRequest(Cart cart, UpdateCartCommand command) {
+    private UpdateCartRequest updateCartRequest(
+            Cart cart, UpdateCartCommand command, ResolvedItems resolved,
+            UserCommerceContextResult commerceContext) {
+        return updateCartRequest(cart, command, resolved.items().entrySet().stream()
+                .map(entry -> cartAddItem(resolved.byKey().get(entry.getKey()), entry.getValue()))
+                .toList(), commerceContext);
+    }
+
+    private UpdateCartRequest updateCartRequest(
+            Cart cart,
+            UpdateCartCommand command,
+            List<CartAddItem> addItems,
+            UserCommerceContextResult commerceContext
+    ) {
         Map<UUID, CartLine> linesByLocalId = new HashMap<>();
         Map<String, CartLine> linesByRemoteId = new HashMap<>();
         cart.getLines().forEach(line -> {
@@ -665,16 +706,14 @@ public class CartService {
         List<CartUpdateItem> removeItems = removeItems(command, linesByLocalId, linesByRemoteId);
         return new UpdateCartRequest(
                 cart.getRemoteCartId(),
-                safeList(command.addItems()).stream()
-                        .map(item -> new CartAddItem(item.productVariantId(), item.quantity()))
-                        .toList(),
+                addItems,
                 safeList(command.updateItems()).stream()
                         .map(item -> cartUpdateItem(item, linesByLocalId, linesByRemoteId, remoteLineIdsByLocalId))
                         .toList(),
                 removeLineIds(removeItems),
                 removeItems,
                 command.buyerIdentity(),
-                cartBuyerContextService.buyerContext(command.userId()),
+                cartBuyerContextService.buyerContext(commerceContext),
                 safeList(command.deliveryAddressesToAdd()),
                 safeList(command.deliveryAddressesToReplace()),
                 safeList(command.selectedDeliveryOptions()),
@@ -682,6 +721,192 @@ public class CartService {
                 normalizeCodes(command.giftCardCodes()),
                 command.note()
         );
+    }
+
+    private ResolvedItems resolveCreate(
+            UUID userId, List<CreateCartCommand.AddItem> items, UserCommerceContextResult context) {
+        return resolve(userId, safeList(items).stream()
+                .map(item -> new SelectedOfferQuantity(item.offerKey(), item.quantity())).toList(), context);
+    }
+
+    private ResolvedItems resolveUpdate(
+            UUID userId, List<UpdateCartCommand.AddItem> items, UserCommerceContextResult context) {
+        return resolve(userId, safeList(items).stream()
+                .map(item -> new SelectedOfferQuantity(item.offerKey(), item.quantity())).toList(), context);
+    }
+
+    private ResolvedItems resolve(
+            UUID userId, List<SelectedOfferQuantity> rawItems, UserCommerceContextResult context) {
+        Map<String, Integer> quantities = new LinkedHashMap<>();
+        for (SelectedOfferQuantity rawItem : safeList(rawItems)) {
+                String offerKey = rawItem.offerKey();
+                Integer quantity = rawItem.quantity();
+                int normalizedQuantity = quantity == null ? 1 : quantity;
+                if (quantities.putIfAbsent(offerKey, normalizedQuantity) != null) {
+                    quantities.merge(offerKey, normalizedQuantity, Integer::sum);
+                    cartBindingMetrics.record(CartException.BindingFailure.IDEMPOTENT_REPLAY);
+                }
+        }
+        Map<String, ResolvedSelectedOffer> byKey = new LinkedHashMap<>();
+        List<String> offerKeys = List.copyOf(quantities.keySet());
+        if (offerKeys.isEmpty()) {
+            return new ResolvedItems(quantities, byKey);
+        }
+        List<ResolvedSelectedOffer> resolvedOffers = selectedOfferResolutionService.resolveAll(
+                new ResolveUserSelectedOffersQuery(userId, offerKeys, context.countryCode()));
+        if (resolvedOffers.size() != offerKeys.size()) {
+            cartBindingMetrics.record(CartException.BindingFailure.PROVIDER_FAILURE);
+            throw CartException.binding(
+                    CartException.BindingFailure.PROVIDER_FAILURE,
+                    "Selected offer resolution returned an incomplete result set");
+        }
+        java.util.stream.IntStream.range(0, offerKeys.size())
+                .forEach(index -> byKey.put(offerKeys.get(index), resolvedOffers.get(index)));
+        return new ResolvedItems(quantities, byKey);
+    }
+
+    private CartRoutingTarget routingTarget(List<ResolvedSelectedOffer> offers) {
+        if (offers.isEmpty()) {
+            throw new CartException("At least one selected offer is required");
+        }
+        Map<String, ResolvedSelectedOffer> uniqueRoutes = new LinkedHashMap<>();
+        offers.forEach(offer -> uniqueRoutes.putIfAbsent(routeSelectionKey(offer), offer));
+        List<CartRoutingTarget> targets = uniqueRoutes.values().stream()
+                .map(selectedOfferCartRoutingService::resolve)
+                .toList();
+        String scope = targets.getFirst().scopeKey();
+        if (targets.stream().anyMatch(target -> !scope.equals(target.scopeKey()))) {
+            cartBindingMetrics.record(CartException.BindingFailure.CROSS_SCOPE_REPLAY);
+            throw CartException.binding(
+                    CartException.BindingFailure.CROSS_SCOPE_REPLAY,
+                    "One remote cart cannot mix sellers or provider integrations");
+        }
+        return targets.getFirst();
+    }
+
+    private void validateExactVariantSelections(List<ResolvedSelectedOffer> offers) {
+        if (safeList(offers).stream().anyMatch(offer -> offer.identity().externalVariantIdentity() == null)) {
+            throw SelectedOfferResolutionException.rejected(
+                    SelectedOfferResolutionException.Failure.UNSUPPORTED_SELECTION,
+                    "Cart selections require an exact variant");
+        }
+    }
+
+    private String routeSelectionKey(ResolvedSelectedOffer offer) {
+        var local = offer.rehydratedReference().localRouting();
+        if (local != null) {
+            return offer.identity().provider().value() + ":integration:" + local.merchantIntegrationId();
+        }
+        var merchant = offer.identity().merchantScope().externalMerchantIdentity();
+        return offer.identity().provider().value() + ":merchant:" + (merchant == null ? "missing" : merchant.value());
+    }
+
+    private CartRoutingTarget routingTarget(Cart cart) {
+        if (!hasText(cart.getProvider()) || !hasText(cart.getRoutingScopeKey())
+                || cart.getRoutingScopeKey().startsWith("LEGACY:")) {
+            MerchantCartProvider legacy = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
+            return new CartRoutingTarget(
+                    "LEGACY:merchant:" + cart.getMerchantId(),
+                    MerchantIntegrationProvider.GENERIC_UCP,
+                    null,
+                    null,
+                    legacy
+            );
+        }
+        MerchantIntegrationProvider provider;
+        try {
+            provider = MerchantIntegrationProvider.valueOf(cart.getProvider());
+        } catch (IllegalArgumentException exception) {
+            throw CartException.rejected("Stored cart provider is unsupported");
+        }
+        if (cart.getMerchantIntegrationId() != null) {
+            return selectedOfferCartRoutingService.resolvePersisted(
+                    provider,
+                    cart.getMerchantIntegrationId(),
+                    cart.getExternalMerchantId(),
+                    cart.getRoutingScopeKey()
+            );
+        }
+        if (cart.getMerchantId() != null) {
+            throw CartException.binding(
+                    CartException.BindingFailure.MISSING_ROUTING,
+                    "Stored cart is missing its immutable provider integration"
+            );
+        }
+        CartRoutingTarget persistedTarget = new CartRoutingTarget(
+                cart.getRoutingScopeKey(), provider, cart.getMerchantIntegrationId(),
+                cart.getExternalMerchantId(), new MerchantCartProvider(
+                        null, cart.getMerchantDomain(), cart.getEndpoint(), null,
+                        List.of(), MerchantExecutionPolicy.unavailable()));
+        return selectedOfferCartRoutingService.resolvePersistedExternal(persistedTarget);
+    }
+
+    private CartAddItem cartAddItem(ResolvedSelectedOffer offer, Integer quantity) {
+        var identity = offer.identity();
+        return new CartAddItem(
+                identity.externalProductIdentity().value(),
+                identity.externalVariantIdentity() == null ? null : identity.externalVariantIdentity().value(),
+                identity.selectedOptions().stream()
+                        .map(option -> new CartAddItem.SelectedOption(option.group(), option.name(), option.value()))
+                        .toList(),
+                identity.components().stream()
+                        .map(component -> new CartAddItem.Component(
+                                component.externalProductIdentity().value(),
+                                component.externalVariantIdentity() == null
+                                        ? null : component.externalVariantIdentity().value(),
+                                component.quantity(),
+                                component.selectedOptions().stream()
+                                        .map(option -> new CartAddItem.SelectedOption(
+                                                option.group(), option.name(), option.value()))
+                                        .toList()
+                        ))
+                        .toList(),
+                identity.sellingPlanIdentity() == null ? null : new CartAddItem.SellingPlan(
+                        identity.sellingPlanIdentity().groupReference() == null
+                                ? null : identity.sellingPlanIdentity().groupReference().value(),
+                        identity.sellingPlanIdentity().planReference() == null
+                                ? null : identity.sellingPlanIdentity().planReference().value(),
+                        identity.sellingPlanIdentity().options().stream()
+                                .map(option -> new CartAddItem.Option(option.name(), option.value()))
+                                .toList()),
+                quantity
+        );
+    }
+
+    private record ResolvedItems(
+            Map<String, Integer> items,
+            Map<String, ResolvedSelectedOffer> byKey
+    ) {
+        private List<ResolvedSelectedOffer> offers() {
+            return List.copyOf(byKey.values());
+        }
+    }
+
+    private record SelectedOfferQuantity(String offerKey, Integer quantity) {
+    }
+
+    private void validateUnambiguousConfigurations(
+            List<CartLine> existingLines, List<ResolvedSelectedOffer> addedOffers) {
+        Map<String, java.util.Set<String>> offerKeysByVariant = new LinkedHashMap<>();
+        safeList(existingLines).stream()
+                .filter(line -> line.getOfferKey() != null && hasText(line.getExternalVariantId()))
+                .forEach(line -> offerKeysByVariant
+                        .computeIfAbsent(line.getExternalVariantId(), ignored -> new java.util.HashSet<>())
+                        .add(line.getOfferKey()));
+        safeList(addedOffers).forEach(offer -> {
+            String variant = offer.identity().externalVariantIdentity() == null
+                    ? null : offer.identity().externalVariantIdentity().value();
+            if (hasText(variant)) {
+                offerKeysByVariant.computeIfAbsent(variant, ignored -> new java.util.HashSet<>())
+                        .add(offer.offerKey());
+            }
+        });
+        if (offerKeysByVariant.values().stream().anyMatch(keys -> keys.size() > 1)) {
+            cartBindingMetrics.record(CartException.BindingFailure.IDENTITY_MISMATCH);
+            throw CartException.binding(
+                    CartException.BindingFailure.IDENTITY_MISMATCH,
+                    "Remote cart response cannot disambiguate multiple configurations of one variant");
+        }
     }
 
     private CartUpdateItem cartUpdateItem(

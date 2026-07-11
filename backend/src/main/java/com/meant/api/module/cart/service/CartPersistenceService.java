@@ -8,7 +8,9 @@ import com.meant.api.module.cart.entity.CartAppliedCode;
 import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.cart.common.support.UcpCartMoney;
@@ -19,10 +21,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
@@ -84,6 +88,30 @@ public class CartPersistenceService {
             UcpCartToolResult result,
             List<String> submittedGiftCardCodes
     ) {
+        return saveSnapshot(cart, userId, provider, result, submittedGiftCardCodes, null, List.of());
+    }
+
+    @Transactional
+    public Cart saveSnapshot(
+            Cart cart,
+            UUID userId,
+            CartRoutingTarget target,
+            UcpCartToolResult result,
+            List<String> submittedGiftCardCodes,
+            List<ResolvedSelectedOffer> addedOffers
+    ) {
+        return saveSnapshot(cart, userId, target.merchantProvider(), result, submittedGiftCardCodes, target, addedOffers);
+    }
+
+    private Cart saveSnapshot(
+            Cart cart,
+            UUID userId,
+            MerchantCartProvider provider,
+            UcpCartToolResult result,
+            List<String> submittedGiftCardCodes,
+            CartRoutingTarget target,
+            List<ResolvedSelectedOffer> addedOffers
+    ) {
         UcpCartResponse.Cart remoteCart = result.response().cart();
         Instant now = Instant.now();
         Cart persistedCart = cart == null
@@ -97,7 +125,14 @@ public class CartPersistenceService {
         if (cart != null) {
             validateWritableCart(persistedCart, userId);
         }
-        persistedCart.assignProvider(provider.merchantId(), provider.domain());
+        boolean identityOnly = target != null && !target.scopeKey().startsWith("LEGACY:");
+        if (!identityOnly) {
+            persistedCart.assignProvider(provider.merchantId(), provider.domain());
+        } else {
+            persistedCart.assignRoutingScope(
+                    target.provider().name(), target.merchantIntegrationId(), target.externalMerchantId(),
+                    target.scopeKey(), provider.merchantId(), provider.domain());
+        }
         String remoteCartId = required(remoteCart.id(), "Remote cart id is required");
         UcpCartResponse.Money totalAmount = remoteCart.cost() == null ? null : remoteCart.cost().totalAmount();
         UcpCartResponse.Money subtotalAmount = remoteCart.cost() == null ? null : remoteCart.cost().subtotalAmount();
@@ -105,30 +140,61 @@ public class CartPersistenceService {
         persistedCart.replaceSnapshot(
                 result.endpoint(),
                 remoteCartId,
-                hash(remoteCartId),
-                remoteCart.checkoutUrl(),
-                remoteCart.continueUrl(),
-                result.response().instructions(),
-                result.rawResponse(),
+                identityOnly ? scopedHash(target.scopeKey(), remoteCartId) : hash(remoteCartId),
+                identityOnly ? null : remoteCart.checkoutUrl(),
+                identityOnly ? null : remoteCart.continueUrl(),
+                identityOnly ? null : result.response().instructions(),
+                identityOnly ? "{}" : result.rawResponse(),
                 remoteCart.totalQuantity() == null ? totalQuantity(remoteCart.lines()) : remoteCart.totalQuantity(),
-                amount(totalAmount),
-                amount(subtotalAmount),
-                currency,
+                identityOnly ? null : amount(totalAmount),
+                identityOnly ? null : amount(subtotalAmount),
+                identityOnly ? null : currency,
                 remoteCart.createdAt(),
                 remoteCart.updatedAt(),
                 remoteCart.expiresAt(),
                 now
         );
-        persistedCart.replaceLines(safeNonNullList(remoteCart.lines()).stream()
-                .map(line -> toCartLine(line, now))
-                .toList());
-        persistedCart.replaceAppliedCodes(toAppliedCodes(
-                remoteCart,
-                currency,
-                submittedGiftCardCodes,
-                persistedCart.getAppliedCodes()
-        ));
+        Set<String> existingRemoteLineIds = persistedCart.getLines().stream()
+                .map(CartLine::getRemoteCartLineId)
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+        SnapshotBindings bindings = new SnapshotBindings(identityOnly ? addedOffers : List.of());
+        List<CartLine> replacementLines = new ArrayList<>();
+        for (UcpCartResponse.Line line : safeNonNullList(remoteCart.lines())) {
+            boolean existingRemoteLine = existingRemoteLineIds.contains(line.id());
+            ResolvedSelectedOffer selectedOffer = existingRemoteLine ? null : bindings.take(line);
+            CartLine replacement = toCartLine(
+                    line,
+                    now,
+                    selectedOffer,
+                    identityOnly,
+                    identityOnly ? target.merchantIntegrationId() : null
+            );
+            if (identityOnly && selectedOffer == null) {
+                inheritExistingBinding(persistedCart, replacement, existingRemoteLine);
+            }
+            replacementLines.add(replacement);
+        }
+        persistedCart.replaceLines(replacementLines);
+        bindings.requireConsumed();
+        persistedCart.replaceAppliedCodes(identityOnly ? List.of() : toAppliedCodes(
+                remoteCart, currency, submittedGiftCardCodes, persistedCart.getAppliedCodes()));
         return cartRepository.save(persistedCart);
+    }
+
+    private void inheritExistingBinding(Cart cart, CartLine replacement, boolean sameRemoteLineId) {
+        List<CartLine> candidates = cart.getLines().stream()
+                .filter(line -> line.getOfferKey() != null)
+                .filter(line -> sameRemoteLineId
+                        ? line.getRemoteCartLineId().equals(replacement.getRemoteCartLineId())
+                        : line.getProductVariantId().equals(replacement.getProductVariantId()))
+                .toList();
+        if (candidates.size() != 1) {
+            throw CartException.binding(
+                    CartException.BindingFailure.IDENTITY_MISMATCH,
+                    "Remote cart line could not be matched to exactly one selected offer"
+            );
+        }
+        replacement.inheritOfferBinding(candidates.getFirst());
     }
 
     @Transactional
@@ -167,24 +233,56 @@ public class CartPersistenceService {
     }
 
     private CartLine toCartLine(UcpCartResponse.Line line, Instant now) {
+        return toCartLine(line, now, null, false, null);
+    }
+
+    private CartLine toCartLine(
+            UcpCartResponse.Line line,
+            Instant now,
+            ResolvedSelectedOffer selectedOffer,
+            boolean identityOnly,
+            UUID merchantIntegrationId
+    ) {
         UcpCartResponse.Merchandise merchandise = line.merchandise();
         UcpCartResponse.Product product = merchandise == null ? null : merchandise.product();
         UcpCartResponse.Money totalAmount = line.cost() == null ? null : line.cost().totalAmount();
         UcpCartResponse.Money subtotalAmount = line.cost() == null ? null : line.cost().subtotalAmount();
-        return CartLine.builder()
+        CartLine.CartLineBuilder builder = CartLine.builder()
                 .remoteCartLineId(required(line.id(), "Remote cart line id is required"))
-                .productId(product == null ? null : product.id())
-                .productTitle(product == null ? null : product.title())
+                .productId(identityOnly ? null : product == null ? null : product.id())
+                .productTitle(identityOnly ? null : product == null ? null : product.title())
                 .productVariantId(required(merchandise == null ? null : merchandise.id(), "Product variant id is required"))
-                .variantTitle(merchandise == null ? null : merchandise.title())
+                .variantTitle(identityOnly ? null : merchandise == null ? null : merchandise.title())
                 .quantity(line.quantity() == null ? 0 : line.quantity())
-                .totalAmount(amount(totalAmount))
-                .subtotalAmount(amount(subtotalAmount))
-                .currency(currency(totalAmount, subtotalAmount))
-                .rawLineResponse(toJson(line))
+                .totalAmount(identityOnly ? null : amount(totalAmount))
+                .subtotalAmount(identityOnly ? null : amount(subtotalAmount))
+                .currency(identityOnly ? null : currency(totalAmount, subtotalAmount))
+                .rawLineResponse(identityOnly ? "{}" : toJson(line))
                 .createdAt(now)
-                .updatedAt(now)
-                .build();
+                .updatedAt(now);
+        if (selectedOffer != null) {
+            var identity = selectedOffer.identity();
+            var merchant = identity.merchantScope().externalMerchantIdentity();
+            var source = selectedOffer.provenance().discoverySource();
+            builder.provider(identity.provider().value())
+                    .merchantIntegrationId(merchantIntegrationId)
+                    .externalMerchantId(merchant == null ? null : merchant.value())
+                    .externalProductId(selectedOffer.provenance().externalProductReference().value())
+                    .externalVariantId(selectedOffer.provenance().externalVariantReference() == null
+                            ? null : selectedOffer.provenance().externalVariantReference().value())
+                    .offerProductId(identity.externalProductIdentity().value())
+                    .offerVariantId(identity.externalVariantIdentity() == null
+                            ? null : identity.externalVariantIdentity().value())
+                    .offerKey(selectedOffer.offerKey())
+                    .sourceType(source.type().name())
+                    .sourceIdentity(source.value())
+                    .selectedOptionsJson(toJson(identity.selectedOptions()))
+                    .componentsJson(toJson(identity.components()))
+                    .sellingPlanJson(identity.sellingPlanIdentity() == null
+                            ? null : toJson(identity.sellingPlanIdentity()))
+                    .selectedAt(now);
+        }
+        return builder.build();
     }
 
     private List<CartAppliedCode> toAppliedCodes(
@@ -351,6 +449,23 @@ public class CartPersistenceService {
         }
     }
 
+    private String scopedHash(String scope, String remoteCartId) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateLengthPrefixed(digest, scope);
+            updateLengthPrefixed(digest, remoteCartId);
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException exception) {
+            throw new CartException("SHA-256 hash algorithm is unavailable", exception);
+        }
+    }
+
+    private void updateLengthPrefixed(MessageDigest digest, String value) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        digest.update(java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+        digest.update(bytes);
+    }
+
     private record AppliedCodeValue(
             CartAppliedCodeType type,
             String code,
@@ -394,6 +509,34 @@ public class CartPersistenceService {
 
         private static <T> T firstPresent(T first, T second) {
             return first == null ? second : first;
+        }
+    }
+
+    private static final class SnapshotBindings {
+        private final java.util.Map<String, ResolvedSelectedOffer> remaining;
+
+        private SnapshotBindings(List<ResolvedSelectedOffer> offers) {
+            this.remaining = new java.util.LinkedHashMap<>();
+            for (ResolvedSelectedOffer offer : offers == null ? List.<ResolvedSelectedOffer>of() : offers) {
+                String variant = offer.identity().externalVariantIdentity() == null
+                        ? null : offer.identity().externalVariantIdentity().value();
+                if (variant == null || remaining.putIfAbsent(variant, offer) != null) {
+                    throw CartException.binding(
+                            CartException.BindingFailure.IDENTITY_MISMATCH,
+                            "Selected offers cannot be disambiguated by the remote cart response");
+                }
+            }
+        }
+
+        private ResolvedSelectedOffer take(UcpCartResponse.Line line) {
+            String variantId = line.merchandise() == null ? null : line.merchandise().id();
+            return variantId == null ? null : remaining.remove(variantId);
+        }
+
+        private void requireConsumed() {
+            if (!remaining.isEmpty()) {
+                throw CartException.upstream("Remote cart response did not preserve selected offer identity");
+            }
         }
     }
 

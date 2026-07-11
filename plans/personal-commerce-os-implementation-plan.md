@@ -471,6 +471,7 @@ Make cross-merchant grouping understandable and trustworthy instead of presentin
 
 Priority: P0  
 Dependencies: PCOS-003, PCOS-011  
+Implementation status: Complete
 
 **Goal**
 

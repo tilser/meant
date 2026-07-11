@@ -8,6 +8,8 @@ import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting;
 import java.util.Optional;
+import java.net.IDN;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,22 @@ public class MerchantCartProviderLookupService {
                 .map(this::toProvider);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<MerchantCartProvider> findActiveByCanonicalDomain(String merchantDomain) {
+        if (merchantDomain == null || merchantDomain.isBlank()) {
+            return Optional.empty();
+        }
+        return merchantRepository.findByDomainAndActiveTrue(normalizeDomain(merchantDomain)).map(this::toProvider);
+    }
+
+    private String normalizeDomain(String domain) {
+        String normalized = IDN.toASCII(domain.trim().toLowerCase(Locale.ROOT));
+        while (normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.startsWith("www.") ? normalized.substring(4) : normalized;
+    }
+
     private MerchantCartProvider toProvider(Merchant merchant) {
         var integrations = merchantIntegrationRepository.findByMerchantIdOrderByCreatedAtAsc(merchant.getId());
         Set<String> advertisedCapabilities = merchantCapabilityRepository.findNamesByMerchantId(merchant.getId());
@@ -63,7 +81,9 @@ public class MerchantCartProviderLookupService {
                                 integration.getEndpoint()
                         ))
                         .toList(),
-                executionPolicy
+                executionPolicy,
+                merchant.getProfileCapturedAt(),
+                advertisedCapabilities
         );
     }
 }

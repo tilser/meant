@@ -2,7 +2,9 @@ package com.meant.api.module.merchant.service.dto;
 
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.time.Instant;
 
 public record MerchantCartProvider(
         UUID merchantId,
@@ -10,12 +12,40 @@ public record MerchantCartProvider(
         String advertisedMcpEndpoint,
         String profileMcpEndpoint,
         List<MerchantIntegrationRouting> integrations,
-        MerchantExecutionPolicy executionPolicy
+        MerchantExecutionPolicy executionPolicy,
+        Instant profileCapturedAt,
+        Set<String> advertisedCapabilities
 ) {
 
     public MerchantCartProvider {
         integrations = integrations == null ? List.of() : List.copyOf(integrations);
         executionPolicy = executionPolicy == null ? MerchantExecutionPolicy.unavailable() : executionPolicy;
+        advertisedCapabilities = advertisedCapabilities == null ? Set.of() : Set.copyOf(advertisedCapabilities);
+    }
+
+    public MerchantCartProvider(
+            UUID merchantId,
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint,
+            List<MerchantIntegrationRouting> integrations,
+            MerchantExecutionPolicy executionPolicy,
+            Instant profileCapturedAt
+    ) {
+        this(merchantId, domain, advertisedMcpEndpoint, profileMcpEndpoint, integrations, executionPolicy,
+                profileCapturedAt, Set.of());
+    }
+
+    public MerchantCartProvider(
+            UUID merchantId,
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint,
+            List<MerchantIntegrationRouting> integrations,
+            MerchantExecutionPolicy executionPolicy
+    ) {
+        this(merchantId, domain, advertisedMcpEndpoint, profileMcpEndpoint, integrations, executionPolicy, null,
+                Set.of());
     }
 
     public MerchantCartProvider(
@@ -30,7 +60,9 @@ public record MerchantCartProvider(
                 advertisedMcpEndpoint,
                 profileMcpEndpoint,
                 List.of(),
-                MerchantExecutionPolicy.unavailable()
+                MerchantExecutionPolicy.unavailable(),
+                null,
+                Set.of()
         );
     }
 
@@ -52,7 +84,9 @@ public record MerchantCartProvider(
                 advertisedMcpEndpoint,
                 profileMcpEndpoint,
                 List.of(),
-                MerchantExecutionPolicy.legacyNativeCheckout(nativeCheckoutEnabled)
+                MerchantExecutionPolicy.legacyNativeCheckout(nativeCheckoutEnabled),
+                null,
+                Set.of()
         );
     }
 
@@ -76,7 +110,9 @@ public record MerchantCartProvider(
                 advertisedMcpEndpoint(operation),
                 profileMcpEndpoint,
                 integrations,
-                executionPolicy
+                executionPolicy,
+                profileCapturedAt,
+                advertisedCapabilities
         );
     }
 

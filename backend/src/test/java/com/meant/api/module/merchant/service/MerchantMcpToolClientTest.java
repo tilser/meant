@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.properties.MerchantMcpToolProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
+import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.plugin.transport.client.UcpMcpClient;
 import com.meant.api.plugin.transport.profile.AgentIdentity;
@@ -268,6 +269,26 @@ class MerchantMcpToolClientTest {
 
         assertThat(result.endpoint()).isEqualTo("https://advertised.example/api/ucp/mcp");
         assertThat(result.contentText()).isEqualTo("{\"ok\":true}");
+        server.verify();
+    }
+
+    @Test
+    void exactEndpointCallNeverFansOutAfterFailure() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
+        server.expect(requestTo("https://merchant.example/exact-mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.GATEWAY_TIMEOUT));
+        MerchantCartProvider provider = new MerchantCartProvider(
+                UUID.randomUUID(), "merchant.example", "https://merchant.example/exact-mcp",
+                "https://merchant.example/profile-mcp");
+
+        assertThatThrownBy(() -> client.callToolExactEndpoint(
+                provider, "create_cart", Map.of(), Map.of()))
+                .isInstanceOf(MerchantMcpToolException.class)
+                .hasMessageContaining("Exact MCP tool create_cart failed");
+
         server.verify();
     }
 

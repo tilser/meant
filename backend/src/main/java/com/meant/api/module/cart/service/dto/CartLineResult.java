@@ -1,6 +1,8 @@
 package com.meant.api.module.cart.service.dto;
 
 import com.meant.api.module.cart.entity.CartLine;
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
+import com.meant.api.plugin.cart.common.support.UcpCartMoney;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -15,22 +17,40 @@ public record CartLineResult(
         String totalAmount,
         String subtotalAmount,
         String currency,
+        String offerKey,
+        String provider,
+        UUID merchantIntegrationId,
+        String externalMerchantId,
         Instant createdAt,
         Instant updatedAt
 ) {
 
     public static CartLineResult from(CartLine line) {
+        return from(line, null);
+    }
+
+    public static CartLineResult from(CartLine line, UcpCartResponse.Line currentLine) {
+        UcpCartResponse.Merchandise merchandise = currentLine == null ? null : currentLine.merchandise();
+        UcpCartResponse.Product product = merchandise == null ? null : merchandise.product();
+        UcpCartResponse.Money total = currentLine == null || currentLine.cost() == null
+                ? null : currentLine.cost().totalAmount();
+        UcpCartResponse.Money subtotal = currentLine == null || currentLine.cost() == null
+                ? null : currentLine.cost().subtotalAmount();
         return new CartLineResult(
                 line.getId(),
                 line.getRemoteCartLineId(),
-                line.getProductId(),
-                line.getProductTitle(),
+                currentLine == null ? line.getProductId() : product == null ? null : product.id(),
+                currentLine == null ? line.getProductTitle() : product == null ? null : product.title(),
                 line.getProductVariantId(),
-                line.getVariantTitle(),
-                line.getQuantity(),
-                line.getTotalAmount(),
-                line.getSubtotalAmount(),
-                line.getCurrency(),
+                currentLine == null ? line.getVariantTitle() : merchandise == null ? null : merchandise.title(),
+                currentLine == null || currentLine.quantity() == null ? line.getQuantity() : currentLine.quantity(),
+                currentLine == null ? line.getTotalAmount() : UcpCartMoney.displayAmount(total),
+                currentLine == null ? line.getSubtotalAmount() : UcpCartMoney.displayAmount(subtotal),
+                currentLine == null ? line.getCurrency() : UcpCartMoney.currency(total, subtotal, line.getCurrency()),
+                line.getOfferKey(),
+                line.getProvider(),
+                line.getMerchantIntegrationId(),
+                line.getExternalMerchantId(),
                 line.getCreatedAt(),
                 line.getUpdatedAt()
         );

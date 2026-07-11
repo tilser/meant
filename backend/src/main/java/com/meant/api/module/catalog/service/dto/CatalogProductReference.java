@@ -11,6 +11,7 @@ public record CatalogProductReference(
         UUID localMerchantId,
         LocalMerchantRouting localRouting,
         ExternalIdentifier externalMerchantReference,
+        String externalMerchantDomain,
         ExternalIdentifier externalProductReference,
         ExternalIdentifier externalVariantReference,
         List<ProductAttribute> selectedOptions
@@ -32,6 +33,22 @@ public record CatalogProductReference(
         requireProviderReference(externalMerchantReference, ExternalIdentifierType.MERCHANT, discoverySource, false);
         requireProviderReference(externalProductReference, ExternalIdentifierType.PRODUCT, discoverySource, true);
         requireProviderReference(externalVariantReference, ExternalIdentifierType.VARIANT, discoverySource, false);
+        externalMerchantDomain = externalMerchantDomain == null
+                ? null : externalMerchantDomain.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    public CatalogProductReference(
+            String interactionKey,
+            DiscoverySourceIdentity discoverySource,
+            UUID localMerchantId,
+            LocalMerchantRouting localRouting,
+            ExternalIdentifier externalMerchantReference,
+            ExternalIdentifier externalProductReference,
+            ExternalIdentifier externalVariantReference,
+            List<ProductAttribute> selectedOptions
+    ) {
+        this(interactionKey, discoverySource, localMerchantId, localRouting, externalMerchantReference, null,
+                externalProductReference, externalVariantReference, selectedOptions);
     }
 
     public static CatalogProductReference from(String interactionKey, ResultProvenance provenance) {
@@ -41,6 +58,7 @@ public record CatalogProductReference(
                 null,
                 provenance.localRouting(),
                 provenance.externalMerchantReference(),
+                provenance.externalMerchantDomain(),
                 provenance.externalProductReference(),
                 provenance.externalVariantReference(),
                 List.of()

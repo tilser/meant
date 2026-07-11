@@ -18,6 +18,28 @@ import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
+import com.meant.api.module.cart.service.CartOfferRevalidationService;
+import com.meant.api.module.cart.service.SelectedOfferCartRoutingService;
+import com.meant.api.module.cart.service.CartBindingMetrics;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
+import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
+import com.meant.api.module.user.service.query.ResolveUserSelectedOfferQuery;
+import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
+import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.OfferIdentity;
+import com.meant.api.module.catalog.service.dto.OfferMerchantScope;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.ResultFreshness;
+import com.meant.api.module.catalog.service.dto.ResultProvenance;
+import com.meant.api.module.catalog.service.dto.ResultSourceReference;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
@@ -33,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,8 +70,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class CartControllerIT extends PostgresIntegrationTestSupport {
@@ -96,6 +121,50 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
+    void openApiCartContractExposesOnlyServerIssuedOfferSelection() throws JacksonException {
+        String document = client.get().uri("/v3/api-docs")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+        JsonNode schemas = new ObjectMapper().readTree(document).path("components").path("schemas");
+        JsonNode createProperties = schemas.path("CartCreateRequest").path("properties");
+        JsonNode addProperties = schemas.path("CartAddItemRequest").path("properties");
+        JsonNode cartRequired = schemas.path("CartResponse").path("required");
+        JsonNode lineRequired = schemas.path("CartLineResponse").path("required");
+
+        assertThat(createProperties.has("merchantId")).isFalse();
+        assertThat(createProperties.has("merchantDomain")).isFalse();
+        assertThat(addProperties.has("offerKey")).isTrue();
+        assertThat(addProperties.has("productVariantId")).isFalse();
+        assertThat(cartRequired.toString()).doesNotContain(
+                "checkoutUrl", "totalAmount", "subtotalAmount", "currency", "expiresAt");
+        assertThat(lineRequired.toString()).doesNotContain(
+                "productTitle", "variantTitle", "totalAmount", "subtotalAmount", "currency");
+    }
+
+    @Test
+    void nullAddItemIsRejectedAtTheHttpBoundary() {
+        client.post().uri("/api/carts")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(UUID.randomUUID()));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "addItems": [null],
+                          "discountCodes": [],
+                          "giftCardCodes": []
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        assertThat(cartDispatchService.createCount()).isZero();
+    }
+
+    @Test
     void ownerCanReadUpdateAndCheckoutCart() {
         UUID userId = UUID.randomUUID();
         Merchant merchant = saveMerchant();
@@ -121,12 +190,12 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                         {
                           "addItems": [
                             {
-                              "productVariantId": "gid://shopify/ProductVariant/2",
+                              "offerKey": "%s|gid://shopify/ProductVariant/2",
                               "quantity": 1
                             }
                           ]
                         }
-                        """)
+                        """.formatted(merchant.getId()))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(CartResponse.class)
@@ -168,6 +237,37 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
+    void clientSuppliedRoutingCommercialAndVariantFieldsAreNonAuthoritative() {
+        UUID userId = UUID.randomUUID();
+        Merchant merchant = saveMerchant();
+        String selectedVariant = "gid://shopify/ProductVariant/server-selected";
+
+        client.post().uri("/api/carts")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(userId));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "merchantId": "%s",
+                          "endpoint": "https://attacker.example/mcp",
+                          "price": "0.01",
+                          "currency": "XXX",
+                          "addItems": [{
+                            "offerKey": "%s|%s",
+                            "productVariantId": "attacker-variant",
+                            "selectedOptions": [{"name":"Color","value":"Tampered"}],
+                            "quantity": 1
+                          }]
+                        }
+                        """.formatted(UUID.randomUUID(), merchant.getId(), selectedVariant))
+                .exchange()
+                .expectStatus().isOk();
+
+        assertThat(cartDispatchService.lastCreatedVariant()).isEqualTo(selectedVariant);
+    }
+
+    @Test
     void nonOwnerCannotReadUpdateOrCheckoutCart() {
         UUID ownerId = UUID.randomUUID();
         UUID otherUserId = UUID.randomUUID();
@@ -188,12 +288,12 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                         {
                           "addItems": [
                             {
-                              "productVariantId": "gid://shopify/ProductVariant/2",
+                              "offerKey": "%s|gid://shopify/ProductVariant/2",
                               "quantity": 1
                             }
                           ]
                         }
-                        """)
+                        """.formatted(merchant.getId()))
                 .exchange()
                 .expectStatus().isNotFound();
 
@@ -228,10 +328,9 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
     private String createCartBody(UUID merchantId) {
         return """
                 {
-                  "merchantId": "%s",
                   "addItems": [
                     {
-                      "productVariantId": "gid://shopify/ProductVariant/1",
+                      "offerKey": "%s|gid://shopify/ProductVariant/1",
                       "quantity": 1
                     }
                   ]
@@ -328,6 +427,27 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         FakeCheckoutDispatchService testCheckoutDispatchService() {
             return new FakeCheckoutDispatchService();
         }
+
+        @Bean
+        @Primary
+        FakeSelectedOfferResolutionService testSelectedOfferResolutionService() {
+            return new FakeSelectedOfferResolutionService();
+        }
+
+        @Bean
+        @Primary
+        FakeSelectedOfferCartRoutingService testSelectedOfferCartRoutingService(
+                MerchantCartProviderLookupService providerLookupService,
+                CartBindingMetrics metrics
+        ) {
+            return new FakeSelectedOfferCartRoutingService(providerLookupService, metrics);
+        }
+
+        @Bean
+        @Primary
+        FakeCartOfferRevalidationService testCartOfferRevalidationService(CartBindingMetrics metrics) {
+            return new FakeCartOfferRevalidationService(metrics);
+        }
     }
 
     static class FakeCartDispatchService extends MerchantCartPluginDispatchService {
@@ -337,9 +457,13 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         private final AtomicInteger getCount = new AtomicInteger();
         private final AtomicInteger cancelCount = new AtomicInteger();
         private final AtomicInteger cartSequence = new AtomicInteger();
+        private final AtomicReference<String> lastCreatedVariant = new AtomicReference<>();
 
         FakeCartDispatchService() {
-            super(null, null, null);
+            super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.transport.registry.CapabilityRegistry.class),
+                    new tools.jackson.databind.ObjectMapper(), List.of(),
+                    new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         }
 
         void reset() {
@@ -347,6 +471,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             updateCount.set(0);
             getCount.set(0);
             cancelCount.set(0);
+            lastCreatedVariant.set(null);
         }
 
         int createCount() {
@@ -365,6 +490,47 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             return cancelCount.get();
         }
 
+        String lastCreatedVariant() {
+            return lastCreatedVariant.get();
+        }
+
+        @Override
+        public UcpCartToolResult createCart(
+                CartRoutingTarget target,
+                CreateCartRequest request,
+                UcpSession session
+        ) {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            createCount.incrementAndGet();
+            lastCreatedVariant.set(request.addItems().getFirst().productVariantId());
+            return cartToolResult(request.addItems().getFirst().productVariantId());
+        }
+
+        @Override
+        public UcpCartToolResult updateCart(
+                CartRoutingTarget target,
+                UpdateCartRequest request,
+                UcpSession session
+        ) {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            updateCount.incrementAndGet();
+            return cartToolResult(request.addItems().isEmpty()
+                    ? "gid://shopify/ProductVariant/1"
+                    : request.addItems().getFirst().productVariantId());
+        }
+
+        @Override
+        public CancelCartResponse cancelCart(
+                CartRoutingTarget target,
+                CancelCartRequest request,
+                UcpSession session,
+                UUID idempotencyKey
+        ) {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            cancelCount.incrementAndGet();
+            return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
+        }
+
         @Override
         public UcpCartToolResult createCart(
                 MerchantCartProvider provider,
@@ -372,7 +538,8 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 UcpSession session
         ) {
             createCount.incrementAndGet();
-            return cartToolResult();
+            lastCreatedVariant.set(request.addItems().getFirst().productVariantId());
+            return cartToolResult(request.addItems().getFirst().productVariantId());
         }
 
         @Override
@@ -382,7 +549,9 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 UcpSession session
         ) {
             updateCount.incrementAndGet();
-            return cartToolResult();
+            return cartToolResult(request.addItems().isEmpty()
+                    ? "gid://shopify/ProductVariant/1"
+                    : request.addItems().getFirst().productVariantId());
         }
 
         @Override
@@ -392,7 +561,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 UcpSession session
         ) {
             getCount.incrementAndGet();
-            return cartToolResult();
+            return cartToolResult("gid://shopify/ProductVariant/1");
         }
 
         @Override
@@ -405,7 +574,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             return new CancelCartResponse(request.cartId(), "canceled", true, List.of(), List.of());
         }
 
-        private UcpCartToolResult cartToolResult() {
+        private UcpCartToolResult cartToolResult(String variantId) {
             int sequence = cartSequence.incrementAndGet();
             UcpCartResponse response = new UcpCartResponse(
                     "Checkout when ready",
@@ -414,7 +583,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                             Instant.parse("2026-06-16T11:05:00Z"),
                             Instant.parse("2026-06-16T11:05:01Z"),
                             null,
-                            List.of(cartLine(sequence)),
+                            List.of(cartLine(sequence, variantId)),
                             new UcpCartResponse.Cost(
                                     new UcpCartResponse.Money("14.95", "USD"),
                                     new UcpCartResponse.Money("14.95", "USD")
@@ -440,7 +609,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             );
         }
 
-        private UcpCartResponse.Line cartLine(int sequence) {
+        private UcpCartResponse.Line cartLine(int sequence, String variantId) {
             return new UcpCartResponse.Line(
                     "gid://shopify/CartLine/" + sequence,
                     1,
@@ -449,7 +618,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                             new UcpCartResponse.Money("14.95", "USD")
                     ),
                     new UcpCartResponse.Merchandise(
-                            "gid://shopify/ProductVariant/" + sequence,
+                            variantId,
                             "3x6",
                             new UcpCartResponse.Product("gid://shopify/Product/" + sequence, "Candle")
                     )
@@ -497,6 +666,79 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             } catch (JacksonException exception) {
                 throw new AssertionError(exception);
             }
+        }
+    }
+
+    static class FakeSelectedOfferResolutionService extends UserSelectedOfferResolutionService {
+        FakeSelectedOfferResolutionService() {
+            super(null, null, null);
+        }
+
+        @Override
+        public ResolvedSelectedOffer resolve(ResolveUserSelectedOfferQuery query) {
+            String[] parts = query.offerKey().split("\\|", 2);
+            UUID merchantId = UUID.fromString(parts[0]);
+            String variantId = parts[1];
+            ProviderIdentity provider = new ProviderIdentity("GENERIC_UCP");
+            ExternalIdentifier product = new ExternalIdentifier(
+                    ExternalIdentifierType.PRODUCT, provider.value(), "product:" + variantId);
+            ExternalIdentifier variant = new ExternalIdentifier(
+                    ExternalIdentifierType.VARIANT, provider.value(), variantId);
+            LocalMerchantRouting routing = new LocalMerchantRouting(merchantId);
+            DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                    provider, ResultSourceType.MERCHANT_STOREFRONT, merchantId.toString());
+            OfferIdentity identity = new OfferIdentity(
+                    provider, OfferMerchantScope.localIntegrationFallback(merchantId), product, variant,
+                    List.of(), List.of(), null);
+            ResultProvenance provenance = new ResultProvenance(
+                    provider, source, routing, null, product, variant, new ResultFreshness(Instant.now(), null),
+                    new ResultSourceReference(ResultSourceType.MERCHANT_STOREFRONT, "test", null));
+            CatalogProductReference reference = new CatalogProductReference(
+                    query.offerKey(), source, null, routing, null, product, variant, List.of());
+            return new ResolvedSelectedOffer(merchantId.toString(), query.offerKey(), identity, provenance, reference);
+        }
+
+        @Override
+        public List<ResolvedSelectedOffer> resolveAll(ResolveUserSelectedOffersQuery query) {
+            return query.offerKeys().stream()
+                    .map(offerKey -> resolve(new ResolveUserSelectedOfferQuery(
+                            query.userId(), offerKey, query.countryCode())))
+                    .toList();
+        }
+    }
+
+    static class FakeSelectedOfferCartRoutingService extends SelectedOfferCartRoutingService {
+        private final MerchantCartProviderLookupService providerLookupService;
+
+        FakeSelectedOfferCartRoutingService(
+                MerchantCartProviderLookupService providerLookupService,
+                CartBindingMetrics metrics
+        ) {
+            super(null, null, List.of(), metrics);
+            this.providerLookupService = providerLookupService;
+        }
+
+        @Override
+        public CartRoutingTarget resolve(ResolvedSelectedOffer offer) {
+            UUID merchantId = UUID.fromString(offer.canonicalProductKey());
+            MerchantCartProvider provider = providerLookupService.findById(merchantId).orElseThrow();
+            return new CartRoutingTarget(
+                    "LEGACY:merchant:" + merchantId,
+                    MerchantIntegrationProvider.GENERIC_UCP,
+                    null,
+                    null,
+                    provider);
+        }
+    }
+
+    static class FakeCartOfferRevalidationService extends CartOfferRevalidationService {
+        FakeCartOfferRevalidationService(CartBindingMetrics metrics) {
+            super(null, null, metrics);
+        }
+
+        @Override
+        public void revalidate(Cart cart, String countryCode) {
+            // Controller integration tests exercise ownership and request flow, not provider rehydration.
         }
     }
 

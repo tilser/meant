@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -40,11 +41,17 @@ public class Cart {
     @Column(nullable = false, updatable = false)
     private UUID userId;
 
-    @Column(nullable = false)
     private UUID merchantId;
 
-    @Column(nullable = false)
     private String merchantDomain;
+
+    private String provider;
+
+    private UUID merchantIntegrationId;
+
+    private String externalMerchantId;
+
+    private String routingScopeKey;
 
     @Column(nullable = false)
     private String endpoint;
@@ -106,6 +113,30 @@ public class Cart {
     private List<CartAppliedCode> appliedCodes = new ArrayList<>();
 
     public void assignProvider(UUID merchantId, String merchantDomain) {
+        this.merchantId = merchantId;
+        this.merchantDomain = merchantDomain;
+    }
+
+    public void assignRoutingScope(
+            String provider,
+            UUID merchantIntegrationId,
+            String externalMerchantId,
+            String routingScopeKey,
+            UUID merchantId,
+            String merchantDomain
+    ) {
+        if (this.routingScopeKey != null && (!Objects.equals(this.routingScopeKey, routingScopeKey)
+                || !Objects.equals(this.provider, provider)
+                || !Objects.equals(this.merchantIntegrationId, merchantIntegrationId)
+                || !Objects.equals(this.externalMerchantId, externalMerchantId)
+                || !Objects.equals(this.merchantId, merchantId)
+                || !Objects.equals(this.merchantDomain, merchantDomain))) {
+            throw new IllegalStateException("A remote cart cannot change merchant/provider scope");
+        }
+        this.provider = provider;
+        this.merchantIntegrationId = merchantIntegrationId;
+        this.externalMerchantId = externalMerchantId;
+        this.routingScopeKey = routingScopeKey;
         this.merchantId = merchantId;
         this.merchantDomain = merchantDomain;
     }

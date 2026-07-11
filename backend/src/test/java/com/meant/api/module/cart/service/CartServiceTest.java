@@ -2,6 +2,11 @@ package com.meant.api.module.cart.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.meant.api.module.cart.constant.CartAppliedCodeType;
 import com.meant.api.module.cart.entity.Cart;
@@ -28,6 +33,11 @@ import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.user.service.UserInventoryService;
+import com.meant.api.module.user.service.UserCommerceContextService;
+import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
+import com.meant.api.module.user.exception.SelectedOfferResolutionException;
+import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
+import com.meant.api.module.catalog.service.dto.*;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
@@ -73,6 +83,8 @@ class CartServiceTest {
     private FakeUserInventoryService userInventoryService;
     private CartPersistenceService cartPersistenceService;
     private CartService cartService;
+    private UserSelectedOfferResolutionService offerResolution;
+    private SelectedOfferCartRoutingService routing;
     private Merchant merchant;
 
     @BeforeEach
@@ -86,18 +98,29 @@ class CartServiceTest {
                 cartRepository.proxy(),
                 new ObjectMapper()
         );
+        merchant = merchant();
+        merchantRepository.save(merchant);
+        MerchantCartProviderLookupService providerLookup = new MerchantCartProviderLookupService(
+                merchantRepository.proxy(), merchantCapabilityRepositoryProxy(), merchantIntegrationRepositoryProxy(),
+                new MerchantExecutionPolicyService(
+                        new MerchantExecutionPolicyProperties(true, true, true, false, false, true, true),
+                        new CapabilityExecutionPolicyEvaluator(), List.of()));
+        UserCommerceContextService commerceContextService =
+                new UserCommerceContextService(userSettingsLocationRepositoryProxy());
+        offerResolution = mock(UserSelectedOfferResolutionService.class);
+        when(offerResolution.resolveAll(any())).thenAnswer(invocation ->
+                invocation.<com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery>getArgument(0)
+                        .offerKeys().stream().map(this::resolvedOffer).toList());
+        routing = mock(SelectedOfferCartRoutingService.class);
+        when(routing.resolve(any())).thenAnswer(invocation -> new com.meant.api.module.cart.service.dto.CartRoutingTarget(
+                "LEGACY:merchant:" + merchant.getId(),
+                com.meant.api.module.merchant.constant.MerchantIntegrationProvider.GENERIC_UCP,
+                null, null, providerLookup.findById(merchant.getId()).orElseThrow()));
+        CartOfferRevalidationService revalidation = mock(CartOfferRevalidationService.class);
+        CartBindingMetrics metrics = new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         cartService = new CartService(
-                new MerchantCartProviderLookupService(
-                        merchantRepository.proxy(),
-                        merchantCapabilityRepositoryProxy(),
-                        merchantIntegrationRepositoryProxy(),
-                        new MerchantExecutionPolicyService(
-                                new MerchantExecutionPolicyProperties(true, true, true, false, false, true, true),
-                                new CapabilityExecutionPolicyEvaluator(),
-                                List.of()
-                        )
-                ),
-                new CartBuyerContextService(userSettingsLocationRepositoryProxy()),
+                providerLookup,
+                new CartBuyerContextService(commerceContextService),
                 cartPersistenceService,
                 cartDispatchService,
                 checkoutDispatchService,
@@ -105,11 +128,47 @@ class CartServiceTest {
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper()),
                 new CheckoutResultMapper(new ObjectMapper()),
-                null
+                null,
+                offerResolution,
+                routing,
+                revalidation,
+                metrics,
+                commerceContextService
         );
-        merchant = merchant();
-        merchantRepository.save(merchant);
         cartDispatchService.cartToolResult = cartToolResult();
+    }
+
+    private ResolvedSelectedOffer resolvedOffer(String key) {
+        ProviderIdentity provider = new ProviderIdentity("GENERIC_UCP");
+        ExternalIdentifier product = new ExternalIdentifier(ExternalIdentifierType.PRODUCT, provider.value(), key);
+        ExternalIdentifier variant = new ExternalIdentifier(ExternalIdentifierType.VARIANT, provider.value(), key);
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                provider, ResultSourceType.MERCHANT_STOREFRONT, merchant.getDomain());
+        OfferIdentity identity = new OfferIdentity(
+                provider, OfferMerchantScope.localIntegrationFallback(merchant.getId()), product, variant,
+                List.of(), List.of(), null);
+        ResultProvenance provenance = new ResultProvenance(
+                provider, source, null, null, product, variant, new ResultFreshness(Instant.now(), null),
+                new ResultSourceReference(ResultSourceType.MERCHANT_STOREFRONT, merchant.getDomain(), null));
+        CatalogProductReference reference = new CatalogProductReference(
+                key, source, null, null, null, product, variant, List.of());
+        return new ResolvedSelectedOffer("canonical", key, identity, provenance, reference);
+    }
+
+    private ResolvedSelectedOffer resolvedOfferWithoutVariant(String key) {
+        ProviderIdentity provider = new ProviderIdentity("GENERIC_UCP");
+        ExternalIdentifier product = new ExternalIdentifier(ExternalIdentifierType.PRODUCT, provider.value(), key);
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                provider, ResultSourceType.MERCHANT_STOREFRONT, merchant.getDomain());
+        OfferIdentity identity = new OfferIdentity(
+                provider, OfferMerchantScope.localIntegrationFallback(merchant.getId()), product, null,
+                List.of(), List.of(), null);
+        ResultProvenance provenance = new ResultProvenance(
+                provider, source, null, null, product, null, new ResultFreshness(Instant.now(), null),
+                new ResultSourceReference(ResultSourceType.MERCHANT_STOREFRONT, merchant.getDomain(), null));
+        CatalogProductReference reference = new CatalogProductReference(
+                key, source, null, null, null, product, null, List.of());
+        return new ResolvedSelectedOffer("canonical", key, identity, provenance, reference);
     }
 
     @Test
@@ -135,6 +194,23 @@ class CartServiceTest {
         assertThat(cartRepository.saveCount).isEqualTo(1);
         assertThat(cartDispatchService.createCount).isEqualTo(1);
         assertThat(cartDispatchService.updateCount).isZero();
+    }
+
+    @Test
+    void variantlessGenericSelectionFailsTypedBeforeRoutingOrCartMutation() {
+        doReturn(List.of(resolvedOfferWithoutVariant("product-only")))
+                .when(offerResolution).resolveAll(any());
+
+        assertThatThrownBy(() -> cartService.create(new CreateCartCommand(
+                USER_ID, merchant.getId(), null,
+                List.of(new CreateCartCommand.AddItem("product-only", 1)), null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), null)))
+                .isInstanceOf(SelectedOfferResolutionException.class)
+                .extracting("failure")
+                .isEqualTo(SelectedOfferResolutionException.Failure.UNSUPPORTED_SELECTION);
+
+        assertThat(cartDispatchService.createCount).isZero();
+        verifyNoInteractions(routing);
     }
 
     @Test
@@ -593,7 +669,7 @@ class CartServiceTest {
                 .containsEntry("last_name", "Lovelace")
                 .containsEntry("phone_number", "+15551234567");
         assertThat(request.currency()).isNull();
-        assertThat(request.context()).containsEntry("address_country", "US");
+        assertThat(request.context()).isEmpty();
         List<?> methods = (List<?>) request.fulfillment().get("methods");
         assertThat(methods).hasSize(1);
         @SuppressWarnings("unchecked")
@@ -659,6 +735,7 @@ class CartServiceTest {
         assertThat(cartDispatchService.updateCount).isEqualTo(1);
         assertThat(cartDispatchService.cancelCount).isEqualTo(1);
         assertThat(cartDispatchService.lastCanceledRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(cartDispatchService.lastCancelIdempotencyKey).isEqualTo(created.cartId());
         assertThat(cartRepository.carts.get(created.cartId()).isActive()).isFalse();
         assertThatThrownBy(() -> cartService.get(new GetCartQuery(created.cartId(), USER_ID, false)))
                 .isInstanceOf(CartException.class)
@@ -1054,13 +1131,46 @@ class CartServiceTest {
         private RuntimeException updateException;
         private String lastRemoteCartId;
         private String lastCanceledRemoteCartId;
+        private UUID lastCancelIdempotencyKey;
         private int createCount;
         private int updateCount;
         private int getCount;
         private int cancelCount;
 
         FakeCartDispatchService() {
-            super(null, null, null);
+            super(mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
+                    mock(com.meant.api.plugin.transport.registry.CapabilityRegistry.class),
+                    new ObjectMapper(), List.of(),
+                    new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        }
+
+        @Override
+        public UcpCartToolResult createCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                CreateCartRequest request, UcpSession session) {
+            return createCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
+        public UcpCartToolResult updateCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                UpdateCartRequest request, UcpSession session) {
+            return updateCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
+        public UcpCartToolResult getCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                GetCartRequest request, UcpSession session) {
+            return getCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
+        public CancelCartResponse cancelCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                CancelCartRequest request, UcpSession session, UUID idempotencyKey) {
+            lastCancelIdempotencyKey = idempotencyKey;
+            return cancelCart(target.merchantProvider(), request, session);
         }
 
         @Override
@@ -1272,7 +1382,8 @@ class CartServiceTest {
                             findByIdCount++;
                             yield Optional.ofNullable(merchantsById.get(args[0]));
                         }
-                        case "findByDomain" -> Optional.ofNullable(merchantsByDomain.get(args[0]));
+                        case "findByDomain", "findByDomainAndActiveTrue" ->
+                                Optional.ofNullable(merchantsByDomain.get(args[0]));
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
             );

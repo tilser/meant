@@ -3,6 +3,10 @@ package com.meant.api.module.cart.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.cart.service.dto.CartToolCallContext;
+import com.meant.api.module.cart.service.port.CartToolTransport;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
@@ -47,15 +51,39 @@ public class MerchantCartPluginDispatchService {
     private final MerchantMcpToolClient merchantMcpToolClient;
     private final CapabilityRegistry capabilityRegistry;
     private final ObjectMapper objectMapper;
+    private final List<CartToolTransport> cartToolTransports;
+    private final CartBindingMetrics cartBindingMetrics;
 
     public UcpCartToolResult createCart(
             MerchantCartProvider provider,
             CreateCartRequest request,
             UcpSession session
     ) {
+        return createCart(null, provider, request, session);
+    }
+
+    public UcpCartToolResult createCart(
+            CartRoutingTarget target,
+            CreateCartRequest request,
+            UcpSession session
+    ) {
+        return createCart(target, target.merchantProvider(), request, session);
+    }
+
+    private UcpCartToolResult createCart(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            CreateCartRequest request,
+            UcpSession session
+    ) {
         provider = provider.forOperation(CommerceOperation.CART);
         CreateCartCapability capability = capability(CreateCartCapability.TOOL_NAME, CreateCartCapability.class);
-        MerchantMcpToolCallResult result = callCreateCart(provider, request, session, capability);
+        MerchantMcpToolCallResult result;
+        try {
+            result = callCreateCart(target, provider, request, session, capability);
+        } catch (MerchantMcpToolException exception) {
+            throw providerFailure("Cart provider create failed", exception);
+        }
         UcpCartResponse response = parseCartResponse(capability, result, "create cart");
         rejectCartProblems(null, request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
@@ -67,15 +95,33 @@ public class MerchantCartPluginDispatchService {
             GetCartRequest request,
             UcpSession session
     ) {
+        return getCart(null, provider, request, session);
+    }
+
+    public UcpCartToolResult getCart(CartRoutingTarget target, GetCartRequest request, UcpSession session) {
+        return getCart(target, target.merchantProvider(), request, session);
+    }
+
+    private UcpCartToolResult getCart(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            GetCartRequest request,
+            UcpSession session
+    ) {
         provider = provider.forOperation(CommerceOperation.CART);
         GetCartCapability capability = capability(GetCartCapability.TOOL_NAME, GetCartCapability.class);
-        MerchantMcpToolCallResult result = callWithLegacyCartIdFallback(
-                provider,
-                GetCartCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities()),
-                "cart_id",
-                request.cartId()
-        );
+        MerchantMcpToolCallResult result;
+        try {
+            result = callWithLegacyCartIdFallback(
+                    target, provider,
+                    GetCartCapability.TOOL_NAME,
+                    capability.buildArguments(request, session.activeCapabilities()),
+                    "cart_id",
+                    request.cartId()
+            );
+        } catch (MerchantMcpToolException exception) {
+            throw providerFailure("Cart provider get failed", exception);
+        }
         UcpCartResponse response = parseCartResponse(capability, result, "get cart");
         rejectCartProblems(request.cartId(), List.of(), List.of(), response);
         updateSession(session, result, response);
@@ -87,9 +133,31 @@ public class MerchantCartPluginDispatchService {
             UpdateCartRequest request,
             UcpSession session
     ) {
+        return updateCart(null, provider, request, session);
+    }
+
+    public UcpCartToolResult updateCart(
+            CartRoutingTarget target,
+            UpdateCartRequest request,
+            UcpSession session
+    ) {
+        return updateCart(target, target.merchantProvider(), request, session);
+    }
+
+    private UcpCartToolResult updateCart(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            UpdateCartRequest request,
+            UcpSession session
+    ) {
         provider = provider.forOperation(CommerceOperation.CART);
         UpdateCartCapability capability = capability(UpdateCartCapability.TOOL_NAME, UpdateCartCapability.class);
-        MerchantMcpToolCallResult result = callUpdateCart(provider, request, session, capability);
+        MerchantMcpToolCallResult result;
+        try {
+            result = callUpdateCart(target, provider, request, session, capability);
+        } catch (MerchantMcpToolException exception) {
+            throw providerFailure("Cart provider update failed", exception);
+        }
         UcpCartResponse response = parseCartResponse(capability, result, "update cart");
         rejectCartProblems(request.cartId(), request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
@@ -101,15 +169,49 @@ public class MerchantCartPluginDispatchService {
             CancelCartRequest request,
             UcpSession session
     ) {
+        return cancelCart(null, provider, request, session);
+    }
+
+    public CancelCartResponse cancelCart(
+            CartRoutingTarget target,
+            CancelCartRequest request,
+            UcpSession session,
+            java.util.UUID idempotencyKey
+    ) {
+        return cancelCart(target, target.merchantProvider(), request, session, new CartToolCallContext(idempotencyKey));
+    }
+
+    private CancelCartResponse cancelCart(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            CancelCartRequest request,
+            UcpSession session
+    ) {
+        return cancelCart(target, provider, request, session, CartToolCallContext.standard());
+    }
+
+    private CancelCartResponse cancelCart(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            CancelCartRequest request,
+            UcpSession session,
+            CartToolCallContext callContext
+    ) {
         provider = provider.forOperation(CommerceOperation.CART);
         CancelCartCapability capability = capability(CancelCartCapability.TOOL_NAME, CancelCartCapability.class);
-        MerchantMcpToolCallResult result = callWithLegacyCartIdFallback(
-                provider,
-                CancelCartCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities()),
-                "cart_id",
-                request.cartId()
-        );
+        MerchantMcpToolCallResult result;
+        try {
+            result = callWithLegacyCartIdFallback(
+                    target, provider,
+                    CancelCartCapability.TOOL_NAME,
+                    capability.buildArguments(request, session.activeCapabilities()),
+                    "cart_id",
+                    request.cartId(),
+                    callContext
+            );
+        } catch (MerchantMcpToolException exception) {
+            throw providerFailure("Cart provider cancel failed", exception);
+        }
         CancelCartResponse response = capability.parseResponse(toolResponse(result));
         rejectCancelProblems(request.cartId(), response);
         session.acceptNegotiatedCapabilities(result.negotiatedCapabilities());
@@ -118,29 +220,34 @@ public class MerchantCartPluginDispatchService {
     }
 
     private MerchantMcpToolCallResult callCreateCart(
+            CartRoutingTarget target,
             MerchantCartProvider provider,
             CreateCartRequest request,
             UcpSession session,
             CreateCartCapability capability
     ) {
+        Object exactArguments = capability.buildArguments(request, session.activeCapabilities());
+        if (!isLegacy(target)) {
+            return callTool(target, provider, CreateCartCapability.TOOL_NAME, exactArguments);
+        }
         try {
-            return merchantMcpToolClient.callTool(
-                    provider,
+            return callTool(
+                    target, provider,
                     CreateCartCapability.TOOL_NAME,
-                    capability.buildArguments(request, session.activeCapabilities())
+                    exactArguments
             );
         } catch (MerchantMcpToolException primaryException) {
             try {
-                return merchantMcpToolClient.callTool(
-                        provider,
+                return callTool(
+                        target, provider,
                         CreateCartCapability.TOOL_NAME,
                         legacyCreateCartArguments(request)
                 );
             } catch (MerchantMcpToolException legacyCreateException) {
                 legacyCreateException.addSuppressed(primaryException);
                 try {
-                    return merchantMcpToolClient.callTool(
-                            provider,
+                    return callTool(
+                            target, provider,
                             UpdateCartCapability.TOOL_NAME,
                             legacyCreateWithUpdateCartArguments(request)
                     );
@@ -153,20 +260,25 @@ public class MerchantCartPluginDispatchService {
     }
 
     private MerchantMcpToolCallResult callUpdateCart(
+            CartRoutingTarget target,
             MerchantCartProvider provider,
             UpdateCartRequest request,
             UcpSession session,
             UpdateCartCapability capability
     ) {
+        Object exactArguments = capability.buildArguments(request, session.activeCapabilities());
+        if (!isLegacy(target)) {
+            return callTool(target, provider, UpdateCartCapability.TOOL_NAME, exactArguments);
+        }
         try {
-            return merchantMcpToolClient.callTool(
-                    provider,
+            return callTool(
+                    target, provider,
                     UpdateCartCapability.TOOL_NAME,
-                    capability.buildArguments(request, session.activeCapabilities())
+                    exactArguments
             );
         } catch (MerchantMcpToolException exception) {
             return callLegacyAfterFailure(
-                    provider,
+                    target, provider,
                     UpdateCartCapability.TOOL_NAME,
                     legacyUpdateCartArguments(request),
                     exception
@@ -175,33 +287,111 @@ public class MerchantCartPluginDispatchService {
     }
 
     private MerchantMcpToolCallResult callWithLegacyCartIdFallback(
+            CartRoutingTarget target,
             MerchantCartProvider provider,
             String toolName,
             Object primaryArguments,
             String legacyIdKey,
             String cartId
     ) {
+        return callWithLegacyCartIdFallback(
+                target, provider, toolName, primaryArguments, legacyIdKey, cartId, CartToolCallContext.standard());
+    }
+
+    private MerchantMcpToolCallResult callWithLegacyCartIdFallback(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            String toolName,
+            Object primaryArguments,
+            String legacyIdKey,
+            String cartId,
+            CartToolCallContext callContext
+    ) {
+        if (!isLegacy(target)) {
+            return callTool(target, provider, toolName, primaryArguments, callContext);
+        }
         try {
-            return merchantMcpToolClient.callTool(provider, toolName, primaryArguments);
+            return callTool(target, provider, toolName, primaryArguments, callContext);
         } catch (MerchantMcpToolException exception) {
             Map<String, Object> legacyArguments = new LinkedHashMap<>();
             put(legacyArguments, legacyIdKey, cartId);
-            return callLegacyAfterFailure(provider, toolName, legacyArguments, exception);
+            return callLegacyAfterFailure(target, provider, toolName, legacyArguments, exception, callContext);
         }
     }
 
     private MerchantMcpToolCallResult callLegacyAfterFailure(
+            CartRoutingTarget target,
             MerchantCartProvider provider,
             String toolName,
             Object legacyArguments,
             MerchantMcpToolException primaryException
     ) {
+        return callLegacyAfterFailure(
+                target, provider, toolName, legacyArguments, primaryException, CartToolCallContext.standard());
+    }
+
+    private MerchantMcpToolCallResult callLegacyAfterFailure(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            String toolName,
+            Object legacyArguments,
+            MerchantMcpToolException primaryException,
+            CartToolCallContext callContext
+    ) {
         try {
-            return merchantMcpToolClient.callTool(provider, toolName, legacyArguments);
+            return callTool(target, provider, toolName, legacyArguments, callContext);
         } catch (MerchantMcpToolException legacyException) {
             legacyException.addSuppressed(primaryException);
             throw legacyException;
         }
+    }
+
+    private MerchantMcpToolCallResult callTool(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments
+    ) {
+        return callTool(target, provider, toolName, arguments, CartToolCallContext.standard());
+    }
+
+    private MerchantMcpToolCallResult callTool(
+            CartRoutingTarget target,
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments,
+            CartToolCallContext callContext
+    ) {
+        if (target == null) {
+            return merchantMcpToolClient.callTool(provider, toolName, arguments, headers(callContext));
+        }
+        List<CartToolTransport> matching = cartToolTransports.stream()
+                .filter(transport -> transport.supports(target))
+                .toList();
+        if (matching.size() == 1) {
+            return matching.getFirst().call(target, toolName, arguments, callContext);
+        }
+        if (matching.isEmpty() && target.provider() == MerchantIntegrationProvider.GENERIC_UCP) {
+            return isLegacy(target)
+                    ? merchantMcpToolClient.callTool(provider, toolName, arguments, headers(callContext))
+                    : merchantMcpToolClient.callToolExactEndpoint(
+                            provider, toolName, arguments, headers(callContext));
+        }
+        throw CartException.rejected("Cart provider transport is missing or ambiguous");
+    }
+
+    private Map<String, String> headers(CartToolCallContext context) {
+        return context.idempotencyKey() == null
+                ? Map.of() : Map.of("Idempotency-Key", context.idempotencyKey().toString());
+    }
+
+    private boolean isLegacy(CartRoutingTarget target) {
+        return target == null || target.scopeKey() == null || target.scopeKey().startsWith("LEGACY:");
+    }
+
+    private CartException providerFailure(String message, RuntimeException cause) {
+        cartBindingMetrics.record(CartException.BindingFailure.PROVIDER_FAILURE);
+        return CartException.bindingUpstream(message, cause);
     }
 
     private Map<String, Object> legacyCreateCartArguments(CreateCartRequest request) {

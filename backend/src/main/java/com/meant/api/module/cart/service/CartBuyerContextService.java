@@ -1,15 +1,12 @@
 package com.meant.api.module.cart.service;
 
-import com.meant.api.common.util.CountryCodeNormalizer;
-import com.meant.api.module.user.entity.UserSettingsLocation;
-import com.meant.api.module.user.repository.UserSettingsLocationRepository;
+import com.meant.api.module.user.service.UserCommerceContextService;
+import com.meant.api.module.user.service.dto.UserCommerceContextResult;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Builds the UCP {@code context} object (localization + market hints) for cart and checkout
@@ -21,34 +18,17 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CartBuyerContextService {
 
-    static final String DEFAULT_COUNTRY = "US";
+    private final UserCommerceContextService userCommerceContextService;
 
-    private final UserSettingsLocationRepository userSettingsLocationRepository;
-
-    @Transactional(readOnly = true)
     public Map<String, Object> buyerContext(UUID userId) {
+        return buyerContext(userCommerceContextService.find(userId));
+    }
+
+    public Map<String, Object> buyerContext(UserCommerceContextResult commerceContext) {
         Map<String, Object> context = new LinkedHashMap<>();
-        context.put("address_country", buyerCountryCode(userId));
+        if (commerceContext != null && commerceContext.countryCode() != null) {
+            context.put("address_country", commerceContext.countryCode());
+        }
         return context;
-    }
-
-    private String buyerCountryCode(UUID userId) {
-        if (userId == null) {
-            return DEFAULT_COUNTRY;
-        }
-        List<UserSettingsLocation> locations =
-                userSettingsLocationRepository.findByIdUserIdOrderByDisplayOrderAsc(userId);
-        return locations.stream()
-                .map(this::countryCode)
-                .filter(code -> code != null)
-                .findFirst()
-                .orElse(DEFAULT_COUNTRY);
-    }
-
-    private String countryCode(UserSettingsLocation location) {
-        if (location == null || location.getId() == null) {
-            return null;
-        }
-        return CountryCodeNormalizer.normalizeAlpha2(location.getId().getLocationCode());
     }
 }

@@ -7,6 +7,7 @@ import com.meant.api.plugin.cart.cancel.dto.CancelCartArguments;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.create.CreateCartCapability;
@@ -57,6 +58,30 @@ class CartCapabilityTest {
         assertThat(response.cart().continueUrl()).isEqualTo("https://merchant.example/continue");
         assertThat(response.cart().expiresAt()).isEqualTo(Instant.parse("2026-06-16T12:05:00Z"));
         assertThat(response.messages()).extracting("code").containsExactly("cart_created");
+    }
+
+    @Test
+    void createCarriesExactConfiguredOfferIdentityIntoTheRemoteCall() {
+        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+        CartAddItem item = new CartAddItem(
+                "product-1",
+                "variant-1",
+                List.of(new CartAddItem.SelectedOption("variant", "Color", "Black")),
+                List.of(new CartAddItem.Component("component-product", "component-variant", 2,
+                        List.of(new CartAddItem.SelectedOption(null, "Size", "M")))),
+                new CartAddItem.SellingPlan(null, "plan-1", List.of(new CartAddItem.Option("Delivery", "Monthly"))),
+                1);
+
+        CreateCartArguments arguments = capability.buildArguments(
+                new CreateCartRequest(List.of(item), null, List.of(), List.of(), List.of(), List.of(), List.of(), null),
+                NegotiatedCapabilities.none());
+
+        CartToolArguments.Item remote = arguments.cart().lineItems().getFirst().item();
+        assertThat(remote.id()).isEqualTo("variant-1");
+        assertThat(remote.productId()).isEqualTo("product-1");
+        assertThat(remote.selectedOptions()).containsExactlyElementsOf(item.selectedOptions());
+        assertThat(remote.components()).containsExactlyElementsOf(item.components());
+        assertThat(remote.sellingPlan()).isEqualTo(item.sellingPlan());
     }
 
     @Test

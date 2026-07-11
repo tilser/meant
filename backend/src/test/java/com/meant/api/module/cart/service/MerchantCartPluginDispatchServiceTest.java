@@ -2,6 +2,13 @@ package com.meant.api.module.cart.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -9,9 +16,13 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.plugin.cart.cancel.CancelCartCapability;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
@@ -24,6 +35,7 @@ import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.UpdateCartCapability;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.support.UcpSession;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.net.InetAddress;
 import java.util.List;
@@ -47,7 +59,9 @@ class MerchantCartPluginDispatchServiceTest {
         MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
                 merchantMcpToolClient(restClientBuilder.build()),
                 registry(),
-                objectMapper
+                objectMapper,
+                List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
         );
         MerchantCartProvider provider = provider();
         UcpSession session = UcpSession.start();
@@ -130,6 +144,75 @@ class MerchantCartPluginDispatchServiceTest {
                 .satisfies(exception -> assertThat(((CartException) exception).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));
         server.verify();
+    }
+
+    @Test
+    void boundGenericCreateFailureUsesOneExactEndpointCallAndNoLegacyFallback() {
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callToolExactEndpoint(any(), any(), any(), any()))
+                .thenThrow(new MerchantMcpToolException("ambiguous timeout"));
+        MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
+                client, registry(), objectMapper, List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        MerchantCartProvider provider = provider();
+        CartRoutingTarget target = new CartRoutingTarget(
+                "GENERIC_UCP:integration:" + UUID.randomUUID(), MerchantIntegrationProvider.GENERIC_UCP,
+                UUID.randomUUID(), null, provider);
+
+        assertThatThrownBy(() -> service.createCart(target, new CreateCartRequest(
+                List.of(new CartAddItem("variant-1", 1)), null, List.of(), List.of(), List.of(),
+                List.of(), List.of(), null), UcpSession.start()))
+                .isInstanceOf(CartException.class);
+
+        verify(client).callToolExactEndpoint(eq(provider), eq("create_cart"), any(), eq(java.util.Map.of()));
+        verify(client, never()).callTool(any(MerchantCartProvider.class), any(), any(), any());
+    }
+
+    @Test
+    void boundGenericUpdateFailureUsesOneExactEndpointCallAndNoLegacyFallback() {
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callToolExactEndpoint(any(), any(), any(), any()))
+                .thenThrow(new MerchantMcpToolException("ambiguous timeout"));
+        MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
+                client, registry(), objectMapper, List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        MerchantCartProvider provider = provider();
+        CartRoutingTarget target = new CartRoutingTarget(
+                "GENERIC_UCP:integration:" + UUID.randomUUID(), MerchantIntegrationProvider.GENERIC_UCP,
+                UUID.randomUUID(), null, provider);
+
+        assertThatThrownBy(() -> service.updateCart(target, new UpdateCartRequest(
+                "cart-1", List.of(new CartAddItem("variant-1", 1)), List.of(), List.of(), null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), null), UcpSession.start()))
+                .isInstanceOf(CartException.class);
+
+        verify(client).callToolExactEndpoint(eq(provider), eq("update_cart"), any(), eq(java.util.Map.of()));
+        verify(client, never()).callTool(any(MerchantCartProvider.class), any(), any(), any());
+    }
+
+    @Test
+    void legacyCreateRetainsCompatibilityFallback() {
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callTool(any(MerchantCartProvider.class), eq("create_cart"), any(), any()))
+                .thenThrow(new MerchantMcpToolException("primary contract unsupported"))
+                .thenReturn(new MerchantMcpToolCallResult(
+                        "https://merchant.example/api/mcp", cartResponse("legacy-cart"), null,
+                        NegotiatedCapabilities.none()));
+        MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
+                client, registry(), objectMapper, List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        MerchantCartProvider provider = provider();
+        CartRoutingTarget target = new CartRoutingTarget(
+                "LEGACY:merchant:" + provider.merchantId(), MerchantIntegrationProvider.GENERIC_UCP,
+                null, null, provider);
+
+        UcpCartToolResult result = service.createCart(target, new CreateCartRequest(
+                List.of(new CartAddItem("variant-1", 1)), null, List.of(), List.of(), List.of(),
+                List.of(), List.of(), null), UcpSession.start());
+
+        assertThat(result.response().cart().id()).isEqualTo("legacy-cart");
+        verify(client, times(2)).callTool(any(MerchantCartProvider.class), eq("create_cart"), any(), any());
+        verify(client, never()).callToolExactEndpoint(any(), any(), any(), any());
     }
 
     private MerchantMcpToolClient merchantMcpToolClient(RestClient restClient) {

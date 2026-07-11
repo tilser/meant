@@ -727,6 +727,11 @@ export interface CartAddItemInput {
   quantity: number
 }
 
+export interface SelectedOfferCartAddItemInput {
+  offerKey: string
+  quantity: number
+}
+
 export type CartToolMapInput = Record<string, unknown>
 
 export interface SearchDiscountCodesInput {
@@ -1607,9 +1612,7 @@ export async function rejectUserTasteSuggestion(filterId: string): Promise<void>
 }
 
 export async function createCart(input: {
-  merchantId?: string | null
-  merchantDomain?: string | null
-  addItems: readonly CartAddItemInput[]
+  addItems: readonly SelectedOfferCartAddItemInput[]
   discountCodes?: readonly string[]
   giftCardCodes?: readonly string[]
   deliveryAddressesToAdd?: readonly CartToolMapInput[]
@@ -1623,8 +1626,6 @@ export async function createCart(input: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      merchantId: input.merchantId ?? undefined,
-      merchantDomain: input.merchantDomain ?? undefined,
       addItems: input.addItems,
       discountCodes: input.discountCodes,
       giftCardCodes: input.giftCardCodes,
@@ -1638,7 +1639,7 @@ export async function createCart(input: {
 
 export async function updateCart(input: {
   cartId: string
-  addItems?: readonly CartAddItemInput[]
+  addItems?: readonly SelectedOfferCartAddItemInput[]
   updateItems?: readonly {
     cartLineId?: string | null
     remoteCartLineId?: string | null
@@ -1671,6 +1672,16 @@ export async function updateCart(input: {
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to update cart')
+}
+
+/** PCOS-013 binding: the browser contributes only a server-issued exact offer key and quantity. */
+export async function bindSelectedOfferToCart(input: {
+  offerKey: string
+  quantity?: number
+  cartId?: string | null
+}): Promise<CartProfile> {
+  const addItems = [{ offerKey: input.offerKey, quantity: input.quantity ?? 1 }]
+  return input.cartId ? updateCart({ cartId: input.cartId, addItems }) : createCart({ addItems })
 }
 
 export async function getCartCheckout(input: {

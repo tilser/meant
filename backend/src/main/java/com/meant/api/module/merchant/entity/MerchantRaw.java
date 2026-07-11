@@ -31,7 +31,6 @@ public class MerchantRaw {
     @Column(nullable = false, updatable = false)
     private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false)
     private Integer datasetRowIdx;
 
     @Column(nullable = false)
@@ -148,6 +147,15 @@ public class MerchantRaw {
         this.processed = false;
         this.processingStatus = "INACTIVE";
         this.processingError = null;
+    }
+
+    public void markForEnrichment(Instant observedAt) {
+        this.active = true;
+        this.processed = false;
+        this.processedAt = null;
+        this.processingStatus = null;
+        this.processingError = null;
+        this.lastSeenAt = observedAt;
     }
 
     public void markProcessed(String processingStatus, Instant processedAt) {

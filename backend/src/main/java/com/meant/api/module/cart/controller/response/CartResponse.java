@@ -11,35 +11,46 @@ import java.util.UUID;
 public record CartResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         UUID cartId,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         UUID merchantId,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String merchantDomain,
+        @Schema(description = "Immutable commerce provider scope", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String provider,
+        @Schema(description = "Verified local integration route when one exists",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        UUID merchantIntegrationId,
+        @Schema(description = "Provider-scoped external seller identity",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String externalMerchantId,
+        @Schema(description = "Opaque immutable remote-cart seller/provider scope",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String routingScopeKey,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String endpoint,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String remoteCartId,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String checkoutUrl,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String continueUrl,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String instructions,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Integer totalQuantity,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String totalAmount,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String subtotalAmount,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String currency,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         boolean active,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Instant remoteCreatedAt,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Instant remoteUpdatedAt,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Instant expiresAt,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
@@ -62,6 +73,10 @@ public record CartResponse(
                 result.cartId(),
                 result.merchantId(),
                 result.merchantDomain(),
+                result.provider(),
+                result.merchantIntegrationId(),
+                result.externalMerchantId(),
+                result.routingScopeKey(),
                 result.endpoint(),
                 result.remoteCartId(),
                 result.checkoutUrl(),

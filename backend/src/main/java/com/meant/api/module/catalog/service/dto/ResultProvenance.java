@@ -6,6 +6,7 @@ public record ResultProvenance(
         DiscoverySourceIdentity discoverySource,
         LocalMerchantRouting localRouting,
         ExternalIdentifier externalMerchantReference,
+        String externalMerchantDomain,
         ExternalIdentifier externalProductReference,
         ExternalIdentifier externalVariantReference,
         ResultFreshness freshness,
@@ -29,6 +30,32 @@ public record ResultProvenance(
         requireProviderIdentifier(externalMerchantReference, ExternalIdentifierType.MERCHANT, provider, false);
         requireProviderIdentifier(externalProductReference, ExternalIdentifierType.PRODUCT, provider, true);
         requireProviderIdentifier(externalVariantReference, ExternalIdentifierType.VARIANT, provider, false);
+        externalMerchantDomain = normalizeDomain(externalMerchantDomain);
+    }
+
+    public ResultProvenance(
+            ProviderIdentity provider,
+            DiscoverySourceIdentity discoverySource,
+            LocalMerchantRouting localRouting,
+            ExternalIdentifier externalMerchantReference,
+            ExternalIdentifier externalProductReference,
+            ExternalIdentifier externalVariantReference,
+            ResultFreshness freshness,
+            ResultSourceReference sourceReference
+    ) {
+        this(provider, discoverySource, localRouting, externalMerchantReference, null,
+                externalProductReference, externalVariantReference, freshness, sourceReference);
+    }
+
+    private static String normalizeDomain(String domain) {
+        if (domain == null || domain.isBlank()) {
+            return null;
+        }
+        String normalized = domain.trim().toLowerCase(java.util.Locale.ROOT);
+        while (normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.isBlank() ? null : normalized;
     }
 
     private static void requireProviderIdentifier(
