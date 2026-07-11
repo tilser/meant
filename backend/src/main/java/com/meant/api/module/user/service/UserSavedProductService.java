@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
@@ -27,7 +28,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.Locale;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -143,14 +143,10 @@ public class UserSavedProductService {
     }
 
     private CatalogRehydrationContext context(UserSettingsResult settings) {
-        String country = settings == null || settings.location() == null
+        String countryCode = settings == null || settings.location() == null
                 ? null
-                : trimmed(settings.location().code());
-        return new CatalogRehydrationContext(country == null ? null : country.toUpperCase(Locale.ROOT), null);
-    }
-
-    private String trimmed(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
+                : CountryCodeNormalizer.normalizeAlpha2(settings.location().code());
+        return new CatalogRehydrationContext(countryCode, null);
     }
 
     private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {

@@ -131,15 +131,50 @@ class UserSavedProductServiceTest {
     }
 
     @Test
-    void missingMarketContextIsExplicitAndNeverFabricatesCountryOrLanguage() {
-        when(settingsService.get(any())).thenReturn(settings(null));
+    void saveNormalizesUkMarketContextToIsoGb() {
+        when(settingsService.get(any())).thenReturn(settings("UK"));
 
-        UserSavedProductResult result = service.save(profile(), product("product-1", "No market"));
+        UserSavedProductResult result = service.save(profile(), product("product-uk", "UK market"));
 
-        assertThat(provider.contexts.getLast().country()).isNull();
-        assertThat(provider.contexts.getLast().language()).isNull();
-        assertThat(result.marketCountry()).isNull();
-        assertThat(result.marketContextApplied()).isFalse();
+        assertMarketContext(result, "GB", true);
+    }
+
+    @Test
+    void listNormalizesUkMarketContextToIsoGb() {
+        service.save(profile(), product("product-uk", "UK market"));
+        provider.contexts.clear();
+        when(settingsService.get(any())).thenReturn(settings("UK"));
+
+        UserSavedProductResult result = service.list(
+                profile(), new ListSavedProductsQuery(USER_ID, 0, 10)).getFirst();
+
+        assertMarketContext(result, "GB", true);
+    }
+
+    @Test
+    void saveRejectsMalformedAndMissingMarketContext() {
+        for (String countryCode : java.util.Arrays.asList("U1", "GBR", "\u010cZ", "ZZ", null)) {
+            when(settingsService.get(any())).thenReturn(settings(countryCode));
+
+            UserSavedProductResult result = service.save(
+                    profile(), product("product-" + String.valueOf(countryCode), "Invalid market"));
+
+            assertMarketContext(result, null, false);
+        }
+    }
+
+    @Test
+    void listRejectsMalformedAndMissingMarketContext() {
+        service.save(profile(), product("product-invalid-context", "Invalid market"));
+        for (String countryCode : java.util.Arrays.asList("U1", "GBR", "\u010cZ", "ZZ", null)) {
+            provider.contexts.clear();
+            when(settingsService.get(any())).thenReturn(settings(countryCode));
+
+            UserSavedProductResult result = service.list(
+                    profile(), new ListSavedProductsQuery(USER_ID, 0, 10)).getFirst();
+
+            assertMarketContext(result, null, false);
+        }
     }
 
     @Test
@@ -269,6 +304,13 @@ class UserSavedProductServiceTest {
                 persistence,
                 new UserSavedProductResultMapper(objectMapper)
         );
+    }
+
+    private void assertMarketContext(UserSavedProductResult result, String countryCode, boolean applied) {
+        assertThat(provider.contexts.getLast().country()).isEqualTo(countryCode);
+        assertThat(provider.contexts.getLast().language()).isNull();
+        assertThat(result.marketCountry()).isEqualTo(countryCode);
+        assertThat(result.marketContextApplied()).isEqualTo(applied);
     }
 
     private UserSettingsResult settings(String countryCode) {
