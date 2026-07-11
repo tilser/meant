@@ -17,7 +17,7 @@ import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.catalog.service.dto.*;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.MerchantEnrichmentCandidateService;
-import com.meant.api.module.merchant.service.MerchantMcpToolClient;
+import com.meant.api.provider.shopify.auth.ShopifyMerchantUcpTransport;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.MerchantUcpProfileObservationService;
 import com.meant.api.module.merchant.service.UcpProfileClient;
@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -244,101 +245,126 @@ class ShopifyOfferCartRoutingTest {
 
     @Test
     void cancelContextReachesAnonymousMerchantTransportAsStableHeader() {
-        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
-        when(client.callToolExactEndpoint(any(), any(), any(), any())).thenReturn(new MerchantMcpToolCallResult(
+        ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+        when(client.call(any(), any(), any(), any(), any(), any(Boolean.class))).thenReturn(new MerchantMcpToolCallResult(
                 "https://shop.example/api/ucp/mcp", "{}", null, NegotiatedCapabilities.none()));
         ShopifyExternalOfferCartRoutingProvider routingProvider = routeProvider();
         ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
-                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider,
-                MerchantOutboundUrlValidator.withResolver(host -> {
-                    try {
-                        return List.of(InetAddress.getByName("93.184.216.34"));
-                    } catch (Exception exception) {
-                        throw new java.net.UnknownHostException(host);
-                    }
-                }));
+                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, retryPolicy());
         var target = routingProvider.resolve(offer()).orElseThrow();
         UUID key = UUID.randomUUID();
 
         transport.call(target, "cancel_cart", Map.of("cart_id", "cart"), new CartToolCallContext(key));
 
-        verify(client).callToolExactEndpoint(any(), eq("cancel_cart"), any(),
-                eq(Map.of("Idempotency-Key", key.toString())));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("cancel_cart"), any(),
+                eq(Map.of("Idempotency-Key", key.toString())), eq(true));
     }
 
     @Test
     void cancelRetryKeepsTheSameIdempotencyHeader() {
-        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
-        when(client.callToolExactEndpoint(any(), any(), any(), any()))
+        ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+        when(client.call(any(), any(), any(), any(), any(), any(Boolean.class)))
                 .thenThrow(new IllegalStateException("stale route"))
                 .thenReturn(new MerchantMcpToolCallResult(
                         "https://shop.example/api/ucp/mcp", "{}", null, NegotiatedCapabilities.none()));
         ShopifyExternalOfferCartRoutingProvider routingProvider = routeProvider();
         ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
-                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider,
-                MerchantOutboundUrlValidator.withResolver(host -> {
-                    try {
-                        return List.of(InetAddress.getByName("93.184.216.34"));
-                    } catch (Exception exception) {
-                        throw new java.net.UnknownHostException(host);
-                    }
-                }));
+                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, retryPolicy());
         var target = routingProvider.resolve(offer()).orElseThrow();
         UUID key = UUID.randomUUID();
 
         transport.call(target, "cancel_cart", Map.of("cart_id", "cart"), new CartToolCallContext(key));
 
-        verify(client, times(2)).callToolExactEndpoint(any(), eq("cancel_cart"), any(),
-                eq(Map.of("Idempotency-Key", key.toString())));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("cancel_cart"), any(),
+                eq(Map.of("Idempotency-Key", key.toString())), eq(true));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("cancel_cart"), any(),
+                eq(Map.of("Idempotency-Key", key.toString())), eq(false));
     }
 
     @Test
     void createFailureIsNotRetried() {
-        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
-        when(client.callToolExactEndpoint(any(), any(), any(), any()))
+        ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+        when(client.call(any(), any(), any(), any(), any(), any(Boolean.class)))
                 .thenThrow(new IllegalStateException("ambiguous timeout"));
         ShopifyExternalOfferCartRoutingProvider routingProvider = routeProvider();
         ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
-                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, publicUrlValidator());
+                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, retryPolicy());
 
         assertThatThrownBy(() -> transport.call(
                 routingProvider.resolve(offer()).orElseThrow(), "create_cart", Map.of(), CartToolCallContext.standard()))
                 .isInstanceOf(com.meant.api.module.cart.exception.CartException.class);
 
-        verify(client).callToolExactEndpoint(any(), eq("create_cart"), any(), eq(Map.of()));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("create_cart"), any(), eq(Map.of()), eq(true));
     }
 
     @Test
     void updateFailureIsNotRetried() {
-        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
-        when(client.callToolExactEndpoint(any(), any(), any(), any()))
+        ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+        when(client.call(any(), any(), any(), any(), any(), any(Boolean.class)))
                 .thenThrow(new IllegalStateException("ambiguous timeout"));
         ShopifyExternalOfferCartRoutingProvider routingProvider = routeProvider();
         ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
-                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, publicUrlValidator());
+                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, retryPolicy());
 
         assertThatThrownBy(() -> transport.call(
                 routingProvider.resolve(offer()).orElseThrow(), "update_cart", Map.of(), CartToolCallContext.standard()))
                 .isInstanceOf(com.meant.api.module.cart.exception.CartException.class);
 
-        verify(client).callToolExactEndpoint(any(), eq("update_cart"), any(), eq(Map.of()));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("update_cart"), any(), eq(Map.of()), eq(true));
     }
 
     @Test
     void getFailureRefreshesAndRetriesOnce() {
-        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
-        when(client.callToolExactEndpoint(any(), any(), any(), any()))
+        ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+        when(client.call(any(), any(), any(), any(), any(), any(Boolean.class)))
                 .thenThrow(new IllegalStateException("stale endpoint"))
                 .thenReturn(new MerchantMcpToolCallResult(
                         "https://shop.example/api/ucp/mcp", "{}", null, NegotiatedCapabilities.none()));
         ShopifyExternalOfferCartRoutingProvider routingProvider = routeProvider();
         ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
-                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, publicUrlValidator());
+                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, retryPolicy());
 
         transport.call(
                 routingProvider.resolve(offer()).orElseThrow(), "get_cart", Map.of(), CartToolCallContext.standard());
 
-        verify(client, times(2)).callToolExactEndpoint(any(), eq("get_cart"), any(), eq(Map.of()));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("get_cart"), any(), eq(Map.of()), eq(true));
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("get_cart"), any(), eq(Map.of()), eq(false));
+    }
+
+    @Test
+    void managedGetAndCancelRetryOnTheExactIntegrationWithoutExternalRouteRefresh() {
+        for (String tool : List.of("get_cart", "cancel_cart")) {
+            ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+            when(client.call(any(), any(), any(), any(), any(), any(Boolean.class)))
+                    .thenThrow(new com.meant.api.provider.shopify.auth.ShopifyUcpTransportException(
+                            com.meant.api.provider.shopify.auth.ShopifyUcpTransportFailure.TIMEOUT,
+                            "timeout", null, null, null))
+                    .thenReturn(new MerchantMcpToolCallResult(
+                            "https://managed.shop/api/ucp/mcp", "{}", null, NegotiatedCapabilities.none()));
+            ShopifyExternalOfferCartRoutingProvider external = mock(ShopifyExternalOfferCartRoutingProvider.class);
+            ShopifyCartRetryPolicy retry = retryPolicy();
+            ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
+                    client, new CartBindingMetrics(new SimpleMeterRegistry()), external, retry);
+            UUID integrationId = UUID.randomUUID();
+            var integration = new com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting(
+                    integrationId, MerchantIntegrationProvider.SHOPIFY, Set.of(MerchantIntegrationRole.CART),
+                    MerchantIntegrationStatus.ACTIVE, "shop-1", "managed.shop", "shop-1",
+                    "https://managed.shop/api/ucp/mcp");
+            CartRoutingTarget target = new CartRoutingTarget(
+                    "SHOPIFY:integration:" + integrationId, MerchantIntegrationProvider.SHOPIFY,
+                    integrationId, "shop-1", new MerchantCartProvider(
+                    UUID.randomUUID(), "managed.shop", "https://wrong.example/api/ucp/mcp", null,
+                    List.of(integration), MerchantExecutionPolicy.unavailable(), Instant.now(),
+                    Set.of("dev.ucp.shopping.cart")));
+            UUID key = UUID.randomUUID();
+
+            transport.call(target, tool, Map.of(), new CartToolCallContext(
+                    tool.equals("cancel_cart") ? key : null));
+
+            verify(client).call(eq(target), eq(CommerceOperation.CART), eq(tool), any(), any(), eq(true));
+            verify(client).call(eq(target), eq(CommerceOperation.CART), eq(tool), any(), any(), eq(false));
+            verifyNoInteractions(external);
+        }
     }
 
     private ShopifyExternalOfferCartRoutingProvider routeProvider() {
@@ -382,7 +408,9 @@ class ShopifyOfferCartRoutingTest {
     }
 
     private ShopifyCartProperties properties() {
-        return new ShopifyCartProperties(Duration.ofDays(35));
+        return new ShopifyCartProperties(
+                Duration.ofDays(35), Duration.ofSeconds(2), Duration.ofSeconds(8), Duration.ofSeconds(10),
+                Duration.ofSeconds(2));
     }
 
     private MerchantOutboundUrlValidator publicUrlValidator() {
@@ -407,7 +435,22 @@ class ShopifyOfferCartRoutingTest {
                 enrichmentCandidates,
                 new MerchantUcpProfileObservationProperties(Duration.ofMinutes(10), 50)
         );
-        return new ShopifyExternalOfferCartRoutingProvider(properties, lookup, observations, validator);
+        com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties auth =
+                mock(com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties.class);
+        when(auth.isEnabled()).thenReturn(true);
+        com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties readiness =
+                mock(com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties.class);
+        when(readiness.authorizationTier()).thenReturn(
+                com.meant.api.provider.shopify.capability.ShopifyAuthorizationTier.TOKEN);
+        return new ShopifyExternalOfferCartRoutingProvider(
+                properties, lookup, observations, validator, auth, readiness);
+    }
+
+    private ShopifyCartRetryPolicy retryPolicy() {
+        ShopifyCartRetryPolicy policy = mock(ShopifyCartRetryPolicy.class);
+        when(policy.prepare(any())).thenReturn(true);
+        when(policy.refreshExternalRoute(any())).thenReturn(true);
+        return policy;
     }
 
     private ResolvedSelectedOffer offer() {

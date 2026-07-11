@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -57,8 +58,32 @@ public record UcpCartResponse(
             @JsonProperty("delivery_groups")
             @JsonAlias("deliveryGroups")
             List<DeliveryGroup> deliveryGroups,
-            List<CartMessage> messages
+            List<CartMessage> messages,
+            Map<String, Object> buyer,
+            Map<String, Object> context,
+            Map<String, Object> signals,
+            CartToolArguments.Fulfillment fulfillment,
+            CartToolArguments.Discounts discounts,
+            String note
     ) {
+        public Cart(
+                String id, Instant createdAt, Instant updatedAt, Instant expiresAt, List<Line> lines,
+                Cost cost, Integer totalQuantity, String checkoutUrl, String continueUrl,
+                List<AppliedCode> discountCodes, List<AppliedCode> appliedDiscounts,
+                List<AppliedCode> discountAllocations, List<AppliedCode> giftCardCodes,
+                List<AppliedCode> appliedGiftCards, List<DeliveryGroup> deliveryGroups,
+                List<CartMessage> messages
+        ) {
+            this(id, createdAt, updatedAt, expiresAt, lines, cost, totalQuantity, checkoutUrl, continueUrl,
+                    discountCodes, appliedDiscounts, discountAllocations, giftCardCodes, appliedGiftCards,
+                    deliveryGroups, messages, Map.of(), Map.of(), Map.of(), null, null, null);
+        }
+
+        public Cart {
+            buyer = buyer == null ? Map.of() : Map.copyOf(buyer);
+            context = context == null ? Map.of() : Map.copyOf(context);
+            signals = signals == null ? Map.of() : Map.copyOf(signals);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -143,8 +168,27 @@ public record UcpCartResponse(
     public record Merchandise(
             String id,
             String title,
-            Product product
+            Product product,
+            @JsonProperty("product_id")
+            String productId,
+            @JsonProperty("selected_options")
+            List<CartAddItem.SelectedOption> selectedOptions,
+            List<CartAddItem.Component> components,
+            @JsonProperty("selling_plan")
+            CartAddItem.SellingPlan sellingPlan
     ) {
+        public Merchandise(String id, String title, Product product) {
+            this(id, title, product, null, List.of(), List.of(), null);
+        }
+
+        public Merchandise {
+            selectedOptions = selectedOptions == null ? List.of() : List.copyOf(selectedOptions);
+            components = components == null ? List.of() : List.copyOf(components);
+        }
+
+        public String resolvedProductId() {
+            return productId == null || productId.isBlank() ? product == null ? null : product.id() : productId;
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -6,13 +6,13 @@ import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.cart.service.port.CartToolTransport;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
-import com.meant.api.module.merchant.service.MerchantMcpToolClient;
-import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
-import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.plugin.cart.cancel.CancelCartCapability;
 import com.meant.api.plugin.cart.get.GetCartCapability;
+import com.meant.api.provider.shopify.auth.ShopifyMerchantUcpTransport;
+import com.meant.api.provider.shopify.auth.ShopifyCommerceFailureMapper;
+import com.meant.api.provider.shopify.auth.ShopifyUcpTransportException;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,10 +21,10 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ShopifyCartToolTransport implements CartToolTransport {
-    private final MerchantMcpToolClient merchantMcpToolClient;
+    private final ShopifyMerchantUcpTransport merchantTransport;
     private final CartBindingMetrics metrics;
     private final ShopifyExternalOfferCartRoutingProvider routingProvider;
-    private final MerchantOutboundUrlValidator urlValidator;
+    private final ShopifyCartRetryPolicy retryPolicy;
 
     @Override
     public boolean supports(CartRoutingTarget target) {
@@ -41,11 +41,15 @@ public class ShopifyCartToolTransport implements CartToolTransport {
         try {
             return invoke(target, toolName, arguments, context);
         } catch (RuntimeException exception) {
-            if (!isSafeToRetry(toolName, context)) {
+            if (!isSafeToRetry(toolName, context) || !retryPolicy.prepare(exception)) {
                 throw providerFailure(exception);
             }
+            CartRoutingTarget retryTarget = target;
+            if (target.merchantIntegrationId() == null && retryPolicy.refreshExternalRoute(exception)) {
+                retryTarget = routingProvider.refresh(target);
+            }
             try {
-                return invoke(routingProvider.refresh(target), toolName, arguments, context);
+                return invoke(retryTarget, toolName, arguments, context, false);
             } catch (RuntimeException retryFailure) {
                 retryFailure.addSuppressed(exception);
                 throw providerFailure(retryFailure);
@@ -55,31 +59,16 @@ public class ShopifyCartToolTransport implements CartToolTransport {
 
     private MerchantMcpToolCallResult invoke(
             CartRoutingTarget target, String toolName, Object arguments, CartToolCallContext context) {
+        return invoke(target, toolName, arguments, context, true);
+    }
+
+    private MerchantMcpToolCallResult invoke(
+            CartRoutingTarget target, String toolName, Object arguments, CartToolCallContext context,
+            boolean unauthorizedRefreshAllowed) {
         Map<String, String> headers = context.idempotencyKey() == null
                 ? Map.of() : Map.of("Idempotency-Key", context.idempotencyKey().toString());
-        return merchantMcpToolClient.callToolExactEndpoint(
-                validatedProvider(target), toolName, arguments, headers);
-    }
-
-    private MerchantCartProvider validatedProvider(CartRoutingTarget target) {
-        MerchantCartProvider provider = target.merchantProvider().forOperation(CommerceOperation.CART);
-        String domain = provider.domain();
-        if (domain == null || domain.isBlank()) {
-            throw CartException.binding(CartException.BindingFailure.MISSING_ROUTING,
-                    "Shopify cart route has no verified merchant domain");
-        }
-        String advertised = validated(domain, provider.advertisedMcpEndpoint());
-        String profile = provider.profileMcpEndpoint() == null
-                ? null : validated(domain, provider.profileMcpEndpoint());
-        return new MerchantCartProvider(
-                provider.merchantId(), domain, advertised, profile, provider.integrations(),
-                provider.executionPolicy(), provider.profileCapturedAt(), provider.advertisedCapabilities());
-    }
-
-    private String validated(String domain, String endpoint) {
-        String absolute = endpoint != null && endpoint.startsWith("/")
-                ? "https://" + domain + endpoint : endpoint;
-        return urlValidator.validateMerchantUrl(domain, absolute).toString();
+        return merchantTransport.call(
+                target, CommerceOperation.CART, toolName, arguments, headers, unauthorizedRefreshAllowed);
     }
 
     private boolean isSafeToRetry(String toolName, CartToolCallContext context) {
@@ -89,6 +78,8 @@ public class ShopifyCartToolTransport implements CartToolTransport {
 
     private CartException providerFailure(RuntimeException cause) {
         metrics.record(CartException.BindingFailure.PROVIDER_FAILURE);
-        return CartException.bindingUpstream("Shopify cart provider call failed", cause);
+        Throwable redacted = cause instanceof ShopifyUcpTransportException transport
+                ? ShopifyCommerceFailureMapper.map(transport) : cause;
+        return CartException.bindingUpstream("Shopify cart provider call failed", redacted);
     }
 }

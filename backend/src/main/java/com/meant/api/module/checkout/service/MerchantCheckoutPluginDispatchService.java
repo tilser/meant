@@ -3,6 +3,7 @@ package com.meant.api.module.checkout.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
@@ -19,6 +20,8 @@ import com.meant.api.plugin.checkout.get.GetCheckoutCapability;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.UpdateCheckoutCapability;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
+import com.meant.api.module.checkout.service.port.CheckoutToolTransport;
+import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.support.UcpSession;
@@ -32,7 +35,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @org.springframework.beans.factory.annotation.Autowired)
 public class MerchantCheckoutPluginDispatchService {
 
     private static final int MAX_CHECKOUT_ERROR_LENGTH = 180;
@@ -40,6 +43,7 @@ public class MerchantCheckoutPluginDispatchService {
     private final MerchantMcpToolClient merchantMcpToolClient;
     private final CapabilityRegistry capabilityRegistry;
     private final ObjectMapper objectMapper;
+    private final List<CheckoutToolTransport> checkoutToolTransports;
 
     public UcpCheckoutToolResult createCheckout(
             MerchantCartProvider provider,
@@ -62,6 +66,26 @@ public class MerchantCheckoutPluginDispatchService {
         return checkoutResult(result, response);
     }
 
+    public UcpCheckoutToolResult createCheckout(
+            CartRoutingTarget target, CreateCheckoutRequest request, UcpSession session) {
+        return createCheckout(target, request, session, CheckoutToolCallContext.standard());
+    }
+
+    public UcpCheckoutToolResult createCheckout(
+            CartRoutingTarget target, CreateCheckoutRequest request, UcpSession session,
+            CheckoutToolCallContext context) {
+        if (!hasProviderTransport(target)) {
+            return createCheckout(target.merchantProvider(), request, session);
+        }
+        CreateCheckoutCapability capability = capability(CreateCheckoutCapability.TOOL_NAME, CreateCheckoutCapability.class);
+        MerchantMcpToolCallResult result = call(target, CreateCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities()), context);
+        UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "create checkout");
+        rejectCheckoutProblems("Cart not found: " + request.cartId(), response);
+        updateSession(session, result, response);
+        return checkoutResult(result, response);
+    }
+
     public UcpCheckoutToolResult getCheckout(
             MerchantCartProvider provider,
             GetCheckoutRequest request,
@@ -74,6 +98,26 @@ public class MerchantCheckoutPluginDispatchService {
                 GetCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities())
         );
+        UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "get checkout");
+        rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
+        updateSession(session, result, response);
+        return checkoutResult(result, response);
+    }
+
+    public UcpCheckoutToolResult getCheckout(
+            CartRoutingTarget target, GetCheckoutRequest request, UcpSession session) {
+        return getCheckout(target, request, session, CheckoutToolCallContext.standard());
+    }
+
+    public UcpCheckoutToolResult getCheckout(
+            CartRoutingTarget target, GetCheckoutRequest request, UcpSession session,
+            CheckoutToolCallContext context) {
+        if (!hasProviderTransport(target)) {
+            return getCheckout(target.merchantProvider(), request, session);
+        }
+        GetCheckoutCapability capability = capability(GetCheckoutCapability.TOOL_NAME, GetCheckoutCapability.class);
+        MerchantMcpToolCallResult result = call(target, GetCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities()), context);
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "get checkout");
         rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
         updateSession(session, result, response);
@@ -99,6 +143,68 @@ public class MerchantCheckoutPluginDispatchService {
         rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
+    }
+
+    public UcpCheckoutToolResult updateCheckout(
+            CartRoutingTarget target, UpdateCheckoutRequest request, UcpSession session) {
+        return updateCheckout(target, request, session, CheckoutToolCallContext.standard());
+    }
+
+    public UcpCheckoutToolResult updateCheckout(
+            CartRoutingTarget target, UpdateCheckoutRequest request, UcpSession session,
+            CheckoutToolCallContext context) {
+        if (!hasProviderTransport(target)) {
+            return updateCheckout(target.merchantProvider(), request, session);
+        }
+        UpdateCheckoutCapability capability = capability(UpdateCheckoutCapability.TOOL_NAME, UpdateCheckoutCapability.class);
+        MerchantMcpToolCallResult result = call(target, UpdateCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities()), context);
+        UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "update checkout");
+        rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
+        updateSession(session, result, response);
+        return checkoutResult(result, response);
+    }
+
+    public UcpCheckoutToolResult cancelCheckout(
+            CartRoutingTarget target, CancelCheckoutRequest request, UcpSession session,
+            CheckoutToolCallContext context) {
+        if (!hasProviderTransport(target)) {
+            return cancelCheckout(target.merchantProvider(), request, session,
+                    context.idempotencyKey() == null ? Map.of()
+                            : Map.of("Idempotency-Key", context.idempotencyKey().toString()));
+        }
+        CancelCheckoutCapability capability = capability(CancelCheckoutCapability.TOOL_NAME, CancelCheckoutCapability.class);
+        MerchantMcpToolCallResult result = call(target, CancelCheckoutCapability.TOOL_NAME,
+                capability.buildArguments(request, session.activeCapabilities()), context);
+        UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "cancel checkout");
+        updateSessionIfCheckoutPresent(session, result, response);
+        return checkoutResult(result, response);
+    }
+
+    private MerchantMcpToolCallResult call(
+            CartRoutingTarget target, String toolName, Object arguments, CheckoutToolCallContext context) {
+        List<CheckoutToolTransport> matching = checkoutToolTransports.stream()
+                .filter(transport -> transport.supports(target)).toList();
+        if (matching.size() > 1) {
+            throw CartException.binding(CartException.BindingFailure.AMBIGUOUS_ROUTING,
+                    "Checkout provider transport is ambiguous");
+        }
+        if (matching.size() == 1) {
+            return matching.getFirst().call(target, toolName, arguments, context);
+        }
+        return merchantMcpToolClient.callToolReturningJsonToolErrors(
+                target.merchantProvider().forOperation(CommerceOperation.CHECKOUT_SESSION), toolName, arguments,
+                context.idempotencyKey() == null ? Map.of()
+                        : Map.of("Idempotency-Key", context.idempotencyKey().toString()));
+    }
+
+    private boolean hasProviderTransport(CartRoutingTarget target) {
+        long count = checkoutToolTransports.stream().filter(transport -> transport.supports(target)).count();
+        if (count > 1) {
+            throw CartException.binding(CartException.BindingFailure.AMBIGUOUS_ROUTING,
+                    "Checkout provider transport is ambiguous");
+        }
+        return count == 1;
     }
 
     public UcpCheckoutToolResult completeCheckout(

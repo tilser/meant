@@ -274,11 +274,11 @@ public class DiscountCodeValidationService {
         try {
             merchantCartPluginDispatchService.cancelCart(provider, new CancelCartRequest(cartId), session);
         } catch (CartException | MerchantMcpToolException exception) {
-            log.warn("Could not cancel temporary discount validation cart merchantId={} cartId={}",
-                    provider.merchantId(), cartId, exception);
+            log.warn("Could not cancel temporary discount validation cart failure={}",
+                    exception.getClass().getSimpleName());
         } catch (RuntimeException exception) {
-            log.warn("Unexpected error canceling temporary discount validation cart merchantId={} cartId={}",
-                    provider.merchantId(), cartId, exception);
+            log.warn("Unexpected error canceling temporary discount validation cart failure={}",
+                    exception.getClass().getSimpleName());
         }
     }
 

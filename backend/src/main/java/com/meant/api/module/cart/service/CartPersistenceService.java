@@ -3,6 +3,7 @@ package com.meant.api.module.cart.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.constant.CartAppliedCodeType;
+import com.meant.api.module.cart.constant.CartSnapshotPurpose;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartAppliedCode;
 import com.meant.api.module.cart.entity.CartLine;
@@ -15,6 +16,7 @@ import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.cart.common.support.UcpCartMoney;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.module.checkout.constant.CheckoutLifecycleState;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -54,13 +56,17 @@ public class CartPersistenceService {
     }
 
     @Transactional
-    public Cart saveSnapshot(UUID cartId, UUID userId, MerchantCartProvider provider, UcpCartToolResult result) {
-        return saveSnapshot(cartId, userId, provider, result, null);
+    public Cart saveSnapshot(
+            UUID cartId, UUID userId, MerchantCartProvider provider, UcpCartToolResult result,
+            CartSnapshotPurpose purpose) {
+        return saveSnapshot(cartId, userId, provider, result, null, purpose);
     }
 
     @Transactional
-    public Cart saveSnapshot(Cart cart, UUID userId, MerchantCartProvider provider, UcpCartToolResult result) {
-        return saveSnapshot(cart, userId, provider, result, null);
+    public Cart saveSnapshot(
+            Cart cart, UUID userId, MerchantCartProvider provider, UcpCartToolResult result,
+            CartSnapshotPurpose purpose) {
+        return saveSnapshot(cart, userId, provider, result, null, purpose);
     }
 
     @Transactional
@@ -69,14 +75,16 @@ public class CartPersistenceService {
             UUID userId,
             MerchantCartProvider provider,
             UcpCartToolResult result,
-            List<String> submittedGiftCardCodes
+            List<String> submittedGiftCardCodes,
+            CartSnapshotPurpose purpose
     ) {
         return saveSnapshot(
                 cartId == null ? null : findCart(cartId, userId),
                 userId,
                 provider,
                 result,
-                submittedGiftCardCodes
+                submittedGiftCardCodes,
+                purpose
         );
     }
 
@@ -86,9 +94,10 @@ public class CartPersistenceService {
             UUID userId,
             MerchantCartProvider provider,
             UcpCartToolResult result,
-            List<String> submittedGiftCardCodes
+            List<String> submittedGiftCardCodes,
+            CartSnapshotPurpose purpose
     ) {
-        return saveSnapshot(cart, userId, provider, result, submittedGiftCardCodes, null, List.of());
+        return saveSnapshot(cart, userId, provider, result, submittedGiftCardCodes, null, List.of(), purpose);
     }
 
     @Transactional
@@ -98,9 +107,11 @@ public class CartPersistenceService {
             CartRoutingTarget target,
             UcpCartToolResult result,
             List<String> submittedGiftCardCodes,
-            List<ResolvedSelectedOffer> addedOffers
+            List<ResolvedSelectedOffer> addedOffers,
+            CartSnapshotPurpose purpose
     ) {
-        return saveSnapshot(cart, userId, target.merchantProvider(), result, submittedGiftCardCodes, target, addedOffers);
+        return saveSnapshot(
+                cart, userId, target.merchantProvider(), result, submittedGiftCardCodes, target, addedOffers, purpose);
     }
 
     private Cart saveSnapshot(
@@ -110,7 +121,8 @@ public class CartPersistenceService {
             UcpCartToolResult result,
             List<String> submittedGiftCardCodes,
             CartRoutingTarget target,
-            List<ResolvedSelectedOffer> addedOffers
+            List<ResolvedSelectedOffer> addedOffers,
+            CartSnapshotPurpose purpose
     ) {
         UcpCartResponse.Cart remoteCart = result.response().cart();
         Instant now = Instant.now();
@@ -152,7 +164,8 @@ public class CartPersistenceService {
                 remoteCart.createdAt(),
                 remoteCart.updatedAt(),
                 remoteCart.expiresAt(),
-                now
+                now,
+                purpose
         );
         Set<String> existingRemoteLineIds = persistedCart.getLines().stream()
                 .map(CartLine::getRemoteCartLineId)
@@ -199,11 +212,8 @@ public class CartPersistenceService {
 
     @Transactional
     public Cart saveCheckoutHandoff(UUID cartId, UUID userId, UcpCheckoutToolResult result) {
-        return saveCheckoutHandoff(findCart(cartId, userId), userId, result);
-    }
-
-    @Transactional
-    public Cart saveCheckoutHandoff(Cart cart, UUID userId, UcpCheckoutToolResult result) {
+        Cart cart = cartRepository.findForCheckoutUpdate(cartId, userId)
+                .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
         validateWritableCart(cart, userId);
         UcpCheckoutResponse.Checkout checkout = result.response().resolvedCheckout();
         if (checkout == null) {
@@ -212,6 +222,14 @@ public class CartPersistenceService {
         if (hasText(checkout.cartId()) && !checkout.cartId().equals(cart.getRemoteCartId())) {
             throw CartException.upstream("UCP checkout response did not match cart");
         }
+        if (!persistRawCheckout(cart) && hasText(cart.getCheckoutId()) && hasText(checkout.id())
+                && !cart.getCheckoutId().equals(checkout.id())) {
+            throw CartException.binding(CartException.BindingFailure.IDENTITY_MISMATCH,
+                    "Remote cart cannot change its logical checkout session");
+        }
+        if (!persistRawCheckout(cart) && !hasText(checkout.id())) {
+            throw CartException.upstream("Provider-bound checkout response did not contain a checkout id");
+        }
         String checkoutUrl = blankToNull(checkout.checkoutUrl());
         String continueUrl = blankToNull(checkout.continueUrl());
         cart.replaceCheckoutSession(
@@ -219,10 +237,16 @@ public class CartPersistenceService {
                 blankToNull(checkout.status()),
                 checkoutUrl,
                 continueUrl,
-                result.rawResponse(),
+                persistRawCheckout(cart) ? result.rawResponse() : null,
+                blankToNull(result.response().version()),
+                CheckoutLifecycleState.from(result.response()).name(),
                 Instant.now()
         );
         return cartRepository.save(cart);
+    }
+
+    private boolean persistRawCheckout(Cart cart) {
+        return cart.getRoutingScopeKey() == null || cart.getRoutingScopeKey().startsWith("LEGACY:");
     }
 
     @Transactional

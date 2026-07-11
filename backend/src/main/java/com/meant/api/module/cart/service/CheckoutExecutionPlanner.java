@@ -12,7 +12,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import org.springframework.stereotype.Component;
 
+@Component
 public class CheckoutExecutionPlanner {
 
     public CheckoutExecutionPlan resolve(
@@ -32,13 +34,14 @@ public class CheckoutExecutionPlanner {
             case "incomplete" -> checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
             case "requires_escalation" -> handoffPlan(List.of(CapabilityIneligibilityReason.FALLBACK_SELECTED));
             case "ready_for_complete", "ready_for_payment" -> paymentPlan(executionPolicy);
-            case "complete_in_progress" -> new CheckoutExecutionPlan(
+            case "complete_in_progress", "processing" -> new CheckoutExecutionPlan(
                     CheckoutNextAction.WAIT,
                     CommerceExecutionRail.DIRECT_CHECKOUT_COMPLETION,
                     List.of()
             );
             case "completed" -> terminalPlan(CheckoutNextAction.DONE);
-            case "canceled" -> terminalPlan(CheckoutNextAction.RESTART);
+            case "canceled", "cancelled", "terminal_failure" -> terminalPlan(CheckoutNextAction.RESTART);
+            case "recoverable_failure" -> checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
             default -> checkoutSessionPlan(CheckoutNextAction.UNKNOWN, executionPolicy);
         };
     }

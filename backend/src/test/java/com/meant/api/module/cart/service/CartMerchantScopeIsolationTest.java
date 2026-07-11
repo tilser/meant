@@ -55,7 +55,13 @@ class CartMerchantScopeIsolationTest {
                 mock(com.meant.api.module.user.service.UserInventoryService.class),
                 mock(CartResultMapper.class), mock(CheckoutResultMapper.class),
                 mock(CartCheckoutConsentService.class), resolution, routing,
-                mock(CartOfferRevalidationService.class), metrics, commerceContext);
+                mock(CartOfferRevalidationService.class), metrics, commerceContext,
+                new CartReplacementService(new CartLineOfferIdentityMapper(new tools.jackson.databind.ObjectMapper()),
+                        new CartFulfillmentReplacementService()),
+                new CommerceMutationPolicy(
+                        new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
+                        new CartRetrySleeper()),
+                new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy());
         CreateCartCommand command = new CreateCartCommand(
                 UUID.randomUUID(), null, null,
                 List.of(new CreateCartCommand.AddItem("shop-1", 1), new CreateCartCommand.AddItem("shop-2", 1)),

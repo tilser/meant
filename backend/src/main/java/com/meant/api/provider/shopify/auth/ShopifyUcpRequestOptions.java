@@ -12,8 +12,16 @@ public record ShopifyUcpRequestOptions(
         Set<String> requiredScopes,
         Duration connectTimeout,
         Duration readTimeout,
-        Duration requestDeadline
+        Duration requestDeadline,
+        boolean unauthorizedRefreshAllowed
 ) {
+
+    public ShopifyUcpRequestOptions(
+            URI endpoint, Set<String> allowedHosts, Set<String> requiredScopes,
+            Duration connectTimeout, Duration readTimeout, Duration requestDeadline
+    ) {
+        this(endpoint, allowedHosts, requiredScopes, connectTimeout, readTimeout, requestDeadline, true);
+    }
 
     public ShopifyUcpRequestOptions {
         if (endpoint == null || !endpoint.isAbsolute() || endpoint.getHost() == null) {
@@ -26,7 +34,8 @@ public record ShopifyUcpRequestOptions(
             throw new IllegalArgumentException("Shopify UCP endpoint must not contain user info or a fragment");
         }
         allowedHosts = normalized(allowedHosts, true);
-        requiredScopes = normalized(requiredScopes, false);
+        requiredScopes = requiredScopes == null || requiredScopes.isEmpty()
+                ? Set.of() : normalized(requiredScopes, false);
         if (!allowedHosts.contains(endpoint.getHost().toLowerCase(Locale.ROOT))) {
             throw new IllegalArgumentException("Shopify UCP endpoint host is not allowlisted");
         }

@@ -3,6 +3,8 @@ package com.meant.api.module.cart.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meant.api.module.cart.constant.CartSnapshotPurpose;
+import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
@@ -27,6 +29,8 @@ import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.List;
@@ -34,6 +38,76 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class CartPersistenceOfferBindingTest {
+
+    @Test
+    void providerReadRefreshPreservesActiveCheckoutLifecycleAndCachedPlanning() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        Cart cart = service.saveSnapshot(null, java.util.UUID.randomUUID(), target(), cartResult("line-1"),
+                List.of(), List.of(selectedOffer()), CartSnapshotPurpose.CART_MUTATION);
+        Instant synchronizedAt = Instant.parse("2026-07-11T20:00:00Z");
+        cart.replaceCheckoutSession(
+                "checkout-1", "processing-wire", "https://seller.test/handoff", "https://seller.test/continue",
+                null, "2026-04-08", "PROCESSING", synchronizedAt);
+
+        Cart refreshed = service.saveSnapshot(cart, cart.getUserId(), target(), cartResult("line-1"),
+                List.of(), List.of(), CartSnapshotPurpose.READ_REFRESH);
+
+        assertThat(refreshed.getCheckoutId()).isEqualTo("checkout-1");
+        assertThat(refreshed.getCheckoutStatus()).isEqualTo("processing-wire");
+        assertThat(refreshed.getCheckoutLifecycleState()).isEqualTo("PROCESSING");
+        assertThat(refreshed.getCheckoutProtocolVersion()).isEqualTo("2026-04-08");
+        assertThat(refreshed.getCheckoutSynchronizedAt()).isEqualTo(synchronizedAt);
+        assertThat(refreshed.getCheckoutUrl()).isEqualTo("https://seller.test/handoff");
+        assertThat(refreshed.getContinueUrl()).isEqualTo("https://seller.test/continue");
+        assertThat(new CheckoutResultMapper(new ObjectMapper(), new CheckoutExecutionPlanner())
+                .from(refreshed, MerchantExecutionPolicy.unavailable()).nextAction())
+                .isEqualTo(CheckoutNextAction.WAIT);
+    }
+
+    @Test
+    void legacyReadRefreshPreservesPermittedRawCheckoutResponseAndHandoff() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        MerchantCartProvider provider = new MerchantCartProvider(
+                null, "seller.test", "https://seller.test/api/ucp/mcp", null,
+                List.of(), MerchantExecutionPolicy.unavailable());
+        Cart cart = service.saveSnapshot((Cart) null, java.util.UUID.randomUUID(), provider, cartResult("line-1"),
+                List.of(), CartSnapshotPurpose.CART_MUTATION);
+        Instant synchronizedAt = Instant.parse("2026-07-11T20:00:00Z");
+        cart.replaceCheckoutSession(
+                "legacy-checkout", "incomplete", "https://seller.test/handoff", "https://seller.test/continue",
+                "{\"legacy\":\"permitted\"}", "2026-04-08", "INCOMPLETE", synchronizedAt);
+
+        Cart refreshed = service.saveSnapshot(cart, cart.getUserId(), provider, cartResult("line-1"),
+                List.of(), CartSnapshotPurpose.READ_REFRESH);
+
+        assertThat(refreshed.getCheckoutId()).isEqualTo("legacy-checkout");
+        assertThat(refreshed.getRawCheckoutResponse()).isEqualTo("{\"legacy\":\"permitted\"}");
+        assertThat(refreshed.getCheckoutSynchronizedAt()).isEqualTo(synchronizedAt);
+        assertThat(refreshed.getCheckoutUrl()).isEqualTo("https://seller.test/handoff");
+        assertThat(refreshed.getContinueUrl()).isEqualTo("https://seller.test/continue");
+    }
+
+    @Test
+    void cartMutationSnapshotInvalidatesCheckoutSoItCannotBeReused() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        Cart cart = service.saveSnapshot(null, java.util.UUID.randomUUID(), target(), cartResult("line-1"),
+                List.of(), List.of(selectedOffer()), CartSnapshotPurpose.CART_MUTATION);
+        cart.replaceCheckoutSession(
+                "stale-checkout", "incomplete", "https://seller.test/handoff", "https://seller.test/continue",
+                null, "2026-04-08", "INCOMPLETE", Instant.now());
+
+        Cart mutated = service.saveSnapshot(cart, cart.getUserId(), target(), cartResult("line-rotated"),
+                List.of(), List.of(), CartSnapshotPurpose.CART_MUTATION);
+
+        assertThat(mutated.getCheckoutId()).isNull();
+        assertThat(mutated.getCheckoutStatus()).isNull();
+        assertThat(mutated.getCheckoutLifecycleState()).isNull();
+        assertThat(mutated.getCheckoutProtocolVersion()).isNull();
+        assertThat(mutated.getCheckoutSynchronizedAt()).isNull();
+        assertThat(mutated.getCheckoutUrl()).isNull();
+        assertThat(mutated.getContinueUrl()).isNull();
+        assertThat(mutated.getRawCheckoutResponse()).isNull();
+    }
 
     @Test
     void persistsExactIdentityButNoDisplayPriceCheckoutUrlOrRawProviderPayload() {
@@ -62,7 +136,8 @@ class CartPersistenceOfferBindingTest {
                 "https://catalog.shopify.com/api/ucp/mcp", "{\"raw\":\"prohibited\"}",
                 new UcpCartResponse("provider instructions", remote, List.of(), List.of()));
 
-        Cart cart = service.saveSnapshot(null, java.util.UUID.randomUUID(), target, result, List.of(), List.of(selected));
+        Cart cart = service.saveSnapshot(null, java.util.UUID.randomUUID(), target, result, List.of(),
+                List.of(selected), CartSnapshotPurpose.CART_MUTATION);
         var currentResult = new CartResultMapper(new ObjectMapper()).from(cart, result.response());
 
         assertThat(cart.getRawCartResponse()).isEqualTo("{}");
@@ -96,14 +171,14 @@ class CartPersistenceOfferBindingTest {
     void boundRemoteCartHashIncludesImmutableRoutingScope() {
         CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
         Cart first = service.saveSnapshot(null, java.util.UUID.randomUUID(), target(), cartResult("line-1"),
-                List.of(), List.of(selectedOffer()));
+                List.of(), List.of(selectedOffer()), CartSnapshotPurpose.CART_MUTATION);
         CartRoutingTarget other = new CartRoutingTarget(
                 "SHOPIFY:merchant:shop-2", MerchantIntegrationProvider.SHOPIFY, null, "shop-2",
                 new MerchantCartProvider(null, "other.test", "https://other.test/api/ucp/mcp", null,
                         List.of(), MerchantExecutionPolicy.unavailable()));
         ResolvedSelectedOffer selected = selectedOffer("shop-2");
         Cart second = service.saveSnapshot(null, java.util.UUID.randomUUID(), other, cartResult("line-1"),
-                List.of(), List.of(selected));
+                List.of(), List.of(selected), CartSnapshotPurpose.CART_MUTATION);
 
         assertThat(first.getRemoteCartId()).isEqualTo(second.getRemoteCartId());
         assertThat(first.getRemoteCartIdHash()).isNotEqualTo(second.getRemoteCartIdHash());
@@ -116,9 +191,11 @@ class CartPersistenceOfferBindingTest {
         CartRoutingTarget target = target();
 
         Cart cart = service.saveSnapshot(
-                null, java.util.UUID.randomUUID(), target, cartResult("line-1"), List.of(), List.of(selected));
+                null, java.util.UUID.randomUUID(), target, cartResult("line-1"), List.of(), List.of(selected),
+                CartSnapshotPurpose.CART_MUTATION);
         Cart refreshed = service.saveSnapshot(
-                cart, cart.getUserId(), target, cartResult("line-rotated"), List.of(), List.of());
+                cart, cart.getUserId(), target, cartResult("line-rotated"), List.of(), List.of(),
+                CartSnapshotPurpose.READ_REFRESH);
 
         assertThat(refreshed.getLines()).singleElement().satisfies(saved -> {
             assertThat(saved.getRemoteCartLineId()).isEqualTo("line-rotated");
@@ -135,7 +212,7 @@ class CartPersistenceOfferBindingTest {
 
         assertThatThrownBy(() -> service.saveSnapshot(
                 null, java.util.UUID.randomUUID(), target(), cartResult("line-1"), List.of(),
-                List.of(selected, selected)))
+                List.of(selected, selected), CartSnapshotPurpose.CART_MUTATION))
                 .isInstanceOf(CartException.class)
                 .extracting("bindingFailure")
                 .isEqualTo(CartException.BindingFailure.IDENTITY_MISMATCH);
@@ -152,13 +229,47 @@ class CartPersistenceOfferBindingTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void shopifyCheckoutPersistsOnlyPermittedLifecycleMetadata() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), objectMapper);
+        Cart cart = service.saveSnapshot(null, java.util.UUID.randomUUID(), target(), cartResult("line-1"),
+                List.of(), List.of(selectedOffer()), CartSnapshotPurpose.CART_MUTATION);
+        String raw = """
+                {"ucp":{"version":"2026-04-08"},"checkout":{"id":"checkout-1","cart_id":"remote-cart",
+                "status":"requires_escalation","continue_url":"https://seller.test/checkout",
+                "buyer":{"email":"buyer-secret@example.test"},"payment":{"instruments":[{"token":"secret"}]}}}
+                """;
+        UcpCheckoutResponse response = objectMapper.readValue(raw, UcpCheckoutResponse.class);
+
+        Cart saved = service.saveCheckoutHandoff(cart.getId(), cart.getUserId(), new UcpCheckoutToolResult(
+                "https://seller.test/api/ucp/mcp", raw, response));
+
+        assertThat(saved.getCheckoutId()).isEqualTo("checkout-1");
+        assertThat(saved.getCheckoutStatus()).isEqualTo("requires_escalation");
+        assertThat(saved.getCheckoutLifecycleState()).isEqualTo("REQUIRES_ESCALATION");
+        assertThat(saved.getCheckoutProtocolVersion()).isEqualTo("2026-04-08");
+        assertThat(saved.getCheckoutSynchronizedAt()).isNotNull();
+        assertThat(saved.getContinueUrl()).isEqualTo("https://seller.test/checkout");
+        assertThat(saved.getRawCheckoutResponse()).isNull();
+        assertThat(saved.toString()).doesNotContain("buyer-secret").doesNotContain("secret");
+    }
+
     private CartRepository savingRepository() {
+        java.util.concurrent.atomic.AtomicReference<Cart> stored = new java.util.concurrent.atomic.AtomicReference<>();
         return (CartRepository) Proxy.newProxyInstance(
                 CartRepository.class.getClassLoader(),
                 new Class<?>[]{CartRepository.class},
                 (proxy, method, arguments) -> {
                     if (method.getName().equals("save")) {
+                        stored.set((Cart) arguments[0]);
                         return arguments[0];
+                    }
+                    if (method.getName().equals("findForCheckoutUpdate")) {
+                        Cart cart = stored.get();
+                        return cart != null && cart.getId().equals(arguments[0])
+                                && cart.getUserId().equals(arguments[1])
+                                ? java.util.Optional.of(cart) : java.util.Optional.empty();
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });

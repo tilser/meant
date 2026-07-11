@@ -2520,8 +2520,8 @@ export interface components {
             selectedDeliveryOptions?: {
                 [key: string]: unknown;
             }[];
-            discountCodes: string[];
-            giftCardCodes: string[];
+            discountCodes?: string[];
+            giftCardCodes?: string[];
             note?: string;
         };
         CartAppliedCodeResponse: {

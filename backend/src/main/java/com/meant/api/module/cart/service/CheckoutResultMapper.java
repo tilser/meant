@@ -4,6 +4,7 @@ import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.module.checkout.constant.CheckoutLifecycleState;
 import com.meant.api.plugin.support.UcpMoney;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,10 +20,14 @@ import tools.jackson.databind.ObjectMapper;
 public class CheckoutResultMapper {
 
     private final ObjectMapper objectMapper;
-    private final CheckoutExecutionPlanner checkoutExecutionPlanner = new CheckoutExecutionPlanner();
+    private final CheckoutExecutionPlanner checkoutExecutionPlanner;
 
     public CheckoutResult from(Cart cart, MerchantExecutionPolicy policy) {
-        UcpCheckoutResponse response = parseStoredResponse(cart.getRawCheckoutResponse());
+        return from(cart, parseStoredResponse(cart.getRawCheckoutResponse()), policy);
+    }
+
+    public CheckoutResult from(
+            Cart cart, UcpCheckoutResponse response, MerchantExecutionPolicy policy) {
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         UcpMoney total = checkout == null ? null : checkout.resolvedTotal();
         String currency = firstText(
@@ -33,8 +38,11 @@ public class CheckoutResultMapper {
         String continueUrl = firstText(checkout == null ? null : checkout.continueUrl(), cart.getContinueUrl());
         String checkoutUrl = firstText(checkout == null ? null : checkout.checkoutUrl(), cart.getCheckoutUrl());
         List<CheckoutResult.Message> checkoutMessages = messages(response);
+        String lifecycle = response == null
+                ? firstText(cart.getCheckoutLifecycleState(), cart.getCheckoutStatus())
+                : CheckoutLifecycleState.from(response).name();
         var execution = checkoutExecutionPlanner.resolve(
-                firstText(checkout == null ? null : checkout.status(), cart.getCheckoutStatus()),
+                lifecycle,
                 checkoutMessages,
                 policy
         );
@@ -45,7 +53,7 @@ public class CheckoutResultMapper {
                 firstText(checkout == null ? null : checkout.status(), cart.getCheckoutStatus()),
                 checkoutUrl,
                 continueUrl,
-                response == null ? null : response.version(),
+                firstText(response == null ? null : response.version(), cart.getCheckoutProtocolVersion()),
                 total == null ? null : total.amount(),
                 currency == null ? null : currency.toUpperCase(Locale.ROOT),
                 checkoutMessages,

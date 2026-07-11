@@ -80,9 +80,10 @@ public class UcpMcpClient {
             URI endpoint,
             String toolName,
             Object arguments,
+            Map<String, String> headers,
             Consumer<HttpHeaders> authentication
     ) {
-        return callTool(restClient, endpoint, toolName, arguments, Map.of(), authentication, true);
+        return callTool(restClient, endpoint, toolName, arguments, headers, authentication, true);
     }
 
     private UcpToolResponse callTool(
@@ -154,13 +155,9 @@ public class UcpMcpClient {
         McpToolResult result = response == null ? null : response.result();
         String outcome = exchangeOutcome(response, result);
         boolean failed = !"success".equals(outcome);
-        String message = "UCP merchant tool exchange endpointHost={} endpointPath={} tool={} requestId={} "
-                + "outcome={} textPresent={} structuredPresent={}";
+        String message = "UCP merchant tool exchange tool={} outcome={} textPresent={} structuredPresent={}";
         Object[] values = {
-                endpoint == null ? null : endpoint.getHost(),
-                endpoint == null ? null : endpoint.getPath(),
                 toolName,
-                request.id(),
                 outcome,
                 result != null && firstContentText(result.content()) != null,
                 result != null && result.structuredContent() != null

@@ -25,9 +25,9 @@ public record CartUpdateRequest(
         List<Map<String, Object>> deliveryAddressesToReplace,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<Map<String, Object>> selectedDeliveryOptions,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<@NotBlank String> discountCodes,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<@NotBlank String> giftCardCodes,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String note

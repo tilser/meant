@@ -276,8 +276,7 @@ public class MerchantMcpToolClient {
     ) {
         if (exception instanceof RestClientResponseException responseException) {
             log.warn(
-                    "UCP merchant HTTP failure domain={} operation={} status={}",
-                    domain,
+                    "UCP merchant HTTP failure operation={} status={}",
                     operation,
                     responseException.getStatusCode().value()
             );
@@ -285,8 +284,7 @@ public class MerchantMcpToolClient {
         }
         if (exception instanceof UcpMcpException || exception instanceof MerchantMcpToolException) {
             log.warn(
-                    "UCP merchant MCP failure domain={} operation={} exception={}",
-                    domain,
+                    "UCP merchant MCP failure operation={} exception={}",
                     operation,
                     exception.getClass().getName()
             );

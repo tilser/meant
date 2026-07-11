@@ -67,9 +67,9 @@ public final class CartCommandMapper {
                 safeList(request.removeCartLineIds()),
                 safeList(request.removeRemoteCartLineIds()),
                 request.buyerIdentity(),
-                safeList(request.deliveryAddressesToAdd()),
-                safeList(request.deliveryAddressesToReplace()),
-                safeList(request.selectedDeliveryOptions()),
+                request.deliveryAddressesToAdd(),
+                request.deliveryAddressesToReplace(),
+                request.selectedDeliveryOptions(),
                 request.discountCodes(),
                 request.giftCardCodes(),
                 request.note()

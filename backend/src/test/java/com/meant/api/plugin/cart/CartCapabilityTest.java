@@ -19,6 +19,7 @@ import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.UpdateCartCapability;
 import com.meant.api.plugin.cart.update.dto.UpdateCartArguments;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.cart.update.dto.CartReplacementState;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import java.time.Instant;
@@ -54,6 +55,8 @@ class CartCapabilityTest {
         assertThat(arguments.cart().lineItems()).extracting(lineItem -> lineItem.item().id())
                 .containsExactly("gid://shopify/ProductVariant/1");
         assertThat(arguments.cart().discounts().codes()).containsExactly("SAVE5");
+        assertThat(arguments.cart().giftCardCodes()).containsExactly("CARD1234");
+        assertThat(arguments.cart().note()).isEqualTo("Please gift wrap");
         assertThat(response.cart().id()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.cart().continueUrl()).isEqualTo("https://merchant.example/continue");
         assertThat(response.cart().expiresAt()).isEqualTo(Instant.parse("2026-06-16T12:05:00Z"));
@@ -141,6 +144,32 @@ class CartCapabilityTest {
                 .isEqualTo("gid://shopify/ProductVariant/3");
         assertThat(arguments.cart().lineItems().get(2).quantity()).isZero();
         assertThat(response.cart().lines()).hasSize(1);
+    }
+
+    @Test
+    void providerUpdateSerializesTheCompleteIntendedCartState() {
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+        CartAddItem first = new CartAddItem("product-1", "variant-1",
+                List.of(new CartAddItem.SelectedOption("variant", "Color", "Black")),
+                List.of(), null, 3);
+        CartAddItem second = new CartAddItem("product-2", "variant-2",
+                List.of(), List.of(), null, 1);
+
+        UpdateCartArguments arguments = capability.buildArguments(new UpdateCartRequest(
+                "cart-1", List.of(), List.of(), List.of(), List.of(), null, Map.of("address_country", "US"),
+                List.of(), List.of(), List.of(), List.of(), List.of(), null,
+                new CartReplacementState(List.of(first, second), Map.of(), Map.of("address_country", "US"),
+                        Map.of(), null, null, List.of(), null)),
+                NegotiatedCapabilities.none());
+
+        assertThat(arguments.cart().lineItems()).hasSize(2);
+        assertThat(arguments.cart().lineItems()).extracting(item -> item.item().id())
+                .containsExactly("variant-1", "variant-2");
+        assertThat(arguments.cart().lineItems()).extracting(CartToolArguments.LineItem::quantity)
+                .containsExactly(3, 1);
+        assertThat(arguments.cart().lineItems().getFirst().item().selectedOptions())
+                .containsExactlyElementsOf(first.selectedOptions());
+        assertThat(arguments.cart().context()).containsEntry("address_country", "US");
     }
 
     @Test

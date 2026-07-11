@@ -41,7 +41,8 @@ class MerchantCheckoutPluginDispatchServiceTest {
         MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
                 merchantMcpToolClient(restClientBuilder.build()),
                 registry(),
-                objectMapper
+                objectMapper,
+                List.of()
         );
         UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
 
@@ -73,7 +74,8 @@ class MerchantCheckoutPluginDispatchServiceTest {
         MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
                 merchantMcpToolClient(restClientBuilder.build()),
                 registry(),
-                objectMapper
+                objectMapper,
+                List.of()
         );
         UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
 
@@ -122,7 +124,8 @@ class MerchantCheckoutPluginDispatchServiceTest {
         MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
                 merchantMcpToolClient(restClientBuilder.build()),
                 registry(),
-                objectMapper
+                objectMapper,
+                List.of()
         );
         UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
 
@@ -152,7 +155,8 @@ class MerchantCheckoutPluginDispatchServiceTest {
         MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
                 merchantMcpToolClient(restClientBuilder.build()),
                 registry(),
-                objectMapper
+                objectMapper,
+                List.of()
         );
         UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
 
@@ -186,7 +190,8 @@ class MerchantCheckoutPluginDispatchServiceTest {
         MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
                 merchantMcpToolClient(restClientBuilder.build()),
                 registry(),
-                objectMapper
+                objectMapper,
+                List.of()
         );
         UcpSession session = UcpSession.cart("gid://shopify/Cart/1", null, null);
 

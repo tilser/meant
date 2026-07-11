@@ -116,6 +116,21 @@ public record MerchantCartProvider(
         );
     }
 
+    public MerchantCartProvider forIntegration(UUID integrationId) {
+        if (integrationId == null) {
+            return this;
+        }
+        String endpoint = integrations.stream()
+                .filter(integration -> integrationId.equals(integration.integrationId()))
+                .map(MerchantIntegrationRouting::endpoint)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Merchant integration endpoint is unavailable"));
+        return new MerchantCartProvider(
+                merchantId, domain, endpoint, profileMcpEndpoint, integrations, executionPolicy,
+                profileCapturedAt, advertisedCapabilities);
+    }
+
     /**
      * Deprecated compatibility view. It is derived from the direct-completion policy and is not an
      * input to migrated checkout routing.

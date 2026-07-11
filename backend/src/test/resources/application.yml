@@ -83,6 +83,9 @@ ucp:
     order-webhooks-authorized: false
 
 commerce:
+  cart:
+    retry:
+      max-reconciliation-delay: 2s
   catalog:
     federation:
       overall-deadline: 15s
@@ -130,6 +133,10 @@ shopify:
     circuit-open-duration: 30s
   cart:
     profile-freshness: 840h
+    connect-timeout: 2s
+    read-timeout: 8s
+    request-deadline: 10s
+    max-retry-delay: 2s
   capability-readiness:
     authorization-tier: NONE
     granted-scopes: []

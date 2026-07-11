@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import org.springframework.stereotype.Component;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.util.StringUtils;
 
 @Component
@@ -18,13 +19,16 @@ public class ShopifyBearerAuthenticationStrategy {
 
     private final ShopifyTokenProvider tokenProvider;
     private final ShopifyAgentAuthProperties properties;
+    private final MeterRegistry meterRegistry;
 
-    ShopifyBearerAuthenticationStrategy(
+    public ShopifyBearerAuthenticationStrategy(
             ShopifyTokenProvider tokenProvider,
-            ShopifyAgentAuthProperties properties
+            ShopifyAgentAuthProperties properties,
+            MeterRegistry meterRegistry
     ) {
         this.tokenProvider = Objects.requireNonNull(tokenProvider, "tokenProvider");
         this.properties = Objects.requireNonNull(properties, "properties");
+        this.meterRegistry = Objects.requireNonNull(meterRegistry, "meterRegistry");
     }
 
     public ShopifyBearerAuthenticationResult prepare(Set<String> requiredScopes) {
@@ -54,7 +58,15 @@ public class ShopifyBearerAuthenticationStrategy {
                     metadata
             );
         }
-        return result(tokenProvider.refreshAfterUnauthorized(rejectedHeader.orElseThrow().generation()), required);
+        try {
+            ShopifyBearerAuthenticationResult result = result(
+                    tokenProvider.refreshAfterUnauthorized(rejectedHeader.orElseThrow().generation()), required);
+            recordRefresh("success");
+            return result;
+        } catch (RuntimeException exception) {
+            recordRefresh("failure");
+            throw exception;
+        }
     }
 
     private ShopifyBearerAuthenticationResult result(ShopifyAccessToken token, Set<String> requiredScopes) {
@@ -103,5 +115,11 @@ public class ShopifyBearerAuthenticationStrategy {
             }
         }
         return Collections.unmodifiableSet(normalized);
+    }
+
+    private void recordRefresh(String outcome) {
+        meterRegistry.counter("commerce.provider.auth_refresh",
+                "provider", "shopify", "integration", "token_tier",
+                "operation", "authentication", "outcome", outcome).increment();
     }
 }

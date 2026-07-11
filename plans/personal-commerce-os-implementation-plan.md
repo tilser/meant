@@ -498,6 +498,7 @@ Carry offer provenance into the correct cart integration and prevent provider or
 
 Priority: P0  
 Dependencies: PCOS-005, PCOS-013  
+Implementation status: Complete
 
 **Goal**
 

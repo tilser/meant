@@ -592,7 +592,9 @@ class NativeCheckoutCompletionServiceTest {
         private int cancelCount;
 
         private FakeDispatchService() {
-            super(null, null, null);
+            super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.transport.registry.CapabilityRegistry.class),
+                    new tools.jackson.databind.ObjectMapper(), java.util.List.of());
         }
 
         @Override

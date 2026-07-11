@@ -1,5 +1,7 @@
 package com.meant.api.module.cart.entity;
 
+import com.meant.api.module.cart.constant.CartSnapshotPurpose;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -69,6 +71,12 @@ public class Cart {
     private String checkoutId;
 
     private String checkoutStatus;
+
+    private String checkoutProtocolVersion;
+
+    private String checkoutLifecycleState;
+
+    private Instant checkoutSynchronizedAt;
 
     private String rawCheckoutResponse;
 
@@ -156,16 +164,25 @@ public class Cart {
             Instant remoteCreatedAt,
             Instant remoteUpdatedAt,
             Instant expiresAt,
-            Instant refreshedAt
+            Instant refreshedAt,
+            CartSnapshotPurpose purpose
     ) {
         this.endpoint = endpoint;
         this.remoteCartId = remoteCartId;
         this.remoteCartIdHash = remoteCartIdHash;
-        this.checkoutUrl = checkoutUrl;
-        this.continueUrl = continueUrl;
-        this.checkoutId = null;
-        this.checkoutStatus = null;
-        this.rawCheckoutResponse = null;
+        if (purpose.invalidatesCheckout()) {
+            this.checkoutUrl = checkoutUrl;
+            this.continueUrl = continueUrl;
+            this.checkoutId = null;
+            this.checkoutStatus = null;
+            this.checkoutProtocolVersion = null;
+            this.checkoutLifecycleState = null;
+            this.checkoutSynchronizedAt = null;
+            this.rawCheckoutResponse = null;
+        } else if (!hasCheckoutSession()) {
+            this.checkoutUrl = checkoutUrl;
+            this.continueUrl = continueUrl;
+        }
         this.instructions = instructions;
         this.rawCartResponse = rawCartResponse;
         this.totalQuantity = totalQuantity;
@@ -178,6 +195,11 @@ public class Cart {
         this.active = true;
         this.updatedAt = refreshedAt;
         this.refreshedAt = refreshedAt;
+    }
+
+    private boolean hasCheckoutSession() {
+        return checkoutId != null || checkoutStatus != null || checkoutProtocolVersion != null
+                || checkoutLifecycleState != null || checkoutSynchronizedAt != null || rawCheckoutResponse != null;
     }
 
     public void replaceCheckoutHandoff(String checkoutUrl, String continueUrl, Instant refreshedAt) {
@@ -195,11 +217,28 @@ public class Cart {
             String rawCheckoutResponse,
             Instant refreshedAt
     ) {
+        replaceCheckoutSession(checkoutId, checkoutStatus, checkoutUrl, continueUrl,
+                rawCheckoutResponse, null, null, refreshedAt);
+    }
+
+    public void replaceCheckoutSession(
+            String checkoutId,
+            String checkoutStatus,
+            String checkoutUrl,
+            String continueUrl,
+            String rawCheckoutResponse,
+            String checkoutProtocolVersion,
+            String checkoutLifecycleState,
+            Instant refreshedAt
+    ) {
         this.checkoutId = checkoutId;
         this.checkoutStatus = checkoutStatus;
         this.checkoutUrl = checkoutUrl;
         this.continueUrl = continueUrl;
         this.rawCheckoutResponse = rawCheckoutResponse;
+        this.checkoutProtocolVersion = checkoutProtocolVersion;
+        this.checkoutLifecycleState = checkoutLifecycleState;
+        this.checkoutSynchronizedAt = refreshedAt;
         this.updatedAt = refreshedAt;
         this.refreshedAt = refreshedAt;
     }

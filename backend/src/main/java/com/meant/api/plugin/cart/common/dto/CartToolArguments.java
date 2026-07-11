@@ -13,8 +13,11 @@ public record CartToolArguments(
         List<LineItem> lineItems,
         Map<String, Object> buyer,
         Map<String, Object> context,
+        Map<String, Object> signals,
         Fulfillment fulfillment,
         Discounts discounts,
+        @JsonProperty("gift_card_codes")
+        List<String> giftCardCodes,
         String note
 ) {
 
@@ -22,18 +25,22 @@ public record CartToolArguments(
             List<CartAddItem> addItems,
             Map<String, Object> buyerIdentity,
             Map<String, Object> context,
+            Map<String, Object> signals,
             List<Map<String, Object>> deliveryAddressesToAdd,
             List<Map<String, Object>> deliveryAddressesToReplace,
             List<Map<String, Object>> selectedDeliveryOptions,
             List<String> discountCodes,
+            List<String> giftCardCodes,
             String note
     ) {
         return new CartToolArguments(
                 addLineItems(addItems),
                 emptyToNull(buyerIdentity),
                 emptyToNull(context),
+                emptyToNull(signals),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
                 discounts(discountCodes),
+                codes(giftCardCodes),
                 note
         );
     }
@@ -44,10 +51,12 @@ public record CartToolArguments(
             List<CartUpdateItem> removeItems,
             Map<String, Object> buyerIdentity,
             Map<String, Object> context,
+            Map<String, Object> signals,
             List<Map<String, Object>> deliveryAddressesToAdd,
             List<Map<String, Object>> deliveryAddressesToReplace,
             List<Map<String, Object>> selectedDeliveryOptions,
             List<String> discountCodes,
+            List<String> giftCardCodes,
             String note
     ) {
         List<LineItem> lineItems = new ArrayList<>(addLineItems(addItems));
@@ -72,10 +81,27 @@ public record CartToolArguments(
                 lineItems,
                 emptyToNull(buyerIdentity),
                 emptyToNull(context),
+                emptyToNull(signals),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
                 discounts(discountCodes),
+                codes(giftCardCodes),
                 note
         );
+    }
+
+    public static CartToolArguments replacement(
+            List<CartAddItem> lineItems,
+            Map<String, Object> buyer,
+            Map<String, Object> context,
+            Map<String, Object> signals,
+            Fulfillment fulfillment,
+            Discounts discounts,
+            List<String> giftCardCodes,
+            String note
+    ) {
+        return new CartToolArguments(
+                addLineItems(lineItems), emptyToNull(buyer), emptyToNull(context), emptyToNull(signals),
+                fulfillment, discounts, codes(giftCardCodes), note);
     }
 
     private static List<LineItem> addLineItems(List<CartAddItem> addItems) {
@@ -99,13 +125,19 @@ public record CartToolArguments(
     }
 
     private static Discounts discounts(List<String> discountCodes) {
-        List<String> codes = safeList(discountCodes).stream()
-                .filter(CartToolArguments::hasText)
-                .toList();
+        List<String> codes = codes(discountCodes);
         return codes.isEmpty() ? null : new Discounts(codes);
     }
 
-    private static Fulfillment fulfillment(
+    private static List<String> codes(List<String> values) {
+        return safeList(values).stream()
+                .filter(CartToolArguments::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    public static Fulfillment fulfillment(
             List<Map<String, Object>> deliveryAddressesToAdd,
             List<Map<String, Object>> deliveryAddressesToReplace,
             List<Map<String, Object>> selectedDeliveryOptions
@@ -140,7 +172,7 @@ public record CartToolArguments(
         return new Fulfillment(List.of(method));
     }
 
-    private static Map<String, Object> destination(Map<String, Object> source) {
+    public static Map<String, Object> destination(Map<String, Object> source) {
         if (source == null || source.isEmpty()) {
             return Map.of();
         }
@@ -163,7 +195,7 @@ public record CartToolArguments(
         return destination;
     }
 
-    private static Map<String, Object> fulfillmentGroup(Map<String, Object> source) {
+    public static Map<String, Object> fulfillmentGroup(Map<String, Object> source) {
         if (source == null || source.isEmpty()) {
             return Map.of();
         }

@@ -38,7 +38,7 @@ public class CartResultMapper {
         try {
             return objectMapper.readValue(rawCartResponse, UcpCartResponse.class);
         } catch (JacksonException exception) {
-            log.warn("Could not parse stored cart response for cart {}: {}", cart.getId(), exception.getMessage());
+            log.warn("Could not parse stored cart response");
             return null;
         }
     }

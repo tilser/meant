@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="036-add-checkout-lifecycle-metadata" author="codex">
+        <addColumn tableName="cart">
+            <column name="checkout_protocol_version" type="text"/>
+            <column name="checkout_lifecycle_state" type="text"/>
+            <column name="checkout_synchronized_at" type="timestamp with time zone"/>
+        </addColumn>
+        <sql>
+            UPDATE cart
+            SET raw_checkout_response = NULL,
+                checkout_id = NULL,
+                checkout_status = NULL
+            WHERE routing_scope_key IS NOT NULL AND routing_scope_key NOT LIKE 'LEGACY:%'
+        </sql>
+        <sql>
+            ALTER TABLE cart ADD CONSTRAINT ck_cart_provider_checkout_raw_absent
+            CHECK (routing_scope_key IS NULL OR routing_scope_key LIKE 'LEGACY:%' OR raw_checkout_response IS NULL)
+        </sql>
+        <sql>
+            ALTER TABLE cart ADD CONSTRAINT ck_cart_checkout_lifecycle_value
+            CHECK (checkout_lifecycle_state IS NULL OR checkout_lifecycle_state IN
+                   ('INCOMPLETE', 'REQUIRES_ESCALATION', 'READY_FOR_COMPLETE', 'PROCESSING', 'COMPLETED',
+                    'CANCELLED', 'RECOVERABLE_FAILURE', 'TERMINAL_FAILURE', 'UNKNOWN'))
+        </sql>
+        <sql>
+            ALTER TABLE cart ADD CONSTRAINT ck_cart_provider_checkout_metadata
+            CHECK (routing_scope_key IS NULL OR routing_scope_key LIKE 'LEGACY:%' OR checkout_id IS NULL OR
+                   (checkout_lifecycle_state IS NOT NULL AND checkout_synchronized_at IS NOT NULL))
+        </sql>
+    </changeSet>
+</databaseChangeLog>

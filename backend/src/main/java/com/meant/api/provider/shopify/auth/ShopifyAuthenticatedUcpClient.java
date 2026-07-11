@@ -12,6 +12,7 @@ import java.net.SocketTimeoutException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -78,9 +79,15 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
 
     @Override
     public UcpToolResponse callTool(ShopifyUcpRequestOptions options, String toolName, Object arguments) {
+        return callTool(options, toolName, arguments, Map.of());
+    }
+
+    @Override
+    public UcpToolResponse callTool(
+            ShopifyUcpRequestOptions options, String toolName, Object arguments, Map<String, String> headers) {
         Objects.requireNonNull(options, "options");
         Future<UcpToolResponse> call = executor.submit(
-                () -> callWithSingleUnauthorizedRefresh(restClient(options), options, toolName, arguments)
+                () -> callWithSingleUnauthorizedRefresh(restClient(options), options, toolName, arguments, headers)
         );
         try {
             return call.get(options.requestDeadline().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -106,15 +113,21 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
             RestClient restClient,
             ShopifyUcpRequestOptions options,
             String toolName,
-            Object arguments
+            Object arguments,
+            Map<String, String> headers
     ) {
         ShopifyBearerAuthenticationResult authentication = prepare(options);
         try {
-            return callOnce(restClient, options, toolName, arguments, authentication);
+            return callOnce(restClient, options, toolName, arguments, headers, authentication);
         } catch (UnauthorizedResponseException rejected) {
+            if (!options.unauthorizedRefreshAllowed()) {
+                throw failure(ShopifyUcpTransportFailure.AUTHENTICATION,
+                        "Shopify rejected bearer authentication after the refresh budget was exhausted",
+                        null, 401, rejected);
+            }
             ShopifyBearerAuthenticationResult refreshed = refresh(authentication, options);
             try {
-                return callOnce(restClient, options, toolName, arguments, refreshed);
+                return callOnce(restClient, options, toolName, arguments, headers, refreshed);
             } catch (UnauthorizedResponseException secondRejection) {
                 throw failure(
                         ShopifyUcpTransportFailure.AUTHENTICATION,
@@ -180,6 +193,7 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
             ShopifyUcpRequestOptions options,
             String toolName,
             Object arguments,
+            Map<String, String> headers,
             ShopifyBearerAuthenticationResult authentication
     ) {
         try {
@@ -188,6 +202,7 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
                     options.endpoint(),
                     toolName,
                     arguments,
+                    headers,
                     authentication::applyTo
             );
         } catch (RestClientResponseException exception) {

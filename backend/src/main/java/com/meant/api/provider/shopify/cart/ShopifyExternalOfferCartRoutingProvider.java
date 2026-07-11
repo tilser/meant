@@ -4,15 +4,24 @@ import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.port.ExternalOfferCartRoutingProvider;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.CapabilityAvailability;
+import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
+import com.meant.api.module.merchant.constant.CommerceExecutionRail;
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.MerchantUcpProfileObservationService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision;
+import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
 import com.meant.api.module.merchant.service.dto.MerchantUcpProfileObservation;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
+import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
+import com.meant.api.provider.shopify.capability.ShopifyAuthorizationTier;
+import com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties;
 import java.net.IDN;
 import java.net.URI;
 import java.time.Instant;
@@ -27,22 +36,29 @@ import org.springframework.stereotype.Component;
 public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCartRoutingProvider {
     private static final String SHOPPING_SERVICE = "dev.ucp.shopping";
     private static final String CART_CAPABILITY_PREFIX = "dev.ucp.shopping.cart";
+    private static final String CHECKOUT_CAPABILITY_PREFIX = "dev.ucp.shopping.checkout";
 
     private final ShopifyCartProperties properties;
     private final MerchantCartProviderLookupService merchantLookup;
     private final MerchantUcpProfileObservationService profileObservations;
     private final MerchantOutboundUrlValidator urlValidator;
+    private final ShopifyAgentAuthProperties authenticationProperties;
+    private final ShopifyCapabilityReadinessProperties readinessProperties;
 
     public ShopifyExternalOfferCartRoutingProvider(
             ShopifyCartProperties properties,
             MerchantCartProviderLookupService merchantLookup,
             MerchantUcpProfileObservationService profileObservations,
-            MerchantOutboundUrlValidator urlValidator
+            MerchantOutboundUrlValidator urlValidator,
+            ShopifyAgentAuthProperties authenticationProperties,
+            ShopifyCapabilityReadinessProperties readinessProperties
     ) {
         this.properties = properties;
         this.merchantLookup = merchantLookup;
         this.profileObservations = profileObservations;
         this.urlValidator = urlValidator;
+        this.authenticationProperties = authenticationProperties;
+        this.readinessProperties = readinessProperties;
     }
 
     @Override
@@ -98,6 +114,21 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
                 externalProvider(domain, observation));
     }
 
+    public CartRoutingTarget refreshForCheckout(CartRoutingTarget target) {
+        if (target.merchantIntegrationId() != null) {
+            throw new MerchantEnrichmentException("Managed Shopify cart routes cannot refresh as external routes");
+        }
+        String domain = normalizedDomain(target.merchantProvider().domain());
+        if (domain == null || target.externalMerchantId() == null) {
+            throw new MerchantEnrichmentException("Stored Shopify checkout route is incomplete");
+        }
+        Observation observation = refreshObservation(domain);
+        if (!hasCapability(observation.capabilities(), CHECKOUT_CAPABILITY_PREFIX)) {
+            throw new MerchantEnrichmentException("Merchant profile does not advertise checkout capability");
+        }
+        return externalTarget(domain, target.externalMerchantId(), observation);
+    }
+
     private Observation refreshObservation(String domain) {
         URI profileOrigin = profileOrigin(domain);
         return executable(profileObservations.refresh(domain, profileOrigin));
@@ -131,7 +162,7 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
             URI profileEndpoint = provider.profileMcpEndpoint() == null || provider.profileMcpEndpoint().isBlank()
                     ? profileOrigin(domain)
                     : urlValidator.validateMerchantUrl(domain, provider.profileMcpEndpoint());
-            return Optional.of(new Observation(profileEndpoint, endpoint));
+            return Optional.of(new Observation(profileEndpoint, endpoint, provider.advertisedCapabilities()));
         } catch (RuntimeException exception) {
             return Optional.empty();
         }
@@ -150,7 +181,7 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
     private MerchantCartProvider externalProvider(String domain, Observation observation) {
         return new MerchantCartProvider(
                 null, domain, observation.endpoint().toString(), observation.profileEndpoint().toString(),
-                List.of(), MerchantExecutionPolicy.unavailable(), Instant.now(), Set.of(CART_CAPABILITY_PREFIX));
+                List.of(), externalExecutionPolicy(observation.capabilities()), Instant.now(), observation.capabilities());
     }
 
     private Observation executable(MerchantUcpProfileObservation profile) {
@@ -161,11 +192,32 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
                 .map(value -> urlValidator.validateMerchantUrl(profile.domain(), value))
                 .orElseGet(() -> urlValidator.validateMerchantUrl(
                         profile.domain(), "https://" + profile.domain() + "/api/ucp/mcp"));
-        return new Observation(profile.profileEndpoint(), endpoint);
+        return new Observation(profile.profileEndpoint(), endpoint, Set.copyOf(profile.capabilities()));
     }
 
     private boolean hasCartCapability(MerchantUcpProfileObservation profile) {
-        return profile.capabilities().stream().anyMatch(name -> name.startsWith(CART_CAPABILITY_PREFIX));
+        return hasCapability(profile.capabilities(), CART_CAPABILITY_PREFIX);
+    }
+
+    private boolean hasCapability(Set<String> capabilities, String prefix) {
+        return capabilities != null && capabilities.stream().anyMatch(name -> name.startsWith(prefix));
+    }
+
+    private MerchantExecutionPolicy externalExecutionPolicy(Set<String> capabilities) {
+        boolean ready = hasCapability(capabilities, CHECKOUT_CAPABILITY_PREFIX)
+                && authenticationProperties.isEnabled()
+                && readinessProperties.authorizationTier().level() >= ShopifyAuthorizationTier.TOKEN.level();
+        CommerceCapabilityDecision checkout = ready
+                ? new CommerceCapabilityDecision(
+                        CommerceOperation.CHECKOUT_SESSION, true,
+                        CapabilityAuthorizationDecision.ready("TOKEN", readinessProperties.authorizationTier().name(), Set.of()),
+                        true, CapabilityIntegrationHealth.HEALTHY, false, CapabilityAvailability.AVAILABLE,
+                        CommerceExecutionRail.PROVIDER_CHECKOUT_SESSION, List.of(), null,
+                        MerchantIntegrationProvider.SHOPIFY)
+                : MerchantExecutionPolicy.unavailable().decision(CommerceOperation.CHECKOUT_SESSION);
+        return new MerchantExecutionPolicy(MerchantExecutionPolicy.unavailable().decisions().stream()
+                .map(decision -> decision.operation() == CommerceOperation.CHECKOUT_SESSION ? checkout : decision)
+                .toList());
     }
 
     private Optional<String> shoppingEndpoint(MerchantUcpProfileObservation profile) {
@@ -191,6 +243,6 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
         }
     }
 
-    private record Observation(URI profileEndpoint, URI endpoint) {
+    private record Observation(URI profileEndpoint, URI endpoint, Set<String> capabilities) {
     }
 }

@@ -373,7 +373,14 @@ class CheckoutAssistantServiceTest {
                     mock(com.meant.api.module.user.service.UserSelectedOfferResolutionService.class),
                     mock(SelectedOfferCartRoutingService.class), mock(CartOfferRevalidationService.class),
                     new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
-                    mock(com.meant.api.module.user.service.UserCommerceContextService.class));
+                    mock(com.meant.api.module.user.service.UserCommerceContextService.class),
+                    new CartReplacementService(
+                            new CartLineOfferIdentityMapper(new tools.jackson.databind.ObjectMapper()),
+                            new CartFulfillmentReplacementService()),
+                    new CommerceMutationPolicy(
+                            new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
+                            new CartRetrySleeper()),
+                    new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy());
         }
 
         @Override

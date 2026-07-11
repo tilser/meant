@@ -3,8 +3,11 @@ package com.meant.api.plugin.cart.common.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
@@ -34,7 +37,15 @@ public record UcpCartRootResponse(
         String continueUrl,
         Discounts discounts,
         List<UcpCartResponse.CartMessage> messages,
-        List<UcpCartResponse.CartError> errors
+        List<UcpCartResponse.CartError> errors,
+        Map<String, Object> buyer,
+        Map<String, Object> context,
+        Map<String, Object> signals,
+        CartToolArguments.Fulfillment fulfillment,
+        String note,
+        @JsonProperty("gift_card_codes")
+        @JsonDeserialize(using = CartAppliedCodeListDeserializer.class)
+        List<UcpCartResponse.AppliedCode> giftCardCodes
 ) {
 
     public boolean hasCart() {
@@ -60,10 +71,20 @@ public record UcpCartRootResponse(
                         discounts == null ? null : discounts.codes(),
                         discounts == null ? null : discounts.applied(),
                         null,
+                        giftCardCodes,
                         null,
                         null,
-                        null,
-                        List.of()
+                        List.of(),
+                        buyer,
+                        context,
+                        signals,
+                        fulfillment,
+                        discounts == null ? null : new CartToolArguments.Discounts(
+                                safeList(discounts.codes()).stream()
+                                        .map(UcpCartResponse.AppliedCode::code)
+                                        .filter(Objects::nonNull)
+                                        .toList()),
+                        note
                 ),
                 messages,
                 errors
@@ -134,7 +155,11 @@ public record UcpCartRootResponse(
                     item == null ? null : new UcpCartResponse.Merchandise(
                             item.id(),
                             item.title(),
-                            item.product()
+                            item.product(),
+                            item.productId(),
+                            item.selectedOptions(),
+                            item.components(),
+                            item.sellingPlan()
                     )
             );
         }
@@ -144,8 +169,16 @@ public record UcpCartRootResponse(
     public record Item(
             String id,
             String title,
-            UcpCartResponse.Product product
+            UcpCartResponse.Product product,
+            @JsonProperty("product_id") String productId,
+            @JsonProperty("selected_options") List<CartAddItem.SelectedOption> selectedOptions,
+            List<CartAddItem.Component> components,
+            @JsonProperty("selling_plan") CartAddItem.SellingPlan sellingPlan
     ) {
+        public Item {
+            selectedOptions = selectedOptions == null ? List.of() : List.copyOf(selectedOptions);
+            components = components == null ? List.of() : List.copyOf(components);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

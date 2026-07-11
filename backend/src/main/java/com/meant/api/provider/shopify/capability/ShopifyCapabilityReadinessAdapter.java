@@ -52,7 +52,13 @@ public class ShopifyCapabilityReadinessAdapter implements MerchantCapabilityRead
             MerchantCapabilityReadinessContext context
     ) {
         return switch (operation) {
-            case CATALOG, CART, CHECKOUT_SESSION -> CapabilityAuthorizationDecision.notRequired();
+            case CATALOG -> CapabilityAuthorizationDecision.notRequired();
+            case CART, CHECKOUT_SESSION -> authorizedTier(
+                    context,
+                    true,
+                    ShopifyAuthorizationTier.TOKEN,
+                    Set.of()
+            );
             case EMBEDDED_CHECKOUT -> authorizedTier(
                     context,
                     properties.isEmbeddedCheckoutAuthorized(),

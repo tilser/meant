@@ -71,6 +71,27 @@ class UcpMcpClientTest {
     }
 
     @Test
+    void cancelCheckoutSerializesStableUuidIdempotencyKeyInHeaderAndExactMcpEnvelope() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        String key = "223e4567-e89b-12d3-a456-426614174000";
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(header("Idempotency-Key", key))
+                .andExpect(jsonPath("$.params.name").value("cancel_checkout"))
+                .andExpect(jsonPath("$.params.arguments.id").value("checkout-1"))
+                .andExpect(jsonPath("$.params.arguments.meta['idempotency-key']").value(key))
+                .andRespond(withSuccess("""
+                        {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"isError":false}}
+                        """, MediaType.APPLICATION_JSON));
+
+        client.callTool(restClientBuilder.build(), URI.create("https://merchant.example/api/mcp"),
+                "cancel_checkout", Map.of("id", "checkout-1"), Map.of("Idempotency-Key", key));
+
+        server.verify();
+    }
+
+    @Test
     void callToolSendsAgentProfileMetaAndExtractsStructuredContentNegotiation() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
@@ -236,11 +257,11 @@ class UcpMcpClientTest {
 
         assertThat(response.textContent()).contains("Cross-border checkout is not supported for this channel.");
         assertThat(output).contains("UCP merchant tool exchange");
-        assertThat(output).contains("endpointHost=merchant.example");
-        assertThat(output).contains("endpointPath=/api/mcp");
         assertThat(output).contains("tool=create_checkout");
         assertThat(output).contains("outcome=tool_error");
-        assertThat(output).doesNotContain("cart_1", "Cross-border checkout is not supported for this channel.");
+        assertThat(output).doesNotContain(
+                "merchant.example", "/api/mcp", "cart_1",
+                "Cross-border checkout is not supported for this channel.");
         server.verify();
     }
 

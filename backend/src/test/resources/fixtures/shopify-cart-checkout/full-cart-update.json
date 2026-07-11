@@ -1,0 +1,20 @@
+{
+  "id": "gid://shopify/Cart/redacted",
+  "cart": {
+    "line_items": [
+      {
+        "quantity": 2,
+        "item": {
+          "id": "gid://shopify/ProductVariant/redacted-1",
+          "product_id": "gid://shopify/Product/redacted-1",
+          "selected_options": [{"group": "variant", "name": "Color", "value": "Black"}]
+        }
+      },
+      {
+        "quantity": 1,
+        "item": {"id": "gid://shopify/ProductVariant/redacted-2"}
+      }
+    ],
+    "context": {"address_country": "US"}
+  }
+}

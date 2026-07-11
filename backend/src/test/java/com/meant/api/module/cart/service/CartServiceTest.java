@@ -63,6 +63,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -127,13 +131,20 @@ class CartServiceTest {
                 null,
                 userInventoryService,
                 new CartResultMapper(new ObjectMapper()),
-                new CheckoutResultMapper(new ObjectMapper()),
+                new CheckoutResultMapper(new ObjectMapper(), new CheckoutExecutionPlanner()),
                 null,
                 offerResolution,
                 routing,
                 revalidation,
                 metrics,
-                commerceContextService
+                commerceContextService,
+                new CartReplacementService(new CartLineOfferIdentityMapper(new ObjectMapper()),
+                        new CartFulfillmentReplacementService()),
+                new CommerceMutationPolicy(
+                        new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
+                        new CartRetrySleeper()),
+                new CheckoutUpdateReconciliationService(),
+                new CheckoutCancellationPolicy()
         );
         cartDispatchService.cartToolResult = cartToolResult();
     }
@@ -366,6 +377,30 @@ class CartServiceTest {
     }
 
     @Test
+    void getRefreshPreservesActiveCheckoutSessionMetadataAndHandoff() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        Instant synchronizedAt = Instant.parse("2026-06-16T11:07:00Z");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored", "processing-wire",
+                "https://merchant.example/stored-checkout", "https://merchant.example/stored-continue",
+                "{\"legacy\":\"permitted\"}", "2026-04-08", "PROCESSING", synchronizedAt);
+        cartRepository.save(cart);
+
+        cartService.get(new GetCartQuery(cartId, USER_ID, true));
+
+        Cart saved = cartRepository.carts.get(cartId);
+        assertThat(saved.getCheckoutId()).isEqualTo("gid://shopify/Checkout/stored");
+        assertThat(saved.getCheckoutStatus()).isEqualTo("processing-wire");
+        assertThat(saved.getCheckoutLifecycleState()).isEqualTo("PROCESSING");
+        assertThat(saved.getCheckoutProtocolVersion()).isEqualTo("2026-04-08");
+        assertThat(saved.getCheckoutSynchronizedAt()).isEqualTo(synchronizedAt);
+        assertThat(saved.getCheckoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
+        assertThat(saved.getContinueUrl()).isEqualTo("https://merchant.example/stored-continue");
+        assertThat(saved.getRawCheckoutResponse()).isEqualTo("{\"legacy\":\"permitted\"}");
+    }
+
+    @Test
     void updateMapsLocalCartLineIdsToRemoteCartLineIds() {
         UUID cartId = UUID.randomUUID();
         UUID cartLineId = UUID.randomUUID();
@@ -398,6 +433,29 @@ class CartServiceTest {
     }
 
     @Test
+    void updateCartInvalidatesActiveCheckoutSession() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stale", "incomplete",
+                "https://merchant.example/stored-checkout", "https://merchant.example/stored-continue",
+                "{}", "2026-04-08", "INCOMPLETE", Instant.now());
+        cartRepository.save(cart);
+
+        cartService.update(new UpdateCartCommand(
+                cartId, USER_ID, List.of(), List.of(), List.of(), List.of(), null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), null));
+
+        Cart saved = cartRepository.carts.get(cartId);
+        assertThat(saved.getCheckoutId()).isNull();
+        assertThat(saved.getCheckoutStatus()).isNull();
+        assertThat(saved.getCheckoutLifecycleState()).isNull();
+        assertThat(saved.getCheckoutProtocolVersion()).isNull();
+        assertThat(saved.getCheckoutSynchronizedAt()).isNull();
+        assertThat(saved.getRawCheckoutResponse()).isNull();
+    }
+
+    @Test
     void updateUsesRemoteRemoveIdWhenLocalRemoveIdIsStale() {
         UUID cartId = UUID.randomUUID();
         UUID staleCartLineId = UUID.randomUUID();
@@ -422,6 +480,30 @@ class CartServiceTest {
         assertThat(cartDispatchService.lastUpdateRequest.removeLineIds()).containsExactly("gid://shopify/CartLine/1");
         assertThat(cartDispatchService.lastUpdateRequest.removeItems()).hasSize(1);
         assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().quantity()).isZero();
+    }
+
+    @Test
+    void updateRejectsCrossedLocalAndRemoteLineIdsBeforeRemoteIo() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, null);
+        UUID secondId = UUID.randomUUID();
+        CartLine second = CartLine.builder()
+                .id(secondId).remoteCartLineId("gid://shopify/CartLine/2")
+                .productId("gid://shopify/Product/2").productVariantId("gid://shopify/ProductVariant/2")
+                .quantity(1).rawLineResponse("{}").createdAt(Instant.now()).updatedAt(Instant.now()).build();
+        cart.replaceLines(new ArrayList<>(java.util.stream.Stream.concat(
+                cart.getLines().stream(), java.util.stream.Stream.of(second)).toList()));
+        cartRepository.save(cart);
+
+        assertThatThrownBy(() -> cartService.update(new UpdateCartCommand(
+                cartId, USER_ID, List.of(),
+                List.of(new UpdateCartCommand.UpdateItem(
+                        cart.getLines().getFirst().getId(), "gid://shopify/CartLine/2", 3)),
+                List.of(), List.of(), null, null, null, null, null, null, null)))
+                .isInstanceOf(CartException.class)
+                .hasMessageContaining("different lines");
+        assertThat(cartDispatchService.updateCount).isZero();
+        assertThat(cartDispatchService.getCount).isZero();
     }
 
     @Test
@@ -545,8 +627,30 @@ class CartServiceTest {
         assertThat(checkoutDispatchService.createCount).isEqualTo(1);
         assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
         assertThat(cartDispatchService.getCount).isZero();
-        assertThat(cartRepository.findWithLinesCount).isEqualTo(1);
+        assertThat(cartRepository.findWithLinesCount).isEqualTo(2);
         assertImportedCandle();
+    }
+
+    @Test
+    void concurrentCheckoutCreationConvergesOnOneLogicalCheckout() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, null));
+        checkoutDispatchService.concurrentCreates = new CountDownLatch(2);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<CheckoutResult> first = executor.submit(
+                    () -> cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false)));
+            Future<CheckoutResult> second = executor.submit(
+                    () -> cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false)));
+
+            CheckoutResult firstResult = first.get(5, TimeUnit.SECONDS);
+            CheckoutResult secondResult = second.get(5, TimeUnit.SECONDS);
+
+            assertThat(firstResult.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
+            assertThat(secondResult.checkoutId()).isEqualTo(firstResult.checkoutId());
+            assertThat(cartRepository.carts.get(cartId).getCheckoutId()).isEqualTo(firstResult.checkoutId());
+            assertThat(checkoutDispatchService.createCount).isEqualTo(2);
+        }
     }
 
     @Test
@@ -804,12 +908,12 @@ class CartServiceTest {
     @Test
     void checkoutHandoffSaveWithMissingCartReturnsNotFound() {
         assertThatThrownBy(() -> cartPersistenceService.saveCheckoutHandoff(
-                (Cart) null,
+                UUID.randomUUID(),
                 USER_ID,
                 checkoutDispatchService.checkoutToolResult
         ))
                 .isInstanceOf(CartException.class)
-                .hasMessage("Cart not found")
+                .hasMessageStartingWith("Cart not found:")
                 .satisfies(exception -> assertThat(((CartException) exception).getStatus())
                         .isEqualTo(HttpStatus.NOT_FOUND));
     }
@@ -1229,9 +1333,12 @@ class CartServiceTest {
         private int createCount;
         private int getCount;
         private int updateCount;
+        private CountDownLatch concurrentCreates;
 
         FakeCheckoutDispatchService() {
-            super(null, null, null);
+            super(mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
+                    mock(com.meant.api.plugin.transport.registry.CapabilityRegistry.class),
+                    new ObjectMapper(), List.of());
             checkoutToolResult = checkoutToolResult("gid://shopify/Cart/1");
         }
 
@@ -1241,8 +1348,21 @@ class CartServiceTest {
                 CreateCheckoutRequest request,
                 UcpSession session
         ) {
-            createCount++;
+            synchronized (this) {
+                createCount++;
+            }
             lastRemoteCartId = request.cartId();
+            if (concurrentCreates != null) {
+                concurrentCreates.countDown();
+                try {
+                    if (!concurrentCreates.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("Concurrent checkout requests did not reach the provider together");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("Interrupted while coordinating concurrent checkout requests", exception);
+                }
+            }
             return checkoutToolResult;
         }
 
@@ -1405,7 +1525,7 @@ class CartServiceTest {
                     CartRepository.class.getClassLoader(),
                     new Class<?>[]{CartRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
-                        case "findWithLinesByIdAndUserId" -> {
+                        case "findWithLinesByIdAndUserId", "findForCheckoutUpdate" -> {
                             findWithLinesCount++;
                             Cart cart = carts.get(args[0]);
                             yield cart == null || !cart.getUserId().equals(args[1]) || !cart.isActive()

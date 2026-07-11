@@ -24,6 +24,7 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -71,6 +72,29 @@ class ShopifyAuthenticatedUcpClientTest {
     }
 
     @Test
+    void authenticatedCartCarriesStableIdempotencyHeaderAndUcpMetadataWithoutInventedScope() {
+        TestClient context = client(tokenClient("cart-token", SCOPE));
+        context.server().expect(requestTo(ENDPOINT))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer cart-token"))
+                .andExpect(header("Idempotency-Key", "8cc80496-3ce8-4ab7-b7ca-c504647ddf12"))
+                .andExpect(jsonPath("$.params.name").value("cancel_cart"))
+                .andExpect(jsonPath("$.params.arguments.meta.idempotency-key")
+                        .value("8cc80496-3ce8-4ab7-b7ca-c504647ddf12"))
+                .andRespond(withSuccess(successEnvelope(), MediaType.APPLICATION_JSON));
+        ShopifyUcpRequestOptions cartOptions = new ShopifyUcpRequestOptions(
+                ENDPOINT, Set.of("catalog.shopify.test"), Set.of(), Duration.ofMillis(100),
+                Duration.ofSeconds(1), Duration.ofSeconds(1));
+
+        try {
+            context.client().callTool(cartOptions, "cancel_cart", Map.of("id", "cart-1"),
+                    Map.of("Idempotency-Key", "8cc80496-3ce8-4ab7-b7ca-c504647ddf12"));
+            context.server().verify();
+        } finally {
+            context.client().close();
+        }
+    }
+
+    @Test
     void refreshesAndRetriesExactlyOnceAfterUnauthorized() {
         AtomicInteger tokens = new AtomicInteger();
         TestClient context = client(tokenClient(() -> tokens.getAndIncrement() == 0
@@ -87,6 +111,30 @@ class ShopifyAuthenticatedUcpClientTest {
             context.client().callTool(options(Duration.ofSeconds(1)), "search_catalog", searchArguments(10));
 
             assertThat(tokens).hasValue(2);
+            context.server().verify();
+        } finally {
+            context.client().close();
+        }
+    }
+
+    @Test
+    void reconciliationAttemptCannotStartASecondUnauthorizedRefresh() {
+        AtomicInteger tokens = new AtomicInteger();
+        TestClient context = client(tokenClient(() -> {
+            tokens.incrementAndGet();
+            return new ShopifyTokenResponse("single-budget-token", "Bearer", 3600L, SCOPE);
+        }));
+        context.server().expect(requestTo(ENDPOINT)).andRespond(withRawStatus(401));
+        ShopifyUcpRequestOptions noRefresh = new ShopifyUcpRequestOptions(
+                ENDPOINT, Set.of("catalog.shopify.test"), Set.of(SCOPE), Duration.ofMillis(100),
+                Duration.ofSeconds(1), Duration.ofSeconds(1), false);
+
+        try {
+            assertThatThrownBy(() -> context.client().callTool(
+                    noRefresh, "get_checkout", Map.of("id", "checkout-1")))
+                    .isInstanceOfSatisfying(ShopifyUcpTransportException.class, exception ->
+                            assertThat(exception.failure()).isEqualTo(ShopifyUcpTransportFailure.AUTHENTICATION));
+            assertThat(tokens).hasValue(1);
             context.server().verify();
         } finally {
             context.client().close();
@@ -293,7 +341,8 @@ class ShopifyAuthenticatedUcpClientTest {
         );
         ShopifyBearerAuthenticationStrategy authentication = new ShopifyBearerAuthenticationStrategy(
                 tokenProvider,
-                authProperties
+                authProperties,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
         );
         UcpMcpClient mcpClient = new UcpMcpClient(new AgentIdentity(PROFILE, "2026-04-08", "test-key"));
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();

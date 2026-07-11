@@ -8,6 +8,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.meant.api.provider.shopify.auth.ShopifyTokenScopeDecision.Availability;
 import com.meant.api.provider.shopify.auth.ShopifyTokenResponse;
 import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -290,7 +292,8 @@ class ShopifyTokenProviderTest {
                 endpoint.toString(),
                 server,
                 clock,
-                new ShopifyBearerAuthenticationStrategy(provider, properties)
+                new ShopifyBearerAuthenticationStrategy(
+                        provider, properties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
         );
     }
 
@@ -386,6 +389,11 @@ class ShopifyTokenProviderTest {
         @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
         }
     }
 }

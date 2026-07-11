@@ -26,10 +26,6 @@ public class CancelCheckoutCapability implements UcpCapability<CancelCheckoutReq
         this.objectMapper = objectMapper;
     }
 
-    public CancelCheckoutCapability() {
-        this(new ObjectMapper());
-    }
-
     @Override
     public CapabilityId id() {
         return ID;

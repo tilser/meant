@@ -1,0 +1,16 @@
+{
+  "ucp": {"version": "2026-04-08"},
+  "checkout": {
+    "id": "gid://shopify/Checkout/redacted",
+    "cart_id": "gid://shopify/Cart/redacted",
+    "status": "requires_escalation",
+    "continue_url": "https://merchant.example/checkout/redacted",
+    "messages": [{
+      "type": "info",
+      "severity": "requires_buyer_review",
+      "content": "Buyer review required"
+    }],
+    "future_extension": {"version": 99, "opaque": true}
+  },
+  "provider_extension": {"unknown": [1, 2, 3]}
+}

@@ -747,7 +747,9 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         private final AtomicInteger createCount = new AtomicInteger();
 
         FakeCheckoutDispatchService() {
-            super(null, null, null);
+            super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
+                    org.mockito.Mockito.mock(com.meant.api.plugin.transport.registry.CapabilityRegistry.class),
+                    new tools.jackson.databind.ObjectMapper(), java.util.List.of());
         }
 
         void reset() {

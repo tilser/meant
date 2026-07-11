@@ -6,7 +6,7 @@ import java.time.Duration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 /** Dedicated no-redirect factory so an allowlisted Shopify bearer cannot follow to another host. */
-final class ShopifyUcpClientHttpRequestFactory extends SimpleClientHttpRequestFactory {
+class ShopifyUcpClientHttpRequestFactory extends SimpleClientHttpRequestFactory {
 
     ShopifyUcpClientHttpRequestFactory(Duration connectTimeout, Duration readTimeout) {
         setConnectTimeout(connectTimeout);

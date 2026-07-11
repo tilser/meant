@@ -8,6 +8,7 @@ import com.meant.api.plugin.checkout.extension.ap2mandate.dto.Ap2CheckoutData;
 import com.meant.api.plugin.support.UcpMoney;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -165,13 +166,29 @@ public record UcpCheckoutResponse(
             @JsonProperty("shipping_method")
             @JsonAlias({"shippingMethod", "selectedShippingMethod", "deliveryMethod"})
             CheckoutShippingMethod shippingMethod,
-            List<CheckoutMessage> messages
+            List<CheckoutMessage> messages,
+            Map<String, Object> context
     ) {
+
+        public Checkout(
+                String id, String cartId, String status, String checkoutUrl, String continueUrl,
+                String orderId, CheckoutOrder order, Instant createdAt, Instant updatedAt, Instant expiresAt,
+                String currency, List<CheckoutLineItem> lineItems, List<CheckoutTotal> totals,
+                CheckoutBuyer buyer, CheckoutDiscounts discounts, CheckoutFulfillment fulfillment,
+                Ap2CheckoutData ap2, CheckoutMoney totalAmount, CheckoutMoney taxAmount,
+                CheckoutAddress shippingAddress, CheckoutShippingMethod shippingMethod,
+                List<CheckoutMessage> messages
+        ) {
+            this(id, cartId, status, checkoutUrl, continueUrl, orderId, order, createdAt, updatedAt, expiresAt,
+                    currency, lineItems, totals, buyer, discounts, fulfillment, ap2, totalAmount, taxAmount,
+                    shippingAddress, shippingMethod, messages, Map.of());
+        }
 
         public Checkout {
             lineItems = safeList(lineItems);
             totals = safeList(totals);
             messages = safeList(messages);
+            context = context == null ? Map.of() : Map.copyOf(context);
         }
 
         public UcpMoney resolvedTotal() {
@@ -404,8 +421,17 @@ public record UcpCheckoutResponse(
             String postalCode,
             @JsonProperty("address_country")
             @JsonAlias({"addressCountry", "country", "countryCode"})
-            String addressCountry
+            String addressCountry,
+            @JsonProperty("first_name") @JsonAlias("firstName") String firstName,
+            @JsonProperty("last_name") @JsonAlias("lastName") String lastName,
+            @JsonProperty("phone_number") @JsonAlias({"phoneNumber", "phone"}) String phoneNumber
     ) {
+        public CheckoutAddress(
+                String id, String streetAddress, String addressLocality, String addressRegion,
+                String postalCode, String addressCountry
+        ) {
+            this(id, streetAddress, addressLocality, addressRegion, postalCode, addressCountry, null, null, null);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

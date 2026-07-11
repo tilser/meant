@@ -18,8 +18,21 @@ public record UpdateCartRequest(
         List<Map<String, Object>> selectedDeliveryOptions,
         List<String> discountCodes,
         List<String> giftCardCodes,
-        String note
+        String note,
+        CartReplacementState replacementState
 ) {
+
+    public UpdateCartRequest(
+            String cartId, List<CartAddItem> addItems, List<CartUpdateItem> updateItems,
+            List<String> removeLineIds, List<CartUpdateItem> removeItems, Map<String, Object> buyerIdentity,
+            Map<String, Object> context, List<Map<String, Object>> deliveryAddressesToAdd,
+            List<Map<String, Object>> deliveryAddressesToReplace, List<Map<String, Object>> selectedDeliveryOptions,
+            List<String> discountCodes, List<String> giftCardCodes, String note
+    ) {
+        this(cartId, addItems, updateItems, removeLineIds, removeItems, buyerIdentity, context,
+                deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions,
+                discountCodes, giftCardCodes, note, null);
+    }
 
     public UpdateCartRequest(
             String cartId,
@@ -48,7 +61,8 @@ public record UpdateCartRequest(
                 selectedDeliveryOptions,
                 discountCodes,
                 giftCardCodes,
-                note
+                note,
+                null
         );
     }
 
@@ -76,12 +90,14 @@ public record UpdateCartRequest(
                                 .map(lineId -> new CartUpdateItem(lineId, null, 0))
                                 .toList(),
                 buyerIdentity,
+                null,
                 deliveryAddressesToAdd,
                 deliveryAddressesToReplace,
                 selectedDeliveryOptions,
                 discountCodes,
                 giftCardCodes,
-                note
+                note,
+                null
         );
     }
 }
