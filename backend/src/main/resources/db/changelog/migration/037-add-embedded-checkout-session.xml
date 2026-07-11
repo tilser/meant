@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="037-add-embedded-checkout-session" author="codex">
+        <createTable tableName="embedded_checkout_session">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cart_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_integration_id" type="uuid"/>
+            <column name="routing_scope_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="allowed_origin" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="protocol_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="completed_at" type="timestamp with time zone"/>
+            <column name="cancelled_at" type="timestamp with time zone"/>
+        </createTable>
+        <addForeignKeyConstraint constraintName="fk_embedded_checkout_session_user"
+                                 baseTableName="embedded_checkout_session" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id"/>
+        <addForeignKeyConstraint constraintName="fk_embedded_checkout_session_cart"
+                                 baseTableName="embedded_checkout_session" baseColumnNames="cart_id"
+                                 referencedTableName="cart" referencedColumnNames="id"/>
+        <addForeignKeyConstraint constraintName="fk_embedded_checkout_session_integration"
+                                 baseTableName="embedded_checkout_session" baseColumnNames="merchant_integration_id"
+                                 referencedTableName="merchant_integration" referencedColumnNames="id"/>
+        <createIndex tableName="embedded_checkout_session" indexName="idx_embedded_checkout_session_binding">
+            <column name="user_id"/>
+            <column name="cart_id"/>
+            <column name="status"/>
+            <column name="expires_at"/>
+        </createIndex>
+        <sql>
+            ALTER TABLE embedded_checkout_session ADD CONSTRAINT ck_embedded_checkout_session_status
+            CHECK (status IN ('ACTIVE', 'COMPLETED', 'CANCELLED'))
+        </sql>
+        <sql>
+            ALTER TABLE embedded_checkout_session ADD CONSTRAINT ck_embedded_checkout_session_terminal_time
+            CHECK ((status = 'ACTIVE' AND completed_at IS NULL AND cancelled_at IS NULL) OR
+                   (status = 'COMPLETED' AND completed_at IS NOT NULL AND cancelled_at IS NULL) OR
+                   (status = 'CANCELLED' AND completed_at IS NULL AND cancelled_at IS NOT NULL))
+        </sql>
+    </changeSet>
+</databaseChangeLog>

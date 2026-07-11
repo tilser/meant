@@ -78,3 +78,31 @@ test('saved products accept a typed session-only catalog reference', () => {
   expect(referenceFields).toContain('sourceIdentity')
   expect(referenceFields).toContain('selectedOptions')
 })
+
+test('embedded checkout bootstrap exposes only short-lived browser instructions', () => {
+  const expectedPaths: Array<keyof paths> = [
+    '/api/carts/{cartId}/checkout/embedded',
+    '/api/carts/{cartId}/checkout/embedded/{sessionId}/complete',
+    '/api/carts/{cartId}/checkout/embedded/{sessionId}/cancel',
+  ]
+  type Bootstrap = components['schemas']['EmbeddedCheckoutBootstrapResponse']
+  const fields: Array<keyof Bootstrap> = [
+    'action',
+    'sessionId',
+    'cartId',
+    'checkoutId',
+    'checkoutUrl',
+    'fallbackContinueUrl',
+    'protocolVersion',
+    'ecAuth',
+    'allowedDelegations',
+    'expiresAt',
+    'merchantProvider',
+    'merchantDomain',
+    'reason',
+  ]
+
+  expect(expectedPaths).toHaveLength(3)
+  expect(fields as string[]).not.toContain('clientSecret')
+  expect(fields as string[]).not.toContain('accessToken')
+})

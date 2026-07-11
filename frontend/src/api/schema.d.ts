@@ -385,9 +385,60 @@ export interface paths {
         put?: never;
         /**
          * Create cart
-         * @description Creates a remote MCP cart with initial items and stores the local cart snapshot.
+         * @description Resolves server-issued offer keys from the authenticated user's live catalog session, revalidates exact commercial identity, and creates one merchant-scoped remote cart.
          */
         post: operations["create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout/embedded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an embedded checkout bootstrap session */
+        post: operations["bootstrapEmbeddedCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout/embedded/{sessionId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify an embedded checkout completion */
+        post: operations["completeEmbeddedCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/carts/{cartId}/checkout/embedded/{sessionId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close an embedded checkout host session without cancelling the remote checkout */
+        post: operations["cancelEmbeddedCheckout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -634,7 +685,7 @@ export interface paths {
         head?: never;
         /**
          * Update cart
-         * @description Adds items, updates line quantities, removes lines, and stores the refreshed remote cart snapshot.
+         * @description Adds server-resolved offers only when they match the cart's immutable provider and merchant scope, updates quantities, and removes lines.
          */
         patch: operations["update"];
         trace?: never;
@@ -2520,8 +2571,8 @@ export interface components {
             selectedDeliveryOptions?: {
                 [key: string]: unknown;
             }[];
-            discountCodes?: string[];
-            giftCardCodes?: string[];
+            discountCodes: string[];
+            giftCardCodes: string[];
             note?: string;
         };
         CartAppliedCodeResponse: {
@@ -2573,7 +2624,10 @@ export interface components {
             offerKey?: string;
             /** @description Immutable commerce provider scope */
             provider?: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Verified local integration route when one exists
+             */
             merchantIntegrationId?: string;
             /** @description Provider-scoped external seller identity */
             externalMerchantId?: string;
@@ -2597,7 +2651,10 @@ export interface components {
             merchantDomain?: string;
             /** @description Immutable commerce provider scope */
             provider?: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Verified local integration route when one exists
+             */
             merchantIntegrationId?: string;
             /** @description Provider-scoped external seller identity */
             externalMerchantId?: string;
@@ -2630,6 +2687,125 @@ export interface components {
             lines: components["schemas"]["CartLineResponse"][];
             deliveryGroups: components["schemas"]["CartDeliveryGroupResponse"][];
             messages: components["schemas"]["CartMessageResponse"][];
+        };
+        /** @description Short-lived, user-bound instructions for opening or falling back from embedded checkout. */
+        EmbeddedCheckoutBootstrapResponse: {
+            /** @enum {string} */
+            action: "EMBEDDED" | "DIRECT_COMPLETE" | "EXTERNAL_HANDOFF" | "WAIT" | "COMPLETED" | "UNAVAILABLE";
+            /** Format: uuid */
+            sessionId?: string;
+            /** Format: uuid */
+            cartId: string;
+            checkoutId?: string;
+            checkoutUrl?: string;
+            fallbackContinueUrl?: string;
+            protocolVersion?: string;
+            ecAuth?: string;
+            allowedDelegations: string[];
+            /** Format: date-time */
+            expiresAt?: string;
+            merchantProvider?: string;
+            merchantDomain?: string;
+            reason?: string;
+        };
+        /** @description Effective availability of one provider-neutral commerce operation. */
+        CapabilityDecisionResponse: {
+            /**
+             * @description Commerce operation being evaluated.
+             * @enum {string}
+             */
+            operation: "CATALOG" | "CART" | "CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "ORDER_READS" | "ORDER_WEBHOOKS";
+            /** @description Whether the selected merchant/provider integration advertises the operation. */
+            advertised: boolean;
+            /**
+             * @description Stable authorization, tier, and granted-scope readiness outcome.
+             * @enum {string}
+             */
+            authorizationStatus: "NOT_REQUIRED" | "READY" | "NOT_AUTHORIZED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "UNSUPPORTED";
+            /** @description Whether product rollout enables this operation for the merchant. */
+            rolloutEnabled: boolean;
+            /**
+             * @description Current health of the integration selected for this operation.
+             * @enum {string}
+             */
+            integrationHealth: "HEALTHY" | "PENDING" | "INACTIVE" | "SUSPENDED" | "REVOKED" | "NO_INTEGRATION";
+            /** @description Whether a supported fallback rail exists when the operation is ineligible. */
+            fallbackSupported: boolean;
+            /**
+             * @description Effective operation availability.
+             * @enum {string}
+             */
+            availability: "AVAILABLE" | "FALLBACK_AVAILABLE" | "UNAVAILABLE";
+            /**
+             * @description Rail selected for this operation.
+             * @enum {string}
+             */
+            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
+            /** @description Typed reasons explaining ineligibility or fallback selection. */
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+        };
+        /** @description Status-aware UCP checkout session for an in-page checkout flow. */
+        CheckoutResponse: {
+            /**
+             * Format: uuid
+             * @description Meant cart identifier.
+             */
+            cartId: string;
+            /** @description Merchant/provider cart identifier. */
+            remoteCartId: string;
+            /** @description Merchant/provider checkout identifier. */
+            checkoutId?: string;
+            /** @description Current provider checkout status. */
+            status?: string;
+            /** @description Provider checkout URL when available. */
+            checkoutUrl?: string;
+            /** @description Provider continuation URL when available. */
+            continueUrl?: string;
+            /** @description Negotiated UCP protocol version. */
+            ucpVersion?: string;
+            /**
+             * Format: int64
+             * @description Checkout total in minor currency units.
+             */
+            totalAmountMinor?: number;
+            /** @description ISO 4217 checkout currency code. */
+            currency?: string;
+            /** @description Whether the provider checkout state requires merchant or buyer escalation. */
+            requiresEscalation: boolean;
+            /**
+             * @description Authoritative next checkout action derived from session state and execution policy.
+             * @enum {string}
+             */
+            nextAction: "UPDATE_CHECKOUT" | "OPEN_EMBEDDED_CHECKOUT" | "HANDOFF" | "COMPLETE_CHECKOUT" | "WAIT" | "DONE" | "RESTART" | "UNKNOWN";
+            /**
+             * @description Execution rail selected by the effective checkout policy.
+             * @enum {string}
+             */
+            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
+            /** @description Typed reasons that made a preferred checkout rail ineligible or selected a fallback. */
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+            /** @description Independent effective capability decisions for the merchant's commerce operations. */
+            capabilities: components["schemas"]["CapabilityDecisionResponse"][];
+            /** @description Provider messages for checkout guidance. */
+            messages: components["schemas"]["MessageResponse"][];
+            /**
+             * @deprecated
+             * @description Deprecated compatibility view derived only from direct checkout completion availability.
+             */
+            nativeCheckoutEnabled: boolean;
+        };
+        /** @description UCP checkout message to present in the in-page checkout UI. */
+        MessageResponse: {
+            /** @description Provider message type. */
+            type?: string;
+            /** @description Stable provider message code. */
+            code?: string;
+            /** @description Provider message severity. */
+            severity?: string;
+            /** @description Buyer-facing provider message content. */
+            content: string;
+            /** @description Payload path related to the message. */
+            path?: string;
         };
         /** @description Buyer consent binding for a checkout session before native completion. */
         CreateCheckoutConsentRequest: {
@@ -2735,111 +2911,12 @@ export interface components {
             role: "user" | "assistant";
             content: string;
         };
-        /** @description Effective availability of one provider-neutral commerce operation. */
-        CapabilityDecisionResponse: {
-            /**
-             * @description Commerce operation being evaluated.
-             * @enum {string}
-             */
-            operation: "CATALOG" | "CART" | "CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "ORDER_READS" | "ORDER_WEBHOOKS";
-            /** @description Whether the selected merchant/provider integration advertises the operation. */
-            advertised: boolean;
-            /**
-             * @description Stable authorization, tier, and granted-scope readiness outcome.
-             * @enum {string}
-             */
-            authorizationStatus: "NOT_REQUIRED" | "READY" | "NOT_AUTHORIZED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "UNSUPPORTED";
-            /** @description Whether product rollout enables this operation for the merchant. */
-            rolloutEnabled: boolean;
-            /**
-             * @description Current health of the integration selected for this operation.
-             * @enum {string}
-             */
-            integrationHealth: "HEALTHY" | "PENDING" | "INACTIVE" | "SUSPENDED" | "REVOKED" | "NO_INTEGRATION";
-            /** @description Whether a supported fallback rail exists when the operation is ineligible. */
-            fallbackSupported: boolean;
-            /**
-             * @description Effective operation availability.
-             * @enum {string}
-             */
-            availability: "AVAILABLE" | "FALLBACK_AVAILABLE" | "UNAVAILABLE";
-            /**
-             * @description Rail selected for this operation.
-             * @enum {string}
-             */
-            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
-            /** @description Typed reasons explaining ineligibility or fallback selection. */
-            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
-        };
         /** @description Checkout assistant reply, with the checkout session it acted on. */
         CheckoutAssistResponse: {
             reply: string;
             /** @description True when the assistant applied collected details to the merchant checkout. */
             checkoutUpdated: boolean;
             checkout: components["schemas"]["CheckoutResponse"];
-        };
-        /** @description Status-aware UCP checkout session for an in-page checkout flow. */
-        CheckoutResponse: {
-            /**
-             * Format: uuid
-             * @description Meant cart identifier.
-             */
-            cartId: string;
-            /** @description Merchant/provider cart identifier. */
-            remoteCartId: string;
-            /** @description Merchant/provider checkout identifier. */
-            checkoutId?: string;
-            /** @description Current provider checkout status. */
-            status?: string;
-            /** @description Provider checkout URL when available. */
-            checkoutUrl?: string;
-            /** @description Provider continuation URL when available. */
-            continueUrl?: string;
-            /** @description Negotiated UCP protocol version. */
-            ucpVersion?: string;
-            /**
-             * Format: int64
-             * @description Checkout total in minor currency units.
-             */
-            totalAmountMinor?: number;
-            /** @description ISO 4217 checkout currency code. */
-            currency?: string;
-            /** @description Whether the provider checkout state requires merchant or buyer escalation. */
-            requiresEscalation: boolean;
-            /**
-             * @description Authoritative next checkout action derived from session state and execution policy.
-             * @enum {string}
-             */
-            nextAction: "UPDATE_CHECKOUT" | "OPEN_EMBEDDED_CHECKOUT" | "HANDOFF" | "COMPLETE_CHECKOUT" | "WAIT" | "DONE" | "RESTART" | "UNKNOWN";
-            /**
-             * @description Execution rail selected by the effective checkout policy.
-             * @enum {string}
-             */
-            selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
-            /** @description Typed reasons that made a preferred checkout rail ineligible or selected a fallback. */
-            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
-            /** @description Independent effective capability decisions for the merchant's commerce operations. */
-            capabilities: components["schemas"]["CapabilityDecisionResponse"][];
-            /** @description Provider messages for checkout guidance. */
-            messages: components["schemas"]["MessageResponse"][];
-            /**
-             * @deprecated
-             * @description Deprecated compatibility view derived only from direct checkout completion availability.
-             */
-            nativeCheckoutEnabled: boolean;
-        };
-        /** @description UCP checkout message to present in the in-page checkout UI. */
-        MessageResponse: {
-            /** @description Provider message type. */
-            type?: string;
-            /** @description Stable provider message code. */
-            code?: string;
-            /** @description Provider message severity. */
-            severity?: string;
-            /** @description Buyer-facing provider message content. */
-            content: string;
-            /** @description Payload path related to the message. */
-            path?: string;
         };
         UpdateUserProfileRequest: {
             firstName: string;
@@ -2930,8 +3007,8 @@ export interface components {
             selectedDeliveryOptions?: {
                 [key: string]: unknown;
             }[];
-            discountCodes: string[];
-            giftCardCodes: string[];
+            discountCodes?: string[];
+            giftCardCodes?: string[];
             note?: string;
         };
         /** @description Buyer identity for checkout calculation and confirmation. */
@@ -3870,6 +3947,78 @@ export interface operations {
                 content: {
                     "*/*": components["schemas"]["CartResponse"];
                 };
+            };
+        };
+    };
+    bootstrapEmbeddedCheckout: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+            };
+            path: {
+                cartId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embedded checkout or safe fallback instructions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["EmbeddedCheckoutBootstrapResponse"];
+                };
+            };
+        };
+    };
+    completeEmbeddedCheckout: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+            };
+            path: {
+                cartId: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider-verified completed checkout */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CheckoutResponse"];
+                };
+            };
+        };
+    };
+    cancelEmbeddedCheckout: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+            };
+            path: {
+                cartId: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embedded host session closed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

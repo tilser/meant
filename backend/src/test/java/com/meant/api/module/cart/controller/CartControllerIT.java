@@ -133,6 +133,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         JsonNode addProperties = schemas.path("CartAddItemRequest").path("properties");
         JsonNode cartRequired = schemas.path("CartResponse").path("required");
         JsonNode lineRequired = schemas.path("CartLineResponse").path("required");
+        JsonNode embeddedProperties = schemas.path("EmbeddedCheckoutBootstrapResponse").path("properties");
 
         assertThat(createProperties.has("merchantId")).isFalse();
         assertThat(createProperties.has("merchantDomain")).isFalse();
@@ -142,6 +143,9 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 "checkoutUrl", "totalAmount", "subtotalAmount", "currency", "expiresAt");
         assertThat(lineRequired.toString()).doesNotContain(
                 "productTitle", "variantTitle", "totalAmount", "subtotalAmount", "currency");
+        assertThat(embeddedProperties.has("sessionId")).isTrue();
+        assertThat(embeddedProperties.has("checkoutUrl")).isTrue();
+        assertThat(embeddedProperties.toString()).doesNotContain("clientSecret", "accessToken");
     }
 
     @Test

@@ -60,8 +60,25 @@ public class CheckoutResultMapper {
                 execution.nextAction(),
                 execution.selectedRail(),
                 execution.ineligibilityReasons(),
-                policy
+                policy,
+                embeddedConfiguration(response)
         );
+    }
+
+    private com.meant.api.module.cart.service.dto.EmbeddedCheckoutConfiguration embeddedConfiguration(
+            UcpCheckoutResponse response) {
+        if (response == null || response.ucp() == null) {
+            return null;
+        }
+        return response.ucp().services().getOrDefault("dev.ucp.shopping", List.of()).stream()
+                .filter(binding -> binding != null && "embedded".equalsIgnoreCase(binding.transport()))
+                .findFirst()
+                .map(binding -> new com.meant.api.module.cart.service.dto.EmbeddedCheckoutConfiguration(
+                        firstText(binding.version(), response.version()),
+                        binding.config() == null ? List.of() : binding.config().delegate(),
+                        binding.config() == null || binding.config().auth() == null
+                                ? null : binding.config().auth().type()))
+                .orElse(null);
     }
 
     UcpCheckoutResponse parseStoredResponse(String rawCheckoutResponse) {

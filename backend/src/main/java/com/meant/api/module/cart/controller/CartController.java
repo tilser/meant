@@ -13,7 +13,9 @@ import com.meant.api.module.cart.controller.response.CheckoutConsentResponse;
 import com.meant.api.module.cart.controller.response.CheckoutCompletionResponse;
 import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.controller.response.CheckoutResponse;
+import com.meant.api.module.cart.controller.response.EmbeddedCheckoutBootstrapResponse;
 import com.meant.api.module.cart.service.CartService;
+import com.meant.api.module.cart.service.EmbeddedCheckoutBootstrapService;
 import com.meant.api.module.cart.service.CheckoutAssistantService;
 import com.meant.api.module.cart.service.command.AssistCheckoutCommand;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
@@ -33,7 +35,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -42,6 +46,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -56,6 +61,7 @@ public class CartController {
 
     private final CartService cartService;
     private final CheckoutAssistantService checkoutAssistantService;
+    private final EmbeddedCheckoutBootstrapService embeddedCheckoutBootstrapService;
     private final UserService userService;
 
     @PostMapping
@@ -159,6 +165,53 @@ public class CartController {
         return CheckoutResponse.from(
                 cartService.checkout(new GetCheckoutQuery(cartId, authenticatedUser.id(), refresh))
         );
+    }
+
+    @PostMapping("/{cartId}/checkout/embedded")
+    @Operation(summary = "Create an embedded checkout bootstrap session")
+    @ApiResponse(responseCode = "200", description = "Embedded checkout or safe fallback instructions",
+            content = @Content(schema = @Schema(implementation = EmbeddedCheckoutBootstrapResponse.class)))
+    public ResponseEntity<EmbeddedCheckoutBootstrapResponse> bootstrapEmbeddedCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID cartId,
+            @RequestHeader("Origin") String origin
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(EmbeddedCheckoutBootstrapResponse.from(
+                        embeddedCheckoutBootstrapService.bootstrap(cartId, authenticatedUser.id(), origin)));
+    }
+
+    @PostMapping("/{cartId}/checkout/embedded/{sessionId}/complete")
+    @Operation(summary = "Verify an embedded checkout completion")
+    @ApiResponse(responseCode = "200", description = "Provider-verified completed checkout",
+            content = @Content(schema = @Schema(implementation = CheckoutResponse.class)))
+    public ResponseEntity<CheckoutResponse> completeEmbeddedCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID cartId,
+            @PathVariable UUID sessionId,
+            @RequestHeader("Origin") String origin
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(CheckoutResponse.from(
+                        embeddedCheckoutBootstrapService.complete(cartId, sessionId, authenticatedUser.id(), origin)));
+    }
+
+    @PostMapping("/{cartId}/checkout/embedded/{sessionId}/cancel")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    @Operation(summary = "Close an embedded checkout host session without cancelling the remote checkout")
+    @ApiResponse(responseCode = "204", description = "Embedded host session closed")
+    public void cancelEmbeddedCheckout(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID cartId,
+            @PathVariable UUID sessionId,
+            @RequestHeader("Origin") String origin
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        embeddedCheckoutBootstrapService.cancel(cartId, sessionId, authenticatedUser.id(), origin);
     }
 
     @PatchMapping("/{cartId}/checkout")

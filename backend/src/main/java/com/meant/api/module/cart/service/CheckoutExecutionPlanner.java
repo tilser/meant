@@ -28,11 +28,11 @@ public class CheckoutExecutionPlanner {
             return checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
         }
         if (checkoutMessages.stream().anyMatch(CheckoutResult.Message::requiresBuyerAction)) {
-            return handoffPlan(List.of(CapabilityIneligibilityReason.FALLBACK_SELECTED));
+            return escalationPlan(executionPolicy);
         }
         return switch (normalize(status)) {
             case "incomplete" -> checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
-            case "requires_escalation" -> handoffPlan(List.of(CapabilityIneligibilityReason.FALLBACK_SELECTED));
+            case "requires_escalation" -> escalationPlan(executionPolicy);
             case "ready_for_complete", "ready_for_payment" -> paymentPlan(executionPolicy);
             case "complete_in_progress", "processing" -> new CheckoutExecutionPlan(
                     CheckoutNextAction.WAIT,
@@ -44,6 +44,21 @@ public class CheckoutExecutionPlanner {
             case "recoverable_failure" -> checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
             default -> checkoutSessionPlan(CheckoutNextAction.UNKNOWN, executionPolicy);
         };
+    }
+
+    private CheckoutExecutionPlan escalationPlan(MerchantExecutionPolicy policy) {
+        CommerceCapabilityDecision embedded = policy.decision(CommerceOperation.EMBEDDED_CHECKOUT);
+        if (embedded.available()) {
+            return new CheckoutExecutionPlan(
+                    CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
+                    embedded.selectedRail(),
+                    List.of()
+            );
+        }
+        List<CapabilityIneligibilityReason> reasons = embedded.ineligibilityReasons().isEmpty()
+                ? List.of(CapabilityIneligibilityReason.FALLBACK_SELECTED)
+                : embedded.ineligibilityReasons();
+        return handoffPlan(reasons);
     }
 
     private CheckoutExecutionPlan checkoutSessionPlan(

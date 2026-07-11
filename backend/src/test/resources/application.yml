@@ -83,6 +83,10 @@ ucp:
     order-webhooks-authorized: false
 
 commerce:
+  checkout:
+    embedded:
+      session-ttl: 5m
+      supported-protocol-version: 2026-01-23
   cart:
     retry:
       max-reconciliation-delay: 2s

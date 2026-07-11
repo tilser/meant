@@ -532,6 +532,7 @@ Run the full Shopify Cart MCP and Checkout MCP lifecycle through typed, token-au
 
 Priority: P0  
 Dependencies: PCOS-014  
+Implementation status: Complete
 
 **Goal**
 

@@ -114,7 +114,39 @@ public record UcpCheckoutResponse(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record UcpMetadata(String version) {
+    public record UcpMetadata(
+            String version,
+            Map<String, List<ServiceBinding>> services
+    ) {
+        public UcpMetadata(String version) {
+            this(version, Map.of());
+        }
+
+        public UcpMetadata {
+            services = services == null ? Map.of() : Map.copyOf(services);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ServiceBinding(
+            String version,
+            String transport,
+            ServiceBindingConfig config
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ServiceBindingConfig(
+            List<String> delegate,
+            AuthenticationRequirement auth
+    ) {
+        public ServiceBindingConfig {
+            delegate = safeList(delegate);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record AuthenticationRequirement(String type) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

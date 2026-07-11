@@ -22,13 +22,35 @@ public record CheckoutResult(
         CheckoutNextAction nextAction,
         CommerceExecutionRail selectedRail,
         List<CapabilityIneligibilityReason> ineligibilityReasons,
-        MerchantExecutionPolicy executionPolicy
+        MerchantExecutionPolicy executionPolicy,
+        EmbeddedCheckoutConfiguration embeddedCheckout
 ) {
 
     public CheckoutResult {
         messages = messages == null ? List.of() : List.copyOf(messages);
         ineligibilityReasons = ineligibilityReasons == null ? List.of() : List.copyOf(ineligibilityReasons);
         executionPolicy = executionPolicy == null ? MerchantExecutionPolicy.unavailable() : executionPolicy;
+    }
+
+    public CheckoutResult(
+            UUID cartId,
+            String remoteCartId,
+            String checkoutId,
+            String status,
+            String checkoutUrl,
+            String continueUrl,
+            String ucpVersion,
+            Long totalAmountMinor,
+            String currency,
+            List<Message> messages,
+            CheckoutNextAction nextAction,
+            CommerceExecutionRail selectedRail,
+            List<CapabilityIneligibilityReason> ineligibilityReasons,
+            MerchantExecutionPolicy executionPolicy
+    ) {
+        this(cartId, remoteCartId, checkoutId, status, checkoutUrl, continueUrl, ucpVersion,
+                totalAmountMinor, currency, messages, nextAction, selectedRail, ineligibilityReasons,
+                executionPolicy, null);
     }
 
     public CheckoutResult(UUID cartId, String remoteCartId, String checkoutUrl, String continueUrl) {
@@ -46,7 +68,8 @@ public record CheckoutResult(
                 CheckoutNextAction.UNKNOWN,
                 CommerceExecutionRail.NONE,
                 List.of(),
-                MerchantExecutionPolicy.unavailable()
+                MerchantExecutionPolicy.unavailable(),
+                null
         );
     }
 

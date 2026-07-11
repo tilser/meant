@@ -63,6 +63,18 @@ class CheckoutResultTest {
         assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
     }
 
+    @Test
+    void embeddedCheckoutHandlesRequiresEscalationWithoutTopLevelNavigation() {
+        var result = new CheckoutExecutionPlanner().resolve(
+                "requires_escalation",
+                List.of(message("extension_interaction_required", "requires_buyer_input")),
+                availablePolicy(CommerceOperation.EMBEDDED_CHECKOUT, CommerceExecutionRail.EMBEDDED_CHECKOUT)
+        );
+
+        assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT);
+        assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
+    }
+
     private com.meant.api.module.cart.service.dto.CheckoutExecutionPlan checkout(
             String status,
             List<CheckoutResult.Message> messages
