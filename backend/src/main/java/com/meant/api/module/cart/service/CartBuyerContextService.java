@@ -13,9 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Builds the UCP {@code context} object (localization + market hints) for cart and checkout
- * tool calls. Shopify allocates inventory per market: without an {@code address_country} hint
- * merchants drop line items as "sold out" even when the variant is purchasable, so every cart
- * and checkout call sends the buyer's country.
+ * tool calls. Commerce providers can allocate inventory per market; without an
+ * {@code address_country} hint merchants may drop otherwise purchasable line items, so every
+ * cart and checkout call sends the buyer's country.
  */
 @Service
 @RequiredArgsConstructor

@@ -36,7 +36,9 @@ class ReviewProviderDiscoveryServiceTest {
             candidateRepository,
             storefrontClient,
             new ReviewProductPageLinkExtractor(),
-            new ReviewProviderDetectionService(),
+            new ReviewProviderDetectionService(java.util.List.of(
+                    new com.meant.api.provider.shopify.review.ShopifyReviewProviderEvidenceContributor()
+            )),
             persistenceService,
             properties
     );

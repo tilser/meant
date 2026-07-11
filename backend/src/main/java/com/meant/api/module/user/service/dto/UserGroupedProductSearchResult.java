@@ -1,9 +1,9 @@
 package com.meant.api.module.user.service.dto;
 
-import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
-import com.meant.api.plugin.catalog.common.dto.OfferRankingExplanation;
-import com.meant.api.plugin.catalog.common.dto.ProductRankingExplanation;
-import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
+import com.meant.api.module.catalog.service.dto.CanonicalProduct;
+import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ProductGroupingDecision;
 import java.util.List;
 import java.util.Map;
 

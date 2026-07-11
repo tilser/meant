@@ -4,6 +4,7 @@ import com.meant.api.module.review.constant.ReviewProductIdType;
 import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.service.dto.ReviewProviderDetectionResult;
 import com.meant.api.module.review.service.dto.StorefrontDocument;
+import com.meant.api.module.review.service.port.ReviewProviderEvidenceContributor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -62,7 +63,6 @@ public class ReviewProviderDetectionService {
                             "data-oke-reviews-subscriber-id=[\"']([^\"']+)[\"']"
                     ),
                     List.of(
-                            "shopify://apps/okendo",
                             "cdn-static\\.okendo\\.io",
                             "static\\.okendo\\.io",
                             "widget\\.okendo\\.io",
@@ -82,7 +82,6 @@ public class ReviewProviderDetectionService {
                             "\"shop_domain\"\\s*:\\s*\"([^\"]+)\""
                     ),
                     List.of(
-                            "shopify://apps/judge-me-reviews",
                             "cdnwidget\\.judge\\.me",
                             "cdn\\.judge\\.me",
                             "judgeme-\\d+(?:/|\\\\/)assets",
@@ -166,7 +165,6 @@ public class ReviewProviderDetectionService {
                             "data-store-key=[\"']([^\"']+)[\"']"
                     ),
                     List.of(
-                            "shopify://apps/junip",
                             "junip-store-key",
                             "junip-reviews",
                             "junip-product-review",
@@ -237,6 +235,12 @@ public class ReviewProviderDetectionService {
             )
     );
 
+    private final List<ReviewProviderEvidenceContributor> evidenceContributors;
+
+    public ReviewProviderDetectionService(List<ReviewProviderEvidenceContributor> evidenceContributors) {
+        this.evidenceContributors = List.copyOf(evidenceContributors);
+    }
+
     public ReviewProviderDetectionResult detect(String sourceUrl, String html) {
         return detect(List.of(new StorefrontDocument(sourceUrl, html)));
     }
@@ -252,8 +256,14 @@ public class ReviewProviderDetectionService {
             return ReviewProviderDetectionResult.notFound();
         }
         for (ProviderDetector detector : PROVIDER_DETECTORS) {
+            List<Pattern> evidencePatterns = new ArrayList<>();
+            evidenceContributors.stream()
+                    .map(contributor -> contributor.evidencePatterns(detector.provider()))
+                    .filter(Objects::nonNull)
+                    .forEach(patterns -> evidencePatterns.addAll(compile(patterns)));
+            evidencePatterns.addAll(detector.reviewEvidencePatterns());
             Optional<MarkerEvidence> evidence = safeDocuments.stream()
-                    .map(document -> reviewEvidence(document, detector.reviewEvidencePatterns()))
+                    .map(document -> reviewEvidence(document, evidencePatterns))
                     .flatMap(Optional::stream)
                     .findFirst();
             if (evidence.isEmpty()) {

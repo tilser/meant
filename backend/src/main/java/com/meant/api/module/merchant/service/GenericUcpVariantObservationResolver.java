@@ -1,9 +1,9 @@
 package com.meant.api.module.merchant.service;
 
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
-import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
-import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationFailureKind;
-import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

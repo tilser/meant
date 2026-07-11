@@ -1,6 +1,6 @@
 package com.meant.api.module.user.service.command;
 
-import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

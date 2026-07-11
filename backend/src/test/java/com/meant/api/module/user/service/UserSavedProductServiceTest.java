@@ -21,27 +21,27 @@ import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
-import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
-import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
-import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
-import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationFailureKind;
-import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationStatus;
-import com.meant.api.plugin.catalog.common.dto.CommercialFactsFreshness;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
-import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
-import com.meant.api.plugin.catalog.common.dto.Money;
-import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
-import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
-import com.meant.api.plugin.catalog.common.dto.ProductMedia;
-import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
-import com.meant.api.plugin.catalog.common.dto.RehydratedCommercialFacts;
-import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyMetrics;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
-import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationMetrics;
-import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationProvider;
-import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationService;
+import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
+import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
+import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
+import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
+import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.Money;
+import com.meant.api.module.catalog.service.dto.OfferAvailability;
+import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.ProductMedia;
+import com.meant.api.module.catalog.service.dto.ProductMediaType;
+import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
+import com.meant.api.module.catalog.service.dto.ResultFreshness;
+import com.meant.api.module.catalog.service.CatalogDataUsePolicyMetrics;
+import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
+import com.meant.api.module.catalog.service.CatalogProductRehydrationMetrics;
+import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
+import com.meant.api.module.catalog.service.CatalogProductRehydrationService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Proxy;
 import java.net.URI;
@@ -390,7 +390,7 @@ class UserSavedProductServiceTest {
         private boolean available = true;
 
         @Override
-        public boolean supports(com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity source) {
+        public boolean supports(com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity source) {
             return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
         }
 

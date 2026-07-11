@@ -2,7 +2,7 @@ package com.meant.api.module.order.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
-import com.meant.api.module.merchant.entity.Merchant;
+import com.meant.api.module.merchant.service.dto.MerchantOrderSourceResult;
 import com.meant.api.module.order.constant.OrderState;
 import com.meant.api.module.order.entity.MerchantOrder;
 import com.meant.api.module.order.entity.MerchantOrderLine;
@@ -48,7 +48,7 @@ public class OrderPersistenceService {
     @Transactional
     public MerchantOrder saveSnapshot(
             UUID userId,
-            Merchant merchant,
+            MerchantOrderSourceResult merchant,
             String endpoint,
             UcpOrderResponse.Order remoteOrder,
             String rawOrderResponse,
@@ -58,13 +58,16 @@ public class OrderPersistenceService {
         Instant now = Instant.now();
         String remoteOrderId = required(firstText(remoteOrder.id(), remoteOrder.name(), remoteOrder.orderNumber()),
                 "Remote order id is required");
-        String remoteOrderIdHash = hash(merchant.getId() + ":" + remoteOrderId);
-        MerchantOrder order = orderRepository.findByMerchantIdAndRemoteOrderIdHash(merchant.getId(), remoteOrderIdHash)
+        String remoteOrderIdHash = hash(merchant.merchantId() + ":" + remoteOrderId);
+        MerchantOrder order = orderRepository.findByMerchantIdAndRemoteOrderIdHash(
+                        merchant.merchantId(),
+                        remoteOrderIdHash
+                )
                 .orElseGet(() -> MerchantOrder.builder()
                         .userId(userId)
-                        .merchantId(merchant.getId())
-                        .merchantDomain(merchant.getDomain())
-                        .merchantName(merchant.getName())
+                        .merchantId(merchant.merchantId())
+                        .merchantDomain(merchant.domain())
+                        .merchantName(merchant.name())
                         .remoteOrderId(remoteOrderId)
                         .remoteOrderIdHash(remoteOrderIdHash)
                         .state(OrderState.UNKNOWN)
@@ -82,9 +85,9 @@ public class OrderPersistenceService {
         );
         order.replaceSnapshot(
                 userId,
-                merchant.getId(),
-                merchant.getDomain(),
-                merchant.getName(),
+                merchant.merchantId(),
+                merchant.domain(),
+                merchant.name(),
                 required(endpoint, "Order endpoint is required"),
                 remoteOrderId,
                 remoteOrderIdHash,

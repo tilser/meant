@@ -59,7 +59,7 @@ class ReviewControllerTest {
                     new YotpoReviewProperties("https://yotpo.example", 20),
                     new OkendoReviewProperties("https://okendo.example", 20),
                     new ReviewCacheProperties(Duration.ofMinutes(1), 10L),
-                    new ReviewProductIdNormalizer()
+                    new ReviewProductIdNormalizer(java.util.List.of(new com.meant.api.provider.shopify.review.ShopifyReviewProductIdNormalizationStrategy()))
             );
         }
 

@@ -4,15 +4,15 @@ import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.dto.ProductRichCatalogData;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
-import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
+import com.meant.api.module.merchant.service.MerchantCatalogPluginDispatchService;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.support.UcpDecimal;
 import java.util.List;

@@ -5,9 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
-import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.extension.CatalogExtensionContributor;
+import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
+import com.meant.api.plugin.catalog.extension.CatalogTool;
 import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
@@ -18,7 +21,8 @@ import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupResponse;
 import com.meant.api.plugin.catalog.search.CatalogSearchCapability;
 import com.meant.api.plugin.catalog.search.dto.CatalogSearchArguments;
 import com.meant.api.plugin.catalog.search.dto.CatalogSearchRequest;
-import com.meant.api.plugin.catalog.shopify.ShopifyCatalogExtensionCapability;
+import com.meant.api.plugin.catalog.extension.shopify.ShopifyCatalogExtensionCapability;
+import com.meant.api.plugin.catalog.extension.shopify.ShopifyCatalogExtensionContributor;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
@@ -33,7 +37,7 @@ class CatalogCapabilityTest {
 
     @Test
     void searchBuildsTypedArgumentsAndGatesShopifyExtension() throws Exception {
-        CatalogSearchCapability capability = new CatalogSearchCapability(objectMapper);
+        CatalogSearchCapability capability = new CatalogSearchCapability(objectMapper, extensionRegistry());
         CatalogSearchRequest request = new CatalogSearchRequest(
                 "running shoes",
                 new CatalogSearchContext("US", null, null, "en", "USD", "Original request"),
@@ -59,7 +63,7 @@ class CatalogCapabilityTest {
 
     @Test
     void searchParsesTypedResponse() {
-        CatalogSearchCapability capability = new CatalogSearchCapability(objectMapper);
+        CatalogSearchCapability capability = new CatalogSearchCapability(objectMapper, extensionRegistry());
 
         CatalogSearchResponse response = capability.parseResponse(new UcpToolResponse(
                 "{\"products\":[{\"id\":\"product-1\",\"title\":\"Trail Runner\"}]}",
@@ -72,7 +76,7 @@ class CatalogCapabilityTest {
 
     @Test
     void lookupBuildsTypedArgumentsParsesResponseAndGatesShopifyExtension() throws Exception {
-        CatalogLookupCapability capability = new CatalogLookupCapability(objectMapper);
+        CatalogLookupCapability capability = new CatalogLookupCapability(objectMapper, extensionRegistry());
         CatalogLookupRequest request = new CatalogLookupRequest(
                 "gid://shopify/Product/1",
                 new CatalogSearchContext("US", null, null, "en", "USD", "Product detail")
@@ -98,7 +102,7 @@ class CatalogCapabilityTest {
 
     @Test
     void lookupParsesShopifyCatalogProductObjects() {
-        CatalogLookupCapability capability = new CatalogLookupCapability(objectMapper);
+        CatalogLookupCapability capability = new CatalogLookupCapability(objectMapper, extensionRegistry());
 
         CatalogLookupResponse response = capability.parseResponse(new UcpToolResponse(
                 """
@@ -190,7 +194,7 @@ class CatalogCapabilityTest {
 
     @Test
     void getProductBuildsTypedArgumentsParsesResponseAndGatesShopifyExtension() throws Exception {
-        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper, extensionRegistry());
         CatalogGetProductRequest request = new CatalogGetProductRequest(
                 "gid://shopify/Product/1",
                 new CatalogSearchContext("US", null, null, "en", "USD", "Product detail")
@@ -216,7 +220,7 @@ class CatalogCapabilityTest {
 
     @Test
     void getProductParsesShopifyCatalogProductObject() {
-        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper, extensionRegistry());
 
         ProductDetailsResponse response = capability.parseResponse(new UcpToolResponse(
                 """
@@ -268,7 +272,7 @@ class CatalogCapabilityTest {
 
     @Test
     void getProductParsesGroupedMajorUnitMoneyStrings() {
-        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper, extensionRegistry());
 
         ProductDetailsResponse response = capability.parseResponse(new UcpToolResponse(
                 """
@@ -311,7 +315,7 @@ class CatalogCapabilityTest {
 
     @Test
     void getProductParsesWholeNumberFloatingMoneyAsMinorUnits() {
-        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper);
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper, extensionRegistry());
 
         ProductDetailsResponse response = capability.parseResponse(new UcpToolResponse(
                 """
@@ -364,6 +368,50 @@ class CatalogCapabilityTest {
                     assertThat(advertisement.tools()).isEmpty();
                     assertThat(advertisement.required()).isFalse();
                 });
+    }
+
+    @Test
+    void registrySerializesMultipleExtensionsDeterministically() throws Exception {
+        CatalogExtensionContributor etsyContributor = new CatalogExtensionContributor() {
+            @Override
+            public Map<String, tools.jackson.databind.JsonNode> contribute(
+                    CatalogTool tool,
+                    NegotiatedCapabilities activeCapabilities
+            ) {
+                if (!activeCapabilities.supports(CapabilityId.of("dev.etsy.catalog"))) {
+                    return Map.of();
+                }
+                return Map.of("dev.etsy.catalog", objectMapper.valueToTree(Map.of("include_market", true)));
+            }
+
+            @Override
+            public int order() {
+                return -1;
+            }
+        };
+        CatalogExtensionRegistry registry = new CatalogExtensionRegistry(List.of(
+                new ShopifyCatalogExtensionContributor(objectMapper),
+                etsyContributor
+        ));
+
+        String serialized = objectMapper.writeValueAsString(registry.extensions(
+                CatalogTool.SEARCH,
+                NegotiatedCapabilities.of(Map.of(
+                        CapabilityId.of("dev.shopify.catalog"), "1.0.0",
+                        CapabilityId.of("dev.etsy.catalog"), "1.0.0"
+                ))
+        ));
+
+        assertThat(serialized).isEqualTo(
+                "{\"dev.etsy.catalog\":{\"include_market\":true},"
+                        + "\"dev.shopify.catalog\":{\"include_product_ids\":true,"
+                        + "\"include_variant_ids\":true,\"include_selling_plans\":true,"
+                        + "\"include_metafields\":true}}"
+        );
+    }
+
+    private CatalogExtensionRegistry extensionRegistry() {
+        return new CatalogExtensionRegistry(List.of(new ShopifyCatalogExtensionContributor(objectMapper)));
     }
 
     private NegotiatedCapabilities shopifyActive() {

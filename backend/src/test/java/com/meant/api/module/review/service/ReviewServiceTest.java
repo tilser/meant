@@ -37,7 +37,7 @@ class ReviewServiceTest {
                 new YotpoReviewProperties("https://yotpo.example", 20),
                 new OkendoReviewProperties("https://okendo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
-                new ReviewProductIdNormalizer()
+                new ReviewProductIdNormalizer(java.util.List.of(new com.meant.api.provider.shopify.review.ShopifyReviewProductIdNormalizationStrategy()))
         );
         GetProductReviewsQuery query = new GetProductReviewsQuery(merchantId, "123", null, null);
 
@@ -65,7 +65,7 @@ class ReviewServiceTest {
                 new YotpoReviewProperties("https://yotpo.example", 20),
                 new OkendoReviewProperties("https://okendo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
-                new ReviewProductIdNormalizer()
+                new ReviewProductIdNormalizer(java.util.List.of(new com.meant.api.provider.shopify.review.ShopifyReviewProductIdNormalizationStrategy()))
         );
 
         ProductReviewsResult result = service.getProductReviews(
@@ -93,7 +93,7 @@ class ReviewServiceTest {
                 new YotpoReviewProperties("https://yotpo.example", 5),
                 new OkendoReviewProperties("https://okendo.example", 20),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
-                new ReviewProductIdNormalizer()
+                new ReviewProductIdNormalizer(java.util.List.of(new com.meant.api.provider.shopify.review.ShopifyReviewProductIdNormalizationStrategy()))
         );
 
         ProductReviewsResult result = service.getProductReviews(
@@ -125,7 +125,7 @@ class ReviewServiceTest {
                 new YotpoReviewProperties("https://yotpo.example", 20),
                 new OkendoReviewProperties("https://okendo.example", 8),
                 new ReviewCacheProperties(Duration.ofHours(1), 100L),
-                new ReviewProductIdNormalizer()
+                new ReviewProductIdNormalizer(java.util.List.of(new com.meant.api.provider.shopify.review.ShopifyReviewProductIdNormalizationStrategy()))
         );
 
         ProductReviewsResult result = service.getProductReviews(

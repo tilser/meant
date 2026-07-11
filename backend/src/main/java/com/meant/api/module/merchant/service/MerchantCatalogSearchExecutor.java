@@ -4,14 +4,14 @@ import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
-import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchAttemptResult;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogSearchOutcome;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
-import com.meant.api.plugin.catalog.common.service.MerchantCatalogPluginDispatchService;
+import com.meant.api.module.merchant.service.MerchantCatalogPluginDispatchService;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;

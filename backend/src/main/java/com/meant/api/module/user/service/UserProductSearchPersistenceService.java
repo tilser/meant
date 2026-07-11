@@ -22,7 +22,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;

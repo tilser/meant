@@ -1,5 +1,7 @@
 package com.meant.api.module.merchant.service.dto;
 
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
+
 import static com.meant.api.common.util.CollectionUtils.safeList;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 

@@ -1,6 +1,6 @@
 package com.meant.api.module.user.controller.request;
 
-import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;

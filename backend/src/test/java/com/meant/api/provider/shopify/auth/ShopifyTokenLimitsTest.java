@@ -1,0 +1,24 @@
+package com.meant.api.provider.shopify.auth;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.HashMap;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+class ShopifyTokenLimitsTest {
+
+    @Test
+    void filtersNullKeysAndValuesAtTheMetadataBoundary() {
+        Map<String, Long> limits = new HashMap<>();
+        limits.put("catalog_per_minute", 120L);
+        limits.put("checkout_per_minute", 20L);
+        limits.put("unknown_limit", null);
+        limits.put(null, 10L);
+
+        ShopifyTokenLimits result = new ShopifyTokenLimits(limits);
+
+        assertThat(result.values().keySet())
+                .containsExactly("catalog_per_minute", "checkout_per_minute");
+    }
+}

@@ -1,7 +1,7 @@
 package com.meant.api.module.user.controller.response;
 
-import com.meant.api.plugin.catalog.common.dto.OfferRankingExplanation;
-import com.meant.api.plugin.catalog.common.dto.ProductRankingExplanation;
+import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
 
 final class RankingExplanationResponseMapper {
     private RankingExplanationResponseMapper() { }

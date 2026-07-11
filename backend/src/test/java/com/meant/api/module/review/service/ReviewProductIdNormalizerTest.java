@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 class ReviewProductIdNormalizerTest {
 
-    private final ReviewProductIdNormalizer normalizer = new ReviewProductIdNormalizer();
+    private final ReviewProductIdNormalizer normalizer = new ReviewProductIdNormalizer(java.util.List.of(new com.meant.api.provider.shopify.review.ShopifyReviewProductIdNormalizationStrategy()));
 
     @Test
     void keepsNumericShopifyProductIdUnchanged() {

@@ -5,7 +5,7 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
-import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
