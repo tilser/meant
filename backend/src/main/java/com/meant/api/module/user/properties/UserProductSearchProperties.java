@@ -24,6 +24,12 @@ public record UserProductSearchProperties(
         Duration cacheTtl,
 
         @NotNull
+        Duration productDetailSessionTtl,
+
+        @Positive
+        long productDetailSessionMaximumSize,
+
+        @NotNull
         Duration streamTimeout,
 
         @Positive

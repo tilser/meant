@@ -663,6 +663,26 @@ export interface paths {
         patch: operations["updateCheckout"];
         trace?: never;
     };
+    "/api/v1/users/me/products/{canonicalProductKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current detail for a grouped canonical product
+         * @description Resolves a server-issued Meant canonical product key and optional exact offer key from the authenticated user's live search session, then batch-rehydrates current commercial facts. Provider endpoints, merchant identities, prices, routing, and checkout URLs are never accepted.
+         */
+        get: operations["getCanonicalProductDetailV1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me/taste-profile": {
         parameters: {
             query?: never;
@@ -1076,6 +1096,8 @@ export interface components {
             provenance: components["schemas"]["ResultProvenanceResponse"][];
             /** @description Typed, redacted explanation of canonical-product relevance */
             rankingExplanation?: components["schemas"]["ProductRankingExplanationResponse"];
+            /** @description Default independently ranked offer key */
+            recommendedOfferKey: string;
             /** @description Distinct merchant, variant, and selling-plan offers */
             offers: components["schemas"]["OfferResponse"][];
         };
@@ -1216,6 +1238,53 @@ export interface components {
              */
             merchantIntegrationFallbackId?: string;
         };
+        /** @description Reproducible offer-ranking trace with unknown facts preserved */
+        OfferRankingExplanationResponse: {
+            /** @description Deterministic offer-ranking version */
+            rankingVersion: string;
+            /**
+             * Format: int32
+             * @description Final offer score in basis points
+             */
+            scoreBasisPoints: number;
+            /**
+             * Format: int32
+             * @description Final one-based rank inside the canonical product
+             */
+            finalRank: number;
+            /**
+             * @description Disclosed commercial tie-break policy
+             * @enum {string}
+             */
+            commercialTieBreakPolicy: "NONE";
+            /** @description Stable offer key used only after offer-feature ties */
+            deterministicTieBreakKey: string;
+            /** @description Typed offer features; unavailable facts have no numeric value */
+            features: components["schemas"]["OfferRankingFeatureResponse"][];
+        };
+        /** @description One named offer-ranking feature */
+        OfferRankingFeatureResponse: {
+            /**
+             * @description Controlled offer feature name
+             * @enum {string}
+             */
+            name: "LANDED_PRICE" | "ITEM_PRICE" | "AVAILABILITY" | "DELIVERY_EVIDENCE" | "MERCHANT_TRUST" | "HISTORICAL_RELIABILITY" | "RETURN_POLICY" | "CHECKOUT_CAPABILITY" | "FRESHNESS" | "DATA_COMPLETENESS";
+            /**
+             * @description Whether this fact was known
+             * @enum {string}
+             */
+            availability: "AVAILABLE" | "UNKNOWN";
+            /**
+             * Format: int32
+             * @description Normalized feature value in basis points
+             */
+            valueBasisPoints?: number;
+            /**
+             * Format: int32
+             * @description Versioned policy weight
+             */
+            weight: number;
+        };
         /** @description One selectable merchant, variant, and selling-plan offer */
         OfferResponse: {
             /** @description Stable versioned offer key */
@@ -1241,36 +1310,17 @@ export interface components {
             checkoutUrl?: string;
             /** @description Selected variant and selling-plan options */
             selectedOptions: components["schemas"]["ProductAttributeResponse"][];
+            /**
+             * @description Available checkout experience inferred from server-controlled routing facts
+             * @enum {string}
+             */
+            checkoutExperience: "MEANT_MANAGED" | "PROVIDER_HANDOFF" | "UNKNOWN";
+            /** @description Authority and freshness of price, availability, and delivery */
+            commercialState: components["schemas"]["UserOfferCommercialStateResponse"];
             /** @description Typed, redacted explanation of this offer's independent ordering */
             rankingExplanation?: components["schemas"]["OfferRankingExplanationResponse"];
             /** @description Every source observation merged into this exact offer */
             provenance: components["schemas"]["ResultProvenanceResponse"][];
-        };
-        /** @description One named offer-ranking feature */
-        OfferRankingFeatureResponse: {
-            /** @description Controlled offer feature name */
-            name: "LANDED_PRICE" | "ITEM_PRICE" | "AVAILABILITY" | "DELIVERY_EVIDENCE" | "MERCHANT_TRUST" | "HISTORICAL_RELIABILITY" | "RETURN_POLICY" | "CHECKOUT_CAPABILITY" | "FRESHNESS" | "DATA_COMPLETENESS";
-            /** @description Whether this fact was known */
-            availability: "AVAILABLE" | "UNKNOWN";
-            /** Format: int32 @description Normalized feature value in basis points */
-            valueBasisPoints?: number;
-            /** Format: int32 @description Versioned policy weight */
-            weight: number;
-        };
-        /** @description Reproducible offer-ranking trace with unknown facts preserved */
-        OfferRankingExplanationResponse: {
-            /** @description Deterministic offer-ranking version */
-            rankingVersion: string;
-            /** Format: int32 @description Final offer score in basis points */
-            scoreBasisPoints: number;
-            /** Format: int32 @description Final one-based rank inside the canonical product */
-            finalRank: number;
-            /** @description Disclosed commercial tie-break policy */
-            commercialTieBreakPolicy: "NONE";
-            /** @description Stable offer key used only after offer-feature ties */
-            deterministicTieBreakKey: string;
-            /** @description Typed offer features; unavailable facts have no numeric value */
-            features: components["schemas"]["OfferRankingFeatureResponse"][];
         };
         ProductAttributeResponse: {
             name: string;
@@ -1328,40 +1378,6 @@ export interface components {
             /** @description Typed contradictory facts that vetoed or qualified the match */
             contradictions: ("SIZE" | "COLOR" | "BUNDLE" | "PACK_QUANTITY" | "GENERATION" | "MODEL" | "SELLING_PLAN")[];
         };
-        /** @description One named product-ranking feature */
-        ProductRankingFeatureResponse: {
-            /** @description Controlled product feature name */
-            name: "CALIBRATED_SOURCE_INTENT_FIT" | "LEXICAL_INTENT_FIT" | "DURABLE_PREFERENCE_FIT" | "INVENTORY_RELATIONSHIP" | "QUALITY_EVIDENCE" | "IDENTITY_CONFIDENCE" | "FRESHNESS" | "MODEL_RERANK";
-            /** @description Whether this feature was known */
-            availability: "AVAILABLE" | "UNKNOWN";
-            /** Format: int32 @description Normalized feature value in basis points */
-            valueBasisPoints?: number;
-            /** Format: int32 @description Versioned policy weight */
-            weight: number;
-            /** @description Provider-adapter calibration or model versions used */
-            evidenceVersions: string[];
-        };
-        /** @description Reproducible product-ranking trace without prompts or personal raw text */
-        ProductRankingExplanationResponse: {
-            /** @description Deterministic product-ranking version */
-            rankingVersion: string;
-            /** @description Bounded source and merchant diversity policy version */
-            diversityPolicyVersion: string;
-            /** @description Whether diversity caps were strict or relaxed because no full feasible window existed */
-            diversityPolicyOutcome: "STRICT" | "RELAXED_INFEASIBLE";
-            /** Format: int32 @description Final product relevance score in basis points */
-            scoreBasisPoints: number;
-            /** Format: int32 @description Final one-based rank after diversity control */
-            finalRank: number;
-            /** @description Deterministic, model-augmented, or safe fallback execution */
-            execution: "DETERMINISTIC" | "MODEL_AUGMENTED" | "MODEL_FALLBACK";
-            /** @description Whether diversity control promoted or deferred this product */
-            diversityDecision: "NONE" | "PROMOTED" | "DEFERRED";
-            /** @description Stable canonical key used only after relevance ties */
-            deterministicTieBreakKey: string;
-            /** @description Typed product feature values and calibration versions */
-            features: components["schemas"]["ProductRankingFeatureResponse"][];
-        };
         /** @description Explicit-confidence product identity evidence */
         ProductIdentityEvidenceResponse: {
             /**
@@ -1399,6 +1415,67 @@ export interface components {
             url: string;
             altText: string;
             previewImageUrl: string;
+        };
+        /** @description Reproducible product-ranking trace without prompts or personal raw text */
+        ProductRankingExplanationResponse: {
+            /** @description Deterministic product-ranking version */
+            rankingVersion: string;
+            /** @description Bounded source and merchant diversity policy version */
+            diversityPolicyVersion: string;
+            /**
+             * @description Whether diversity caps were strict or relaxed because no full feasible window existed
+             * @enum {string}
+             */
+            diversityPolicyOutcome: "STRICT" | "RELAXED_INFEASIBLE";
+            /**
+             * Format: int32
+             * @description Final product relevance score in basis points
+             */
+            scoreBasisPoints: number;
+            /**
+             * Format: int32
+             * @description Final one-based rank after diversity control
+             */
+            finalRank: number;
+            /**
+             * @description Deterministic, model-augmented, or safe fallback execution
+             * @enum {string}
+             */
+            execution: "DETERMINISTIC" | "MODEL_AUGMENTED" | "MODEL_FALLBACK";
+            /**
+             * @description Whether diversity control promoted or deferred this product
+             * @enum {string}
+             */
+            diversityDecision: "NONE" | "PROMOTED" | "DEFERRED";
+            /** @description Stable canonical key used only after relevance ties */
+            deterministicTieBreakKey: string;
+            /** @description Typed product feature values and calibration versions */
+            features: components["schemas"]["ProductRankingFeatureResponse"][];
+        };
+        /** @description One named product-ranking feature */
+        ProductRankingFeatureResponse: {
+            /**
+             * @description Controlled product feature name
+             * @enum {string}
+             */
+            name: "CALIBRATED_SOURCE_INTENT_FIT" | "LEXICAL_INTENT_FIT" | "DURABLE_PREFERENCE_FIT" | "INVENTORY_RELATIONSHIP" | "QUALITY_EVIDENCE" | "IDENTITY_CONFIDENCE" | "FRESHNESS" | "MODEL_RERANK";
+            /**
+             * @description Whether this feature was known
+             * @enum {string}
+             */
+            availability: "AVAILABLE" | "UNKNOWN";
+            /**
+             * Format: int32
+             * @description Normalized feature value in basis points
+             */
+            valueBasisPoints?: number;
+            /**
+             * Format: int32
+             * @description Versioned policy weight
+             */
+            weight: number;
+            /** @description Provider-adapter calibration or model versions used */
+            evidenceVersions: string[];
         };
         /** @description Observation timestamp and optional source-provided freshness deadline */
         ResultFreshnessResponse: {
@@ -1469,6 +1546,35 @@ export interface components {
             /** @description Provider-defined option value */
             value: string;
         };
+        /** @description Typed source-scoped completion, degradation, and truncation state */
+        UserCatalogSourceStateResponse: {
+            /** @description Stable provider and discovery-path identity */
+            source: components["schemas"]["DiscoverySourceIdentityResponse"];
+            /**
+             * @description Catalog operation performed by the source
+             * @enum {string}
+             */
+            operation: "SEARCH" | "LOOKUP" | "GET_PRODUCT";
+            /** @description Whether this source failed without failing successful sources */
+            degraded: boolean;
+            /** @description Whether this source reported more candidates than were materialized */
+            truncated: boolean;
+            /**
+             * @description Safe typed failure classification
+             * @enum {string}
+             */
+            failureKind?: "AUTHENTICATION" | "INVALID_REQUEST" | "RATE_LIMITED" | "TIMEOUT" | "TRANSIENT_UPSTREAM" | "UNAVAILABLE" | "MALFORMED_RESPONSE";
+            /**
+             * @description Typed offer rehydration failure for this source
+             * @enum {string}
+             */
+            rehydrationFailureKind?: "NO_PROVIDER" | "AMBIGUOUS_PROVIDER" | "CAPABILITY_UNAVAILABLE" | "INVALID_REFERENCE" | "NOT_FOUND" | "INVALID_RESPONSE" | "UPSTREAM_UNAVAILABLE";
+            /**
+             * Format: int64
+             * @description Retry delay in milliseconds when supplied by the source
+             */
+            retryAfterMilliseconds?: number;
+        };
         /** @description Version 1 grouped product-search response with canonical products and merchant offers */
         UserGroupedProductSearchV1Response: {
             /** @description Original user search query */
@@ -1498,6 +1604,8 @@ export interface components {
             hasMore: boolean;
             /** @description Whether an upstream source reported more candidates than this live search request could materialize */
             upstreamTruncated: boolean;
+            /** @description Typed completion, degradation, and truncation state for every invoked source */
+            sourceStates: components["schemas"]["UserCatalogSourceStateResponse"][];
             /** @description Deterministically ordered canonical products */
             products: components["schemas"]["CanonicalProductResponse"][];
             /**
@@ -1509,6 +1617,30 @@ export interface components {
             groupingDecisionsTruncated: boolean;
             /** @description Typed exact-match and conservative non-match decisions for this page */
             groupingDecisions: components["schemas"]["ProductGroupingDecisionResponse"][];
+        };
+        /** @description Authority, freshness, and typed degradation for commercial offer facts */
+        UserOfferCommercialStateResponse: {
+            /**
+             * @description Whether facts are a discovery observation or current rehydration
+             * @enum {string}
+             */
+            authority: "DISCOVERY_OBSERVATION" | "REHYDRATED_CURRENT";
+            /**
+             * @description Detail rehydration status; absent on search observations
+             * @enum {string}
+             */
+            rehydrationStatus?: "FRESH" | "UNSUPPORTED" | "UNAVAILABLE" | "DEGRADED";
+            /**
+             * @description Typed offer-scoped rehydration failure
+             * @enum {string}
+             */
+            degradation?: "NO_PROVIDER" | "AMBIGUOUS_PROVIDER" | "CAPABILITY_UNAVAILABLE" | "INVALID_REFERENCE" | "NOT_FOUND" | "INVALID_RESPONSE" | "UPSTREAM_UNAVAILABLE";
+            /** @description Price observation freshness */
+            priceFreshness?: components["schemas"]["ResultFreshnessResponse"];
+            /** @description Availability observation freshness */
+            availabilityFreshness?: components["schemas"]["ResultFreshnessResponse"];
+            /** @description Delivery observation freshness */
+            deliveryFreshness?: components["schemas"]["ResultFreshnessResponse"];
         };
         CatalogSourceFailureResponse: {
             /** @enum {string} */
@@ -1560,6 +1692,20 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        CatalogReference: {
+            provider: string;
+            /** @enum {string} */
+            sourceType: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            sourceIdentity: string;
+            /** Format: uuid */
+            localMerchantId?: string;
+            /** Format: uuid */
+            merchantIntegrationId?: string;
+            externalMerchantId?: string;
+            externalProductId: string;
+            externalVariantId?: string;
+            selectedOptions: components["schemas"]["SelectedOption"][];
+        };
         Offer: {
             merchant: string;
             /** Format: double */
@@ -1583,25 +1729,6 @@ export interface components {
             count: number;
             insight: string;
         };
-        CatalogReference: {
-            provider: string;
-            /** @enum {string} */
-            sourceType: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
-            sourceIdentity: string;
-            /** Format: uuid */
-            localMerchantId?: string;
-            /** Format: uuid */
-            merchantIntegrationId?: string;
-            externalMerchantId?: string;
-            externalProductId: string;
-            externalVariantId?: string;
-            selectedOptions: components["schemas"]["SelectedOption"][];
-        };
-        SelectedOption: {
-            group?: string;
-            name: string;
-            value: string;
-        };
         SaveUserProductRequest: {
             id: string;
             productHash?: string;
@@ -1615,7 +1742,7 @@ export interface components {
             /** Format: int32 */
             match: number;
             /** Format: double */
-            priceFrom?: number | null;
+            priceFrom?: number;
             /** Format: int32 */
             merchants: number;
             satisfies: string[];
@@ -1629,6 +1756,11 @@ export interface components {
             provides: string[];
             /** @description Provider identifiers for session-only results; omitted only when the server can resolve an admitted cache row */
             catalogReference?: components["schemas"]["CatalogReference"];
+        };
+        SelectedOption: {
+            group?: string;
+            name: string;
+            value: string;
         };
         UserTasteProfileResponse: {
             profileHash: string;
@@ -1667,39 +1799,55 @@ export interface components {
             /** Format: double */
             score: number;
         };
+        UserSavedProductOffer: {
+            merchant?: string;
+            /** Format: double */
+            price?: number;
+            /** Format: int64 */
+            priceMinorUnits?: number;
+            priceCurrency?: string;
+            delivery?: string;
+            merchantId?: string;
+            merchantDomain?: string;
+            productVariantId?: string;
+            variantTitle?: string;
+            available?: boolean;
+        };
         UserSavedProductResponse: {
             id: string;
-            productHash?: string | null;
-            name?: string | null;
-            brand?: string | null;
-            category?: string | null;
-            tone?: string | null;
-            imageUrl?: string | null;
-            productUrl?: string | null;
-            remote?: boolean | null;
+            productHash?: string;
+            name?: string;
+            brand?: string;
+            category?: string;
+            tone?: string;
+            imageUrl?: string;
+            productUrl?: string;
+            remote?: boolean;
             /** Format: int32 */
-            match?: number | null;
-            /** @description Current rehydrated price, or null when unavailable
+            match?: number;
+            /**
              * Format: double
+             * @description Current rehydrated price, or null when unavailable
              */
-            priceFrom?: number | null;
-            /** @description Current rehydrated price in ISO currency minor units, or null when unavailable
+            priceFrom?: number;
+            /**
              * Format: int64
+             * @description Current rehydrated price in ISO currency minor units, or null when unavailable
              */
-            priceFromMinorUnits?: number | null;
-            priceCurrency?: string | null;
+            priceFromMinorUnits?: number;
+            priceCurrency?: string;
             /** Format: int32 */
-            merchants?: number | null;
+            merchants?: number;
             satisfies: string[];
             misses: string[];
-            note?: string | null;
+            note?: string;
             pros: string[];
             cons: string[];
-            review?: components["schemas"]["UserSavedProductReview"] | null;
+            review?: components["schemas"]["UserSavedProductReview"];
             offers: components["schemas"]["UserSavedProductOffer"][];
-            needs?: string | null;
+            needs?: string;
             provides: string[];
-            marketCountry?: string | null;
+            marketCountry?: string;
             /** @description True when the provider lookup used the returned ISO market country */
             marketContextApplied: boolean;
             /** @description True only when response facts came from current provider rehydration */
@@ -1711,24 +1859,10 @@ export interface components {
         };
         UserSavedProductReview: {
             /** Format: double */
-            score?: number | null;
+            score?: number;
             /** Format: int32 */
-            count?: number | null;
-            insight?: string | null;
-        };
-        UserSavedProductOffer: {
-            merchant?: string | null;
-            /** Format: double */
-            price?: number | null;
-            /** Format: int64 */
-            priceMinorUnits?: number | null;
-            priceCurrency?: string | null;
-            delivery?: string | null;
-            merchantId?: string | null;
-            merchantDomain?: string | null;
-            productVariantId?: string | null;
-            variantTitle?: string | null;
-            available?: boolean | null;
+            count?: number;
+            insight?: string;
         };
         ProductCategoryResponse: {
             value: string;
@@ -2808,6 +2942,17 @@ export interface components {
             addressRegion?: string;
             postalCode: string;
             addressCountry: string;
+        };
+        /** @description Version 1 canonical product detail with selectable exact offers */
+        UserCanonicalProductDetailV1Response: {
+            /** @description Canonical product and all eligible independently ranked offers */
+            product: components["schemas"]["CanonicalProductResponse"];
+            /** @description Default independently ranked offer key */
+            recommendedOfferKey: string;
+            /** @description Deterministically resolved selected offer key */
+            selectedOfferKey: string;
+            /** @description Search-source degradation and truncation retained for this product */
+            sourceStates: components["schemas"]["UserCatalogSourceStateResponse"][];
         };
         UserProductSearchSuggestionsResponse: {
             suggestions: string[];
@@ -4193,6 +4338,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["CheckoutResponse"];
+                };
+            };
+        };
+    };
+    getCanonicalProductDetailV1: {
+        parameters: {
+            query?: {
+                selectedOfferKey?: string;
+            };
+            header?: never;
+            path: {
+                canonicalProductKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical product detail with recommended, selected, and alternative offers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserCanonicalProductDetailV1Response"];
                 };
             };
         };

@@ -20,6 +20,7 @@ public record UserGroupedProductSearchResult(
         List<CanonicalProduct> products,
         Map<String, ProductRankingExplanation> productRankingExplanations,
         Map<String, OfferRankingExplanation> offerRankingExplanations,
+        List<UserCatalogSourceState> sourceStates,
         int groupingDecisionCount,
         boolean groupingDecisionsTruncated,
         List<ProductGroupingDecision> groupingDecisions
@@ -31,7 +32,31 @@ public record UserGroupedProductSearchResult(
                 ? Map.of() : Map.copyOf(productRankingExplanations);
         offerRankingExplanations = offerRankingExplanations == null
                 ? Map.of() : Map.copyOf(offerRankingExplanations);
+        sourceStates = sourceStates == null ? List.of() : List.copyOf(sourceStates);
         groupingDecisions = groupingDecisions == null ? List.of() : List.copyOf(groupingDecisions);
+    }
+
+    public UserGroupedProductSearchResult(
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            boolean cached,
+            int offset,
+            int limit,
+            Integer nextOffset,
+            boolean hasMore,
+            boolean upstreamTruncated,
+            List<CanonicalProduct> products,
+            Map<String, ProductRankingExplanation> productRankingExplanations,
+            Map<String, OfferRankingExplanation> offerRankingExplanations,
+            int groupingDecisionCount,
+            boolean groupingDecisionsTruncated,
+            List<ProductGroupingDecision> groupingDecisions
+    ) {
+        this(
+                query, normalizedQuery, profileHash, cached, offset, limit, nextOffset, hasMore,
+                upstreamTruncated, products, productRankingExplanations, offerRankingExplanations,
+                List.of(), groupingDecisionCount, groupingDecisionsTruncated, groupingDecisions);
     }
 
     public UserGroupedProductSearchResult(
@@ -62,6 +87,7 @@ public record UserGroupedProductSearchResult(
                 products,
                 Map.of(),
                 Map.of(),
+                List.of(),
                 groupingDecisionCount,
                 groupingDecisionsTruncated,
                 groupingDecisions

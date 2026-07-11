@@ -79,7 +79,7 @@ public class GenericUcpCatalogProductRehydrationProvider implements CatalogProdu
     }
 
     private CatalogProductRehydrationResult unverified(CatalogProductReference reference) {
-        boolean unsupported = reference.localMerchantId() == null;
+        boolean unsupported = reference.localMerchantId() == null && reference.localRouting() == null;
         return CatalogProductRehydrationResult.failed(
                 reference,
                 unsupported ? CatalogRehydrationStatus.UNSUPPORTED : CatalogRehydrationStatus.UNAVAILABLE,

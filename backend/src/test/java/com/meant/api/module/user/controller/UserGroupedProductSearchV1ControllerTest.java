@@ -5,14 +5,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserGroupedProductSearchV1Response;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserCanonicalProductDetailService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
+import com.meant.api.module.user.exception.UserException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -34,7 +38,7 @@ class UserGroupedProductSearchV1ControllerTest {
         httpRequest.setRemoteAddr("192.0.2.10");
         httpRequest.addHeader("User-Agent", " grouped-client ");
         UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
-                service, null, null, null);
+                service, null, null, null, null);
 
         UserGroupedProductSearchV1Response response = controller.searchProducts(
                 jwt,
@@ -58,13 +62,35 @@ class UserGroupedProductSearchV1ControllerTest {
         assertThat(service.searchCommand.limit()).isEqualTo(10);
     }
 
+    @Test
+    void mapsOnlyAuthenticatedUserAndServerIssuedKeysToTheDetailQuery() {
+        CapturingProductDetailService detailService = new CapturingProductDetailService();
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000001");
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject(userId.toString())
+                .claim("email", "shopper@example.com")
+                .issuedAt(Instant.parse("2026-07-10T10:00:00Z"))
+                .expiresAt(Instant.parse("2026-07-10T11:00:00Z"))
+                .build();
+        UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
+                null, detailService, null, null, null);
+
+        assertThatThrownBy(() -> controller.getProductDetail(jwt, "grouped-product-v3_key", "offer-v2_key"))
+                .isInstanceOf(UserException.class);
+
+        assertThat(detailService.query.userId()).isEqualTo(userId);
+        assertThat(detailService.query.canonicalProductKey()).isEqualTo("grouped-product-v3_key");
+        assertThat(detailService.query.selectedOfferKey()).isEqualTo("offer-v2_key");
+    }
+
     private static final class CapturingGroupedProductSearchService extends UserGroupedProductSearchService {
 
         private EnsureUserProfileCommand profileCommand;
         private SearchUserProductsCommand searchCommand;
 
         private CapturingGroupedProductSearchService() {
-            super(null, null, null, null, null);
+            super(null, null, null, null, null, null);
         }
 
         @Override
@@ -77,6 +103,23 @@ class UserGroupedProductSearchV1ControllerTest {
             return new UserGroupedProductSearchResult(
                     "linen", "linen", "profile", false, 5, 10, 15, true, false,
                     List.of(), 0, false, List.of());
+        }
+    }
+
+    private static final class CapturingProductDetailService extends UserCanonicalProductDetailService {
+        private GetUserCanonicalProductDetailQuery query;
+
+        private CapturingProductDetailService() {
+            super(null, null, null);
+        }
+
+        @Override
+        public com.meant.api.module.user.service.dto.UserProductDetailResult get(
+                EnsureUserProfileCommand profileCommand,
+                GetUserCanonicalProductDetailQuery query
+        ) {
+            this.query = query;
+            throw UserException.notFound("controlled test stop");
         }
     }
 }

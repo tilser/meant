@@ -5,6 +5,7 @@ import com.meant.api.module.user.exception.UserProductSearchGroupingException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserCatalogSourceState;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
@@ -12,6 +13,8 @@ import com.meant.api.module.catalog.service.dto.FederatedCatalogDiscoveryResult;
 import com.meant.api.module.catalog.service.dto.ProductGroupingDecision;
 import com.meant.api.module.catalog.service.dto.ProductGroupingResult;
 import com.meant.api.module.catalog.service.dto.ProductRankingResult;
+import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
+import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
 import com.meant.api.module.catalog.service.ExactProductGroupingService;
 import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
 import com.meant.api.module.catalog.service.ProductRankingService;
@@ -37,6 +40,7 @@ public class UserGroupedProductSearchService {
     private final ExactProductGroupingService exactProductGroupingService;
     private final ProductRankingService productRankingService;
     private final UserProductRankingContextFactory rankingContextFactory;
+    private final UserCanonicalProductSessionStore productSessionStore;
 
     public UserGroupedProductSearchResult search(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -78,6 +82,27 @@ public class UserGroupedProductSearchService {
                         && visibleOfferKeys.contains(decision.rightOfferKey()))
                 .limit(MAX_PUBLIC_GROUPING_DECISIONS)
                 .toList();
+        List<UserCatalogSourceState> sourceStates = discovery.sources().stream()
+                .map(source -> new UserCatalogSourceState(
+                        source.discoverySource(),
+                        source.operation(),
+                        source.failure() != null,
+                        source.truncated() || source.page() != null && source.page().hasNextPage(),
+                        source.failure() == null ? null : source.failure().kind(),
+                        null,
+                        source.failure() == null ? null : source.failure().retryAfter()
+                ))
+                .toList();
+        Map<String, ProductRankingExplanation> pageProductExplanations =
+                ranking.productExplanations().entrySet().stream()
+                        .filter(entry -> page.stream().anyMatch(product -> product.key().equals(entry.getKey())))
+                        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, OfferRankingExplanation> pageOfferExplanations =
+                ranking.offerExplanations().entrySet().stream()
+                        .filter(entry -> visibleOfferKeys.contains(entry.getKey()))
+                        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+        productSessionStore.remember(
+                command.userId(), page, pageProductExplanations, pageOfferExplanations, sourceStates);
         return new UserGroupedProductSearchResult(
                 preparation.query(),
                 preparation.normalizedQuery(),
@@ -89,12 +114,9 @@ public class UserGroupedProductSearchService {
                 hasMore,
                 discovery.truncated(),
                 page,
-                ranking.productExplanations().entrySet().stream()
-                        .filter(entry -> page.stream().anyMatch(product -> product.key().equals(entry.getKey())))
-                        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
-                ranking.offerExplanations().entrySet().stream()
-                        .filter(entry -> visibleOfferKeys.contains(entry.getKey()))
-                        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
+                pageProductExplanations,
+                pageOfferExplanations,
+                sourceStates,
                 grouping.decisions().size(),
                 grouping.decisions().size() > visibleDecisions.size(),
                 visibleDecisions

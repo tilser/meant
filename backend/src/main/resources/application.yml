@@ -76,6 +76,8 @@ app:
           path: /api/v1/users/me/product-searches
         - method: POST
           path: /api/v1/users/me/product-searches:stream
+        - method: GET
+          path: /api/v1/users/me/products/{canonicalProductKey}
         - method: POST
           path: /api/users/me/product-searches:stream
         - method: GET
@@ -233,6 +235,8 @@ user:
     query-parser-prompt-version: v2
     explanation-prompt-version: v3
     cache-ttl: 24h
+    product-detail-session-ttl: ${USER_PRODUCT_DETAIL_SESSION_TTL:30m}
+    product-detail-session-maximum-size: ${USER_PRODUCT_DETAIL_SESSION_MAXIMUM_SIZE:10000}
     stream-timeout: ${USER_PRODUCT_SEARCH_STREAM_TIMEOUT:45s}
     stream-queue-capacity: ${USER_PRODUCT_SEARCH_STREAM_QUEUE_CAPACITY:128}
     discovery-recent-search-limit: 5

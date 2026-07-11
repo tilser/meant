@@ -5,6 +5,7 @@ import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.query.GetMerchantIntegrationByProviderIdentityQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
+import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByIdsQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByVerifiedDomainQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsQuery;
 import jakarta.validation.Valid;
@@ -38,6 +39,15 @@ public class MerchantIntegrationLookupService {
             @NotNull @Valid ListMerchantIntegrationsByMerchantsQuery query
     ) {
         return merchantIntegrationRepository.findByMerchantIdInOrderByCreatedAtAsc(query.merchantIds()).stream()
+                .map(this::toResult)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MerchantIntegrationResult> listByIds(
+            @NotNull @Valid ListMerchantIntegrationsByIdsQuery query
+    ) {
+        return merchantIntegrationRepository.findByIdInOrderByCreatedAtAsc(query.integrationIds()).stream()
                 .map(this::toResult)
                 .toList();
     }
