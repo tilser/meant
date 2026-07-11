@@ -58,3 +58,23 @@ test('cart creation accepts only server-issued offer identity for line selection
   expect(addFields as string[]).not.toContain('productVariantId')
   expect(addFields).toContain('offerKey')
 })
+
+test('saved products accept a typed session-only catalog reference', () => {
+  type SaveProduct = components['schemas']['SaveUserProductRequest']
+  type CatalogReference = components['schemas']['CatalogReference']
+  const saveFields: Array<keyof SaveProduct> = ['id', 'catalogReference']
+  const referenceFields: Array<keyof CatalogReference> = [
+    'provider',
+    'sourceType',
+    'sourceIdentity',
+    'merchantIntegrationId',
+    'externalMerchantId',
+    'externalProductId',
+    'externalVariantId',
+    'selectedOptions',
+  ]
+
+  expect(saveFields).toContain('catalogReference')
+  expect(referenceFields).toContain('sourceIdentity')
+  expect(referenceFields).toContain('selectedOptions')
+})

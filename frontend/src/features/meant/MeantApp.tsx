@@ -36,9 +36,10 @@ import { DEFAULT_BUDGET, clothingFitLabel } from './preferences/preferencesUtils
 import { upsertInventorySnapshot } from './inventory/inventoryUtils'
 import { ProductCard } from './product/ProductCard'
 import { ProductModal } from './product/ProductModal'
+import { GroupedProductModal } from './product/GroupedProductModal'
+import { productFromCanonical } from './product/groupedProductMapping'
 import {
   appendProductSnapshots,
-  mergeProductSnapshot,
   productSnapshotsForIds,
   upsertProductSnapshot,
 } from './product/productSnapshots'
@@ -84,7 +85,7 @@ import {
   revokeMerchantIdentityLink,
   saveUserProduct,
   startMerchantIdentityAuthorization,
-  streamUserProductSearch,
+  searchGroupedProducts,
   type AssistantChatContextInput,
   type CheckoutAssistantMessage,
   type CheckoutProfile,
@@ -95,7 +96,6 @@ import {
   type UserInventoryItemProfile,
   type UserInventoryItemUpdateInput,
   type UserInventoryPhotoInput,
-  type UserProductSearchStreamEventProfile,
   type UserTasteProfile,
   updateUserInventoryItem,
   updateNewsletterSubscription,
@@ -113,7 +113,6 @@ import type {
   Preference,
   PreferenceId,
   Product,
-  ProductAgentStage,
   ProductId,
   Theme,
   UserAccount,
@@ -312,41 +311,6 @@ function applySettingsPayload(
   setBudget(settings.budget)
   setDeliveryLocations(settingsLocations(settings))
   setClothingFit(clothingFitFromSettings(settings))
-}
-
-function upsertAgentActivity(
-  activities: readonly AgentActivity[],
-  event: Pick<UserProductSearchStreamEventProfile, 'agent' | 'label'>,
-  state: AgentActivity['state'] = 'active',
-): AgentActivity[] {
-  const agent = event.agent ?? 'search'
-  const label = event.label ?? 'Working'
-  const next = {
-    agent,
-    label,
-    state,
-    updatedAt: Date.now(),
-  }
-  const existing = activities.findIndex((activity) => activity.agent === agent)
-  if (existing < 0) {
-    return [...activities, next]
-  }
-  return activities.map((activity, index) => (index === existing ? next : activity))
-}
-
-function advanceAgentActivity(
-  activities: readonly AgentActivity[],
-  event: Pick<UserProductSearchStreamEventProfile, 'agent' | 'label'>,
-): AgentActivity[] {
-  const agent = event.agent ?? 'search'
-  return upsertAgentActivity(
-    activities.map((activity) =>
-      activity.agent !== agent && activity.state === 'active'
-        ? { ...activity, state: 'done' }
-        : activity,
-    ),
-    event,
-  )
 }
 
 function merchantNameSet(merchant: MerchantProfile): ReadonlySet<string> {
@@ -834,6 +798,7 @@ export function MeantApp() {
     setCart,
     updateStoredCart,
     addProductOfferToCart,
+    addSelectedOfferToCart,
     addToCart,
     removeFromCart,
     updateQty,
@@ -1660,120 +1625,44 @@ export function MeantApp() {
     setReply(null)
     setSearchLoading(true)
     setSearchResults([])
-    setProductSearchActivities([])
-    const streamedProductIds = new Set<ProductId>()
-    const upsertStreamProduct = (
-      event: UserProductSearchStreamEventProfile,
-      stage: ProductAgentStage,
-    ) => {
-      if (searchRequestRef.current !== requestId || !event.product) {
-        return
-      }
-      const product = productFromSearchResult(event.product, allPreferences, stage)
-      if (isRenderableSearchProduct(product)) {
-        streamedProductIds.add(product.id)
-        setSearchResults((current) => appendProductSnapshots(current, [product]))
-        setRemoteProducts((current) => appendProductSnapshots(current, [product]))
-      }
-      setProductSearchActivities((current) => upsertAgentActivity(current, event))
-    }
-    const orderedStreamProducts = (
-      event: UserProductSearchStreamEventProfile,
-      stage: ProductAgentStage,
-    ) => event.products.map((product) => productFromSearchResult(product, allPreferences, stage))
-    const noteFinalStreamProducts = (products: readonly Product[]) => {
-      if (products.length === 0) {
-        return streamedProductIds.size
-      }
-      streamedProductIds.clear()
-      products.forEach((product) => streamedProductIds.add(product.id))
-      return products.length
-    }
-    const finalStreamProducts = (current: Product[], products: readonly Product[]) => {
-      if (products.length === 0) {
-        return current
-      }
-      const currentById = new Map(current.map((product) => [product.id, product] as const))
-      const mergedProducts = products
-        .map((product) => mergeProductSnapshot(currentById.get(product.id), product))
-        .filter(isRenderableSearchProduct)
-      return mergedProducts
-    }
+    setProductSearchActivities([
+      {
+        agent: 'search',
+        label: 'Grouping products and ranking merchant offers',
+        state: 'active',
+        updatedAt: Date.now(),
+      },
+    ])
     try {
-      await streamUserProductSearch(
-        {
-          query: submittedQuery,
-          merchantId,
-          offset: 0,
-          limit: PRODUCT_SEARCH_PAGE_SIZE,
-          signal: controller.signal,
-        },
-        {
-          onPhase: (event) => {
-            if (searchRequestRef.current !== requestId) {
-              return
-            }
-            setProductSearchActivities((current) => advanceAgentActivity(current, event))
-          },
-          onProduct: (event) => {
-            upsertStreamProduct(event, 'candidate')
-          },
-          onProductUpdate: (event) => {
-            upsertStreamProduct(event, event.agent === 'discovery' ? 'enriched' : 'curating')
-          },
-          onRankUpdate: (event) => {
-            if (searchRequestRef.current !== requestId) {
-              return
-            }
-            const products = orderedStreamProducts(event, 'curated')
-            noteFinalStreamProducts(products)
-            setSearchResults((current) => finalStreamProducts(current, products))
-            setRemoteProducts((current) =>
-              appendProductSnapshots(current, products).filter(isRenderableSearchProduct),
-            )
-            setProductSearchActivities((current) => upsertAgentActivity(current, event))
-          },
-          onDone: (event) => {
-            if (searchRequestRef.current !== requestId) {
-              return
-            }
-            const products = orderedStreamProducts(event, 'curated')
-            const displayedCount = noteFinalStreamProducts(products)
-            setSearchResults((current) => finalStreamProducts(current, products))
-            setRemoteProducts((current) =>
-              appendProductSnapshots(current, products).filter(isRenderableSearchProduct),
-            )
-            setProductSearchActivities((current) =>
-              upsertAgentActivity(
-                current.map((activity) => ({ ...activity, state: 'done' })),
-                event,
-                'done',
-              ),
-            )
-            setReply(
-              event.cached
-                ? `Showing ${displayedCount} cached match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}".`
-                : `Found ${displayedCount} match${displayedCount === 1 ? '' : 'es'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.`,
-            )
-          },
-          onError: (message) => {
-            if (searchRequestRef.current !== requestId) {
-              return
-            }
-            setSearchError(message)
-            setProductSearchActivities((current) =>
-              upsertAgentActivity(
-                current,
-                {
-                  agent: 'search',
-                  label: message,
-                },
-                'error',
-              ),
-            )
-          },
-        },
+      const result = await searchGroupedProducts({
+        query: submittedQuery,
+        merchantId,
+        offset: 0,
+        limit: PRODUCT_SEARCH_PAGE_SIZE,
+        signal: controller.signal,
+      })
+      if (searchRequestRef.current !== requestId || controller.signal.aborted) return
+      const products = result.products.map(productFromCanonical).filter(isRenderableSearchProduct)
+      setSearchResults(products)
+      setRemoteProducts((current) => appendProductSnapshots(current, products))
+      const degradedCount = result.sourceStates.filter((source) => source.degraded).length
+      const sourceNote =
+        degradedCount > 0
+          ? ` ${degradedCount} source${degradedCount === 1 ? ' is' : 's are'} limited; healthy offers are still shown.`
+          : ''
+      setReply(
+        result.cached
+          ? `Showing ${products.length} cached grouped match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".${sourceNote}`
+          : `Found ${products.length} grouped product${products.length === 1 ? '' : 's'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.${sourceNote}`,
       )
+      setProductSearchActivities([
+        {
+          agent: 'search',
+          label: 'Grouped products and ranked offers',
+          state: 'done',
+          updatedAt: Date.now(),
+        },
+      ])
     } catch {
       if (searchRequestRef.current !== requestId) {
         return
@@ -1783,6 +1672,14 @@ export function MeantApp() {
       }
       setSearchResults([])
       setSearchError('Product search failed. Please try again.')
+      setProductSearchActivities([
+        {
+          agent: 'search',
+          label: 'Grouped product search failed',
+          state: 'error',
+          updatedAt: Date.now(),
+        },
+      ])
     } finally {
       if (searchRequestRef.current === requestId) {
         if (searchAbortRef.current === controller) {
@@ -2288,23 +2185,36 @@ export function MeantApp() {
           onCheckoutAssistant={assistActiveCheckout}
         />
       ) : null}
-      <ProductModal
-        product={activeProduct}
-        deliveryLocations={deliveryLocations}
-        preferences={allPreferences}
-        saved={activeProduct ? savedSet.has(activeProduct.id) : false}
-        savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
-        inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
-        onClose={() => setActiveProduct(null)}
-        onToggleSave={toggleSave}
-        onCompare={handleProductCompare}
-        onAddToCart={addProductOfferToCartResolved}
-        onAskInChat={sendProductQuestionToDiscover}
-        canPrev={canNavPrev}
-        canNext={canNavNext}
-        onPrev={() => navigateProduct(-1)}
-        onNext={() => navigateProduct(1)}
-      />
+      {activeProduct?.canonicalProduct ? (
+        <GroupedProductModal
+          key={activeProduct.id}
+          product={activeProduct}
+          onClose={() => setActiveProduct(null)}
+          onAddOfferKey={(offerKey) => addSelectedOfferToCart(activeProduct, offerKey)}
+          onResearch={(searchQuery) => {
+            setActiveProduct(null)
+            void runProductSearch(searchQuery)
+          }}
+        />
+      ) : (
+        <ProductModal
+          product={activeProduct}
+          deliveryLocations={deliveryLocations}
+          preferences={allPreferences}
+          saved={activeProduct ? savedSet.has(activeProduct.id) : false}
+          savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
+          inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
+          onClose={() => setActiveProduct(null)}
+          onToggleSave={toggleSave}
+          onCompare={handleProductCompare}
+          onAddToCart={addProductOfferToCartResolved}
+          onAskInChat={sendProductQuestionToDiscover}
+          canPrev={canNavPrev}
+          canNext={canNavNext}
+          onPrev={() => navigateProduct(-1)}
+          onNext={() => navigateProduct(1)}
+        />
+      )}
       <FloatingAsk
         contextLabel={askContext.label}
         context={assistantContext}

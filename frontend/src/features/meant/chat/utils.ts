@@ -235,6 +235,9 @@ function productArtworkUrl(product: Product): string | null {
 }
 
 export function isRenderableSearchProduct(product: Product): boolean {
+  if (product.canonicalProduct) {
+    return product.agentStage !== 'candidate' && product.canonicalProduct.offers.length > 0
+  }
   return product.agentStage !== 'candidate' && Boolean(productArtworkUrl(product))
 }
 

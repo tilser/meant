@@ -1,3 +1,5 @@
+import type { CanonicalProductProfile } from '../../lib/apiClient'
+
 export type CorePreferenceId = string
 export type PreferenceId = string
 
@@ -124,6 +126,8 @@ export interface Product {
   agentStage?: ProductAgentStage
   agentUpdatedAt?: number
   commercialFactsAuthoritative?: boolean
+  /** Generated grouped API payload retained as the single source of truth for exact offers. */
+  canonicalProduct?: CanonicalProductProfile
 }
 
 export interface Reply {

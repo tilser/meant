@@ -15,6 +15,8 @@ export type GroupedProductSearchProfile =
   components['schemas']['UserGroupedProductSearchV1Response']
 export type CanonicalProductDetailProfile =
   components['schemas']['UserCanonicalProductDetailV1Response']
+export type CanonicalProductProfile = components['schemas']['CanonicalProductResponse']
+export type CanonicalOfferProfile = components['schemas']['OfferResponse']
 
 export interface ShoppingFilterProfile {
   id: string

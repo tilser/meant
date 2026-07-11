@@ -994,11 +994,14 @@ export function ChatDiscoverView({
     if (products.length > 0) {
       return products
     }
+    if (query) {
+      return []
+    }
     if (savedProducts.length > 0) {
       return savedProducts
     }
     return PRODUCTS.slice(0, 4)
-  }, [products, savedProducts])
+  }, [products, query, savedProducts])
   const knownProductsById = useMemo(() => {
     const next = new Map<ProductId, Product>()
     for (const product of [...PRODUCTS, ...savedProducts, ...cartProducts, ...displayProducts]) {
@@ -1855,6 +1858,10 @@ export function ChatDiscoverView({
   }
 
   const addCartFromChat = async (product: Product) => {
+    if (product.canonicalProduct) {
+      onOpen(product)
+      return
+    }
     const offer = bestOffer(product, deliveryLocations)
     const synced = offerCartable(offer) || canResolveCartOffer(product, offer)
     if (synced) {
@@ -1891,6 +1898,10 @@ export function ChatDiscoverView({
   }
 
   const restoreCartLineFromReview = async (product: Product, merchant: string, price?: number) => {
+    if (product.canonicalProduct) {
+      onOpen(product)
+      return
+    }
     if (cart.some((item) => item.id === product.id && item.merchant === merchant)) {
       return
     }
@@ -2306,7 +2317,8 @@ export function ChatDiscoverView({
         ) : null}
         {error && !activeThreadSearchPending ? (
           <div className="mt-ct-system">
-            Live search is unavailable, so Meant is showing demo products for this chat.
+            Grouped product search is unavailable. No merchant offers were substituted; try the
+            search again.
           </div>
         ) : null}
         {agentActivities.length > 0 && loading ? (

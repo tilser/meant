@@ -430,6 +430,42 @@ describe('cart recovery helpers', () => {
     })
     expect(merged[0].deliveryGroups).toEqual([oldGroup])
   })
+
+  test('binds a grouped cart line by the exact server-issued offer key', () => {
+    const cart: CartItem[] = [
+      {
+        id: 'canonical-product',
+        merchant: 'Merchant',
+        offerKey: 'offer-exact',
+        qty: 1,
+        syncing: true,
+      },
+    ]
+    const snapshot = {
+      cartId: 'cart-1',
+      merchantId: 'merchant-1',
+      merchantDomain: 'merchant.example',
+      remoteCartId: 'remote-cart-1',
+      lines: [
+        {
+          cartLineId: 'line-1',
+          remoteCartLineId: 'remote-line-1',
+          offerKey: 'offer-exact',
+          productVariantId: 'server-variant',
+          quantity: 1,
+        },
+      ],
+      deliveryGroups: [],
+    } as unknown as CartProfile
+
+    expect(mergeCartSnapshot(cart, 'merchant', snapshot)[0]).toMatchObject({
+      offerKey: 'offer-exact',
+      productVariantId: 'server-variant',
+      cartLineId: 'line-1',
+      syncing: false,
+      syncError: null,
+    })
+  })
 })
 
 describe('cart and order utilities', () => {

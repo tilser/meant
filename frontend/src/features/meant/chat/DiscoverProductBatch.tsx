@@ -78,10 +78,14 @@ function DiscoverChatProduct({
           type="button"
           onClick={(event) => {
             event.stopPropagation()
-            onAddCart(product)
+            if (product.canonicalProduct) {
+              onOpen(product)
+            } else {
+              onAddCart(product)
+            }
           }}
         >
-          <CartIcon /> Add to cart
+          <CartIcon /> {product.canonicalProduct ? 'Choose offer' : 'Add to cart'}
         </button>
         <button
           className={`mt-ct-pinbtn ${pinned ? 'on' : ''}`}

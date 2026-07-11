@@ -257,6 +257,7 @@ function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>)
 }
 
 export function productPriceFrom(product: Product, locations: DeliveryLocations): number | null {
+  if (product.canonicalProduct) return product.priceFrom
   const offers = availableOffers(product, locations)
   const prices = offers.map((offer) => offer.price)
   return prices.length > 0 ? Math.min(...prices) : product.priceFrom
@@ -482,6 +483,7 @@ function cartLineForItem(
     return Boolean(
       (item.cartLineId && line.cartLineId === item.cartLineId) ||
       (item.remoteCartLineId && line.remoteCartLineId === item.remoteCartLineId) ||
+      (item.offerKey && line.offerKey === item.offerKey) ||
       (item.productVariantId && line.productVariantId === item.productVariantId),
     )
   })
@@ -508,7 +510,7 @@ export function mergeCartSnapshot(
     // The merchant confirmed the cart but did not return this line (e.g. the
     // variant sold out). Keep the item visible with the merchant's reason
     // instead of leaving it in a permanent "syncing" state.
-    if (!line && item.productVariantId) {
+    if (!line && (item.productVariantId || item.offerKey)) {
       return {
         ...item,
         merchantId: snapshot.merchantId ?? item.merchantId,
@@ -534,6 +536,7 @@ export function mergeCartSnapshot(
       cartLineId: line?.cartLineId ?? item.cartLineId,
       remoteCartLineId: line?.remoteCartLineId ?? item.remoteCartLineId,
       productVariantId: line?.productVariantId ?? item.productVariantId,
+      offerKey: line?.offerKey ?? item.offerKey,
       variantTitle: line?.variantTitle ?? item.variantTitle,
       cartTotalAmount: snapshot.totalAmount ?? item.cartTotalAmount,
       cartSubtotalAmount: snapshot.subtotalAmount ?? item.cartSubtotalAmount,

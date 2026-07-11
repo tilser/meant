@@ -1,7 +1,112 @@
-import type { SaveUserProductInput, UserSavedProductProfile } from '../../../lib/apiClient'
+import type {
+  CanonicalOfferProfile,
+  CatalogProductReferenceInput,
+  SaveUserProductInput,
+  UserSavedProductProfile,
+} from '../../../lib/apiClient'
 import type { Preference, Product } from '../types'
 import { displayProductCategoryValue, minorUnitsToMajor } from '../utils'
 import { productCuratedFields, productWithCuratedFields } from './productCuration'
+
+function catalogReferenceForRecommendedOffer(
+  product: Product,
+): CatalogProductReferenceInput | undefined {
+  const canonical = product.canonicalProduct
+  if (!canonical) return undefined
+  const offer = canonical.offers.find(
+    (candidate) => candidate.key === canonical.recommendedOfferKey,
+  )
+  if (!offer) return undefined
+
+  // Offer provenance is server-ranked. Select the first complete record that matches this exact
+  // offer identity, and keep every reference field on that one record to avoid mixed authority.
+  const provenance = offer.provenance.find((candidate) => provenanceMatchesOffer(candidate, offer))
+  if (!provenance) return undefined
+
+  const provider = provenance.provider.trim()
+  const sourceIdentity = provenance.discoverySource.value.trim()
+  const externalProductId = provenance.externalProductReference.value.trim()
+  const merchantIntegrationId = provenance.localRouting?.merchantIntegrationId.trim()
+  const externalMerchantId = provenance.externalMerchantReference?.value.trim()
+  const externalVariantId = provenance.externalVariantReference?.value.trim()
+  return {
+    provider,
+    sourceType: provenance.discoverySource.type,
+    sourceIdentity,
+    ...(merchantIntegrationId ? { merchantIntegrationId } : {}),
+    ...(externalMerchantId ? { externalMerchantId } : {}),
+    externalProductId,
+    ...(externalVariantId ? { externalVariantId } : {}),
+    selectedOptions: offer.selectedOptions.map((option) => ({
+      name: option.name,
+      value: option.value,
+    })),
+  }
+}
+
+function provenanceMatchesOffer(
+  provenance: CanonicalOfferProfile['provenance'][number],
+  offer: CanonicalOfferProfile,
+): boolean {
+  const provider = provenance.provider.trim()
+  const sourceProvider = provenance.discoverySource.provider.trim()
+  const sourceIdentity = provenance.discoverySource.value.trim()
+  const externalProductId = provenance.externalProductReference.value.trim()
+  if (
+    !provider ||
+    provider !== sourceProvider ||
+    provider !== offer.identity.provider.trim() ||
+    !sourceIdentity ||
+    !externalProductId ||
+    provenance.externalProductReference.type !== 'PRODUCT' ||
+    offer.identity.externalProductIdentity.type !== 'PRODUCT' ||
+    !offer.identity.externalProductIdentity.value.trim() ||
+    offer.selectedOptions.some((option) => !option.name.trim() || !option.value.trim())
+  ) {
+    return false
+  }
+
+  const offerVariantId = offer.identity.externalVariantIdentity?.value.trim()
+  const provenanceVariantId = provenance.externalVariantReference?.value.trim()
+  if (
+    (offer.identity.externalVariantIdentity &&
+      (offer.identity.externalVariantIdentity.type !== 'VARIANT' || !offerVariantId)) ||
+    (provenance.externalVariantReference &&
+      (provenance.externalVariantReference.type !== 'VARIANT' || !provenanceVariantId)) ||
+    (offerVariantId || undefined) !== (provenanceVariantId || undefined)
+  ) {
+    return false
+  }
+
+  const offerMerchantId = offer.identity.merchantScope.externalMerchantIdentity?.value.trim()
+  const provenanceMerchantId = provenance.externalMerchantReference?.value.trim()
+  if (
+    (offer.identity.merchantScope.externalMerchantIdentity &&
+      (offer.identity.merchantScope.externalMerchantIdentity.type !== 'MERCHANT' ||
+        !offerMerchantId)) ||
+    (provenance.externalMerchantReference &&
+      (provenance.externalMerchantReference.type !== 'MERCHANT' || !provenanceMerchantId)) ||
+    (offerMerchantId || undefined) !== (provenanceMerchantId || undefined)
+  ) {
+    return false
+  }
+
+  const fallbackIntegrationId = offer.identity.merchantScope.merchantIntegrationFallbackId?.trim()
+  const routingIntegrationId = provenance.localRouting?.merchantIntegrationId.trim()
+  if (offer.identity.merchantScope.type === 'LOCAL_MERCHANT_INTEGRATION_FALLBACK') {
+    return Boolean(
+      !offerMerchantId &&
+      !provenanceMerchantId &&
+      fallbackIntegrationId &&
+      fallbackIntegrationId === routingIntegrationId,
+    )
+  }
+  return (
+    offer.identity.merchantScope.type === 'EXTERNAL_MERCHANT' &&
+    !fallbackIntegrationId &&
+    Boolean(offerMerchantId)
+  )
+}
 
 export function savedProductFromProfile(
   product: UserSavedProductProfile,
@@ -71,8 +176,9 @@ export function savedProductInput(
   preferences: readonly Preference[] = [],
 ): SaveUserProductInput {
   const curatedFields = productCuratedFields(product, preferences)
+  const catalogReference = catalogReferenceForRecommendedOffer(product)
   return {
-    id: product.id,
+    id: product.canonicalProduct?.key ?? product.id,
     productHash: product.productHash ?? null,
     name: product.name,
     brand: product.brand,
@@ -106,5 +212,6 @@ export function savedProductInput(
     })),
     needs: product.needs ?? null,
     provides: product.provides ? [...product.provides] : [],
+    ...(catalogReference ? { catalogReference } : {}),
   }
 }

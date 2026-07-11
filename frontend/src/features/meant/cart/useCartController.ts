@@ -1,6 +1,11 @@
 import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react'
 
-import { createCart, updateCart, type CartProfile } from '../../../lib/apiClient'
+import {
+  bindSelectedOfferToCart,
+  createCart,
+  updateCart,
+  type CartProfile,
+} from '../../../lib/apiClient'
 import { DEFAULT_CART } from '../data'
 import { useStoredState } from '../shared/storage'
 import type { CartItem, Offer, Product, ProductId } from '../types'
@@ -19,6 +24,11 @@ import {
   offerCartable,
   selectedDeliveryOptionsForCart,
 } from './utils'
+import {
+  confirmedCartIdForOffer,
+  mergeConfirmedCartSnapshot,
+  mergeInitialSelectedOfferSnapshot,
+} from './selectedOfferCartBinding'
 
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
   return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
@@ -250,6 +260,98 @@ export function useCartController(products: readonly Product[]) {
         }),
       )
       return false
+    }
+  }
+
+  const addSelectedOfferToCart = async (product: Product, offerKey: string): Promise<boolean> => {
+    const exactOfferKey = offerKey.trim()
+    const selectedOffer = product.canonicalProduct?.offers.find(
+      (offer) => offer.key === exactOfferKey,
+    )
+    if (!exactOfferKey) {
+      return false
+    }
+
+    const merchant = selectedOffer?.merchantName?.trim() || 'Selected merchant'
+    const confirmedCartId = confirmedCartIdForOffer(cartRef.current, exactOfferKey)
+    const existingExactOffer = confirmedCartId
+      ? cartRef.current.find(
+          (item) => item.offerKey === exactOfferKey && item.cartId === confirmedCartId,
+        )
+      : undefined
+    updateStoredCart((current) => {
+      const existing = current.find(
+        (item) => item.id === product.id && item.offerKey === exactOfferKey,
+      )
+      if (existing) {
+        return current.map((item) =>
+          item.id === product.id && item.offerKey === exactOfferKey
+            ? {
+                ...item,
+                qty: item.qty + 1,
+                syncing: true,
+                syncError: null,
+              }
+            : item,
+        )
+      }
+      return [
+        ...current,
+        {
+          id: product.id,
+          merchant,
+          merchantId: existingExactOffer?.merchantId,
+          merchantDomain: existingExactOffer?.merchantDomain,
+          offerKey: exactOfferKey,
+          cartId: confirmedCartId,
+          remoteCartId: existingExactOffer?.remoteCartId,
+          checkoutUrl: existingExactOffer?.checkoutUrl,
+          continueUrl: existingExactOffer?.continueUrl,
+          qty: 1,
+          syncing: true,
+          syncError: null,
+        },
+      ]
+    })
+
+    try {
+      const snapshot = await bindSelectedOfferToCart({
+        offerKey: exactOfferKey,
+        quantity: 1,
+        cartId: confirmedCartId,
+      })
+      const serverMerchant = snapshot.merchantDomain?.trim() || merchant
+      updateStoredCart((current) => {
+        const merged =
+          existingExactOffer && confirmedCartId
+            ? mergeConfirmedCartSnapshot(current, confirmedCartId, snapshot)
+            : mergeInitialSelectedOfferSnapshot(current, product.id, exactOfferKey, snapshot)
+        return merged.map((item) =>
+          item.id === product.id && item.offerKey === exactOfferKey
+            ? { ...item, merchant: serverMerchant }
+            : item,
+        )
+      })
+      const serverMerchantKey = cartMerchantKey({
+        merchant: serverMerchant,
+        merchantId: snapshot.merchantId,
+        merchantDomain: snapshot.merchantDomain,
+      })
+      storeCartSnapshot(serverMerchantKey, serverMerchant, snapshot)
+      return true
+    } catch (error) {
+      updateStoredCart((current) =>
+        current.flatMap((item) => {
+          if (item.id !== product.id || item.offerKey !== exactOfferKey) {
+            return [item]
+          }
+          const qty = item.qty - 1
+          return qty <= 0
+            ? []
+            : [{ ...item, qty, syncing: false, syncError: 'Could not add this exact offer.' }]
+        }),
+      )
+      throw error
     }
   }
 
@@ -590,6 +692,7 @@ export function useCartController(products: readonly Product[]) {
     setCart,
     updateStoredCart,
     addProductOfferToCart,
+    addSelectedOfferToCart,
     addToCart,
     removeFromCart,
     updateQty,
