@@ -2,6 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
+import com.meant.api.module.merchant.service.GenericUcpVariantObservationResolver.VariantObservation;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
@@ -15,7 +16,6 @@ import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
-import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
 import com.meant.api.plugin.catalog.common.dto.RehydratedCommercialFacts;
@@ -25,8 +25,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -35,23 +33,27 @@ import org.springframework.stereotype.Component;
 @Component
 public class GenericUcpProductObservationMapper {
     private final GenericUcpCatalogReferenceVerifier referenceVerifier;
+    private final GenericUcpVariantObservationResolver variantResolver;
     private final GenericUcpCatalogDataUseProperties properties;
     private final Clock clock;
 
     @Autowired
     public GenericUcpProductObservationMapper(
             GenericUcpCatalogReferenceVerifier referenceVerifier,
+            GenericUcpVariantObservationResolver variantResolver,
             GenericUcpCatalogDataUseProperties properties
     ) {
-        this(referenceVerifier, properties, Clock.systemUTC());
+        this(referenceVerifier, variantResolver, properties, Clock.systemUTC());
     }
 
     GenericUcpProductObservationMapper(
             GenericUcpCatalogReferenceVerifier referenceVerifier,
+            GenericUcpVariantObservationResolver variantResolver,
             GenericUcpCatalogDataUseProperties properties,
             Clock clock
     ) {
         this.referenceVerifier = referenceVerifier;
+        this.variantResolver = variantResolver;
         this.properties = properties;
         this.clock = clock;
     }
@@ -68,10 +70,11 @@ public class GenericUcpProductObservationMapper {
         if (reference.externalVariantReference() == null) {
             return failed(reference, CatalogRehydrationFailureKind.INVALID_REFERENCE);
         }
-        VariantObservation variant = exactVariant(reference, product);
-        if (variant == null) {
-            return failed(reference, CatalogRehydrationFailureKind.NOT_FOUND);
+        GenericUcpVariantObservationResolver.Resolution resolution = variantResolver.resolve(reference, product);
+        if (resolution.failure() != null) {
+            return failed(reference, resolution.failure());
         }
+        VariantObservation variant = resolution.observation();
         Instant observedAt = clock.instant();
         ResultFreshness freshness = new ResultFreshness(observedAt, observedAt.plus(properties.rehydratedFactsTtl()));
         ExternalIdentifier productId = identifier(ExternalIdentifierType.PRODUCT, product.productId());
@@ -96,23 +99,6 @@ public class GenericUcpProductObservationMapper {
                         null
                 )
         ));
-    }
-
-    private VariantObservation exactVariant(CatalogProductReference reference, ProductDetailsResponse.Product product) {
-        List<VariantObservation> variants = new ArrayList<>();
-        if (product.selectedOrFirstAvailableVariant() != null) {
-            variants.add(VariantObservation.from(product.selectedOrFirstAvailableVariant()));
-        }
-        if (product.variants() != null) {
-            product.variants().stream().map(VariantObservation::from).forEach(variants::add);
-        }
-        return variants.stream()
-                .filter(variant -> reference.externalVariantReference().value().equals(variant.id()))
-                .filter(variant -> reference.selectedOptions().isEmpty()
-                        || reference.selectedOptions().equals(variant.options()))
-                .distinct()
-                .findFirst()
-                .orElse(null);
     }
 
     private ExternalIdentifier identifier(ExternalIdentifierType type, String value) {
@@ -160,39 +146,4 @@ public class GenericUcpProductObservationMapper {
         return CatalogProductRehydrationResult.failed(reference, CatalogRehydrationStatus.UNAVAILABLE, failure);
     }
 
-    private record VariantObservation(
-            String id,
-            String price,
-            String currency,
-            String imageUrl,
-            Boolean available,
-            List<ProductAttribute> options
-    ) {
-        private static final Comparator<ProductAttribute> OPTION_ORDER = Comparator
-                .comparing((ProductAttribute option) -> option.group() == null ? "" : option.group())
-                .thenComparing(ProductAttribute::name)
-                .thenComparing(ProductAttribute::value);
-
-        static VariantObservation from(ProductDetailsResponse.SelectedVariant variant) {
-            return new VariantObservation(variant.variantId(), variant.price(), variant.currency(), variant.imageUrl(),
-                    variant.available(), options(variant.selectedOptions()));
-        }
-
-        static VariantObservation from(ProductDetailsResponse.Variant variant) {
-            return new VariantObservation(variant.variantId(), variant.price(), variant.currency(), variant.imageUrl(),
-                    variant.available(), options(variant.selectedOptions()));
-        }
-
-        private static List<ProductAttribute> options(List<ProductDetailsResponse.SelectedOption> options) {
-            if (options == null) {
-                return List.of();
-            }
-            return options.stream()
-                    .filter(option -> option != null && option.name() != null && option.value() != null)
-                    .map(option -> new ProductAttribute("variant-option", option.name(), option.value()))
-                    .distinct()
-                    .sorted(OPTION_ORDER)
-                    .toList();
-        }
-    }
 }

@@ -1,13 +1,14 @@
 import type { SaveUserProductInput, UserSavedProductProfile } from '../../../lib/apiClient'
 import type { Preference, Product } from '../types'
-import { displayProductCategoryValue } from '../utils'
+import { displayProductCategoryValue, minorUnitsToMajor } from '../utils'
 import { productCuratedFields, productWithCuratedFields } from './productCuration'
 
 export function savedProductFromProfile(
   product: UserSavedProductProfile,
   preferences: readonly Preference[] = [],
 ): Product {
-  const authoritative = product.commercialFactsAuthoritative
+  const priceFrom = minorUnitsToMajor(product.priceFromMinorUnits, product.priceCurrency)
+  const authoritative = product.commercialFactsAuthoritative && priceFrom != null
   const snapshot: Product = {
     id: product.id,
     productHash: product.productHash,
@@ -19,7 +20,9 @@ export function savedProductFromProfile(
     productUrl: product.productUrl,
     remote: product.remote ?? false,
     match: product.match ?? 0,
-    priceFrom: authoritative ? product.priceFrom : null,
+    priceFrom: authoritative ? priceFrom : null,
+    priceFromMinorUnits: authoritative ? product.priceFromMinorUnits : null,
+    priceCurrency: authoritative ? product.priceCurrency : null,
     merchants: product.merchants ?? 0,
     satisfies: product.satisfies,
     misses: product.misses,
@@ -38,14 +41,21 @@ export function savedProductFromProfile(
           .filter(
             (
               offer,
-            ): offer is typeof offer & { merchant: string; price: number; delivery: string } =>
-              offer.merchant != null && offer.price != null && offer.delivery != null,
+            ): offer is typeof offer & {
+              merchant: string
+              priceMinorUnits: number
+              priceCurrency: string
+            } =>
+              offer.merchant != null &&
+              minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency) != null,
           )
           .map((offer) => ({
             ...offer,
             merchant: offer.merchant,
-            price: offer.price,
-            delivery: offer.delivery,
+            price: minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency) as number,
+            priceMinorUnits: offer.priceMinorUnits,
+            priceCurrency: offer.priceCurrency,
+            delivery: offer.delivery ?? 'Calculated at checkout',
           }))
       : [],
     needs: product.needs ? (product.needs as Product['needs']) : undefined,

@@ -112,7 +112,7 @@ export function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: money(productPriceFrom(product, deliveryLocations)),
+                value: money(productPriceFrom(product, deliveryLocations), product.priceCurrency),
                 win:
                   bestPrice !== null && productPriceFrom(product, deliveryLocations) === bestPrice,
               }))}
@@ -191,7 +191,7 @@ export function CompareView({
                   <div key={product.id} className="mt-cmp-cell">
                     <span className="mt-cmp-store">{offer.merchant}</span>
                     <span className="mt-mono mt-cmp-sub">
-                      {money(offer.price)} · {offer.delivery}
+                      {money(offer.price, offer.priceCurrency)} · {offer.delivery}
                     </span>
                   </div>
                 )

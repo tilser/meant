@@ -8,6 +8,7 @@ import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import com.meant.api.plugin.catalog.common.dto.CatalogPayloadClass;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
@@ -26,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserSavedProductService {
     private final UserService userService;
+    private final UserSettingsService userSettingsService;
     private final UserSavedProductRepository userSavedProductRepository;
     private final UserCollectionProperties userCollectionProperties;
     private final UserSavedProductReferenceResolver referenceResolver;
@@ -50,11 +53,10 @@ public class UserSavedProductService {
             @NotNull @Valid ListSavedProductsQuery query
     ) {
         validateUser(profileCommand, query.userId());
-        userService.ensureProfile(profileCommand);
+        CatalogRehydrationContext context = context(userSettingsService.get(profileCommand));
         List<UserSavedProduct> saved = persistenceService.findVerified(
                 query.userId(),
-                query.page(),
-                boundedLimit(query.limit(), userCollectionProperties.savedProducts().maxLimit())
+                userCollectionProperties.savedProducts().quota()
         );
         Map<UserSavedProduct, CatalogProductReference> references = new LinkedHashMap<>();
         for (UserSavedProduct entity : saved) {
@@ -76,15 +78,26 @@ public class UserSavedProductService {
             return policy.mode() != CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY
                     || !policy.policyKey().equals(entry.getKey().getRetentionPolicyKey());
         });
+        int limit = boundedLimit(query.limit(), userCollectionProperties.savedProducts().maxLimit());
+        long offset = (long) query.page() * limit;
+        Map<UserSavedProduct, CatalogProductReference> visibleReferences = references.entrySet().stream()
+                .skip(offset)
+                .limit(limit)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
         Map<CatalogProductReference, CatalogProductRehydrationResult> results = new LinkedHashMap<>();
-        if (!references.isEmpty()) {
+        if (!visibleReferences.isEmpty()) {
             rehydrationService.rehydrate(
-                    List.copyOf(references.values()),
-                    new CatalogRehydrationContext(null, null)
+                    List.copyOf(visibleReferences.values()),
+                    context
             ).forEach(result -> results.put(result.reference(), result));
         }
-        return references.entrySet().stream()
-                .map(entry -> resultMapper.result(entry.getKey(), results.get(entry.getValue())))
+        return visibleReferences.entrySet().stream()
+                .map(entry -> resultMapper.result(entry.getKey(), results.get(entry.getValue()), context))
                 .toList();
     }
 
@@ -93,12 +106,12 @@ public class UserSavedProductService {
             @NotNull @Valid SaveUserProductCommand command
     ) {
         validateUser(profileCommand, command.userId());
-        userService.ensureProfile(profileCommand);
+        CatalogRehydrationContext context = context(userSettingsService.get(profileCommand));
         Instant now = Instant.now();
         CatalogProductReference requested = referenceResolver.resolve(command, now);
         CatalogProductRehydrationResult rehydrated = rehydrationService.rehydrate(
                 requested,
-                new CatalogRehydrationContext(null, null)
+                context
         );
         if (rehydrated.status() != CatalogRehydrationStatus.FRESH || rehydrated.resolvedReference() == null) {
             throw new UserException("Saved product could not be verified from current provider facts");
@@ -112,7 +125,7 @@ public class UserSavedProductService {
             throw new UserException("Provider policy does not permit a durable saved-product reference");
         }
         UserSavedProduct saved = persistenceService.save(command, verified, policy.policyKey(), now);
-        return resultMapper.result(saved, rehydrated);
+        return resultMapper.result(saved, rehydrated, context);
     }
 
     @Transactional
@@ -127,6 +140,17 @@ public class UserSavedProductService {
 
     private int boundedLimit(int limit, int maxLimit) {
         return Math.min(limit, maxLimit);
+    }
+
+    private CatalogRehydrationContext context(UserSettingsResult settings) {
+        String country = settings == null || settings.location() == null
+                ? null
+                : trimmed(settings.location().code());
+        return new CatalogRehydrationContext(country == null ? null : country.toUpperCase(Locale.ROOT), null);
+    }
+
+    private String trimmed(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {

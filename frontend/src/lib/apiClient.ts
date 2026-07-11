@@ -411,6 +411,8 @@ export interface UserAssistantStreamHandlers {
 export interface UserSavedProductOfferProfile {
   merchant: string | null
   price: number | null
+  priceMinorUnits: number | null
+  priceCurrency: string | null
   delivery: string | null
   merchantId: string | null
   merchantDomain: string | null
@@ -437,6 +439,8 @@ export interface UserSavedProductProfile {
   remote: boolean | null
   match: number | null
   priceFrom: number | null
+  priceFromMinorUnits: number | null
+  priceCurrency: string | null
   merchants: number | null
   satisfies: string[]
   misses: string[]
@@ -447,6 +451,8 @@ export interface UserSavedProductProfile {
   offers: UserSavedProductOfferProfile[]
   needs: string | null
   provides: string[]
+  marketCountry: string | null
+  marketContextApplied: boolean
   commercialFactsAuthoritative: boolean
   createdAt: string
   updatedAt: string
@@ -471,8 +477,18 @@ export type CatalogProductReferenceInput = {
 
 export type SaveUserProductInput = Omit<
   UserSavedProductProfile,
-  'commercialFactsAuthoritative' | 'createdAt' | 'updatedAt'
-> & { catalogReference?: CatalogProductReferenceInput }
+  | 'commercialFactsAuthoritative'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'priceFromMinorUnits'
+  | 'priceCurrency'
+  | 'marketCountry'
+  | 'marketContextApplied'
+  | 'offers'
+> & {
+  offers: Array<Omit<UserSavedProductOfferProfile, 'priceMinorUnits' | 'priceCurrency'>>
+  catalogReference?: CatalogProductReferenceInput
+}
 
 export interface MerchantProfile {
   id: string

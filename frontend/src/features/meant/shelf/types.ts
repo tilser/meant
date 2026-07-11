@@ -22,6 +22,7 @@ export interface ShelfProductSnapshot {
   category: string
   tone: string
   priceFrom: number | null
+  priceCurrency?: string | null
   merchants: number
   imageUrl?: string | null
 }

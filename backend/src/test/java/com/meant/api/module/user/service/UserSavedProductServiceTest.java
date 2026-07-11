@@ -2,8 +2,10 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
@@ -16,6 +18,8 @@ import com.meant.api.module.user.repository.UserSavedProductRepository;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
+import com.meant.api.module.user.service.dto.UserLocationResult;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
@@ -61,6 +65,7 @@ class UserSavedProductServiceTest {
     private FakeRepository repository;
     private FakeRehydrationProvider provider;
     private UserTasteProfileService tasteService;
+    private UserSettingsService settingsService;
     private UserSavedProductService service;
 
     @BeforeEach
@@ -68,6 +73,8 @@ class UserSavedProductServiceTest {
         repository = new FakeRepository();
         provider = new FakeRehydrationProvider();
         tasteService = mock(UserTasteProfileService.class);
+        settingsService = mock(UserSettingsService.class);
+        when(settingsService.get(any())).thenReturn(settings("CZ"));
         service = service(50);
     }
 
@@ -76,17 +83,63 @@ class UserSavedProductServiceTest {
         service.save(profile(), product("product-1", "Client title"));
         service.save(profile(), product("product-2", "Other client title"));
         provider.batchSizes.clear();
+        provider.contexts.clear();
 
         List<UserSavedProductResult> results = service.list(profile(), new ListSavedProductsQuery(USER_ID, 0, 10));
 
         assertThat(provider.batchSizes).containsExactly(2);
         assertThat(provider.transactionActive).containsOnly(false);
+        assertThat(provider.contexts).allSatisfy(context -> {
+            assertThat(context.country()).isEqualTo("CZ");
+            assertThat(context.language()).isNull();
+        });
         assertThat(results).allSatisfy(result -> {
             assertThat(result.name()).startsWith("Current ");
             assertThat(result.priceFrom()).isEqualTo(42.0d);
+            assertThat(result.priceFromMinorUnits()).isEqualTo(4200L);
+            assertThat(result.priceCurrency()).isEqualTo("USD");
             assertThat(result.imageUrl()).startsWith("https://provider.test/");
+            assertThat(result.offers()).singleElement().satisfies(offer -> {
+                assertThat(offer.price()).isEqualTo(42.0d);
+                assertThat(offer.priceMinorUnits()).isEqualTo(4200L);
+                assertThat(offer.priceCurrency()).isEqualTo("USD");
+                assertThat(offer.delivery()).isNull();
+            });
+            assertThat(result.marketCountry()).isEqualTo("CZ");
+            assertThat(result.marketContextApplied()).isTrue();
             assertThat(result.commercialFactsAuthoritative()).isTrue();
         });
+    }
+
+    @Test
+    void retentionAdmissionPrecedesStablePaginationAndOnlyVisibleRowsRehydrate() {
+        service.save(profile(), product("product-1", "Oldest"));
+        service.save(profile(), product("product-2", "Middle"));
+        service.save(profile(), product("product-stale", "Newest stale"));
+        UserSavedProduct stale = repository.products.getLast();
+        stale.replaceReference(snapshot(stale, "historical-or-unknown-policy"), Instant.now());
+        provider.batchSizes.clear();
+
+        List<UserSavedProductResult> firstPage = service.list(
+                profile(), new ListSavedProductsQuery(USER_ID, 0, 1));
+        List<UserSavedProductResult> secondPage = service.list(
+                profile(), new ListSavedProductsQuery(USER_ID, 1, 1));
+
+        assertThat(firstPage).extracting(UserSavedProductResult::id).containsExactly("product-2");
+        assertThat(secondPage).extracting(UserSavedProductResult::id).containsExactly("product-1");
+        assertThat(provider.batchSizes).containsExactly(1, 1);
+    }
+
+    @Test
+    void missingMarketContextIsExplicitAndNeverFabricatesCountryOrLanguage() {
+        when(settingsService.get(any())).thenReturn(settings(null));
+
+        UserSavedProductResult result = service.save(profile(), product("product-1", "No market"));
+
+        assertThat(provider.contexts.getLast().country()).isNull();
+        assertThat(provider.contexts.getLast().language()).isNull();
+        assertThat(result.marketCountry()).isNull();
+        assertThat(result.marketContextApplied()).isFalse();
     }
 
     @Test
@@ -183,7 +236,7 @@ class UserSavedProductServiceTest {
                 .getMethod("list", EnsureUserProfileCommand.class, ListSavedProductsQuery.class)
                 .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
         assertThat(UserSavedProductPersistenceService.class
-                .getMethod("findVerified", UUID.class, int.class, int.class)
+                .getMethod("findVerified", UUID.class, int.class)
                 .getAnnotation(org.springframework.transaction.annotation.Transactional.class).readOnly()).isTrue();
         assertThat(UserSavedProductPersistenceService.class
                 .getMethod("save", SaveUserProductCommand.class, CatalogProductReference.class, String.class, Instant.class)
@@ -204,6 +257,7 @@ class UserSavedProductServiceTest {
         );
         return new UserSavedProductService(
                 mock(UserService.class),
+                settingsService,
                 repositoryProxy,
                 properties,
                 new UserSavedProductReferenceResolver(mock(UserProductSearchResultItemRepository.class)),
@@ -214,6 +268,39 @@ class UserSavedProductServiceTest {
                 ),
                 persistence,
                 new UserSavedProductResultMapper(objectMapper)
+        );
+    }
+
+    private UserSettingsResult settings(String countryCode) {
+        UserLocationResult location = countryCode == null
+                ? null
+                : new UserLocationResult("Czechia", countryCode, "Prague");
+        return new UserSettingsResult(
+                null,
+                null,
+                location,
+                location == null ? List.of() : List.of(location),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-07-11T00:00:00Z"),
+                Instant.parse("2026-07-11T00:00:00Z")
+        );
+    }
+
+    private UserSavedProduct.DurableReferenceSnapshot snapshot(UserSavedProduct product, String policyKey) {
+        return new UserSavedProduct.DurableReferenceSnapshot(
+                product.getSourceProvider(),
+                product.getSourceType(),
+                product.getSourceIdentity(),
+                product.getLocalMerchantId(),
+                product.getMerchantIntegrationId(),
+                product.getExternalMerchantId(),
+                product.getExternalProductId(),
+                product.getExternalVariantId(),
+                product.getSelectedOptionsJson(),
+                policyKey
         );
     }
 
@@ -257,6 +344,7 @@ class UserSavedProductServiceTest {
     private final class FakeRehydrationProvider implements CatalogProductRehydrationProvider {
         private final List<Integer> batchSizes = new ArrayList<>();
         private final List<Boolean> transactionActive = new ArrayList<>();
+        private final List<CatalogRehydrationContext> contexts = new ArrayList<>();
         private boolean available = true;
 
         @Override
@@ -271,6 +359,7 @@ class UserSavedProductServiceTest {
         ) {
             batchSizes.add(references.size());
             transactionActive.add(TransactionSynchronizationManager.isActualTransactionActive());
+            contexts.add(context);
             return references.stream().map(this::result).toList();
         }
 
@@ -320,7 +409,7 @@ class UserSavedProductServiceTest {
                     new Class<?>[]{UserSavedProductRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
                         case "save" -> save((UserSavedProduct) args[0]);
-                        case "findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDesc" ->
+                        case "findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDescIdDesc" ->
                                 page(byUser((UUID) args[0]), (Pageable) args[1]);
                         case "findByUserIdAndProductKey" -> products.stream()
                                 .filter(product -> product.getUserId().equals(args[0]))
@@ -343,7 +432,8 @@ class UserSavedProductServiceTest {
             return products.stream()
                     .filter(product -> product.getUserId().equals(userId))
                     .filter(product -> product.getReferenceVerifiedAt() != null)
-                    .sorted(Comparator.comparing(UserSavedProduct::getCreatedAt).reversed())
+                    .sorted(Comparator.comparing(UserSavedProduct::getCreatedAt).reversed()
+                            .thenComparing(UserSavedProduct::getId, Comparator.reverseOrder()))
                     .toList();
         }
 

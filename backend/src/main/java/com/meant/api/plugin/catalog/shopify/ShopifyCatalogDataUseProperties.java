@@ -13,4 +13,14 @@ public record ShopifyCatalogDataUseProperties(
         @NotNull Duration approvedSearchCacheTtl,
         @NotNull Duration rehydratedFactsTtl
 ) {
+    public ShopifyCatalogDataUseProperties {
+        requirePositive(approvedSearchCacheTtl, "approved search cache TTL");
+        requirePositive(rehydratedFactsTtl, "rehydrated facts TTL");
+    }
+
+    private static void requirePositive(Duration duration, String label) {
+        if (duration != null && (duration.isZero() || duration.isNegative())) {
+            throw new IllegalArgumentException("Shopify " + label + " must be positive");
+        }
+    }
 }

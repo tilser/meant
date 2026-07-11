@@ -154,6 +154,7 @@ class UserProductDiscoveryServiceTest {
         FakeUserSavedProductService() {
             super(
                     org.mockito.Mockito.mock(UserService.class),
+                    org.mockito.Mockito.mock(UserSettingsService.class),
                     org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserSavedProductRepository.class),
                     org.mockito.Mockito.mock(UserCollectionProperties.class),
                     org.mockito.Mockito.mock(UserSavedProductReferenceResolver.class),

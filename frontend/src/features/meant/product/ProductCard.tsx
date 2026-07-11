@@ -38,8 +38,11 @@ export function ProductPriceLine({
 
   return (
     <span className={className}>
-      <span className="mt-mono mt-card-from">from</span> <span>{money(price)}</span>
-      {wasPrice ? <span className="mt-was-price">{money(wasPrice)}</span> : null}
+      <span className="mt-mono mt-card-from">from</span>{' '}
+      <span>{money(price, product.priceCurrency)}</span>
+      {wasPrice ? (
+        <span className="mt-was-price">{money(wasPrice, product.priceCurrency)}</span>
+      ) : null}
     </span>
   )
 }

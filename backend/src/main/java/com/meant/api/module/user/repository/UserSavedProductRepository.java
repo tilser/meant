@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserSavedProductRepository extends JpaRepository<UserSavedProduct, UUID> {
 
-    List<UserSavedProduct> findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDesc(
+    List<UserSavedProduct> findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDescIdDesc(
             UUID userId,
             Pageable pageable
     );

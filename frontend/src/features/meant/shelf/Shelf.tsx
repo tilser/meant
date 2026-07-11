@@ -117,6 +117,7 @@ function ShelfCard({
     const thumbUrl = product ? (authoritative ? product.imageUrl : null) : snapshot.imageUrl
     const tone = product?.tone ?? snapshot.tone
     const price = product ? (authoritative ? product.priceFrom : null) : snapshot.priceFrom
+    const priceCurrency = product ? product.priceCurrency : snapshot.priceCurrency
     const merchantSummary = product
       ? authoritative
         ? `from ${product.merchants} stores`
@@ -161,7 +162,7 @@ function ShelfCard({
                   </span>
                   <span className="mt-shelf-prod-name">{title}</span>
                   <span className="mt-shelf-prod-price">
-                    {money(price)}
+                    {money(price, priceCurrency)}
                     <span className="mt-shelf-prod-from"> {merchantSummary}</span>
                   </span>
                 </span>

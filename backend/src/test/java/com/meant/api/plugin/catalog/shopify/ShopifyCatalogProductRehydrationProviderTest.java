@@ -38,6 +38,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.EnumSet;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class ShopifyCatalogProductRehydrationProviderTest {
     private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
@@ -153,6 +154,25 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 EnumSet.of(CommercialFact.AVAILABILITY),
                 NOW
         ).status()).isEqualTo(CommercialFreshnessStatus.REFRESH_REQUIRED);
+    }
+
+    @Test
+    void propagatesAvailableCountryAndLanguageToShopifyLookup() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult lookupResult = successful(List.of(candidate(
+                "product-1", "variant-1", "seller", 1000, available())));
+        when(global.lookupCatalog(any())).thenReturn(lookupResult);
+
+        rehydrator(global, 50).rehydrate(
+                List.of(reference("saved", "product-1", "variant-1", "seller", List.of())),
+                new CatalogRehydrationContext("CZ", "cs")
+        );
+
+        ArgumentCaptor<ShopifyGlobalCatalogLookupRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogLookupRequest.class);
+        org.mockito.Mockito.verify(global).lookupCatalog(request.capture());
+        assertThat(request.getValue().context().addressCountry()).isEqualTo("CZ");
+        assertThat(request.getValue().context().language()).isEqualTo("cs");
     }
 
     private ShopifyCatalogProductRehydrationProvider rehydrator(

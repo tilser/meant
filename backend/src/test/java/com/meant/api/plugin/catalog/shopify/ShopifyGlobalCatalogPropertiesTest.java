@@ -72,6 +72,26 @@ class ShopifyGlobalCatalogPropertiesTest {
                 });
     }
 
+    @Test
+    void rejectsZeroOrNegativeDataUseDurationsAtStartup() {
+        for (String property : Set.of(
+                "shopify.global-catalog.data-use.approved-search-cache-ttl",
+                "shopify.global-catalog.data-use.rehydrated-facts-ttl"
+        )) {
+            for (String value : Set.of("0s", "-1s")) {
+                new ApplicationContextRunner()
+                        .withInitializer(new ConfigDataApplicationContextInitializer())
+                        .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))
+                        .withUserConfiguration(TestConfiguration.class)
+                        .withPropertyValues(
+                                "spring.config.location=classpath:/application.yml",
+                                property + "=" + value
+                        )
+                        .run(context -> assertThat(context).hasFailed());
+            }
+        }
+    }
+
     @Configuration
     @EnableConfigurationProperties({ShopifyGlobalCatalogProperties.class, ShopifyCatalogDataUseProperties.class})
     static class TestConfiguration {

@@ -25,8 +25,47 @@ export const IMPORT_ASK = `Based on everything you know about me from our past c
 
 Write it as a short list of clear, specific statements (one per line) that a shopping app could use to filter products for me.`
 
-export function money(value: number | null | undefined): string {
-  return value == null ? 'Price unavailable' : `$${value.toFixed(2)}`
+export function currencyExponent(currency: string | null | undefined): number | null {
+  if (!currency?.trim()) {
+    return null
+  }
+  try {
+    return (
+      new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency.trim().toUpperCase(),
+      }).resolvedOptions().maximumFractionDigits ?? null
+    )
+  } catch {
+    return null
+  }
+}
+
+export function minorUnitsToMajor(
+  minorUnits: number | null | undefined,
+  currency: string | null | undefined,
+): number | null {
+  const exponent = currencyExponent(currency)
+  return minorUnits == null || !Number.isSafeInteger(minorUnits) || exponent == null
+    ? null
+    : minorUnits / 10 ** exponent
+}
+
+export function money(
+  value: number | null | undefined,
+  currency: string | null | undefined = 'USD',
+): string {
+  if (value == null || !Number.isFinite(value) || !currency?.trim()) {
+    return 'Price unavailable'
+  }
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency.trim().toUpperCase(),
+    }).format(value)
+  } catch {
+    return 'Price unavailable'
+  }
 }
 
 export function productById(id: ProductId): Product {

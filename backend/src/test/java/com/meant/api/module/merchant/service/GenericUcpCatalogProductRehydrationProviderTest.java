@@ -15,6 +15,7 @@ import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperti
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
+import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
 import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationFailureKind;
@@ -33,6 +34,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class GenericUcpCatalogProductRehydrationProviderTest {
@@ -53,7 +55,10 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         GenericUcpCatalogDataUseProperties properties = new GenericUcpCatalogDataUseProperties(
                 Duration.ofHours(24), Duration.ofMinutes(2));
         GenericUcpProductObservationMapper mapper = new GenericUcpProductObservationMapper(
-                verifier, properties, Clock.fixed(NOW, ZoneOffset.UTC));
+                verifier,
+                new GenericUcpVariantObservationResolver(),
+                properties,
+                Clock.fixed(NOW, ZoneOffset.UTC));
         provider = new GenericUcpCatalogProductRehydrationProvider(detailsService, verifier, mapper);
         transactionActive = new AtomicBoolean();
         when(detailsService.get(any())).thenAnswer(invocation -> {
@@ -75,6 +80,11 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         assertThat(result.facts().selectedVariant().value()).isEqualTo("variant-1");
         assertThat(result.resolvedReference().localRouting().merchantIntegrationId()).isEqualTo(INTEGRATION_ID);
         assertThat(result.resolvedReference().externalMerchantReference().value()).isEqualTo("merchant-1");
+        ArgumentCaptor<GetMerchantProductDetailsQuery> query =
+                ArgumentCaptor.forClass(GetMerchantProductDetailsQuery.class);
+        verify(detailsService).get(query.capture());
+        assertThat(query.getValue().addressCountry()).isEqualTo("CZ");
+        assertThat(query.getValue().language()).isEqualTo("en");
     }
 
     @Test
@@ -93,6 +103,27 @@ class GenericUcpCatalogProductRehydrationProviderTest {
                         CatalogRehydrationFailureKind.NOT_FOUND,
                         CatalogRehydrationFailureKind.NOT_FOUND
                 );
+    }
+
+    @Test
+    void duplicateVariantIdWithDifferentConfigurationsFailsIndependentOfObservationOrder() {
+        for (String selectedSize : List.of("M", "L")) {
+            String listedSize = selectedSize.equals("M") ? "L" : "M";
+            ProductDetailsResult ambiguous = details(
+                    "product-1",
+                    selected("variant-1", selectedSize.equals("M") ? "12.99" : "13.99", selectedSize),
+                    List.of(variant("variant-1", listedSize.equals("M") ? "12.99" : "13.99", listedSize))
+            );
+            when(detailsService.get(any())).thenReturn(ambiguous);
+
+            var result = provider.rehydrate(List.of(reference(
+                    MERCHANT_ID, INTEGRATION_ID, "merchant-1", "variant-1", List.of())),
+                    new CatalogRehydrationContext(null, null)).getFirst();
+
+            assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.UNAVAILABLE);
+            assertThat(result.failure()).isEqualTo(CatalogRehydrationFailureKind.INVALID_RESPONSE);
+            assertThat(result.resolvedReference()).isNull();
+        }
     }
 
     @Test

@@ -88,5 +88,33 @@
                 )
             )
         </sql>
+        <sql>
+            ALTER TABLE user_saved_products
+            ADD CONSTRAINT ck_user_saved_products_identifier_only
+            CHECK (
+                product_hash IS NULL
+                AND name IS NULL
+                AND brand IS NULL
+                AND category IS NULL
+                AND tone IS NULL
+                AND image_url IS NULL
+                AND product_url IS NULL
+                AND remote IS NULL
+                AND match_score IS NULL
+                AND price_from IS NULL
+                AND merchant_count IS NULL
+                AND satisfies IS NULL
+                AND misses IS NULL
+                AND note IS NULL
+                AND pros IS NULL
+                AND cons IS NULL
+                AND review_score IS NULL
+                AND review_count IS NULL
+                AND review_insight IS NULL
+                AND offers IS NULL
+                AND needs IS NULL
+                AND provides IS NULL
+            )
+        </sql>
     </changeSet>
 </databaseChangeLog>

@@ -938,6 +938,7 @@ class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
         FakeUserSavedProductService() {
             super(
                     org.mockito.Mockito.mock(UserService.class),
+                    org.mockito.Mockito.mock(UserSettingsService.class),
                     org.mockito.Mockito.mock(com.meant.api.module.user.repository.UserSavedProductRepository.class),
                     org.mockito.Mockito.mock(com.meant.api.module.user.properties.UserCollectionProperties.class),
                     org.mockito.Mockito.mock(UserSavedProductReferenceResolver.class),
@@ -976,6 +977,8 @@ class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
                 false,
                 match,
                 priceFrom,
+                Math.round(priceFrom * 100),
+                "USD",
                 2,
                 List.of("natural fibers", "travel ready"),
                 List.of(),
@@ -986,6 +989,8 @@ class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
                 List.of(),
                 null,
                 List.of("layering"),
+                null,
+                false,
                 false,
                 Instant.parse("2026-06-17T10:00:00Z"),
                 Instant.parse("2026-06-17T10:00:00Z")

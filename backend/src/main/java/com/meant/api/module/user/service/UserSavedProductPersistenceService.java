@@ -28,10 +28,10 @@ public class UserSavedProductPersistenceService {
     private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
-    public List<UserSavedProduct> findVerified(UUID userId, int page, int limit) {
-        return repository.findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDesc(
+    public List<UserSavedProduct> findVerified(UUID userId, int candidateLimit) {
+        return repository.findByUserIdAndReferenceVerifiedAtIsNotNullOrderByCreatedAtDescIdDesc(
                 userId,
-                PageRequest.of(page, limit)
+                PageRequest.of(0, candidateLimit)
         );
     }
 

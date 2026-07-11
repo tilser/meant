@@ -32,6 +32,14 @@ public record UserSavedProductResponse(
                 requiredMode = Schema.RequiredMode.NOT_REQUIRED
         )
         Double priceFrom,
+        @Schema(
+                description = "Current rehydrated price in ISO currency minor units, or null when unavailable",
+                nullable = true,
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        Long priceFromMinorUnits,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String priceCurrency,
         @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Integer merchants,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -52,6 +60,13 @@ public record UserSavedProductResponse(
         String needs,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> provides,
+        @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String marketCountry,
+        @Schema(
+                description = "True when the provider lookup used the returned ISO market country",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        boolean marketContextApplied,
         @Schema(
                 description = "True only when response facts came from current provider rehydration",
                 requiredMode = Schema.RequiredMode.REQUIRED
@@ -76,6 +91,8 @@ public record UserSavedProductResponse(
                 result.remote(),
                 result.match(),
                 result.priceFrom(),
+                result.priceFromMinorUnits(),
+                result.priceCurrency(),
                 result.merchants(),
                 result.satisfies(),
                 result.misses(),
@@ -86,6 +103,8 @@ public record UserSavedProductResponse(
                 result.offers().stream().map(SavedOffer::from).toList(),
                 result.needs(),
                 result.provides(),
+                result.marketCountry(),
+                result.marketContextApplied(),
                 result.commercialFactsAuthoritative(),
                 result.createdAt(),
                 result.updatedAt()
@@ -114,6 +133,10 @@ public record UserSavedProductResponse(
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             Double price,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Long priceMinorUnits,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String priceCurrency,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String delivery,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantId,
@@ -131,6 +154,8 @@ public record UserSavedProductResponse(
             return new SavedOffer(
                     result.merchant(),
                     result.price(),
+                    result.priceMinorUnits(),
+                    result.priceCurrency(),
                     result.delivery(),
                     result.merchantId(),
                     result.merchantDomain(),

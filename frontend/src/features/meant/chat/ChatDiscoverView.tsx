@@ -654,6 +654,7 @@ function shelfProductSnapshot(product: Product): ShelfProductSnapshot {
     category: product.category,
     tone: product.tone,
     priceFrom: product.priceFrom,
+    priceCurrency: product.priceCurrency,
     merchants: product.merchants,
     imageUrl: product.imageUrl,
   }

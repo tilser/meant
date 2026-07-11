@@ -11,4 +11,14 @@ public record GenericUcpCatalogDataUseProperties(
         @NotNull Duration searchCacheTtl,
         @NotNull Duration rehydratedFactsTtl
 ) {
+    public GenericUcpCatalogDataUseProperties {
+        requirePositive(searchCacheTtl, "search cache TTL");
+        requirePositive(rehydratedFactsTtl, "rehydrated facts TTL");
+    }
+
+    private static void requirePositive(Duration duration, String label) {
+        if (duration != null && (duration.isZero() || duration.isNegative())) {
+            throw new IllegalArgumentException("Generic UCP " + label + " must be positive");
+        }
+    }
 }

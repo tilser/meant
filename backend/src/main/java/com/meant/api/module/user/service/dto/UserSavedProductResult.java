@@ -16,6 +16,8 @@ public record UserSavedProductResult(
         Boolean remote,
         Integer match,
         Double priceFrom,
+        Long priceFromMinorUnits,
+        String priceCurrency,
         Integer merchants,
         List<String> satisfies,
         List<String> misses,
@@ -26,6 +28,8 @@ public record UserSavedProductResult(
         List<Offer> offers,
         String needs,
         List<String> provides,
+        String marketCountry,
+        boolean marketContextApplied,
         boolean commercialFactsAuthoritative,
         Instant createdAt,
         Instant updatedAt
@@ -45,6 +49,8 @@ public record UserSavedProductResult(
     public record Offer(
             String merchant,
             Double price,
+            Long priceMinorUnits,
+            String priceCurrency,
             String delivery,
             String merchantId,
             String merchantDomain,

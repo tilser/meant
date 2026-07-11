@@ -1,6 +1,7 @@
 package com.meant.api.module.user.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.PostgresIntegrationTestSupport;
 import java.sql.Connection;
@@ -15,6 +16,7 @@ import liquibase.integration.spring.SpringLiquibase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -57,6 +59,40 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
                       and is_nullable = 'NO'
                     """, String.class, schema);
             assertThat(nonNullablePayloadColumns).isEmpty();
+        } finally {
+            jdbcTemplate.execute("drop schema " + schema + " cascade");
+        }
+    }
+
+    @Test
+    void migrationPermanentlyRejectsLegacyPayloadWritesAndAcceptsIdentifierOnlyRows() throws Exception {
+        String schema = "pcos010_guard_" + UUID.randomUUID().toString().replace("-", "");
+        UUID savedId = UUID.randomUUID();
+        jdbcTemplate.execute("create schema " + schema);
+        try {
+            createLegacyTables(schema);
+            runMigration(schema);
+            insertIdentifierOnlySavedProduct(schema, savedId);
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from %s.user_saved_products where id = ?".formatted(schema),
+                    Integer.class,
+                    savedId
+            )).isEqualTo(1);
+            assertThatThrownBy(() -> insertWithLegacyPayload(schema, UUID.randomUUID()))
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    .hasMessageContaining("ck_user_saved_products_identifier_only");
+
+            for (Map.Entry<String, Object> payload : prohibitedPayloadValues()) {
+                assertThatThrownBy(() -> jdbcTemplate.update(
+                        "update %s.user_saved_products set %s = ? where id = ?"
+                                .formatted(schema, payload.getKey()),
+                        payload.getValue(),
+                        savedId
+                )).as(payload.getKey())
+                        .isInstanceOf(DataIntegrityViolationException.class)
+                        .hasMessageContaining("ck_user_saved_products_identifier_only");
+            }
         } finally {
             jdbcTemplate.execute("drop schema " + schema + " cascade");
         }
@@ -143,6 +179,82 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
                 "[\"port\"]",
                 Timestamp.from(now),
                 Timestamp.from(now)
+        );
+    }
+
+    private void insertIdentifierOnlySavedProduct(String schema, UUID id) {
+        Instant now = Instant.parse("2026-07-11T00:00:00Z");
+        jdbcTemplate.update("""
+                insert into %s.user_saved_products (
+                    id, user_id, product_key, source_provider, source_type, source_identity,
+                    external_product_id, selected_options_json, retention_policy_key,
+                    reference_verified_at, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.formatted(schema),
+                id,
+                UUID.randomUUID(),
+                "identifier-only",
+                "GENERIC_UCP",
+                "MERCHANT_STOREFRONT",
+                "MEANT_MERCHANT_SEMANTIC",
+                "product-1",
+                "[]",
+                "generic-ucp-storefront-v2",
+                Timestamp.from(now),
+                Timestamp.from(now),
+                Timestamp.from(now)
+        );
+    }
+
+    private void insertWithLegacyPayload(String schema, UUID id) {
+        Instant now = Instant.parse("2026-07-11T00:00:00Z");
+        jdbcTemplate.update("""
+                insert into %s.user_saved_products (
+                    id, user_id, product_key, name, source_provider, source_type, source_identity,
+                    external_product_id, selected_options_json, retention_policy_key,
+                    reference_verified_at, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.formatted(schema),
+                id,
+                UUID.randomUUID(),
+                "forbidden-insert",
+                "Forbidden provider title",
+                "GENERIC_UCP",
+                "MERCHANT_STOREFRONT",
+                "MEANT_MERCHANT_SEMANTIC",
+                "product-1",
+                "[]",
+                "generic-ucp-storefront-v2",
+                Timestamp.from(now),
+                Timestamp.from(now),
+                Timestamp.from(now)
+        );
+    }
+
+    private List<Map.Entry<String, Object>> prohibitedPayloadValues() {
+        return List.of(
+                Map.entry("product_hash", "hash"),
+                Map.entry("name", "Provider title"),
+                Map.entry("brand", "Provider brand"),
+                Map.entry("category", "Provider category"),
+                Map.entry("tone", "#fff"),
+                Map.entry("image_url", "https://provider.test/image.jpg"),
+                Map.entry("product_url", "https://provider.test/product"),
+                Map.entry("remote", true),
+                Map.entry("match_score", 99),
+                Map.entry("price_from", 10.5d),
+                Map.entry("merchant_count", 2),
+                Map.entry("satisfies", "[]"),
+                Map.entry("misses", "[]"),
+                Map.entry("note", "Generated note"),
+                Map.entry("pros", "[]"),
+                Map.entry("cons", "[]"),
+                Map.entry("review_score", 4.5d),
+                Map.entry("review_count", 100),
+                Map.entry("review_insight", "Review payload"),
+                Map.entry("offers", "[]"),
+                Map.entry("needs", "later-ticket"),
+                Map.entry("provides", "[]")
         );
     }
 

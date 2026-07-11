@@ -1683,6 +1683,11 @@ export interface components {
              * Format: double
              */
             priceFrom?: number | null;
+            /** @description Current rehydrated price in ISO currency minor units, or null when unavailable
+             * Format: int64
+             */
+            priceFromMinorUnits?: number | null;
+            priceCurrency?: string | null;
             /** Format: int32 */
             merchants?: number | null;
             satisfies: string[];
@@ -1694,6 +1699,9 @@ export interface components {
             offers: components["schemas"]["UserSavedProductOffer"][];
             needs?: string | null;
             provides: string[];
+            marketCountry?: string | null;
+            /** @description True when the provider lookup used the returned ISO market country */
+            marketContextApplied: boolean;
             /** @description True only when response facts came from current provider rehydration */
             commercialFactsAuthoritative: boolean;
             /** Format: date-time */
@@ -1712,6 +1720,9 @@ export interface components {
             merchant?: string | null;
             /** Format: double */
             price?: number | null;
+            /** Format: int64 */
+            priceMinorUnits?: number | null;
+            priceCurrency?: string | null;
             delivery?: string | null;
             merchantId?: string | null;
             merchantDomain?: string | null;
