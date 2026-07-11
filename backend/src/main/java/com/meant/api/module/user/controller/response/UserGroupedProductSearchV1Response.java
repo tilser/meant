@@ -22,6 +22,10 @@ import com.meant.api.plugin.catalog.common.dto.ProductAttribution;
 import com.meant.api.plugin.catalog.common.dto.ProductCertification;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionOutcome;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionReason;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityContradictionKind;
 import com.meant.api.plugin.catalog.common.dto.ProductMaterial;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
@@ -47,16 +51,18 @@ public record UserGroupedProductSearchV1Response(
         String profileHash,
         @Schema(description = "Whether results came from a source-approved cache", requiredMode = Schema.RequiredMode.REQUIRED)
         boolean cached,
-        @Schema(description = "Flat-result offset used before grouping", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "Canonical-product offset applied after grouping", requiredMode = Schema.RequiredMode.REQUIRED)
         int offset,
-        @Schema(description = "Flat-result page size used before grouping", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "Canonical-product page size applied after grouping", requiredMode = Schema.RequiredMode.REQUIRED)
         int limit,
-        @Schema(description = "Next flat-result offset, when another page exists", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Schema(description = "Next canonical-product offset, when another page exists", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Integer nextOffset,
-        @Schema(description = "Whether another flat-result page exists", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "Whether another canonical-product page exists in the deterministic result window", requiredMode = Schema.RequiredMode.REQUIRED)
         boolean hasMore,
         @Schema(description = "Deterministically ordered canonical products", requiredMode = Schema.RequiredMode.REQUIRED)
-        List<CanonicalProductResponse> products
+        List<CanonicalProductResponse> products,
+        @Schema(description = "Typed exact-match and conservative non-match decisions for this page", requiredMode = Schema.RequiredMode.REQUIRED)
+        List<ProductGroupingDecisionResponse> groupingDecisions
 ) {
 
     public static UserGroupedProductSearchV1Response from(UserGroupedProductSearchResult result) {
@@ -69,8 +75,40 @@ public record UserGroupedProductSearchV1Response(
                 result.limit(),
                 result.nextOffset(),
                 result.hasMore(),
-                result.products().stream().map(CanonicalProductResponse::from).toList()
+                result.products().stream().map(CanonicalProductResponse::from).toList(),
+                result.groupingDecisions().stream().map(ProductGroupingDecisionResponse::from).toList()
         );
+    }
+
+    @Schema(description = "Typed, redacted explanation of a measurable product grouping comparison")
+    public record ProductGroupingDecisionResponse(
+            @Schema(description = "Stable first offer key", requiredMode = Schema.RequiredMode.REQUIRED)
+            String leftOfferKey,
+            @Schema(description = "Stable second offer key", requiredMode = Schema.RequiredMode.REQUIRED)
+            String rightOfferKey,
+            @Schema(description = "Whether the observations grouped or remained separate", requiredMode = Schema.RequiredMode.REQUIRED)
+            ProductGroupingDecisionOutcome outcome,
+            @Schema(description = "Stable grouping explanation code", requiredMode = Schema.RequiredMode.REQUIRED)
+            ProductGroupingDecisionReason reason,
+            @Schema(description = "Decision confidence in basis points", requiredMode = Schema.RequiredMode.REQUIRED)
+            int confidenceBasisPoints,
+            @Schema(description = "Identity evidence used by the decision", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<ProductIdentityEvidenceResponse> evidence,
+            @Schema(description = "Typed contradictory facts that vetoed or qualified the match", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<ProductIdentityContradictionKind> contradictions
+    ) {
+
+        static ProductGroupingDecisionResponse from(ProductGroupingDecision decision) {
+            return new ProductGroupingDecisionResponse(
+                    decision.leftOfferKey(),
+                    decision.rightOfferKey(),
+                    decision.outcome(),
+                    decision.reason(),
+                    decision.confidenceBasisPoints(),
+                    decision.evidence().stream().map(ProductIdentityEvidenceResponse::from).toList(),
+                    decision.contradictions()
+            );
+        }
     }
 
     @Schema(description = "Shared product facts plus all exact distinct offers and source observations")

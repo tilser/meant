@@ -327,6 +327,7 @@ Run Shopify Global Catalog and current Meant merchant discovery in parallel unde
 
 Priority: P0  
 Dependencies: PCOS-007  
+Implementation status: Complete
 
 **Goal**
 

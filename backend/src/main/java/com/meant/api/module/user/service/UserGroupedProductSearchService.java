@@ -7,13 +7,17 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
 import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryTerminalStatus;
+import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
-import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingResult;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -35,7 +39,7 @@ public class UserGroupedProductSearchService {
         FederatedCatalogDiscoveryResult discovery = federatedDiscoveryService.search(new CatalogDiscoveryRequest(
                 preparation.catalogInput().searchQuery(),
                 command.merchantId(),
-                preparation.fetchLimit(),
+                UserProductSearchPagination.MAX_RESULT_WINDOW,
                 preparation.catalogInput().context(),
                 preparation.catalogInput().signals(),
                 preparation.catalogInput().filters()
@@ -44,12 +48,24 @@ public class UserGroupedProductSearchService {
             throw new UserProductSearchGroupingException("Every catalog discovery source failed");
         }
 
-        List<ProductCandidate> page = discovery.candidates().stream()
+        ProductGroupingResult grouping = exactProductGroupingService.evaluate(discovery.candidates());
+        List<CanonicalProduct> page = grouping.products().stream()
                 .skip(preparation.offset())
                 .limit(preparation.limit())
                 .toList();
-        boolean hasMore = preparation.fetchLimit() < UserProductSearchPagination.MAX_RESULT_WINDOW
-                && (discovery.truncated() || discovery.candidates().size() >= preparation.fetchLimit());
+        int pageEnd = Math.min(
+                preparation.offset() + preparation.limit(),
+                UserProductSearchPagination.MAX_RESULT_WINDOW
+        );
+        boolean hasMore = grouping.products().size() > pageEnd;
+        Set<String> visibleOfferKeys = page.stream()
+                .flatMap(product -> product.offers().stream())
+                .map(offer -> offer.key())
+                .collect(Collectors.toUnmodifiableSet());
+        List<ProductGroupingDecision> visibleDecisions = grouping.decisions().stream()
+                .filter(decision -> visibleOfferKeys.contains(decision.leftOfferKey())
+                        && visibleOfferKeys.contains(decision.rightOfferKey()))
+                .toList();
         return new UserGroupedProductSearchResult(
                 preparation.query(),
                 preparation.normalizedQuery(),
@@ -57,12 +73,10 @@ public class UserGroupedProductSearchService {
                 false,
                 preparation.offset(),
                 preparation.limit(),
-                hasMore ? Math.min(
-                        preparation.offset() + preparation.limit(),
-                        UserProductSearchPagination.MAX_RESULT_WINDOW
-                ) : null,
+                hasMore ? pageEnd : null,
                 hasMore,
-                exactProductGroupingService.group(page)
+                page,
+                visibleDecisions
         );
     }
 }

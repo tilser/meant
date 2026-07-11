@@ -53,6 +53,16 @@ public final class CanonicalCommerceKey {
         return "product_v1_" + digest("canonical-product", evidenceFields(evidence));
     }
 
+    public static String groupedProductKey(String identityKind, String normalizedIdentity) {
+        return "product_v2_" + digest("grouped-product-v2", List.of(identityKind, normalizedIdentity));
+    }
+
+    public static String merchantScopeKey(OfferMerchantScope merchantScope) {
+        List<String> fields = new ArrayList<>();
+        addMerchantScopeV2(fields, merchantScope);
+        return digest("merchant-scope-v1", fields);
+    }
+
     private static List<String> evidenceFields(ProductIdentityEvidence evidence) {
         List<String> fields = new ArrayList<>();
         fields.add(evidence.kind().name());

@@ -91,7 +91,7 @@ class UserGroupedProductSearchServiceTest {
             });
         });
         assertThat(discoveryService.request.query()).isEqualTo("linen shirt");
-        assertThat(discoveryService.request.candidateLimit()).isEqualTo(21);
+        assertThat(discoveryService.request.candidateLimit()).isEqualTo(100);
         assertThat(preparationService.profileCommand).isEqualTo(profile);
         assertThat(preparationService.searchCommand).isEqualTo(command);
     }
@@ -126,18 +126,17 @@ class UserGroupedProductSearchServiceTest {
         var second = service.search(profile, command(profile.id(), 2, 2));
         var third = service.search(profile, command(profile.id(), 4, 2));
 
+        List<String> expectedPrefix = new ExactProductGroupingService().group(
+                        java.util.stream.Stream.concat(generic.stream(), shopify.stream()).toList())
+                .stream()
+                .limit(6)
+                .map(product -> product.title())
+                .toList();
         assertThat(java.util.stream.Stream.of(first, second, third)
                 .flatMap(page -> page.products().stream())
                 .map(product -> product.title())
                 .toList())
-                .containsExactlyInAnyOrder(
-                        "Product generic-0",
-                        "Product shopify-0",
-                        "Product generic-1",
-                        "Product shopify-1",
-                        "Product generic-2",
-                        "Product shopify-2"
-                )
+                .containsExactlyElementsOf(expectedPrefix)
                 .doesNotHaveDuplicates();
         assertThat(first.hasMore()).isTrue();
         assertThat(second.hasMore()).isTrue();
@@ -161,12 +160,52 @@ class UserGroupedProductSearchServiceTest {
         var sparsePage = sparseService.search(profile, command(profile.id(), 2, 2));
         var partialPage = partialService.search(profile, command(profile.id(), 2, 2));
 
+        List<String> sparseExpected = new ExactProductGroupingService().group(
+                        java.util.stream.Stream.concat(sparse.stream(), shopify.stream()).toList())
+                .stream().skip(2).limit(2).map(product -> product.title()).toList();
+        List<String> partialExpected = new ExactProductGroupingService().group(shopify)
+                .stream().skip(2).limit(2).map(product -> product.title()).toList();
         assertThat(sparsePage.products()).extracting(product -> product.title())
-                .containsExactlyInAnyOrder("Product shopify-1", "Product shopify-2");
+                .containsExactlyElementsOf(sparseExpected);
         assertThat(partialPage.products()).extracting(product -> product.title())
-                .containsExactlyInAnyOrder("Product shopify-2", "Product shopify-3");
+                .containsExactlyElementsOf(partialExpected);
         assertThat(sparsePage.hasMore()).isTrue();
         assertThat(partialPage.hasMore()).isTrue();
+    }
+
+    @Test
+    void groupsBeforeProductPaginationWithoutSplittingOffersAcrossSuccessivePages() {
+        ProductCandidate shared = pageCandidates("shared", 1).getFirst();
+        List<ProductCandidate> candidates = new java.util.ArrayList<>();
+        candidates.add(pageCandidates("unique-a", 1).getFirst());
+        candidates.add(shared);
+        candidates.add(shared);
+        candidates.addAll(pageCandidates("unique-b", 4));
+        UserGroupedProductSearchService service = pagingService(
+                new PrefixSource("SHOPIFY", ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL", candidates, false)
+        );
+        EnsureUserProfileCommand profile = profile();
+
+        var first = service.search(profile, command(profile.id(), 0, 2));
+        var second = service.search(profile, command(profile.id(), 2, 2));
+        var third = service.search(profile, command(profile.id(), 4, 2));
+        List<String> successiveKeys = java.util.stream.Stream.of(first, second, third)
+                .flatMap(page -> page.products().stream())
+                .map(product -> product.key())
+                .toList();
+        List<String> expectedKeys = new ExactProductGroupingService().group(candidates).stream()
+                .map(product -> product.key())
+                .toList();
+
+        assertThat(successiveKeys).containsExactlyElementsOf(expectedKeys).doesNotHaveDuplicates();
+        assertThat(java.util.stream.Stream.of(first, second, third)
+                .flatMap(page -> page.products().stream())
+                .flatMap(product -> product.offers().stream())
+                .filter(offer -> offer.key().equals(shared.offer().key())))
+                .hasSize(1);
+        assertThat(first.hasMore()).isTrue();
+        assertThat(second.hasMore()).isTrue();
+        assertThat(third.hasMore()).isFalse();
     }
 
     private UserProductSearchPreparation preparation() {

@@ -14,6 +14,9 @@ import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
 import com.meant.api.plugin.catalog.common.dto.OfferIdentity;
 import com.meant.api.plugin.catalog.common.dto.OfferMerchantScope;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionOutcome;
+import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionReason;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -84,7 +87,16 @@ class UserGroupedProductSearchV1ResponseTest {
         UserGroupedProductSearchV1Response response = UserGroupedProductSearchV1Response.from(
                 new UserGroupedProductSearchResult(
                         "product", "product", "profile", false, 0, 20, null, false,
-                        List.of(canonicalProduct)
+                        List.of(canonicalProduct),
+                        List.of(new ProductGroupingDecision(
+                                offer.key(),
+                                offer.key(),
+                                ProductGroupingDecisionOutcome.GROUPED,
+                                ProductGroupingDecisionReason.EXACT_OFFER,
+                                10_000,
+                                List.of(),
+                                List.of()
+                        ))
                 )
         );
 
@@ -104,6 +116,11 @@ class UserGroupedProductSearchV1ResponseTest {
                 assertThat(mappedOffer.provenance().getFirst().localRouting().merchantIntegrationId())
                         .isEqualTo(integrationId);
             });
+        });
+        assertThat(response.groupingDecisions()).singleElement().satisfies(decision -> {
+            assertThat(decision.outcome()).isEqualTo(ProductGroupingDecisionOutcome.GROUPED);
+            assertThat(decision.reason()).isEqualTo(ProductGroupingDecisionReason.EXACT_OFFER);
+            assertThat(decision.leftOfferKey()).isEqualTo(offer.key());
         });
     }
 

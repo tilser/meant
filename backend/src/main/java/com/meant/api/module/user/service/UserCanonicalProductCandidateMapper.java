@@ -9,6 +9,7 @@ import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
+import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
 import com.meant.api.plugin.catalog.common.dto.Money;
 import com.meant.api.plugin.catalog.common.dto.Offer;
 import com.meant.api.plugin.catalog.common.dto.OfferAvailability;
@@ -22,6 +23,8 @@ import com.meant.api.plugin.catalog.common.dto.ProductCertification;
 import com.meant.api.plugin.catalog.common.dto.ProductMaterial;
 import com.meant.api.plugin.catalog.common.dto.ProductMedia;
 import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
 import com.meant.api.plugin.catalog.common.dto.ResultFreshness;
 import com.meant.api.plugin.catalog.common.dto.ResultProvenance;
@@ -149,10 +152,32 @@ public class UserCanonicalProductCandidateMapper {
                         uri(product.url()),
                         sourceReference
                 )),
-                List.of(),
+                canonicalUrlEvidence(provider, product.url(), sourceReference),
                 List.of(provenance),
                 offer
         );
+    }
+
+    private List<ProductIdentityEvidence> canonicalUrlEvidence(
+            ProviderIdentity provider,
+            String productUrl,
+            ResultSourceReference sourceReference
+    ) {
+        URI url = uri(productUrl);
+        if (url == null || !url.isAbsolute() || url.getHost() == null) {
+            return List.of();
+        }
+        return List.of(new ProductIdentityEvidence(
+                ProductIdentityEvidenceKind.CANONICAL_URL,
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                9_500,
+                List.of(new ExternalIdentifier(
+                        ExternalIdentifierType.CANONICAL_URL,
+                        provider.value(),
+                        url.toString()
+                )),
+                sourceReference
+        ));
     }
 
     private ExternalIdentifier externalMerchantIdentity(
