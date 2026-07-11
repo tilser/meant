@@ -27,7 +27,7 @@ class UserProductRankingContextFactoryTest {
         ProductRankingContext context = factory().create(UUID.randomUUID(), preparation(
                 null,
                 List.of(taste("opaque-filter-id", "Natural Linen", 2.0d),
-                        taste("avoid-filter-id", "Polyester", -2.0d))), List.of());
+                        taste("avoid-filter-id", "No polyester", -2.0d))), List.of());
 
         assertThat(context.preferences()).containsExactly(
                 new ProductRankingContext.PreferenceSignal(

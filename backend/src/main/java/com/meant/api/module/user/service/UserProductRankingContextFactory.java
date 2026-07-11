@@ -119,10 +119,16 @@ public class UserProductRankingContextFactory {
             return null;
         }
         int weight = Math.max(-10_000, Math.min(10_000, (int) Math.round(signal.weight() * 2_500.0d)));
+        String target = type == PreferenceSignal.Type.FILTER && weight < 0
+                ? AVOID_PREFIX.matcher(value).replaceFirst("")
+                : value;
+        if (target.isBlank()) {
+            return null;
+        }
         return weight == 0 ? null : new PreferenceSignal(
                 type,
                 signal.signalKey(),
-                value,
+                target,
                 weight
         );
     }

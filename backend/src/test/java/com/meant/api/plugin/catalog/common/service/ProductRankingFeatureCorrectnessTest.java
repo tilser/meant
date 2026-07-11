@@ -21,15 +21,29 @@ class ProductRankingFeatureCorrectnessTest {
     void positiveAndNegativeFilterTasteUseNormalizedLabelNotOpaqueIdentity() {
         CanonicalProduct linen = product("linen", "linen shirt", fresh());
         CanonicalProduct cotton = product("cotton", "cotton shirt", fresh());
+        CanonicalProduct polyester = product("polyester", "polyester shirt", fresh());
         ProductRankingContext.PreferenceSignal positive = new ProductRankingContext.PreferenceSignal(
                 ProductRankingContext.PreferenceSignal.Type.FILTER, "filter:opaque-123", "linen", 8_000);
         ProductRankingContext.PreferenceSignal negative = new ProductRankingContext.PreferenceSignal(
-                ProductRankingContext.PreferenceSignal.Type.FILTER, "filter:opaque-123", "linen", -8_000);
+                ProductRankingContext.PreferenceSignal.Type.FILTER, "avoid-filter-id", "polyester", -8_000);
 
         assertThat(rank(List.of(cotton, linen), List.of(positive)).products())
                 .extracting(CanonicalProduct::key).containsExactly("linen", "cotton");
-        assertThat(rank(List.of(linen, cotton), List.of(negative)).products())
-                .extracting(CanonicalProduct::key).containsExactly("cotton", "linen");
+        assertThat(rank(List.of(polyester, cotton), List.of(negative)).products())
+                .extracting(CanonicalProduct::key).containsExactly("cotton", "polyester");
+    }
+
+    @Test
+    void filterAndQueryPreferenceMatchingDoesNotMatchMenInsideWomen() {
+        CanonicalProduct men = product("men", "men shirt", fresh());
+        CanonicalProduct women = product("women", "women shirt", fresh());
+        List.of(ProductRankingContext.PreferenceSignal.Type.FILTER, ProductRankingContext.PreferenceSignal.Type.QUERY)
+                .forEach(type -> {
+                    ProductRankingContext.PreferenceSignal preference = new ProductRankingContext.PreferenceSignal(
+                            type, type.name().toLowerCase() + ":men", "men", 8_000);
+                    assertThat(rank(List.of(women, men), List.of(preference)).products())
+                            .extracting(CanonicalProduct::key).containsExactly("men", "women");
+                });
     }
 
     @Test

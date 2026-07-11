@@ -138,7 +138,7 @@ public class ProductRankingFeatureExtractor {
         boolean matches(ProductRankingContext.PreferenceSignal signal) {
             return switch (signal.type()) { case BRAND -> tokenMatch(brand, signal.normalizedValue()); case CATEGORY -> tokenMatch(category, signal.normalizedValue());
                 case MATERIAL -> tokenMatch(materials, signal.normalizedValue()); case CERTIFICATION -> tokenMatch(certifications, signal.normalizedValue());
-                case FILTER, QUERY -> searchable.contains(signal.normalizedValue()); };
+                case FILTER, QUERY -> tokenMatch(searchable, signal.normalizedValue()); };
         }
         private static boolean tokenMatch(String facts, String expected) {
             Set<String> expectedTokens = tokens(expected);

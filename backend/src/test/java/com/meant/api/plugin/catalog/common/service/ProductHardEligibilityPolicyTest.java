@@ -36,6 +36,42 @@ class ProductHardEligibilityPolicyTest {
     }
 
     @Test
+    void activePriceAndAvailabilityConstraintsMustBeSatisfiedByTheSameOffer() {
+        CanonicalProduct splitAvailability = product("split-availability", List.of(category("apparel")),
+                offer("A", "m1", "split-availability", "cheap", new Money(8_000, "USD"),
+                        OfferAvailabilityStatus.OUT_OF_STOCK),
+                offer("A", "m2", "split-availability", "available", new Money(20_000, "USD"),
+                        OfferAvailabilityStatus.IN_STOCK));
+        CanonicalProduct splitCurrency = product("split-currency", List.of(category("apparel")),
+                offer("B", "m3", "split-currency", "eur", new Money(8_000, "EUR"),
+                        OfferAvailabilityStatus.IN_STOCK),
+                offer("B", "m4", "split-currency", "usd", new Money(20_000, "USD"),
+                        OfferAvailabilityStatus.IN_STOCK));
+        CanonicalProduct valid = product("valid", List.of(category("apparel")),
+                offer("C", "m5", "valid", "v", new Money(8_000, "USD"),
+                        OfferAvailabilityStatus.IN_STOCK));
+        CatalogSearchFilters filters = new CatalogSearchFilters(
+                List.of(), new CatalogSearchPriceFilter(null, 10_000L));
+
+        assertThat(service.rank(List.of(valid, splitCurrency, splitAvailability), RankingTestFixtures.context(
+                "shirt", "USD", "US", filters, List.of(), 20)).products())
+                .extracting(CanonicalProduct::key).containsExactly("valid");
+    }
+
+    @Test
+    void unknownAvailabilityRemainsExplicitlyEligibleWhenTheSameOfferMatchesPrice() {
+        CanonicalProduct unknown = product("unknown", List.of(category("apparel")),
+                offer("A", "m", "unknown", "v", new Money(8_000, "USD"),
+                        OfferAvailabilityStatus.UNKNOWN));
+        CatalogSearchFilters filters = new CatalogSearchFilters(
+                List.of(), new CatalogSearchPriceFilter(null, 10_000L));
+
+        assertThat(service.rank(List.of(unknown), RankingTestFixtures.context(
+                "shirt", "USD", "US", filters, List.of(), 20)).products())
+                .extracting(CanonicalProduct::key).containsExactly("unknown");
+    }
+
+    @Test
     void categoryConstraintFailsClosedWhenEvidenceIsAbsentAndDoesNotSubstringMatchMenToWomen() {
         CanonicalProduct absent = product("absent", List.of(), offer("A", "m1", "absent", "v", new Money(1_000, "USD")));
         CanonicalProduct women = product("women", List.of(category("womens")), offer("B", "m2", "women", "v", new Money(1_000, "USD")));
@@ -69,8 +105,15 @@ class ProductHardEligibilityPolicyTest {
     }
 
     private Offer offer(String provider, String merchant, String product, String variant, Money price) {
+        return offer(provider, merchant, product, variant, price, OfferAvailabilityStatus.IN_STOCK);
+    }
+
+    private Offer offer(
+            String provider, String merchant, String product, String variant, Money price,
+            OfferAvailabilityStatus availability
+    ) {
         return RankingTestFixtures.offer(provider, merchant, product, variant, price,
-                OfferAvailabilityStatus.IN_STOCK, null, List.of());
+                availability, null, List.of());
     }
 
     private CanonicalProduct product(String key, List<ProductAttribute> attributes, Offer... offers) {

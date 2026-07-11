@@ -4,6 +4,7 @@ import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import com.meant.api.plugin.catalog.common.dto.Money;
+import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
 import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.ProductRankingContext;
 import java.text.Normalizer;
@@ -25,35 +26,37 @@ public class ProductHardEligibilityPolicy {
     List<CanonicalProduct> eligible(List<CanonicalProduct> products, ProductRankingContext context) {
         return products == null ? List.of() : products.stream()
                 .filter(Objects::nonNull)
-                .filter(this::availabilityEligible)
-                .filter(product -> priceEligible(product, context))
+                .filter(product -> offerEligible(product, context))
                 .filter(product -> categoryEligible(product, context.hardFilters()))
                 .toList();
     }
 
-    private boolean availabilityEligible(CanonicalProduct product) {
-        return product.offers().stream().anyMatch(offer -> switch (offer.availability().status()) {
-            case IN_STOCK, PREORDER, BACKORDER, UNKNOWN -> true;
-            case OUT_OF_STOCK, DISCONTINUED -> false;
-        });
-    }
-
-    private boolean priceEligible(CanonicalProduct product, ProductRankingContext context) {
+    private boolean offerEligible(CanonicalProduct product, ProductRankingContext context) {
         CatalogSearchPriceFilter filter = context.hardFilters() == null ? null : context.hardFilters().price();
-        if (filter == null || filter.min() == null && filter.max() == null) {
-            return true;
+        boolean priceActive = filter != null && (filter.min() != null || filter.max() != null);
+        if (!priceActive) {
+            return product.offers().stream().anyMatch(offer -> availabilityEligible(offer.availability().status()));
         }
         String currency = context.searchContext() == null ? null : normalizedCurrency(context.searchContext().currency());
         if (currency == null) {
             return false;
         }
-        return product.offers().stream()
-                .map(offer -> offer.price())
-                .filter(Objects::nonNull)
-                .filter(price -> currency.equals(price.currency()))
-                .mapToLong(Money::minorUnits)
-                .anyMatch(amount -> (filter.min() == null || amount >= filter.min())
-                        && (filter.max() == null || amount <= filter.max()));
+        return product.offers().stream().anyMatch(offer -> availabilityEligible(offer.availability().status())
+                && priceEligible(offer.price(), currency, filter));
+    }
+
+    private boolean availabilityEligible(OfferAvailabilityStatus status) {
+        return switch (status) {
+            case IN_STOCK, PREORDER, BACKORDER, UNKNOWN -> true;
+            case OUT_OF_STOCK, DISCONTINUED -> false;
+        };
+    }
+
+    private boolean priceEligible(Money price, String currency, CatalogSearchPriceFilter filter) {
+        return price != null
+                && currency.equals(price.currency())
+                && (filter.min() == null || price.minorUnits() >= filter.min())
+                && (filter.max() == null || price.minorUnits() <= filter.max());
     }
 
     private boolean categoryEligible(CanonicalProduct product, CatalogSearchFilters filters) {
