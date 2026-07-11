@@ -2,12 +2,12 @@ package com.meant.api.module.merchant.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductRichCatalogData;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;

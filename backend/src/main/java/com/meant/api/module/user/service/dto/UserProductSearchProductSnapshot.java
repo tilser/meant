@@ -1,7 +1,7 @@
 package com.meant.api.module.user.service.dto;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import jakarta.validation.constraints.NotNull;
 

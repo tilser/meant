@@ -1,7 +1,7 @@
 package com.meant.api.module.cart.controller.response;
 
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
-import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
+import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;

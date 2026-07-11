@@ -4,7 +4,7 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;

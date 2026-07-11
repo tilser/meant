@@ -6,6 +6,7 @@ import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.MerchantIdentityLinkService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantIdentityAccessTokenResult;
+import com.meant.api.module.merchant.service.dto.MerchantOrderSourceResult;
 import com.meant.api.module.merchant.service.query.GetMerchantIdentityAccessTokenQuery;
 import com.meant.api.module.order.entity.MerchantOrder;
 import com.meant.api.module.order.exception.OrderException;
@@ -14,7 +15,7 @@ import com.meant.api.module.order.service.dto.OrderResult;
 import com.meant.api.module.order.service.query.GetOrderQuery;
 import com.meant.api.module.order.service.query.ListOrdersQuery;
 import com.meant.api.plugin.order.common.dto.UcpOrderToolResult;
-import com.meant.api.plugin.order.common.service.MerchantOrderPluginDispatchService;
+import com.meant.api.module.order.service.MerchantOrderPluginDispatchService;
 import com.meant.api.plugin.order.get.dto.GetOrderRequest;
 import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
@@ -75,7 +76,7 @@ public class OrderService {
         );
         return orderPersistenceService.saveSnapshot(
                 query.userId(),
-                merchant,
+                new MerchantOrderSourceResult(merchant.getId(), merchant.getDomain(), merchant.getName()),
                 result.endpoint(),
                 result.response().order(),
                 result.rawResponse(),

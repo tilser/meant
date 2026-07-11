@@ -2,7 +2,7 @@ package com.meant.api.plugin.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 

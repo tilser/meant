@@ -1,9 +1,9 @@
 package com.meant.api.module.user.entity;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
-import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

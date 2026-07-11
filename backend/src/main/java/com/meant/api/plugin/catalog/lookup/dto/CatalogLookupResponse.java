@@ -3,7 +3,7 @@ package com.meant.api.plugin.catalog.lookup.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.plugin.catalog.common.dto.CatalogProductResponse;
 import java.util.List;
 

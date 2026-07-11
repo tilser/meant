@@ -298,7 +298,7 @@ public class MerchantMcpToolClient {
     ) {
         // The advertised endpoint comes from the merchant's /.well-known/ucp services entry and is
         // the only endpoint guaranteed to serve UCP-shaped tool arguments. Legacy /api/mcp
-        // (Shopify Storefront MCP) rejects UCP arguments, so it stays last as a best-effort fallback.
+        // can reject UCP arguments, so the legacy endpoint stays last as a best-effort fallback.
         List<String> endpoints = new ArrayList<>();
         addEndpoint(endpoints, domain, advertisedMcpEndpoint);
         if (hasText(domain)) {

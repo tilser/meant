@@ -2,20 +2,20 @@ package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
-import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
-import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
-import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
-import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationStatus;
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
-import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
-import com.meant.api.plugin.catalog.common.dto.OfferAvailabilityStatus;
-import com.meant.api.plugin.catalog.common.dto.ProductAttribute;
-import com.meant.api.plugin.catalog.common.dto.ProductMediaType;
-import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
-import com.meant.api.plugin.catalog.common.dto.RehydratedCommercialFacts;
-import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
+import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
+import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
+import com.meant.api.module.catalog.service.dto.ProductMediaType;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import java.math.BigDecimal;
 import java.util.Currency;
 import java.util.List;
@@ -139,7 +139,7 @@ public class UserSavedProductResultMapper {
         );
     }
 
-    private MoneyProjection money(com.meant.api.plugin.catalog.common.dto.Money money) {
+    private MoneyProjection money(com.meant.api.module.catalog.service.dto.Money money) {
         if (money == null) {
             return null;
         }

@@ -19,6 +19,7 @@ com.meant.api
   plugin
     spi
     support
+    signing
     catalog
       search
         dto
@@ -26,19 +27,44 @@ com.meant.api
         dto
       getproduct
         dto
-      shopify
-        dto
       common
         dto
         support
         exception
-        service
+      extension
+        shopify
+          dto
+    cart
+    checkout
+    order
+    payment
     transport
       client
       dto
       profile
       registry
+  provider
+    shopify
+      auth
+      capability
+      catalog
+        dto
+      order
+      review
   module
+    catalog
+      service
+        dto
+        port
+        support
+      properties
+    checkout
+      service
+        command
+        dto
+      repository
+      entity
+      exception
     user
       controller
         request
@@ -57,15 +83,30 @@ com.meant.api
 
 Use top-level `common` for application-wide cross-cutting code such as Swagger/OpenAPI configuration, security, shared web configuration, shared exceptions, and other infrastructure that is not owned by a business module or plugin.
 
-Use top-level `plugin` for the UCP plugin layer. `plugin.spi` is contract-only and owns UCP plugin contracts such as `UcpCapability`, `CapabilityId`, `NegotiatedCapabilities`, `CapabilityAdvertisement`, and `UcpToolResponse`. Keep `plugin.spi` and `plugin.support` flat while they remain small and contract/support-only.
+Use top-level `plugin` only for UCP capability contracts, capability-specific wire DTOs/parsers/builders/extensions, and generic UCP runtime, transport, signing, and protocol support. `plugin.spi` is contract-only and owns UCP plugin contracts such as `UcpCapability`, `CapabilityId`, `NegotiatedCapabilities`, `CapabilityAdvertisement`, and `UcpToolResponse`. Keep `plugin.spi` and `plugin.support` flat while they remain small and contract/support-only.
 
-`plugin.catalog` is split by catalog capability and shared role. Capability implementations live in `catalog.search`, `catalog.lookup`, `catalog.getproduct`, and `catalog.shopify`; their capability-specific request/argument/response records live in each capability's `dto` subpackage. Per CEO David Tilser's decision, catalog-shared code belongs under `catalog.common`, not top-level `common`: shared catalog metadata lives in `catalog.common.dto`, catalog JSON helpers in `catalog.common.support`, catalog exceptions in `catalog.common.exception`, and catalog-plugin dispatch orchestration in `catalog.common.service`.
+`plugin.catalog` is split by catalog capability and shared protocol role. Capability implementations live in `catalog.search`, `catalog.lookup`, and `catalog.getproduct`; their capability-specific request/argument/response records live in each capability's `dto` subpackage. Shared UCP catalog wire metadata and wire response records live in `catalog.common.dto`, catalog JSON helpers in `catalog.common.support`, and protocol response exceptions in `catalog.common.exception`. Provider-specific UCP capability extensions live under `catalog.extension.<provider>` and contribute serialized extension arguments through the generic catalog extension registry. Generic catalog capabilities must not import or branch on a provider extension.
 
-`plugin.transport` is split by transport role: MCP clients and client exceptions in `transport.client`, transport wire records in `transport.dto`, generated agent profile serving and hashing in `transport.profile`, and capability lookup/registration in `transport.registry`.
+`plugin.transport` is split by generic UCP transport role: MCP clients and client exceptions in `transport.client`, transport wire records in `transport.dto`, generated agent profile serving and hashing in `transport.profile`, and capability lookup/registration in `transport.registry`. It must not contain Shopify-, Etsy-, or other commerce-provider authentication, clients, DTOs, profiles, or readiness adapters.
 
-Plugins should not get `controller` or `repository` packages unless they actually own that role. Do not place UCP plugin SPI, catalog plugin, or transport code under `common` or a business `module`.
+Plugins must not own business controllers, services, entities, repositories, state machines, or persistence. Plugin source must have zero dependencies on `com.meant.api.module` and `com.meant.api.provider`. `plugin.payment.shoppay` remains a plugin because `com.shopify.shop_pay` is an actual negotiated payment-handler capability, not a Shopify platform adapter.
 
-Use `module` for business logic modules. Each module, such as `user`, owns its own packages and should not leak internal entities or repositories into other modules.
+Use top-level `provider` for concrete external commerce-platform integrations. For example, `provider.shopify` owns Shopify authentication and authorized transport, Global Catalog clients and wire contracts, normalization and identity policy, discovery/rehydration/data-use adapters, capability readiness, order webhooks, and proven Shopify-specific review adapters. Providers may depend on plugin contracts and module-owned public services, commands, queries, service DTOs, and ports. A provider must not directly access a module repository or entity.
+
+Use `module` for Meant business domains, use cases, and state. `module.catalog` owns provider-neutral canonical catalog models, federation, exact grouping, ranking, diversity, retention, freshness, and rehydration orchestration. `module.checkout` owns checkout state, idempotency, consent, canary, totals, and workflow persistence. Merchant routing/onboarding, cart, orders, users, and reviews remain in their owning modules. A module must not import a concrete provider.
+
+`module.catalog.service.port` is the intentional provider-inversion boundary for catalog discovery sources, data-use policies, rehydration providers, and offer identity strategies. `module.review.service.port` is the equivalent narrow boundary for concrete platform ID normalization. Keep ports limited to cases where external adapters materially require inversion; do not create port packages as ceremony.
+
+Top-level `common` remains application-wide cross-cutting infrastructure only. Do not move provider or business-domain code there to bypass dependency rules.
+
+The dependency direction is enforced:
+
+- `plugin` imports neither `module` nor `provider`.
+- `module` does not import `provider`.
+- `provider` may implement module-owned ports and use plugin capabilities, but does not import module repositories or entities.
+- No JPA entity or Spring Data repository belongs under `plugin`.
+- No package `plugin.catalog.shopify` is allowed; actual Shopify UCP extensions belong under `plugin.catalog.extension.shopify` and platform adapters belong under `provider.shopify`.
+- Generic catalog capabilities serialize extension contributions through the extension registry and never import provider-specific extension classes.
 
 ## Domain Package Layers
 

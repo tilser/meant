@@ -6,13 +6,16 @@ import com.meant.api.module.review.constant.ReviewProviderStatus;
 import com.meant.api.module.review.constant.ReviewProviderType;
 import com.meant.api.module.review.service.dto.ReviewProviderDetectionResult;
 import com.meant.api.module.review.service.dto.StorefrontDocument;
+import com.meant.api.provider.shopify.review.ShopifyReviewProviderEvidenceContributor;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class ReviewProviderDetectionServiceTest {
 
-    private final ReviewProviderDetectionService detectionService = new ReviewProviderDetectionService();
+    private final ReviewProviderDetectionService detectionService = new ReviewProviderDetectionService(
+            List.of(new ShopifyReviewProviderEvidenceContributor())
+    );
 
     @Test
     void extractsKlaviyoCompanyIdFromStaticScriptWhenReviewMarkersExist() {

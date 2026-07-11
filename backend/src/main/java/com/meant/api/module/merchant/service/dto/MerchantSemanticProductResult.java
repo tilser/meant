@@ -1,5 +1,7 @@
 package com.meant.api.module.merchant.service.dto;
 
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+
 import java.util.List;
 import java.util.UUID;
 

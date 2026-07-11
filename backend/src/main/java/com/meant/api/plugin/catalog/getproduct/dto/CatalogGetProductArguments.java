@@ -3,16 +3,16 @@ package com.meant.api.plugin.catalog.getproduct.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
-import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import java.util.List;
 import java.util.Map;
+import tools.jackson.databind.JsonNode;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CatalogGetProductArguments(
         Catalog catalog,
 
-        Map<String, ShopifyCatalogExtensionArguments> extensions
+        Map<String, JsonNode> extensions
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

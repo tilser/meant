@@ -1,6 +1,6 @@
 package com.meant.api.module.user.controller.response;
 
-import com.meant.api.plugin.catalog.common.dto.ProductRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 

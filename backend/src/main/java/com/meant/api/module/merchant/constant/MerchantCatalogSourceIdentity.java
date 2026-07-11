@@ -1,8 +1,8 @@
 package com.meant.api.module.merchant.constant;
 
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
-import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 
 /** Server-owned identity of the direct merchant storefront discovery source. */
 public final class MerchantCatalogSourceIdentity {

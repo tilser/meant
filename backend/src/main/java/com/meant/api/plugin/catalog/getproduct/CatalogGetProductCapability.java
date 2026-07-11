@@ -1,13 +1,14 @@
 package com.meant.api.plugin.catalog.getproduct;
 
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
 import com.meant.api.plugin.catalog.common.exception.UcpCatalogResponseException;
+import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
+import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
+import com.meant.api.plugin.catalog.extension.CatalogTool;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductResponse;
-import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
-import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -24,9 +25,11 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
     public static final CapabilityId ID = CapabilityId.of("dev.ucp.shopping.catalog.get_product");
 
     private final ObjectMapper objectMapper;
+    private final CatalogExtensionRegistry extensionRegistry;
 
-    public CatalogGetProductCapability(ObjectMapper objectMapper) {
+    public CatalogGetProductCapability(ObjectMapper objectMapper, CatalogExtensionRegistry extensionRegistry) {
         this.objectMapper = objectMapper;
+        this.extensionRegistry = extensionRegistry;
     }
 
     @Override
@@ -51,7 +54,7 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
                         request.preferences(),
                         request.context()
                 ),
-                ShopifyCatalogExtensionArguments.extensions(activeCapabilities)
+                extensionRegistry.extensions(CatalogTool.GET_PRODUCT, activeCapabilities)
         );
     }
 

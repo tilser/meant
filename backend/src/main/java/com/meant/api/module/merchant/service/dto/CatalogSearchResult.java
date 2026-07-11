@@ -1,5 +1,7 @@
 package com.meant.api.module.merchant.service.dto;
 
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
+
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import java.util.List;
 

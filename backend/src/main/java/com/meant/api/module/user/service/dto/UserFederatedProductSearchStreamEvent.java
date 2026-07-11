@@ -1,10 +1,10 @@
 package com.meant.api.module.user.service.dto;
 
-import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
-import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryEventType;
-import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryTerminalStatus;
-import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailure;
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.CanonicalProduct;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEventType;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryTerminalStatus;
+import com.meant.api.module.catalog.service.dto.CatalogSourceFailure;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import java.util.List;
 
 public record UserFederatedProductSearchStreamEvent(

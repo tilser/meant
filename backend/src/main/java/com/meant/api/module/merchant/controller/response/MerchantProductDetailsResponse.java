@@ -2,7 +2,7 @@ package com.meant.api.module.merchant.controller.response;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;

@@ -22,7 +22,7 @@ import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsQuery
 import com.meant.api.module.merchant.service.MerchantProductDetailsService;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
-import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
@@ -55,7 +55,7 @@ import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
+import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;

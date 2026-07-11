@@ -27,13 +27,13 @@ import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.user.service.MerchantSemanticCatalogDiscoverySource;
 import com.meant.api.module.user.service.UserCanonicalProductCandidateMapper;
 import com.meant.api.module.user.service.UserProductSearchHashService;
-import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryEvent;
-import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryEventType;
-import com.meant.api.plugin.catalog.common.dto.CatalogDiscoveryRequest;
-import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
-import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySourceMetrics;
-import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryMetrics;
-import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEvent;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEventType;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.FederatedCatalogDiscoveryResult;
+import com.meant.api.module.catalog.service.CatalogDiscoverySourceMetrics;
+import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryMetrics;
+import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -166,7 +166,7 @@ class MerchantSemanticCatalogDiscoverySourceTest {
     private FederatedCatalogDiscoveryService federation(MerchantSemanticCatalogDiscoverySource source) {
         return new FederatedCatalogDiscoveryService(
                 List.of(source),
-                new com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties(
+                new com.meant.api.module.catalog.properties.FederatedCatalogDiscoveryProperties(
                         Duration.ofSeconds(1)
                 ),
                 new FederatedCatalogDiscoveryMetrics(new SimpleMeterRegistry()),

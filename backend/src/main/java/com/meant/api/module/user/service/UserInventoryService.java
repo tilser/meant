@@ -23,7 +23,7 @@ import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
-import com.meant.api.plugin.catalog.common.dto.CanonicalProduct;
+import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.text.Normalizer;

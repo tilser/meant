@@ -2,10 +2,10 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
-import com.meant.api.plugin.catalog.common.dto.CatalogPayloadClass;
-import com.meant.api.plugin.catalog.common.dto.CatalogRetentionDecision;
-import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicy;
+import com.meant.api.module.catalog.service.dto.CatalogPayloadClass;
+import com.meant.api.module.catalog.service.dto.CatalogRetentionDecision;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.port.CatalogDataUsePolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

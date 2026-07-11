@@ -13,7 +13,7 @@ import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
-import com.meant.api.plugin.cart.common.service.MerchantCartPluginDispatchService;
+import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
 import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.time.Duration;

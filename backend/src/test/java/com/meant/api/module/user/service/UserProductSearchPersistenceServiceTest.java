@@ -21,8 +21,8 @@ import com.meant.api.module.user.service.dto.UserProductRecommendationExplanatio
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchResult;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyMetrics;
-import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
+import com.meant.api.module.catalog.service.CatalogDataUsePolicyMetrics;
+import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;

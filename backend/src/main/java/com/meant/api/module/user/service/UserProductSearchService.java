@@ -424,7 +424,7 @@ public class UserProductSearchService {
                 merchantCandidateConsumer
         );
         List<MerchantSemanticProductResult> products = safeProducts(searchResult);
-        Map<UUID, com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity> sources =
+        Map<UUID, com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity> sources =
                 productSourceResolver.resolve(products);
         return products.stream()
                 .map(product -> productSnapshot(
@@ -439,7 +439,7 @@ public class UserProductSearchService {
 
     private UserProductSearchProductSnapshot productSnapshot(
             MerchantSemanticProductResult product,
-            com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity source
+            com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity source
     ) {
         return new UserProductSearchProductSnapshot(
                 userProductSearchHashService.productKey(product),

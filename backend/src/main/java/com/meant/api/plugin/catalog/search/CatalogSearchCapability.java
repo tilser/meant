@@ -1,11 +1,12 @@
 package com.meant.api.plugin.catalog.search;
 
-import com.meant.api.module.merchant.service.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
+import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
+import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
+import com.meant.api.plugin.catalog.extension.CatalogTool;
 import com.meant.api.plugin.catalog.search.dto.CatalogSearchArguments;
 import com.meant.api.plugin.catalog.search.dto.CatalogSearchRequest;
-import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
-import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -22,9 +23,11 @@ public class CatalogSearchCapability implements UcpCapability<CatalogSearchReque
     public static final CapabilityId ID = CapabilityId.of("dev.ucp.shopping.catalog.search");
 
     private final ObjectMapper objectMapper;
+    private final CatalogExtensionRegistry extensionRegistry;
 
-    public CatalogSearchCapability(ObjectMapper objectMapper) {
+    public CatalogSearchCapability(ObjectMapper objectMapper, CatalogExtensionRegistry extensionRegistry) {
         this.objectMapper = objectMapper;
+        this.extensionRegistry = extensionRegistry;
     }
 
     @Override
@@ -50,7 +53,7 @@ public class CatalogSearchCapability implements UcpCapability<CatalogSearchReque
                         request.filters(),
                         new CatalogSearchArguments.Pagination(null, request.limit())
                 ),
-                ShopifyCatalogExtensionArguments.extensions(activeCapabilities)
+                extensionRegistry.extensions(CatalogTool.SEARCH, activeCapabilities)
         );
     }
 

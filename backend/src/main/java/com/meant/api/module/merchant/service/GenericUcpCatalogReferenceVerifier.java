@@ -6,10 +6,10 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
-import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
-import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
-import com.meant.api.plugin.catalog.common.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -55,7 +55,7 @@ public class GenericUcpCatalogReferenceVerifier {
             MerchantIntegrationResult integration,
             ExternalIdentifier product,
             ExternalIdentifier variant,
-            List<com.meant.api.plugin.catalog.common.dto.ProductAttribute> options
+            List<com.meant.api.module.catalog.service.dto.ProductAttribute> options
     ) {
         ExternalIdentifier merchant = merchantIdentity(integration);
         return new CatalogProductReference(

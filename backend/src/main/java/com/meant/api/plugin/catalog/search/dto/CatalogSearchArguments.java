@@ -5,13 +5,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
-import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
 import java.util.Map;
+import tools.jackson.databind.JsonNode;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CatalogSearchArguments(
         Catalog catalog,
-        Map<String, ShopifyCatalogExtensionArguments> extensions
+        Map<String, JsonNode> extensions
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

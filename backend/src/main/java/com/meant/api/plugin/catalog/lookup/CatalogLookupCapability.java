@@ -1,11 +1,12 @@
 package com.meant.api.plugin.catalog.lookup;
 
 import com.meant.api.plugin.catalog.common.dto.CatalogCapabilityMetadata;
+import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
+import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
+import com.meant.api.plugin.catalog.extension.CatalogTool;
 import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupArguments;
 import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupRequest;
 import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupResponse;
-import com.meant.api.plugin.catalog.shopify.dto.ShopifyCatalogExtensionArguments;
-import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -22,9 +23,11 @@ public class CatalogLookupCapability implements UcpCapability<CatalogLookupReque
     public static final CapabilityId ID = CapabilityId.of("dev.ucp.shopping.catalog.lookup");
 
     private final ObjectMapper objectMapper;
+    private final CatalogExtensionRegistry extensionRegistry;
 
-    public CatalogLookupCapability(ObjectMapper objectMapper) {
+    public CatalogLookupCapability(ObjectMapper objectMapper, CatalogExtensionRegistry extensionRegistry) {
         this.objectMapper = objectMapper;
+        this.extensionRegistry = extensionRegistry;
     }
 
     @Override
@@ -47,7 +50,7 @@ public class CatalogLookupCapability implements UcpCapability<CatalogLookupReque
                         List.of(request.productId()),
                         request.context()
                 ),
-                ShopifyCatalogExtensionArguments.extensions(activeCapabilities)
+                extensionRegistry.extensions(CatalogTool.LOOKUP, activeCapabilities)
         );
     }
 

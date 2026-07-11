@@ -1,6 +1,6 @@
 package com.meant.api.module.cart.service.dto;
 
-import com.meant.api.plugin.checkout.common.service.dto.NativeCheckoutStatus;
+import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
 import java.util.List;
 import java.util.UUID;
 
