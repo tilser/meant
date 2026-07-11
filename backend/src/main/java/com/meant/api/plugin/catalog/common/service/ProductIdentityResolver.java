@@ -1,6 +1,5 @@
 package com.meant.api.plugin.catalog.common.service;
 
-import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecision;
 import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionOutcome;
@@ -8,13 +7,37 @@ import com.meant.api.plugin.catalog.common.dto.ProductGroupingDecisionReason;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityContradictionKind;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
 import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-/** Small deterministic evidence chain for conservative provider-neutral product reconciliation. */
+/**
+ * Small deterministic evidence chain for conservative provider-neutral product reconciliation.
+ * Only explicitly typed TRUSTED_EXACT source evidence can merge; titles, free-text attributes,
+ * and even high-confidence semantic measurements remain non-merging diagnostics.
+ */
 final class ProductIdentityResolver {
+
+    private static final Comparator<ProductIdentityEvidence> EVIDENCE_ORDER = Comparator
+            .comparing(ProductIdentityEvidence::kind)
+            .thenComparing(ProductIdentityEvidence::strength)
+            .thenComparing(com.meant.api.plugin.catalog.common.support.CanonicalCommerceKey::evidenceGroupingKey)
+            .thenComparingInt(ProductIdentityEvidence::confidenceBasisPoints)
+            .thenComparing(evidence -> evidence.sourceReference().type())
+            .thenComparing(evidence -> evidence.sourceReference().reference())
+            .thenComparing(evidence -> evidence.sourceReference().uri() == null
+                    ? ""
+                    : evidence.sourceReference().uri().toString());
+
+    private static final Comparator<SignalMatch> MATCH_ORDER = Comparator
+            .comparing((SignalMatch match) -> !match.trustedMergeEvidence())
+            .thenComparingInt(match -> match.preferred().precedence())
+            .thenComparingInt(match -> -match.confidenceBasisPoints())
+            .thenComparing(match -> match.preferred().key())
+            .thenComparing(match -> match.preferred().kind())
+            .thenComparing(SignalMatch::stableEvidenceKey);
 
     private final ProductIdentitySignalExtractor signalExtractor = new ProductIdentitySignalExtractor();
     private final ProductIdentityCompatibility compatibility = new ProductIdentityCompatibility();
@@ -34,7 +57,7 @@ final class ProductIdentityResolver {
                 .filter(signal -> leftSignals.containsKey(signal.key()))
                 .map(signal -> new SignalMatch(leftSignals.get(signal.key()), signal))
                 .filter(match -> scopesAllow(match, left, right))
-                .sorted(java.util.Comparator.comparing(SignalMatch::preferred, ProductIdentitySignal.ORDER))
+                .sorted(MATCH_ORDER)
                 .toList();
         if (matches.isEmpty()) {
             return Optional.empty();
@@ -42,8 +65,7 @@ final class ProductIdentityResolver {
 
         SignalMatch match = matches.getFirst();
         List<ProductIdentityContradictionKind> contradictions = contradictions(left, right);
-        boolean trusted = match.left().evidence().strength() == IdentityEvidenceStrength.TRUSTED_EXACT
-                && match.right().evidence().strength() == IdentityEvidenceStrength.TRUSTED_EXACT;
+        boolean trusted = match.trustedMergeEvidence();
         boolean semantic = match.preferred().kind() == ProductIdentityEvidenceKind.SEMANTIC;
         boolean authoritativeProviderGroup = match.preferred().kind() == ProductIdentityEvidenceKind.UPID;
         boolean merge = trusted && !semantic && (authoritativeProviderGroup || contradictions.isEmpty());
@@ -54,10 +76,7 @@ final class ProductIdentityResolver {
                         : semantic
                                 ? ProductGroupingDecisionReason.SEMANTIC_EVIDENCE_ONLY
                                 : ProductGroupingDecisionReason.LOW_CONFIDENCE_EVIDENCE;
-        int confidence = Math.min(
-                match.left().evidence().confidenceBasisPoints(),
-                match.right().evidence().confidenceBasisPoints()
-        );
+        int confidence = match.confidenceBasisPoints();
         return Optional.of(new Resolution(
                 decision(left, right, merge, reason, confidence, match.evidence(), contradictions),
                 merge,
@@ -127,6 +146,9 @@ final class ProductIdentityResolver {
     }
 
     private ProductIdentitySignal preferSignal(ProductIdentitySignal first, ProductIdentitySignal second) {
+        if (first.trustedMergeEvidence() != second.trustedMergeEvidence()) {
+            return first.trustedMergeEvidence() ? first : second;
+        }
         return ProductIdentitySignal.ORDER.compare(first, second) <= 0 ? first : second;
     }
 
@@ -145,9 +167,32 @@ final class ProductIdentityResolver {
         }
 
         private List<ProductIdentityEvidence> evidence() {
-            return left.evidence().equals(right.evidence())
-                    ? List.of(left.evidence())
-                    : List.of(left.evidence(), right.evidence());
+            return java.util.stream.Stream.of(left.evidence(), right.evidence())
+                    .distinct()
+                    .sorted(EVIDENCE_ORDER)
+                    .toList();
+        }
+
+        private boolean trustedMergeEvidence() {
+            return left.trustedMergeEvidence() && right.trustedMergeEvidence();
+        }
+
+        private int confidenceBasisPoints() {
+            return Math.min(
+                    left.evidence().confidenceBasisPoints(),
+                    right.evidence().confidenceBasisPoints()
+            );
+        }
+
+        private String stableEvidenceKey() {
+            return evidence().stream()
+                    .map(evidence -> com.meant.api.plugin.catalog.common.support.CanonicalCommerceKey
+                            .evidenceGroupingKey(evidence)
+                            + ":" + evidence.strength()
+                            + ":" + evidence.confidenceBasisPoints()
+                            + ":" + evidence.sourceReference().type()
+                            + ":" + evidence.sourceReference().reference())
+                    .collect(Collectors.joining("|"));
         }
     }
 }

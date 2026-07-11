@@ -1,6 +1,7 @@
 package com.meant.api.plugin.catalog.common.support;
 
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.text.Normalizer;
@@ -23,16 +24,46 @@ public final class ProductIdentityNormalizationSupport {
                 .replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
-    public static Optional<String> universalTradeItemNumber(String value) {
+    public static Optional<String> universalTradeItemNumber(
+            ProductIdentityEvidenceKind kind,
+            String value
+    ) {
+        if (kind != ProductIdentityEvidenceKind.GTIN
+                && kind != ProductIdentityEvidenceKind.UPC
+                && kind != ProductIdentityEvidenceKind.EAN) {
+            return Optional.empty();
+        }
         String input = value == null ? "" : value.trim();
         if (!input.matches("[0-9 -]+")) {
             return Optional.empty();
         }
         String digits = input.replace(" ", "").replace("-", "");
-        if (digits.length() < 8 || digits.length() > 14) {
+        if (!supportedLength(kind, digits.length())
+                || digits.chars().distinct().count() == 1
+                || !validGs1CheckDigit(digits)) {
             return Optional.empty();
         }
         return Optional.of("0".repeat(14 - digits.length()) + digits);
+    }
+
+    private static boolean supportedLength(ProductIdentityEvidenceKind kind, int length) {
+        return switch (kind) {
+            case GTIN -> Set.of(8, 12, 13, 14).contains(length);
+            case UPC -> length == 12;
+            case EAN -> length == 8 || length == 13;
+            default -> false;
+        };
+    }
+
+    private static boolean validGs1CheckDigit(String digits) {
+        int sum = 0;
+        boolean triple = true;
+        for (int index = digits.length() - 2; index >= 0; index--) {
+            int digit = digits.charAt(index) - '0';
+            sum += triple ? digit * 3 : digit;
+            triple = !triple;
+        }
+        return (10 - sum % 10) % 10 == digits.charAt(digits.length() - 1) - '0';
     }
 
     public static Optional<String> typedStandardIdentifier(ExternalIdentifier identifier) {

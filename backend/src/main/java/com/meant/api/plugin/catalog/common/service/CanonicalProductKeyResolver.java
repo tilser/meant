@@ -14,18 +14,9 @@ import java.util.Set;
 final class CanonicalProductKeyResolver {
 
     private final ProductIdentitySignalExtractor signalExtractor = new ProductIdentitySignalExtractor();
+    private final ProductIdentityCompatibility compatibility = new ProductIdentityCompatibility();
 
     String resolve(List<ProductCandidate> candidates) {
-        boolean oneExactOffer = candidates.stream().map(candidate -> candidate.offer().key()).distinct().count() == 1;
-        if (candidates.size() == 1 || oneExactOffer) {
-            return candidates.stream()
-                    .flatMap(candidate -> signalExtractor.signals(candidate).stream())
-                    .filter(ProductIdentitySignal::trustedMergeEvidence)
-                    .sorted(ProductIdentitySignal.ORDER)
-                    .findFirst()
-                    .map(this::productKey)
-                    .orElseGet(candidates.getFirst()::fallbackProductKey);
-        }
         Map<String, SignalCoverage> coverage = new HashMap<>();
         for (int index = 0; index < candidates.size(); index++) {
             for (ProductIdentitySignal signal : signalExtractor.signals(candidates.get(index))) {
@@ -36,17 +27,16 @@ final class CanonicalProductKeyResolver {
             }
         }
         return coverage.values().stream()
-                .filter(value -> value.candidateIndexes().size() >= 2)
+                .filter(value -> value.candidateIndexes().size() == candidates.size())
                 .filter(value -> scopeAllowed(value.signal(), candidates, value.candidateIndexes()))
                 .sorted(Comparator.comparing(SignalCoverage::signal, ProductIdentitySignal.ORDER)
-                        .thenComparingInt(value -> -value.candidateIndexes().size()))
+                        .thenComparing(value -> value.signal().key()))
                 .map(SignalCoverage::signal)
                 .findFirst()
-                .map(this::productKey)
-                .orElseGet(() -> candidates.stream()
+                .map(signal -> productKey(signal, candidates))
+                .orElseGet(() -> CanonicalCommerceKey.clusteredProductKey(candidates.stream()
                         .map(ProductCandidate::fallbackProductKey)
-                        .min(String::compareTo)
-                        .orElseThrow());
+                        .toList()));
     }
 
     private boolean scopeAllowed(
@@ -59,13 +49,27 @@ final class CanonicalProductKeyResolver {
             return matching.stream().map(candidate -> candidate.offer().identity().merchantScope()).distinct().count() == 1;
         }
         if (signal.kind() == ProductIdentityEvidenceKind.UPID) {
-            return matching.stream().map(candidate -> candidate.offer().identity().provider()).distinct().count() == 1;
+            return matching.stream().map(candidate -> candidate.offer().identity().provider()).distinct().count() == 1
+                    && matching.stream()
+                            .flatMap(candidate -> signalExtractor.signals(candidate).stream())
+                            .filter(candidateSignal -> candidateSignal.key().equals(signal.key()))
+                            .map(candidateSignal -> candidateSignal.evidence().sourceReference().type()
+                                    + ":" + candidateSignal.evidence().sourceReference().reference())
+                            .distinct()
+                            .count() == 1;
         }
         return true;
     }
 
-    private String productKey(ProductIdentitySignal signal) {
-        return CanonicalCommerceKey.groupedProductKey(signal.reason().name(), signal.key());
+    private String productKey(ProductIdentitySignal signal, List<ProductCandidate> candidates) {
+        String compatibilityFingerprint = signal.kind() == ProductIdentityEvidenceKind.UPID
+                ? "authoritative-provider-group"
+                : compatibility.fingerprint(candidates);
+        return CanonicalCommerceKey.groupedProductKey(
+                signal.reason().name(),
+                signal.key(),
+                compatibilityFingerprint
+        );
     }
 
     private record SignalCoverage(ProductIdentitySignal signal, Set<Integer> candidateIndexes) {

@@ -1432,8 +1432,17 @@ export interface components {
             nextOffset?: number;
             /** @description Whether another canonical-product page exists in the deterministic result window */
             hasMore: boolean;
+            /** @description Whether an upstream source reported more candidates than this live search request could materialize */
+            upstreamTruncated: boolean;
             /** @description Deterministically ordered canonical products */
             products: components["schemas"]["CanonicalProductResponse"][];
+            /**
+             * Format: int32
+             * @description Total typed reconciliation decisions in the fetched candidate window
+             */
+            groupingDecisionCount: number;
+            /** @description Whether grouping decisions were omitted by page filtering or the public diagnostic bound */
+            groupingDecisionsTruncated: boolean;
             /** @description Typed exact-match and conservative non-match decisions for this page */
             groupingDecisions: components["schemas"]["ProductGroupingDecisionResponse"][];
         };

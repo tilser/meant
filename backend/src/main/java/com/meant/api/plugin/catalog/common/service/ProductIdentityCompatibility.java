@@ -35,6 +35,16 @@ final class ProductIdentityCompatibility {
         return List.copyOf(contradictions);
     }
 
+    String fingerprint(List<ProductCandidate> candidates) {
+        return candidates.stream()
+                .flatMap(candidate -> facts(candidate).entrySet().stream())
+                .flatMap(entry -> entry.getValue().stream()
+                        .map(value -> entry.getKey().name() + ":" + value))
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining("|"));
+    }
+
     private EnumMap<ProductIdentityContradictionKind, Set<String>> facts(ProductCandidate candidate) {
         EnumMap<ProductIdentityContradictionKind, Set<String>> facts =
                 new EnumMap<>(ProductIdentityContradictionKind.class);

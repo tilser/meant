@@ -21,17 +21,24 @@ import com.meant.api.plugin.catalog.common.dto.CatalogSourceFailureKind;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceOperation;
 import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.plugin.catalog.common.dto.ExternalIdentifier;
 import com.meant.api.plugin.catalog.common.dto.ExternalIdentifierType;
 import com.meant.api.plugin.catalog.common.dto.FederatedCatalogDiscoveryResult;
+import com.meant.api.plugin.catalog.common.dto.IdentityEvidenceStrength;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidence;
+import com.meant.api.plugin.catalog.common.dto.ProductIdentityEvidenceKind;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySource;
 import com.meant.api.plugin.catalog.common.service.ExactProductGroupingService;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryMetrics;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryProperties;
 import com.meant.api.plugin.catalog.common.service.FederatedCatalogDiscoveryService;
+import com.meant.api.plugin.catalog.common.service.ProductGroupingMetrics;
 import com.meant.api.plugin.catalog.shopify.ShopifyOfferIdentityStrategy;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +48,6 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
-import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import org.junit.jupiter.api.Test;
 
 class UserGroupedProductSearchServiceTest {
@@ -208,6 +214,87 @@ class UserGroupedProductSearchServiceTest {
         assertThat(third.hasMore()).isFalse();
     }
 
+    @Test
+    void boundsPublicDiagnosticsButCountsEveryWindowDecision() {
+        ProductIdentityEvidence semantic = new ProductIdentityEvidence(
+                ProductIdentityEvidenceKind.SEMANTIC,
+                IdentityEvidenceStrength.SEMANTIC,
+                9_900,
+                List.of(new ExternalIdentifier(
+                        ExternalIdentifierType.SEMANTIC_FINGERPRINT,
+                        "MEASURED",
+                        "redacted-fingerprint"
+                )),
+                new ResultSourceReference(
+                        ResultSourceType.PROVIDER_CATALOG,
+                        "measured-similarity-v1",
+                        null
+                )
+        );
+        List<ProductCandidate> candidates = pageCandidates("diagnostic", 100).stream()
+                .map(candidate -> withEvidence(candidate, semantic))
+                .toList();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        UserGroupedProductSearchService service = new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                new StubFederatedDiscoveryService(new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.SUCCESS, List.of(), candidates, false)),
+                new ExactProductGroupingService(new ProductGroupingMetrics(registry))
+        );
+
+        var result = service.search(profile(), command(profile().id(), 0, 20));
+
+        assertThat(result.groupingDecisionCount()).isEqualTo(4_950);
+        assertThat(result.groupingDecisions()).hasSize(UserGroupedProductSearchService.MAX_PUBLIC_GROUPING_DECISIONS);
+        assertThat(result.groupingDecisionsTruncated()).isTrue();
+        assertThat(registry.get("commerce.catalog.grouping.decisions")
+                .tags("outcome", "separate", "reason", "semantic_evidence_only")
+                .counter().count()).isEqualTo(4_950d);
+    }
+
+    @Test
+    void shopifyUpstreamTruncationNeverAdvertisesAnUnreachableContinuation() {
+        List<ProductCandidate> candidates = pageCandidates("shopify-upstream", 50);
+        DiscoverySourceIdentity shopify = new DiscoverySourceIdentity(
+                new ProviderIdentity("SHOPIFY"),
+                ResultSourceType.PROVIDER_CATALOG,
+                "SHOPIFY_GLOBAL"
+        );
+        CatalogSourceResult source = new CatalogSourceResult(
+                shopify.provider(),
+                shopify,
+                CatalogSourceOperation.SEARCH,
+                "2026-04-08",
+                NegotiatedCapabilities.none(),
+                candidates,
+                null,
+                true,
+                null
+        );
+        StubFederatedDiscoveryService discovery = new StubFederatedDiscoveryService(
+                new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.SUCCESS,
+                        List.of(source),
+                        candidates,
+                        true
+                )
+        );
+        UserGroupedProductSearchService service = new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                discovery,
+                new ExactProductGroupingService()
+        );
+
+        var result = service.search(profile(), command(profile().id(), 40, 20));
+
+        assertThat(result.products()).hasSize(10);
+        assertThat(result.hasMore()).isFalse();
+        assertThat(result.nextOffset()).isNull();
+        assertThat(result.upstreamTruncated()).isTrue();
+        assertThat(discovery.calls).isEqualTo(1);
+        assertThat(discovery.request.candidateLimit()).isEqualTo(100);
+    }
+
     private UserProductSearchPreparation preparation() {
         return new UserProductSearchPreparation(
                 "linen shirt",
@@ -290,6 +377,21 @@ class UserGroupedProductSearchServiceTest {
                     );
                 })
                 .toList();
+    }
+
+    private ProductCandidate withEvidence(ProductCandidate candidate, ProductIdentityEvidence evidence) {
+        return new ProductCandidate(
+                candidate.title(),
+                candidate.description(),
+                candidate.media(),
+                candidate.attributes(),
+                candidate.materials(),
+                candidate.certifications(),
+                candidate.attribution(),
+                List.of(evidence),
+                candidate.provenance(),
+                candidate.offer()
+        );
     }
 
     private UserGroupedProductSearchService pagingService(CatalogDiscoverySource... sources) {
@@ -450,6 +552,7 @@ class UserGroupedProductSearchServiceTest {
 
         private final FederatedCatalogDiscoveryResult result;
         private CatalogDiscoveryRequest request;
+        private int calls;
 
         private StubFederatedDiscoveryService(FederatedCatalogDiscoveryResult result) {
             super(
@@ -463,6 +566,7 @@ class UserGroupedProductSearchServiceTest {
 
         @Override
         public FederatedCatalogDiscoveryResult search(CatalogDiscoveryRequest request) {
+            calls++;
             this.request = request;
             return result;
         }

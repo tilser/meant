@@ -27,6 +27,8 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserGroupedProductSearchService {
 
+    static final int MAX_PUBLIC_GROUPING_DECISIONS = 100;
+
     private final UserProductSearchPreparationService preparationService;
     private final FederatedCatalogDiscoveryService federatedDiscoveryService;
     private final ExactProductGroupingService exactProductGroupingService;
@@ -65,6 +67,7 @@ public class UserGroupedProductSearchService {
         List<ProductGroupingDecision> visibleDecisions = grouping.decisions().stream()
                 .filter(decision -> visibleOfferKeys.contains(decision.leftOfferKey())
                         && visibleOfferKeys.contains(decision.rightOfferKey()))
+                .limit(MAX_PUBLIC_GROUPING_DECISIONS)
                 .toList();
         return new UserGroupedProductSearchResult(
                 preparation.query(),
@@ -75,7 +78,10 @@ public class UserGroupedProductSearchService {
                 preparation.limit(),
                 hasMore ? pageEnd : null,
                 hasMore,
+                discovery.truncated(),
                 page,
+                grouping.decisions().size(),
+                grouping.decisions().size() > visibleDecisions.size(),
                 visibleDecisions
         );
     }

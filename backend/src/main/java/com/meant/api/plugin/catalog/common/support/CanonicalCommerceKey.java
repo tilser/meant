@@ -53,8 +53,22 @@ public final class CanonicalCommerceKey {
         return "product_v1_" + digest("canonical-product", evidenceFields(evidence));
     }
 
-    public static String groupedProductKey(String identityKind, String normalizedIdentity) {
-        return "product_v2_" + digest("grouped-product-v2", List.of(identityKind, normalizedIdentity));
+    public static String groupedProductKey(
+            String identityKind,
+            String normalizedIdentity,
+            String compatibilityFingerprint
+    ) {
+        return "product_v3_" + digest(
+                "grouped-product-v3",
+                List.of(identityKind, normalizedIdentity, compatibilityFingerprint)
+        );
+    }
+
+    public static String clusteredProductKey(List<String> stableMemberIdentities) {
+        return "product_v3_" + digest(
+                "clustered-product-v3",
+                stableMemberIdentities.stream().sorted().distinct().toList()
+        );
     }
 
     public static String merchantScopeKey(OfferMerchantScope merchantScope) {

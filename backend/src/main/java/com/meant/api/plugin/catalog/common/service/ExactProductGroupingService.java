@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -39,6 +40,7 @@ import org.springframework.stereotype.Service;
 public class ExactProductGroupingService {
 
     private final ProductIdentityResolver identityResolver = new ProductIdentityResolver();
+    private final ProductGroupingMetrics metrics;
 
     private static final Comparator<CandidateEntry> CANDIDATE_ORDER = Comparator
             .comparingInt((CandidateEntry entry) -> evidencePreference(entry.candidate()))
@@ -71,6 +73,15 @@ public class ExactProductGroupingService {
             .thenComparing(value -> identifierText(value.externalVariantReference()))
             .thenComparing(value -> value.freshness().observedAt())
             .thenComparing(value -> sourceText(value.sourceReference()));
+
+    public ExactProductGroupingService() {
+        this(ProductGroupingMetrics.noop());
+    }
+
+    @Autowired
+    public ExactProductGroupingService(ProductGroupingMetrics metrics) {
+        this.metrics = metrics;
+    }
 
     public List<CanonicalProduct> group(List<ProductCandidate> sourceCandidates) {
         return evaluate(sourceCandidates).products();
@@ -121,20 +132,8 @@ public class ExactProductGroupingService {
             groupedCandidates.computeIfAbsent(groups.find(index), ignored -> new ArrayList<>())
                     .add(candidates.get(index));
         }
-        List<AssembledGroup> assembledGroups = groupedCandidates.values().stream()
-                .map(entries -> new AssembledGroup(
-                        assemble(entries),
-                        entries.stream().map(CandidateEntry::fallbackProductKey).min(String::compareTo).orElseThrow()
-                ))
-                .toList();
-        Map<String, Long> keyCounts = assembledGroups.stream().collect(Collectors.groupingBy(
-                group -> group.product().key(),
-                Collectors.counting()
-        ));
-        List<CanonicalProduct> products = assembledGroups.stream()
-                .map(group -> keyCounts.get(group.product().key()) > 1
-                        ? withKey(group.product(), group.fallbackProductKey())
-                        : group.product())
+        List<CanonicalProduct> products = groupedCandidates.values().stream()
+                .map(this::assemble)
                 .sorted(Comparator.comparing(CanonicalProduct::key))
                 .toList();
         List<ProductGroupingDecision> orderedDecisions = decisions.stream()
@@ -143,23 +142,8 @@ public class ExactProductGroupingService {
                         .thenComparing(ProductGroupingDecision::rightOfferKey)
                         .thenComparing(ProductGroupingDecision::reason))
                 .toList();
+        metrics.record(orderedDecisions);
         return new ProductGroupingResult(products, orderedDecisions);
-    }
-
-    private CanonicalProduct withKey(CanonicalProduct product, String key) {
-        return new CanonicalProduct(
-                key,
-                product.title(),
-                product.description(),
-                product.media(),
-                product.attributes(),
-                product.materials(),
-                product.certifications(),
-                product.attribution(),
-                product.identityEvidence(),
-                product.provenance(),
-                product.offers()
-        );
     }
 
     private CanonicalProduct assemble(List<CandidateEntry> candidates) {
@@ -463,9 +447,6 @@ public class ExactProductGroupingService {
             int right,
             ProductIdentityResolver.Resolution resolution
     ) {
-    }
-
-    private record AssembledGroup(CanonicalProduct product, String fallbackProductKey) {
     }
 
     private static final class UnionFind {

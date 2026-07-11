@@ -36,7 +36,7 @@ public record OfferIdentity(
         }
         selectedOptions = selectedOptions == null
                 ? List.of()
-                : selectedOptions.stream().sorted(OPTION_ORDER).toList();
+                : selectedOptions.stream().distinct().sorted(OPTION_ORDER).toList();
         components = components == null
                 ? List.of()
                 : components.stream().sorted(OfferComponentIdentity::compareCanonical).toList();

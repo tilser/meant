@@ -13,7 +13,10 @@ public record UserGroupedProductSearchResult(
         int limit,
         Integer nextOffset,
         boolean hasMore,
+        boolean upstreamTruncated,
         List<CanonicalProduct> products,
+        int groupingDecisionCount,
+        boolean groupingDecisionsTruncated,
         List<ProductGroupingDecision> groupingDecisions
 ) {
 

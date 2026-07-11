@@ -48,7 +48,7 @@ final class ProductIdentitySignalExtractor {
                             || identifier.type() == ExternalIdentifierType.UPC
                             || identifier.type() == ExternalIdentifierType.EAN)
                     .map(ExternalIdentifier::value)
-                    .map(value -> universalTradeItemNumber(value))
+                    .map(value -> universalTradeItemNumber(evidence.kind(), value))
                     .flatMap(Optional::stream)
                     .map(value -> signal("universal:" + value, evidence, 1,
                             ProductGroupingDecisionReason.UNIVERSAL_IDENTIFIER))

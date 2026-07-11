@@ -59,8 +59,17 @@ public record UserGroupedProductSearchV1Response(
         Integer nextOffset,
         @Schema(description = "Whether another canonical-product page exists in the deterministic result window", requiredMode = Schema.RequiredMode.REQUIRED)
         boolean hasMore,
+        @Schema(
+                description = "Whether an upstream source reported more candidates than this live search request could materialize",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        boolean upstreamTruncated,
         @Schema(description = "Deterministically ordered canonical products", requiredMode = Schema.RequiredMode.REQUIRED)
         List<CanonicalProductResponse> products,
+        @Schema(description = "Total typed reconciliation decisions in the fetched candidate window", requiredMode = Schema.RequiredMode.REQUIRED)
+        int groupingDecisionCount,
+        @Schema(description = "Whether grouping decisions were omitted by page filtering or the public diagnostic bound", requiredMode = Schema.RequiredMode.REQUIRED)
+        boolean groupingDecisionsTruncated,
         @Schema(description = "Typed exact-match and conservative non-match decisions for this page", requiredMode = Schema.RequiredMode.REQUIRED)
         List<ProductGroupingDecisionResponse> groupingDecisions
 ) {
@@ -75,7 +84,10 @@ public record UserGroupedProductSearchV1Response(
                 result.limit(),
                 result.nextOffset(),
                 result.hasMore(),
+                result.upstreamTruncated(),
                 result.products().stream().map(CanonicalProductResponse::from).toList(),
+                result.groupingDecisionCount(),
+                result.groupingDecisionsTruncated(),
                 result.groupingDecisions().stream().map(ProductGroupingDecisionResponse::from).toList()
         );
     }

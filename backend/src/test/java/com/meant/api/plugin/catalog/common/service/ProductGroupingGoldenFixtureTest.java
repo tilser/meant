@@ -30,6 +30,7 @@ import com.meant.api.plugin.catalog.common.dto.ResultSourceReference;
 import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanIdentity;
 import com.meant.api.plugin.catalog.common.dto.SellingPlanOption;
+import com.meant.api.plugin.catalog.common.support.CanonicalCommerceKey;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -118,6 +119,31 @@ class ProductGroupingGoldenFixtureTest {
     }
 
     @Test
+    void trustedEligibleEvidenceWinsOverHigherPrecedenceAssertedEvidenceDeterministically() {
+        ProductIdentityEvidence assertedGtin = universal(
+                ProductIdentityEvidenceKind.GTIN,
+                ExternalIdentifierType.GTIN,
+                gtin14("7234567890123"),
+                IdentityEvidenceStrength.ASSERTED,
+                9_900
+        );
+        ProductIdentityEvidence trustedBrandModel = brandModel("Acme", "Model 200");
+        ProductCandidate first = fixture("SOURCE_A", "merchant-a", "product-a", "variant-a")
+                .evidence(assertedGtin).evidence(trustedBrandModel).build();
+        ProductCandidate second = fixture("SOURCE_B", "merchant-b", "product-b", "variant-b")
+                .evidence(trustedBrandModel).evidence(assertedGtin).build();
+
+        ProductGroupingResult forward = service.evaluate(List.of(first, second));
+        ProductGroupingResult reversed = service.evaluate(List.of(second, first));
+
+        assertThat(forward).isEqualTo(reversed);
+        assertThat(forward.products()).singleElement()
+                .satisfies(product -> assertThat(product.offers()).hasSize(2));
+        assertThat(forward.decisions()).singleElement().satisfies(decision ->
+                assertThat(decision.reason()).isEqualTo(ProductGroupingDecisionReason.VERIFIED_BRAND_MODEL));
+    }
+
+    @Test
     void verifiedProviderMappingGroupsIndependentOffers() {
         ProductIdentityEvidence mapping = evidence(
                 ProductIdentityEvidenceKind.PROVIDER_GROUPING_ID,
@@ -173,7 +199,7 @@ class ProductGroupingGoldenFixtureTest {
     @Test
     void sizeAndColorContradictionsVetoUniversalIdentifierMatch() {
         ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
-                "12345678901234", IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+                gtin14("1234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
         ProductCandidate first = fixture("SOURCE_A", "merchant-a", "product-a", "variant-a")
                 .evidence(gtin).option("Size", "Small").option("Color", "Blue").build();
         ProductCandidate second = fixture("SOURCE_B", "merchant-b", "product-b", "variant-b")
@@ -191,9 +217,55 @@ class ProductGroupingGoldenFixtureTest {
     }
 
     @Test
+    void contradictionVetoedSiblingNeverRewritesAnIntrinsicCanonicalKey() {
+        ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
+                gtin14("1234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+        ProductCandidate blue = fixture("SOURCE_A", "merchant-a", "product-a", "variant-blue")
+                .evidence(gtin).option("Color", "Blue").build();
+        ProductCandidate red = fixture("SOURCE_B", "merchant-b", "product-b", "variant-red")
+                .evidence(gtin).option("Color", "Red").build();
+
+        String singletonKey = service.evaluate(List.of(blue)).products().getFirst().key();
+        ProductGroupingResult withSibling = service.evaluate(List.of(blue, red));
+        ProductGroupingResult reversed = service.evaluate(List.of(red, blue));
+
+        assertThat(withSibling).isEqualTo(reversed);
+        assertThat(withSibling.products()).hasSize(2).extracting(CanonicalProduct::key).doesNotHaveDuplicates();
+        assertThat(withSibling.products()).filteredOn(product -> product.offers().contains(blue.offer()))
+                .singleElement().extracting(CanonicalProduct::key).isEqualTo(singletonKey);
+        assertThat(service.evaluate(List.of(blue)).products().getFirst().key()).isEqualTo(singletonKey);
+    }
+
+    @Test
+    void partialSignalCoverageUsesEveryStableClusterMemberIdentity() {
+        ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
+                gtin14("9234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+        ProductIdentityEvidence brandModel = brandModel("Acme", "Model 900");
+        ProductCandidate first = fixture("SOURCE_A", "merchant-a", "product-a", "variant-a")
+                .evidence(gtin).build();
+        ProductCandidate bridge = fixture("SOURCE_B", "merchant-b", "product-b", "variant-b")
+                .evidence(gtin).evidence(brandModel).build();
+        ProductCandidate third = fixture("SOURCE_C", "merchant-c", "product-c", "variant-c")
+                .evidence(brandModel).build();
+
+        ProductGroupingResult result = service.evaluate(List.of(first, bridge, third));
+
+        assertThat(result.products()).singleElement().satisfies(product -> {
+            assertThat(product.offers()).hasSize(3);
+            assertThat(product.key()).isEqualTo(CanonicalCommerceKey.clusteredProductKey(List.of(
+                    first.fallbackProductKey(),
+                    bridge.fallbackProductKey(),
+                    third.fallbackProductKey()
+            )));
+            assertThat(product.key()).isNotEqualTo(service.group(List.of(first, bridge)).getFirst().key());
+        });
+        assertThat(result).isEqualTo(service.evaluate(List.of(third, bridge, first)));
+    }
+
+    @Test
     void bundleAndPackContradictionsRemainSeparate() {
         ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
-                "22345678901234", IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+                gtin14("2234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
         ProductCandidate bundle = fixture("SOURCE_A", "merchant-a", "product-a", "variant-a")
                 .evidence(gtin).component("part-a", 2).attribute("Pack quantity", "2").build();
         ProductCandidate single = fixture("SOURCE_B", "merchant-b", "product-b", "variant-b")
@@ -212,7 +284,7 @@ class ProductGroupingGoldenFixtureTest {
     @Test
     void modelAndGenerationContradictionsRemainSeparate() {
         ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
-                "32345678901234", IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+                gtin14("3234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
         ProductCandidate first = fixture("SOURCE_A", "merchant-a", "product-a", "variant-a")
                 .evidence(gtin).attribute("Model", "X1").attribute("Generation", "2").build();
         ProductCandidate second = fixture("SOURCE_B", "merchant-b", "product-b", "variant-b")
@@ -258,7 +330,7 @@ class ProductGroupingGoldenFixtureTest {
         ProductIdentityEvidence assertedGtin = universal(
                 ProductIdentityEvidenceKind.GTIN,
                 ExternalIdentifierType.GTIN,
-                "42345678901234",
+                gtin14("4234567890123"),
                 IdentityEvidenceStrength.ASSERTED,
                 7_000
         );
@@ -283,9 +355,55 @@ class ProductGroupingGoldenFixtureTest {
     }
 
     @Test
+    void identicalTitlesAndFreeTextAttributesNeverCreateIdentityEvidence() {
+        ProductCandidate first = fixture("SOURCE_A", "merchant-a", "title-a", "variant-a")
+                .title("Ambiguous redacted product")
+                .attribute("Material", "Cotton")
+                .build();
+        ProductCandidate second = fixture("SOURCE_B", "merchant-b", "title-b", "variant-b")
+                .title("Ambiguous redacted product")
+                .attribute("Material", "Cotton")
+                .build();
+
+        assertThat(service.evaluate(List.of(first, second))).satisfies(result -> {
+            assertThat(result.products()).hasSize(2);
+            assertThat(result.decisions()).isEmpty();
+        });
+    }
+
+    @Test
+    void invalidGs1CheckDigitsAndRepeatedPlaceholdersNeverBecomeTrustedMatches() {
+        ProductIdentityEvidence valid = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
+                gtin14("8234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+        ProductIdentityEvidence invalidCheckDigit = universal(
+                ProductIdentityEvidenceKind.GTIN,
+                ExternalIdentifierType.GTIN,
+                invalidCheckDigit(gtin14("8234567890123")),
+                IdentityEvidenceStrength.TRUSTED_EXACT,
+                10_000
+        );
+        ProductIdentityEvidence placeholder = universal(ProductIdentityEvidenceKind.UPC, ExternalIdentifierType.UPC,
+                "000000000000", IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+
+        assertThat(service.group(List.of(
+                fixture("SOURCE_A", "merchant-a", "valid-a", "variant-a").evidence(valid).build(),
+                fixture("SOURCE_B", "merchant-b", "valid-b", "variant-b").evidence(valid).build()
+        ))).singleElement();
+        assertThat(service.evaluate(List.of(
+                fixture("SOURCE_A", "merchant-a", "invalid-a", "variant-a").evidence(invalidCheckDigit).build(),
+                fixture("SOURCE_B", "merchant-b", "invalid-b", "variant-b").evidence(invalidCheckDigit).build(),
+                fixture("SOURCE_C", "merchant-c", "placeholder-a", "variant-c").evidence(placeholder).build(),
+                fixture("SOURCE_D", "merchant-d", "placeholder-b", "variant-d").evidence(placeholder).build()
+        ))).satisfies(result -> {
+            assertThat(result.products()).hasSize(4);
+            assertThat(result.decisions()).isEmpty();
+        });
+    }
+
+    @Test
     void inputPermutationProducesIdenticalProductsOffersKeysAndDecisions() {
         ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
-                "52345678901234", IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+                gtin14("5234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
         List<ProductCandidate> candidates = List.of(
                 fixture("SOURCE_A", "merchant-a", "product-a", "variant-a").evidence(gtin).build(),
                 fixture("SOURCE_B", "merchant-b", "product-b", "variant-b").evidence(gtin).build(),
@@ -301,7 +419,7 @@ class ProductGroupingGoldenFixtureTest {
     void preferredDisplayObservationNeverMutatesSelectedOfferIdentityOrRouting() {
         UUID routing = UUID.fromString("00000000-0000-0000-0000-000000000808");
         ProductIdentityEvidence gtin = universal(ProductIdentityEvidenceKind.GTIN, ExternalIdentifierType.GTIN,
-                "62345678901234", IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
+                gtin14("6234567890123"), IdentityEvidenceStrength.TRUSTED_EXACT, 10_000);
         ProductCandidate selected = fixture("SOURCE_A", "merchant-a", "product-a", "variant-a")
                 .title("Selected source title")
                 .evidence(gtin)
@@ -404,6 +522,21 @@ class ProductGroupingGoldenFixtureTest {
 
     private ExternalIdentifier id(ExternalIdentifierType type, String namespace, String value) {
         return new ExternalIdentifier(type, namespace, value);
+    }
+
+    private String gtin14(String thirteenDigits) {
+        int sum = 0;
+        boolean triple = true;
+        for (int index = thirteenDigits.length() - 1; index >= 0; index--) {
+            sum += (thirteenDigits.charAt(index) - '0') * (triple ? 3 : 1);
+            triple = !triple;
+        }
+        return thirteenDigits + (10 - sum % 10) % 10;
+    }
+
+    private String invalidCheckDigit(String valid) {
+        int last = valid.charAt(valid.length() - 1) - '0';
+        return valid.substring(0, valid.length() - 1) + (last + 1) % 10;
     }
 
     private static final class Fixture {
