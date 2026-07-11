@@ -8,7 +8,7 @@ import java.util.List;
 public record UserSavedProductResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String id,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String productHash,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String name,
@@ -18,9 +18,9 @@ public record UserSavedProductResponse(
         String category,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String tone,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String imageUrl,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String productUrl,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         boolean remote,
@@ -44,10 +44,15 @@ public record UserSavedProductResponse(
         Review review,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<Offer> offers,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String needs,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> provides,
+        @Schema(
+                description = "False for persisted display hints; current price and availability require rehydration",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        boolean commercialFactsAuthoritative,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -77,6 +82,7 @@ public record UserSavedProductResponse(
                 result.offers().stream().map(Offer::from).toList(),
                 result.needs(),
                 result.provides(),
+                result.commercialFactsAuthoritative(),
                 result.createdAt(),
                 result.updatedAt()
         );
@@ -103,15 +109,15 @@ public record UserSavedProductResponse(
             double price,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String delivery,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantId,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantDomain,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String productVariantId,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String variantTitle,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             Boolean available
     ) {
 

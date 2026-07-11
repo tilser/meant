@@ -25,6 +25,7 @@ public record UserSavedProductResult(
         List<Offer> offers,
         String needs,
         List<String> provides,
+        boolean commercialFactsAuthoritative,
         Instant createdAt,
         Instant updatedAt
 ) {

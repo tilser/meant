@@ -41,6 +41,26 @@ public class UserSavedProduct {
 
     private String productHash;
 
+    private String sourceProvider;
+
+    private String sourceType;
+
+    private String sourceIdentity;
+
+    private UUID localMerchantId;
+
+    private UUID merchantIntegrationId;
+
+    private String externalMerchantId;
+
+    private String externalProductId;
+
+    private String externalVariantId;
+
+    private String selectedOptionsJson;
+
+    private String retentionPolicyKey;
+
     @Column(nullable = false)
     private String name;
 
@@ -63,8 +83,7 @@ public class UserSavedProduct {
     @Column(nullable = false)
     private int matchScore;
 
-    @Column(nullable = false)
-    private double priceFrom;
+    private Double priceFrom;
 
     @Column(nullable = false)
     private int merchantCount;
@@ -93,7 +112,6 @@ public class UserSavedProduct {
     @Column(nullable = false)
     private String reviewInsight;
 
-    @Column(nullable = false)
     private String offers;
 
     private String needs;
@@ -152,6 +170,25 @@ public class UserSavedProduct {
         return this;
     }
 
+    public UserSavedProduct replaceReference(DurableReferenceSnapshot snapshot, Instant now) {
+        this.sourceProvider = snapshot.sourceProvider();
+        this.sourceType = snapshot.sourceType();
+        this.sourceIdentity = snapshot.sourceIdentity();
+        this.localMerchantId = snapshot.localMerchantId();
+        this.merchantIntegrationId = snapshot.merchantIntegrationId();
+        this.externalMerchantId = snapshot.externalMerchantId();
+        this.externalProductId = snapshot.externalProductId();
+        this.externalVariantId = snapshot.externalVariantId();
+        this.selectedOptionsJson = snapshot.selectedOptionsJson();
+        this.retentionPolicyKey = snapshot.retentionPolicyKey();
+        this.imageUrl = null;
+        this.productUrl = null;
+        this.priceFrom = null;
+        this.offers = null;
+        this.updatedAt = now;
+        return this;
+    }
+
     public record SavedProductSnapshot(
             String productKey,
             String productHash,
@@ -163,7 +200,7 @@ public class UserSavedProduct {
             String productUrl,
             boolean remote,
             int matchScore,
-            double priceFrom,
+            Double priceFrom,
             int merchantCount,
             String satisfies,
             String misses,
@@ -176,6 +213,20 @@ public class UserSavedProduct {
             String offers,
             String needs,
             String provides
+    ) {
+    }
+
+    public record DurableReferenceSnapshot(
+            String sourceProvider,
+            String sourceType,
+            String sourceIdentity,
+            UUID localMerchantId,
+            UUID merchantIntegrationId,
+            String externalMerchantId,
+            String externalProductId,
+            String externalVariantId,
+            String selectedOptionsJson,
+            String retentionPolicyKey
     ) {
     }
 }

@@ -447,11 +447,32 @@ export interface UserSavedProductProfile {
   offers: UserSavedProductOfferProfile[]
   needs: string | null
   provides: string[]
+  commercialFactsAuthoritative: boolean
   createdAt: string
   updatedAt: string
 }
 
-export type SaveUserProductInput = Omit<UserSavedProductProfile, 'createdAt' | 'updatedAt'>
+export type CatalogProductReferenceInput = {
+  provider: string
+  sourceType:
+    | 'MERCHANT_STOREFRONT'
+    | 'PROVIDER_CATALOG'
+    | 'DATASET_IMPORT'
+    | 'CACHED_OBSERVATION'
+    | 'MANUAL_ASSERTION'
+  sourceIdentity: string
+  localMerchantId?: string
+  merchantIntegrationId?: string
+  externalMerchantId?: string
+  externalProductId: string
+  externalVariantId?: string
+  selectedOptions: { group?: string; name: string; value: string }[]
+}
+
+export type SaveUserProductInput = Omit<
+  UserSavedProductProfile,
+  'commercialFactsAuthoritative' | 'createdAt' | 'updatedAt'
+> & { catalogReference?: CatalogProductReferenceInput }
 
 export interface MerchantProfile {
   id: string

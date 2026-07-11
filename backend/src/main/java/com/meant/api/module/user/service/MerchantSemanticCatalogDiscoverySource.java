@@ -19,9 +19,9 @@ import com.meant.api.plugin.catalog.common.dto.CatalogSourceResult;
 import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
 import com.meant.api.plugin.catalog.common.dto.ProductCandidate;
 import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
-import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySource;
 import com.meant.api.plugin.catalog.common.service.CatalogDiscoverySourceMetrics;
+import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,12 +38,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoverySource {
 
-    private static final ProviderIdentity PROVIDER = new ProviderIdentity("GENERIC_UCP");
-    private static final DiscoverySourceIdentity SOURCE = new DiscoverySourceIdentity(
-            PROVIDER,
-            ResultSourceType.MERCHANT_STOREFRONT,
-            "MEANT_MERCHANT_SEMANTIC"
-    );
+    private static final ProviderIdentity PROVIDER = GenericUcpCatalogDataUsePolicy.SOURCE.provider();
+    private static final DiscoverySourceIdentity SOURCE = GenericUcpCatalogDataUsePolicy.SOURCE;
 
     private final MerchantSemanticProductSearchService searchService;
     private final MerchantCatalogDiscoveryEligibilityPolicy eligibilityPolicy;

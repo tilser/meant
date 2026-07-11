@@ -1,9 +1,6 @@
 package com.meant.api.module.user.service;
 
-import static com.meant.api.common.util.CollectionUtils.safeList;
-
 import com.meant.api.module.user.entity.UserSavedProduct;
-import com.meant.api.module.user.entity.UserSavedProduct.SavedProductSnapshot;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserSavedProductRepository;
@@ -12,12 +9,22 @@ import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
+import com.meant.api.plugin.catalog.common.dto.CatalogPayloadClass;
+import com.meant.api.plugin.catalog.common.dto.CatalogProductReference;
+import com.meant.api.plugin.catalog.common.dto.CatalogProductRehydrationResult;
+import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogRehydrationStatus;
+import com.meant.api.plugin.catalog.common.dto.CatalogRetentionDecision;
+import com.meant.api.plugin.catalog.common.dto.CatalogRetentionMode;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
+import com.meant.api.plugin.catalog.common.service.CatalogProductRehydrationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +35,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 @Validated
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class UserSavedProductService {
 
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
@@ -41,6 +48,21 @@ public class UserSavedProductService {
     private final UserTasteProfileService userTasteProfileService;
     private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
+    private final UserSavedProductReferenceResolver referenceResolver;
+    private final CatalogDataUsePolicyResolver policyResolver;
+    private final CatalogProductRehydrationService rehydrationService;
+    private final UserSavedProductPersistenceService persistenceService;
+
+    protected UserSavedProductService(
+            UserService userService,
+            UserSavedProductRepository userSavedProductRepository,
+            UserTasteProfileService userTasteProfileService,
+            UserCollectionProperties userCollectionProperties,
+            ObjectMapper objectMapper
+    ) {
+        this(userService, userSavedProductRepository, userTasteProfileService, userCollectionProperties, objectMapper,
+                null, null, null, null);
+    }
 
     @Transactional
     public List<UserSavedProductResult> list(
@@ -59,7 +81,6 @@ public class UserSavedProductService {
                 .toList();
     }
 
-    @Transactional
     public UserSavedProductResult save(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SaveUserProductCommand command
@@ -67,24 +88,25 @@ public class UserSavedProductService {
         validateUser(profileCommand, command.userId());
         userService.ensureProfile(profileCommand);
         Instant now = Instant.now();
-        SavedProductSnapshot snapshot = snapshot(command);
-        UserSavedProduct savedProduct = userSavedProductRepository
-                .findByUserIdAndProductKey(command.userId(), command.productKey())
-                .map(existing -> existing.replaceSnapshot(snapshot, now))
-                .orElseGet(() -> {
-                    validateSavedProductQuota(command.userId());
-                    return UserSavedProduct.create(command.userId(), snapshot, now);
-                });
-        UserSavedProductResult result = toResult(userSavedProductRepository.save(savedProduct));
+        CatalogProductReference reference = referenceResolver.resolve(command, now);
+        CatalogRetentionDecision policy = policyResolver.resolve(
+                reference.discoverySource(),
+                CatalogPayloadClass.SAVED_INTERACTION
+        );
+        if (policy.mode() != CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY) {
+            throw new UserException("Provider policy does not permit a durable saved-product reference");
+        }
+        CatalogProductRehydrationResult rehydrated = rehydrationService.rehydrate(
+                reference,
+                new CatalogRehydrationContext(null, null)
+        );
+        if (rehydrated.status() != CatalogRehydrationStatus.FRESH) {
+            throw new UserException("Saved product could not be rehydrated from current provider facts");
+        }
+        UserSavedProduct savedProduct = persistenceService.save(command, reference, policy.policyKey(), now);
+        UserSavedProductResult result = toResult(savedProduct);
         userTasteProfileService.recordSavedProduct(command.userId(), command, now);
         return result;
-    }
-
-    private void validateSavedProductQuota(UUID userId) {
-        int quota = userCollectionProperties.savedProducts().quota();
-        if (userSavedProductRepository.countByUserId(userId) >= quota) {
-            throw new UserException("Saved product quota exceeded for user " + userId);
-        }
     }
 
     private int boundedLimit(int limit, int maxLimit) {
@@ -101,45 +123,6 @@ public class UserSavedProductService {
         userSavedProductRepository.deleteByUserIdAndProductKey(command.userId(), command.productKey());
     }
 
-    private SavedProductSnapshot snapshot(SaveUserProductCommand command) {
-        return new SavedProductSnapshot(
-                command.productKey(),
-                blankToNull(command.productHash()),
-                command.name(),
-                command.brand(),
-                command.category(),
-                command.tone(),
-                blankToNull(command.imageUrl()),
-                blankToNull(command.productUrl()),
-                command.remote(),
-                command.matchScore(),
-                command.priceFrom(),
-                command.merchantCount(),
-                toJson(safeList(command.satisfies())),
-                toJson(safeList(command.misses())),
-                command.note(),
-                toJson(safeList(command.pros())),
-                toJson(safeList(command.cons())),
-                command.review().score(),
-                command.review().count(),
-                command.review().insight(),
-                toJson(safeList(command.offers()).stream()
-                        .map(offer -> new UserSavedProductResult.Offer(
-                                offer.merchant(),
-                                offer.price(),
-                                offer.delivery(),
-                                blankToNull(offer.merchantId()),
-                                blankToNull(offer.merchantDomain()),
-                                blankToNull(offer.productVariantId()),
-                                blankToNull(offer.variantTitle()),
-                                offer.available()
-                        ))
-                        .toList()),
-                blankToNull(command.needs()),
-                toJson(safeList(command.provides()))
-        );
-    }
-
     private UserSavedProductResult toResult(UserSavedProduct entity) {
         return new UserSavedProductResult(
                 entity.getProductKey(),
@@ -152,7 +135,7 @@ public class UserSavedProductService {
                 entity.getProductUrl(),
                 entity.isRemote(),
                 entity.getMatchScore(),
-                entity.getPriceFrom(),
+                entity.getPriceFrom() == null ? 0.0d : entity.getPriceFrom(),
                 entity.getMerchantCount(),
                 fromJson(entity.getSatisfies(), STRING_LIST_TYPE, List.<String>of()),
                 fromJson(entity.getMisses(), STRING_LIST_TYPE, List.<String>of()),
@@ -167,6 +150,7 @@ public class UserSavedProductService {
                 fromJson(entity.getOffers(), OFFER_LIST_TYPE, List.<UserSavedProductResult.Offer>of()),
                 entity.getNeeds(),
                 fromJson(entity.getProvides(), STRING_LIST_TYPE, List.<String>of()),
+                false,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
@@ -175,14 +159,6 @@ public class UserSavedProductService {
     private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId) {
         if (!profileCommand.id().equals(userId)) {
             throw UserException.forbidden("Saved product user does not match authenticated user");
-        }
-    }
-
-    private String toJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JacksonException exception) {
-            throw new UserException("Could not serialize saved product snapshot", exception);
         }
     }
 
@@ -195,9 +171,5 @@ public class UserSavedProductService {
         } catch (JacksonException exception) {
             throw new UserException("Could not parse saved product snapshot", exception);
         }
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
     }
 }

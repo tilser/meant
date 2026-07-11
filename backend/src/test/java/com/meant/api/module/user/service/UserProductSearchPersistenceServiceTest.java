@@ -857,6 +857,9 @@ class UserProductSearchPersistenceServiceTest {
                 SEARCH_VERSION,
                 NOW,
                 NOW.plusSeconds(3600),
+                UserProductSearchPersistenceService.testPolicyResolver()
+                        .admitSearch(List.of(com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy.SOURCE))
+                        .policyFingerprint(),
                 hasMoreProducts
         );
     }

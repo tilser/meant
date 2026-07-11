@@ -965,6 +965,7 @@ class UserAssistantChatServiceIT extends PostgresIntegrationTestSupport {
                 List.of(),
                 null,
                 List.of("layering"),
+                false,
                 Instant.parse("2026-06-17T10:00:00Z"),
                 Instant.parse("2026-06-17T10:00:00Z")
         );

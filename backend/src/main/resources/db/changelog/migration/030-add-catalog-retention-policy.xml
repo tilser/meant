@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-search-retention-policy-state" author="meant">
+        <addColumn tableName="user_product_searches">
+            <column name="retention_policy_fingerprint" type="text"/>
+        </addColumn>
+        <addColumn tableName="user_product_search_results">
+            <column name="source_provider" type="text"/>
+            <column name="source_type" type="text"/>
+            <column name="source_identity" type="text"/>
+        </addColumn>
+        <!-- Existing rows intentionally remain null and are rejected by the runtime policy validator. -->
+    </changeSet>
+
+    <changeSet id="002-add-saved-product-rehydration-reference" author="meant">
+        <addColumn tableName="user_saved_products">
+            <column name="source_provider" type="text"/>
+            <column name="source_type" type="text"/>
+            <column name="source_identity" type="text"/>
+            <column name="local_merchant_id" type="uuid"/>
+            <column name="merchant_integration_id" type="uuid"/>
+            <column name="external_merchant_id" type="text"/>
+            <column name="external_product_id" type="text"/>
+            <column name="external_variant_id" type="text"/>
+            <column name="selected_options_json" type="text"/>
+            <column name="retention_policy_key" type="text"/>
+        </addColumn>
+        <dropNotNullConstraint
+                tableName="user_saved_products"
+                columnName="price_from"
+                columnDataType="double precision"/>
+        <dropNotNullConstraint tableName="user_saved_products" columnName="offers" columnDataType="text"/>
+    </changeSet>
+</databaseChangeLog>

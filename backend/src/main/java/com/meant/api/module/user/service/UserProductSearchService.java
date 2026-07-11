@@ -21,6 +21,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchResult;
 import com.meant.api.module.user.service.dto.UserProductSearchStreamEvent;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
+import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -259,6 +260,7 @@ public class UserProductSearchService {
                         now,
                         now.plus(userProductSearchProperties.cacheTtl()),
                         products,
+                        List.of(GenericUcpCatalogDataUsePolicy.SOURCE),
                         curated.explanations(),
                         tasteProfile,
                         settings,
@@ -375,6 +377,7 @@ public class UserProductSearchService {
                 now,
                 now.plus(userProductSearchProperties.cacheTtl()),
                 products,
+                List.of(GenericUcpCatalogDataUsePolicy.SOURCE),
                 curated.explanations(),
                 tasteProfile,
                 settings,
@@ -424,7 +427,8 @@ public class UserProductSearchService {
         return new UserProductSearchProductSnapshot(
                 userProductSearchHashService.productKey(product),
                 userProductSearchHashService.productHash(product),
-                product
+                product,
+                GenericUcpCatalogDataUsePolicy.SOURCE
         );
     }
 

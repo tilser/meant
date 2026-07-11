@@ -57,6 +57,8 @@ public class UserProductSearch {
     @Column(nullable = false)
     private Instant expiresAt;
 
+    private String retentionPolicyFingerprint;
+
     @Column(nullable = false)
     private boolean hasMoreProducts;
 
@@ -68,6 +70,7 @@ public class UserProductSearch {
             String searchVersion,
             Instant now,
             Instant expiresAt,
+            String retentionPolicyFingerprint,
             boolean hasMoreProducts
     ) {
         return UserProductSearch.builder()
@@ -80,14 +83,36 @@ public class UserProductSearch {
                 .createdAt(now)
                 .updatedAt(now)
                 .expiresAt(expiresAt)
+                .retentionPolicyFingerprint(retentionPolicyFingerprint)
                 .hasMoreProducts(hasMoreProducts)
                 .build();
     }
 
-    public void refresh(String query, Instant now, Instant expiresAt, boolean hasMoreProducts) {
+    /** Compatibility constructor for historical rows; the null policy marker makes them unservable. */
+    public static UserProductSearch create(
+            UUID userId,
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            String searchVersion,
+            Instant now,
+            Instant expiresAt,
+            boolean hasMoreProducts
+    ) {
+        return create(userId, query, normalizedQuery, profileHash, searchVersion, now, expiresAt, null, hasMoreProducts);
+    }
+
+    public void refresh(
+            String query,
+            Instant now,
+            Instant expiresAt,
+            String retentionPolicyFingerprint,
+            boolean hasMoreProducts
+    ) {
         this.query = query;
         this.updatedAt = now;
         this.expiresAt = expiresAt;
+        this.retentionPolicyFingerprint = retentionPolicyFingerprint;
         this.hasMoreProducts = hasMoreProducts;
     }
 }

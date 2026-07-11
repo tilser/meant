@@ -1,6 +1,10 @@
 package com.meant.api.module.user.entity;
 
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
+import com.meant.api.plugin.catalog.common.dto.DiscoverySourceIdentity;
+import com.meant.api.plugin.catalog.common.dto.ProviderIdentity;
+import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
+import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -52,6 +56,12 @@ public class UserProductSearchResultItem {
     private String merchantName;
 
     private String endpoint;
+
+    private String sourceProvider;
+
+    private String sourceType;
+
+    private String sourceIdentity;
 
     @Column(nullable = false)
     private int merchantRank;
@@ -149,7 +159,8 @@ public class UserProductSearchResultItem {
             MerchantSemanticProductResult result,
             Instant now
     ) {
-        return from(searchId, productKey, productHash, result, now, RichCatalogSnapshot.empty());
+        return from(searchId, productKey, productHash, result, now, RichCatalogSnapshot.empty(),
+                GenericUcpCatalogDataUsePolicy.SOURCE);
     }
 
     public static UserProductSearchResultItem from(
@@ -160,6 +171,19 @@ public class UserProductSearchResultItem {
             Instant now,
             RichCatalogSnapshot richCatalogSnapshot
     ) {
+        return from(searchId, productKey, productHash, result, now, richCatalogSnapshot,
+                GenericUcpCatalogDataUsePolicy.SOURCE);
+    }
+
+    public static UserProductSearchResultItem from(
+            UUID searchId,
+            String productKey,
+            String productHash,
+            MerchantSemanticProductResult result,
+            Instant now,
+            RichCatalogSnapshot richCatalogSnapshot,
+            DiscoverySourceIdentity discoverySource
+    ) {
         return UserProductSearchResultItem.builder()
                 .id(UUID.randomUUID())
                 .searchId(searchId)
@@ -169,6 +193,9 @@ public class UserProductSearchResultItem {
                 .merchantDomain(result.merchantDomain())
                 .merchantName(result.merchantName())
                 .endpoint(result.endpoint())
+                .sourceProvider(discoverySource.provider().value())
+                .sourceType(discoverySource.type().name())
+                .sourceIdentity(discoverySource.value())
                 .merchantRank(result.merchantRank())
                 .merchantSemanticScore(result.merchantSemanticScore())
                 .merchantRerankScore(result.merchantRerankScore())
@@ -210,6 +237,21 @@ public class UserProductSearchResultItem {
                 .rank(result.rank())
                 .createdAt(now)
                 .build();
+    }
+
+    public DiscoverySourceIdentity discoverySource() {
+        if (sourceProvider == null || sourceType == null || sourceIdentity == null) {
+            return null;
+        }
+        try {
+            return new DiscoverySourceIdentity(
+                    new ProviderIdentity(sourceProvider),
+                    ResultSourceType.valueOf(sourceType),
+                    sourceIdentity
+            );
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private static String resultImageUrl(MerchantSemanticProductResult result) {

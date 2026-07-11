@@ -80,6 +80,11 @@ commerce:
   catalog:
     federation:
       overall-deadline: 15s
+    data-use:
+      generic-ucp:
+        search-cache-ttl: 24h
+        rehydrated-facts-ttl: 2m
+        transaction-snapshot-ttl: 30d
   execution-policy:
     catalog-rollout-enabled: true
     cart-rollout-enabled: true
@@ -99,6 +104,11 @@ shopify:
     refresh-skew: 5m
     fallback-token-ttl: 60m
   global-catalog:
+    data-use:
+      search-persistence-approved: false
+      approved-search-cache-ttl: 15m
+      rehydrated-facts-ttl: 2m
+      transaction-snapshot-ttl: 30d
     discovery-enabled: false
     endpoint: https://catalog.shopify.test/api/ucp/mcp
     allowed-hosts:

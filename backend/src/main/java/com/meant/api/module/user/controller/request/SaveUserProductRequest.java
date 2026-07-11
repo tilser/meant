@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller.request;
 
+import com.meant.api.plugin.catalog.common.dto.ResultSourceType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.UUID;
 
 public record SaveUserProductRequest(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -79,8 +81,46 @@ public record SaveUserProductRequest(
         @Size(max = 100)
         String needs,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        List<@NotBlank @Size(max = 100) String> provides
+        List<@NotBlank @Size(max = 100) String> provides,
+        @Schema(
+                description = "Provider identifiers for session-only results; omitted only when the server can resolve an admitted cache row",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        @Valid
+        CatalogReference catalogReference
 ) {
+
+    public record CatalogReference(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 100) String provider,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotNull ResultSourceType sourceType,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 200) String sourceIdentity,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            UUID localMerchantId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            UUID merchantIntegrationId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 512) String externalMerchantId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 512) String externalProductId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 512) String externalVariantId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<@Valid SelectedOption> selectedOptions
+    ) {
+    }
+
+    public record SelectedOption(
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 100) String group,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 200) String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 500) String value
+    ) {
+    }
 
     public record Review(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

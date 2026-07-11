@@ -1565,11 +1565,11 @@ export interface components {
             /** Format: double */
             price: number;
             delivery: string;
-            merchantId: string;
-            merchantDomain: string;
-            productVariantId: string;
-            variantTitle: string;
-            available: boolean;
+            merchantId?: string;
+            merchantDomain?: string;
+            productVariantId?: string;
+            variantTitle?: string;
+            available?: boolean;
         };
         RecordUserTasteBehaviorRequest: {
             /** @enum {string} */
@@ -1582,6 +1582,25 @@ export interface components {
             /** Format: int32 */
             count: number;
             insight: string;
+        };
+        CatalogReference: {
+            provider: string;
+            /** @enum {string} */
+            sourceType: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            sourceIdentity: string;
+            /** Format: uuid */
+            localMerchantId?: string;
+            /** Format: uuid */
+            merchantIntegrationId?: string;
+            externalMerchantId?: string;
+            externalProductId: string;
+            externalVariantId?: string;
+            selectedOptions: components["schemas"]["SelectedOption"][];
+        };
+        SelectedOption: {
+            group?: string;
+            name: string;
+            value: string;
         };
         SaveUserProductRequest: {
             id: string;
@@ -1608,6 +1627,8 @@ export interface components {
             offers: components["schemas"]["Offer"][];
             needs?: string;
             provides: string[];
+            /** @description Provider identifiers for session-only results; omitted only when the server can resolve an admitted cache row */
+            catalogReference?: components["schemas"]["CatalogReference"];
         };
         UserTasteProfileResponse: {
             profileHash: string;
@@ -1648,13 +1669,13 @@ export interface components {
         };
         UserSavedProductResponse: {
             id: string;
-            productHash: string;
+            productHash?: string;
             name: string;
             brand: string;
             category: string;
             tone: string;
-            imageUrl: string;
-            productUrl: string;
+            imageUrl?: string;
+            productUrl?: string;
             remote: boolean;
             /** Format: int32 */
             match: number;
@@ -1669,8 +1690,10 @@ export interface components {
             cons: string[];
             review: components["schemas"]["Review"];
             offers: components["schemas"]["Offer"][];
-            needs: string;
+            needs?: string;
             provides: string[];
+            /** @description False for persisted display hints; current price and availability require rehydration */
+            commercialFactsAuthoritative: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

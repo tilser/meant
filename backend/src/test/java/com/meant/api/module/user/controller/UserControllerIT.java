@@ -8,8 +8,12 @@ import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
+import com.meant.api.module.merchant.service.MerchantProductDetailsService;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
+import com.meant.api.module.merchant.service.dto.ProductDetailsResponse;
+import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
+import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
 import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
 import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
@@ -40,6 +44,8 @@ import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.plugin.catalog.common.service.CatalogDataUsePolicyResolver;
+import com.meant.api.plugin.catalog.common.service.GenericUcpCatalogDataUsePolicy;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -116,6 +122,9 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private OpenRouterProperties openRouterProperties;
+
+    @Autowired
+    private CatalogDataUsePolicyResolver catalogDataUsePolicyResolver;
 
     private RestTestClient client;
 
@@ -238,6 +247,43 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         candidateConsumer.accept(product);
                     }
                     return new MerchantSemanticProductSearchResult(List.of(), List.of(product));
+                }
+            };
+        }
+
+        @Bean
+        @Primary
+        MerchantProductDetailsService testMerchantProductDetailsService() {
+            return new MerchantProductDetailsService(null, null) {
+                @Override
+                public ProductDetailsResult get(GetMerchantProductDetailsQuery query) {
+                    return new ProductDetailsResult(
+                            "https://merchant.example/mcp",
+                            "redacted",
+                            new ProductDetailsResponse.Product(
+                                    query.productId(),
+                                    "Current saved product",
+                                    "Current description",
+                                    "https://merchant.example/products/current",
+                                    "https://merchant.example/media/current.jpg",
+                                    List.of(),
+                                    List.of(),
+                                    1,
+                                    new ProductDetailsResponse.PriceRange("7.40", "7.40", "USD"),
+                                    false,
+                                    List.of(),
+                                    new ProductDetailsResponse.SelectedVariant(
+                                            "variant-1",
+                                            "Default",
+                                            "7.40",
+                                            "USD",
+                                            "https://merchant.example/media/current.jpg",
+                                            "Current product",
+                                            true,
+                                            List.of()
+                                    )
+                            )
+                    );
                 }
             };
         }
@@ -716,7 +762,17 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                             }
                           ],
                           "needs": null,
-                          "provides": []
+                          "provides": [],
+                          "catalogReference": {
+                            "provider": "GENERIC_UCP",
+                            "sourceType": "MERCHANT_STOREFRONT",
+                            "sourceIdentity": "MEANT_MERCHANT_SEMANTIC",
+                            "localMerchantId": "00000000-0000-0000-0000-000000000099",
+                            "externalMerchantId": "shop.example",
+                            "externalProductId": "gid://shopify/Product/123",
+                            "externalVariantId": "variant-1",
+                            "selectedOptions": []
+                          }
                         }
                         """)
                 .exchange()
@@ -727,9 +783,9 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(saved).isNotNull();
         assertThat(saved.id()).isEqualTo(productKey);
-        assertThat(saved.offers()).singleElement()
-                .extracting(UserSavedProductResponse.Offer::merchant)
-                .isEqualTo("Whole Foods");
+        assertThat(saved.commercialFactsAuthoritative()).isFalse();
+        assertThat(saved.offers()).isEmpty();
+        assertThat(saved.imageUrl()).isNull();
 
         UserSavedProductResponse[] listed = client.get().uri("/api/users/me/saved-products")
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
@@ -923,6 +979,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 userProductSearchProperties.searchVersion(),
                 now,
                 now.plusSeconds(3600),
+                currentSearchPolicyFingerprint(),
                 false
         ));
         userProductSearchResultItemRepository.save(UserProductSearchResultItem.from(
@@ -979,6 +1036,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 userProductSearchProperties.searchVersion(),
                 now,
                 now.plusSeconds(3600),
+                currentSearchPolicyFingerprint(),
                 false
         ));
         saveRecentProduct(
@@ -1095,7 +1153,17 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                             }
                           ],
                           "needs": null,
-                          "provides": []
+                          "provides": [],
+                          "catalogReference": {
+                            "provider": "GENERIC_UCP",
+                            "sourceType": "MERCHANT_STOREFRONT",
+                            "sourceIdentity": "MEANT_MERCHANT_SEMANTIC",
+                            "localMerchantId": "00000000-0000-0000-0000-000000000099",
+                            "externalMerchantId": "merchant.example",
+                            "externalProductId": "product-tee",
+                            "externalVariantId": "variant-1",
+                            "selectedOptions": []
+                          }
                         }
                         """.formatted(productKey))
                 .exchange()
@@ -1111,6 +1179,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 userProductSearchProperties.searchVersion(),
                 now,
                 now.plusSeconds(3600),
+                currentSearchPolicyFingerprint(),
                 false
         ));
         saveRecentProduct(
@@ -1158,6 +1227,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 userProductSearchProperties.searchVersion(),
                 now,
                 now.plusSeconds(3600),
+                currentSearchPolicyFingerprint(),
                 false
         ));
         saveRecentProduct(id, profileHash, search, "merchant.example:rated-high", "hash-high",
@@ -1320,6 +1390,9 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "DiscoverySourceIdentityResponse",
                         "LocalMerchantRoutingResponse",
                         "ResultProvenanceResponse",
+                        "CatalogReference",
+                        "SelectedOption",
+                        "commercialFactsAuthoritative",
                         "\"minorUnits\"",
                         "\"groupingDecisions\"",
                         "\"CONTRADICTION_VETO\""
@@ -1329,6 +1402,11 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     private static void assertBefore(String value, String first, String second) {
         assertThat(value).contains(first, second);
         assertThat(value.indexOf(first)).isLessThan(value.indexOf(second));
+    }
+
+    private String currentSearchPolicyFingerprint() {
+        return catalogDataUsePolicyResolver.admitSearch(List.of(GenericUcpCatalogDataUsePolicy.SOURCE))
+                .policyFingerprint();
     }
 
     private static UserProductSearchQueryIntentResult queryIntent(String normalizedQuery, String displayQuery) {
