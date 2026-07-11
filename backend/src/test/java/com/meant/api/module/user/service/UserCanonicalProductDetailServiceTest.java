@@ -15,6 +15,7 @@ import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferAvailability;
@@ -31,18 +32,23 @@ import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvid
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserOfferCommercialState;
+import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
+import com.meant.api.provider.shopify.catalog.ShopifyOfferIdentityStrategy;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class UserCanonicalProductDetailServiceTest {
     private static final UUID USER_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -52,11 +58,18 @@ class UserCanonicalProductDetailServiceTest {
             PROVIDER, ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL");
     private static final Instant OBSERVED_AT = Instant.parse("2026-07-11T08:00:00Z");
     private static final Instant FRESH_AT = Instant.parse("2026-07-11T09:00:00Z");
+    private static final UUID ROUTING_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_ROUTING_ID = UUID.fromString("30000000-0000-0000-0000-000000000002");
+    private static final UUID LOCAL_MERCHANT_ID = UUID.fromString("40000000-0000-0000-0000-000000000001");
 
     private final AtomicInteger providerCalls = new AtomicInteger();
-    private final AtomicBoolean substituteIdentity = new AtomicBoolean();
+    private final AtomicBoolean transactionActiveAtProvider = new AtomicBoolean();
+    private final AtomicReference<CatalogRehydrationContext> providerContext = new AtomicReference<>();
+    private final AtomicReference<UnaryOperator<CatalogProductReference>> resolvedReferenceMutation =
+            new AtomicReference<>(UnaryOperator.identity());
     private final UserCanonicalProductSessionStore store =
             new UserCanonicalProductSessionStore(Duration.ofMinutes(30), 100);
+    private final StubUserSettingsService userSettingsService = new StubUserSettingsService();
     private CanonicalProduct product;
     private UserCanonicalProductDetailService service;
 
@@ -64,12 +77,7 @@ class UserCanonicalProductDetailServiceTest {
     void setUp() {
         Offer first = offer("merchant-a", "product-a", "variant-a", 1500);
         Offer second = offer("merchant-b", "product-b", "variant-b", 1400);
-        product = new CanonicalProduct(
-                "grouped-product-v3_fixture", "Shared product", null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(first.provenance().getFirst(), second.provenance().getFirst()),
-                List.of(first, second));
-        store.remember(USER_ID, List.of(product), Map.of(), Map.of(), List.of());
+        rememberProduct(first, second);
         CatalogProductRehydrationProvider provider = new CatalogProductRehydrationProvider() {
             @Override
             public boolean supports(DiscoverySourceIdentity source) {
@@ -82,6 +90,8 @@ class UserCanonicalProductDetailServiceTest {
                     CatalogRehydrationContext context
             ) {
                 providerCalls.incrementAndGet();
+                providerContext.set(context);
+                transactionActiveAtProvider.set(TransactionSynchronizationManager.isActualTransactionActive());
                 ResultFreshness freshness = new ResultFreshness(FRESH_AT, FRESH_AT.plusSeconds(120));
                 return references.stream().map(reference -> {
                     if (reference.externalMerchantReference().value().equals("merchant-b")) {
@@ -90,14 +100,7 @@ class UserCanonicalProductDetailServiceTest {
                                 CatalogRehydrationStatus.DEGRADED,
                                 CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE);
                     }
-                    CatalogProductReference resolved = substituteIdentity.get()
-                            ? new CatalogProductReference(
-                                    reference.interactionKey(), reference.discoverySource(), reference.localMerchantId(),
-                                    reference.localRouting(), reference.externalMerchantReference(),
-                                    reference.externalProductReference(),
-                                    identifier(ExternalIdentifierType.VARIANT, "substitute-variant"),
-                                    reference.selectedOptions())
-                            : reference;
+                    CatalogProductReference resolved = resolvedReferenceMutation.get().apply(reference);
                     return CatalogProductRehydrationResult.fresh(reference, resolved, new RehydratedCommercialFacts(
                             "Fresh product",
                             new Money(1300, "USD"),
@@ -116,7 +119,7 @@ class UserCanonicalProductDetailServiceTest {
                 store,
                 new CatalogProductRehydrationService(
                         List.of(provider), new CatalogProductRehydrationMetrics(new SimpleMeterRegistry())),
-                new StubUserSettingsService());
+                userSettingsService);
     }
 
     @Test
@@ -166,7 +169,14 @@ class UserCanonicalProductDetailServiceTest {
 
     @Test
     void rejectsARehydratedVariantSubstitutionAndRetainsTheExactObservedOffer() {
-        substituteIdentity.set(true);
+        resolvedReferenceMutation.set(reference -> copy(
+                reference,
+                reference.discoverySource(),
+                reference.localMerchantId(),
+                reference.localRouting(),
+                reference.externalMerchantReference(),
+                reference.externalProductReference(),
+                identifier(ExternalIdentifierType.VARIANT, "substitute-variant")));
 
         var result = service.get(profile(USER_ID), query(USER_ID, null));
 
@@ -176,6 +186,133 @@ class UserCanonicalProductDetailServiceTest {
                 .isEqualTo(CatalogRehydrationFailureKind.INVALID_RESPONSE);
         assertThat(result.sourceStates()).anySatisfy(state -> assertThat(state.rehydrationFailureKind())
                 .isEqualTo(CatalogRehydrationFailureKind.INVALID_RESPONSE));
+    }
+
+    @Test
+    void acceptsFreshShopifyFactsAgainstTheRequestedProvenanceProductReference() {
+        ExternalIdentifier merchant = identifier(ExternalIdentifierType.MERCHANT, "merchant-a");
+        ExternalIdentifier productReference = identifier(
+                ExternalIdentifierType.PRODUCT, "gid://shopify/Product/100");
+        ExternalIdentifier variant = identifier(
+                ExternalIdentifierType.VARIANT, "gid://shopify/ProductVariant/200");
+        Offer observed = offer(merchant, productReference, variant, 1500, null);
+        ExternalIdentifier variantAnchoredProduct = new ShopifyOfferIdentityStrategy()
+                .product(PROVIDER, productReference, variant);
+        Offer shopifyOffer = new Offer(
+                new OfferIdentity(
+                        PROVIDER,
+                        OfferMerchantScope.external(merchant),
+                        variantAnchoredProduct,
+                        variant,
+                        List.of(),
+                        List.of(),
+                        null),
+                observed.merchantName(), observed.variantTitle(), observed.price(), observed.listPrice(),
+                observed.availability(), observed.delivery(), observed.checkoutUrl(), observed.rankingEvidence(),
+                observed.provenance());
+        rememberProduct(shopifyOffer);
+
+        var result = service.get(profile(USER_ID), query(USER_ID, null));
+
+        assertThat(result.product().offers().getFirst().identity().externalProductIdentity())
+                .isEqualTo(variantAnchoredProduct);
+        assertThat(result.product().offers().getFirst().price()).isEqualTo(new Money(1300, "USD"));
+        assertThat(result.commercialStates().get(shopifyOffer.key()).authority())
+                .isEqualTo(UserOfferCommercialState.Authority.REHYDRATED_CURRENT);
+    }
+
+    @Test
+    void rejectsARehydratedMerchantSubstitutionWithoutChangingObservedIdentityOrRouting() {
+        resolvedReferenceMutation.set(reference -> copy(
+                reference,
+                reference.discoverySource(),
+                reference.localMerchantId(),
+                reference.localRouting(),
+                identifier(ExternalIdentifierType.MERCHANT, "substitute-merchant"),
+                reference.externalProductReference(),
+                reference.externalVariantReference()));
+
+        assertInvalidResponseRetainsObservedOffer();
+    }
+
+    @Test
+    void rejectsARehydratedDiscoverySourceAndProviderSubstitutionWithoutChangingTheObservedOffer() {
+        ProviderIdentity otherProvider = new ProviderIdentity("OTHER_PROVIDER");
+        DiscoverySourceIdentity otherSource = new DiscoverySourceIdentity(
+                otherProvider, ResultSourceType.PROVIDER_CATALOG, "OTHER_CATALOG");
+        resolvedReferenceMutation.set(reference -> copy(
+                reference,
+                otherSource,
+                reference.localMerchantId(),
+                reference.localRouting(),
+                identifier(otherProvider, ExternalIdentifierType.MERCHANT,
+                        reference.externalMerchantReference().value()),
+                identifier(otherProvider, ExternalIdentifierType.PRODUCT,
+                        reference.externalProductReference().value()),
+                identifier(otherProvider, ExternalIdentifierType.VARIANT,
+                        reference.externalVariantReference().value())));
+
+        assertInvalidResponseRetainsObservedOffer();
+    }
+
+    @Test
+    void rejectsALocalRoutingSubstitutionAndRetainsTheRequestedIntegrationAnchor() {
+        Offer routed = withRouting(product.offers().getFirst(), ROUTING_ID);
+        rememberProduct(routed);
+        resolvedReferenceMutation.set(reference -> copy(
+                reference,
+                reference.discoverySource(),
+                reference.localMerchantId(),
+                new LocalMerchantRouting(OTHER_ROUTING_ID),
+                reference.externalMerchantReference(),
+                reference.externalProductReference(),
+                reference.externalVariantReference()));
+
+        var result = assertInvalidResponseRetainsObservedOffer();
+
+        assertThat(result.product().offers().getFirst().provenance().getFirst().localRouting())
+                .isEqualTo(new LocalMerchantRouting(ROUTING_ID));
+    }
+
+    @Test
+    void permitsVerifiedLocalMerchantEnrichmentWhenRoutingStillAnchorsTheIntegration() {
+        Offer routed = withRouting(product.offers().getFirst(), ROUTING_ID);
+        rememberProduct(routed);
+        resolvedReferenceMutation.set(reference -> copy(
+                reference,
+                reference.discoverySource(),
+                LOCAL_MERCHANT_ID,
+                reference.localRouting(),
+                reference.externalMerchantReference(),
+                reference.externalProductReference(),
+                reference.externalVariantReference()));
+
+        var result = service.get(profile(USER_ID), query(USER_ID, null));
+
+        assertThat(result.product().offers().getFirst().price()).isEqualTo(new Money(1300, "USD"));
+        assertThat(result.commercialStates().get(routed.key()).authority())
+                .isEqualTo(UserOfferCommercialState.Authority.REHYDRATED_CURRENT);
+    }
+
+    @Test
+    void normalizesMarketCountryOncePerRequestAndKeepsRemoteIoOutsideTransactions() {
+        userSettingsService.locationCode("UK");
+
+        service.get(profile(USER_ID), query(USER_ID, null));
+
+        assertThat(providerContext.get().country()).isEqualTo("GB");
+        assertThat(userSettingsService.calls()).isEqualTo(1);
+        assertThat(transactionActiveAtProvider).isFalse();
+
+        userSettingsService.locationCode("ZZ");
+        service.get(profile(USER_ID), query(USER_ID, null));
+        assertThat(providerContext.get().country()).isNull();
+        assertThat(userSettingsService.calls()).isEqualTo(2);
+
+        userSettingsService.locationCode("USA");
+        service.get(profile(USER_ID), query(USER_ID, null));
+        assertThat(providerContext.get().country()).isNull();
+        assertThat(userSettingsService.calls()).isEqualTo(3);
     }
 
     @Test
@@ -198,31 +335,116 @@ class UserCanonicalProductDetailServiceTest {
         ExternalIdentifier merchant = identifier(ExternalIdentifierType.MERCHANT, merchantValue);
         ExternalIdentifier productId = identifier(ExternalIdentifierType.PRODUCT, productValue);
         ExternalIdentifier variant = identifier(ExternalIdentifierType.VARIANT, variantValue);
+        return offer(merchant, productId, variant, price, null);
+    }
+
+    private Offer offer(
+            ExternalIdentifier merchant,
+            ExternalIdentifier productId,
+            ExternalIdentifier variant,
+            long price,
+            LocalMerchantRouting routing
+    ) {
         ResultProvenance provenance = new ResultProvenance(
-                PROVIDER, SOURCE, null, merchant, productId, variant,
+                PROVIDER, SOURCE, routing, merchant, productId, variant,
                 new ResultFreshness(OBSERVED_AT, OBSERVED_AT.plusSeconds(60)),
-                new ResultSourceReference(ResultSourceType.PROVIDER_CATALOG, merchantValue, null));
+                new ResultSourceReference(ResultSourceType.PROVIDER_CATALOG, merchant.value(), null));
         return new Offer(
                 new OfferIdentity(PROVIDER, OfferMerchantScope.external(merchant), productId, variant,
                         List.of(), List.of(), null),
-                merchantValue, variantValue, new Money(price, "USD"), null,
+                merchant.value(), variant.value(), new Money(price, "USD"), null,
                 new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
                 List.of(), null, List.of(provenance));
     }
 
+    private void rememberProduct(Offer... offers) {
+        List<Offer> offerList = List.of(offers);
+        product = new CanonicalProduct(
+                "grouped-product-v3_fixture", "Shared product", null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                offerList.stream().flatMap(offer -> offer.provenance().stream()).toList(),
+                offerList);
+        store.remember(USER_ID, List.of(product), Map.of(), Map.of(), List.of());
+    }
+
+    private Offer withRouting(Offer source, UUID routingId) {
+        ResultProvenance provenance = source.provenance().getFirst();
+        ResultProvenance routed = new ResultProvenance(
+                provenance.provider(), provenance.discoverySource(), new LocalMerchantRouting(routingId),
+                provenance.externalMerchantReference(), provenance.externalProductReference(),
+                provenance.externalVariantReference(), provenance.freshness(), provenance.sourceReference());
+        return new Offer(
+                source.identity(), source.merchantName(), source.variantTitle(), source.price(), source.listPrice(),
+                source.availability(), source.delivery(), source.checkoutUrl(), source.rankingEvidence(),
+                List.of(routed));
+    }
+
+    private CatalogProductReference copy(
+            CatalogProductReference source,
+            DiscoverySourceIdentity discoverySource,
+            UUID localMerchantId,
+            LocalMerchantRouting localRouting,
+            ExternalIdentifier merchant,
+            ExternalIdentifier productReference,
+            ExternalIdentifier variant
+    ) {
+        return new CatalogProductReference(
+                source.interactionKey(), discoverySource, localMerchantId, localRouting, merchant,
+                productReference, variant, source.selectedOptions());
+    }
+
+    private com.meant.api.module.user.service.dto.UserProductDetailResult
+            assertInvalidResponseRetainsObservedOffer() {
+        Offer observed = product.offers().getFirst();
+
+        var result = service.get(profile(USER_ID), query(USER_ID, null));
+
+        assertThat(result.product().offers().getFirst().identity()).isEqualTo(observed.identity());
+        assertThat(result.product().offers().getFirst().price()).isEqualTo(observed.price());
+        assertThat(result.product().offers().getFirst().provenance()).isEqualTo(observed.provenance());
+        assertThat(result.commercialStates().get(observed.key()).degradation())
+                .isEqualTo(CatalogRehydrationFailureKind.INVALID_RESPONSE);
+        assertThat(result.sourceStates()).anySatisfy(state -> assertThat(state.rehydrationFailureKind())
+                .isEqualTo(CatalogRehydrationFailureKind.INVALID_RESPONSE));
+        return result;
+    }
+
     private ExternalIdentifier identifier(ExternalIdentifierType type, String value) {
-        return new ExternalIdentifier(type, PROVIDER.value(), value);
+        return identifier(PROVIDER, type, value);
+    }
+
+    private ExternalIdentifier identifier(
+            ProviderIdentity provider,
+            ExternalIdentifierType type,
+            String value
+    ) {
+        return new ExternalIdentifier(type, provider.value(), value);
     }
 
     private static final class StubUserSettingsService extends UserSettingsService {
+        private final AtomicInteger calls = new AtomicInteger();
+        private String locationCode;
+
         private StubUserSettingsService() {
             super(null, null, null, null, null);
         }
 
+        private void locationCode(String value) {
+            locationCode = value;
+        }
+
+        private int calls() {
+            return calls.get();
+        }
+
         @Override
         public UserSettingsResult get(EnsureUserProfileCommand profileCommand) {
+            calls.incrementAndGet();
+            UserLocationResult location = locationCode == null
+                    ? null
+                    : new UserLocationResult("Fixture", locationCode, "Fixture City");
             return new UserSettingsResult(
-                    null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(),
+                    null, null, location, List.of(), List.of(), List.of(), List.of(), List.of(),
                     OBSERVED_AT, OBSERVED_AT);
         }
     }

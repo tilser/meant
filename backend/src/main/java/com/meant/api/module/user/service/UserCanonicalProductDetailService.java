@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.catalog.service.CatalogProductRehydrationService;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
@@ -10,7 +11,6 @@ import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogSourceOperation;
 import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
 import com.meant.api.module.catalog.service.dto.Offer;
-import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
@@ -26,8 +26,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.Objects;
+import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -58,42 +58,38 @@ public class UserCanonicalProductDetailService {
 
         UserSettingsResult settings = userSettingsService.get(profileCommand);
         CatalogRehydrationContext context = new CatalogRehydrationContext(
-                settings.location() == null ? null : settings.location().code(), null);
+                settings.location() == null
+                        ? null
+                        : CountryCodeNormalizer.normalizeAlpha2(settings.location().code()),
+                null);
         List<OfferReference> references = references(product);
         List<CatalogProductRehydrationResult> results = rehydrationService.rehydrate(
                 references.stream().map(OfferReference::reference).toList(), context);
-        Map<CatalogProductReference, CatalogProductRehydrationResult> byReference = results.stream()
-                .collect(Collectors.toMap(CatalogProductRehydrationResult::reference, Function.identity()));
+        List<OfferObservation> observations = pair(references, results);
 
         Map<String, UserOfferCommercialState> states = new LinkedHashMap<>();
         List<Offer> offers = product.offers().stream()
-                .map(offer -> refreshed(offer, references, byReference, states))
+                .map(offer -> refreshed(offer, observations, states))
                 .toList();
         List<UserCatalogSourceState> sourceStates = new ArrayList<>(entry.sourceStates());
-        results.stream()
-                .filter(result -> result.status() != CatalogRehydrationStatus.FRESH)
-                .map(result -> new UserCatalogSourceState(
-                        result.reference().discoverySource(),
+        observations.stream()
+                .filter(observation -> observation.result().status() != CatalogRehydrationStatus.FRESH)
+                .map(observation -> new UserCatalogSourceState(
+                        observation.requested().reference().discoverySource(),
                         CatalogSourceOperation.GET_PRODUCT,
                         true,
                         false,
                         null,
-                        result.failure(),
+                        observation.result().failure(),
                         null
                 ))
                 .distinct()
                 .forEach(sourceStates::add);
-        Map<String, Offer> offersByKey = product.offers().stream()
-                .collect(Collectors.toMap(Offer::key, Function.identity()));
-        references.stream()
-                .filter(reference -> {
-                    CatalogProductRehydrationResult result = byReference.get(reference.reference());
-                    return result != null
-                            && result.status() == CatalogRehydrationStatus.FRESH
-                            && !exactIdentity(offersByKey.get(reference.offerKey()), result);
-                })
-                .map(reference -> new UserCatalogSourceState(
-                        reference.reference().discoverySource(),
+        observations.stream()
+                .filter(observation -> observation.result().status() == CatalogRehydrationStatus.FRESH
+                        && !exactReference(observation))
+                .map(observation -> new UserCatalogSourceState(
+                        observation.requested().reference().discoverySource(),
                         CatalogSourceOperation.GET_PRODUCT,
                         true,
                         false,
@@ -136,37 +132,31 @@ public class UserCanonicalProductDetailService {
 
     private Offer refreshed(
             Offer offer,
-            List<OfferReference> references,
-            Map<CatalogProductReference, CatalogProductRehydrationResult> results,
+            List<OfferObservation> observations,
             Map<String, UserOfferCommercialState> states
     ) {
-        List<CatalogProductRehydrationResult> offerResults = references.stream()
-                .filter(reference -> reference.offerKey().equals(offer.key()))
-                .map(reference -> results.get(reference.reference()))
-                .filter(java.util.Objects::nonNull)
+        List<OfferObservation> offerObservations = observations.stream()
+                .filter(observation -> observation.requested().offerKey().equals(offer.key()))
                 .toList();
-        CatalogProductRehydrationResult fresh = offerResults.stream()
-                .filter(result -> result.status() == CatalogRehydrationStatus.FRESH)
-                .filter(result -> exactIdentity(offer, result))
-                .min(Comparator.comparing(result -> sourceKey(result.reference())))
+        OfferObservation freshObservation = offerObservations.stream()
+                .filter(observation -> observation.result().status() == CatalogRehydrationStatus.FRESH)
+                .filter(this::exactReference)
+                .min(Comparator.comparing(observation -> sourceKey(observation.requested().reference())))
                 .orElse(null);
-        if (fresh == null) {
-            CatalogProductRehydrationResult failure = offerResults.stream()
+        if (freshObservation == null) {
+            CatalogProductRehydrationResult failure = offerObservations.stream()
+                    .map(OfferObservation::result)
                     .filter(result -> result.status() != CatalogRehydrationStatus.FRESH)
                     .findFirst()
                     .orElse(null);
-            ResultFreshness observed = latestFreshness(offer);
-            states.put(offer.key(), new UserOfferCommercialState(
-                    UserOfferCommercialState.Authority.DISCOVERY_OBSERVATION,
+            states.put(offer.key(), UserOfferCommercialState.discovery(
+                    offer,
                     failure == null ? CatalogRehydrationStatus.DEGRADED : failure.status(),
                     failure == null ? CatalogRehydrationFailureKind.INVALID_RESPONSE
-                            : failure.failure(),
-                    offer.price() == null ? null : observed,
-                    observed,
-                    offer.delivery().isEmpty() ? null : observed
-            ));
+                            : failure.failure()));
             return offer;
         }
+        CatalogProductRehydrationResult fresh = freshObservation.result();
         CommercialFactsFreshness freshness = fresh.facts().purchaseFreshness();
         states.put(offer.key(), new UserOfferCommercialState(
                 UserOfferCommercialState.Authority.REHYDRATED_CURRENT,
@@ -182,19 +172,41 @@ public class UserCanonicalProductDetailService {
                 offer.rankingEvidence(), offer.provenance());
     }
 
-    private boolean exactIdentity(Offer offer, CatalogProductRehydrationResult result) {
-        CatalogProductReference resolved = result.resolvedReference();
-        return resolved.externalProductReference().equals(offer.identity().externalProductIdentity())
-                && java.util.Objects.equals(
-                        resolved.externalVariantReference(), offer.identity().externalVariantIdentity())
-                && resolved.selectedOptions().equals(offer.selectedOptions());
+    private List<OfferObservation> pair(
+            List<OfferReference> references,
+            List<CatalogProductRehydrationResult> results
+    ) {
+        if (references.size() != results.size()) {
+            throw new IllegalStateException("Rehydration service must return one result per requested reference");
+        }
+        return IntStream.range(0, references.size())
+                .mapToObj(index -> new OfferObservation(references.get(index), results.get(index)))
+                .toList();
     }
 
-    private ResultFreshness latestFreshness(Offer offer) {
-        return offer.provenance().stream()
-                .map(ResultProvenance::freshness)
-                .max(Comparator.comparing(ResultFreshness::observedAt))
-                .orElseThrow();
+    private boolean exactReference(OfferObservation observation) {
+        CatalogProductReference requested = observation.requested().reference();
+        CatalogProductReference resolved = observation.result().resolvedReference();
+        return requested.interactionKey().equals(resolved.interactionKey())
+                && requested.discoverySource().equals(resolved.discoverySource())
+                && localMerchantMatches(requested, resolved)
+                && Objects.equals(requested.localRouting(), resolved.localRouting())
+                && Objects.equals(requested.externalMerchantReference(), resolved.externalMerchantReference())
+                && requested.externalProductReference().equals(resolved.externalProductReference())
+                && Objects.equals(requested.externalVariantReference(), resolved.externalVariantReference())
+                && requested.selectedOptions().equals(resolved.selectedOptions());
+    }
+
+    private boolean localMerchantMatches(
+            CatalogProductReference requested,
+            CatalogProductReference resolved
+    ) {
+        if (Objects.equals(requested.localMerchantId(), resolved.localMerchantId())) {
+            return true;
+        }
+        return requested.localMerchantId() == null
+                && requested.localRouting() != null
+                && resolved.localMerchantId() != null;
     }
 
     private String sourceKey(CatalogProductReference reference) {
@@ -203,5 +215,8 @@ public class UserCanonicalProductDetailService {
     }
 
     private record OfferReference(String offerKey, CatalogProductReference reference) {
+    }
+
+    private record OfferObservation(OfferReference requested, CatalogProductRehydrationResult result) {
     }
 }
