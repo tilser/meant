@@ -43,14 +43,16 @@ class GenericUcpCatalogProductRehydrationProviderTest {
     private static final UUID INTEGRATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000012");
 
     private MerchantProductDetailsService detailsService;
+    private MerchantIntegrationLookupService integrations;
     private GenericUcpCatalogProductRehydrationProvider provider;
     private AtomicBoolean transactionActive;
 
     @BeforeEach
     void setUp() {
         detailsService = mock(MerchantProductDetailsService.class);
-        MerchantIntegrationLookupService integrations = mock(MerchantIntegrationLookupService.class);
+        integrations = mock(MerchantIntegrationLookupService.class);
         when(integrations.listByMerchants(any())).thenReturn(List.of(integration(MERCHANT_ID, INTEGRATION_ID)));
+        when(integrations.listByIds(any())).thenReturn(List.of(integration(MERCHANT_ID, INTEGRATION_ID)));
         GenericUcpCatalogReferenceVerifier verifier = new GenericUcpCatalogReferenceVerifier(integrations);
         GenericUcpCatalogDataUseProperties properties = new GenericUcpCatalogDataUseProperties(
                 Duration.ofHours(24), Duration.ofMinutes(2));
@@ -85,6 +87,26 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         verify(detailsService).get(query.capture());
         assertThat(query.getValue().addressCountry()).isEqualTo("CZ");
         assertThat(query.getValue().language()).isEqualTo("en");
+    }
+
+    @Test
+    void resolvesSessionReferenceByServerRoutingInOneBoundedIntegrationRead() {
+        CatalogProductReference first = reference(null, INTEGRATION_ID, "merchant-1", "variant-1", List.of(option("M")));
+        CatalogProductReference second = new CatalogProductReference(
+                "session-second",
+                first.discoverySource(),
+                null,
+                first.localRouting(),
+                first.externalMerchantReference(),
+                first.externalProductReference(),
+                first.externalVariantReference(),
+                first.selectedOptions());
+
+        var results = provider.rehydrate(List.of(first, second), new CatalogRehydrationContext("CZ", "en"));
+
+        assertThat(results).allSatisfy(result -> assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH));
+        verify(integrations).listByIds(any());
+        verify(integrations, never()).listByMerchants(any());
     }
 
     @Test

@@ -20,6 +20,9 @@ public interface MerchantIntegrationRepository extends JpaRepository<MerchantInt
     List<MerchantIntegration> findByMerchantIdInOrderByCreatedAtAsc(Set<UUID> merchantIds);
 
     @EntityGraph(attributePaths = {"roles", "merchant"})
+    List<MerchantIntegration> findByIdInOrderByCreatedAtAsc(Set<UUID> integrationIds);
+
+    @EntityGraph(attributePaths = {"roles", "merchant"})
     Optional<MerchantIntegration> findByProviderAndExternalMerchantId(
             MerchantIntegrationProvider provider,
             String externalMerchantId

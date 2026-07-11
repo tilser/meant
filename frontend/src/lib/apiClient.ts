@@ -11,6 +11,10 @@ const PROFILE_PICTURE_SIGNED_URL_SECONDS = 60 * 60
 
 /** Profile shape served by the backend, sourced from the generated OpenAPI schema. */
 export type UserProfile = components['schemas']['UserResponse']
+export type GroupedProductSearchProfile =
+  components['schemas']['UserGroupedProductSearchV1Response']
+export type CanonicalProductDetailProfile =
+  components['schemas']['UserCanonicalProductDetailV1Response']
 
 export interface ShoppingFilterProfile {
   id: string
@@ -1041,6 +1045,57 @@ export async function searchUserProducts(input: {
     }),
   })
   return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
+}
+
+export async function searchGroupedProducts(input: {
+  query: string
+  merchantId?: string | null
+  offset?: number
+  limit?: number
+  signal?: AbortSignal
+}): Promise<GroupedProductSearchProfile> {
+  const response = await fetch(`${API_URL}/api/v1/users/me/product-searches`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: input.query,
+      merchantId: input.merchantId ?? undefined,
+      offset: input.offset ?? undefined,
+      limit: input.limit ?? undefined,
+    }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<GroupedProductSearchProfile>(
+    response,
+    'Failed to search grouped products',
+  )
+}
+
+export async function getCanonicalProductDetail(input: {
+  canonicalProductKey: string
+  selectedOfferKey?: string | null
+  signal?: AbortSignal
+}): Promise<CanonicalProductDetailProfile> {
+  const search = new URLSearchParams()
+  if (input.selectedOfferKey) {
+    search.set('selectedOfferKey', input.selectedOfferKey)
+  }
+  const suffix = search.size === 0 ? '' : `?${search.toString()}`
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/products/${encodeURIComponent(input.canonicalProductKey)}${suffix}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(),
+      signal: input.signal,
+    },
+  )
+  return parseJsonResponse<CanonicalProductDetailProfile>(
+    response,
+    'Failed to load canonical product details',
+  )
 }
 
 export async function streamUserProductSearch(

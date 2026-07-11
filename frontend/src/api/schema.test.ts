@@ -8,6 +8,7 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     '/api/users/me/product-searches:stream',
     '/api/v1/users/me/product-searches',
     '/api/v1/users/me/product-searches:stream',
+    '/api/v1/users/me/products/{canonicalProductKey}',
   ]
   const expectedSchemas: Array<keyof components['schemas']> = [
     'UserGroupedProductSearchV1Response',
@@ -26,6 +27,9 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'LocalMerchantRoutingResponse',
     'UserFederatedProductSearchStreamEventResponse',
     'CatalogSourceFailureResponse',
+    'UserCanonicalProductDetailV1Response',
+    'UserCatalogSourceStateResponse',
+    'UserOfferCommercialStateResponse',
   ]
   const federatedEventFields: Array<
     keyof components['schemas']['UserFederatedProductSearchStreamEventResponse']
@@ -37,8 +41,8 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'features',
   ]
 
-  expect(expectedPaths).toHaveLength(4)
-  expect(expectedSchemas).toHaveLength(16)
+  expect(expectedPaths).toHaveLength(5)
+  expect(expectedSchemas).toHaveLength(19)
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
 })

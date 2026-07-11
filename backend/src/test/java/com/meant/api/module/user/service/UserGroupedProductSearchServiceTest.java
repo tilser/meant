@@ -82,7 +82,8 @@ class UserGroupedProductSearchServiceTest {
                 discoveryService,
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
-                new StubRankingContextFactory()
+                new StubRankingContextFactory(),
+                sessionStore()
         );
         EnsureUserProfileCommand profile = profile();
         SearchUserProductsCommand command = command(profile.id());
@@ -183,6 +184,10 @@ class UserGroupedProductSearchServiceTest {
                 .containsExactlyElementsOf(partialExpected);
         assertThat(sparsePage.hasMore()).isTrue();
         assertThat(partialPage.hasMore()).isTrue();
+        assertThat(partialPage.sourceStates()).anySatisfy(state -> {
+            assertThat(state.degraded()).isTrue();
+            assertThat(state.failureKind()).isEqualTo(CatalogSourceFailureKind.TRANSIENT_UPSTREAM);
+        });
     }
 
     @Test
@@ -247,7 +252,8 @@ class UserGroupedProductSearchServiceTest {
                         CatalogDiscoveryTerminalStatus.SUCCESS, List.of(), candidates, false)),
                 new ExactProductGroupingService(new ProductGroupingMetrics(registry)),
                 ProductRankingTestFactory.service(),
-                new StubRankingContextFactory()
+                new StubRankingContextFactory(),
+                sessionStore()
         );
 
         var result = service.search(profile(), command(profile().id(), 0, 20));
@@ -292,7 +298,8 @@ class UserGroupedProductSearchServiceTest {
                 discovery,
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
-                new StubRankingContextFactory()
+                new StubRankingContextFactory(),
+                sessionStore()
         );
 
         var result = service.search(profile(), command(profile().id(), 40, 20));
@@ -301,6 +308,10 @@ class UserGroupedProductSearchServiceTest {
         assertThat(result.hasMore()).isFalse();
         assertThat(result.nextOffset()).isNull();
         assertThat(result.upstreamTruncated()).isTrue();
+        assertThat(result.sourceStates()).singleElement().satisfies(state -> {
+            assertThat(state.truncated()).isTrue();
+            assertThat(state.degraded()).isFalse();
+        });
         assertThat(discovery.calls).isEqualTo(1);
         assertThat(discovery.request.candidateLimit()).isEqualTo(100);
     }
@@ -416,8 +427,13 @@ class UserGroupedProductSearchServiceTest {
                 discoveryService,
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
-                new StubRankingContextFactory()
+                new StubRankingContextFactory(),
+                sessionStore()
         );
+    }
+
+    private static UserCanonicalProductSessionStore sessionStore() {
+        return new UserCanonicalProductSessionStore(Duration.ofMinutes(30), 100);
     }
 
     private static final class StubRankingContextFactory extends UserProductRankingContextFactory {

@@ -418,6 +418,7 @@ Prevent the existing persistent search cache from violating Shopify catalog data
 
 Priority: P0  
 Dependencies: PCOS-008, PCOS-009, PCOS-010  
+Implementation status: Complete
 
 **Goal**
 

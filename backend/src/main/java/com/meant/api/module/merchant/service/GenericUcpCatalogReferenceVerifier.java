@@ -6,6 +6,7 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
+import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByIdsQuery;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
@@ -32,17 +33,34 @@ public class GenericUcpCatalogReferenceVerifier {
                 .map(CatalogProductReference::localMerchantId)
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toSet());
-        if (merchantIds.isEmpty()) {
+        Set<UUID> integrationIds = references.stream()
+                .filter(reference -> reference.localMerchantId() == null)
+                .map(CatalogProductReference::localRouting)
+                .filter(java.util.Objects::nonNull)
+                .map(LocalMerchantRouting::merchantIntegrationId)
+                .collect(Collectors.toSet());
+        if (merchantIds.isEmpty() && integrationIds.isEmpty()) {
             return Map.of();
         }
-        Map<UUID, List<MerchantIntegrationResult>> byMerchant = integrationLookupService.listByMerchants(
-                        new ListMerchantIntegrationsByMerchantsQuery(merchantIds)
-                ).stream()
+        Map<UUID, MerchantIntegrationResult> integrationsById = new LinkedHashMap<>();
+        if (!merchantIds.isEmpty()) {
+            integrationLookupService.listByMerchants(new ListMerchantIntegrationsByMerchantsQuery(merchantIds))
+                    .forEach(integration -> integrationsById.put(integration.id(), integration));
+        }
+        if (!integrationIds.isEmpty()) {
+            integrationLookupService.listByIds(new ListMerchantIntegrationsByIdsQuery(integrationIds))
+                    .forEach(integration -> integrationsById.put(integration.id(), integration));
+        }
+        List<MerchantIntegrationResult> integrations = List.copyOf(integrationsById.values());
+        Map<UUID, MerchantIntegrationResult> byId = integrations.stream()
+                .filter(this::eligible)
+                .collect(Collectors.toMap(MerchantIntegrationResult::id, value -> value));
+        Map<UUID, List<MerchantIntegrationResult>> byMerchant = integrations.stream()
                 .filter(this::eligible)
                 .collect(Collectors.groupingBy(MerchantIntegrationResult::merchantId));
         Map<CatalogProductReference, MerchantIntegrationResult> verified = new LinkedHashMap<>();
         for (CatalogProductReference reference : references) {
-            MerchantIntegrationResult integration = resolve(reference, byMerchant);
+            MerchantIntegrationResult integration = resolve(reference, byMerchant, byId);
             if (integration != null) {
                 verified.put(reference, integration);
             }
@@ -72,18 +90,25 @@ public class GenericUcpCatalogReferenceVerifier {
 
     private MerchantIntegrationResult resolve(
             CatalogProductReference reference,
-            Map<UUID, List<MerchantIntegrationResult>> byMerchant
+            Map<UUID, List<MerchantIntegrationResult>> byMerchant,
+            Map<UUID, MerchantIntegrationResult> byId
     ) {
-        if (!MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(reference.discoverySource())
-                || reference.localMerchantId() == null) {
+        if (!MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(reference.discoverySource())) {
             return null;
         }
-        List<MerchantIntegrationResult> candidates = byMerchant.getOrDefault(reference.localMerchantId(), List.of())
-                .stream()
+        List<MerchantIntegrationResult> candidates = reference.localMerchantId() == null
+                ? java.util.Optional.ofNullable(reference.localRouting())
+                        .map(LocalMerchantRouting::merchantIntegrationId)
+                        .map(byId::get)
+                        .map(List::of)
+                        .orElseGet(List::of)
+                : byMerchant.getOrDefault(reference.localMerchantId(), List.of());
+        return candidates.stream()
                 .filter(integration -> routingMatches(reference, integration))
                 .filter(integration -> merchantMatches(reference.externalMerchantReference(), integration))
-                .toList();
-        return candidates.size() == 1 ? candidates.getFirst() : null;
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toList(),
+                        matches -> matches.size() == 1 ? matches.getFirst() : null));
     }
 
     private boolean eligible(MerchantIntegrationResult integration) {

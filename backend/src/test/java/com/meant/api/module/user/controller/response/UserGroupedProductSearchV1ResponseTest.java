@@ -139,6 +139,7 @@ class UserGroupedProductSearchV1ResponseTest {
 
         assertThat(response.products()).singleElement().satisfies(mappedProduct -> {
             assertThat(mappedProduct.key()).isEqualTo("product_v1_fixture");
+            assertThat(mappedProduct.recommendedOfferKey()).isEqualTo(offer.key());
             assertThat(mappedProduct.rankingExplanation().rankingVersion()).isEqualTo("product-v1");
             assertThat(mappedProduct.offers()).singleElement().satisfies(mappedOffer -> {
                 assertThat(mappedOffer.key()).isEqualTo(offer.key());
@@ -162,6 +163,10 @@ class UserGroupedProductSearchV1ResponseTest {
                         .isEqualTo(integrationId);
                 assertThat(mappedOffer.rankingExplanation().commercialTieBreakPolicy())
                         .isEqualTo(OfferRankingExplanation.CommercialTieBreakPolicy.NONE);
+                assertThat(mappedOffer.commercialState().authority())
+                        .isEqualTo(com.meant.api.module.user.service.dto.UserOfferCommercialState.Authority.DISCOVERY_OBSERVATION);
+                assertThat(mappedOffer.checkoutExperience())
+                        .isEqualTo(UserGroupedProductSearchV1Response.CheckoutExperienceLevel.UNKNOWN);
             });
         });
         assertThat(response.groupingDecisions()).singleElement().satisfies(decision -> {
@@ -179,6 +184,9 @@ class UserGroupedProductSearchV1ResponseTest {
                 assertRecordSchemas(nested);
             }
         }
+        assertRecordSchemas(UserCatalogSourceStateResponse.class);
+        assertRecordSchemas(UserOfferCommercialStateResponse.class);
+        assertRecordSchemas(UserCanonicalProductDetailV1Response.class);
     }
 
     private void assertRecordSchemas(Class<?> recordType) {

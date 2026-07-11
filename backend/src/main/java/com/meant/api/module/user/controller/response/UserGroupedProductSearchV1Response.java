@@ -1,6 +1,7 @@
 package com.meant.api.module.user.controller.response;
 
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserOfferCommercialState;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DeliveryMethod;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -67,6 +68,8 @@ public record UserGroupedProductSearchV1Response(
                 requiredMode = Schema.RequiredMode.REQUIRED
         )
         boolean upstreamTruncated,
+        @Schema(description = "Typed completion, degradation, and truncation state for every invoked source", requiredMode = Schema.RequiredMode.REQUIRED)
+        List<UserCatalogSourceStateResponse> sourceStates,
         @Schema(description = "Deterministically ordered canonical products", requiredMode = Schema.RequiredMode.REQUIRED)
         List<CanonicalProductResponse> products,
         @Schema(description = "Total typed reconciliation decisions in the fetched candidate window", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -88,11 +91,14 @@ public record UserGroupedProductSearchV1Response(
                 result.nextOffset(),
                 result.hasMore(),
                 result.upstreamTruncated(),
+                result.sourceStates().stream().map(UserCatalogSourceStateResponse::from).toList(),
                 result.products().stream()
                         .map(product -> CanonicalProductResponse.from(
                                 product,
                                 result.productRankingExplanations().get(product.key()),
-                                result.offerRankingExplanations()
+                                result.offerRankingExplanations(),
+                                product.offers().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                        Offer::key, UserOfferCommercialState::discovery))
                         ))
                         .toList(),
                 result.groupingDecisionCount(),
@@ -156,18 +162,22 @@ public record UserGroupedProductSearchV1Response(
             List<ResultProvenanceResponse> provenance,
             @Schema(description = "Typed, redacted explanation of canonical-product relevance", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             ProductRankingExplanationResponse rankingExplanation,
+            @Schema(description = "Default independently ranked offer key", requiredMode = Schema.RequiredMode.REQUIRED)
+            String recommendedOfferKey,
             @Schema(description = "Distinct merchant, variant, and selling-plan offers", requiredMode = Schema.RequiredMode.REQUIRED)
             List<OfferResponse> offers
     ) {
 
         public static CanonicalProductResponse from(CanonicalProduct product) {
-            return from(product, null, java.util.Map.of());
+            return from(product, null, java.util.Map.of(), product == null ? java.util.Map.of() : product.offers().stream()
+                    .collect(java.util.stream.Collectors.toUnmodifiableMap(Offer::key, UserOfferCommercialState::discovery)));
         }
 
-        static CanonicalProductResponse from(
+        public static CanonicalProductResponse from(
                 CanonicalProduct product,
                 ProductRankingExplanation explanation,
-                Map<String, OfferRankingExplanation> offerExplanations
+                Map<String, OfferRankingExplanation> offerExplanations,
+                Map<String, UserOfferCommercialState> commercialStates
         ) {
             return product == null ? null : new CanonicalProductResponse(
                     product.key(), product.title(), product.description(),
@@ -179,8 +189,12 @@ public record UserGroupedProductSearchV1Response(
                     product.identityEvidence().stream().map(ProductIdentityEvidenceResponse::from).toList(),
                     product.provenance().stream().map(ResultProvenanceResponse::from).toList(),
                     ProductRankingExplanationResponse.from(explanation),
+                    product.offers().getFirst().key(),
                     product.offers().stream()
-                            .map(offer -> OfferResponse.from(offer, offerExplanations.get(offer.key())))
+                            .map(offer -> OfferResponse.from(
+                                    offer,
+                                    offerExplanations.get(offer.key()),
+                                    commercialStates.getOrDefault(offer.key(), UserOfferCommercialState.discovery(offer))))
                             .toList()
             );
         }
@@ -208,6 +222,10 @@ public record UserGroupedProductSearchV1Response(
             URI checkoutUrl,
             @Schema(description = "Selected variant and selling-plan options", requiredMode = Schema.RequiredMode.REQUIRED)
             List<ProductAttributeResponse> selectedOptions,
+            @Schema(description = "Available checkout experience inferred from server-controlled routing facts", requiredMode = Schema.RequiredMode.REQUIRED)
+            CheckoutExperienceLevel checkoutExperience,
+            @Schema(description = "Authority and freshness of price, availability, and delivery", requiredMode = Schema.RequiredMode.REQUIRED)
+            UserOfferCommercialStateResponse commercialState,
             @Schema(description = "Typed, redacted explanation of this offer's independent ordering", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             OfferRankingExplanationResponse rankingExplanation,
             @Schema(description = "Every source observation merged into this exact offer", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -215,20 +233,42 @@ public record UserGroupedProductSearchV1Response(
     ) {
 
         static OfferResponse from(Offer offer) {
-            return from(offer, null);
+            return from(offer, null, UserOfferCommercialState.discovery(offer));
         }
 
-        static OfferResponse from(Offer offer, OfferRankingExplanation explanation) {
+        static OfferResponse from(
+                Offer offer,
+                OfferRankingExplanation explanation,
+                UserOfferCommercialState commercialState
+        ) {
             return new OfferResponse(
                     offer.key(), OfferIdentityResponse.from(offer.identity()), offer.merchantName(), offer.variantTitle(),
                     MoneyResponse.from(offer.price()), MoneyResponse.from(offer.listPrice()),
                     OfferAvailabilityResponse.from(offer.availability()),
                     offer.delivery().stream().map(OfferDeliveryResponse::from).toList(), offer.checkoutUrl(),
                     offer.selectedOptions().stream().map(ProductAttributeResponse::from).toList(),
+                    checkoutExperience(offer),
+                    UserOfferCommercialStateResponse.from(commercialState),
                     OfferRankingExplanationResponse.from(explanation),
                     offer.provenance().stream().map(ResultProvenanceResponse::from).toList()
             );
         }
+
+        private static CheckoutExperienceLevel checkoutExperience(Offer offer) {
+            if (offer.provenance().stream().anyMatch(value -> value.localRouting() != null)
+                    && Boolean.TRUE.equals(offer.rankingEvidence().checkoutCapable())) {
+                return CheckoutExperienceLevel.MEANT_MANAGED;
+            }
+            return offer.checkoutUrl() == null
+                    ? CheckoutExperienceLevel.UNKNOWN
+                    : CheckoutExperienceLevel.PROVIDER_HANDOFF;
+        }
+    }
+
+    public enum CheckoutExperienceLevel {
+        MEANT_MANAGED,
+        PROVIDER_HANDOFF,
+        UNKNOWN
     }
 
     @Schema(description = "Provider-defined identities that determine offer uniqueness")
@@ -611,8 +651,8 @@ public record UserGroupedProductSearchV1Response(
             Instant freshUntil
     ) {
 
-        static ResultFreshnessResponse from(ResultFreshness freshness) {
-            return new ResultFreshnessResponse(freshness.observedAt(), freshness.freshUntil());
+        public static ResultFreshnessResponse from(ResultFreshness freshness) {
+            return freshness == null ? null : new ResultFreshnessResponse(freshness.observedAt(), freshness.freshUntil());
         }
     }
 
