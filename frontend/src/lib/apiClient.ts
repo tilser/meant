@@ -1,7 +1,7 @@
 import createClient, { type Middleware } from 'openapi-fetch'
 
 import type { components, paths } from '../api/schema'
-import { parseJsonResponse } from './apiError'
+import { parseErrorResponse, parseJsonResponse } from './apiError'
 export { ApiError, parseErrorResponse, parseJsonResponse } from './apiError'
 import { supabase } from './supabase'
 
@@ -529,6 +529,8 @@ export type CheckoutProfile = components['schemas']['CheckoutResponse']
 export type CheckoutMessageProfile = components['schemas']['MessageResponse']
 export type CheckoutConsentProfile = components['schemas']['CheckoutConsentResponse']
 export type CheckoutCompletionProfile = components['schemas']['CheckoutCompletionResponse']
+export type EmbeddedCheckoutBootstrapProfile =
+  components['schemas']['EmbeddedCheckoutBootstrapResponse']
 
 export interface CheckoutBuyerInput {
   email: string
@@ -1703,6 +1705,52 @@ export async function getCartCheckout(input: {
     },
   )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
+}
+
+export async function bootstrapEmbeddedCheckout(
+  cartId: string,
+): Promise<EmbeddedCheckoutBootstrapProfile> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(cartId)}/checkout/embedded`,
+    {
+      method: 'POST',
+      headers: await authHeaders(),
+    },
+  )
+  return parseJsonResponse<EmbeddedCheckoutBootstrapProfile>(
+    response,
+    'Failed to prepare embedded checkout',
+  )
+}
+
+export async function completeEmbeddedCheckout(input: {
+  cartId: string
+  sessionId: string
+}): Promise<CheckoutProfile> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/embedded/${encodeURIComponent(input.sessionId)}/complete`,
+    {
+      method: 'POST',
+      headers: await authHeaders(),
+    },
+  )
+  return parseJsonResponse<CheckoutProfile>(response, 'Failed to verify embedded checkout')
+}
+
+export async function cancelEmbeddedCheckout(input: {
+  cartId: string
+  sessionId: string
+}): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/embedded/${encodeURIComponent(input.sessionId)}/cancel`,
+    {
+      method: 'POST',
+      headers: await authHeaders(),
+    },
+  )
+  if (!response.ok) {
+    throw await parseErrorResponse(response, 'Failed to close embedded checkout')
+  }
 }
 
 export async function updateCartCheckout(input: UpdateCheckoutInput): Promise<CheckoutProfile> {

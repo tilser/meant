@@ -1,8 +1,9 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
-import type { CheckoutAssistantMessage } from '../../../lib/apiClient'
+import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../lib/apiClient'
 import { CloseIcon, SparkMark } from '../shared/ui'
 import { MerchantCheckoutLink } from './MerchantCheckoutLink'
+import { EmbeddedCheckout } from './EmbeddedCheckout'
 import { merchantDeliveryCoverageSummary, money } from '../utils'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkoutTypes'
 import {
@@ -49,7 +50,7 @@ export function CartCheckoutDialog({
   busy: boolean
   error: string | null
   onClose: () => void
-  onRefresh: () => Promise<void> | void
+  onRefresh: (checkout?: CheckoutProfile) => Promise<void> | void
   onCheckoutAssistant: CheckoutAssistantHandler
 }>) {
   const [messages, setMessages] = useState<CheckoutAssistantMessage[]>([])
@@ -61,6 +62,12 @@ export function CartCheckoutDialog({
   const merchantUrl = merchantCheckoutUrl(session)
   const handoff = checkoutNeedsHandoff(session)
   const needsAddress = checkoutNeedsAddress(session)
+  const embedded = session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT'
+
+  const requestClose = useCallback(() => {
+    if (embedded && !window.confirm('Close checkout? Your merchant cart will be preserved.')) return
+    onClose()
+  }, [embedded, onClose])
 
   useEffect(() => {
     if (sessionCartIdRef.current !== session.cartId) {
@@ -87,12 +94,12 @@ export function CartCheckoutDialog({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose()
+        requestClose()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [requestClose])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -132,7 +139,7 @@ export function CartCheckoutDialog({
   }
 
   return (
-    <div className="mt-checkout-shell" role="presentation" onMouseDown={onClose}>
+    <div className="mt-checkout-shell" role="presentation" onMouseDown={requestClose}>
       <section
         className="mt-checkout-panel"
         role="dialog"
@@ -145,7 +152,12 @@ export function CartCheckoutDialog({
             <div className="mt-checkout-eyebrow">Checkout</div>
             <h2 id="mt-cart-checkout-title">{session.merchant}</h2>
           </div>
-          <button className="mt-checkout-close" type="button" onClick={onClose} aria-label="Close">
+          <button
+            className="mt-checkout-close"
+            type="button"
+            onClick={requestClose}
+            aria-label="Close"
+          >
             <CloseIcon size={14} />
           </button>
         </div>
@@ -182,7 +194,9 @@ export function CartCheckoutDialog({
             ) : null}
           </div>
           {error ? <div className="mt-checkout-error">{error}</div> : null}
-          {handoff ? (
+          {embedded ? (
+            <EmbeddedCheckout session={session} surface="cart" onReconciled={onRefresh} />
+          ) : handoff ? (
             <div className="mt-checkout-handoff">
               <div className="mt-checkout-note">
                 <SparkMark size={13} />

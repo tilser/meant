@@ -43,7 +43,7 @@ class EmbeddedCheckoutBootstrapServiceTest {
         service = new EmbeddedCheckoutBootstrapService(cartService, persistenceService, sessionStore,
                 new EmbeddedCheckoutOriginPolicy(new com.meant.api.common.properties.CorsProperties(
                         List.of("https://meant.com"))), urlValidator,
-                new EmbeddedCheckoutProperties(Duration.ofMinutes(5), "2026-01-23"));
+                new EmbeddedCheckoutProperties(Duration.ofMinutes(5), "2026-04-08"));
     }
 
     @Test
@@ -52,13 +52,13 @@ class EmbeddedCheckoutBootstrapServiceTest {
         Cart cart = cart(userId);
         when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
         when(cartService.checkout(any())).thenReturn(checkout(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
-                new EmbeddedCheckoutConfiguration("2026-01-23", List.of("payment.credential"), null)));
+                new EmbeddedCheckoutConfiguration("2026-04-08", List.of("payment.credential"), null)));
         when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkouts/embedded/1"))
                 .thenReturn(URI.create("https://shop.example/checkouts/embedded/1"));
         when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkout/1"))
                 .thenReturn(URI.create("https://shop.example/checkout/1"));
         when(sessionStore.create(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
-                UUID.randomUUID(), cart.getId(), "checkout-1", "https://meant.com", "2026-01-23",
+                UUID.randomUUID(), cart.getId(), "checkout-1", "https://meant.com", "2026-04-08",
                 Instant.parse("2026-07-11T20:05:00Z")));
 
         var result = service.bootstrap(cart.getId(), userId, "https://meant.com");
@@ -93,7 +93,7 @@ class EmbeddedCheckoutBootstrapServiceTest {
         UUID sessionId = UUID.randomUUID();
         when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
         when(sessionStore.requireActive(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
-                sessionId, cart.getId(), "checkout-1", "https://meant.com", "2026-01-23", Instant.MAX));
+                sessionId, cart.getId(), "checkout-1", "https://meant.com", "2026-04-08", Instant.MAX));
         when(cartService.checkout(any())).thenReturn(checkout(CheckoutNextAction.WAIT, null));
 
         assertThatThrownBy(() -> service.complete(cart.getId(), sessionId, userId, "https://meant.com"))
@@ -113,7 +113,7 @@ class EmbeddedCheckoutBootstrapServiceTest {
     private CheckoutResult checkout(CheckoutNextAction action, EmbeddedCheckoutConfiguration configuration) {
         return new CheckoutResult(UUID.randomUUID(), "cart-1", "checkout-1", "requires_escalation",
                 "https://shop.example/checkouts/embedded/1",
-                "https://shop.example/checkout/1", "2026-01-23", 1000L, "USD", List.of(), action,
+                "https://shop.example/checkout/1", "2026-04-08", 1000L, "USD", List.of(), action,
                 action == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT
                         ? CommerceExecutionRail.EMBEDDED_CHECKOUT : CommerceExecutionRail.NONE,
                 List.of(), MerchantExecutionPolicy.unavailable(), configuration);

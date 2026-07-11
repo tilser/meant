@@ -15,8 +15,8 @@ class CheckoutResultMapperEmbeddedConfigurationTest {
     void mapsOnlyTypedEmbeddedServiceBinding() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         UcpCheckoutResponse response = mapper.readValue("""
-                {"ucp":{"version":"2026-01-23","services":{"dev.ucp.shopping":[
-                  {"version":"2026-01-23","transport":"embedded","config":{"delegate":["payment.credential"]}}
+                {"ucp":{"version":"2026-04-08","services":{"dev.ucp.shopping":[
+                  {"version":"2026-04-08","transport":"embedded","config":{"delegate":["payment.credential"]}}
                 ]}},"checkout_id":"checkout-1","status":"requires_escalation",
                 "continue_url":"https://shop.example/checkout/1"}
                 """, UcpCheckoutResponse.class);
@@ -28,7 +28,7 @@ class CheckoutResultMapperEmbeddedConfigurationTest {
                 .from(cart, response, MerchantExecutionPolicy.unavailable());
 
         assertThat(result.embeddedCheckout()).isNotNull();
-        assertThat(result.embeddedCheckout().protocolVersion()).isEqualTo("2026-01-23");
+        assertThat(result.embeddedCheckout().protocolVersion()).isEqualTo("2026-04-08");
         assertThat(result.embeddedCheckout().merchantAllowedDelegations()).containsExactly("payment.credential");
     }
 }

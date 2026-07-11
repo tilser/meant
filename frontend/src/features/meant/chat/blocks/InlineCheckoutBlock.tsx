@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage } from '../../../../lib/apiClient'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../../cart/checkoutTypes'
+import { EmbeddedCheckout } from '../../cart/EmbeddedCheckout'
 import {
   checkoutAssistantPrompt,
   checkoutNeedsAddress,
@@ -167,6 +168,7 @@ export function InlineCheckoutBlock({
 
   const renderConversation = (session: ActiveCheckoutSession) => {
     const handoff = checkoutNeedsHandoff(session)
+    const embedded = session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT'
     const merchantUrl = merchantCheckoutUrl(session)
     const needsAddress = checkoutNeedsAddress(session)
     return (
@@ -187,7 +189,9 @@ export function InlineCheckoutBlock({
           ) : null}
         </div>
         {checkoutError ? <div className="mt-cart-inline-error">{checkoutError}</div> : null}
-        {handoff ? (
+        {embedded ? (
+          <EmbeddedCheckout session={session} surface="chat" onReconciled={onRefreshCheckout} />
+        ) : handoff ? (
           <div className="mt-ct-checkout-handoff">
             <div className="mt-ct-checkout-handoff-copy">
               <SparkMark size={13} />

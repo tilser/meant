@@ -1804,17 +1804,19 @@ export function MeantApp() {
     }
   }
 
-  const refreshActiveCheckout = async () => {
+  const refreshActiveCheckout = async (verifiedCheckout?: CheckoutProfile) => {
     if (!activeCheckout) {
       return
     }
     setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
-      const checkoutProfile = await getCartCheckout({
-        cartId: activeCheckout.cartId,
-        refresh: true,
-      })
+      const checkoutProfile =
+        verifiedCheckout ??
+        (await getCartCheckout({
+          cartId: activeCheckout.cartId,
+          refresh: true,
+        }))
       updateCartWithCheckoutProfile(activeCheckout, checkoutProfile)
       setActiveCheckout((current) =>
         current

@@ -121,7 +121,7 @@ commerce:
   checkout:
     embedded:
       session-ttl: ${COMMERCE_EMBEDDED_CHECKOUT_SESSION_TTL:5m}
-      supported-protocol-version: ${COMMERCE_EMBEDDED_CHECKOUT_PROTOCOL_VERSION:2026-01-23}
+      supported-protocol-version: ${COMMERCE_EMBEDDED_CHECKOUT_PROTOCOL_VERSION:2026-04-08}
   cart:
     retry:
       max-reconciliation-delay: ${COMMERCE_CART_MAX_RECONCILIATION_DELAY:2s}

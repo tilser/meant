@@ -559,6 +559,7 @@ Give the frontend the short-lived information required to open Checkout Kit with
 
 Priority: P0  
 Dependencies: PCOS-015  
+Implementation status: Complete
 
 **Goal**
 

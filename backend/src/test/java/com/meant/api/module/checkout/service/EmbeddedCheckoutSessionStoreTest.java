@@ -33,7 +33,7 @@ class EmbeddedCheckoutSessionStoreTest {
     @BeforeEach
     void setUp() {
         store = new EmbeddedCheckoutSessionStore(repository,
-                new EmbeddedCheckoutProperties(Duration.ofMinutes(5), "2026-01-23"),
+                new EmbeddedCheckoutProperties(Duration.ofMinutes(5), "2026-04-08"),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -48,7 +48,7 @@ class EmbeddedCheckoutSessionStoreTest {
         UUID userId = UUID.randomUUID();
         UUID cartId = UUID.randomUUID();
         var binding = store.create(new CreateEmbeddedCheckoutSessionCommand(
-                userId, cartId, "checkout-1", null, "SHOPIFY:merchant:1", "https://meant.com", "2026-01-23"));
+                userId, cartId, "checkout-1", null, "SHOPIFY:merchant:1", "https://meant.com", "2026-04-08"));
         EmbeddedCheckoutSession session = saved.get();
         when(repository.findForUpdate(binding.sessionId())).thenReturn(Optional.of(session));
         when(repository.findById(binding.sessionId())).thenReturn(Optional.of(session));
@@ -73,7 +73,7 @@ class EmbeddedCheckoutSessionStoreTest {
         UUID id = UUID.randomUUID();
         EmbeddedCheckoutSession expired = EmbeddedCheckoutSession.builder()
                 .id(id).userId(UUID.randomUUID()).cartId(UUID.randomUUID()).checkoutId("checkout-1")
-                .routingScopeKey("scope").allowedOrigin("https://meant.com").protocolVersion("2026-01-23")
+                .routingScopeKey("scope").allowedOrigin("https://meant.com").protocolVersion("2026-04-08")
                 .status(com.meant.api.module.checkout.constant.EmbeddedCheckoutSessionStatus.ACTIVE)
                 .expiresAt(NOW).createdAt(NOW.minusSeconds(60)).build();
         when(repository.findById(id)).thenReturn(Optional.of(expired));
