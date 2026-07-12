@@ -2,14 +2,16 @@ package com.meant.api.module.cart.service;
 
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.checkout.constant.CheckoutLifecycleState;
+import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
-import com.meant.api.module.checkout.constant.CheckoutLifecycleState;
 import com.meant.api.plugin.support.UcpMoney;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import tools.jackson.core.JacksonException;
@@ -17,6 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CheckoutResultMapper {
 
     private final ObjectMapper objectMapper;
@@ -45,6 +48,18 @@ public class CheckoutResultMapper {
                 lifecycle,
                 checkoutMessages,
                 policy
+        );
+        log.info(
+                "Checkout execution decision lifecycle={} responseStatus={} nextAction={} selectedRail={} "
+                        + "embeddedAvailable={} messageCodes={} ineligibilityReasons={}",
+                lifecycle,
+                checkout == null ? null : checkout.status(),
+                execution.nextAction(),
+                execution.selectedRail(),
+                policy != null && policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).available(),
+                checkoutMessages.stream().map(CheckoutResult.Message::code)
+                        .filter(StringUtils::hasText).distinct().limit(10).toList(),
+                execution.ineligibilityReasons()
         );
         return new CheckoutResult(
                 cart.getId(),

@@ -2,6 +2,8 @@ package com.meant.api.module.cart.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.cart.service.port.ExternalOfferCartRoutingProvider;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
@@ -33,15 +35,76 @@ import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByIdsQuery;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class SelectedOfferCartRoutingServiceTest {
+
+    @Test
+    void checkoutRestorationUsesTheProviderCheckoutPolicyPathOnlyForCheckout() {
+        MerchantCartProvider cartProvider = new MerchantCartProvider(
+                null, "shop.test", "https://shop.test/cart", null);
+        MerchantCartProvider checkoutProvider = new MerchantCartProvider(
+                null, "shop.test", "https://shop.test/checkout", null);
+        CartRoutingTarget persisted = new CartRoutingTarget(
+                "SHOPIFY:merchant:shop-1:domain:shop.test",
+                MerchantIntegrationProvider.SHOPIFY,
+                null,
+                "shop-1",
+                cartProvider
+        );
+        AtomicBoolean cartRestoreCalled = new AtomicBoolean();
+        AtomicBoolean checkoutRestoreCalled = new AtomicBoolean();
+        ExternalOfferCartRoutingProvider external = new ExternalOfferCartRoutingProvider() {
+            @Override
+            public boolean supports(ResolvedSelectedOffer offer) {
+                return false;
+            }
+
+            @Override
+            public Optional<CartRoutingTarget> resolve(ResolvedSelectedOffer offer) {
+                return Optional.empty();
+            }
+
+            @Override
+            public boolean supportsPersisted(CartRoutingTarget target) {
+                return true;
+            }
+
+            @Override
+            public Optional<CartRoutingTarget> restore(CartRoutingTarget target) {
+                cartRestoreCalled.set(true);
+                return Optional.of(new CartRoutingTarget(
+                        target.scopeKey(), target.provider(), null, target.externalMerchantId(), cartProvider));
+            }
+
+            @Override
+            public Optional<CartRoutingTarget> restoreForCheckout(CartRoutingTarget target) {
+                checkoutRestoreCalled.set(true);
+                return Optional.of(new CartRoutingTarget(
+                        target.scopeKey(), target.provider(), null, target.externalMerchantId(), checkoutProvider));
+            }
+        };
+        SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
+                new StubIntegrationLookup(), new StubProviderLookup(provider(
+                        UUID.randomUUID(), UUID.randomUUID(), MerchantIntegrationProvider.GENERIC_UCP)),
+                List.of(external), new CartBindingMetrics(new SimpleMeterRegistry()));
+
+        CartRoutingTarget cartTarget = service.resolvePersistedExternal(persisted);
+        CartRoutingTarget checkoutTarget = service.resolvePersistedExternalForCheckout(persisted);
+
+        assertThat(cartTarget.merchantProvider().advertisedMcpEndpoint()).isEqualTo("https://shop.test/cart");
+        assertThat(checkoutTarget.merchantProvider().advertisedMcpEndpoint())
+                .isEqualTo("https://shop.test/checkout");
+        assertThat(cartRestoreCalled).isTrue();
+        assertThat(checkoutRestoreCalled).isTrue();
+    }
 
     @Test
     void genericUcpRoutesOnlyThroughTheExactActiveCartIntegration() {

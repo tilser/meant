@@ -76,6 +76,17 @@ public class SelectedOfferCartRoutingService {
     }
 
     public CartRoutingTarget resolvePersistedExternal(CartRoutingTarget persistedTarget) {
+        return resolvePersistedExternal(persistedTarget, false);
+    }
+
+    public CartRoutingTarget resolvePersistedExternalForCheckout(CartRoutingTarget persistedTarget) {
+        return resolvePersistedExternal(persistedTarget, true);
+    }
+
+    private CartRoutingTarget resolvePersistedExternal(
+            CartRoutingTarget persistedTarget,
+            boolean checkoutPolicyRequired
+    ) {
         List<ExternalOfferCartRoutingProvider> matching = externalProviders.stream()
                 .filter(provider -> provider.supportsPersisted(persistedTarget))
                 .toList();
@@ -86,7 +97,10 @@ public class SelectedOfferCartRoutingService {
                             : CartException.BindingFailure.AMBIGUOUS_ROUTING,
                     "Stored external cart route is missing or ambiguous");
         }
-        CartRoutingTarget restored = matching.getFirst().restore(persistedTarget)
+        ExternalOfferCartRoutingProvider provider = matching.getFirst();
+        CartRoutingTarget restored = (checkoutPolicyRequired
+                        ? provider.restoreForCheckout(persistedTarget)
+                        : provider.restore(persistedTarget))
                 .orElseThrow(() -> failure(
                         CartException.BindingFailure.MISSING_ROUTING,
                         "Stored external cart route is unavailable"));

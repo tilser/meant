@@ -260,7 +260,8 @@ class UcpMcpClientTest {
         assertThat(response.textContent()).contains("Cross-border checkout is not supported for this channel.");
         assertThat(output).contains("UCP merchant tool exchange");
         assertThat(output).contains("tool=create_checkout");
-        assertThat(output).contains("outcome=tool_error");
+        assertThat(output).contains("outcome=business_response");
+        assertThat(output).doesNotContain("outcome=tool_error");
         assertThat(output).doesNotContain(
                 "merchant.example", "/api/mcp", "cart_1",
                 "Cross-border checkout is not supported for this channel.");
@@ -417,7 +418,9 @@ class UcpMcpClientTest {
     }
 
     @Test
-    void callToolAllowingJsonToolErrorsStillRejectsPlainTextToolErrorsWithMetadataOnlyStructuredContent() {
+    void callToolAllowingJsonToolErrorsStillRejectsPlainTextToolErrorsWithMetadataOnlyStructuredContent(
+            CapturedOutput output
+    ) {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
@@ -455,6 +458,7 @@ class UcpMcpClientTest {
         ))
                 .isInstanceOf(UcpMcpException.class)
                 .hasMessage("MCP tool result was marked as error");
+        assertThat(output).contains("tool=create_checkout", "outcome=tool_error");
         server.verify();
     }
 

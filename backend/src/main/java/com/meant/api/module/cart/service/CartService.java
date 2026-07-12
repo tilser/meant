@@ -192,7 +192,7 @@ public class CartService {
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
-        CartRoutingTarget target = routingTarget(cart);
+        CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         if (!query.refresh() && hasText(cart.getCheckoutId())) {
             importCartInventory(cart);
@@ -250,7 +250,7 @@ public class CartService {
         if (!hasText(cart.getCheckoutId())) {
             throw new CartException("Checkout session is required before updating checkout");
         }
-        CartRoutingTarget target = routingTarget(cart);
+        CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         UcpSession session = session(cart);
         UcpCheckoutToolResult currentCheckout = merchantCheckoutPluginDispatchService.getCheckout(
@@ -448,7 +448,7 @@ public class CartService {
         if (!hasText(cart.getCheckoutId()) || !cart.getCheckoutId().equals(command.checkoutId())) {
             throw CartException.rejected("Checkout session does not match cart");
         }
-        CartRoutingTarget target = routingTarget(cart);
+        CartRoutingTarget target = checkoutRoutingTarget(cart);
         UcpSession session = session(cart);
         UUID idempotencyKey = UUID.nameUUIDFromBytes(
                 ("cancel_checkout:" + cart.getId() + ':' + command.checkoutId())
@@ -541,7 +541,7 @@ public class CartService {
             return cart;
         }
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
-                routingTarget(cart),
+                checkoutRoutingTarget(cart),
                 createCheckoutRequest(cart),
                 session(cart)
         );
@@ -875,6 +875,14 @@ public class CartService {
     }
 
     private CartRoutingTarget routingTarget(Cart cart) {
+        return routingTarget(cart, false);
+    }
+
+    private CartRoutingTarget checkoutRoutingTarget(Cart cart) {
+        return routingTarget(cart, true);
+    }
+
+    private CartRoutingTarget routingTarget(Cart cart, boolean checkoutPolicyRequired) {
         if (!hasText(cart.getProvider()) || !hasText(cart.getRoutingScopeKey())
                 || cart.getRoutingScopeKey().startsWith("LEGACY:")) {
             MerchantCartProvider legacy = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
@@ -911,7 +919,9 @@ public class CartService {
                 cart.getExternalMerchantId(), new MerchantCartProvider(
                         null, cart.getMerchantDomain(), cart.getEndpoint(), null,
                         List.of(), MerchantExecutionPolicy.unavailable()));
-        return selectedOfferCartRoutingService.resolvePersistedExternal(persistedTarget);
+        return checkoutPolicyRequired
+                ? selectedOfferCartRoutingService.resolvePersistedExternalForCheckout(persistedTarget)
+                : selectedOfferCartRoutingService.resolvePersistedExternal(persistedTarget);
     }
 
     private CartAddItem cartAddItem(ResolvedSelectedOffer offer, Integer quantity) {

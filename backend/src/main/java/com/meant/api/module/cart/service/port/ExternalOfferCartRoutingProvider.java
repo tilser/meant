@@ -17,4 +17,8 @@ public interface ExternalOfferCartRoutingProvider {
     default Optional<CartRoutingTarget> restore(CartRoutingTarget target) {
         return Optional.empty();
     }
+
+    default Optional<CartRoutingTarget> restoreForCheckout(CartRoutingTarget target) {
+        return restore(target);
+    }
 }

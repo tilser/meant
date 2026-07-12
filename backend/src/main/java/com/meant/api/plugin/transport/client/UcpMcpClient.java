@@ -139,7 +139,7 @@ public class UcpMcpClient {
             wireLogger.logHttpFailure(endpoint, toolName, exception);
             throw exception;
         }
-        logMerchantToolExchange(toolName, response);
+        logMerchantToolExchange(toolName, response, allowJsonToolErrors);
         wireLogger.logResponse(endpoint, toolName, response);
 
         McpToolResult result = requireToolResult(response);
@@ -164,14 +164,15 @@ public class UcpMcpClient {
 
     private void logMerchantToolExchange(
             String toolName,
-            McpToolCallResponse response
+            McpToolCallResponse response,
+            boolean allowJsonToolErrors
     ) {
         if (!isCartOrCheckoutTool(toolName)) {
             return;
         }
         McpToolResult result = response == null ? null : response.result();
-        String outcome = exchangeOutcome(response, result);
-        boolean failed = !"success".equals(outcome);
+        String outcome = exchangeOutcome(response, result, allowJsonToolErrors);
+        boolean failed = !"success".equals(outcome) && !"business_response".equals(outcome);
         String message = "UCP merchant tool exchange tool={} outcome={} textPresent={} structuredPresent={}";
         Object[] values = {
                 toolName,
@@ -186,7 +187,11 @@ public class UcpMcpClient {
         }
     }
 
-    private String exchangeOutcome(McpToolCallResponse response, McpToolResult result) {
+    private String exchangeOutcome(
+            McpToolCallResponse response,
+            McpToolResult result,
+            boolean allowJsonToolErrors
+    ) {
         if (response == null) {
             return "empty_response";
         }
@@ -196,7 +201,14 @@ public class UcpMcpClient {
         if (result == null) {
             return "missing_result";
         }
-        return result.isError() ? "tool_error" : "success";
+        if (!result.isError()) {
+            return "success";
+        }
+        String textContent = firstContentText(result.content());
+        boolean isTypedBusinessResponse = allowJsonToolErrors
+                && (hasJsonTextPayload(textContent)
+                        || hasResultStructuredContent(result.structuredContent()));
+        return isTypedBusinessResponse ? "business_response" : "tool_error";
     }
 
     private boolean isCartOrCheckoutTool(String toolName) {

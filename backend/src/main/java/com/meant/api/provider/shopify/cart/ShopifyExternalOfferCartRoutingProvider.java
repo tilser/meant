@@ -67,7 +67,7 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
         if (merchant == null || domain == null) {
             return Optional.empty();
         }
-        return route(domain, merchant.value());
+        return route(domain, merchant.value(), false);
     }
 
     @Override
@@ -80,15 +80,31 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
     public Optional<CartRoutingTarget> restore(CartRoutingTarget target) {
         String domain = normalizedDomain(target.merchantProvider().domain());
         return domain == null || target.externalMerchantId() == null
-                ? Optional.empty() : route(domain, target.externalMerchantId());
+                ? Optional.empty() : route(domain, target.externalMerchantId(), false);
     }
 
-    private Optional<CartRoutingTarget> route(String domain, String externalMerchantId) {
+    @Override
+    public Optional<CartRoutingTarget> restoreForCheckout(CartRoutingTarget target) {
+        String domain = normalizedDomain(target.merchantProvider().domain());
+        return domain == null || target.externalMerchantId() == null
+                ? Optional.empty() : route(domain, target.externalMerchantId(), true);
+    }
+
+    private Optional<CartRoutingTarget> route(
+            String domain,
+            String externalMerchantId,
+            boolean checkoutPolicyRequired
+    ) {
         try {
             Optional<MerchantCartProvider> match = merchantLookup.findActiveByCanonicalDomain(domain);
             if (match.isPresent()) {
-                Observation observation = storedObservation(domain, match.get())
-                        .orElseGet(() -> refreshObservation(domain));
+                Optional<Observation> stored = storedObservation(domain, match.get());
+                Observation observation = stored.isEmpty()
+                        ? refreshObservation(domain)
+                        : checkoutPolicyRequired
+                                && !hasCapability(stored.get().capabilities(), CHECKOUT_CAPABILITY_PREFIX)
+                                ? observeObservation(domain)
+                                : stored.get();
                 return Optional.of(externalTarget(domain, externalMerchantId, observation));
             }
             return discovered(domain, externalMerchantId);
@@ -125,6 +141,11 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
     private Observation refreshObservation(String domain) {
         URI profileOrigin = profileOrigin(domain);
         return executable(profileObservations.refresh(domain, profileOrigin));
+    }
+
+    private Observation observeObservation(String domain) {
+        URI profileOrigin = profileOrigin(domain);
+        return executable(profileObservations.observe(domain, profileOrigin));
     }
 
     private Optional<CartRoutingTarget> discovered(String domain, String externalMerchantId) {

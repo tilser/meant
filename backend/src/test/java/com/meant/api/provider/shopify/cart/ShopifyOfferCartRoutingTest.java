@@ -208,7 +208,7 @@ class ShopifyOfferCartRoutingTest {
         when(lookup.findActiveByCanonicalDomain("shop.example")).thenReturn(Optional.of(new MerchantCartProvider(
                 UUID.randomUUID(), "shop.example", "https://shop.example/api/ucp/mcp", null,
                 List.of(), MerchantExecutionPolicy.unavailable(), Instant.now(),
-                java.util.Set.of("dev.ucp.shopping.cart"))));
+                java.util.Set.of("dev.ucp.shopping.cart", "dev.ucp.shopping.checkout"))));
         UcpProfileClient profiles = mock(UcpProfileClient.class);
         ShopifyExternalOfferCartRoutingProvider provider = routingProvider(
                 properties(), lookup, profiles, publicUrlValidator(),
@@ -224,6 +224,36 @@ class ShopifyOfferCartRoutingTest {
         assertThat(restored.merchantIntegrationId()).isNull();
         assertThat(restored.merchantProvider().merchantId()).isNull();
         verifyNoInteractions(profiles);
+    }
+
+    @Test
+    void persistedCartOnlyDatasetProfileObservesCheckoutCapabilityAndEnablesEmbeddedRail() {
+        MerchantCartProviderLookupService lookup = mock(MerchantCartProviderLookupService.class);
+        when(lookup.findActiveByCanonicalDomain("shop.example")).thenReturn(Optional.of(new MerchantCartProvider(
+                UUID.randomUUID(), "shop.example", "https://shop.example/api/ucp/mcp", null,
+                List.of(), MerchantExecutionPolicy.unavailable(), Instant.now(),
+                java.util.Set.of("dev.ucp.shopping.cart"))));
+        UcpProfileClient profiles = mock(UcpProfileClient.class);
+        when(profiles.fetchProfileResult(eq("shop.example"), any())).thenReturn(profile(Map.of(
+                "dev.ucp.shopping.cart", List.of(capability("dev.ucp.shopping.cart")),
+                "dev.ucp.shopping.checkout", List.of(capability("dev.ucp.shopping.checkout"))
+        )));
+        ShopifyExternalOfferCartRoutingProvider provider = routingProvider(
+                properties(), lookup, profiles, publicUrlValidator(),
+                mock(MerchantEnrichmentCandidateService.class));
+        CartRoutingTarget persisted = new CartRoutingTarget(
+                "SHOPIFY:merchant:gid://shopify/Shop/1:domain:shop.example",
+                MerchantIntegrationProvider.SHOPIFY, null, "gid://shopify/Shop/1",
+                new MerchantCartProvider(null, "shop.example", "https://shop.example/old", null));
+
+        CartRoutingTarget first = provider.restoreForCheckout(persisted).orElseThrow();
+        CartRoutingTarget second = provider.restoreForCheckout(persisted).orElseThrow();
+
+        assertThat(first.merchantProvider().executionPolicy()
+                .decision(CommerceOperation.EMBEDDED_CHECKOUT).available()).isTrue();
+        assertThat(second.merchantProvider().executionPolicy()
+                .decision(CommerceOperation.EMBEDDED_CHECKOUT).available()).isTrue();
+        verify(profiles).fetchProfileResult(eq("shop.example"), any());
     }
 
     @Test
