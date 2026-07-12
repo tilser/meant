@@ -293,6 +293,46 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
+    void exactEndpointCanReturnStructuredBusinessErrorsWithoutCandidateFallback() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
+        server.expect(requestTo("https://merchant.example/exact-mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\\"checkout\\\":{\\\"id\\\":\\\"checkout-1\\\"}}"
+                              }
+                            ],
+                            "structuredContent": {
+                              "checkout": {
+                                "id": "checkout-1"
+                              }
+                            },
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        MerchantCartProvider provider = new MerchantCartProvider(
+                UUID.randomUUID(), "merchant.example", "https://merchant.example/exact-mcp",
+                "https://merchant.example/profile-mcp");
+
+        MerchantMcpToolCallResult result = client.callToolExactEndpointReturningJsonToolErrors(
+                provider, "update_checkout", Map.of(), Map.of());
+
+        assertThat(result.endpoint()).isEqualTo("https://merchant.example/exact-mcp");
+        assertThat(result.contentText()).contains("checkout-1");
+        assertThat(result.structuredContent()).isNotNull();
+        server.verify();
+    }
+
+    @Test
     void doesNotFallbackToNextEndpointAfterRateLimitOrLogResponsePayload(CapturedOutput output) {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();

@@ -157,10 +157,33 @@ public class MerchantMcpToolClient {
             Object arguments,
             Map<String, String> headers
     ) {
+        return callToolExactEndpoint(provider, toolName, arguments, headers, false);
+    }
+
+    /** Executes one exact-endpoint call while preserving structured JSON business errors. */
+    public MerchantMcpToolCallResult callToolExactEndpointReturningJsonToolErrors(
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers
+    ) {
+        return callToolExactEndpoint(provider, toolName, arguments, headers, true);
+    }
+
+    private MerchantMcpToolCallResult callToolExactEndpoint(
+            MerchantCartProvider provider,
+            String toolName,
+            Object arguments,
+            Map<String, String> headers,
+            boolean allowJsonToolErrors
+    ) {
         String endpoint = provider.advertisedMcpEndpoint();
         try {
             URI endpointUri = merchantOutboundUrlValidator.validateOutboundUrl(endpoint);
-            UcpToolResponse response = ucpMcpClient.callTool(restClient, endpointUri, toolName, arguments, headers);
+            UcpToolResponse response = allowJsonToolErrors
+                    ? ucpMcpClient.callToolAllowingJsonToolErrors(
+                            restClient, endpointUri, toolName, arguments, headers)
+                    : ucpMcpClient.callTool(restClient, endpointUri, toolName, arguments, headers);
             return new MerchantMcpToolCallResult(
                     endpointUri.toString(), response.textContent(), response.structuredContent(),
                     response.negotiatedCapabilities());

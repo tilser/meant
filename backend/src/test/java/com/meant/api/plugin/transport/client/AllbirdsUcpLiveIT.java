@@ -11,13 +11,14 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Opt-in smoke test against a real merchant. It creates a temporary cart and checkout session, but
- * never submits buyer data, a payment instrument, or a completion request.
+ * Opt-in smoke test against a real merchant. It creates a temporary cart and checkout session and
+ * submits a synthetic delivery address, but never submits a payment instrument or completion request.
  */
 class AllbirdsUcpLiveIT {
 
@@ -27,7 +28,9 @@ class AllbirdsUcpLiveIT {
             "https://www.machinecommerce.dev/ucp/agent-profile/ucp-agent.json";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestClient restClient = RestClient.builder().build();
+    private final RestClient restClient = RestClient.builder()
+            .requestFactory(new JdkClientHttpRequestFactory())
+            .build();
     private final UcpMcpClient mcpClient = new UcpMcpClient(
             new AgentIdentity(URI.create(AGENT_PROFILE), "2026-04-08", "live-smoke-test"),
             objectMapper
@@ -43,7 +46,7 @@ class AllbirdsUcpLiveIT {
 
     @Test
     @Timeout(120)
-    void discoversSearchesCreatesCartAndCreatesRecoverableCheckout() {
+    void discoversSearchesCreatesCartAndSubmitsCheckoutAddressWithoutSchemaFailure() {
         Map<String, Object> profile = restClient.get().uri(PROFILE).retrieve().body(Map.class);
         URI endpoint = shoppingMcpEndpoint(profile);
         assertThat(capabilities(profile)).contains(
@@ -52,7 +55,7 @@ class AllbirdsUcpLiveIT {
                 "dev.ucp.shopping.checkout"
         );
         assertThat(mcpClient.listTools(restClient, endpoint))
-                .contains("search_catalog", "create_cart", "create_checkout", "get_checkout");
+                .contains("search_catalog", "create_cart", "create_checkout", "get_checkout", "update_checkout");
 
         Map<String, Object> search = payload(mcpClient.callTool(
                 restClient,
@@ -123,6 +126,57 @@ class AllbirdsUcpLiveIT {
         assertThat(requiredString(persistedCheckout, "id")).isEqualTo(checkoutId);
         assertThat(firstLineVariantId(persistedCheckout)).isEqualTo(variantId);
         assertThat(continueUrl(persistedCheckout)).isNotBlank();
+
+        String checkoutLineId = firstLineId(persistedCheckout);
+        Map<String, Object> updatedCheckout = checkoutPayload(mcpClient.callToolAllowingJsonToolErrors(
+                restClient,
+                endpoint,
+                "update_checkout",
+                Map.of(
+                        "id", checkoutId,
+                        "checkout", Map.of(
+                                "line_items", List.of(Map.of(
+                                        "id", checkoutLineId,
+                                        "quantity", 1,
+                                        "item", Map.of("id", variantId)
+                                )),
+                                "buyer", Map.of(
+                                        "email", "checkout-live-test@example.com",
+                                        "first_name", "Checkout",
+                                        "last_name", "Test",
+                                        "phone_number", "+15555550100"
+                                ),
+                                "fulfillment", Map.of("methods", List.of(Map.of(
+                                        "id", "shipping",
+                                        "type", "shipping",
+                                        "line_item_ids", List.of(checkoutLineId),
+                                        "selected_destination_id", "shipping",
+                                        "destinations", List.of(Map.of(
+                                                "id", "shipping",
+                                                "street_address", "123 Main Street",
+                                                "address_locality", "New York",
+                                                "address_region", "NY",
+                                                "postal_code", "10001",
+                                                "address_country", "US",
+                                                "first_name", "Checkout",
+                                                "last_name", "Test",
+                                                "phone_number", "+15555550100"
+                                        ))
+                                )))
+                        )
+                ),
+                Map.of()
+        ));
+        String updatedCheckoutId = string(updatedCheckout.get("id"));
+        if (updatedCheckoutId.isBlank()) {
+            assertThat(businessProblems(updatedCheckout))
+                    .as("a structured merchant validation response")
+                    .isNotEmpty();
+        } else {
+            assertThat(updatedCheckoutId).isEqualTo(checkoutId);
+            assertThat(firstLineId(updatedCheckout)).isEqualTo(checkoutLineId);
+            assertThat(firstLineVariantId(updatedCheckout)).isEqualTo(variantId);
+        }
     }
 
     private URI shoppingMcpEndpoint(Map<String, Object> profile) {
@@ -157,6 +211,10 @@ class AllbirdsUcpLiveIT {
         return requiredString(map(line.get("item")), "id");
     }
 
+    private String firstLineId(Map<String, Object> payload) {
+        return requiredString(map(list(payload.get("line_items")).getFirst()), "id");
+    }
+
     private String continueUrl(Map<String, Object> checkout) {
         Object value = checkout.get("continue_url");
         if (value == null) {
@@ -167,7 +225,11 @@ class AllbirdsUcpLiveIT {
 
     private Map<String, Object> payload(UcpToolResponse response) {
         if (response.structuredContent() instanceof Map<?, ?> values) {
-            return map(values);
+            Map<String, Object> structured = map(values);
+            if (structured.keySet().stream().anyMatch(
+                    key -> List.of("id", "products", "cart", "checkout", "line_items").contains(key))) {
+                return structured;
+            }
         }
         try {
             return objectMapper.readValue(response.textContent(), new TypeReference<>() { });
@@ -176,11 +238,28 @@ class AllbirdsUcpLiveIT {
         }
     }
 
+    private Map<String, Object> checkoutPayload(UcpToolResponse response) {
+        Map<String, Object> values = payload(response);
+        Map<String, Object> checkout = map(values.get("checkout"));
+        return checkout.isEmpty() ? values : checkout;
+    }
+
     private String requiredString(Map<String, Object> values, String key) {
         Object value = values.get(key);
         assertThat(value).as(key).isInstanceOf(String.class);
         assertThat(value.toString()).as(key).isNotBlank();
         return value.toString();
+    }
+
+    private List<Object> businessProblems(Map<String, Object> values) {
+        return java.util.stream.Stream.concat(
+                        list(values.get("messages")).stream(),
+                        list(values.get("errors")).stream())
+                .toList();
+    }
+
+    private String string(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     private Map<String, Object> map(Object value) {

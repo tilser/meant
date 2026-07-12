@@ -50,6 +50,7 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
@@ -725,7 +726,7 @@ class CartServiceTest {
     }
 
     @Test
-    void updateCheckoutSendsBuyerLineItemsAndFulfillmentDestination() {
+    void updateCheckoutRefreshesLineIdentityBeforeSendingBuyerAndFulfillmentDestination() {
         UUID cartId = UUID.randomUUID();
         Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
         cart.replaceCheckoutSession(
@@ -733,7 +734,7 @@ class CartServiceTest {
                 "incomplete",
                 "https://merchant.example/stored-checkout",
                 null,
-                storedCheckoutResponse(),
+                null,
                 Instant.parse("2026-06-16T11:07:00Z")
         );
         cartRepository.save(cart);
@@ -797,8 +798,9 @@ class CartServiceTest {
                 .containsEntry("first_name", "Ada")
                 .containsEntry("last_name", "Lovelace")
                 .containsEntry("phone_number", "+15551234567");
-        assertThat(checkoutDispatchService.getCount).isEqualTo(1);
+        assertThat(checkoutDispatchService.getCount).isEqualTo(2);
         assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
+        assertThat(checkoutDispatchService.calls).startsWith("get", "update");
         assertImportedCandle();
     }
 
@@ -1334,6 +1336,7 @@ class CartServiceTest {
         private int getCount;
         private int updateCount;
         private CountDownLatch concurrentCreates;
+        private final List<String> calls = new ArrayList<>();
 
         FakeCheckoutDispatchService() {
             super(mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
@@ -1367,14 +1370,35 @@ class CartServiceTest {
         }
 
         @Override
+        public UcpCheckoutToolResult createCheckout(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                CreateCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            return createCheckout(target.merchantProvider(), request, session);
+        }
+
+        @Override
         public UcpCheckoutToolResult getCheckout(
                 MerchantCartProvider provider,
                 GetCheckoutRequest request,
                 UcpSession session
         ) {
             getCount++;
+            calls.add("get");
             lastCheckoutId = request.checkoutId();
             return checkoutToolResult;
+        }
+
+        @Override
+        public UcpCheckoutToolResult getCheckout(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                GetCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            return getCheckout(target.merchantProvider(), request, session);
         }
 
         @Override
@@ -1384,8 +1408,19 @@ class CartServiceTest {
                 UcpSession session
         ) {
             updateCount++;
+            calls.add("update");
             lastUpdateRequest = request;
             return checkoutToolResult;
+        }
+
+        @Override
+        public UcpCheckoutToolResult updateCheckout(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                UpdateCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            return updateCheckout(target.merchantProvider(), request, session);
         }
 
         private UcpCheckoutToolResult checkoutToolResult(String cartId) {
@@ -1404,7 +1439,19 @@ class CartServiceTest {
                             Instant.parse("2026-06-16T11:06:01Z"),
                             null,
                             null,
-                            null,
+                            List.of(new UcpCheckoutResponse.CheckoutLineItem(
+                                    "gid://shopify/CheckoutLine/1",
+                                    null,
+                                    "gid://shopify/ProductVariant/1",
+                                    null,
+                                    null,
+                                    1,
+                                    null,
+                                    null,
+                                    null,
+                                    List.of(),
+                                    null
+                            )),
                             null,
                             new UcpCheckoutResponse.CheckoutBuyer(null, null, "ada@example.com", null),
                             null,

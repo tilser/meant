@@ -1,12 +1,22 @@
 package com.meant.api.module.checkout.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
@@ -18,6 +28,7 @@ import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.GetCheckoutCapability;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.UpdateCheckoutCapability;
+import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.net.InetAddress;
@@ -210,6 +221,51 @@ class MerchantCheckoutPluginDispatchServiceTest {
         assertThat(result.response().resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
         assertThat(session.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
         server.verify();
+    }
+
+    @Test
+    void boundUpdateFailureUsesOneExactEndpointAndNeverFallsBackToCandidates() {
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callToolExactEndpointReturningJsonToolErrors(any(), any(), any(), any()))
+                .thenThrow(new MerchantMcpToolException("ambiguous timeout"));
+        MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
+                client,
+                registry(),
+                objectMapper,
+                List.of()
+        );
+        MerchantCartProvider provider = provider();
+        CartRoutingTarget target = new CartRoutingTarget(
+                "GENERIC_UCP:integration:" + UUID.randomUUID(),
+                MerchantIntegrationProvider.GENERIC_UCP,
+                UUID.randomUUID(),
+                null,
+                provider
+        );
+        UpdateCheckoutRequest request = new UpdateCheckoutRequest(
+                "gid://shopify/Checkout/1",
+                List.of(new UpdateCheckoutRequest.LineItem(
+                        "gid://shopify/CheckoutLine/1",
+                        "gid://shopify/ProductVariant/1",
+                        1
+                )),
+                java.util.Map.of(),
+                null,
+                null,
+                null,
+                java.util.Map.of(),
+                List.of(),
+                java.util.Map.of()
+        );
+
+        assertThatThrownBy(() -> service.updateCheckout(target, request, UcpSession.start()))
+                .isInstanceOf(MerchantMcpToolException.class)
+                .hasMessageContaining("ambiguous timeout");
+
+        verify(client).callToolExactEndpointReturningJsonToolErrors(
+                eq(provider), eq("update_checkout"), any(), eq(java.util.Map.of()));
+        verify(client, never()).callToolReturningJsonToolErrors(
+                any(MerchantCartProvider.class), any(), any());
     }
 
     private MerchantMcpToolClient merchantMcpToolClient(RestClient restClient) {

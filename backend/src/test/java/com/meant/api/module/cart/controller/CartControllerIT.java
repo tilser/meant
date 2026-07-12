@@ -46,6 +46,7 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.nio.charset.StandardCharsets;
@@ -827,6 +828,16 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                     raw(response),
                     response
             );
+        }
+
+        @Override
+        public UcpCheckoutToolResult createCheckout(
+                CartRoutingTarget target,
+                CreateCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            return createCheckout(target.merchantProvider(), request, session);
         }
 
         private String raw(UcpCheckoutResponse response) {

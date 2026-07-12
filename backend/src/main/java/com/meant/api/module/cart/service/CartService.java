@@ -252,12 +252,20 @@ public class CartService {
         }
         CartRoutingTarget target = routingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
-        List<UpdateCheckoutRequest.LineItem> lineItems = updateCheckoutLineItems(cart);
+        UcpSession session = session(cart);
+        UcpCheckoutToolResult currentCheckout = merchantCheckoutPluginDispatchService.getCheckout(
+                target,
+                new GetCheckoutRequest(cart.getCheckoutId()),
+                session
+        );
+        List<UpdateCheckoutRequest.LineItem> lineItems = updateCheckoutLineItems(
+                cart,
+                currentCheckout.response()
+        );
         Map<String, Object> buyer = buyer(command.buyer());
         Map<String, Object> shippingAddress = postalAddress(command.buyer(), command.shippingAddress());
         Map<String, Object> context = cartBuyerContextService.buyerContext(command.userId());
         List<String> discountCodes = normalizeCodes(command.discountCodes());
-        UcpSession session = session(cart);
         UpdateCheckoutRequest updateRequest = new UpdateCheckoutRequest(
                         cart.getCheckoutId(),
                         lineItems,
@@ -319,18 +327,36 @@ public class CartService {
         return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
     }
 
-    private List<UpdateCheckoutRequest.LineItem> updateCheckoutLineItems(Cart cart) {
-        List<UcpCheckoutResponse.CheckoutLineItem> checkoutLines = new ArrayList<>(checkoutLineItems(cart));
-        return cart.getLines().stream()
-                .map(line -> {
-                    UcpCheckoutResponse.CheckoutLineItem checkoutLine = takeMatchingCheckoutLine(checkoutLines, line);
-                    return new UpdateCheckoutRequest.LineItem(
-                            checkoutLineId(checkoutLine),
-                            line.getProductVariantId(),
-                            line.getQuantity()
-                    );
-                })
-                .toList();
+    private List<UpdateCheckoutRequest.LineItem> updateCheckoutLineItems(
+            Cart cart,
+            UcpCheckoutResponse currentResponse
+    ) {
+        List<UcpCheckoutResponse.CheckoutLineItem> checkoutLines = new ArrayList<>(checkoutLineItems(currentResponse));
+        if (checkoutLines.isEmpty()) {
+            checkoutLines.addAll(checkoutLineItems(cart));
+        }
+        List<UpdateCheckoutRequest.LineItem> lineItems = new ArrayList<>();
+        for (CartLine line : cart.getLines()) {
+            UcpCheckoutResponse.CheckoutLineItem checkoutLine = takeMatchingCheckoutLine(checkoutLines, line);
+            String checkoutLineId = checkoutLineId(checkoutLine);
+            if (!hasText(checkoutLineId)) {
+                throw CartException.rejected("Checkout line identity is unavailable after refresh");
+            }
+            lineItems.add(new UpdateCheckoutRequest.LineItem(
+                    checkoutLineId,
+                    line.getProductVariantId(),
+                    line.getQuantity()
+            ));
+        }
+        if (!checkoutLines.isEmpty()) {
+            throw CartException.rejected("Checkout lines no longer match the cart");
+        }
+        return List.copyOf(lineItems);
+    }
+
+    private List<UcpCheckoutResponse.CheckoutLineItem> checkoutLineItems(UcpCheckoutResponse response) {
+        UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
+        return checkout == null ? List.of() : safeList(checkout.lineItems());
     }
 
     private List<UcpCheckoutResponse.CheckoutLineItem> checkoutLineItems(Cart cart) {
@@ -344,9 +370,6 @@ public class CartService {
             CartLine cartLine
     ) {
         int matchingIndex = matchingCheckoutLineIndex(checkoutLines, cartLine);
-        if (matchingIndex < 0 && checkoutLines.size() == 1) {
-            matchingIndex = 0;
-        }
         return matchingIndex < 0 ? null : checkoutLines.remove(matchingIndex);
     }
 
