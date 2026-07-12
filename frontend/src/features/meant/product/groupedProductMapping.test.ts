@@ -123,4 +123,47 @@ describe('grouped product card mapping', () => {
     expect(mapped.priceFrom).toBe(8)
     expect(mapped.commercialFactsAuthoritative).toBe(false)
   })
+
+  test('maps canonical media and offer options into the original product detail model', () => {
+    const canonical = canonicalProduct('detail')
+    canonical.media = [
+      {
+        type: 'image',
+        url: 'https://cdn.example/front.jpg',
+        altText: 'Front',
+        previewImageUrl: 'https://cdn.example/front.jpg',
+      },
+      {
+        type: 'image',
+        url: 'https://cdn.example/back.jpg',
+        altText: 'Back',
+        previewImageUrl: 'https://cdn.example/back.jpg',
+      },
+    ]
+    canonical.description = 'Full product description'
+    canonical.offers[0]!.selectedOptions = [
+      { name: 'Size', value: 'M' },
+      { name: 'Color', value: 'Black' },
+    ]
+    canonical.offers[1]!.selectedOptions = [
+      { name: 'Size', value: 'L' },
+      { name: 'Color', value: 'Black' },
+    ]
+
+    const mapped = productFromCanonical(canonical)
+
+    expect(mapped.media?.map((item) => item.url)).toEqual([
+      'https://cdn.example/front.jpg',
+      'https://cdn.example/back.jpg',
+    ])
+    expect(mapped.detailDescription).toBe('Full product description')
+    expect(mapped.detailOptions).toEqual([
+      { name: 'Size', values: ['L', 'M'] },
+      { name: 'Color', values: ['Black'] },
+    ])
+    expect(mapped.selectedOptions).toEqual([
+      { name: 'Size', value: 'L' },
+      { name: 'Color', value: 'Black' },
+    ])
+  })
 })

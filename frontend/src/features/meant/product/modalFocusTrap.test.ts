@@ -6,7 +6,7 @@ function target(name: string, focused: string[]): FocusTarget {
   return { focus: () => focused.push(name) }
 }
 
-describe('grouped product modal focus containment', () => {
+describe('product modal focus containment', () => {
   test('wraps Tab and Shift+Tab at the dialog boundaries', () => {
     const focused: string[] = []
     const fallback = target('dialog', focused)

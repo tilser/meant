@@ -1,7 +1,8 @@
-import { type TouchEvent as ReactTouchEvent, useEffect, useRef, useState } from 'react'
+import { type TouchEvent as ReactTouchEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   getMerchantProductDetails,
+  type CanonicalOfferProfile,
   type MerchantProductDetailsProfile,
   type MerchantProductVariantProfile,
   type ProductAttributeProfile,
@@ -23,6 +24,7 @@ import {
   prefLabel,
   productMerchantCount,
   resolveAsk,
+  minorUnitsToMajor,
 } from '../utils'
 import { ProductPriceLine } from './ProductCard'
 import {
@@ -36,6 +38,8 @@ import {
   productSelectedOptionsFromProfiles,
 } from './productMapping'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
+import { GroupedOfferSelector } from './GroupedProductModal'
+import { containModalTabFocus } from './modalFocusTrap'
 
 type ProductDetailLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 
@@ -219,6 +223,47 @@ function availabilityClass(value: boolean | null | undefined): string {
   return 'unknown'
 }
 
+function canonicalOfferAvailability(offer: CanonicalOfferProfile): boolean | null {
+  switch (offer.availability.status) {
+    case 'IN_STOCK':
+    case 'PREORDER':
+    case 'BACKORDER':
+      return true
+    case 'OUT_OF_STOCK':
+    case 'DISCONTINUED':
+      return false
+    default:
+      return null
+  }
+}
+
+function canonicalOfferVariant(offer: CanonicalOfferProfile): MerchantProductVariantProfile {
+  const price = offer.price ? minorUnitsToMajor(offer.price.minorUnits, offer.price.currency) : null
+  const listPrice = offer.listPrice
+    ? minorUnitsToMajor(offer.listPrice.minorUnits, offer.listPrice.currency)
+    : null
+  return {
+    variantId: offer.identity.externalVariantIdentity?.value ?? offer.key,
+    handle: null,
+    title: offer.variantTitle ?? offer.merchantName ?? null,
+    description: null,
+    url: null,
+    priceAmount: price === null ? null : String(price),
+    priceCurrency: offer.price?.currency ?? null,
+    listPriceAmount: listPrice === null ? null : String(listPrice),
+    listPriceCurrency: offer.listPrice?.currency ?? null,
+    sku: null,
+    imageUrl: null,
+    imageAltText: null,
+    media: [],
+    available: canonicalOfferAvailability(offer),
+    selectedOptions: offer.selectedOptions,
+    categories: [],
+    tags: [],
+    attributes: [],
+  }
+}
+
 export function ProductModal({
   product,
   deliveryLocations,
@@ -230,6 +275,8 @@ export function ProductModal({
   onToggleSave,
   onCompare,
   onAddToCart,
+  onAddOfferKey,
+  onResearch,
   onAskInChat,
   canPrev,
   canNext,
@@ -246,6 +293,8 @@ export function ProductModal({
   onToggleSave: (product: Product) => void
   onCompare: (product: Product) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
+  onAddOfferKey?: (offerKey: string) => Promise<boolean>
+  onResearch?: (query: string) => void
   onAskInChat?: (product: Product, question: string) => void
   canPrev: boolean
   canNext: boolean
@@ -256,6 +305,10 @@ export function ProductModal({
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [canonicalOfferSelection, setCanonicalOfferSelection] = useState<{
+    offerKey: string | null
+    canAdd: boolean
+  }>({ offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null, canAdd: false })
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
   const [thumbnailPage, setThumbnailPage] = useState(0)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
@@ -266,6 +319,8 @@ export function ProductModal({
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const modalDockRef = useRef<HTMLDivElement | null>(null)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
   const deliveryCountryCode = deliveryLocations[0]?.code ?? null
 
   useEffect(() => {
@@ -273,13 +328,28 @@ export function ProductModal({
     setAdded(false)
     setAdding(false)
     setAddError(null)
+    setCanonicalOfferSelection({
+      offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null,
+      canAdd: false,
+    })
     setSelectedMediaUrl(null)
     setThumbnailPage(0)
     setZoomImageUrl(null)
     setMerchantDetails(null)
     setDetailLoadState('idle')
     setDetailLoadError(null)
-  }, [product?.id])
+  }, [product?.canonicalProduct?.recommendedOfferKey, product?.id])
+
+  const handleCanonicalOfferSelection = useCallback(
+    (selection: { offerKey: string | null; canAdd: boolean }) => {
+      setCanonicalOfferSelection((current) =>
+        current.offerKey === selection.offerKey && current.canAdd === selection.canAdd
+          ? current
+          : selection,
+      )
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!product?.remote || !product.merchantId || !product.merchantProductId) {
@@ -331,6 +401,13 @@ export function ProductModal({
   )
 
   useEffect(() => {
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    window.setTimeout(() => dialogRef.current?.focus(), 0)
+    return () => returnFocusRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
     if (!product) {
       return
     }
@@ -350,6 +427,24 @@ export function ProductModal({
       }
       if (event.key === 'Escape') {
         onClose()
+        return
+      }
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+        if (
+          containModalTabFocus(
+            focusable,
+            document.activeElement instanceof HTMLElement ? document.activeElement : null,
+            event.shiftKey,
+            dialogRef.current,
+          )
+        ) {
+          event.preventDefault()
+        }
         return
       }
       if (isInteractive) {
@@ -411,9 +506,11 @@ export function ProductModal({
   const selectedOptions = merchantDetails
     ? productSelectedOptionsFromProfiles(merchantDetails.selectedOptions)
     : [...(product.selectedOptions ?? [])]
-  const detailVariants = (merchantDetails?.variants ?? []).filter(
-    (variant): variant is MerchantProductVariantProfile => Boolean(variant),
-  )
+  const detailVariants = merchantDetails
+    ? merchantDetails.variants.filter((variant): variant is MerchantProductVariantProfile =>
+        Boolean(variant),
+      )
+    : (product.canonicalProduct?.offers.map(canonicalOfferVariant) ?? [])
   const availableVariantCount = detailVariants.filter(
     (variant) => variant.available === true,
   ).length
@@ -425,14 +522,18 @@ export function ProductModal({
     0,
   )
   const detailCategories = cleanValues(
-    (merchantDetails?.categories ?? []).map((category) => category?.value),
+    merchantDetails
+      ? merchantDetails.categories.map((category) => category?.value)
+      : product.catalogCategories?.map((category) => category.value),
   )
   const detailTags = cleanValues(merchantDetails?.tags)
-  const detailSkus = cleanValues(merchantDetails?.skus)
-  const detailMaterials = cleanValues(merchantDetails?.materials)
-  const detailCertifications = cleanValues(merchantDetails?.certifications)
-  const detailCollections = cleanValues(merchantDetails?.collections)
-  const detailAttributes = attributeRows(merchantDetails?.attributes)
+  const detailSkus = cleanValues(merchantDetails?.skus ?? product.skus)
+  const detailMaterials = cleanValues(merchantDetails?.materials ?? product.materials)
+  const detailCertifications = cleanValues(
+    merchantDetails?.certifications ?? product.certifications,
+  )
+  const detailCollections = cleanValues(merchantDetails?.collections ?? product.collections)
+  const detailAttributes = attributeRows(merchantDetails?.attributes ?? product.catalogAttributes)
   const detailMessages = messageRows(merchantDetails?.messages)
   const selectedVariantPrice = detailMoney(
     merchantDetails?.selectedVariantPriceAmount,
@@ -442,12 +543,13 @@ export function ProductModal({
     merchantDetails?.selectedVariantListPriceAmount,
     merchantDetails?.selectedVariantListPriceCurrency,
   )
+  const selectedVariantAvailability =
+    merchantDetails?.selectedVariantAvailable ?? product.selectedVariantAvailable
   const hasSelectedVariantFacts =
     selectedOptions.length > 0 ||
     Boolean(merchantDetails?.selectedVariantSku) ||
     Boolean(selectedVariantPrice) ||
-    (merchantDetails?.selectedVariantAvailable !== null &&
-      merchantDetails?.selectedVariantAvailable !== undefined)
+    (selectedVariantAvailability !== null && selectedVariantAvailability !== undefined)
   const listPriceRange =
     merchantDetails?.listPriceMin && merchantDetails?.listPriceMax
       ? sameAmount(merchantDetails.listPriceMin, merchantDetails.listPriceMax)
@@ -516,18 +618,46 @@ export function ProductModal({
     ])
   }
   const selectedOffer = bestOffer(product, deliveryLocations)
-  const canAddToCart = offerCartable(selectedOffer) || canResolveCartOffer(product, selectedOffer)
+  const isCanonicalProduct = Boolean(product.canonicalProduct)
+  const canAddToCart = isCanonicalProduct
+    ? canonicalOfferSelection.canAdd && Boolean(onAddOfferKey)
+    : offerCartable(selectedOffer) || canResolveCartOffer(product, selectedOffer)
   const addDisabled = adding || !canAddToCart
   const addButtonLabel = added
     ? 'Added to cart'
     : adding
       ? 'Adding...'
-      : selectedOffer.available === false
-        ? 'Unavailable'
-        : canAddToCart
-          ? 'Add to cart'
-          : 'Checkout unavailable'
+      : isCanonicalProduct && !canAddToCart
+        ? 'Refreshing offer…'
+        : selectedOffer.available === false
+          ? 'Unavailable'
+          : canAddToCart
+            ? 'Add to cart'
+            : 'Checkout unavailable'
   const addSelectedOffer = async () => {
+    if (isCanonicalProduct) {
+      if (!canonicalOfferSelection.offerKey || !onAddOfferKey || adding) return
+      setAdding(true)
+      setAddError(null)
+      try {
+        const addedToCart = await onAddOfferKey(canonicalOfferSelection.offerKey)
+        if (!addedToCart) {
+          setAddError('Could not add this exact merchant offer to cart.')
+          return
+        }
+        setAdded(true)
+        if (addedTimeoutRef.current !== null) window.clearTimeout(addedTimeoutRef.current)
+        addedTimeoutRef.current = window.setTimeout(() => {
+          setAdded(false)
+          addedTimeoutRef.current = null
+        }, 1600)
+      } catch {
+        setAddError('Could not add this exact merchant offer to cart.')
+      } finally {
+        setAdding(false)
+      }
+      return
+    }
     if (!canAddToCart || adding) {
       return
     }
@@ -620,6 +750,8 @@ export function ProductModal({
         role="dialog"
         aria-modal="true"
         aria-label={product.name}
+        tabIndex={-1}
+        ref={dialogRef}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
@@ -749,7 +881,7 @@ export function ProductModal({
               </button>
             </div>
             {addError ? <div className="mt-cart-inline-error">{addError}</div> : null}
-            {!canAddToCart && !addError ? (
+            {!isCanonicalProduct && !canAddToCart && !addError ? (
               <div className="mt-cart-inline-error muted">
                 This offer is not available for merchant checkout.
               </div>
@@ -834,15 +966,15 @@ export function ProductModal({
                         )}
                       </span>
                     ) : null}
-                    {merchantDetails?.selectedVariantAvailable !== null &&
-                    merchantDetails?.selectedVariantAvailable !== undefined ? (
+                    {selectedVariantAvailability !== null &&
+                    selectedVariantAvailability !== undefined ? (
                       <span
                         className={`mt-product-detail-fact ${availabilityClass(
-                          merchantDetails.selectedVariantAvailable,
+                          selectedVariantAvailability,
                         )}`}
                       >
                         <span className="mt-mono">Stock</span>
-                        {availabilityLabel(merchantDetails.selectedVariantAvailable)}
+                        {availabilityLabel(selectedVariantAvailability)}
                       </span>
                     ) : null}
                   </div>
@@ -978,7 +1110,9 @@ export function ProductModal({
 
             {hasMerchantData ? (
               <section className="mt-block">
-                <div className="mt-block-label mt-mono">Merchant data</div>
+                <div className="mt-block-label mt-mono">
+                  {product.canonicalProduct ? 'Product data' : 'Merchant data'}
+                </div>
                 <div className="mt-product-data">
                   {detailDataGroups.map((group) => (
                     <div className="mt-product-data-group" key={group.label}>
@@ -1046,25 +1180,36 @@ export function ProductModal({
 
             <ProductReviewsPanel product={product} />
 
-            <section className="mt-block">
-              <div className="mt-block-label mt-mono">Available offers</div>
-              <div className="mt-offers">
-                {visibleOffers.map((offer, index) => (
-                  <div className={`mt-offer ${index === 0 ? 'best' : ''}`} key={offer.merchant}>
-                    <div className="mt-offer-merch">
-                      {offer.merchant}
-                      {index === 0 ? <span className="mt-mono mt-offer-tag">best</span> : null}
-                    </div>
-                    <div className="mt-offer-right">
-                      <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
-                      <span className="mt-offer-price">
-                        {money(offer.price, offer.priceCurrency)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+            {product.canonicalProduct ? (
+              <div>
+                <GroupedOfferSelector
+                  product={product}
+                  onAddOfferKey={onAddOfferKey}
+                  onResearch={(query) => onResearch?.(query)}
+                  onSelectionChange={handleCanonicalOfferSelection}
+                />
               </div>
-            </section>
+            ) : (
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">Available offers</div>
+                <div className="mt-offers">
+                  {visibleOffers.map((offer, index) => (
+                    <div className={`mt-offer ${index === 0 ? 'best' : ''}`} key={offer.merchant}>
+                      <div className="mt-offer-merch">
+                        {offer.merchant}
+                        {index === 0 ? <span className="mt-mono mt-offer-tag">best</span> : null}
+                      </div>
+                      <div className="mt-offer-right">
+                        <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
+                        <span className="mt-offer-price">
+                          {money(offer.price, offer.priceCurrency)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </div>
 

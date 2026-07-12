@@ -6,11 +6,9 @@ import {
   type CanonicalOfferProfile,
   type CanonicalProductDetailProfile,
 } from '../../../lib/apiClient'
-import { CloseIcon, ProductArtwork } from '../shared/ui'
 import type { Product } from '../types'
 import { minorUnitsToMajor, money } from '../utils'
 import { trackCommerceEvent } from './commerceAnalytics'
-import { containModalTabFocus } from './modalFocusTrap'
 import {
   offerCanAdd,
   offerCanSelect,
@@ -135,16 +133,16 @@ function OfferChoice({
   )
 }
 
-export function GroupedProductModal({
+export function GroupedOfferSelector({
   product,
-  onClose,
   onResearch,
   onAddOfferKey,
+  onSelectionChange,
 }: Readonly<{
   product: Product
-  onClose: () => void
   onResearch: (query: string) => void
   onAddOfferKey?: (offerKey: string) => Promise<boolean>
+  onSelectionChange?: (selection: { offerKey: string | null; canAdd: boolean }) => void
 }>) {
   const recommendedOfferKey = product.canonicalProduct?.recommendedOfferKey ?? ''
   const [detail, setDetail] = useState<CanonicalProductDetailProfile | null>(null)
@@ -160,19 +158,10 @@ export function GroupedProductModal({
   const [addMessage, setAddMessage] = useState<string | null>(null)
   const [addFailure, setAddFailure] = useState<SelectedOfferCartFailure | null>(null)
   const requestRef = useRef(0)
-  const dialogRef = useRef<HTMLDivElement | null>(null)
-  const returnFocusRef = useRef<HTMLElement | null>(null)
   const viewedProductKeyRef = useRef<string | null>(null)
   const viewedOfferKeysRef = useRef(new Set<string>())
   const canonicalKey = product.canonicalProduct?.key ?? product.id
   const selectedOfferKey = selection.selectedOfferKey
-
-  useEffect(() => {
-    returnFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
-    window.setTimeout(() => dialogRef.current?.focus(), 0)
-    return () => returnFocusRef.current?.focus()
-  }, [])
 
   useEffect(() => {
     const requestId = requestRef.current + 1
@@ -223,38 +212,16 @@ export function GroupedProductModal({
     })
   }, [canonicalKey, detail])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose()
-        return
-      }
-      if (event.key !== 'Tab' || !dialogRef.current) return
-
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
-      if (
-        containModalTabFocus(
-          focusable,
-          document.activeElement instanceof HTMLElement ? document.activeElement : null,
-          event.shiftKey,
-          dialogRef.current,
-        )
-      ) {
-        event.preventDefault()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   const selectedOffer = useMemo(
     () => detail?.product.offers.find((offer) => offer.key === selection.selectedOfferKey) ?? null,
     [detail, selection.selectedOfferKey],
   )
+  useEffect(() => {
+    onSelectionChange?.({
+      offerKey: selectedOffer?.key ?? null,
+      canAdd: status === 'loaded' && Boolean(selectedOffer && offerCanAdd(selectedOffer)),
+    })
+  }, [onSelectionChange, selectedOffer, status])
   const select = (offer: CanonicalOfferProfile) => {
     if (offer.key === selection.selectedOfferKey) return
     const next = selectOffer(selection, offer.key)
@@ -313,161 +280,128 @@ export function GroupedProductModal({
   }
 
   return (
-    <div className="mt-modal-root open">
-      <button
-        className="mt-modal-scrim"
-        type="button"
-        aria-label="Close product detail"
-        onClick={onClose}
-      />
-      <div
-        className="mt-modal mt-grouped-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={product.name}
-        tabIndex={-1}
-        ref={dialogRef}
-      >
-        <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
-          <CloseIcon />
-        </button>
-        <div className="mt-grouped-product-summary">
-          <div className="mt-grouped-product-art">
-            <ProductArtwork product={product} label={`${product.name} product image`} />
-          </div>
-          <div>
-            <div className="mt-mono mt-card-brand">{product.brand}</div>
-            <h2 className="mt-modal-name">{product.name}</h2>
-            <p>{product.detailDescription || product.note}</p>
-            <div className="mt-drawer-note">
-              <span className="mt-note-key">Why it is meant for you</span>
-              {product.note}
-            </div>
-          </div>
+    <div className="mt-grouped-offer-selector">
+      {status === 'loading' ? (
+        <div className="mt-grouped-loading" role="status" aria-live="polite">
+          <span className="mt-grouped-skeleton wide" />
+          <span className="mt-grouped-skeleton" />
+          <span>Refreshing offers without changing your selection…</span>
         </div>
+      ) : null}
+      {status === 'not-found' ? (
+        <div className="mt-grouped-recovery" role="alert">
+          <h3>This product session has expired</h3>
+          <p>Search again to get fresh product and offer keys.</p>
+          <button
+            type="button"
+            className="mt-act mt-act-primary"
+            onClick={() => onResearch(product.name)}
+          >
+            Re-search this product
+          </button>
+        </div>
+      ) : null}
+      {status === 'error' ? (
+        <div className="mt-grouped-recovery" role="alert">
+          <h3>Offers could not be loaded</h3>
+          <p>Your prior selection has not been replaced.</p>
+          <button
+            type="button"
+            className="mt-act mt-act-ghost"
+            onClick={() => setRefreshVersion((value) => value + 1)}
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
 
-        {status === 'loading' ? (
-          <div className="mt-grouped-loading" role="status" aria-live="polite">
-            <span className="mt-grouped-skeleton wide" />
-            <span className="mt-grouped-skeleton" />
-            <span>Refreshing offers without changing your selection…</span>
+      {detail && status === 'loaded' ? (
+        <section className="mt-grouped-offers" aria-labelledby="grouped-offers-title">
+          <div className="mt-grouped-offers-heading">
+            <div>
+              <h3 id="grouped-offers-title">Choose one merchant offer</h3>
+              <p>Each merchant is a separate cart, checkout, charge, and transaction.</p>
+            </div>
+            <button
+              type="button"
+              className="mt-grouped-refresh"
+              onClick={() => setRefreshVersion((value) => value + 1)}
+            >
+              Refresh all offers
+            </button>
           </div>
-        ) : null}
-        {status === 'not-found' ? (
-          <div className="mt-grouped-recovery" role="alert">
-            <h3>This product session has expired</h3>
-            <p>Search again to get fresh product and offer keys.</p>
+          {detail.sourceStates.some((source) => source.degraded) ? (
+            <div className="mt-grouped-degraded" role="status">
+              Some sources are limited right now. Healthy merchant offers remain available.
+            </div>
+          ) : null}
+          {selection.selectedOfferMissing ? (
+            <div className="mt-grouped-degraded" role="alert">
+              Your selected offer is no longer returned. Meant did not switch merchants; choose a
+              new offer explicitly.
+            </div>
+          ) : null}
+          <div className="mt-grouped-offer-list">
+            {detail.product.offers.length === 0 ? (
+              <div className="mt-grouped-recovery" role="status">
+                No eligible merchant offers are available. Re-search for a fresh product session.
+              </div>
+            ) : null}
+            {detail.product.offers.map((offer) => (
+              <OfferChoice
+                key={offer.key}
+                offer={offer}
+                selected={offer.key === selection.selectedOfferKey}
+                recommended={offer.key === detail.recommendedOfferKey}
+                onSelect={() => select(offer)}
+                onRefresh={() => setRefreshVersion((value) => value + 1)}
+              />
+            ))}
+          </div>
+          <div className="mt-grouped-cart-bar">
+            <span>
+              {selectedOffer
+                ? `${selectedOffer.merchantName || 'Merchant'} · ${offerPrice(selectedOffer)}`
+                : 'Choose an available offer'}
+            </span>
             <button
               type="button"
               className="mt-act mt-act-primary"
-              onClick={() => onResearch(product.name)}
+              disabled={!selectedOffer || !offerCanAdd(selectedOffer) || adding}
+              onClick={() => void addSelected()}
             >
-              Re-search this product
+              {adding ? 'Adding exact offer…' : 'Add selected offer to cart'}
             </button>
           </div>
-        ) : null}
-        {status === 'error' ? (
-          <div className="mt-grouped-recovery" role="alert">
-            <h3>Offers could not be loaded</h3>
-            <p>Your prior selection has not been replaced.</p>
-            <button
-              type="button"
-              className="mt-act mt-act-ghost"
-              onClick={() => setRefreshVersion((value) => value + 1)}
-            >
-              Try again
-            </button>
-          </div>
-        ) : null}
-
-        {detail && status === 'loaded' ? (
-          <section className="mt-grouped-offers" aria-labelledby="grouped-offers-title">
-            <div className="mt-grouped-offers-heading">
-              <div>
-                <h3 id="grouped-offers-title">Choose one merchant offer</h3>
-                <p>Each merchant is a separate cart, checkout, charge, and transaction.</p>
-              </div>
-              <button
-                type="button"
-                className="mt-grouped-refresh"
-                onClick={() => setRefreshVersion((value) => value + 1)}
-              >
-                Refresh all offers
-              </button>
+          {addMessage ? (
+            <div className="mt-cart-inline-error" role="status">
+              {addMessage}
             </div>
-            {detail.sourceStates.some((source) => source.degraded) ? (
-              <div className="mt-grouped-degraded" role="status">
-                Some sources are limited right now. Healthy merchant offers remain available.
-              </div>
-            ) : null}
-            {selection.selectedOfferMissing ? (
-              <div className="mt-grouped-degraded" role="alert">
-                Your selected offer is no longer returned. Meant did not switch merchants; choose a
-                new offer explicitly.
-              </div>
-            ) : null}
-            <div className="mt-grouped-offer-list">
-              {detail.product.offers.length === 0 ? (
-                <div className="mt-grouped-recovery" role="status">
-                  No eligible merchant offers are available. Re-search for a fresh product session.
-                </div>
+          ) : null}
+          {addFailure ? (
+            <div className="mt-grouped-recovery-actions">
+              {addFailure.refresh ? (
+                <button
+                  type="button"
+                  className="mt-grouped-refresh"
+                  onClick={() => setRefreshVersion((value) => value + 1)}
+                >
+                  Refresh selected offer
+                </button>
               ) : null}
-              {detail.product.offers.map((offer) => (
-                <OfferChoice
-                  key={offer.key}
-                  offer={offer}
-                  selected={offer.key === selection.selectedOfferKey}
-                  recommended={offer.key === detail.recommendedOfferKey}
-                  onSelect={() => select(offer)}
-                  onRefresh={() => setRefreshVersion((value) => value + 1)}
-                />
-              ))}
+              {addFailure.research ? (
+                <button
+                  type="button"
+                  className="mt-grouped-refresh"
+                  onClick={() => onResearch(product.name)}
+                >
+                  Re-search this product
+                </button>
+              ) : null}
             </div>
-            <div className="mt-grouped-cart-bar">
-              <span>
-                {selectedOffer
-                  ? `${selectedOffer.merchantName || 'Merchant'} · ${offerPrice(selectedOffer)}`
-                  : 'Choose an available offer'}
-              </span>
-              <button
-                type="button"
-                className="mt-act mt-act-primary"
-                disabled={!selectedOffer || !offerCanAdd(selectedOffer) || adding}
-                onClick={() => void addSelected()}
-              >
-                {adding ? 'Adding exact offer…' : 'Add selected offer to cart'}
-              </button>
-            </div>
-            {addMessage ? (
-              <div className="mt-cart-inline-error" role="status">
-                {addMessage}
-              </div>
-            ) : null}
-            {addFailure ? (
-              <div className="mt-grouped-recovery-actions">
-                {addFailure.refresh ? (
-                  <button
-                    type="button"
-                    className="mt-grouped-refresh"
-                    onClick={() => setRefreshVersion((value) => value + 1)}
-                  >
-                    Refresh selected offer
-                  </button>
-                ) : null}
-                {addFailure.research ? (
-                  <button
-                    type="button"
-                    className="mt-grouped-refresh"
-                    onClick={() => onResearch(product.name)}
-                  >
-                    Re-search this product
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-      </div>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   )
 }

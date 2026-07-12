@@ -54,6 +54,25 @@ function groupedCardPriceOffer(product: CanonicalProductProfile) {
   }, null)
 }
 
+function canonicalProductOptions(product: CanonicalProductProfile) {
+  const valuesByName = new Map<string, { name: string; values: Set<string> }>()
+  product.offers.forEach((offer) => {
+    offer.selectedOptions.forEach((option) => {
+      const name = option.name.trim()
+      const value = option.value.trim()
+      if (!name || !value) return
+      const key = name.toLowerCase()
+      const existing = valuesByName.get(key) ?? { name, values: new Set<string>() }
+      existing.values.add(value)
+      valuesByName.set(key, existing)
+    })
+  })
+  return Array.from(valuesByName.values()).map((option) => ({
+    name: option.name,
+    values: Array.from(option.values).sort((left, right) => left.localeCompare(right)),
+  }))
+}
+
 export function productFromCanonical(product: CanonicalProductProfile): Product {
   const recommended =
     product.offers.find((offer) => offer.key === product.recommendedOfferKey) ?? product.offers[0]
@@ -67,6 +86,19 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     .map((item) => ({ type: item.type || 'image', url: item.url, altText: item.altText }))
   const merchantName = recommended?.merchantName?.trim()
   const match = Math.round((product.rankingExplanation?.scoreBasisPoints ?? 0) / 100)
+  const detailOptions = canonicalProductOptions(product)
+  const selectedOptions = recommended?.selectedOptions.map((option) => ({
+    name: option.name,
+    value: option.value,
+  }))
+  const selectedVariantAvailable = recommended
+    ? recommended.availability.status === 'OUT_OF_STOCK' ||
+      recommended.availability.status === 'DISCONTINUED'
+      ? false
+      : recommended.availability.status === 'UNKNOWN'
+        ? null
+        : true
+    : null
 
   return {
     id: product.key,
@@ -93,6 +125,10 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     certifications: product.certifications.map((certification) => certification.name),
     catalogAttributes: product.attributes,
     detailDescription: product.description ?? null,
+    detailOptions,
+    selectedOptions,
+    totalVariants: product.offers.length,
+    selectedVariantAvailable,
     // Existing cards require their established view-model offer shape. Exact selection always
     // reads canonicalProduct.offers and never uses these display-only projections for cart input.
     offers: product.offers.map((offer) => ({

@@ -839,6 +839,7 @@ export function ChatDiscoverView({
   onOpen,
   onToggleSave,
   onAddProductToCart,
+  onAddSelectedOfferToCart,
   onFallbackAddToCart,
   onCompareProducts,
   onCartQty,
@@ -895,6 +896,7 @@ export function ChatDiscoverView({
   onOpen: (product: Product, products?: readonly Product[]) => void
   onToggleSave: (product: Product) => void
   onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
+  onAddSelectedOfferToCart: (product: Product, offerKey: string) => Promise<boolean>
   onFallbackAddToCart: (product: Product, offer: Offer) => void
   onCompareProducts: (products: readonly Product[]) => void
   onCartQty: (id: ProductId, merchant: string, qty: number) => void
@@ -1859,7 +1861,42 @@ export function ChatDiscoverView({
 
   const addCartFromChat = async (product: Product) => {
     if (product.canonicalProduct) {
-      onOpen(product)
+      const recommendedOfferKey = product.canonicalProduct.recommendedOfferKey
+      const canonicalOfferIndex = product.canonicalProduct.offers.findIndex(
+        (offer) => offer.key === recommendedOfferKey,
+      )
+      const offer =
+        product.offers[canonicalOfferIndex] ??
+        product.offers[0] ??
+        bestOffer(product, deliveryLocations)
+      try {
+        const added = await onAddSelectedOfferToCart(product, recommendedOfferKey)
+        if (!added) {
+          onOpen(product)
+          return
+        }
+        appendMessagesToActiveThread(
+          [
+            {
+              id: nextDiscoverChatMessageId(),
+              role: 'ai',
+              blocks: [
+                {
+                  type: 'added',
+                  product,
+                  merchant: offer.merchant,
+                  synced: true,
+                  price: offer.price,
+                  count: cart.reduce((sum, item) => sum + item.qty, 0) + 1,
+                },
+              ],
+            },
+          ],
+          { focusProductId: product.id },
+        )
+      } catch {
+        onOpen(product)
+      }
       return
     }
     const offer = bestOffer(product, deliveryLocations)

@@ -8,9 +8,11 @@ mock.module('../../../lib/apiClient', () => ({
     status = 500
   },
   getCanonicalProductDetail: () => new Promise(() => undefined),
+  getMerchantProductDetails: () => new Promise(() => undefined),
+  getProductReviews: () => new Promise(() => undefined),
 }))
 
-const { GroupedProductModal } = await import('./GroupedProductModal')
+const { ProductModal } = await import('./ProductModal')
 
 const product: Product = {
   id: 'canonical-1',
@@ -28,7 +30,15 @@ const product: Product = {
   pros: [],
   cons: [],
   review: { score: null, count: 0, insight: '' },
-  offers: [],
+  offers: [
+    {
+      merchant: 'Merchant A',
+      price: 10,
+      priceCurrency: 'USD',
+      delivery: 'Calculated by merchant',
+      available: true,
+    },
+  ],
   canonicalProduct: {
     key: 'canonical-1',
     title: 'Grouped product',
@@ -44,18 +54,36 @@ const product: Product = {
   },
 }
 
-describe('GroupedProductModal', () => {
-  test('renders an accessible loading dialog without a speculative cart action', () => {
+describe('canonical product detail', () => {
+  test('keeps the original product detail shell and embeds exact merchant offers', () => {
     const markup = renderToStaticMarkup(
-      <GroupedProductModal
+      <ProductModal
         product={product}
+        deliveryLocations={[]}
+        preferences={[]}
+        saved={false}
+        savePending={false}
+        inCompare={false}
         onClose={() => undefined}
+        onToggleSave={() => undefined}
+        onCompare={() => undefined}
+        onAddToCart={() => false}
         onResearch={() => undefined}
+        canPrev={true}
+        canNext={true}
+        onPrev={() => undefined}
+        onNext={() => undefined}
       />,
     )
 
     expect(markup).toContain('role="dialog"')
     expect(markup).toContain('aria-modal="true"')
+    expect(markup).toContain('Previous product')
+    expect(markup).toContain('Next product')
+    expect(markup).toContain('Meant&#x27;s take')
+    expect(markup).toContain('Preference match')
+    expect(markup).toContain('Add to compare')
+    expect(markup).toContain('Refreshing offer…')
     expect(markup).toContain('Refreshing offers without changing your selection')
     expect(markup).not.toContain('Add selected offer to cart')
   })

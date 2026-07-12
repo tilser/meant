@@ -36,7 +36,6 @@ import { DEFAULT_BUDGET, clothingFitLabel } from './preferences/preferencesUtils
 import { upsertInventorySnapshot } from './inventory/inventoryUtils'
 import { ProductCard } from './product/ProductCard'
 import { ProductModal } from './product/ProductModal'
-import { GroupedProductModal } from './product/GroupedProductModal'
 import { productFromCanonical } from './product/groupedProductMapping'
 import {
   appendProductSnapshots,
@@ -2060,6 +2059,7 @@ export function MeantApp() {
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
             onAddProductToCart={addProductOfferToCartResolved}
+            onAddSelectedOfferToCart={addSelectedOfferToCart}
             onFallbackAddToCart={(product, offer) => addToCart(product.id, offer.merchant)}
             onCompareProducts={compareChatProducts}
             onCartQty={updateQty}
@@ -2187,36 +2187,32 @@ export function MeantApp() {
           onCheckoutAssistant={assistActiveCheckout}
         />
       ) : null}
-      {activeProduct?.canonicalProduct ? (
-        <GroupedProductModal
-          key={activeProduct.id}
-          product={activeProduct}
-          onClose={() => setActiveProduct(null)}
-          onAddOfferKey={(offerKey) => addSelectedOfferToCart(activeProduct, offerKey)}
-          onResearch={(searchQuery) => {
-            setActiveProduct(null)
-            void runProductSearch(searchQuery)
-          }}
-        />
-      ) : (
-        <ProductModal
-          product={activeProduct}
-          deliveryLocations={deliveryLocations}
-          preferences={allPreferences}
-          saved={activeProduct ? savedSet.has(activeProduct.id) : false}
-          savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
-          inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
-          onClose={() => setActiveProduct(null)}
-          onToggleSave={toggleSave}
-          onCompare={handleProductCompare}
-          onAddToCart={addProductOfferToCartResolved}
-          onAskInChat={sendProductQuestionToDiscover}
-          canPrev={canNavPrev}
-          canNext={canNavNext}
-          onPrev={() => navigateProduct(-1)}
-          onNext={() => navigateProduct(1)}
-        />
-      )}
+      <ProductModal
+        product={activeProduct}
+        deliveryLocations={deliveryLocations}
+        preferences={allPreferences}
+        saved={activeProduct ? savedSet.has(activeProduct.id) : false}
+        savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
+        inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
+        onClose={() => setActiveProduct(null)}
+        onToggleSave={toggleSave}
+        onCompare={handleProductCompare}
+        onAddToCart={addProductOfferToCartResolved}
+        onAddOfferKey={
+          activeProduct?.canonicalProduct
+            ? (offerKey) => addSelectedOfferToCart(activeProduct, offerKey)
+            : undefined
+        }
+        onResearch={(searchQuery) => {
+          setActiveProduct(null)
+          void runProductSearch(searchQuery)
+        }}
+        onAskInChat={sendProductQuestionToDiscover}
+        canPrev={canNavPrev}
+        canNext={canNavNext}
+        onPrev={() => navigateProduct(-1)}
+        onNext={() => navigateProduct(1)}
+      />
       <FloatingAsk
         contextLabel={askContext.label}
         context={assistantContext}
