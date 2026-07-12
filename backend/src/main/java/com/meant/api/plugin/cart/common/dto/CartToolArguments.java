@@ -9,6 +9,7 @@ import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CartToolArguments(
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         @JsonProperty("line_items")
         List<LineItem> lineItems,
         Map<String, Object> buyer,

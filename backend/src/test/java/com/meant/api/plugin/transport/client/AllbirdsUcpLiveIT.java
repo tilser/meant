@@ -2,6 +2,11 @@ package com.meant.api.plugin.transport.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.update.UpdateCartCapability;
+import com.meant.api.plugin.cart.update.dto.CartReplacementState;
+import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.transport.profile.AgentIdentity;
 import java.net.URI;
@@ -28,6 +33,7 @@ class AllbirdsUcpLiveIT {
             "https://www.machinecommerce.dev/ucp/agent-profile/ucp-agent.json";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final UpdateCartCapability updateCartCapability = new UpdateCartCapability(objectMapper);
     private final RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())
             .build();
@@ -107,7 +113,7 @@ class AllbirdsUcpLiveIT {
                 restClient,
                 endpoint,
                 "update_cart",
-                Map.of("id", cartId, "cart", Map.of("line_items", List.of())),
+                replacementArguments(cartId, List.of()),
                 Map.of()
         ));
         assertThat(requiredString(emptiedCart, "id")).isEqualTo(cartId);
@@ -117,10 +123,8 @@ class AllbirdsUcpLiveIT {
                 restClient,
                 endpoint,
                 "update_cart",
-                Map.of("id", cartId, "cart", Map.of("line_items", List.of(Map.of(
-                        "quantity", 1,
-                        "item", Map.of("id", variantId)
-                )))),
+                replacementArguments(cartId, List.of(new CartAddItem(
+                        null, variantId, List.of(), List.of(), null, 1))),
                 Map.of()
         ));
         assertThat(requiredString(restoredCart, "id")).isEqualTo(cartId);
@@ -212,6 +216,15 @@ class AllbirdsUcpLiveIT {
                 .map(URI::create)
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Allbirds profile has no MCP shopping endpoint"));
+    }
+
+    private Object replacementArguments(String cartId, List<CartAddItem> items) {
+        return updateCartCapability.buildArguments(new UpdateCartRequest(
+                cartId, List.of(), List.of(), List.of(), List.of(), null, Map.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), null,
+                new CartReplacementState(items, Map.of(), Map.of(), Map.of(),
+                        null, null, List.of(), null)),
+                NegotiatedCapabilities.none());
     }
 
     private List<String> capabilities(Map<String, Object> profile) {

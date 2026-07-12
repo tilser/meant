@@ -20,12 +20,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class EmbeddedCheckoutBootstrapService {
     private final CartService cartService;
     private final CartPersistenceService cartPersistenceService;
@@ -39,10 +41,21 @@ public class EmbeddedCheckoutBootstrapService {
         String allowedOrigin = originPolicy.requireAllowed(origin);
         CheckoutResult checkout = cartService.checkout(new GetCheckoutQuery(cartId, userId, true));
         Cart cart = cartPersistenceService.findCart(cartId, userId);
-        if (checkout.nextAction() == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT) {
-            return embedded(cart, checkout, allowedOrigin);
-        }
-        return alternative(cart, checkout);
+        EmbeddedCheckoutBootstrapResult result = checkout.nextAction() == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT
+                ? embedded(cart, checkout, allowedOrigin)
+                : alternative(cart, checkout);
+        log.info(
+                "Embedded checkout bootstrap action={} nextAction={} selectedRail={} protocol={} "
+                        + "checkoutUrlPresent={} fallbackUrlPresent={} reason={}",
+                result.action(),
+                checkout.nextAction(),
+                checkout.selectedRail(),
+                result.protocolVersion(),
+                result.checkoutUrl() != null,
+                result.fallbackContinueUrl() != null,
+                result.reason()
+        );
+        return result;
     }
 
     public CheckoutResult complete(

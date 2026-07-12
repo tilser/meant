@@ -173,6 +173,21 @@ class CartCapabilityTest {
     }
 
     @Test
+    void providerUpdateSerializesRequiredEmptyLineItemsWhenRemovingTheLastItem() throws Exception {
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+        UpdateCartArguments arguments = capability.buildArguments(new UpdateCartRequest(
+                "cart-1", List.of(), List.of(), List.of(), List.of(), null, Map.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), null,
+                new CartReplacementState(List.of(), Map.of(), Map.of(), Map.of(),
+                        null, null, List.of(), null)),
+                NegotiatedCapabilities.none());
+
+        assertThat(arguments.cart().lineItems()).isEmpty();
+        assertThat(objectMapper.writeValueAsString(arguments))
+                .contains("\"cart\":{\"line_items\":[]");
+    }
+
+    @Test
     void createParsesShopifyRootCartResponse() {
         CreateCartCapability capability = new CreateCartCapability(objectMapper);
 
