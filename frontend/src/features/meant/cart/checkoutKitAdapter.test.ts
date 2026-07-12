@@ -77,6 +77,7 @@ describe('Meant Checkout Kit adapter', () => {
     expect(CHECKOUT_KIT_ECP_VERSION).toBe('2026-04-08')
     expect(element.src).toBe('https://shop.example/checkouts/cn/test')
     expect(element.target).toBe('popup')
+    expect(element.style.display).toBe('')
     expect(events).toEqual(['ready'])
 
     handle.open()

@@ -22,7 +22,6 @@ export interface CheckoutKitElementPort {
   src: string
   target: string
   debug: boolean
-  style: { display: string }
   open: () => void
   focus: () => void
   close: () => void
@@ -51,7 +50,6 @@ const browserRuntime: CheckoutKitRuntime = {
   async createElement() {
     await import('@shopify/checkout-kit')
     const element = document.createElement('shopify-checkout') as unknown as CheckoutKitElementPort
-    element.style.display = 'none'
     document.body.append(element as unknown as Node)
     return element
   },
