@@ -62,6 +62,57 @@ class MerchantExecutionPolicyServiceTest {
     }
 
     @Test
+    void authoritativeShopifyProfileEvidenceEnablesEmbeddedSurfaceForAGenericUcpTransport() {
+        MerchantIntegration integration = integration(
+                MerchantIntegrationProvider.GENERIC_UCP,
+                MerchantIntegrationStatus.ACTIVE,
+                Set.of(MerchantIntegrationRole.CHECKOUT)
+        );
+        MerchantExecutionPolicy policy = service(
+                rollouts(true, false),
+                generic(false),
+                shopify(ShopifyAuthorizationTier.STANDARD, Set.of(), true, true, false, false, Set.of())
+        ).evaluate(
+                merchant(false),
+                List.of(integration),
+                Set.of("dev.ucp.shopping.checkout", "dev.shopify.catalog")
+        );
+
+        assertThat(policy.decision(CommerceOperation.CHECKOUT_SESSION).available()).isTrue();
+        assertThat(policy.decision(CommerceOperation.CHECKOUT_SESSION).provider())
+                .isEqualTo(MerchantIntegrationProvider.GENERIC_UCP);
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).available()).isTrue();
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).selectedRail())
+                .isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).provider())
+                .isEqualTo(MerchantIntegrationProvider.GENERIC_UCP);
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).integrationId())
+                .isEqualTo(integration.getId());
+    }
+
+    @Test
+    void genericUcpCheckoutWithoutPlatformEvidenceDoesNotEnableShopifyCheckoutKit() {
+        MerchantExecutionPolicy policy = service(
+                rollouts(true, false),
+                generic(false),
+                shopify(ShopifyAuthorizationTier.STANDARD, Set.of(), true, true, false, false, Set.of())
+        ).evaluate(
+                merchant(false),
+                List.of(integration(
+                        MerchantIntegrationProvider.GENERIC_UCP,
+                        MerchantIntegrationStatus.ACTIVE,
+                        Set.of(MerchantIntegrationRole.CHECKOUT)
+                )),
+                Set.of("dev.ucp.shopping.checkout")
+        );
+
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).available()).isFalse();
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).ineligibilityReasons())
+                .contains(CapabilityIneligibilityReason.NOT_ADVERTISED,
+                        CapabilityIneligibilityReason.OPERATION_UNSUPPORTED);
+    }
+
+    @Test
     void currentMerchantCartCapabilityRepairsAStaleBackfillRoleForTheAdvertisedEndpoint() {
         Merchant merchant = merchant(false, "https://merchant.example/api/ucp/mcp");
         MerchantIntegration integration = integration(

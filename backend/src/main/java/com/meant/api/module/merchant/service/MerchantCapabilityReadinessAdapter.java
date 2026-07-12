@@ -9,6 +9,17 @@ public interface MerchantCapabilityReadinessAdapter {
 
     MerchantIntegrationProvider provider();
 
+    /**
+     * Allows a concrete platform adapter to contribute a capability surface when a generic UCP
+     * integration carries authoritative platform evidence. Transport identity remains unchanged.
+     */
+    default boolean overridesContext(
+            CommerceOperation operation,
+            MerchantCapabilityReadinessContext context
+    ) {
+        return false;
+    }
+
     boolean advertised(CommerceOperation operation, MerchantCapabilityReadinessContext context);
 
     CapabilityAuthorizationDecision authorization(

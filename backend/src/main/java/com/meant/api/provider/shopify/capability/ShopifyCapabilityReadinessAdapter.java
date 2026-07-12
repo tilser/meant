@@ -23,12 +23,24 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ShopifyCapabilityReadinessAdapter implements MerchantCapabilityReadinessAdapter {
 
+    private static final String SHOPIFY_PLATFORM_CAPABILITY = "dev.shopify.catalog";
+
     private final ShopifyCapabilityReadinessProperties properties;
     private final ShopifyAgentAuthProperties authenticationProperties;
 
     @Override
     public MerchantIntegrationProvider provider() {
         return MerchantIntegrationProvider.SHOPIFY;
+    }
+
+    @Override
+    public boolean overridesContext(
+            CommerceOperation operation,
+            MerchantCapabilityReadinessContext context
+    ) {
+        return operation == CommerceOperation.EMBEDDED_CHECKOUT
+                && context.provider() == MerchantIntegrationProvider.GENERIC_UCP
+                && context.advertises(SHOPIFY_PLATFORM_CAPABILITY);
     }
 
     @Override

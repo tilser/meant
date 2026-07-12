@@ -84,11 +84,11 @@ public class MerchantExecutionPolicyService {
     public MerchantExecutionPolicy evaluateObservedProvider(
             @NotNull @Valid EvaluateObservedProviderPolicyQuery query
     ) {
-        MerchantCapabilityReadinessAdapter adapter = adapters.get(query.provider());
         MerchantCapabilityReadinessContext context = new MerchantCapabilityReadinessContext(
                 query.provider(), query.authStrategy(), query.roles(), query.advertisedCapabilities());
         List<CommerceCapabilityDecision> decisions = Arrays.stream(CommerceOperation.values())
-                .map(operation -> evaluateObservedProvider(adapter, context, operation))
+                .map(operation -> evaluateObservedProvider(
+                        readinessAdapter(context, operation), context, operation))
                 .toList();
         return new MerchantExecutionPolicy(decisions);
     }
@@ -201,7 +201,6 @@ public class MerchantExecutionPolicyService {
             Set<String> advertisedCapabilities,
             CommerceOperation operation
     ) {
-        MerchantCapabilityReadinessAdapter adapter = adapters.get(integration.getProvider());
         Set<MerchantIntegrationRole> roles = effectiveRoles(merchant, integration, advertisedCapabilities);
         MerchantCapabilityReadinessContext context = new MerchantCapabilityReadinessContext(
                 integration.getProvider(),
@@ -209,6 +208,7 @@ public class MerchantExecutionPolicyService {
                 roles,
                 advertisedCapabilities
         );
+        MerchantCapabilityReadinessAdapter adapter = readinessAdapter(context, operation);
         boolean advertised = adapter != null && adapter.advertised(operation, context);
         CapabilityAuthorizationDecision authorization = adapter == null
                 ? CapabilityAuthorizationDecision.unavailable(CapabilityAuthorizationStatus.UNSUPPORTED)
@@ -236,6 +236,18 @@ public class MerchantExecutionPolicyService {
                 decision.ineligibilityReasons()
         );
         return decision;
+    }
+
+    private MerchantCapabilityReadinessAdapter readinessAdapter(
+            MerchantCapabilityReadinessContext context,
+            CommerceOperation operation
+    ) {
+        List<MerchantCapabilityReadinessAdapter> overrides = adapters.values().stream()
+                .filter(adapter -> adapter.provider() != context.provider())
+                .filter(adapter -> adapter.overridesContext(operation, context))
+                .toList();
+        return overrides.size() == 1 ? overrides.getFirst()
+                : overrides.isEmpty() ? adapters.get(context.provider()) : null;
     }
 
     private CommerceCapabilityDecision evaluateWithoutIntegration(Merchant merchant, CommerceOperation operation) {
