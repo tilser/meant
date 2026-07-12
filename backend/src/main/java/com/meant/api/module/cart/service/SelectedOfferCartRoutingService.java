@@ -7,7 +7,6 @@ import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
-import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
@@ -66,7 +65,7 @@ public class SelectedOfferCartRoutingService {
                     "Stored cart integration is missing or ambiguous");
         }
         MerchantIntegrationResult integration = integrations.getFirst();
-        validateIntegration(expectedProvider, externalMerchantId, integration);
+        validateIntegrationIdentity(expectedProvider, externalMerchantId, integration);
         MerchantCartProvider provider = activeProvider(integration);
         String scopeKey = expectedProvider.name() + ":integration:" + integration.id();
         if (!scopeKey.equals(persistedScopeKey)) {
@@ -110,30 +109,50 @@ public class SelectedOfferCartRoutingService {
                             : CartException.BindingFailure.AMBIGUOUS_ROUTING,
                     "Selected offer integration is missing or ambiguous");
         }
-        MerchantIntegrationResult integration = integrations.getFirst();
+        MerchantIntegrationResult sourceIntegration = integrations.getFirst();
         MerchantIntegrationProvider expectedProvider = provider(offer.identity().provider().value());
         ExternalIdentifier externalMerchant = offer.identity().merchantScope().externalMerchantIdentity();
         String externalMerchantId = externalMerchant == null ? null : externalMerchant.value();
-        validateIntegration(expectedProvider, externalMerchantId, integration);
-        MerchantCartProvider provider = activeProvider(integration);
-        externalMerchantId = externalMerchantId == null ? integration.externalMerchantId() : externalMerchantId;
+        validateIntegrationIdentity(expectedProvider, externalMerchantId, sourceIntegration);
+        MerchantCartProvider provider = merchantProviderLookupService.findById(sourceIntegration.merchantId())
+                .orElseThrow(() -> failure(
+                        CartException.BindingFailure.MISSING_ROUTING,
+                        "Selected offer merchant route is unavailable"));
+        var cartDecision = provider.executionPolicy().decision(CommerceOperation.CART);
+        if (!cartDecision.available()
+                || cartDecision.integrationId() == null
+                || cartDecision.provider() != expectedProvider) {
+            throw failure(CartException.BindingFailure.MISSING_ROUTING,
+                    "Selected offer merchant has no active cart execution route");
+        }
+        MerchantIntegrationResult cartIntegration = integrationLookupService.listByIds(
+                        new ListMerchantIntegrationsByIdsQuery(Set.of(cartDecision.integrationId())))
+                .stream()
+                .filter(candidate -> candidate.merchantId().equals(sourceIntegration.merchantId()))
+                .findFirst()
+                .orElseThrow(() -> failure(
+                        CartException.BindingFailure.MISSING_ROUTING,
+                        "Selected offer cart integration is missing or belongs to another merchant"));
+        validateIntegrationIdentity(expectedProvider, externalMerchantId, cartIntegration);
+        externalMerchantId = externalMerchantId == null
+                ? cartIntegration.externalMerchantId()
+                : externalMerchantId;
         return new CartRoutingTarget(
-                expectedProvider.name() + ":integration:" + integration.id(),
+                expectedProvider.name() + ":integration:" + cartIntegration.id(),
                 expectedProvider,
-                integration.id(),
+                cartIntegration.id(),
                 externalMerchantId,
                 provider
         );
     }
 
-    private void validateIntegration(
+    private void validateIntegrationIdentity(
             MerchantIntegrationProvider expectedProvider,
             String externalMerchantId,
             MerchantIntegrationResult integration
     ) {
         if (integration.provider() != expectedProvider
-                || integration.status() != MerchantIntegrationStatus.ACTIVE
-                || !integration.roles().contains(MerchantIntegrationRole.CART)) {
+                || integration.status() != MerchantIntegrationStatus.ACTIVE) {
             throw failure(CartException.BindingFailure.MISSING_ROUTING,
                     "Selected offer integration is not eligible for cart");
         }

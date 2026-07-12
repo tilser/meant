@@ -90,6 +90,63 @@ class SelectedOfferCartRoutingServiceTest {
         assertThat(target.scopeKey()).isEqualTo("SHOPIFY:integration:" + integrationId);
     }
 
+    @Test
+    void catalogProvenanceRoutesThroughTheMerchantsSeparateActiveCartIntegration() {
+        UUID catalogIntegrationId = UUID.randomUUID();
+        UUID cartIntegrationId = UUID.randomUUID();
+        UUID merchantId = UUID.randomUUID();
+        MerchantIntegrationResult catalogIntegration = new MerchantIntegrationResult(
+                catalogIntegrationId, merchantId, MerchantIntegrationProvider.GENERIC_UCP,
+                MerchantIntegrationKind.MERCHANT_CONNECTION,
+                Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
+                null, "merchant.test", null, "https://catalog.merchant.test/api/ucp/mcp", "2026-04-08",
+                MerchantIntegrationAuthStrategy.NONE, MerchantIntegrationStatus.ACTIVE,
+                MerchantIntegrationSource.DISCOVERY, Instant.now(), Instant.now(), Instant.now());
+        MerchantIntegrationResult cartIntegration = new MerchantIntegrationResult(
+                cartIntegrationId, merchantId, MerchantIntegrationProvider.GENERIC_UCP,
+                MerchantIntegrationKind.MERCHANT_CONNECTION, Set.of(MerchantIntegrationRole.CART),
+                null, "merchant.test", null, "https://cart.merchant.test/api/ucp/mcp", "2026-04-08",
+                MerchantIntegrationAuthStrategy.NONE, MerchantIntegrationStatus.ACTIVE,
+                MerchantIntegrationSource.DISCOVERY, Instant.now(), Instant.now(), Instant.now());
+        MerchantCartProvider provider = provider(
+                merchantId, cartIntegrationId, MerchantIntegrationProvider.GENERIC_UCP);
+        SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
+                new StubIntegrationLookup(catalogIntegration, cartIntegration),
+                new StubProviderLookup(provider), List.of(),
+                new CartBindingMetrics(new SimpleMeterRegistry()));
+
+        var target = service.resolve(offer(catalogIntegrationId));
+
+        assertThat(target.merchantIntegrationId()).isEqualTo(cartIntegrationId);
+        assertThat(target.scopeKey()).isEqualTo("GENERIC_UCP:integration:" + cartIntegrationId);
+        assertThat(target.merchantProvider()).isSameAs(provider);
+    }
+
+    @Test
+    void capabilitySelectedCartRouteDoesNotRequireTheStaleBackfillRole() {
+        UUID integrationId = UUID.randomUUID();
+        UUID merchantId = UUID.randomUUID();
+        MerchantIntegrationResult staleBackfillIntegration = new MerchantIntegrationResult(
+                integrationId, merchantId, MerchantIntegrationProvider.GENERIC_UCP,
+                MerchantIntegrationKind.MERCHANT_CONNECTION,
+                Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
+                null, "allbirds.com", null, "https://weareallbirds.myshopify.com/api/ucp/mcp", "2026-04-08",
+                MerchantIntegrationAuthStrategy.NONE, MerchantIntegrationStatus.ACTIVE,
+                MerchantIntegrationSource.LEGACY_MERCHANT_BACKFILL,
+                Instant.now(), Instant.now(), Instant.now());
+        MerchantCartProvider provider = provider(
+                merchantId, integrationId, MerchantIntegrationProvider.GENERIC_UCP);
+        SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
+                new StubIntegrationLookup(staleBackfillIntegration),
+                new StubProviderLookup(provider), List.of(),
+                new CartBindingMetrics(new SimpleMeterRegistry()));
+
+        var target = service.resolve(offer(integrationId));
+
+        assertThat(target.merchantIntegrationId()).isEqualTo(integrationId);
+        assertThat(target.scopeKey()).isEqualTo("GENERIC_UCP:integration:" + integrationId);
+    }
+
     private MerchantCartProvider provider(
             UUID merchantId,
             UUID integrationId,
@@ -135,16 +192,18 @@ class SelectedOfferCartRoutingServiceTest {
     }
 
     private static final class StubIntegrationLookup extends MerchantIntegrationLookupService {
-        private final MerchantIntegrationResult integration;
+        private final List<MerchantIntegrationResult> integrations;
 
-        private StubIntegrationLookup(MerchantIntegrationResult integration) {
+        private StubIntegrationLookup(MerchantIntegrationResult... integrations) {
             super(null);
-            this.integration = integration;
+            this.integrations = List.of(integrations);
         }
 
         @Override
         public List<MerchantIntegrationResult> listByIds(ListMerchantIntegrationsByIdsQuery query) {
-            return query.integrationIds().contains(integration.id()) ? List.of(integration) : List.of();
+            return integrations.stream()
+                    .filter(integration -> query.integrationIds().contains(integration.id()))
+                    .toList();
         }
     }
 

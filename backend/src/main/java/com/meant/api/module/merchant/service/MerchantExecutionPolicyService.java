@@ -18,6 +18,7 @@ import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,8 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class MerchantExecutionPolicyService {
+
+    private static final String GENERIC_UCP_CART_CAPABILITY = "dev.ucp.shopping.cart";
 
     private final MerchantExecutionPolicyProperties properties;
     private final CapabilityExecutionPolicyEvaluator evaluator;
@@ -79,7 +82,9 @@ public class MerchantExecutionPolicyService {
             Set<String> advertisedCapabilities
     ) {
         CheckoutCapabilityFamily selected = integrations.stream()
-                .filter(integration -> supportsRole(integration, CommerceOperation.CHECKOUT_SESSION))
+                .filter(integration -> supportsRole(
+                        effectiveRoles(merchant, integration, advertisedCapabilities),
+                        CommerceOperation.CHECKOUT_SESSION))
                 .map(integration -> new CheckoutCapabilityFamily(
                         evaluateIntegration(
                                 merchant,
@@ -133,7 +138,9 @@ public class MerchantExecutionPolicyService {
             CommerceOperation operation
     ) {
         List<CommerceCapabilityDecision> candidates = integrations.stream()
-                .filter(integration -> supportsRole(integration, operation))
+                .filter(integration -> supportsRole(
+                        effectiveRoles(merchant, integration, advertisedCapabilities),
+                        operation))
                 .map(integration -> evaluateIntegration(
                         merchant,
                         integration,
@@ -155,10 +162,11 @@ public class MerchantExecutionPolicyService {
             CommerceOperation operation
     ) {
         MerchantCapabilityReadinessAdapter adapter = adapters.get(integration.getProvider());
+        Set<MerchantIntegrationRole> roles = effectiveRoles(merchant, integration, advertisedCapabilities);
         MerchantCapabilityReadinessContext context = new MerchantCapabilityReadinessContext(
                 integration.getProvider(),
                 integration.getAuthStrategy(),
-                integration.getRoles(),
+                roles,
                 advertisedCapabilities
         );
         boolean advertised = adapter != null && adapter.advertised(operation, context);
@@ -204,11 +212,30 @@ public class MerchantExecutionPolicyService {
         ));
     }
 
-    private boolean supportsRole(MerchantIntegration integration, CommerceOperation operation) {
-        Set<MerchantIntegrationRole> roles = integration.getRoles();
-        if (roles == null) {
-            return false;
+    private Set<MerchantIntegrationRole> effectiveRoles(
+            Merchant merchant,
+            MerchantIntegration integration,
+            Set<String> advertisedCapabilities
+    ) {
+        Set<MerchantIntegrationRole> roles = EnumSet.noneOf(MerchantIntegrationRole.class);
+        if (integration.getRoles() != null) {
+            roles.addAll(integration.getRoles());
         }
+        if (integration.getProvider() == MerchantIntegrationProvider.GENERIC_UCP
+                && sameEndpoint(integration.getEndpoint(), merchant.getAdvertisedMcpEndpoint())
+                && advertisedCapabilities.contains(GENERIC_UCP_CART_CAPABILITY)) {
+            roles.add(MerchantIntegrationRole.CART);
+        }
+        return Set.copyOf(roles);
+    }
+
+    private boolean sameEndpoint(String integrationEndpoint, String advertisedEndpoint) {
+        return integrationEndpoint != null
+                && advertisedEndpoint != null
+                && integrationEndpoint.trim().equals(advertisedEndpoint.trim());
+    }
+
+    private boolean supportsRole(Set<MerchantIntegrationRole> roles, CommerceOperation operation) {
         return switch (operation) {
             case CATALOG -> roles.contains(MerchantIntegrationRole.CATALOG_PROVENANCE)
                     || roles.contains(MerchantIntegrationRole.STOREFRONT_CATALOG);

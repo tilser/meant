@@ -34,6 +34,45 @@ import org.junit.jupiter.api.Test;
 class MerchantExecutionPolicyServiceTest {
 
     @Test
+    void currentMerchantCartCapabilityRepairsAStaleBackfillRoleForTheAdvertisedEndpoint() {
+        Merchant merchant = merchant(false, "https://merchant.example/api/ucp/mcp");
+        MerchantIntegration integration = integration(
+                MerchantIntegrationProvider.GENERIC_UCP,
+                MerchantIntegrationStatus.ACTIVE,
+                Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG)
+        );
+
+        MerchantExecutionPolicy policy = service(
+                rollouts(false, false),
+                generic(false),
+                shopifyDefaults()
+        ).evaluate(merchant, List.of(integration), Set.of("dev.ucp.shopping.cart"));
+
+        assertThat(policy.decision(CommerceOperation.CART).available()).isTrue();
+        assertThat(policy.decision(CommerceOperation.CART).integrationId()).isEqualTo(integration.getId());
+        assertThat(policy.decision(CommerceOperation.CART).provider())
+                .isEqualTo(MerchantIntegrationProvider.GENERIC_UCP);
+    }
+
+    @Test
+    void merchantCapabilityCannotGrantCartToADifferentIntegrationEndpoint() {
+        Merchant merchant = merchant(false, "https://other.example/api/ucp/mcp");
+        MerchantIntegration integration = integration(
+                MerchantIntegrationProvider.GENERIC_UCP,
+                MerchantIntegrationStatus.ACTIVE,
+                Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG)
+        );
+
+        MerchantExecutionPolicy policy = service(
+                rollouts(false, false),
+                generic(false),
+                shopifyDefaults()
+        ).evaluate(merchant, List.of(integration), Set.of("dev.ucp.shopping.cart"));
+
+        assertThat(policy.decision(CommerceOperation.CART).available()).isFalse();
+    }
+
+    @Test
     void advertisedGenericCheckoutCannotEnableDirectCompletionWithoutExplicitGrant() {
         MerchantExecutionPolicy policy = service(
                 rollouts(false, false),
@@ -320,8 +359,13 @@ class MerchantExecutionPolicyServiceTest {
     }
 
     private Merchant merchant(boolean legacyRollout) {
+        return merchant(legacyRollout, null);
+    }
+
+    private Merchant merchant(boolean legacyRollout, String advertisedMcpEndpoint) {
         return Merchant.builder()
                 .id(UUID.randomUUID())
+                .advertisedMcpEndpoint(advertisedMcpEndpoint)
                 .nativeCheckoutEnabled(legacyRollout)
                 .build();
     }
