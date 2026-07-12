@@ -136,14 +136,14 @@ commerce:
     catalog-rollout-enabled: ${COMMERCE_CATALOG_ROLLOUT_ENABLED:true}
     cart-rollout-enabled: ${COMMERCE_CART_ROLLOUT_ENABLED:true}
     checkout-session-rollout-enabled: ${COMMERCE_CHECKOUT_SESSION_ROLLOUT_ENABLED:true}
-    embedded-checkout-rollout-enabled: ${COMMERCE_EMBEDDED_CHECKOUT_ROLLOUT_ENABLED:false}
+    embedded-checkout-rollout-enabled: ${COMMERCE_EMBEDDED_CHECKOUT_ROLLOUT_ENABLED:true}
     direct-checkout-completion-rollout-enabled: ${COMMERCE_DIRECT_CHECKOUT_COMPLETION_ROLLOUT_ENABLED:false}
     order-reads-rollout-enabled: ${COMMERCE_ORDER_READS_ROLLOUT_ENABLED:true}
     order-webhooks-rollout-enabled: ${COMMERCE_ORDER_WEBHOOKS_ROLLOUT_ENABLED:true}
 
 shopify:
   agent-auth:
-    enabled: ${SHOPIFY_AGENT_AUTH_ENABLED:false}
+    enabled: ${SHOPIFY_AGENT_AUTH_ENABLED:true}
     environment: ${SHOPIFY_AGENT_AUTH_ENVIRONMENT:local}
     client-id: ${SHOPIFY_CLIENT_ID:}
     client-secret: ${SHOPIFY_CLIENT_SECRET:}
@@ -156,7 +156,7 @@ shopify:
       search-persistence-approved: ${SHOPIFY_GLOBAL_CATALOG_SEARCH_PERSISTENCE_APPROVED:false}
       approved-search-cache-ttl: ${SHOPIFY_GLOBAL_CATALOG_APPROVED_SEARCH_CACHE_TTL:15m}
       rehydrated-facts-ttl: ${SHOPIFY_GLOBAL_CATALOG_REHYDRATED_FACTS_TTL:2m}
-    discovery-enabled: ${SHOPIFY_GLOBAL_CATALOG_DISCOVERY_ENABLED:false}
+    discovery-enabled: ${SHOPIFY_GLOBAL_CATALOG_DISCOVERY_ENABLED:true}
     endpoint: ${SHOPIFY_GLOBAL_CATALOG_ENDPOINT:https://catalog.shopify.com/api/ucp/mcp}
     allowed-hosts: ${SHOPIFY_GLOBAL_CATALOG_ALLOWED_HOSTS:catalog.shopify.com}
     protocol-version: ${SHOPIFY_GLOBAL_CATALOG_PROTOCOL_VERSION:2026-04-08}
@@ -177,10 +177,10 @@ shopify:
     request-deadline: ${SHOPIFY_CART_REQUEST_DEADLINE:10s}
     max-retry-delay: ${SHOPIFY_CART_MAX_RETRY_DELAY:2s}
   capability-readiness:
-    authorization-tier: ${SHOPIFY_AUTHORIZATION_TIER:NONE}
+    authorization-tier: ${SHOPIFY_AUTHORIZATION_TIER:TOKEN}
     granted-scopes: ${SHOPIFY_GRANTED_SCOPES:}
-    embedded-checkout-advertised: ${SHOPIFY_EMBEDDED_CHECKOUT_ADVERTISED:false}
-    embedded-checkout-authorized: ${SHOPIFY_EMBEDDED_CHECKOUT_AUTHORIZED:false}
+    embedded-checkout-advertised: ${SHOPIFY_EMBEDDED_CHECKOUT_ADVERTISED:true}
+    embedded-checkout-authorized: ${SHOPIFY_EMBEDDED_CHECKOUT_AUTHORIZED:true}
     direct-checkout-completion-advertised: ${SHOPIFY_DIRECT_CHECKOUT_COMPLETION_ADVERTISED:false}
     direct-checkout-completion-authorized: ${SHOPIFY_DIRECT_CHECKOUT_COMPLETION_AUTHORIZED:false}
     direct-checkout-completion-required-scopes: ${SHOPIFY_DIRECT_CHECKOUT_COMPLETION_REQUIRED_SCOPES:complete_checkout}
