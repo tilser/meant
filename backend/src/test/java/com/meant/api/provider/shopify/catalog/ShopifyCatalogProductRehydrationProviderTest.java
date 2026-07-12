@@ -79,6 +79,39 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
+    void enrichesAnOmittedMerchantDomainButRejectsAConflictingDomain() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult sourceResult = successful(List.of(candidate(
+                "product-1", "variant-1", "seller-a", "seller.example", 1000, available())));
+        when(global.lookupCatalog(any())).thenReturn(sourceResult);
+        ShopifyCatalogProductRehydrationProvider provider = rehydrator(global, 50);
+        CatalogProductReference withoutDomain = reference(
+                "without-domain", "product-1", "variant-1", "seller-a", List.of());
+        CatalogProductReference conflictingDomain = new CatalogProductReference(
+                "wrong-domain",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "other.example",
+                product("product-1"),
+                variant("variant-1"),
+                List.of()
+        );
+
+        var results = provider.rehydrate(
+                List.of(withoutDomain, conflictingDomain),
+                new CatalogRehydrationContext(null, null)
+        );
+
+        assertThat(results.getFirst().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(results.getFirst().resolvedReference().externalMerchantDomain())
+                .isEqualTo("seller.example");
+        assertThat(results.getLast().status()).isEqualTo(CatalogRehydrationStatus.UNAVAILABLE);
+        assertThat(results.getLast().failure()).isEqualTo(CatalogRehydrationFailureKind.NOT_FOUND);
+    }
+
+    @Test
     void rejectsWrongMerchantVariantOptionsAndClientRouting() {
         ShopifyGlobalCatalogProvider global = providerSource(50);
         CatalogSourceResult sourceResult = successful(List.of(candidate(
@@ -218,6 +251,17 @@ class ShopifyCatalogProductRehydrationProviderTest {
             long price,
             OfferAvailability availability
     ) {
+        return candidate(productId, variantId, seller, null, price, availability);
+    }
+
+    private ProductCandidate candidate(
+            String productId,
+            String variantId,
+            String seller,
+            String merchantDomain,
+            long price,
+            OfferAvailability availability
+    ) {
         ExternalIdentifier merchant = merchant(seller);
         ExternalIdentifier product = product(productId);
         ExternalIdentifier variant = variant(variantId);
@@ -226,6 +270,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 SOURCE,
                 null,
                 merchant,
+                merchantDomain,
                 product,
                 variant,
                 new ResultFreshness(NOW, null),

@@ -1865,10 +1865,6 @@ export function ChatDiscoverView({
       const canonicalOfferIndex = product.canonicalProduct.offers.findIndex(
         (offer) => offer.key === recommendedOfferKey,
       )
-      const offer =
-        product.offers[canonicalOfferIndex] ??
-        product.offers[0] ??
-        bestOffer(product, deliveryLocations)
       const appendCartFailure = () =>
         appendMessagesToActiveThread(
           [
@@ -1885,6 +1881,11 @@ export function ChatDiscoverView({
           ],
           { focusProductId: product.id },
         )
+      const offer = product.offers[canonicalOfferIndex] ?? product.offers[0]
+      if (!offer) {
+        appendCartFailure()
+        return
+      }
       try {
         const added = await onAddSelectedOfferToCart(product, recommendedOfferKey)
         if (!added) {

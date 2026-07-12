@@ -78,7 +78,9 @@ public class EmbeddedCheckoutBootstrapService {
     }
 
     private EmbeddedCheckoutBootstrapResult embedded(Cart cart, CheckoutResult checkout, String allowedOrigin) {
-        if (checkout.checkoutId() == null || embeddedUrl(checkout) == null || cart.getRoutingScopeKey() == null) {
+        String checkoutUrl = embeddedUrl(checkout);
+        if (checkout.checkoutId() == null || checkoutUrl == null || checkoutUrl.isBlank()
+                || cart.getRoutingScopeKey() == null) {
             return handoff(cart, checkout, "Merchant did not confirm embedded checkout for this session");
         }
         String version = checkout.embeddedCheckout() == null
@@ -92,7 +94,6 @@ public class EmbeddedCheckoutBootstrapService {
                 && !checkout.embeddedCheckout().authenticationType().isBlank()) {
             return handoff(cart, checkout, "Merchant requires an unsupported embedded authentication exchange");
         }
-        String checkoutUrl = embeddedUrl(checkout);
         String fallbackContinueUrl = checkout.continueUrl();
         EmbeddedCheckoutSessionBinding session = sessionStore.create(new CreateEmbeddedCheckoutSessionCommand(
                 cart.getUserId(), cart.getId(), checkout.checkoutId(), cart.getMerchantIntegrationId(),
@@ -118,7 +119,7 @@ public class EmbeddedCheckoutBootstrapService {
         if (checkout.nextAction() == CheckoutNextAction.DONE) {
             return result(EmbeddedCheckoutBootstrapAction.COMPLETED, cart, checkout, null);
         }
-        if (checkout.continueUrl() != null) {
+        if (checkout.continueUrl() != null && !checkout.continueUrl().isBlank()) {
             return handoff(cart, checkout, "Embedded checkout is unavailable for this session");
         }
         return result(EmbeddedCheckoutBootstrapAction.UNAVAILABLE, cart, checkout,
@@ -126,7 +127,7 @@ public class EmbeddedCheckoutBootstrapService {
     }
 
     private EmbeddedCheckoutBootstrapResult handoff(Cart cart, CheckoutResult checkout, String reason) {
-        if (checkout.continueUrl() == null) {
+        if (checkout.continueUrl() == null || checkout.continueUrl().isBlank()) {
             return result(EmbeddedCheckoutBootstrapAction.UNAVAILABLE, cart, checkout, reason);
         }
         return new EmbeddedCheckoutBootstrapResult(

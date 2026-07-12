@@ -52,7 +52,7 @@ public class ShopifyCatalogReferenceMatcher {
         ExternalIdentifier variant = offer.externalVariantIdentity();
         if (!requested.discoverySource().equals(provenance.discoverySource())
                 || !requested.externalMerchantReference().equals(merchant)
-                || !Objects.equals(requested.externalMerchantDomain(), provenance.externalMerchantDomain())
+                || !domainMatches(requested.externalMerchantDomain(), provenance.externalMerchantDomain())
                 || !requested.externalProductReference().equals(provenance.externalProductReference())
                 || !requested.externalVariantReference().equals(variant)
                 || !optionsMatch(requested.selectedOptions(), offer.selectedOptions())) {
@@ -70,6 +70,10 @@ public class ShopifyCatalogReferenceMatcher {
                 offer.selectedOptions()
         );
         return new Match(resolved, candidate);
+    }
+
+    private boolean domainMatches(String requested, String observed) {
+        return requested == null || Objects.equals(requested, observed);
     }
 
     private boolean optionsMatch(List<ProductAttribute> requested, List<ProductAttribute> observed) {

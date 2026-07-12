@@ -51,12 +51,12 @@ VITE_CHECKOUT_KIT_DEBUG=true
 - Checkout Kit opens a merchant popup and speaks ECP `2026-04-08`.
 - The browser receives an opaque Meant session and checkout URL, never Shopify client credentials or the reusable global API token.
 - Closing Checkout Kit preserves the cart and allows a fresh session to be prepared.
-- Unsupported browsers, disabled rollout, protocol mismatch, SDK failure, and startup timeout expose the validated external merchant handoff when available.
+- Unsupported browsers, disabled rollout, protocol mismatch, SDK failure, and startup timeout expose the merchant-provided external handoff when available.
 - Reloading Meant preserves the merchant cart; reopening checkout refreshes the existing remote checkout and creates a new short-lived embedded session.
 
 ## Failure diagnosis
 
-- `EXTERNAL_HANDOFF`: inspect the bootstrap reason and confirm the Shopify profile advertises checkout, the checkout returned a validated `continue_url`, and the embedded readiness policy is enabled. Shopify ECP starts from `requires_escalation` plus `continue_url`; it does not require a separate embedded service advertisement in the Checkout MCP response.
+- `EXTERNAL_HANDOFF`: inspect the bootstrap reason and confirm the Shopify profile advertises checkout, the trusted merchant MCP response returned a `continue_url`, and the embedded readiness policy is enabled. Shopify ECP starts from `requires_escalation` plus `continue_url`; it does not require a separate embedded service advertisement in the Checkout MCP response.
 - `UNSUPPORTED_PROTOCOL`: Checkout Kit and the configured ECP version must both use `2026-04-08`; base PCOS-016 requests no native payment/address delegations and supports no merchant-defined `ec_auth` exchange.
 - Authentication or readiness failure: confirm TOKEN tier, Shopify agent auth, and both embedded readiness flags.
 - Popup does not start: allow popups for `localhost:3000`, retry from the explicit “Open secure checkout” button, or use the fallback link.

@@ -153,8 +153,9 @@ public class UcpMcpWireLogger {
                 || normalized.contains("gift_card")
                 || normalized.contains("ec_auth")
                 || normalized.contains("card_number")
-                || normalized.equals("cvv")
-                || normalized.equals("cvc");
+                || normalized.contains("cvv")
+                || normalized.contains("cvc")
+                || normalized.contains("security_code");
     }
 
     private String truncate(String value) {

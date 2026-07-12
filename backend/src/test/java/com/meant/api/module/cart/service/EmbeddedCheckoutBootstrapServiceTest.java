@@ -86,6 +86,26 @@ class EmbeddedCheckoutBootstrapServiceTest {
     }
 
     @Test
+    void blankCheckoutRoutesAreUnavailableAndDoNotCreateSession() {
+        UUID userId = UUID.randomUUID();
+        Cart cart = cart(userId);
+        when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
+        when(cartService.checkout(any())).thenReturn(checkout(
+                CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
+                null,
+                " ",
+                " "
+        ));
+
+        var result = service.bootstrap(cart.getId(), userId, "https://meant.com");
+
+        assertThat(result.action()).isEqualTo(EmbeddedCheckoutBootstrapAction.UNAVAILABLE);
+        assertThat(result.checkoutUrl()).isNull();
+        assertThat(result.fallbackContinueUrl()).isNull();
+        verify(sessionStore, never()).create(any());
+    }
+
+    @Test
     void completionIsNotTrustedUntilRemoteCheckoutIsCompleted() {
         UUID userId = UUID.randomUUID();
         Cart cart = cart(userId);
@@ -118,8 +138,17 @@ class EmbeddedCheckoutBootstrapServiceTest {
             EmbeddedCheckoutConfiguration configuration,
             String continueUrl
     ) {
+        return checkout(action, configuration, continueUrl, "https://shop.example/checkouts/embedded/1");
+    }
+
+    private CheckoutResult checkout(
+            CheckoutNextAction action,
+            EmbeddedCheckoutConfiguration configuration,
+            String continueUrl,
+            String checkoutUrl
+    ) {
         return new CheckoutResult(UUID.randomUUID(), "cart-1", "checkout-1", "requires_escalation",
-                "https://shop.example/checkouts/embedded/1",
+                checkoutUrl,
                 continueUrl, "2026-04-08", 1000L, "USD", List.of(), action,
                 action == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT
                         ? CommerceExecutionRail.EMBEDDED_CHECKOUT : CommerceExecutionRail.NONE,

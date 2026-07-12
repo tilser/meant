@@ -338,7 +338,7 @@ class UcpMcpClientTest {
                             "content": [
                               {
                                 "type": "text",
-                                "text": "{\\\"id\\\":\\\"gid://shopify/Checkout/123?key=response-checkout-key\\\",\\\"continue_url\\\":\\\"https://checkout.example/c/123?key=response-url-key\\\",\\\"errors\\\":[{\\\"code\\\":\\\"delivery_unavailable\\\",\\\"message\\\":\\\"Merchant rejected San Francisco shipping\\\"}],\\\"payment\\\":{\\\"token\\\":\\\"response-payment-secret\\\"}}"
+                                "text": "{\\\"id\\\":\\\"gid://shopify/Checkout/123?key=response-checkout-key\\\",\\\"continue_url\\\":\\\"https://checkout.example/c/123?key=response-url-key\\\",\\\"errors\\\":[{\\\"code\\\":\\\"delivery_unavailable\\\",\\\"message\\\":\\\"Merchant rejected San Francisco shipping\\\"}],\\\"payment\\\":{\\\"token\\\":\\\"response-payment-secret\\\"},\\\"card_cvv\\\":\\\"response-card-cvv\\\",\\\"security_code\\\":\\\"response-security-code\\\"}"
                               }
                             ],
                             "isError": true
@@ -353,7 +353,10 @@ class UcpMcpClientTest {
                 Map.of("checkout", Map.of(
                         "buyer", Map.of("email", "buyer@example.test"),
                         "fulfillment", Map.of("street_address", "1531 Hyde St"),
-                        "payment", Map.of("token", "request-payment-secret")
+                        "payment", Map.of("token", "request-payment-secret"),
+                        "card_cvc", "request-card-cvc",
+                        "cvv_code", "request-cvv-code",
+                        "security_code", "request-security-code"
                 )),
                 Map.of("Authorization", "Bearer header-secret")
         );
@@ -372,6 +375,11 @@ class UcpMcpClientTest {
                         "response-payment-secret",
                         "response-checkout-key",
                         "response-url-key",
+                        "request-card-cvc",
+                        "request-cvv-code",
+                        "request-security-code",
+                        "response-card-cvv",
+                        "response-security-code",
                         "header-secret"
                 );
         server.verify();
