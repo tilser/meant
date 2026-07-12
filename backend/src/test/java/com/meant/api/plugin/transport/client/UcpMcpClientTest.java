@@ -310,6 +310,69 @@ class UcpMcpClientTest {
     }
 
     @Test
+    void optInCheckoutWireLoggingIncludesEndpointRequestAndMerchantResponseButRedactsSecrets(
+            CapturedOutput output
+    ) {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        ObjectMapper objectMapper = new ObjectMapper();
+        UcpMcpClient client = new UcpMcpClient(
+                identity(),
+                objectMapper,
+                new UcpMcpWireLogger(
+                        objectMapper,
+                        new UcpMcpDiagnosticsProperties(true)
+                )
+        );
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "content": [
+                              {
+                                "type": "text",
+                                "text": "{\\\"id\\\":\\\"gid://shopify/Checkout/123?key=response-checkout-key\\\",\\\"continue_url\\\":\\\"https://checkout.example/c/123?key=response-url-key\\\",\\\"errors\\\":[{\\\"code\\\":\\\"delivery_unavailable\\\",\\\"message\\\":\\\"Merchant rejected San Francisco shipping\\\"}],\\\"payment\\\":{\\\"token\\\":\\\"response-payment-secret\\\"}}"
+                              }
+                            ],
+                            "isError": true
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        client.callToolAllowingJsonToolErrors(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "update_checkout",
+                Map.of("checkout", Map.of(
+                        "buyer", Map.of("email", "buyer@example.test"),
+                        "fulfillment", Map.of("street_address", "1531 Hyde St"),
+                        "payment", Map.of("token", "request-payment-secret")
+                )),
+                Map.of("Authorization", "Bearer header-secret")
+        );
+
+        assertThat(output)
+                .contains("UCP checkout MCP wire request")
+                .contains("UCP checkout MCP wire response")
+                .contains("endpoint=https://merchant.example/api/mcp")
+                .contains("tool=update_checkout")
+                .contains("buyer@example.test")
+                .contains("1531 Hyde St")
+                .contains("delivery_unavailable")
+                .contains("Merchant rejected San Francisco shipping")
+                .doesNotContain(
+                        "request-payment-secret",
+                        "response-payment-secret",
+                        "response-checkout-key",
+                        "response-url-key",
+                        "header-secret"
+                );
+        server.verify();
+    }
+
+    @Test
     void callToolAllowingJsonToolErrorsReturnsStructuredPayloadWhenTextIsPlain() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();

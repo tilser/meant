@@ -122,6 +122,49 @@ class CheckoutAssistantServiceTest {
     }
 
     @Test
+    void surfacesExactShippingRejectionWhenMerchantAlsoReturnsAnotherRecoverableMessage() {
+        cartService.updatedCheckout = checkoutResult(
+                "incomplete",
+                List.of(
+                        new CheckoutResult.Message(
+                                "error",
+                                "delivery_phone_number_required",
+                                "recoverable",
+                                "Enter a phone number to use this delivery method",
+                                null
+                        ),
+                        new CheckoutResult.Message(
+                                "error",
+                                "delivery_no_delivery_available_for_merchandise_line",
+                                "recoverable",
+                                "Your cart has been updated and the items you added can’t be shipped to your address.",
+                                null
+                        )
+                )
+        );
+        CheckoutAssistantService service = service("""
+                {
+                  "reply": "Applying your details now.",
+                  "readyToUpdate": true,
+                  "buyer": {"email": "buyer@example.com", "firstName": "Buyer", "lastName": "Test",
+                    "phoneNumber": "+420731958654"},
+                  "shippingAddress": {"streetAddress": "1531 Hyde St", "extendedAddress": "",
+                    "addressLocality": "San Francisco", "addressRegion": "CA", "postalCode": "94109",
+                    "addressCountry": "US"}
+                }
+                """);
+
+        CheckoutAssistResult result = service.assist(command("Use this address"));
+
+        assertThat(result.checkoutUpdated()).isTrue();
+        assertThat(result.reply())
+                .contains("Merchant response: Your cart has been updated")
+                .contains("can’t be shipped to your address")
+                .contains("Choose another merchant offer for this destination")
+                .doesNotContain("has not returned supported shipping destinations");
+    }
+
+    @Test
     void normalizesCountryAndRegionNamesBeforeUpdatingMerchant() {
         CheckoutAssistantService service = service("""
                 {
@@ -167,8 +210,9 @@ class CheckoutAssistantServiceTest {
         );
         assertThat(result.reply()).contains("The merchant rejected that shipping destination.");
         assertThat(result.reply()).contains("Known delivery coverage: ships to United States and Canada.");
-        assertThat(result.reply()).contains("Send another shipping address in a supported destination");
-        assertThat(result.reply()).doesNotContain("Remove them");
+        assertThat(result.reply()).contains("Merchant response:");
+        assertThat(result.reply()).contains("Remove them");
+        assertThat(result.reply()).contains("Choose another merchant offer for this destination");
     }
 
     @Test

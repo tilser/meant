@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -39,12 +40,22 @@ public class UcpMcpClient {
 
     private final AgentIdentity agentIdentity;
     private final ObjectMapper objectMapper;
+    private final UcpMcpWireLogger wireLogger;
     private final AtomicInteger requestIds = new AtomicInteger(1);
 
     @Autowired
-    public UcpMcpClient(AgentIdentity agentIdentity, ObjectMapper objectMapper) {
+    public UcpMcpClient(
+            AgentIdentity agentIdentity,
+            ObjectMapper objectMapper,
+            UcpMcpWireLogger wireLogger
+    ) {
         this.agentIdentity = agentIdentity;
         this.objectMapper = objectMapper;
+        this.wireLogger = wireLogger;
+    }
+
+    public UcpMcpClient(AgentIdentity agentIdentity, ObjectMapper objectMapper) {
+        this(agentIdentity, objectMapper, UcpMcpWireLogger.disabled(objectMapper));
     }
 
     public UcpMcpClient(AgentIdentity agentIdentity) {
@@ -110,18 +121,26 @@ public class UcpMcpClient {
                 "tools/call",
                 new McpToolCallParams(toolName, argumentsWithAgentMeta(arguments, headers))
         );
-        McpToolCallResponse response = restClient.post()
-                .uri(endpoint)
-                .headers(httpHeaders -> {
-                    if (headers != null) {
-                        headers.forEach(httpHeaders::set);
-                    }
-                    authentication.accept(httpHeaders);
-                })
-                .body(request)
-                .retrieve()
-                .body(McpToolCallResponse.class);
-        logMerchantToolExchange(endpoint, toolName, request, response);
+        wireLogger.logRequest(endpoint, toolName, request);
+        McpToolCallResponse response;
+        try {
+            response = restClient.post()
+                    .uri(endpoint)
+                    .headers(httpHeaders -> {
+                        if (headers != null) {
+                            headers.forEach(httpHeaders::set);
+                        }
+                        authentication.accept(httpHeaders);
+                    })
+                    .body(request)
+                    .retrieve()
+                    .body(McpToolCallResponse.class);
+        } catch (RestClientResponseException exception) {
+            wireLogger.logHttpFailure(endpoint, toolName, exception);
+            throw exception;
+        }
+        logMerchantToolExchange(toolName, response);
+        wireLogger.logResponse(endpoint, toolName, response);
 
         McpToolResult result = requireToolResult(response);
         String textContent = firstContentText(result.content());
@@ -144,9 +163,7 @@ public class UcpMcpClient {
     }
 
     private void logMerchantToolExchange(
-            URI endpoint,
             String toolName,
-            McpToolCallRequest request,
             McpToolCallResponse response
     ) {
         if (!isCartOrCheckoutTool(toolName)) {

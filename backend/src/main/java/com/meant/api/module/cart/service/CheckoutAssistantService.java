@@ -261,10 +261,11 @@ public class CheckoutAssistantService {
             reply.append(" The merchant did not return a supported-destinations list through checkout, ")
                     .append("so I only know this address was rejected.");
         }
-        if (hasText(merchantMessage) && !merchantMessage.toLowerCase(Locale.ROOT).contains("remove")) {
+        if (hasText(merchantMessage)) {
             reply.append(" Merchant response: ").append(merchantMessage.trim());
         }
-        reply.append(" Send another shipping address in a supported destination and I will retry.");
+        reply.append(" Choose another merchant offer for this destination, or send another shipping address ")
+                .append("and I will retry.");
         return reply.toString();
     }
 
@@ -318,8 +319,11 @@ public class CheckoutAssistantService {
                 .filter(message -> hasText(message.content()))
                 .toList();
         return messages.stream()
-                .filter(message -> !isExtensionInteractionRequired(message))
+                .filter(this::isShippingRejection)
                 .findFirst()
+                .or(() -> messages.stream()
+                        .filter(message -> !isExtensionInteractionRequired(message))
+                        .findFirst())
                 .or(() -> messages.stream().findFirst())
                 .orElse(null);
     }
