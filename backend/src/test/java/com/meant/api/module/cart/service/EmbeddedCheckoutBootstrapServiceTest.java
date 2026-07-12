@@ -17,9 +17,7 @@ import com.meant.api.module.checkout.properties.EmbeddedCheckoutProperties;
 import com.meant.api.module.checkout.service.EmbeddedCheckoutSessionStore;
 import com.meant.api.module.checkout.service.dto.EmbeddedCheckoutSessionBinding;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
-import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
-import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -35,14 +33,13 @@ class EmbeddedCheckoutBootstrapServiceTest {
     @Mock private CartService cartService;
     @Mock private CartPersistenceService persistenceService;
     @Mock private EmbeddedCheckoutSessionStore sessionStore;
-    @Mock private MerchantOutboundUrlValidator urlValidator;
     private EmbeddedCheckoutBootstrapService service;
 
     @BeforeEach
     void setUp() {
         service = new EmbeddedCheckoutBootstrapService(cartService, persistenceService, sessionStore,
                 new EmbeddedCheckoutOriginPolicy(new com.meant.api.common.properties.CorsProperties(
-                        List.of("https://meant.com"))), urlValidator,
+                        List.of("https://meant.com"))),
                 new EmbeddedCheckoutProperties(Duration.ofMinutes(5), "2026-04-08"));
     }
 
@@ -53,8 +50,6 @@ class EmbeddedCheckoutBootstrapServiceTest {
         when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
         when(cartService.checkout(any())).thenReturn(checkout(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
                 new EmbeddedCheckoutConfiguration("2026-04-08", List.of("payment.credential"), null)));
-        when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkout/1"))
-                .thenReturn(URI.create("https://shop.example/checkout/1"));
         when(sessionStore.create(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
                 UUID.randomUUID(), cart.getId(), "checkout-1", "https://meant.com", "2026-04-08",
                 Instant.parse("2026-07-11T20:05:00Z")));
@@ -74,9 +69,11 @@ class EmbeddedCheckoutBootstrapServiceTest {
         UUID userId = UUID.randomUUID();
         Cart cart = cart(userId);
         when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
-        when(cartService.checkout(any())).thenReturn(checkout(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT, null));
-        when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkout/1"))
-                .thenReturn(URI.create("https://shop.example/checkout/1"));
+        when(cartService.checkout(any())).thenReturn(checkout(
+                CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
+                null,
+                "https://checkout.delegated.example/checkout/1"
+        ));
         when(sessionStore.create(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
                 UUID.randomUUID(), cart.getId(), "checkout-1", "https://meant.com", "2026-04-08",
                 Instant.parse("2026-07-11T20:05:00Z")));
@@ -84,7 +81,7 @@ class EmbeddedCheckoutBootstrapServiceTest {
         var result = service.bootstrap(cart.getId(), userId, "https://meant.com");
 
         assertThat(result.action()).isEqualTo(EmbeddedCheckoutBootstrapAction.EMBEDDED);
-        assertThat(result.checkoutUrl()).isEqualTo("https://shop.example/checkout/1");
+        assertThat(result.checkoutUrl()).isEqualTo("https://checkout.delegated.example/checkout/1");
         verify(sessionStore).create(any());
     }
 
@@ -113,9 +110,17 @@ class EmbeddedCheckoutBootstrapServiceTest {
     }
 
     private CheckoutResult checkout(CheckoutNextAction action, EmbeddedCheckoutConfiguration configuration) {
+        return checkout(action, configuration, "https://shop.example/checkout/1");
+    }
+
+    private CheckoutResult checkout(
+            CheckoutNextAction action,
+            EmbeddedCheckoutConfiguration configuration,
+            String continueUrl
+    ) {
         return new CheckoutResult(UUID.randomUUID(), "cart-1", "checkout-1", "requires_escalation",
                 "https://shop.example/checkouts/embedded/1",
-                "https://shop.example/checkout/1", "2026-04-08", 1000L, "USD", List.of(), action,
+                continueUrl, "2026-04-08", 1000L, "USD", List.of(), action,
                 action == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT
                         ? CommerceExecutionRail.EMBEDDED_CHECKOUT : CommerceExecutionRail.NONE,
                 List.of(), MerchantExecutionPolicy.unavailable(), configuration);

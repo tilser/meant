@@ -3,7 +3,6 @@ package com.meant.api.module.cart.service;
 import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.constant.EmbeddedCheckoutBootstrapAction;
 import com.meant.api.module.cart.entity.Cart;
-import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.dto.EmbeddedCheckoutBootstrapResult;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -13,9 +12,7 @@ import com.meant.api.module.checkout.service.EmbeddedCheckoutSessionStore;
 import com.meant.api.module.checkout.service.command.CreateEmbeddedCheckoutSessionCommand;
 import com.meant.api.module.checkout.service.command.UseEmbeddedCheckoutSessionCommand;
 import com.meant.api.module.checkout.service.dto.EmbeddedCheckoutSessionBinding;
-import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import jakarta.validation.constraints.NotNull;
-import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -33,7 +30,6 @@ public class EmbeddedCheckoutBootstrapService {
     private final CartPersistenceService cartPersistenceService;
     private final EmbeddedCheckoutSessionStore sessionStore;
     private final EmbeddedCheckoutOriginPolicy originPolicy;
-    private final MerchantOutboundUrlValidator outboundUrlValidator;
     private final EmbeddedCheckoutProperties properties;
 
     public EmbeddedCheckoutBootstrapResult bootstrap(
@@ -96,16 +92,14 @@ public class EmbeddedCheckoutBootstrapService {
                 && !checkout.embeddedCheckout().authenticationType().isBlank()) {
             return handoff(cart, checkout, "Merchant requires an unsupported embedded authentication exchange");
         }
-        URI checkoutUri = validatedCheckoutUri(cart, embeddedUrl(checkout));
-        String fallbackContinueUrl = checkout.continueUrl() == null
-                ? null
-                : validatedCheckoutUri(cart, checkout.continueUrl()).toString();
+        String checkoutUrl = embeddedUrl(checkout);
+        String fallbackContinueUrl = checkout.continueUrl();
         EmbeddedCheckoutSessionBinding session = sessionStore.create(new CreateEmbeddedCheckoutSessionCommand(
                 cart.getUserId(), cart.getId(), checkout.checkoutId(), cart.getMerchantIntegrationId(),
                 cart.getRoutingScopeKey(), allowedOrigin, version));
         return new EmbeddedCheckoutBootstrapResult(
                 EmbeddedCheckoutBootstrapAction.EMBEDDED, session.sessionId(), cart.getId(), checkout.checkoutId(),
-                checkoutUri.toString(), fallbackContinueUrl, version, null, List.of(), session.expiresAt(),
+                checkoutUrl, fallbackContinueUrl, version, null, List.of(), session.expiresAt(),
                 cart.getProvider(), cart.getMerchantDomain(), null);
     }
 
@@ -135,10 +129,9 @@ public class EmbeddedCheckoutBootstrapService {
         if (checkout.continueUrl() == null) {
             return result(EmbeddedCheckoutBootstrapAction.UNAVAILABLE, cart, checkout, reason);
         }
-        URI uri = validatedCheckoutUri(cart, checkout.continueUrl());
         return new EmbeddedCheckoutBootstrapResult(
                 EmbeddedCheckoutBootstrapAction.EXTERNAL_HANDOFF, null, cart.getId(), checkout.checkoutId(),
-                null, uri.toString(), null, null, List.of(), null,
+                null, checkout.continueUrl(), null, null, List.of(), null,
                 cart.getProvider(), cart.getMerchantDomain(), reason);
     }
 
@@ -147,14 +140,6 @@ public class EmbeddedCheckoutBootstrapService {
         return new EmbeddedCheckoutBootstrapResult(action, null, cart.getId(), checkout.checkoutId(), null,
                 null, null, null, List.of(), null,
                 cart.getProvider(), cart.getMerchantDomain(), reason);
-    }
-
-    private URI validatedCheckoutUri(Cart cart, String value) {
-        if (cart.getMerchantDomain() == null || cart.getMerchantDomain().isBlank()) {
-            throw CartException.binding(CartException.BindingFailure.MISSING_ROUTING,
-                    "Embedded checkout merchant domain is unavailable");
-        }
-        return outboundUrlValidator.validateMerchantUrl(cart.getMerchantDomain(), value);
     }
 
     private UseEmbeddedCheckoutSessionCommand useCommand(
