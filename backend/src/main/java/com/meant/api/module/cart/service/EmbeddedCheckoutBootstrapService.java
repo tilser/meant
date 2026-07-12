@@ -69,19 +69,21 @@ public class EmbeddedCheckoutBootstrapService {
     }
 
     private EmbeddedCheckoutBootstrapResult embedded(Cart cart, CheckoutResult checkout, String allowedOrigin) {
-        if (checkout.embeddedCheckout() == null || checkout.checkoutId() == null
-                || checkout.checkoutUrl() == null || cart.getRoutingScopeKey() == null) {
+        if (checkout.checkoutId() == null || embeddedUrl(checkout) == null || cart.getRoutingScopeKey() == null) {
             return handoff(cart, checkout, "Merchant did not confirm embedded checkout for this session");
         }
-        String version = checkout.embeddedCheckout().protocolVersion();
+        String version = checkout.embeddedCheckout() == null
+                ? properties.supportedProtocolVersion()
+                : checkout.embeddedCheckout().protocolVersion();
         if (!properties.supportedProtocolVersion().equals(version)) {
             return handoff(cart, checkout, "Embedded checkout protocol version is unsupported");
         }
-        if (checkout.embeddedCheckout().authenticationType() != null
+        if (checkout.embeddedCheckout() != null
+                && checkout.embeddedCheckout().authenticationType() != null
                 && !checkout.embeddedCheckout().authenticationType().isBlank()) {
             return handoff(cart, checkout, "Merchant requires an unsupported embedded authentication exchange");
         }
-        URI checkoutUri = validatedCheckoutUri(cart, checkout.checkoutUrl());
+        URI checkoutUri = validatedCheckoutUri(cart, embeddedUrl(checkout));
         String fallbackContinueUrl = checkout.continueUrl() == null
                 ? null
                 : validatedCheckoutUri(cart, checkout.continueUrl()).toString();
@@ -92,6 +94,11 @@ public class EmbeddedCheckoutBootstrapService {
                 EmbeddedCheckoutBootstrapAction.EMBEDDED, session.sessionId(), cart.getId(), checkout.checkoutId(),
                 checkoutUri.toString(), fallbackContinueUrl, version, null, List.of(), session.expiresAt(),
                 cart.getProvider(), cart.getMerchantDomain(), null);
+    }
+
+    private String embeddedUrl(CheckoutResult checkout) {
+        return checkout.continueUrl() == null || checkout.continueUrl().isBlank()
+                ? checkout.checkoutUrl() : checkout.continueUrl();
     }
 
     private EmbeddedCheckoutBootstrapResult alternative(Cart cart, CheckoutResult checkout) {

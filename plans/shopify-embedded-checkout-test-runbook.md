@@ -56,8 +56,8 @@ VITE_CHECKOUT_KIT_DEBUG=true
 
 ## Failure diagnosis
 
-- `EXTERNAL_HANDOFF`: inspect the bootstrap reason and confirm the merchant checkout response advertises the `dev.ucp.shopping` embedded service binding.
-- `UNSUPPORTED_PROTOCOL`: Checkout Kit and the merchant binding must both use ECP `2026-04-08`; base PCOS-016 requests no delegations and supports no merchant-defined `ec_auth` exchange.
+- `EXTERNAL_HANDOFF`: inspect the bootstrap reason and confirm the Shopify profile advertises checkout, the checkout returned a validated `continue_url`, and the embedded readiness policy is enabled. Shopify ECP starts from `requires_escalation` plus `continue_url`; it does not require a separate embedded service advertisement in the Checkout MCP response.
+- `UNSUPPORTED_PROTOCOL`: Checkout Kit and the configured ECP version must both use `2026-04-08`; base PCOS-016 requests no native payment/address delegations and supports no merchant-defined `ec_auth` exchange.
 - Authentication or readiness failure: confirm TOKEN tier, Shopify agent auth, and both embedded readiness flags.
 - Popup does not start: allow popups for `localhost:3000`, retry from the explicit “Open secure checkout” button, or use the fallback link.
 - Completion cannot be verified: use “Reconcile checkout”; Meant does not trust the frontend completion event without provider confirmation.

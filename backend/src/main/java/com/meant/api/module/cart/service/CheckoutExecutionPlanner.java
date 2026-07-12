@@ -24,7 +24,8 @@ public class CheckoutExecutionPlanner {
     ) {
         List<CheckoutResult.Message> checkoutMessages = messages == null ? List.of() : messages;
         MerchantExecutionPolicy executionPolicy = policy == null ? MerchantExecutionPolicy.unavailable() : policy;
-        if (checkoutMessages.stream().anyMatch(CheckoutResult.Message::recoverable)) {
+        if (checkoutMessages.stream().anyMatch(message -> message.recoverable()
+                && !isExtensionInteraction(message))) {
             return checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
         }
         if (checkoutMessages.stream().anyMatch(CheckoutResult.Message::requiresBuyerAction)) {
@@ -44,6 +45,11 @@ public class CheckoutExecutionPlanner {
             case "recoverable_failure" -> checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
             default -> checkoutSessionPlan(CheckoutNextAction.UNKNOWN, executionPolicy);
         };
+    }
+
+    private boolean isExtensionInteraction(CheckoutResult.Message message) {
+        return message != null && "extension_interaction_required".equalsIgnoreCase(
+                message.code() == null ? "" : message.code().trim());
     }
 
     private CheckoutExecutionPlan escalationPlan(MerchantExecutionPolicy policy) {

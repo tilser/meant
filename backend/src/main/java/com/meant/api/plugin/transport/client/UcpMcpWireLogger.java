@@ -73,7 +73,7 @@ public class UcpMcpWireLogger {
     private boolean enabled(String toolName) {
         return diagnosticsProperties.checkoutWireLoggingEnabled()
                 && toolName != null
-                && toolName.contains("checkout");
+                && (toolName.contains("cart") || toolName.contains("checkout"));
     }
 
     private String wireJson(Object value) {

@@ -53,8 +53,6 @@ class EmbeddedCheckoutBootstrapServiceTest {
         when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
         when(cartService.checkout(any())).thenReturn(checkout(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
                 new EmbeddedCheckoutConfiguration("2026-04-08", List.of("payment.credential"), null)));
-        when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkouts/embedded/1"))
-                .thenReturn(URI.create("https://shop.example/checkouts/embedded/1"));
         when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkout/1"))
                 .thenReturn(URI.create("https://shop.example/checkout/1"));
         when(sessionStore.create(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
@@ -66,24 +64,28 @@ class EmbeddedCheckoutBootstrapServiceTest {
         assertThat(result.action()).isEqualTo(EmbeddedCheckoutBootstrapAction.EMBEDDED);
         assertThat(result.allowedDelegations()).isEmpty();
         assertThat(result.ecAuth()).isNull();
-        assertThat(result.checkoutUrl()).isEqualTo("https://shop.example/checkouts/embedded/1");
+        assertThat(result.checkoutUrl()).isEqualTo("https://shop.example/checkout/1");
         assertThat(result.fallbackContinueUrl()).isEqualTo("https://shop.example/checkout/1");
         verify(sessionStore).create(any());
     }
 
     @Test
-    void fallsBackWhenCheckoutDoesNotConfirmEmbeddedBinding() {
+    void requiresEscalationUsesContinueUrlWithoutASeparateEmbeddedServiceAdvertisement() {
         UUID userId = UUID.randomUUID();
         Cart cart = cart(userId);
         when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
         when(cartService.checkout(any())).thenReturn(checkout(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT, null));
         when(urlValidator.validateMerchantUrl("shop.example", "https://shop.example/checkout/1"))
                 .thenReturn(URI.create("https://shop.example/checkout/1"));
+        when(sessionStore.create(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
+                UUID.randomUUID(), cart.getId(), "checkout-1", "https://meant.com", "2026-04-08",
+                Instant.parse("2026-07-11T20:05:00Z")));
 
         var result = service.bootstrap(cart.getId(), userId, "https://meant.com");
 
-        assertThat(result.action()).isEqualTo(EmbeddedCheckoutBootstrapAction.EXTERNAL_HANDOFF);
-        verify(sessionStore, never()).create(any());
+        assertThat(result.action()).isEqualTo(EmbeddedCheckoutBootstrapAction.EMBEDDED);
+        assertThat(result.checkoutUrl()).isEqualTo("https://shop.example/checkout/1");
+        verify(sessionStore).create(any());
     }
 
     @Test

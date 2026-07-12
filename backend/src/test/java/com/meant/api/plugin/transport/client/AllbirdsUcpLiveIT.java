@@ -103,6 +103,29 @@ class AllbirdsUcpLiveIT {
         assertThat(requiredString(persistedCart, "id")).isEqualTo(cartId);
         assertThat(firstLineVariantId(persistedCart)).isEqualTo(variantId);
 
+        Map<String, Object> emptiedCart = payload(mcpClient.callToolAllowingJsonToolErrors(
+                restClient,
+                endpoint,
+                "update_cart",
+                Map.of("id", cartId, "cart", Map.of("line_items", List.of())),
+                Map.of()
+        ));
+        assertThat(requiredString(emptiedCart, "id")).isEqualTo(cartId);
+        assertThat(list(emptiedCart.get("line_items"))).isEmpty();
+
+        Map<String, Object> restoredCart = payload(mcpClient.callToolAllowingJsonToolErrors(
+                restClient,
+                endpoint,
+                "update_cart",
+                Map.of("id", cartId, "cart", Map.of("line_items", List.of(Map.of(
+                        "quantity", 1,
+                        "item", Map.of("id", variantId)
+                )))),
+                Map.of()
+        ));
+        assertThat(requiredString(restoredCart, "id")).isEqualTo(cartId);
+        assertThat(firstLineVariantId(restoredCart)).isEqualTo(variantId);
+
         Map<String, Object> checkout = payload(mcpClient.callToolAllowingJsonToolErrors(
                 restClient,
                 endpoint,

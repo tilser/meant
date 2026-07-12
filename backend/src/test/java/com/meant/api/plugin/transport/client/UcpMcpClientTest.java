@@ -18,6 +18,8 @@ import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
@@ -309,8 +311,10 @@ class UcpMcpClientTest {
         server.verify();
     }
 
-    @Test
-    void optInCheckoutWireLoggingIncludesEndpointRequestAndMerchantResponseButRedactsSecrets(
+    @ParameterizedTest
+    @ValueSource(strings = {"update_cart", "update_checkout"})
+    void optInCheckoutFlowWireLoggingIncludesEndpointRequestAndMerchantResponseButRedactsSecrets(
+            String toolName,
             CapturedOutput output
     ) {
         RestClient.Builder restClientBuilder = RestClient.builder();
@@ -344,7 +348,7 @@ class UcpMcpClientTest {
         client.callToolAllowingJsonToolErrors(
                 restClientBuilder.build(),
                 URI.create("https://merchant.example/api/mcp"),
-                "update_checkout",
+                toolName,
                 Map.of("checkout", Map.of(
                         "buyer", Map.of("email", "buyer@example.test"),
                         "fulfillment", Map.of("street_address", "1531 Hyde St"),
@@ -357,7 +361,7 @@ class UcpMcpClientTest {
                 .contains("UCP checkout MCP wire request")
                 .contains("UCP checkout MCP wire response")
                 .contains("endpoint=https://merchant.example/api/mcp")
-                .contains("tool=update_checkout")
+                .contains("tool=" + toolName)
                 .contains("buyer@example.test")
                 .contains("1531 Hyde St")
                 .contains("delivery_unavailable")

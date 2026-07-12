@@ -3,28 +3,24 @@ package com.meant.api.provider.shopify.cart;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.port.ExternalOfferCartRoutingProvider;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
-import com.meant.api.module.merchant.constant.CapabilityAvailability;
-import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
-import com.meant.api.module.merchant.constant.CommerceExecutionRail;
-import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
+import com.meant.api.module.merchant.service.MerchantExecutionPolicyService;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.MerchantUcpProfileObservationService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
-import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision;
-import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
 import com.meant.api.module.merchant.service.dto.MerchantUcpProfileObservation;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
+import com.meant.api.module.merchant.service.query.EvaluateObservedProviderPolicyQuery;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
-import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
-import com.meant.api.provider.shopify.capability.ShopifyAuthorizationTier;
-import com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties;
 import java.net.IDN;
 import java.net.URI;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -42,23 +38,20 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
     private final MerchantCartProviderLookupService merchantLookup;
     private final MerchantUcpProfileObservationService profileObservations;
     private final MerchantOutboundUrlValidator urlValidator;
-    private final ShopifyAgentAuthProperties authenticationProperties;
-    private final ShopifyCapabilityReadinessProperties readinessProperties;
+    private final MerchantExecutionPolicyService executionPolicyService;
 
     public ShopifyExternalOfferCartRoutingProvider(
             ShopifyCartProperties properties,
             MerchantCartProviderLookupService merchantLookup,
             MerchantUcpProfileObservationService profileObservations,
             MerchantOutboundUrlValidator urlValidator,
-            ShopifyAgentAuthProperties authenticationProperties,
-            ShopifyCapabilityReadinessProperties readinessProperties
+            MerchantExecutionPolicyService executionPolicyService
     ) {
         this.properties = properties;
         this.merchantLookup = merchantLookup;
         this.profileObservations = profileObservations;
         this.urlValidator = urlValidator;
-        this.authenticationProperties = authenticationProperties;
-        this.readinessProperties = readinessProperties;
+        this.executionPolicyService = executionPolicyService;
     }
 
     @Override
@@ -204,20 +197,19 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
     }
 
     private MerchantExecutionPolicy externalExecutionPolicy(Set<String> capabilities) {
-        boolean ready = hasCapability(capabilities, CHECKOUT_CAPABILITY_PREFIX)
-                && authenticationProperties.isEnabled()
-                && readinessProperties.authorizationTier().level() >= ShopifyAuthorizationTier.TOKEN.level();
-        CommerceCapabilityDecision checkout = ready
-                ? new CommerceCapabilityDecision(
-                        CommerceOperation.CHECKOUT_SESSION, true,
-                        CapabilityAuthorizationDecision.ready("TOKEN", readinessProperties.authorizationTier().name(), Set.of()),
-                        true, CapabilityIntegrationHealth.HEALTHY, false, CapabilityAvailability.AVAILABLE,
-                        CommerceExecutionRail.PROVIDER_CHECKOUT_SESSION, List.of(), null,
-                        MerchantIntegrationProvider.SHOPIFY)
-                : MerchantExecutionPolicy.unavailable().decision(CommerceOperation.CHECKOUT_SESSION);
-        return new MerchantExecutionPolicy(MerchantExecutionPolicy.unavailable().decisions().stream()
-                .map(decision -> decision.operation() == CommerceOperation.CHECKOUT_SESSION ? checkout : decision)
-                .toList());
+        EnumSet<MerchantIntegrationRole> roles = EnumSet.noneOf(MerchantIntegrationRole.class);
+        if (hasCapability(capabilities, CART_CAPABILITY_PREFIX)) {
+            roles.add(MerchantIntegrationRole.CART);
+        }
+        if (hasCapability(capabilities, CHECKOUT_CAPABILITY_PREFIX)) {
+            roles.add(MerchantIntegrationRole.CHECKOUT);
+        }
+        return executionPolicyService.evaluateObservedProvider(new EvaluateObservedProviderPolicyQuery(
+                MerchantIntegrationProvider.SHOPIFY,
+                MerchantIntegrationAuthStrategy.OAUTH_BEARER,
+                Set.copyOf(roles),
+                capabilities
+        ));
     }
 
     private Optional<String> shoppingEndpoint(MerchantUcpProfileObservation profile) {

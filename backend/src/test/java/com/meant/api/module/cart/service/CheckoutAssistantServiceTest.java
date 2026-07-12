@@ -117,7 +117,8 @@ class CheckoutAssistantServiceTest {
 
         assertThat(result.checkoutUpdated()).isTrue();
         assertThat(result.reply()).contains("The merchant accepted those checkout details.");
-        assertThat(result.reply()).contains("Further interaction is required in the merchant checkout");
+        assertThat(result.reply()).contains("secure embedded checkout below")
+                .contains("finish inside Meant");
         assertThat(result.reply()).doesNotContain("An extension interaction is required");
     }
 
@@ -358,7 +359,7 @@ class CheckoutAssistantServiceTest {
     }
 
     private static CheckoutResult checkoutResult(String status, List<CheckoutResult.Message> messages) {
-        MerchantExecutionPolicy policy = directCompletionPolicy();
+        MerchantExecutionPolicy policy = embeddedCheckoutPolicy();
         CheckoutExecutionPlan execution = new CheckoutExecutionPlanner().resolve(status, messages, policy);
         return new CheckoutResult(
                 CART_ID,
@@ -378,9 +379,9 @@ class CheckoutAssistantServiceTest {
         );
     }
 
-    private static MerchantExecutionPolicy directCompletionPolicy() {
+    private static MerchantExecutionPolicy embeddedCheckoutPolicy() {
         return new MerchantExecutionPolicy(Arrays.stream(CommerceOperation.values())
-                .map(operation -> operation == CommerceOperation.DIRECT_CHECKOUT_COMPLETION
+                .map(operation -> operation == CommerceOperation.EMBEDDED_CHECKOUT
                         ? new CommerceCapabilityDecision(
                                 operation,
                                 true,
@@ -389,7 +390,7 @@ class CheckoutAssistantServiceTest {
                                 CapabilityIntegrationHealth.HEALTHY,
                                 true,
                                 CapabilityAvailability.AVAILABLE,
-                                CommerceExecutionRail.DIRECT_CHECKOUT_COMPLETION,
+                                CommerceExecutionRail.EMBEDDED_CHECKOUT,
                                 List.of(),
                                 UUID.randomUUID(),
                                 null

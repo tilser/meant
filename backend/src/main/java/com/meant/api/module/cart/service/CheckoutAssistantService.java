@@ -187,8 +187,13 @@ public class CheckoutAssistantService {
             return reply.toString();
         }
         if (isExtensionInteractionRequired(merchantMessage)) {
-            reply.append("The merchant accepted those checkout details. "
-                    + "Further interaction is required in the merchant checkout to finish the order.");
+            if (updated.nextAction() == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT) {
+                reply.append("The merchant accepted those checkout details. "
+                        + "I opened its secure embedded checkout below so you can finish inside Meant.");
+            } else {
+                reply.append("The merchant accepted those checkout details. "
+                        + "Further interaction is required in the merchant checkout to finish the order.");
+            }
             return reply.toString();
         }
         if (hasText(merchantMessageText)) {

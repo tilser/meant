@@ -112,7 +112,14 @@ describe('checkout session UCP actions', () => {
       nextAction: 'OPEN_EMBEDDED_CHECKOUT',
       selectedRail: 'EMBEDDED_CHECKOUT',
       ineligibilityReasons: [],
-      messages: [],
+      messages: [
+        {
+          type: 'error',
+          code: 'extension_interaction_required',
+          severity: 'requires_buyer_input',
+          content: 'Cross-border checkout requires merchant interaction.',
+        },
+      ],
     })
 
     expect(checkoutNeedsHandoff(checkout)).toBe(false)

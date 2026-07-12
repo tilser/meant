@@ -15,13 +15,15 @@ import com.meant.api.module.cart.service.CartBindingMetrics;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.catalog.service.dto.*;
+import com.meant.api.module.merchant.properties.MerchantExecutionPolicyProperties;
+import com.meant.api.module.merchant.properties.MerchantUcpProfileObservationProperties;
+import com.meant.api.module.merchant.service.CapabilityExecutionPolicyEvaluator;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.MerchantEnrichmentCandidateService;
-import com.meant.api.provider.shopify.auth.ShopifyMerchantUcpTransport;
+import com.meant.api.module.merchant.service.MerchantExecutionPolicyService;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.MerchantUcpProfileObservationService;
 import com.meant.api.module.merchant.service.UcpProfileClient;
-import com.meant.api.module.merchant.properties.MerchantUcpProfileObservationProperties;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
@@ -34,6 +36,8 @@ import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
+import com.meant.api.provider.shopify.auth.ShopifyMerchantUcpTransport;
+import com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessAdapter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetAddress;
 import java.time.Duration;
@@ -46,6 +50,28 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ShopifyOfferCartRoutingTest {
+
+    @Test
+    void observedCheckoutCapabilityMakesExternalShopifyEmbeddedCheckoutAvailable() throws Exception {
+        MerchantCartProviderLookupService lookup = mock(MerchantCartProviderLookupService.class);
+        when(lookup.findActiveByCanonicalDomain("shop.example")).thenReturn(Optional.empty());
+        UcpProfileClient profiles = mock(UcpProfileClient.class);
+        when(profiles.fetchProfileResult(eq("shop.example"), any())).thenReturn(profile(Map.of(
+                "dev.ucp.shopping.cart", List.of(capability("dev.ucp.shopping.cart")),
+                "dev.ucp.shopping.checkout", List.of(capability("dev.ucp.shopping.checkout"))
+        )));
+        ShopifyExternalOfferCartRoutingProvider provider = routingProvider(
+                properties(), lookup, profiles,
+                MerchantOutboundUrlValidator.withResolver(host ->
+                        List.of(InetAddress.getByName("93.184.216.34"))),
+                mock(MerchantEnrichmentCandidateService.class));
+
+        CartRoutingTarget target = provider.resolve(offer()).orElseThrow();
+
+        assertThat(target.merchantProvider().executionPolicy()
+                .decision(CommerceOperation.EMBEDDED_CHECKOUT).available()).isTrue();
+        assertThat(target.merchantIntegrationId()).isNull();
+    }
 
     @Test
     void freshUsableMerchantDomainIsZeroDiscoveryHotPath() {
@@ -407,6 +433,10 @@ class ShopifyOfferCartRoutingTest {
         return new UcpProfileFetchResult(profile, "{}", "https://shop.example/.well-known/ucp", Instant.now());
     }
 
+    private UcpCapabilityDefinition capability(String id) {
+        return new UcpCapabilityDefinition(id, "2026-04-08", null, null, List.of(), null, Map.of());
+    }
+
     private ShopifyCartProperties properties() {
         return new ShopifyCartProperties(
                 Duration.ofDays(35), Duration.ofSeconds(2), Duration.ofSeconds(8), Duration.ofSeconds(10),
@@ -438,12 +468,15 @@ class ShopifyOfferCartRoutingTest {
         com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties auth =
                 mock(com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties.class);
         when(auth.isEnabled()).thenReturn(true);
-        com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties readiness =
-                mock(com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties.class);
-        when(readiness.authorizationTier()).thenReturn(
-                com.meant.api.provider.shopify.capability.ShopifyAuthorizationTier.TOKEN);
+        var readiness = new com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties(
+                com.meant.api.provider.shopify.capability.ShopifyAuthorizationTier.TOKEN,
+                Set.of(), true, true, false, false, Set.of(), false, Set.of(), false);
+        MerchantExecutionPolicyService executionPolicyService = new MerchantExecutionPolicyService(
+                new MerchantExecutionPolicyProperties(true, true, true, true, false, true, true),
+                new CapabilityExecutionPolicyEvaluator(),
+                List.of(new ShopifyCapabilityReadinessAdapter(readiness, auth)));
         return new ShopifyExternalOfferCartRoutingProvider(
-                properties, lookup, observations, validator, auth, readiness);
+                properties, lookup, observations, validator, executionPolicyService);
     }
 
     private ShopifyCartRetryPolicy retryPolicy() {

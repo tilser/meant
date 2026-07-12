@@ -138,6 +138,7 @@ public class CartReplacementService {
         if (remoteLines.size() != localByRemote.size()) {
             throw ambiguousSnapshot();
         }
+        Map<String, CartLine> matchedRemoteLines = matchRemoteLines(cart, remoteLines);
         Map<CartLine, Integer> quantities = new HashMap<>();
         for (UpdateCartCommand.UpdateItem update : safeList(command.updateItems())) {
             quantities.put(resolve(update, localLines(cart), localByRemote), update.quantity());
@@ -148,15 +149,15 @@ public class CartReplacementService {
         List<CartAddItem> replacement = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (UcpCartResponse.Line remoteLine : remoteLines) {
-            CartLine localLine = remoteLine == null ? null : localByRemote.get(remoteLine.id());
+            CartLine localLine = remoteLine == null ? null : matchedRemoteLines.get(remoteLine.id());
             if (localLine == null || remoteLine.quantity() == null
                     || remoteLine.merchandise() == null
-                    || !localLine.getProductVariantId().equals(remoteLine.merchandise().id())
-                    || !remoteIdentityMatches(localLine, remoteLine)
                     || !seen.add(remoteLine.id())) {
                 throw ambiguousSnapshot();
             }
-            if (removedLocal.contains(localLine.getId()) || removedRemote.contains(remoteLine.id())) {
+            if (removedLocal.contains(localLine.getId())
+                    || removedRemote.contains(localLine.getRemoteCartLineId())
+                    || removedRemote.contains(remoteLine.id())) {
                 continue;
             }
             int quantity = quantities.getOrDefault(localLine, remoteLine.quantity());
@@ -169,6 +170,44 @@ public class CartReplacementService {
         }
         replacement.addAll(safeList(additions));
         return List.copyOf(replacement);
+    }
+
+    private Map<String, CartLine> matchRemoteLines(Cart cart, List<UcpCartResponse.Line> remoteLines) {
+        List<CartLine> unmatched = new ArrayList<>(cart.getLines());
+        Map<String, CartLine> matches = new LinkedHashMap<>();
+        for (UcpCartResponse.Line remoteLine : remoteLines) {
+            if (remoteLine == null || !hasText(remoteLine.id()) || matches.containsKey(remoteLine.id())) {
+                throw ambiguousSnapshot();
+            }
+            CartLine sameRemoteId = unmatched.stream()
+                    .filter(line -> remoteLine.id().equals(line.getRemoteCartLineId()))
+                    .findFirst()
+                    .orElse(null);
+            if (sameRemoteId != null) {
+                if (!remoteIdentityCompatible(sameRemoteId, remoteLine)) {
+                    throw ambiguousSnapshot();
+                }
+                unmatched.remove(sameRemoteId);
+                matches.put(remoteLine.id(), sameRemoteId);
+                continue;
+            }
+            List<CartLine> exact = unmatched.stream()
+                    .filter(line -> remoteIdentityMatches(line, remoteLine))
+                    .toList();
+            List<CartLine> candidates = exact.isEmpty()
+                    ? unmatched.stream().filter(line -> remoteIdentityCompatible(line, remoteLine)).toList()
+                    : exact;
+            if (candidates.size() != 1) {
+                throw ambiguousSnapshot();
+            }
+            CartLine matched = candidates.getFirst();
+            unmatched.remove(matched);
+            matches.put(remoteLine.id(), matched);
+        }
+        if (!unmatched.isEmpty()) {
+            throw ambiguousSnapshot();
+        }
+        return Map.copyOf(matches);
     }
 
     private boolean remoteIdentityMatches(CartLine local, UcpCartResponse.Line remote) {
@@ -185,6 +224,22 @@ public class CartReplacementService {
                 && expected.options().equals(actual.options())
                 && expected.components().equals(actual.components())
                 && expected.sellingPlan().equals(actual.sellingPlan());
+    }
+
+    private boolean remoteIdentityCompatible(CartLine local, UcpCartResponse.Line remote) {
+        if (remote == null || remote.quantity() == null || remote.merchandise() == null) {
+            return false;
+        }
+        LineIdentity expected = identity(identityMapper.toItem(local, remote.quantity()));
+        UcpCartResponse.Merchandise merchandise = remote.merchandise();
+        LineIdentity actual = identity(new CartAddItem(
+                merchandise.resolvedProductId(), merchandise.id(), merchandise.selectedOptions(),
+                merchandise.components(), merchandise.sellingPlan(), remote.quantity()));
+        return expected.variantId().equals(actual.variantId())
+                && (!hasText(actual.productId()) || expected.productId().equals(actual.productId()))
+                && (actual.options().isEmpty() || expected.options().equals(actual.options()))
+                && (actual.components().isEmpty() || expected.components().equals(actual.components()))
+                && (actual.sellingPlan().isEmpty() || expected.sellingPlan().equals(actual.sellingPlan()));
     }
 
     private List<String> remoteDiscountCodes(UcpCartResponse.Cart cart) {

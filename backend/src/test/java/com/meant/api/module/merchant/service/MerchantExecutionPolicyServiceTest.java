@@ -17,6 +17,7 @@ import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantIntegration;
 import com.meant.api.module.merchant.properties.MerchantExecutionPolicyProperties;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.query.EvaluateObservedProviderPolicyQuery;
 import com.meant.api.module.merchant.service.GenericUcpCapabilityReadinessAdapter;
 import com.meant.api.module.merchant.properties.GenericUcpCapabilityReadinessProperties;
 import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
@@ -32,6 +33,33 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class MerchantExecutionPolicyServiceTest {
+
+    @Test
+    void observedExternalShopifyCheckoutEnablesEmbeddedRailWithoutALocalIntegration() {
+        ShopifyCapabilityReadinessProperties readiness = shopify(
+                ShopifyAuthorizationTier.TOKEN,
+                Set.of(),
+                true,
+                true,
+                false,
+                false,
+                Set.of()
+        );
+        MerchantExecutionPolicy policy = service(
+                rollouts(true, false), generic(false), readiness, enabledAgentAuth()
+        ).evaluateObservedProvider(new EvaluateObservedProviderPolicyQuery(
+                MerchantIntegrationProvider.SHOPIFY,
+                MerchantIntegrationAuthStrategy.OAUTH_BEARER,
+                Set.of(MerchantIntegrationRole.CART, MerchantIntegrationRole.CHECKOUT),
+                Set.of("dev.ucp.shopping.cart", "dev.ucp.shopping.checkout")
+        ));
+
+        assertThat(policy.decision(CommerceOperation.CHECKOUT_SESSION).available()).isTrue();
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).available()).isTrue();
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).selectedRail())
+                .isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
+        assertThat(policy.decision(CommerceOperation.EMBEDDED_CHECKOUT).integrationId()).isNull();
+    }
 
     @Test
     void currentMerchantCartCapabilityRepairsAStaleBackfillRoleForTheAdvertisedEndpoint() {

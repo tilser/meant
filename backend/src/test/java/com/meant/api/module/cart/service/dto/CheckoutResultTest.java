@@ -75,6 +75,17 @@ class CheckoutResultTest {
         assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
     }
 
+    @Test
+    void recoverableExtensionInteractionOpensEmbeddedCheckoutInsteadOfRepeatingUcpUpdate() {
+        var result = new CheckoutExecutionPlanner().resolve(
+                "requires_escalation",
+                List.of(message("extension_interaction_required", "recoverable")),
+                availablePolicy(CommerceOperation.EMBEDDED_CHECKOUT, CommerceExecutionRail.EMBEDDED_CHECKOUT)
+        );
+
+        assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT);
+    }
+
     private com.meant.api.module.cart.service.dto.CheckoutExecutionPlan checkout(
             String status,
             List<CheckoutResult.Message> messages

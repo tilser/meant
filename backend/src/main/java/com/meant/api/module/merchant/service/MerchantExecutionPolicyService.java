@@ -15,6 +15,9 @@ import com.meant.api.module.merchant.service.dto.CapabilityFallback;
 import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
 import com.meant.api.module.merchant.service.dto.MerchantCapabilityReadinessContext;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.query.EvaluateObservedProviderPolicyQuery;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -24,9 +27,11 @@ import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.validation.annotation.Validated;
 
 @Service
 @Slf4j
+@Validated
 public class MerchantExecutionPolicyService {
 
     private static final String GENERIC_UCP_CART_CAPABILITY = "dev.ucp.shopping.cart";
@@ -74,6 +79,41 @@ public class MerchantExecutionPolicyService {
                 decision.ineligibilityReasons()
         ));
         return new MerchantExecutionPolicy(decisions);
+    }
+
+    public MerchantExecutionPolicy evaluateObservedProvider(
+            @NotNull @Valid EvaluateObservedProviderPolicyQuery query
+    ) {
+        MerchantCapabilityReadinessAdapter adapter = adapters.get(query.provider());
+        MerchantCapabilityReadinessContext context = new MerchantCapabilityReadinessContext(
+                query.provider(), query.authStrategy(), query.roles(), query.advertisedCapabilities());
+        List<CommerceCapabilityDecision> decisions = Arrays.stream(CommerceOperation.values())
+                .map(operation -> evaluateObservedProvider(adapter, context, operation))
+                .toList();
+        return new MerchantExecutionPolicy(decisions);
+    }
+
+    private CommerceCapabilityDecision evaluateObservedProvider(
+            MerchantCapabilityReadinessAdapter adapter,
+            MerchantCapabilityReadinessContext context,
+            CommerceOperation operation
+    ) {
+        boolean roleSupported = supportsRole(context.roles(), operation);
+        boolean advertised = roleSupported && adapter != null && adapter.advertised(operation, context);
+        CapabilityAuthorizationDecision authorization = adapter == null
+                ? CapabilityAuthorizationDecision.unavailable(CapabilityAuthorizationStatus.UNSUPPORTED)
+                : adapter.authorization(operation, context);
+        return evaluator.evaluate(new CapabilityEvaluationInput(
+                operation,
+                advertised,
+                authorization,
+                properties.rolloutEnabled(operation, false),
+                CapabilityIntegrationHealth.HEALTHY,
+                fallback(operation),
+                executionRail(operation),
+                null,
+                context.provider()
+        ));
     }
 
     private Map<CommerceOperation, CommerceCapabilityDecision> evaluateCheckoutFamily(

@@ -135,6 +135,39 @@ class CartReplacementServiceTest {
         service.validateIdentifiers(cart, exact);
     }
 
+    @Test
+    void removalUsesUniqueImmutableIdentityWhenMerchantRotatesRemoteLineIds() {
+        UpdateCartCommand command = new UpdateCartCommand(
+                cart.getId(), cart.getUserId(), List.of(), List.of(), List.of(first.getId()), List.of(),
+                null, null, null, null, null, null, null);
+        UcpCartResponse rotated = response(List.of(
+                remoteLine("rotated-b", "product-b", "variant-b", "Large", 2),
+                remoteLine("rotated-a", "product-a", "variant-a", "Black", 1)));
+
+        CartReplacementState state = service.build(cart, command, List.of(), Map.of(), rotated)
+                .replacementState();
+
+        assertThat(state.lineItems()).extracting(CartAddItem::productVariantId)
+                .containsExactly("variant-b");
+        assertThat(state.lineItems()).extracting(CartAddItem::quantity).containsExactly(2);
+    }
+
+    @Test
+    void removalAcceptsOmittedRemoteOptionsOnlyWhenVariantMatchIsUnique() {
+        UpdateCartCommand command = new UpdateCartCommand(
+                cart.getId(), cart.getUserId(), List.of(), List.of(), List.of(first.getId()), List.of(),
+                null, null, null, null, null, null, null);
+        UcpCartResponse rotated = response(List.of(
+                remoteLineWithoutOptions("rotated-a", "product-a", "variant-a", 1),
+                remoteLineWithoutOptions("rotated-b", "product-b", "variant-b", 2)));
+
+        CartReplacementState state = service.build(cart, command, List.of(), Map.of(), rotated)
+                .replacementState();
+
+        assertThat(state.lineItems()).extracting(CartAddItem::productVariantId)
+                .containsExactly("variant-b");
+    }
+
     private UpdateCartCommand command(
             List<UpdateCartCommand.UpdateItem> updates,
             Map<String, Object> buyer,
@@ -183,6 +216,13 @@ class CartReplacementServiceTest {
         return new UcpCartResponse.Line(id, quantity, null, new UcpCartResponse.Merchandise(
                 variant, null, new UcpCartResponse.Product(product, null), product,
                 List.of(new CartAddItem.SelectedOption("variant", "Color", color)), List.of(), null));
+    }
+
+    private UcpCartResponse.Line remoteLineWithoutOptions(
+            String id, String product, String variant, int quantity) {
+        return new UcpCartResponse.Line(id, quantity, null, new UcpCartResponse.Merchandise(
+                variant, null, new UcpCartResponse.Product(product, null), product,
+                List.of(), List.of(), null));
     }
 
     private CartAddItem item(String product, String variant, String color, int quantity) {
