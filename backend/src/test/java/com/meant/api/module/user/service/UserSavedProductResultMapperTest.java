@@ -45,6 +45,17 @@ class UserSavedProductResultMapperTest {
         }
     }
 
+    @Test
+    void unavailableProviderKeepsPresentationSnapshotWithoutCommercialAuthority() {
+        UserSavedProductResult result = mapper.result(entity(), null, null);
+
+        assertThat(result.name()).isEqualTo("Saved title");
+        assertThat(result.imageUrl()).isEqualTo("https://saved.test/image.jpg");
+        assertThat(result.priceFrom()).isNull();
+        assertThat(result.offers()).isEmpty();
+        assertThat(result.commercialFactsAuthoritative()).isFalse();
+    }
+
     private void assertMoney(String currency, long minorUnits, double majorUnits) {
         UserSavedProductResult result = result(currency, minorUnits);
 
@@ -96,6 +107,28 @@ class UserSavedProductResultMapperTest {
                         "variant-1",
                         "[]",
                         "generic-ucp-storefront-v2"
+                ),
+                new UserSavedProduct.PresentationSnapshot(
+                        "hash",
+                        "Saved title",
+                        "Saved brand",
+                        "Saved category",
+                        "#fff",
+                        "https://saved.test/image.jpg",
+                        "https://saved.test/product",
+                        true,
+                        80,
+                        2,
+                        "[]",
+                        "[]",
+                        "Saved note",
+                        "[]",
+                        "[]",
+                        4.5d,
+                        10,
+                        "Saved review",
+                        null,
+                        "[]"
                 ),
                 NOW
         );

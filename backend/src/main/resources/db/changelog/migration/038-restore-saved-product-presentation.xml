@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-allow-saved-product-presentation-snapshot" author="meant">
+        <sql>
+            ALTER TABLE user_saved_products
+            DROP CONSTRAINT ck_user_saved_products_identifier_only;
+
+            ALTER TABLE user_saved_products
+            ADD CONSTRAINT ck_user_saved_products_no_commercial_snapshot
+            CHECK (
+                price_from IS NULL
+                AND offers IS NULL
+            )
+        </sql>
+    </changeSet>
+</databaseChangeLog>

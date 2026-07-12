@@ -15,7 +15,6 @@ import com.meant.api.module.catalog.service.dto.CatalogPayloadClass;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
-import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.dto.CatalogRetentionDecision;
 import com.meant.api.module.catalog.service.dto.CatalogRetentionMode;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -106,26 +105,17 @@ public class UserSavedProductService {
             @NotNull @Valid SaveUserProductCommand command
     ) {
         validateUser(profileCommand, command.userId());
-        CatalogRehydrationContext context = context(userSettingsService.get(profileCommand));
         Instant now = Instant.now();
-        CatalogProductReference requested = referenceResolver.resolve(command, now);
-        CatalogProductRehydrationResult rehydrated = rehydrationService.rehydrate(
-                requested,
-                context
-        );
-        if (rehydrated.status() != CatalogRehydrationStatus.FRESH || rehydrated.resolvedReference() == null) {
-            throw new UserException("Saved product could not be verified from current provider facts");
-        }
-        CatalogProductReference verified = rehydrated.resolvedReference();
+        CatalogProductReference resolved = referenceResolver.resolve(command, now);
         CatalogRetentionDecision policy = policyResolver.resolve(
-                verified.discoverySource(),
+                resolved.discoverySource(),
                 CatalogPayloadClass.SAVED_INTERACTION
         );
         if (policy.mode() != CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY) {
             throw new UserException("Provider policy does not permit a durable saved-product reference");
         }
-        UserSavedProduct saved = persistenceService.save(command, verified, policy.policyKey(), now);
-        return resultMapper.result(saved, rehydrated, context);
+        UserSavedProduct saved = persistenceService.save(command, resolved, policy.policyKey(), now);
+        return resultMapper.result(saved, null, null);
     }
 
     @Transactional

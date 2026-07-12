@@ -72,7 +72,7 @@ class UserSavedProductPersistenceIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void databaseRowStoresNoCatalogCommercialMediaReviewOrGeneratedSnapshotPayload() {
+    void databaseRowStoresPresentationSnapshotButNoCommercialSnapshot() {
         persistenceService.save(command(), reference(), "generic-v2", Instant.now());
 
         var payload = jdbcTemplate.queryForMap("""
@@ -83,7 +83,29 @@ class UserSavedProductPersistenceIT extends PostgresIntegrationTestSupport {
                 WHERE user_id = ?
                 """, USER_ID);
 
-        assertThat(payload.values()).containsOnlyNulls();
+        assertThat(payload)
+                .containsEntry("product_hash", "hash")
+                .containsEntry("name", "Provider title")
+                .containsEntry("brand", "Provider brand")
+                .containsEntry("category", "Provider category")
+                .containsEntry("tone", "#fff")
+                .containsEntry("image_url", "https://provider.test/image.jpg")
+                .containsEntry("product_url", "https://provider.test/product")
+                .containsEntry("remote", true)
+                .containsEntry("match_score", 100)
+                .containsEntry("merchant_count", 4)
+                .containsEntry("note", "Generated note")
+                .containsEntry("review_score", 5.0d)
+                .containsEntry("review_count", 1000)
+                .containsEntry("review_insight", "Review payload")
+                .containsEntry("needs", null);
+        assertThat(payload.get("satisfies")).isEqualTo("[\"organic\"]");
+        assertThat(payload.get("misses")).isEqualTo("[]");
+        assertThat(payload.get("pros")).isEqualTo("[\"pro\"]");
+        assertThat(payload.get("cons")).isEqualTo("[\"con\"]");
+        assertThat(payload.get("provides")).isEqualTo("[]");
+        assertThat(payload.get("price_from")).isNull();
+        assertThat(payload.get("offers")).isNull();
     }
 
     private SaveUserProductCommand command() {

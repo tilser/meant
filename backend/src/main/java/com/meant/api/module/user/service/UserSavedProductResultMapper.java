@@ -29,6 +29,8 @@ import tools.jackson.databind.ObjectMapper;
 public class UserSavedProductResultMapper {
     private static final TypeReference<List<ProductAttribute>> OPTIONS_TYPE = new TypeReference<>() {
     };
+    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
+    };
 
     private final ObjectMapper objectMapper;
 
@@ -109,28 +111,28 @@ public class UserSavedProductResultMapper {
         String marketCountry = marketCountry(context);
         return new UserSavedProductResult(
                 entity.getProductKey(),
-                null,
-                facts == null ? null : facts.title(),
-                null,
-                null,
-                null,
-                image(facts),
-                null,
-                facts == null ? null : true,
-                null,
+                entity.getProductHash(),
+                facts == null ? entity.getName() : facts.title(),
+                entity.getBrand(),
+                entity.getCategory(),
+                entity.getTone(),
+                facts == null ? entity.getImageUrl() : firstText(image(facts), entity.getImageUrl()),
+                entity.getProductUrl(),
+                entity.getRemote(),
+                entity.getMatchScore(),
                 price == null ? null : price.majorUnits(),
                 price == null ? null : price.minorUnits(),
                 price == null ? null : price.currency(),
-                facts == null ? null : 1,
-                List.of(),
-                List.of(),
-                null,
-                List.of(),
-                List.of(),
-                null,
+                entity.getMerchantCount(),
+                strings(entity.getSatisfies()),
+                strings(entity.getMisses()),
+                entity.getNote(),
+                strings(entity.getPros()),
+                strings(entity.getCons()),
+                review(entity),
                 offers,
-                null,
-                List.of(),
+                entity.getNeeds(),
+                strings(entity.getProvides()),
                 marketCountry,
                 marketCountry != null,
                 authoritative,
@@ -182,6 +184,28 @@ public class UserSavedProductResultMapper {
                 .map(media -> media.url().toString())
                 .findFirst()
                 .orElse(null);
+    }
+
+    private UserSavedProductResult.Review review(UserSavedProduct entity) {
+        return entity.getReviewScore() == null
+                && entity.getReviewCount() == null
+                && entity.getReviewInsight() == null
+                ? null
+                : new UserSavedProductResult.Review(
+                        entity.getReviewScore(), entity.getReviewCount(), entity.getReviewInsight());
+    }
+
+    private List<String> strings(String value) {
+        try {
+            List<String> values = objectMapper.readValue(value == null ? "[]" : value, STRING_LIST_TYPE);
+            return values == null ? List.of() : List.copyOf(values);
+        } catch (JacksonException exception) {
+            return List.of();
+        }
+    }
+
+    private String firstText(String first, String second) {
+        return first == null || first.isBlank() ? second : first;
     }
 
     private List<ProductAttribute> options(String value) throws JacksonException {

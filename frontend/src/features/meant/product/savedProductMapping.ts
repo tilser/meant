@@ -121,7 +121,7 @@ export function savedProductFromProfile(
     brand: product.brand ?? 'Unavailable',
     category: displayProductCategoryValue(product.category) ?? 'Product',
     tone: product.tone ?? '#e7ebef',
-    imageUrl: authoritative ? product.imageUrl : null,
+    imageUrl: product.imageUrl,
     productUrl: product.productUrl,
     remote: product.remote ?? false,
     match: product.match ?? 0,

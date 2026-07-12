@@ -65,7 +65,7 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void migrationPermanentlyRejectsLegacyPayloadWritesAndAcceptsIdentifierOnlyRows() throws Exception {
+    void migrationAllowsPresentationSnapshotsButRejectsCommercialSnapshots() throws Exception {
         String schema = "pcos010_guard_" + UUID.randomUUID().toString().replace("-", "");
         UUID savedId = UUID.randomUUID();
         jdbcTemplate.execute("create schema " + schema);
@@ -79,9 +79,13 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
                     Integer.class,
                     savedId
             )).isEqualTo(1);
-            assertThatThrownBy(() -> insertWithLegacyPayload(schema, UUID.randomUUID()))
-                    .isInstanceOf(DataIntegrityViolationException.class)
-                    .hasMessageContaining("ck_user_saved_products_identifier_only");
+            insertWithLegacyPayload(schema, UUID.randomUUID());
+            jdbcTemplate.update(
+                    "update %s.user_saved_products set image_url = ?, note = ? where id = ?".formatted(schema),
+                    "https://saved.test/image.jpg",
+                    "Saved by the user",
+                    savedId
+            );
 
             for (Map.Entry<String, Object> payload : prohibitedPayloadValues()) {
                 assertThatThrownBy(() -> jdbcTemplate.update(
@@ -91,7 +95,7 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
                         savedId
                 )).as(payload.getKey())
                         .isInstanceOf(DataIntegrityViolationException.class)
-                        .hasMessageContaining("ck_user_saved_products_identifier_only");
+                        .hasMessageContaining("ck_user_saved_products_no_commercial_snapshot");
             }
         } finally {
             jdbcTemplate.execute("drop schema " + schema + " cascade");
@@ -233,28 +237,8 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
 
     private List<Map.Entry<String, Object>> prohibitedPayloadValues() {
         return List.of(
-                Map.entry("product_hash", "hash"),
-                Map.entry("name", "Provider title"),
-                Map.entry("brand", "Provider brand"),
-                Map.entry("category", "Provider category"),
-                Map.entry("tone", "#fff"),
-                Map.entry("image_url", "https://provider.test/image.jpg"),
-                Map.entry("product_url", "https://provider.test/product"),
-                Map.entry("remote", true),
-                Map.entry("match_score", 99),
                 Map.entry("price_from", 10.5d),
-                Map.entry("merchant_count", 2),
-                Map.entry("satisfies", "[]"),
-                Map.entry("misses", "[]"),
-                Map.entry("note", "Generated note"),
-                Map.entry("pros", "[]"),
-                Map.entry("cons", "[]"),
-                Map.entry("review_score", 4.5d),
-                Map.entry("review_count", 100),
-                Map.entry("review_insight", "Review payload"),
-                Map.entry("offers", "[]"),
-                Map.entry("needs", "later-ticket"),
-                Map.entry("provides", "[]")
+                Map.entry("offers", "[]")
         );
     }
 
@@ -262,13 +246,21 @@ class CatalogRetentionMigrationIT extends PostgresIntegrationTestSupport {
         try (Connection connection = dataSource.getConnection();
              AutoCloseable ignored = selectSchema(connection, schema)) {
             SingleConnectionDataSource schemaDataSource = new SingleConnectionDataSource(connection, true);
-            SpringLiquibase liquibase = new SpringLiquibase();
-            liquibase.setDataSource(schemaDataSource);
-            liquibase.setChangeLog("classpath:db/changelog/migration/030-add-catalog-retention-policy.xml");
-            liquibase.setDefaultSchema(schema);
-            liquibase.setLiquibaseSchema(schema);
-            liquibase.afterPropertiesSet();
+            runChangeLog(schemaDataSource, schema,
+                    "classpath:db/changelog/migration/030-add-catalog-retention-policy.xml");
+            runChangeLog(schemaDataSource, schema,
+                    "classpath:db/changelog/migration/038-restore-saved-product-presentation.xml");
         }
+    }
+
+    private void runChangeLog(SingleConnectionDataSource dataSource, String schema, String changeLog)
+            throws Exception {
+        SpringLiquibase liquibase = new SpringLiquibase();
+        liquibase.setDataSource(dataSource);
+        liquibase.setChangeLog(changeLog);
+        liquibase.setDefaultSchema(schema);
+        liquibase.setLiquibaseSchema(schema);
+        liquibase.afterPropertiesSet();
     }
 
     private AutoCloseable selectSchema(Connection connection, String schema) throws SQLException {

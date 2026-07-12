@@ -131,12 +131,20 @@ class UserSavedProductServiceTest {
     }
 
     @Test
-    void saveNormalizesUkMarketContextToIsoGb() {
+    void saveUsesTheServerSessionWithoutCallingTheProviderOrReadingMarketSettings() {
         when(settingsService.get(any())).thenReturn(settings("UK"));
+        provider.contexts.clear();
 
         UserSavedProductResult result = service.save(profile(), product("product-uk", "UK market"));
 
-        assertMarketContext(result, "GB", true);
+        assertThat(provider.contexts).isEmpty();
+        verify(settingsService, org.mockito.Mockito.never()).get(any());
+        assertThat(result.name()).isEqualTo("UK market");
+        assertThat(result.imageUrl()).isEqualTo("https://client.test/image.jpg");
+        assertThat(result.priceFrom()).isNull();
+        assertThat(result.marketCountry()).isNull();
+        assertThat(result.marketContextApplied()).isFalse();
+        assertThat(result.commercialFactsAuthoritative()).isFalse();
     }
 
     @Test
@@ -149,18 +157,6 @@ class UserSavedProductServiceTest {
                 profile(), new ListSavedProductsQuery(USER_ID, 0, 10)).getFirst();
 
         assertMarketContext(result, "GB", true);
-    }
-
-    @Test
-    void saveRejectsMalformedAndMissingMarketContext() {
-        for (String countryCode : java.util.Arrays.asList("U1", "GBR", "\u010cZ", "ZZ", null)) {
-            when(settingsService.get(any())).thenReturn(settings(countryCode));
-
-            UserSavedProductResult result = service.save(
-                    profile(), product("product-" + String.valueOf(countryCode), "Invalid market"));
-
-            assertMarketContext(result, null, false);
-        }
     }
 
     @Test
@@ -178,17 +174,17 @@ class UserSavedProductServiceTest {
     }
 
     @Test
-    void degradedListReturnsExplicitUnknownFactsNeverZeroOrStoredHints() {
+    void degradedListKeepsPresentationButNeverUsesStoredCommercialFacts() {
         service.save(profile(), product("product-1", "Forbidden stored title"));
         provider.available = false;
 
         UserSavedProductResult result = service.list(
                 profile(), new ListSavedProductsQuery(USER_ID, 0, 10)).getFirst();
 
-        assertThat(result.name()).isNull();
+        assertThat(result.name()).isEqualTo("Forbidden stored title");
         assertThat(result.priceFrom()).isNull();
-        assertThat(result.imageUrl()).isNull();
-        assertThat(result.review()).isNull();
+        assertThat(result.imageUrl()).isEqualTo("https://client.test/image.jpg");
+        assertThat(result.review()).isNotNull();
         assertThat(result.offers()).isEmpty();
         assertThat(result.commercialFactsAuthoritative()).isFalse();
     }
@@ -216,37 +212,36 @@ class UserSavedProductServiceTest {
     }
 
     @Test
-    void savedEntityContainsOnlyVerifiedIdentifiersAndNoProviderPayloadFields() {
+    void savedEntityContainsServerSessionIdentifiersAndPresentationButNoCommercialSnapshot() {
         service.save(profile(), product("product-1", "Forbidden stored title"));
 
         UserSavedProduct stored = repository.products.getFirst();
         assertThat(stored.getSourceProvider()).isEqualTo("GENERIC_UCP");
         assertThat(stored.getExternalProductId()).isEqualTo("product-1");
-        assertThat(stored.getExternalVariantId()).isEqualTo("variant-verified");
-        assertThat(stored.getMerchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(stored.getExternalVariantId()).isEqualTo("variant-requested");
+        assertThat(stored.getMerchantIntegrationId()).isNull();
         assertThat(stored.getReferenceVerifiedAt()).isNotNull();
+        assertThat(stored.getName()).isEqualTo("Forbidden stored title");
+        assertThat(stored.getImageUrl()).isEqualTo("https://client.test/image.jpg");
         assertThat(UserSavedProduct.class.getDeclaredFields())
                 .extracting(java.lang.reflect.Field::getName)
-                .doesNotContain(
-                        "name", "brand", "category", "tone", "imageUrl", "productUrl", "remote",
-                        "matchScore", "priceFrom", "merchantCount", "satisfies", "misses", "note",
-                        "pros", "cons", "reviewScore", "reviewCount", "reviewInsight", "offers", "needs", "provides"
-                );
+                .doesNotContain("priceFrom", "offers");
         verify(tasteService).recordSavedProduct(org.mockito.ArgumentMatchers.eq(USER_ID),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void persistenceUsesCanonicalReferenceRatherThanClientRoutingTuple() {
+    void persistenceUsesTheServerSessionReferenceWithoutProviderRehydration() {
         SaveUserProductCommand command = product("product-1", "Client title");
 
         service.save(profile(), command);
 
         UserSavedProduct stored = repository.products.getFirst();
         assertThat(command.catalogReference().localRouting()).isNull();
-        assertThat(stored.getMerchantIntegrationId()).isEqualTo(INTEGRATION_ID);
-        assertThat(stored.getExternalMerchantId()).isEqualTo("merchant-verified");
-        assertThat(stored.getExternalVariantId()).isEqualTo("variant-verified");
+        assertThat(stored.getMerchantIntegrationId()).isNull();
+        assertThat(stored.getExternalMerchantId()).isNull();
+        assertThat(stored.getExternalVariantId()).isEqualTo("variant-requested");
+        assertThat(provider.batchSizes).isEmpty();
     }
 
     @Test
@@ -295,7 +290,9 @@ class UserSavedProductServiceTest {
                 settingsService,
                 repositoryProxy,
                 properties,
-                new UserSavedProductReferenceResolver(mock(UserProductSearchResultItemRepository.class)),
+                new UserSavedProductReferenceResolver(
+                        mock(UserProductSearchResultItemRepository.class),
+                        sessionStore()),
                 policies,
                 new CatalogProductRehydrationService(
                         List.of(provider),
@@ -304,6 +301,34 @@ class UserSavedProductServiceTest {
                 persistence,
                 new UserSavedProductResultMapper(objectMapper)
         );
+    }
+
+    private UserCanonicalProductSessionStore sessionStore() {
+        UserCanonicalProductSessionStore store = mock(UserCanonicalProductSessionStore.class);
+        when(store.find(org.mockito.ArgumentMatchers.eq(USER_ID), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> {
+                    String productId = invocation.getArgument(1);
+                    var product = mock(com.meant.api.module.catalog.service.dto.CanonicalProduct.class);
+                    var offer = mock(com.meant.api.module.catalog.service.dto.Offer.class);
+                    var provenance = mock(com.meant.api.module.catalog.service.dto.ResultProvenance.class);
+                    when(product.key()).thenReturn(productId);
+                    when(product.offers()).thenReturn(List.of(offer));
+                    when(offer.provenance()).thenReturn(List.of(provenance));
+                    when(offer.selectedOptions()).thenReturn(List.of());
+                    when(provenance.discoverySource()).thenReturn(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE);
+                    when(provenance.localRouting()).thenReturn(null);
+                    when(provenance.externalMerchantReference()).thenReturn(null);
+                    when(provenance.externalMerchantDomain()).thenReturn(null);
+                    when(provenance.externalProductReference()).thenReturn(
+                            new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "GENERIC_UCP", productId));
+                    when(provenance.externalVariantReference()).thenReturn(
+                            new ExternalIdentifier(
+                                    ExternalIdentifierType.VARIANT, "GENERIC_UCP", "variant-requested"));
+                    var entry = mock(UserCanonicalProductSessionStore.Entry.class);
+                    when(entry.product()).thenReturn(product);
+                    return java.util.Optional.of(entry);
+                });
+        return store;
     }
 
     private void assertMarketContext(UserSavedProductResult result, String countryCode, boolean applied) {

@@ -103,11 +103,17 @@ function groupedProduct(): Product {
 
 describe('savedProductFromProfile', () => {
   test('keeps unavailable commercial facts unknown instead of displaying a free price', () => {
-    const product = savedProductFromProfile(unavailable)
+    const product = savedProductFromProfile({
+      ...unavailable,
+      name: 'Saved title',
+      imageUrl: 'https://saved.test/image.jpg',
+    })
 
     expect(product.priceFrom).toBeNull()
     expect(product.offers).toEqual([])
     expect(product.commercialFactsAuthoritative).toBe(false)
+    expect(product.name).toBe('Saved title')
+    expect(product.imageUrl).toBe('https://saved.test/image.jpg')
     expect(money(product.priceFrom)).toBe('Price unavailable')
     expect(savedProductInput(product).priceFrom).toBeNull()
   })

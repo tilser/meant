@@ -771,6 +771,37 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         String productKey = "shop.example:gid://shopify/Product/123";
+        EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
+        Instant now = Instant.now();
+        String profileHash = searchProfileHash(id, profileCommand);
+        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
+                id,
+                "saved cereal",
+                "saved cereal",
+                profileHash,
+                userProductSearchProperties.searchVersion(),
+                now,
+                now.plusSeconds(3600),
+                currentSearchPolicyFingerprint(),
+                false
+        ));
+        saveRecentProduct(
+                id,
+                profileHash,
+                search,
+                productKey,
+                "hash-1",
+                recentSearchProduct(
+                        "gid://shopify/Product/123",
+                        "Saved Cereal",
+                        "Organic and low sugar.",
+                        740L,
+                        1,
+                        0.96d
+                ),
+                "Organic and low sugar.",
+                now
+        );
 
         UserSavedProductResponse saved = client.post().uri("/api/users/me/saved-products")
                 .headers(headers -> {
@@ -814,16 +845,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                             }
                           ],
                           "needs": null,
-                          "provides": [],
-                          "catalogReference": {
-                            "provider": "GENERIC_UCP",
-                            "sourceType": "MERCHANT_STOREFRONT",
-                            "sourceIdentity": "MEANT_MERCHANT_SEMANTIC",
-                            "localMerchantId": "00000000-0000-0000-0000-000000000099",
-                            "externalProductId": "gid://shopify/Product/123",
-                            "externalVariantId": "variant-1",
-                            "selectedOptions": []
-                          }
+                          "provides": []
                         }
                         """)
                 .exchange()
@@ -834,10 +856,10 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(saved).isNotNull();
         assertThat(saved.id()).isEqualTo(productKey);
-        assertThat(saved.commercialFactsAuthoritative()).isTrue();
-        assertThat(saved.name()).isEqualTo("Current saved product");
-        assertThat(saved.priceFrom()).isEqualTo(7.4d);
-        assertThat(saved.imageUrl()).isEqualTo("https://merchant.example/media/current.jpg");
+        assertThat(saved.commercialFactsAuthoritative()).isFalse();
+        assertThat(saved.name()).isEqualTo("Saved Cereal");
+        assertThat(saved.priceFrom()).isNull();
+        assertThat(saved.imageUrl()).isEqualTo("https://example.com/cereal.png");
 
         UserSavedProductResponse[] listed = client.get().uri("/api/users/me/saved-products")
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
@@ -1165,6 +1187,28 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         EnsureUserProfileCommand profileCommand = new EnsureUserProfileCommand(id, email, "Ada", "Lovelace");
         Instant now = Instant.now();
         String productKey = "merchant.example:organic-tee";
+        String profileHash = searchProfileHash(id, profileCommand);
+        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
+                id,
+                "organic basics",
+                "organic basics",
+                profileHash,
+                userProductSearchProperties.searchVersion(),
+                now,
+                now.plusSeconds(3600),
+                currentSearchPolicyFingerprint(),
+                false
+        ));
+        saveRecentProduct(
+                id,
+                profileHash,
+                search,
+                productKey,
+                "hash-tee",
+                recentSearchProduct("tee", "Organic Cotton Tee", "Organic cotton tee.", 3800L, 1, 0.9d),
+                "Organic cotton matches your profile.",
+                now
+        );
 
         // A saved product whose text does NOT contain "organic" so it is filtered out by the search.
         client.post().uri("/api/users/me/saved-products")
@@ -1205,45 +1249,13 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                             }
                           ],
                           "needs": null,
-                          "provides": [],
-                          "catalogReference": {
-                            "provider": "GENERIC_UCP",
-                            "sourceType": "MERCHANT_STOREFRONT",
-                            "sourceIdentity": "MEANT_MERCHANT_SEMANTIC",
-                            "localMerchantId": "00000000-0000-0000-0000-000000000099",
-                            "externalProductId": "product-tee",
-                            "externalVariantId": "variant-1",
-                            "selectedOptions": []
-                          }
+                          "provides": []
                         }
                         """.formatted(productKey))
                 .exchange()
                 .expectStatus().isOk();
 
         // The recent twin (same productKey) DOES match "organic", so it must still surface.
-        String profileHash = searchProfileHash(id, profileCommand);
-        UserProductSearch search = userProductSearchRepository.save(UserProductSearch.create(
-                id,
-                "organic basics",
-                "organic basics",
-                profileHash,
-                userProductSearchProperties.searchVersion(),
-                now,
-                now.plusSeconds(3600),
-                currentSearchPolicyFingerprint(),
-                false
-        ));
-        saveRecentProduct(
-                id,
-                profileHash,
-                search,
-                productKey,
-                "hash-tee",
-                recentSearchProduct("tee", "Organic Cotton Tee", "Organic cotton tee.", 3800L, 1, 0.9d),
-                "Organic cotton matches your profile.",
-                now
-        );
-
         UserProductDiscoveryResponse discovery = client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/api/users/me/product-discovery")

@@ -13,7 +13,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** Retention-safe saved interaction containing identifiers and provenance, never provider payload. */
+/** Saved interaction containing server-resolved identifiers and a non-authoritative presentation snapshot. */
 @Entity
 @Getter
 @Builder
@@ -39,6 +39,46 @@ public class UserSavedProduct {
 
     @Column(nullable = false)
     private String productKey;
+
+    private String productHash;
+
+    private String name;
+
+    private String brand;
+
+    private String category;
+
+    private String tone;
+
+    private String imageUrl;
+
+    private String productUrl;
+
+    private Boolean remote;
+
+    private Integer matchScore;
+
+    private Integer merchantCount;
+
+    private String satisfies;
+
+    private String misses;
+
+    private String note;
+
+    private String pros;
+
+    private String cons;
+
+    private Double reviewScore;
+
+    private Integer reviewCount;
+
+    private String reviewInsight;
+
+    private String needs;
+
+    private String provides;
 
     private String sourceProvider;
 
@@ -72,6 +112,7 @@ public class UserSavedProduct {
             UUID userId,
             String productKey,
             DurableReferenceSnapshot reference,
+            PresentationSnapshot presentation,
             Instant now
     ) {
         return UserSavedProduct.builder()
@@ -81,7 +122,16 @@ public class UserSavedProduct {
                 .createdAt(now)
                 .updatedAt(now)
                 .build()
-                .replaceReference(reference, now);
+                .replace(reference, presentation, now);
+    }
+
+    public UserSavedProduct replace(
+            DurableReferenceSnapshot reference,
+            PresentationSnapshot presentation,
+            Instant now
+    ) {
+        replaceReference(reference, now);
+        return replacePresentation(presentation, now);
     }
 
     public UserSavedProduct replaceReference(DurableReferenceSnapshot reference, Instant now) {
@@ -98,6 +148,55 @@ public class UserSavedProduct {
         this.referenceVerifiedAt = now;
         this.updatedAt = now;
         return this;
+    }
+
+    public UserSavedProduct replacePresentation(PresentationSnapshot snapshot, Instant now) {
+        this.productHash = snapshot.productHash();
+        this.name = snapshot.name();
+        this.brand = snapshot.brand();
+        this.category = snapshot.category();
+        this.tone = snapshot.tone();
+        this.imageUrl = snapshot.imageUrl();
+        this.productUrl = snapshot.productUrl();
+        this.remote = snapshot.remote();
+        this.matchScore = snapshot.matchScore();
+        this.merchantCount = snapshot.merchantCount();
+        this.satisfies = snapshot.satisfies();
+        this.misses = snapshot.misses();
+        this.note = snapshot.note();
+        this.pros = snapshot.pros();
+        this.cons = snapshot.cons();
+        this.reviewScore = snapshot.reviewScore();
+        this.reviewCount = snapshot.reviewCount();
+        this.reviewInsight = snapshot.reviewInsight();
+        this.needs = snapshot.needs();
+        this.provides = snapshot.provides();
+        this.updatedAt = now;
+        return this;
+    }
+
+    public record PresentationSnapshot(
+            String productHash,
+            String name,
+            String brand,
+            String category,
+            String tone,
+            String imageUrl,
+            String productUrl,
+            Boolean remote,
+            Integer matchScore,
+            Integer merchantCount,
+            String satisfies,
+            String misses,
+            String note,
+            String pros,
+            String cons,
+            Double reviewScore,
+            Integer reviewCount,
+            String reviewInsight,
+            String needs,
+            String provides
+    ) {
     }
 
     public record DurableReferenceSnapshot(
