@@ -5,7 +5,7 @@
     "": {
       "name": "meant-web",
       "dependencies": {
-        "@shopify/checkout-kit": "4.0.0-alpha.1",
+        "@shopify/checkout-kit": "4.0.0-alpha.2",
         "@supabase/supabase-js": "^2.108.2",
         "@tanstack/react-router": "^1.170.15",
         "@tanstack/react-router-devtools": "^1.167.0",
@@ -161,7 +161,7 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
-    "@shopify/checkout-kit": ["@shopify/checkout-kit@4.0.0-alpha.1", "", {}, "sha512-iXmwNHD7QgV+ddv3cIjhyIWwbEEQNtLtfacctjAEQJV6+YQibVULnDSq6C1/5gyunAf83FKNgSVXm8MLoQmw2Q=="],
+    "@shopify/checkout-kit": ["@shopify/checkout-kit@4.0.0-alpha.2", "", {}, "sha512-o5t6aherkDZ39OWRrtFlPZI5hpfN6bVw/wTiJTWujs+Gq8fEKLlhbX+MxlLVRunETtyzerCpnNb4s4Ag8lqjTg=="],
 
     "@supabase/auth-js": ["@supabase/auth-js@2.108.2", "", { "dependencies": { "tslib": "2.8.1" } }, "sha512-tNaQmBgodDZwgB40mRwVbxFy8IDYwjdpcZ0BYrWiwlULCSQoJj4QoG4zgJT7QRPXcqipefNOzvO/qAu4dF98ag=="],
 

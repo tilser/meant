@@ -59,6 +59,16 @@ function runtime(element: FakeCheckoutElement, supported = true): CheckoutKitRun
 }
 
 describe('Meant Checkout Kit adapter', () => {
+  test('pins the Shopify release that supports checkout redirects to custom storefront domains', async () => {
+    const manifest = (await Bun.file(
+      new URL('../../../../package.json', import.meta.url),
+    ).json()) as {
+      dependencies?: Record<string, string>
+    }
+
+    expect(manifest.dependencies?.['@shopify/checkout-kit']).toBe('4.0.0-alpha.2')
+  })
+
   test('isolates SDK events behind a provider-neutral lifecycle', async () => {
     const element = new FakeCheckoutElement()
     const events: string[] = []
