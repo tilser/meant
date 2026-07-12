@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test'
 import type { CanonicalOfferProfile, CanonicalProductDetailProfile } from '../../../lib/apiClient'
 import {
   initialOfferSelection,
-  offerCanAdd,
   offerCanSelect,
   offerNeedsRefresh,
   reconcileOfferSelection,
@@ -107,19 +106,18 @@ describe('grouped offer selection', () => {
     ).toBe(true)
   })
 
-  test('only current, actionable offers can be added', () => {
-    expect(offerCanAdd(offer('current'))).toBe(true)
-    expect(offerCanAdd({ ...offer('sold-out'), availability: { status: 'OUT_OF_STOCK' } })).toBe(
+  test('allows stale in-stock observations to be submitted for server validation', () => {
+    expect(offerCanSelect(offer('current'))).toBe(true)
+    expect(offerCanSelect(offer('stale', { authority: 'DISCOVERY_OBSERVATION' }))).toBe(true)
+    expect(offerCanSelect({ ...offer('sold-out'), availability: { status: 'OUT_OF_STOCK' } })).toBe(
       false,
     )
-    expect(offerCanAdd(offer('stale', { authority: 'DISCOVERY_OBSERVATION' }))).toBe(false)
   })
 
   test('treats unknown availability as refresh-required and non-addable', () => {
     const unknown = { ...offer('unknown'), availability: { status: 'UNKNOWN' as const } }
 
     expect(offerNeedsRefresh(unknown)).toBe(true)
-    expect(offerCanAdd(unknown)).toBe(false)
     expect(offerCanSelect(unknown)).toBe(false)
   })
 })

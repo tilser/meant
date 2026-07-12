@@ -62,13 +62,6 @@ export function offerNeedsRefresh(offer: CanonicalOfferProfile, now = Date.now()
   )
 }
 
-export function offerCanAdd(offer: CanonicalOfferProfile, now = Date.now()): boolean {
-  return (
-    !offerNeedsRefresh(offer, now) &&
-    ['IN_STOCK', 'PREORDER', 'BACKORDER'].includes(offer.availability.status)
-  )
-}
-
 export function offerCanSelect(offer: CanonicalOfferProfile): boolean {
   return !['OUT_OF_STOCK', 'DISCONTINUED', 'UNKNOWN'].includes(offer.availability.status)
 }

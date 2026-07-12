@@ -10,14 +10,12 @@ import type { Product } from '../types'
 import { minorUnitsToMajor, money } from '../utils'
 import { trackCommerceEvent } from './commerceAnalytics'
 import {
-  offerCanAdd,
   offerCanSelect,
   offerNeedsRefresh,
   reconcileOfferSelection,
   selectOffer,
   type OfferSelectionState,
 } from './groupedOfferSelection'
-import { selectedOfferCartFailure, type SelectedOfferCartFailure } from './selectedOfferCartFailure'
 
 type DetailStatus = 'loading' | 'loaded' | 'not-found' | 'error'
 
@@ -136,13 +134,15 @@ function OfferChoice({
 export function GroupedOfferSelector({
   product,
   onResearch,
-  onAddOfferKey,
   onSelectionChange,
 }: Readonly<{
   product: Product
   onResearch: (query: string) => void
-  onAddOfferKey?: (offerKey: string) => Promise<boolean>
-  onSelectionChange?: (selection: { offerKey: string | null; canAdd: boolean }) => void
+  onSelectionChange?: (selection: {
+    offerKey: string | null
+    canAdd: boolean
+    loading: boolean
+  }) => void
 }>) {
   const recommendedOfferKey = product.canonicalProduct?.recommendedOfferKey ?? ''
   const [detail, setDetail] = useState<CanonicalProductDetailProfile | null>(null)
@@ -154,9 +154,6 @@ export function GroupedOfferSelector({
   }))
   const [status, setStatus] = useState<DetailStatus>('loading')
   const [refreshVersion, setRefreshVersion] = useState(0)
-  const [adding, setAdding] = useState(false)
-  const [addMessage, setAddMessage] = useState<string | null>(null)
-  const [addFailure, setAddFailure] = useState<SelectedOfferCartFailure | null>(null)
   const requestRef = useRef(0)
   const viewedProductKeyRef = useRef<string | null>(null)
   const viewedOfferKeysRef = useRef(new Set<string>())
@@ -168,8 +165,6 @@ export function GroupedOfferSelector({
     requestRef.current = requestId
     const controller = new AbortController()
     setStatus('loading')
-    setAddMessage(null)
-    setAddFailure(null)
     getCanonicalProductDetail({
       canonicalProductKey: canonicalKey,
       selectedOfferKey,
@@ -219,15 +214,14 @@ export function GroupedOfferSelector({
   useEffect(() => {
     onSelectionChange?.({
       offerKey: selectedOffer?.key ?? null,
-      canAdd: status === 'loaded' && Boolean(selectedOffer && offerCanAdd(selectedOffer)),
+      canAdd: status === 'loaded' && Boolean(selectedOffer && offerCanSelect(selectedOffer)),
+      loading: status === 'loading',
     })
   }, [onSelectionChange, selectedOffer, status])
   const select = (offer: CanonicalOfferProfile) => {
     if (offer.key === selection.selectedOfferKey) return
     const next = selectOffer(selection, offer.key)
     setSelection(next)
-    setAddMessage(null)
-    setAddFailure(null)
     trackCommerceEvent('offer_selection', {
       canonicalProductKey: canonicalKey,
       offerKey: offer.key,
@@ -243,49 +237,13 @@ export function GroupedOfferSelector({
       })
     }
   }
-  const addSelected = async () => {
-    if (!selectedOffer || !offerCanAdd(selectedOffer) || adding) return
-    if (!onAddOfferKey) {
-      setAddMessage('Cart support for exact offers is being updated. Your selected offer was kept.')
-      return
-    }
-    setAdding(true)
-    setAddMessage(null)
-    setAddFailure(null)
-    trackCommerceEvent('add_to_cart', {
-      canonicalProductKey: canonicalKey,
-      offerKey: selectedOffer.key,
-      result: 'attempted',
-    })
-    try {
-      const added = await onAddOfferKey(selectedOffer.key)
-      setAddMessage(added ? 'Added to this merchant cart.' : 'Could not add this exact offer.')
-      trackCommerceEvent('add_to_cart', {
-        canonicalProductKey: canonicalKey,
-        offerKey: selectedOffer.key,
-        result: added ? 'succeeded' : 'failed',
-      })
-    } catch (error: unknown) {
-      const failure = selectedOfferCartFailure(error)
-      setAddFailure(failure)
-      setAddMessage(failure.message)
-      trackCommerceEvent('add_to_cart', {
-        canonicalProductKey: canonicalKey,
-        offerKey: selectedOffer.key,
-        result: 'failed',
-      })
-    } finally {
-      setAdding(false)
-    }
-  }
-
   return (
     <div className="mt-grouped-offer-selector">
       {status === 'loading' ? (
         <div className="mt-grouped-loading" role="status" aria-live="polite">
           <span className="mt-grouped-skeleton wide" />
           <span className="mt-grouped-skeleton" />
-          <span>Refreshing offers without changing your selection…</span>
+          <span>Loading merchant availability…</span>
         </div>
       ) : null}
       {status === 'not-found' ? (
@@ -319,8 +277,8 @@ export function GroupedOfferSelector({
         <section className="mt-grouped-offers" aria-labelledby="grouped-offers-title">
           <div className="mt-grouped-offers-heading">
             <div>
-              <h3 id="grouped-offers-title">Choose one merchant offer</h3>
-              <p>Each merchant is a separate cart, checkout, charge, and transaction.</p>
+              <h3 id="grouped-offers-title">Available from</h3>
+              <p>Select a merchant. Add to cart and checkout stay in Meant.</p>
             </div>
             <button
               type="button"
@@ -358,48 +316,6 @@ export function GroupedOfferSelector({
               />
             ))}
           </div>
-          <div className="mt-grouped-cart-bar">
-            <span>
-              {selectedOffer
-                ? `${selectedOffer.merchantName || 'Merchant'} · ${offerPrice(selectedOffer)}`
-                : 'Choose an available offer'}
-            </span>
-            <button
-              type="button"
-              className="mt-act mt-act-primary"
-              disabled={!selectedOffer || !offerCanAdd(selectedOffer) || adding}
-              onClick={() => void addSelected()}
-            >
-              {adding ? 'Adding exact offer…' : 'Add selected offer to cart'}
-            </button>
-          </div>
-          {addMessage ? (
-            <div className="mt-cart-inline-error" role="status">
-              {addMessage}
-            </div>
-          ) : null}
-          {addFailure ? (
-            <div className="mt-grouped-recovery-actions">
-              {addFailure.refresh ? (
-                <button
-                  type="button"
-                  className="mt-grouped-refresh"
-                  onClick={() => setRefreshVersion((value) => value + 1)}
-                >
-                  Refresh selected offer
-                </button>
-              ) : null}
-              {addFailure.research ? (
-                <button
-                  type="button"
-                  className="mt-grouped-refresh"
-                  onClick={() => onResearch(product.name)}
-                >
-                  Re-search this product
-                </button>
-              ) : null}
-            </div>
-          ) : null}
         </section>
       ) : null}
     </div>

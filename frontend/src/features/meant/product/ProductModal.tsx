@@ -301,6 +301,7 @@ export function ProductModal({
   onPrev: () => void
   onNext: () => void
 }>) {
+  const canonicalProductKey = product?.canonicalProduct?.key ?? null
   const [messages, setMessages] = useState<Message[]>([])
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -308,7 +309,12 @@ export function ProductModal({
   const [canonicalOfferSelection, setCanonicalOfferSelection] = useState<{
     offerKey: string | null
     canAdd: boolean
-  }>({ offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null, canAdd: false })
+    loading: boolean
+  }>({
+    offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null,
+    canAdd: false,
+    loading: Boolean(canonicalProductKey),
+  })
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
   const [thumbnailPage, setThumbnailPage] = useState(0)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
@@ -331,6 +337,7 @@ export function ProductModal({
     setCanonicalOfferSelection({
       offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null,
       canAdd: false,
+      loading: Boolean(canonicalProductKey),
     })
     setSelectedMediaUrl(null)
     setThumbnailPage(0)
@@ -338,12 +345,14 @@ export function ProductModal({
     setMerchantDetails(null)
     setDetailLoadState('idle')
     setDetailLoadError(null)
-  }, [product?.canonicalProduct?.recommendedOfferKey, product?.id])
+  }, [canonicalProductKey, product?.canonicalProduct?.recommendedOfferKey, product?.id])
 
   const handleCanonicalOfferSelection = useCallback(
-    (selection: { offerKey: string | null; canAdd: boolean }) => {
+    (selection: { offerKey: string | null; canAdd: boolean; loading: boolean }) => {
       setCanonicalOfferSelection((current) =>
-        current.offerKey === selection.offerKey && current.canAdd === selection.canAdd
+        current.offerKey === selection.offerKey &&
+        current.canAdd === selection.canAdd &&
+        current.loading === selection.loading
           ? current
           : selection,
       )
@@ -627,13 +636,15 @@ export function ProductModal({
     ? 'Added to cart'
     : adding
       ? 'Adding...'
-      : isCanonicalProduct && !canAddToCart
-        ? 'Refreshing offer…'
-        : selectedOffer.available === false
+      : isCanonicalProduct && canonicalOfferSelection.loading
+        ? 'Loading offers…'
+        : isCanonicalProduct && !canAddToCart
           ? 'Unavailable'
-          : canAddToCart
-            ? 'Add to cart'
-            : 'Checkout unavailable'
+          : selectedOffer.available === false
+            ? 'Unavailable'
+            : canAddToCart
+              ? 'Add to cart'
+              : 'Checkout unavailable'
   const addSelectedOffer = async () => {
     if (isCanonicalProduct) {
       if (!canonicalOfferSelection.offerKey || !onAddOfferKey || adding) return
@@ -1184,7 +1195,6 @@ export function ProductModal({
               <div>
                 <GroupedOfferSelector
                   product={product}
-                  onAddOfferKey={onAddOfferKey}
                   onResearch={(query) => onResearch?.(query)}
                   onSelectionChange={handleCanonicalOfferSelection}
                 />
