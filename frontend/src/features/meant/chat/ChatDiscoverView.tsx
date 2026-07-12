@@ -1869,10 +1869,26 @@ export function ChatDiscoverView({
         product.offers[canonicalOfferIndex] ??
         product.offers[0] ??
         bestOffer(product, deliveryLocations)
+      const appendCartFailure = () =>
+        appendMessagesToActiveThread(
+          [
+            {
+              id: nextDiscoverChatMessageId(),
+              role: 'ai',
+              blocks: [
+                {
+                  type: 'text',
+                  text: `I couldn't add ${product.name} to the merchant cart. Please try again or choose another merchant in the product details.`,
+                },
+              ],
+            },
+          ],
+          { focusProductId: product.id },
+        )
       try {
         const added = await onAddSelectedOfferToCart(product, recommendedOfferKey)
         if (!added) {
-          onOpen(product)
+          appendCartFailure()
           return
         }
         appendMessagesToActiveThread(
@@ -1895,7 +1911,7 @@ export function ChatDiscoverView({
           { focusProductId: product.id },
         )
       } catch {
-        onOpen(product)
+        appendCartFailure()
       }
       return
     }
