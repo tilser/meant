@@ -1,6 +1,5 @@
 package com.meant.api.module.merchant.service;
 
-import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
@@ -35,7 +34,7 @@ public class GenericUcpCatalogProductRehydrationProvider implements CatalogProdu
 
     @Override
     public boolean supports(DiscoverySourceIdentity source) {
-        return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
+        return referenceVerifier.supportsSource(source);
     }
 
     @Override

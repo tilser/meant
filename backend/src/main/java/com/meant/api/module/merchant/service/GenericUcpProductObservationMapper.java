@@ -1,6 +1,5 @@
 package com.meant.api.module.merchant.service;
 
-import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
 import com.meant.api.module.merchant.service.GenericUcpVariantObservationResolver.VariantObservation;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
@@ -77,8 +76,9 @@ public class GenericUcpProductObservationMapper {
         VariantObservation variant = resolution.observation();
         Instant observedAt = clock.instant();
         ResultFreshness freshness = new ResultFreshness(observedAt, observedAt.plus(properties.rehydratedFactsTtl()));
-        ExternalIdentifier productId = identifier(ExternalIdentifierType.PRODUCT, product.productId());
-        ExternalIdentifier variantId = identifier(ExternalIdentifierType.VARIANT, variant.id());
+        String provider = reference.discoverySource().provider().value();
+        ExternalIdentifier productId = identifier(provider, ExternalIdentifierType.PRODUCT, product.productId());
+        ExternalIdentifier variantId = identifier(provider, ExternalIdentifierType.VARIANT, variant.id());
         CatalogProductReference resolved = referenceVerifier.canonical(
                 reference, integration, productId, variantId, variant.options());
         Money price = money(variant.price(), variant.currency());
@@ -101,8 +101,8 @@ public class GenericUcpProductObservationMapper {
         ));
     }
 
-    private ExternalIdentifier identifier(ExternalIdentifierType type, String value) {
-        return new ExternalIdentifier(type, MerchantCatalogSourceIdentity.PROVIDER.value(), value);
+    private ExternalIdentifier identifier(String provider, ExternalIdentifierType type, String value) {
+        return new ExternalIdentifier(type, provider, value);
     }
 
     private Money money(String price, String currency) {

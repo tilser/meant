@@ -17,13 +17,17 @@ import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -107,6 +111,120 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         assertThat(results).allSatisfy(result -> assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH));
         verify(integrations).listByIds(any());
         verify(integrations, never()).listByMerchants(any());
+    }
+
+    @Test
+    void rehydratesShopifyMerchantIntegrationResultsThroughTheExistingStorefrontPath() {
+        MerchantIntegrationResult shopify = integration(
+                MERCHANT_ID, INTEGRATION_ID, MerchantIntegrationProvider.SHOPIFY);
+        when(integrations.listByIds(any())).thenReturn(List.of(shopify));
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                new ProviderIdentity(MerchantIntegrationProvider.SHOPIFY.name()),
+                ResultSourceType.MERCHANT_STOREFRONT,
+                "merchant-1"
+        );
+        CatalogProductReference reference = new CatalogProductReference(
+                "shopify-offer",
+                source,
+                null,
+                new LocalMerchantRouting(INTEGRATION_ID),
+                identifier(MerchantIntegrationProvider.SHOPIFY, ExternalIdentifierType.MERCHANT, "merchant-1"),
+                "merchant.test",
+                identifier(MerchantIntegrationProvider.SHOPIFY, ExternalIdentifierType.PRODUCT, "product-1"),
+                identifier(MerchantIntegrationProvider.SHOPIFY, ExternalIdentifierType.VARIANT, "variant-1"),
+                List.of(option("M"))
+        );
+
+        var result = provider.rehydrate(
+                List.of(reference), new CatalogRehydrationContext("CZ", "en")).getFirst();
+
+        assertThat(provider.supports(source)).isTrue();
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.resolvedReference().discoverySource()).isEqualTo(source);
+        assertThat(result.resolvedReference().localRouting().merchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(result.resolvedReference().externalMerchantDomain()).isEqualTo("merchant.test");
+        assertThat(result.facts().selectedVariant().namespace()).isEqualTo("SHOPIFY");
+        assertThat(result.facts().selectedVariant().value()).isEqualTo("variant-1");
+        verify(detailsService).get(new GetMerchantProductDetailsQuery(MERCHANT_ID, "product-1", "CZ", "en"));
+    }
+
+    @Test
+    void rehydratesThePerMerchantSourceProducedByCurrentSemanticDiscovery() {
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                MerchantCatalogSourceIdentity.PROVIDER,
+                ResultSourceType.MERCHANT_STOREFRONT,
+                "merchant-1"
+        );
+        CatalogProductReference reference = new CatalogProductReference(
+                "semantic-offer",
+                source,
+                null,
+                new LocalMerchantRouting(INTEGRATION_ID),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP, ExternalIdentifierType.MERCHANT, "merchant-1"),
+                "merchant.test",
+                identifier(MerchantIntegrationProvider.GENERIC_UCP, ExternalIdentifierType.PRODUCT, "product-1"),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP, ExternalIdentifierType.VARIANT, "variant-1"),
+                List.of(option("M"))
+        );
+
+        var result = provider.rehydrate(
+                List.of(reference), new CatalogRehydrationContext("CZ", "en")).getFirst();
+
+        assertThat(provider.supports(source)).isTrue();
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.resolvedReference().discoverySource()).isEqualTo(source);
+        assertThat(result.resolvedReference().externalMerchantDomain()).isEqualTo("merchant.test");
+        assertThat(result.facts().selectedVariant().namespace()).isEqualTo("GENERIC_UCP");
+    }
+
+    @Test
+    void rejectsForgedPerMerchantSourceAndDomainBeforeRemoteIo() {
+        CatalogProductReference valid = new CatalogProductReference(
+                "semantic-offer",
+                new DiscoverySourceIdentity(
+                        MerchantCatalogSourceIdentity.PROVIDER,
+                        ResultSourceType.MERCHANT_STOREFRONT,
+                        "merchant-1"),
+                null,
+                new LocalMerchantRouting(INTEGRATION_ID),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP, ExternalIdentifierType.MERCHANT, "merchant-1"),
+                "merchant.test",
+                identifier(MerchantIntegrationProvider.GENERIC_UCP, ExternalIdentifierType.PRODUCT, "product-1"),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP, ExternalIdentifierType.VARIANT, "variant-1"),
+                List.of(option("M"))
+        );
+        CatalogProductReference forgedSource = new CatalogProductReference(
+                "forged-source",
+                new DiscoverySourceIdentity(
+                        MerchantCatalogSourceIdentity.PROVIDER,
+                        ResultSourceType.MERCHANT_STOREFRONT,
+                        "different-merchant"),
+                null,
+                valid.localRouting(),
+                valid.externalMerchantReference(),
+                valid.externalMerchantDomain(),
+                valid.externalProductReference(),
+                valid.externalVariantReference(),
+                valid.selectedOptions()
+        );
+        CatalogProductReference forgedDomain = new CatalogProductReference(
+                "forged-domain",
+                valid.discoverySource(),
+                null,
+                valid.localRouting(),
+                valid.externalMerchantReference(),
+                "attacker.test",
+                valid.externalProductReference(),
+                valid.externalVariantReference(),
+                valid.selectedOptions()
+        );
+
+        var results = provider.rehydrate(
+                List.of(forgedSource, forgedDomain), new CatalogRehydrationContext("CZ", "en"));
+
+        assertThat(results).extracting(CatalogProductRehydrationResult::failure)
+                .containsOnly(CatalogRehydrationFailureKind.INVALID_REFERENCE);
+        verify(detailsService, never()).get(any());
     }
 
     @Test
@@ -222,10 +340,18 @@ class GenericUcpCatalogProductRehydrationProviderTest {
     }
 
     private MerchantIntegrationResult integration(UUID merchantId, UUID integrationId) {
+        return integration(merchantId, integrationId, MerchantIntegrationProvider.GENERIC_UCP);
+    }
+
+    private MerchantIntegrationResult integration(
+            UUID merchantId,
+            UUID integrationId,
+            MerchantIntegrationProvider provider
+    ) {
         return new MerchantIntegrationResult(
                 integrationId,
                 merchantId,
-                MerchantIntegrationProvider.GENERIC_UCP,
+                provider,
                 null,
                 Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
                 "merchant-1",
@@ -240,6 +366,14 @@ class GenericUcpCatalogProductRehydrationProviderTest {
                 NOW,
                 NOW
         );
+    }
+
+    private ExternalIdentifier identifier(
+            MerchantIntegrationProvider provider,
+            ExternalIdentifierType type,
+            String value
+    ) {
+        return new ExternalIdentifier(type, provider.name(), value);
     }
 
     private CatalogProductReference reference(

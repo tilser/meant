@@ -11,6 +11,8 @@ import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -68,6 +70,24 @@ public class GenericUcpCatalogReferenceVerifier {
         return Map.copyOf(verified);
     }
 
+    public boolean supportsSource(DiscoverySourceIdentity source) {
+        if (MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source)) {
+            return true;
+        }
+        if (source == null
+                || source.type() != ResultSourceType.MERCHANT_STOREFRONT
+                || source.value() == null
+                || source.value().isBlank()) {
+            return false;
+        }
+        try {
+            MerchantIntegrationProvider.valueOf(source.provider().value());
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
     public CatalogProductReference canonical(
             CatalogProductReference requested,
             MerchantIntegrationResult integration,
@@ -78,10 +98,11 @@ public class GenericUcpCatalogReferenceVerifier {
         ExternalIdentifier merchant = merchantIdentity(integration);
         return new CatalogProductReference(
                 requested.interactionKey(),
-                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
+                requested.discoverySource(),
                 integration.merchantId(),
                 new LocalMerchantRouting(integration.id()),
                 merchant,
+                verifiedDomain(requested, integration),
                 product,
                 variant,
                 options
@@ -93,9 +114,6 @@ public class GenericUcpCatalogReferenceVerifier {
             Map<UUID, List<MerchantIntegrationResult>> byMerchant,
             Map<UUID, MerchantIntegrationResult> byId
     ) {
-        if (!MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(reference.discoverySource())) {
-            return null;
-        }
         List<MerchantIntegrationResult> candidates = reference.localMerchantId() == null
                 ? java.util.Optional.ofNullable(reference.localRouting())
                         .map(LocalMerchantRouting::merchantIntegrationId)
@@ -104,18 +122,35 @@ public class GenericUcpCatalogReferenceVerifier {
                         .orElseGet(List::of)
                 : byMerchant.getOrDefault(reference.localMerchantId(), List.of());
         return candidates.stream()
+                .filter(integration -> sourceMatches(reference.discoverySource(), integration))
                 .filter(integration -> routingMatches(reference, integration))
                 .filter(integration -> merchantMatches(reference.externalMerchantReference(), integration))
+                .filter(integration -> domainMatches(reference.externalMerchantDomain(), integration))
                 .collect(java.util.stream.Collectors.collectingAndThen(
                         java.util.stream.Collectors.toList(),
                         matches -> matches.size() == 1 ? matches.getFirst() : null));
     }
 
     private boolean eligible(MerchantIntegrationResult integration) {
-        return integration.provider() == MerchantIntegrationProvider.GENERIC_UCP
+        return integration.provider() != null
                 && integration.status() == MerchantIntegrationStatus.ACTIVE
                 && (integration.roles().contains(MerchantIntegrationRole.STOREFRONT_CATALOG)
                         || integration.roles().contains(MerchantIntegrationRole.CATALOG_PROVENANCE));
+    }
+
+    private boolean sourceMatches(DiscoverySourceIdentity source, MerchantIntegrationResult integration) {
+        if (MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source)) {
+            return integration.provider() == MerchantIntegrationProvider.GENERIC_UCP;
+        }
+        return supportsSource(source)
+                && source.provider().value().equals(integration.provider().name())
+                && (source.value().equals(expectedSourceValue(integration))
+                        || source.value().equals("MERCHANT_INTEGRATION:" + integration.id()));
+    }
+
+    private String expectedSourceValue(MerchantIntegrationResult integration) {
+        ExternalIdentifier merchant = merchantIdentity(integration);
+        return merchant == null ? "LOCAL_STOREFRONT:" + integration.id() : merchant.value();
     }
 
     private boolean routingMatches(CatalogProductReference reference, MerchantIntegrationResult integration) {
@@ -131,9 +166,28 @@ public class GenericUcpCatalogReferenceVerifier {
         String value = firstText(integration.externalMerchantId(), integration.verifiedShopIdentity());
         return ExternalIdentifier.optional(
                 ExternalIdentifierType.MERCHANT,
-                MerchantCatalogSourceIdentity.PROVIDER.value(),
+                integration.provider().name(),
                 value
         );
+    }
+
+    private boolean domainMatches(String requestedDomain, MerchantIntegrationResult integration) {
+        return requestedDomain == null || requestedDomain.equals(normalizedDomain(integration.verifiedDomain()));
+    }
+
+    private String verifiedDomain(CatalogProductReference requested, MerchantIntegrationResult integration) {
+        return requested.externalMerchantDomain() == null ? null : normalizedDomain(integration.verifiedDomain());
+    }
+
+    private String normalizedDomain(String domain) {
+        if (domain == null || domain.isBlank()) {
+            return null;
+        }
+        String normalized = domain.trim().toLowerCase(java.util.Locale.ROOT);
+        while (normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.startsWith("www.") ? normalized.substring(4) : normalized;
     }
 
     private String firstText(String first, String second) {
