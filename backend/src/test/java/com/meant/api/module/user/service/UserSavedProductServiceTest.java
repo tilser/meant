@@ -33,6 +33,7 @@ import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.OfferAvailability;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductMedia;
 import com.meant.api.module.catalog.service.dto.ProductMediaType;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
@@ -245,6 +246,17 @@ class UserSavedProductServiceTest {
     }
 
     @Test
+    void saveRejectsAConflictingSelectedOptionGroup() {
+        CatalogProductReference conflicting = requestedReference(
+                "product-1", new ProductAttribute("selling-plan", "Size", "Large"));
+
+        assertThatThrownBy(() -> service.save(profile(), product("product-1", "Client title", conflicting)))
+                .isInstanceOf(UserException.class)
+                .hasMessage("Saved product reference does not belong to the current product session");
+        assertThat(repository.products).isEmpty();
+    }
+
+    @Test
     void quotaAllowsReferenceRefreshButRejectsAnotherInteraction() {
         UserSavedProductService quotaService = service(1);
 
@@ -314,7 +326,8 @@ class UserSavedProductServiceTest {
                     when(product.key()).thenReturn(productId);
                     when(product.offers()).thenReturn(List.of(offer));
                     when(offer.provenance()).thenReturn(List.of(provenance));
-                    when(offer.selectedOptions()).thenReturn(List.of());
+                    when(offer.selectedOptions()).thenReturn(List.of(
+                            new ProductAttribute("variant", "Size", "Large")));
                     when(provenance.discoverySource()).thenReturn(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE);
                     when(provenance.localRouting()).thenReturn(null);
                     when(provenance.externalMerchantReference()).thenReturn(null);
@@ -372,6 +385,14 @@ class UserSavedProductServiceTest {
     }
 
     private SaveUserProductCommand product(String productId, String clientTitle) {
+        return product(productId, clientTitle, requestedReference(productId));
+    }
+
+    private SaveUserProductCommand product(
+            String productId,
+            String clientTitle,
+            CatalogProductReference reference
+    ) {
         return new SaveUserProductCommand(
                 USER_ID, productId, "hash", clientTitle, "Client brand", "Client category", "#fff",
                 "https://client.test/image.jpg", "https://client.test/product", true, 99, 0.0d, 9,
@@ -379,11 +400,15 @@ class UserSavedProductServiceTest {
                 new SaveUserProductCommand.Review(5.0d, 500, "Generated review"),
                 List.of(new SaveUserProductCommand.Offer(
                         "Client merchant", 0.0d, "Now", "tampered", "tampered.test", "tampered", "Bad", true)),
-                null, List.of(), requestedReference(productId)
+                null, List.of(), reference
         );
     }
 
     private CatalogProductReference requestedReference(String productId) {
+        return requestedReference(productId, new ProductAttribute(null, "Size", "Large"));
+    }
+
+    private CatalogProductReference requestedReference(String productId, ProductAttribute selectedOption) {
         return new CatalogProductReference(
                 productId,
                 MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
@@ -392,7 +417,7 @@ class UserSavedProductServiceTest {
                 null,
                 new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "GENERIC_UCP", productId),
                 new ExternalIdentifier(ExternalIdentifierType.VARIANT, "GENERIC_UCP", "variant-requested"),
-                List.of()
+                List.of(selectedOption)
         );
     }
 
