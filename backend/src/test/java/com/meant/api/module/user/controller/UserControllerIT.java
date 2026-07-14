@@ -21,6 +21,12 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
+import com.meant.api.module.merchant.entity.Merchant;
+import com.meant.api.module.merchant.entity.MerchantIntegration;
+import com.meant.api.module.merchant.entity.MerchantRaw;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
+import com.meant.api.module.merchant.repository.MerchantRawRepository;
+import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
 import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
@@ -155,6 +161,15 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     @Autowired
     private UserSelectedOfferResolutionService userSelectedOfferResolutionService;
 
+    @Autowired
+    private MerchantRawRepository merchantRawRepository;
+
+    @Autowired
+    private MerchantRepository merchantRepository;
+
+    @Autowired
+    private MerchantIntegrationRepository merchantIntegrationRepository;
+
     private RestTestClient client;
 
     @BeforeEach
@@ -255,19 +270,29 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         @Bean
         @Primary
-        MerchantIntegrationLookupService testMerchantIntegrationLookupService() {
-            return new MerchantIntegrationLookupService(org.mockito.Mockito.mock(
-                    com.meant.api.module.merchant.repository.MerchantIntegrationRepository.class)) {
+        MerchantIntegrationLookupService testMerchantIntegrationLookupService(
+                MerchantIntegrationRepository merchantIntegrationRepository
+        ) {
+            return new MerchantIntegrationLookupService(merchantIntegrationRepository) {
                 @Override
                 public List<MerchantIntegrationResult> listByMerchant(ListMerchantIntegrationsQuery query) {
-                    return List.of(integration(query.merchantId()));
+                    List<MerchantIntegrationResult> persisted = super.listByMerchant(query);
+                    return persisted.isEmpty() ? List.of(integration(query.merchantId())) : persisted;
                 }
 
                 @Override
                 public List<MerchantIntegrationResult> listByMerchants(
                         ListMerchantIntegrationsByMerchantsQuery query
                 ) {
-                    return query.merchantIds().stream().map(this::integration).toList();
+                    List<MerchantIntegrationResult> persisted = super.listByMerchants(query);
+                    return query.merchantIds().stream()
+                            .flatMap(merchantId -> {
+                                List<MerchantIntegrationResult> matches = persisted.stream()
+                                        .filter(integration -> integration.merchantId().equals(merchantId))
+                                        .toList();
+                                return (matches.isEmpty() ? List.of(integration(merchantId)) : matches).stream();
+                            })
+                            .toList();
                 }
 
                 private MerchantIntegrationResult integration(UUID merchantId) {
@@ -896,20 +921,22 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 currentSearchPolicyFingerprint(),
                 false
         ));
+        MerchantSemanticProductResult savedProduct = recentSearchProduct(
+                "1",
+                "Saved Cereal",
+                "Organic and low sugar.",
+                740L,
+                1,
+                0.96d
+        );
+        saveCartMerchant(savedProduct.merchantId());
         saveRecentProduct(
                 id,
                 profileHash,
                 search,
                 productKey,
                 "hash-1",
-                recentSearchProduct(
-                        "1",
-                        "Saved Cereal",
-                        "Organic and low sugar.",
-                        740L,
-                        1,
-                        0.96d
-                ),
+                savedProduct,
                 "Organic and low sugar.",
                 now
         );
@@ -1793,5 +1820,65 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 productRerankScore,
                 rank
         );
+    }
+
+    private void saveCartMerchant(UUID merchantId) {
+        Instant now = Instant.parse("2026-07-11T00:00:00Z");
+        MerchantRaw raw = merchantRawRepository.save(MerchantRaw.builder()
+                .id(UUID.randomUUID())
+                .datasetRowIdx(Math.abs(merchantId.hashCode()))
+                .domain("merchant.example")
+                .status("OK")
+                .ucpUrl("https://merchant.example/.well-known/ucp.json")
+                .httpStatus(200)
+                .ucpVersion("2026-04-08")
+                .hasCheckout(true)
+                .hasIdentityLinking(false)
+                .hasCartManagement(true)
+                .hasOrder(false)
+                .hasPaymentToken(false)
+                .capabilityCount(2)
+                .transports("[]")
+                .fetchedAt(now)
+                .processed(true)
+                .processingStatus("SUCCESS")
+                .sourceHash("saved-product-cart-" + merchantId)
+                .active(true)
+                .lastSeenAt(now)
+                .build());
+        Merchant merchant = merchantRepository.save(Merchant.builder()
+                .id(merchantId)
+                .merchantRaw(raw)
+                .domain("merchant.example")
+                .ucpUrl(raw.getUcpUrl())
+                .ucpVersion(raw.getUcpVersion())
+                .advertisedMcpEndpoint("https://merchant.example/mcp")
+                .profileHash("saved-product-cart-" + merchantId)
+                .name("Merchant")
+                .description("Description")
+                .about("About")
+                .targetAudience("Customers")
+                .profileQuestion("Question")
+                .profileAnswerRaw("Answer")
+                .active(true)
+                .lastProfiledAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
+        merchantIntegrationRepository.save(MerchantIntegration.builder()
+                .merchant(merchant)
+                .provider(MerchantIntegrationProvider.GENERIC_UCP)
+                .kind(MerchantIntegrationKind.MERCHANT_CONNECTION)
+                .roles(Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG, MerchantIntegrationRole.CART))
+                .verifiedDomain("merchant.example")
+                .endpoint("https://merchant.example/mcp")
+                .protocolVersion("2026-04-08")
+                .authStrategy(MerchantIntegrationAuthStrategy.NONE)
+                .status(MerchantIntegrationStatus.ACTIVE)
+                .source(MerchantIntegrationSource.MANUAL)
+                .capturedAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build());
     }
 }
