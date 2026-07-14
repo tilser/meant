@@ -39,6 +39,7 @@ import { resolveCartableOffer } from '../cart/cartOfferResolver'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
 import { canResolveCartOffer, offerCartable } from '../cart/utils'
 import { AskComposer } from '../ask/AskComposer'
+import type { AskReplyDraft } from '../ask/types'
 import { flyToShelf } from '../shared/animations'
 import { DustingContainer } from '../shared/DustingContainer'
 import { MerchantIcon } from '../shared/icons'
@@ -60,6 +61,7 @@ import { DiscoverChatMessageRow } from './DiscoverChatMessageRow'
 import { DiscoverShareSheet } from './DiscoverShareSheet'
 import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
 import { DiscoverThreadTabs } from './DiscoverThreadTabs'
+import { Workbench } from './workbench/Workbench'
 import type {
   AgentActivity,
   DiscoverChatBlock,
@@ -240,6 +242,8 @@ function ChatHero({
   onMerchant,
   onHistorySelect,
   onHistoryDelete,
+  replyDraft,
+  onClearReply,
 }: Readonly<{
   profile: typeof PROFILE
   greeting: string
@@ -257,9 +261,12 @@ function ChatHero({
   onMerchant: (merchant: MerchantProfile | null) => void
   onHistorySelect: (threadId: string) => void
   onHistoryDelete: (threadId: string) => void
+  replyDraft: AskReplyDraft | null
+  onClearReply: () => void
 }>) {
   const [value, setValue] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const submittedTimeoutRef = useRef<number | null>(null)
   const hasSearchText = value.trim().length > 0
 
@@ -271,6 +278,14 @@ function ChatHero({
     },
     [],
   )
+
+  useEffect(() => {
+    if (!replyDraft) {
+      return
+    }
+    setValue(replyDraft.suggestedText)
+    inputRef.current?.focus()
+  }, [replyDraft])
 
   const submit = (text?: string) => {
     if (loading) {
@@ -289,6 +304,7 @@ function ChatHero({
       submittedTimeoutRef.current = null
     }, 520)
     setValue('')
+    onClearReply()
     onSubmit(query)
   }
 
@@ -304,6 +320,23 @@ function ChatHero({
         Ask for products across supported merchants. Meant already knows you prefer{' '}
         {profile.summary}
       </p>
+      {replyDraft ? (
+        <div className="mt-ask-replyto mt-hero-replyto">
+          <span className="mt-ask-replyto-bar" />
+          <span className="mt-ask-replyto-body">
+            <span className="mt-mono mt-ask-replyto-key">{replyDraft.label}</span>
+            <span className="mt-ask-replyto-text">{replyDraft.text}</span>
+          </span>
+          <button
+            className="mt-ask-replyto-x"
+            type="button"
+            onClick={onClearReply}
+            aria-label="Cancel insight reply"
+          >
+            <CloseIcon size={11} />
+          </button>
+        </div>
+      ) : null}
       <form
         className={`mt-search${hasSearchText ? ' mt-search-writing' : ''}${submitted ? ' mt-search-submitted' : ''}`}
         onSubmit={(event) => {
@@ -315,6 +348,7 @@ function ChatHero({
           <SparkMark size={20} />
         </span>
         <input
+          ref={inputRef}
           className="mt-search-input"
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -934,6 +968,7 @@ export function ChatDiscoverView({
   } | null>(null)
   const [arrivalMessageId, setArrivalMessageId] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  const [composerReply, setComposerReply] = useState<AskReplyDraft | null>(null)
   const [pinnedIds, setPinnedIds] = useStoredState<ProductId[]>('meant.chatPinned', [])
   const [trayClearing, setTrayClearing] = useState(false)
   const [newsletterPending, setNewsletterPending] = useState(false)
@@ -2241,6 +2276,26 @@ export function ChatDiscoverView({
     }, 4200)
   }
 
+  const openWorkbenchAgentReport = useCallback(
+    (task: string, result: string) => {
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'ai',
+            blocks: [
+              { type: 'system', text: `Mock research agent · ${task}` },
+              { type: 'text', text: result },
+            ],
+          },
+        ],
+        { titleSeed: task },
+      )
+      scrollChatToBottom()
+    },
+    [appendMessagesToActiveThread, scrollChatToBottom],
+  )
+
   const visibleActiveCheckout =
     activeCheckout && (!activeCheckout.threadId || activeCheckout.threadId === activeThreadIdSafe)
       ? activeCheckout
@@ -2301,216 +2356,239 @@ export function ChatDiscoverView({
     [...messages]
       .reverse()
       .find((message) => message.blocks?.some((block) => block.type === 'checkout'))?.id ?? null
+  const workbenchProduct = discoverThreadFocusProduct(activeThread, knownProductsById)
   if (empty && !visibleActiveCheckout) {
     return (
-      <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
-        <ChatHero
-          profile={profile}
-          greeting={greeting}
-          prompts={prompts}
-          onSubmit={submit}
-          loading={loading}
-          merchants={merchants}
-          selectedMerchant={selectedMerchant}
-          merchantCounts={merchantCounts}
-          totalProductCount={totalProductCount}
-          merchantsLoading={merchantsLoading}
-          merchantsError={null}
-          historyThreads={historyThreads}
-          activeThreadId={activeThreadIdSafe}
-          onMerchant={onMerchant}
-          onHistorySelect={selectHistoryThread}
-          onHistoryDelete={deleteHistoryThread}
+      <>
+        <Workbench
+          product={workbenchProduct}
+          query={query}
+          preferences={preferences}
+          onReply={setComposerReply}
+          onAgentReport={openWorkbenchAgentReport}
         />
-      </main>
+        <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
+          <ChatHero
+            profile={profile}
+            greeting={greeting}
+            prompts={prompts}
+            onSubmit={submit}
+            loading={loading}
+            merchants={merchants}
+            selectedMerchant={selectedMerchant}
+            merchantCounts={merchantCounts}
+            totalProductCount={totalProductCount}
+            merchantsLoading={merchantsLoading}
+            merchantsError={null}
+            historyThreads={historyThreads}
+            activeThreadId={activeThreadIdSafe}
+            onMerchant={onMerchant}
+            onHistorySelect={selectHistoryThread}
+            onHistoryDelete={deleteHistoryThread}
+            replyDraft={composerReply}
+            onClearReply={() => setComposerReply(null)}
+          />
+        </main>
+      </>
     )
   }
 
   return (
-    <main className="mt-feed mt-ct-feed">
-      <DiscoverThreadTabs
-        threads={threads}
-        activeId={activeThreadIdSafe}
-        onSelect={selectHistoryThread}
-        onDelete={deleteHistoryThread}
-        onNew={newThread}
-        onRename={renameThread}
-        onShare={() => setShareOpen(true)}
-        onReorder={reorderThreads}
-        onDeleteHistory={deleteHistoryThread}
-        historyThreads={historyThreads}
+    <>
+      <Workbench
+        product={workbenchProduct}
+        query={query}
+        preferences={preferences}
+        onReply={setComposerReply}
+        onAgentReport={openWorkbenchAgentReport}
       />
-      <div className="mt-ct-thread">
-        <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
-          <span className="mt-ct-av">
-            <SparkMark size={13} />
-          </span>
-          <div className="mt-ct-meant-body">
-            <p className="mt-ct-intro">
-              I only surface products that fit your profile. I can also open your live cart, orders,
-              saved items, and preferences right here.
-            </p>
-          </div>
-        </div>
-        {empty ? (
-          <div className="mt-ct-empty-prompts">
-            {prompts.map((prompt) => (
-              <button
-                key={prompt}
-                className="mt-ct-suggchip"
-                type="button"
-                onClick={() => submit(prompt)}
-              >
-                {prompt}
-              </button>
-            ))}
-            <button
-              className="mt-ct-suggchip"
-              type="button"
-              onClick={() => chooseOne(displayProducts)}
-            >
-              <SparkMark size={11} />
-              Just pick for me
-            </button>
-          </div>
-        ) : null}
-        {messages.map((message) => (
-          <DiscoverChatMessageRow
-            key={message.id}
-            threadId={activeThreadIdSafe}
-            message={message}
-            flash={shelfFlashMessageId === message.id}
-            celebrateArrival={arrivalMessageId === message.id}
-            {...messageBlockProps}
-            activeCheckout={message.id === checkoutHostMessageId ? visibleActiveCheckout : null}
-          />
-        ))}
-        {visibleActiveCheckout && !threadHasCheckoutBlock ? (
-          <div className="mt-ct-msg mt-ct-meant">
+      <main className="mt-feed mt-ct-feed">
+        <DiscoverThreadTabs
+          threads={threads}
+          activeId={activeThreadIdSafe}
+          onSelect={selectHistoryThread}
+          onDelete={deleteHistoryThread}
+          onNew={newThread}
+          onRename={renameThread}
+          onShare={() => setShareOpen(true)}
+          onReorder={reorderThreads}
+          onDeleteHistory={deleteHistoryThread}
+          historyThreads={historyThreads}
+        />
+        <div className="mt-ct-thread">
+          <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
             <span className="mt-ct-av">
               <SparkMark size={13} />
             </span>
             <div className="mt-ct-meant-body">
-              <InlineCheckoutBlock
-                threadId={activeThreadIdSafe}
-                cart={cart}
-                products={cartProducts}
-                onCheckout={onCheckout}
-                activeCheckout={visibleActiveCheckout}
-                checkoutBusy={checkoutBusy}
-                checkoutError={checkoutError}
-                onCheckoutAssistant={onCheckoutAssistant}
-                onRefreshCheckout={onRefreshCheckout}
-                onOpenCart={onOpenCart}
-                onOpenOrders={onOpenOrders}
-              />
+              <p className="mt-ct-intro">
+                I only surface products that fit your profile. I can also open your live cart,
+                orders, saved items, and preferences right here.
+              </p>
             </div>
           </div>
-        ) : null}
-        {error && !activeThreadSearchPending ? (
-          <div className="mt-ct-system">
-            Grouped product search is unavailable. No merchant offers were substituted; try the
-            search again.
-          </div>
-        ) : null}
-        {agentActivities.length > 0 && loading ? (
-          <AgentActivityPanel activities={agentActivities} />
-        ) : null}
-        {deliveryLocations.length > 0 && hiddenByShip > 0 ? (
-          <div className="mt-ship-strip">
-            <span>
-              Shipping to <strong>{deliveryLocationSummary(deliveryLocations)}</strong>
-            </span>
-            <span className="mt-ship-strip-hidden mt-mono">
-              {hiddenByShip} hidden · cannot reach you
-            </span>
-          </div>
-        ) : null}
-        <div ref={chatBottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
-      </div>
-      {shareOpen ? (
-        <DiscoverShareSheet
-          thread={activeThread}
-          onClose={() => setShareOpen(false)}
-          onSend={shareThread}
-        />
-      ) : null}
-
-      {pinnedProducts.length > 0 ? (
-        <DustingContainer
-          className="mt-ct-tray"
-          dusting={trayClearing}
-          onGone={() => {
-            setTrayClearing(false)
-            setPinnedIds([])
-          }}
-        >
-          <span className="mt-mono mt-ct-tray-label">
-            Compare tray
-            <br />
-            <span className="mt-ct-tray-note">chat picks</span>
-          </span>
-          <div className="mt-ct-tray-items">
-            {pinnedProducts.map((product) => (
-              <span className="mt-ct-tray-chip" key={product.id}>
-                <span className="mt-ct-tray-thumb">
-                  <ProductArtwork product={product} label={product.category.toLowerCase()} />
-                </span>
-                {product.name}
+          {empty ? (
+            <div className="mt-ct-empty-prompts">
+              {prompts.map((prompt) => (
                 <button
-                  className="mt-ct-tray-x"
+                  key={prompt}
+                  className="mt-ct-suggchip"
                   type="button"
-                  aria-label={`Remove ${product.name}`}
-                  onClick={() =>
-                    setPinnedIds((current) => current.filter((id) => id !== product.id))
-                  }
+                  onClick={() => submit(prompt)}
                 >
-                  <CloseIcon size={10} />
+                  {prompt}
                 </button>
+              ))}
+              <button
+                className="mt-ct-suggchip"
+                type="button"
+                onClick={() => chooseOne(displayProducts)}
+              >
+                <SparkMark size={11} />
+                Just pick for me
+              </button>
+            </div>
+          ) : null}
+          {messages.map((message) => (
+            <DiscoverChatMessageRow
+              key={message.id}
+              threadId={activeThreadIdSafe}
+              message={message}
+              flash={shelfFlashMessageId === message.id}
+              celebrateArrival={arrivalMessageId === message.id}
+              {...messageBlockProps}
+              activeCheckout={message.id === checkoutHostMessageId ? visibleActiveCheckout : null}
+            />
+          ))}
+          {visibleActiveCheckout && !threadHasCheckoutBlock ? (
+            <div className="mt-ct-msg mt-ct-meant">
+              <span className="mt-ct-av">
+                <SparkMark size={13} />
               </span>
-            ))}
-            {pinnedProducts.length < 2 ? (
-              <span className="mt-ct-tray-hint">Pin one more product to compare.</span>
-            ) : null}
-          </div>
-          <button
-            className="mt-ct-tray-mini"
-            type="button"
-            disabled={pinnedProducts.length < 2 || trayClearing}
-            onClick={() => compareHere(pinnedProducts)}
-          >
-            Compare here
-          </button>
-          <button
-            className="mt-ct-tray-go"
-            type="button"
-            disabled={pinnedProducts.length < 2 || trayClearing}
-            onClick={() => onCompareProducts(pinnedProducts)}
-          >
-            Full compare
-          </button>
-          <button
-            className="mt-ct-tray-clear"
-            type="button"
-            onClick={() => setTrayClearing(true)}
-            disabled={trayClearing}
-          >
-            Clear
-          </button>
-        </DustingContainer>
-      ) : null}
-
-      <div className="mt-ct-dock">
-        <div className="mt-ct-dock-inner">
-          <AskComposer
-            placeholder="Ask, compare, show cart, or paste a product idea..."
-            suggestions={[]}
-            showChips={false}
-            onAsk={submit}
-            disabled={loading}
-          />
+              <div className="mt-ct-meant-body">
+                <InlineCheckoutBlock
+                  threadId={activeThreadIdSafe}
+                  cart={cart}
+                  products={cartProducts}
+                  onCheckout={onCheckout}
+                  activeCheckout={visibleActiveCheckout}
+                  checkoutBusy={checkoutBusy}
+                  checkoutError={checkoutError}
+                  onCheckoutAssistant={onCheckoutAssistant}
+                  onRefreshCheckout={onRefreshCheckout}
+                  onOpenCart={onOpenCart}
+                  onOpenOrders={onOpenOrders}
+                />
+              </div>
+            </div>
+          ) : null}
+          {error && !activeThreadSearchPending ? (
+            <div className="mt-ct-system">
+              Grouped product search is unavailable. No merchant offers were substituted; try the
+              search again.
+            </div>
+          ) : null}
+          {agentActivities.length > 0 && loading ? (
+            <AgentActivityPanel activities={agentActivities} />
+          ) : null}
+          {deliveryLocations.length > 0 && hiddenByShip > 0 ? (
+            <div className="mt-ship-strip">
+              <span>
+                Shipping to <strong>{deliveryLocationSummary(deliveryLocations)}</strong>
+              </span>
+              <span className="mt-ship-strip-hidden mt-mono">
+                {hiddenByShip} hidden · cannot reach you
+              </span>
+            </div>
+          ) : null}
+          <div ref={chatBottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
         </div>
-      </div>
-    </main>
+        {shareOpen ? (
+          <DiscoverShareSheet
+            thread={activeThread}
+            onClose={() => setShareOpen(false)}
+            onSend={shareThread}
+          />
+        ) : null}
+
+        {pinnedProducts.length > 0 ? (
+          <DustingContainer
+            className="mt-ct-tray"
+            dusting={trayClearing}
+            onGone={() => {
+              setTrayClearing(false)
+              setPinnedIds([])
+            }}
+          >
+            <span className="mt-mono mt-ct-tray-label">
+              Compare tray
+              <br />
+              <span className="mt-ct-tray-note">chat picks</span>
+            </span>
+            <div className="mt-ct-tray-items">
+              {pinnedProducts.map((product) => (
+                <span className="mt-ct-tray-chip" key={product.id}>
+                  <span className="mt-ct-tray-thumb">
+                    <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                  </span>
+                  {product.name}
+                  <button
+                    className="mt-ct-tray-x"
+                    type="button"
+                    aria-label={`Remove ${product.name}`}
+                    onClick={() =>
+                      setPinnedIds((current) => current.filter((id) => id !== product.id))
+                    }
+                  >
+                    <CloseIcon size={10} />
+                  </button>
+                </span>
+              ))}
+              {pinnedProducts.length < 2 ? (
+                <span className="mt-ct-tray-hint">Pin one more product to compare.</span>
+              ) : null}
+            </div>
+            <button
+              className="mt-ct-tray-mini"
+              type="button"
+              disabled={pinnedProducts.length < 2 || trayClearing}
+              onClick={() => compareHere(pinnedProducts)}
+            >
+              Compare here
+            </button>
+            <button
+              className="mt-ct-tray-go"
+              type="button"
+              disabled={pinnedProducts.length < 2 || trayClearing}
+              onClick={() => onCompareProducts(pinnedProducts)}
+            >
+              Full compare
+            </button>
+            <button
+              className="mt-ct-tray-clear"
+              type="button"
+              onClick={() => setTrayClearing(true)}
+              disabled={trayClearing}
+            >
+              Clear
+            </button>
+          </DustingContainer>
+        ) : null}
+
+        <div className="mt-ct-dock">
+          <div className="mt-ct-dock-inner">
+            <AskComposer
+              placeholder="Ask, compare, show cart, or paste a product idea..."
+              suggestions={[]}
+              showChips={false}
+              onAsk={submit}
+              disabled={loading}
+              replyDraft={composerReply}
+              onClearReply={() => setComposerReply(null)}
+            />
+          </div>
+        </div>
+      </main>
+    </>
   )
 }

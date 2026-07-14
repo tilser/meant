@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 
 import { SparkMark } from '../shared/ui'
+import type { AskReplyDraft } from './types'
 
 export function AskComposer({
   placeholder,
@@ -9,6 +10,8 @@ export function AskComposer({
   onAsk,
   autoFocus = false,
   disabled = false,
+  replyDraft = null,
+  onClearReply,
 }: Readonly<{
   placeholder: string
   suggestions: readonly string[]
@@ -16,6 +19,8 @@ export function AskComposer({
   onAsk: (question: string) => void
   autoFocus?: boolean
   disabled?: boolean
+  replyDraft?: AskReplyDraft | null
+  onClearReply?: () => void
 }>) {
   const [value, setValue] = useState('')
   const [sentPulse, setSentPulse] = useState(false)
@@ -27,6 +32,14 @@ export function AskComposer({
       inputRef.current?.focus()
     }
   }, [autoFocus])
+
+  useEffect(() => {
+    if (!replyDraft) {
+      return
+    }
+    setValue(replyDraft.suggestedText)
+    inputRef.current?.focus()
+  }, [replyDraft])
 
   useEffect(
     () => () => {
@@ -54,6 +67,7 @@ export function AskComposer({
       sentPulseTimeoutRef.current = null
     }, 520)
     setValue('')
+    onClearReply?.()
     onAsk(question)
   }
 
@@ -76,6 +90,31 @@ export function AskComposer({
               {suggestion}
             </button>
           ))}
+        </div>
+      ) : null}
+      {replyDraft ? (
+        <div className="mt-ask-replyto">
+          <span className="mt-ask-replyto-bar" />
+          <span className="mt-ask-replyto-body">
+            <span className="mt-mono mt-ask-replyto-key">{replyDraft.label}</span>
+            <span className="mt-ask-replyto-text">{replyDraft.text}</span>
+          </span>
+          <button
+            className="mt-ask-replyto-x"
+            type="button"
+            onClick={onClearReply}
+            aria-label="Cancel insight reply"
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
+              <path
+                d="m3 3 6 6m0-6L3 9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
       ) : null}
       <form
