@@ -68,6 +68,45 @@ class CatalogDataUsePolicyResolverTest {
     }
 
     @Test
+    void genericSavedInteractionPolicyCoversServerResolvedStorefrontIdentities() {
+        CatalogDataUsePolicyResolver resolver = resolver(genericPolicy());
+        List<DiscoverySourceIdentity> storefronts = List.of(
+                new DiscoverySourceIdentity(
+                        MerchantCatalogSourceIdentity.PROVIDER,
+                        ResultSourceType.MERCHANT_STOREFRONT,
+                        "merchant-1"
+                ),
+                new DiscoverySourceIdentity(
+                        MerchantCatalogSourceIdentity.PROVIDER,
+                        ResultSourceType.MERCHANT_STOREFRONT,
+                        "LOCAL_STOREFRONT:00000000-0000-0000-0000-000000000001"
+                )
+        );
+
+        assertThat(storefronts)
+                .allSatisfy(source -> assertThat(resolver.resolve(
+                        source,
+                        CatalogPayloadClass.SAVED_INTERACTION
+                )).satisfies(decision -> {
+                    assertThat(decision.mode()).isEqualTo(CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY);
+                    assertThat(decision.policyKey()).isEqualTo("generic-ucp-storefront-v2");
+                }));
+    }
+
+    @Test
+    void genericPolicyDoesNotAdmitAnotherSourceTypeFromTheSameProvider() {
+        CatalogDataUsePolicyResolver resolver = resolver(genericPolicy());
+        DiscoverySourceIdentity providerCatalog = new DiscoverySourceIdentity(
+                MerchantCatalogSourceIdentity.PROVIDER,
+                ResultSourceType.PROVIDER_CATALOG,
+                "unreviewed-generic-provider-catalog"
+        );
+
+        assertThat(resolver.resolve(providerCatalog, CatalogPayloadClass.SAVED_INTERACTION).mode())
+                .isEqualTo(CatalogRetentionMode.SESSION_ONLY);
+    }
+
+    @Test
     void transactionSnapshotsRemainSessionOnlyUntilTheirOwningTicketAddsApproval() {
         CatalogDataUsePolicyResolver resolver = resolver(genericPolicy(), shopifyPolicy(false));
 

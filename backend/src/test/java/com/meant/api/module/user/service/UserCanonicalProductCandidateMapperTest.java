@@ -8,12 +8,17 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
 import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
 import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
+import com.meant.api.module.merchant.properties.GenericUcpCatalogDataUseProperties;
+import com.meant.api.module.merchant.service.GenericUcpCatalogDataUsePolicy;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+import com.meant.api.module.catalog.service.dto.CatalogPayloadClass;
+import com.meant.api.module.catalog.service.dto.CatalogRetentionMode;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
 import com.meant.api.module.catalog.service.ExactProductGroupingService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -45,6 +50,21 @@ class UserCanonicalProductCandidateMapperTest {
         });
         assertThat(new ExactProductGroupingService().group(List.of(medium, large))).singleElement()
                 .satisfies(canonical -> assertThat(canonical.offers()).hasSize(2));
+    }
+
+    @Test
+    void canonicalGenericStorefrontSourceAllowsDurableSavedReference() {
+        ProductCandidate candidate = new UserCanonicalProductCandidateMapper(List.of())
+                .from(product("M"), "merchant:product:medium", integration(), OBSERVED);
+        var source = candidate.offer().provenance().getFirst().discoverySource();
+        GenericUcpCatalogDataUsePolicy policy = new GenericUcpCatalogDataUsePolicy(
+                new GenericUcpCatalogDataUseProperties(Duration.ofHours(24), Duration.ofMinutes(2))
+        );
+
+        assertThat(source.value()).isEqualTo("merchant-1");
+        assertThat(policy.supports(source)).isTrue();
+        assertThat(policy.decide(source, CatalogPayloadClass.SAVED_INTERACTION).mode())
+                .isEqualTo(CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY);
     }
 
     private MerchantSemanticProductResult product(String size) {

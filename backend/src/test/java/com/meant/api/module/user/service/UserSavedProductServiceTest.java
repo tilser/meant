@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
@@ -27,6 +28,7 @@ import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
+import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
@@ -38,6 +40,7 @@ import com.meant.api.module.catalog.service.dto.ProductMedia;
 import com.meant.api.module.catalog.service.dto.ProductMediaType;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
+import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.CatalogDataUsePolicyMetrics;
 import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import com.meant.api.module.catalog.service.CatalogProductRehydrationMetrics;
@@ -62,6 +65,11 @@ class UserSavedProductServiceTest {
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000016");
     private static final UUID MERCHANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000099");
     private static final UUID INTEGRATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000098");
+    private static final DiscoverySourceIdentity STOREFRONT_SOURCE = new DiscoverySourceIdentity(
+            MerchantCatalogSourceIdentity.PROVIDER,
+            ResultSourceType.MERCHANT_STOREFRONT,
+            "merchant-verified"
+    );
 
     private FakeRepository repository;
     private FakeRehydrationProvider provider;
@@ -110,6 +118,21 @@ class UserSavedProductServiceTest {
             assertThat(result.marketContextApplied()).isTrue();
             assertThat(result.commercialFactsAuthoritative()).isTrue();
         });
+    }
+
+    @Test
+    void listRehydratesTheDurableReferenceAfterTheSearchSessionIsGone() {
+        service.save(profile(), product("product-1", "Saved title"));
+        UserCanonicalProductSessionStore emptySessionStore = mock(UserCanonicalProductSessionStore.class);
+        UserSavedProductService restartedService = service(50, emptySessionStore);
+
+        UserSavedProductResult result = restartedService.list(
+                profile(), new ListSavedProductsQuery(USER_ID, 0, 10)).getFirst();
+
+        verifyNoInteractions(emptySessionStore);
+        assertThat(result.name()).isEqualTo("Current product-1");
+        assertThat(result.priceFromMinorUnits()).isEqualTo(4200L);
+        assertThat(result.commercialFactsAuthoritative()).isTrue();
     }
 
     @Test
@@ -218,9 +241,11 @@ class UserSavedProductServiceTest {
 
         UserSavedProduct stored = repository.products.getFirst();
         assertThat(stored.getSourceProvider()).isEqualTo("GENERIC_UCP");
+        assertThat(stored.getSourceIdentity()).isEqualTo("merchant-verified");
         assertThat(stored.getExternalProductId()).isEqualTo("product-1");
         assertThat(stored.getExternalVariantId()).isEqualTo("variant-requested");
-        assertThat(stored.getMerchantIntegrationId()).isNull();
+        assertThat(stored.getMerchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(stored.getExternalMerchantId()).isEqualTo("merchant-verified");
         assertThat(stored.getReferenceVerifiedAt()).isNotNull();
         assertThat(stored.getName()).isEqualTo("Forbidden stored title");
         assertThat(stored.getImageUrl()).isEqualTo("https://client.test/image.jpg");
@@ -238,9 +263,9 @@ class UserSavedProductServiceTest {
         service.save(profile(), command);
 
         UserSavedProduct stored = repository.products.getFirst();
-        assertThat(command.catalogReference().localRouting()).isNull();
-        assertThat(stored.getMerchantIntegrationId()).isNull();
-        assertThat(stored.getExternalMerchantId()).isNull();
+        assertThat(command.catalogReference().localRouting().merchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(stored.getMerchantIntegrationId()).isEqualTo(INTEGRATION_ID);
+        assertThat(stored.getExternalMerchantId()).isEqualTo("merchant-verified");
         assertThat(stored.getExternalVariantId()).isEqualTo("variant-requested");
         assertThat(provider.batchSizes).isEmpty();
     }
@@ -286,6 +311,10 @@ class UserSavedProductServiceTest {
     }
 
     private UserSavedProductService service(int quota) {
+        return service(quota, sessionStore());
+    }
+
+    private UserSavedProductService service(int quota, UserCanonicalProductSessionStore sessionStore) {
         ObjectMapper objectMapper = new ObjectMapper();
         UserCollectionProperties properties = properties(quota);
         SimpleMeterRegistry metrics = new SimpleMeterRegistry();
@@ -304,7 +333,7 @@ class UserSavedProductServiceTest {
                 properties,
                 new UserSavedProductReferenceResolver(
                         mock(UserProductSearchResultItemRepository.class),
-                        sessionStore()),
+                        sessionStore),
                 policies,
                 new CatalogProductRehydrationService(
                         List.of(provider),
@@ -328,9 +357,11 @@ class UserSavedProductServiceTest {
                     when(offer.provenance()).thenReturn(List.of(provenance));
                     when(offer.selectedOptions()).thenReturn(List.of(
                             new ProductAttribute("variant", "Size", "Large")));
-                    when(provenance.discoverySource()).thenReturn(MerchantCatalogSourceIdentity.DISCOVERY_SOURCE);
-                    when(provenance.localRouting()).thenReturn(null);
-                    when(provenance.externalMerchantReference()).thenReturn(null);
+                    when(provenance.discoverySource()).thenReturn(STOREFRONT_SOURCE);
+                    when(provenance.localRouting()).thenReturn(new LocalMerchantRouting(INTEGRATION_ID));
+                    when(provenance.externalMerchantReference()).thenReturn(
+                            new ExternalIdentifier(
+                                    ExternalIdentifierType.MERCHANT, "GENERIC_UCP", "merchant-verified"));
                     when(provenance.externalMerchantDomain()).thenReturn(null);
                     when(provenance.externalProductReference()).thenReturn(
                             new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "GENERIC_UCP", productId));
@@ -411,10 +442,10 @@ class UserSavedProductServiceTest {
     private CatalogProductReference requestedReference(String productId, ProductAttribute selectedOption) {
         return new CatalogProductReference(
                 productId,
-                MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
-                MERCHANT_ID,
+                STOREFRONT_SOURCE,
                 null,
-                null,
+                new LocalMerchantRouting(INTEGRATION_ID),
+                new ExternalIdentifier(ExternalIdentifierType.MERCHANT, "GENERIC_UCP", "merchant-verified"),
                 new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "GENERIC_UCP", productId),
                 new ExternalIdentifier(ExternalIdentifierType.VARIANT, "GENERIC_UCP", "variant-requested"),
                 List.of(selectedOption)
@@ -440,8 +471,10 @@ class UserSavedProductServiceTest {
         private boolean available = true;
 
         @Override
-        public boolean supports(com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity source) {
-            return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
+        public boolean supports(DiscoverySourceIdentity source) {
+            return source != null
+                    && MerchantCatalogSourceIdentity.PROVIDER.equals(source.provider())
+                    && source.type() == ResultSourceType.MERCHANT_STOREFRONT;
         }
 
         @Override
@@ -462,7 +495,7 @@ class UserSavedProductServiceTest {
             }
             CatalogProductReference resolved = new CatalogProductReference(
                     requested.interactionKey(),
-                    MerchantCatalogSourceIdentity.DISCOVERY_SOURCE,
+                    requested.discoverySource(),
                     MERCHANT_ID,
                     new LocalMerchantRouting(INTEGRATION_ID),
                     new ExternalIdentifier(ExternalIdentifierType.MERCHANT, "GENERIC_UCP", "merchant-verified"),
