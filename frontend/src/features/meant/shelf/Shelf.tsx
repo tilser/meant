@@ -10,6 +10,7 @@ import {
 import { BookmarkIcon, ChevronIcon, CollapseIcon, OpenIcon, SearchIcon } from '../shared/icons'
 import { CloseIcon } from '../shared/ui'
 import { useStoredState } from '../shared/storage'
+import { productImageUrl } from '../product/productSnapshots'
 import type { Product, ProductId } from '../types'
 import { money } from '../utils'
 import type { ShelfDragPayload, ShelfItem, ShelfProductSnapshot, ShelfThumb } from './types'
@@ -114,7 +115,8 @@ function ShelfCard({
     const snapshot = item.snapshot
     const title = product?.name ?? snapshot.name
     const authoritative = product?.commercialFactsAuthoritative !== false
-    const thumbUrl = product ? (authoritative ? product.imageUrl : null) : snapshot.imageUrl
+    const thumbUrl =
+      (product ? productImageUrl(product) : null) ?? snapshot.imageUrl?.trim() ?? null
     const tone = product?.tone ?? snapshot.tone
     const price = product ? (authoritative ? product.priceFrom : null) : snapshot.priceFrom
     const priceCurrency = product ? product.priceCurrency : snapshot.priceCurrency

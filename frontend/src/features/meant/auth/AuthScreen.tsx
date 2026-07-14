@@ -249,7 +249,7 @@ function AuthBrand() {
       <img className="mt-auth-brand-logo" src="/assets/meant-logo.png" alt="Meant" />
       <div className="mt-auth-brand-mid">
         <h1 className="mt-auth-brand-line">
-          Everything here is <em>meant</em> for you.
+          Everything here is <em>Meant</em> for you.
         </h1>
         <p className="mt-auth-brand-sub">
           One account for supported stores. Meant learns what matters to you and quietly filters out

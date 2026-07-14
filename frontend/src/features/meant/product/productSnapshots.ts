@@ -14,6 +14,10 @@ function firstProductMediaImage(media?: readonly ProductMedia[]): string | null 
   )
 }
 
+export function productImageUrl(product: Pick<Product, 'imageUrl' | 'media'>): string | null {
+  return nonEmptyImageUrl(product.imageUrl) ?? firstProductMediaImage(product.media)
+}
+
 function mergeProductMediaSnapshots(
   existingMedia?: readonly ProductMedia[],
   nextMedia?: readonly ProductMedia[],
@@ -37,7 +41,7 @@ function mergeProductMediaSnapshots(
 
 export function mergeProductSnapshot(existing: Product | undefined, product: Product): Product {
   if (!existing) {
-    const imageUrl = nonEmptyImageUrl(product.imageUrl) ?? firstProductMediaImage(product.media)
+    const imageUrl = productImageUrl(product)
     return imageUrl && imageUrl !== product.imageUrl ? { ...product, imageUrl } : product
   }
 

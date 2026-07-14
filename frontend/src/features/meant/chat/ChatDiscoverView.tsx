@@ -45,6 +45,7 @@ import { MerchantIcon } from '../shared/icons'
 import { deliveryLocationSummary } from '../shared/locations'
 import { useStoredState } from '../shared/storage'
 import { CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
+import { productImageUrl } from '../product/productSnapshots'
 import type {
   ShelfDragPayload,
   ShelfItem,
@@ -297,7 +298,7 @@ function ChatHero({
         {greeting}, {profile.name}
       </div>
       <h1 className="mt-hero-title">
-        Everything here is <em>meant</em> for you.
+        Everything here is <em>Meant</em> for you.
       </h1>
       <p className="mt-hero-sub">
         Ask for products across supported merchants. Meant already knows you prefer{' '}
@@ -656,7 +657,7 @@ function shelfProductSnapshot(product: Product): ShelfProductSnapshot {
     priceFrom: product.priceFrom,
     priceCurrency: product.priceCurrency,
     merchants: product.merchants,
-    imageUrl: product.imageUrl,
+    imageUrl: productImageUrl(product),
   }
 }
 
@@ -664,7 +665,7 @@ function shelfThumbForProduct(product: Product): ShelfThumb {
   return {
     name: product.name,
     tone: product.tone,
-    imageUrl: product.imageUrl,
+    imageUrl: productImageUrl(product),
   }
 }
 
