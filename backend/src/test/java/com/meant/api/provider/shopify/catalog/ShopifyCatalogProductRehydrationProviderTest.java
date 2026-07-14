@@ -168,7 +168,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
         ShopifyGlobalCatalogProvider global = providerSource(1);
         when(global.lookupCatalog(any())).thenAnswer(invocation -> {
             ShopifyGlobalCatalogLookupRequest request = invocation.getArgument(0);
-            return request.ids().contains("product-ok")
+            return request.ids().contains("variant-ok")
                     ? successful(List.of(candidate(
                             "product-ok", "variant-ok", "seller", 1200, available())))
                     : throwFailure();
@@ -455,6 +455,46 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
+    void rehydratesExactSiblingByLookingUpItsVariantIdentity() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        when(global.lookupCatalog(any())).thenAnswer(invocation -> {
+            ShopifyGlobalCatalogLookupRequest request = invocation.getArgument(0);
+            return request.ids().contains("variant-l")
+                    ? successful(List.of(detailedCandidate(
+                            "product-1", "variant-l", "seller-a", "seller.example", "L", 1399)))
+                    : successful(List.of(detailedCandidate(
+                            "product-1", "variant-m", "seller-a", "seller.example", "M", 1299)));
+        });
+        CatalogProductReference requested = new CatalogProductReference(
+                "selected-large",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-l"),
+                List.of(new ProductAttribute("variant-option", "Size", "L"))
+        );
+
+        CatalogProductRehydrationResult result = rehydrator(global, 50).rehydrate(
+                List.of(requested),
+                new CatalogRehydrationContext("CZ", "en")
+        ).getFirst();
+
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.resolvedReference().externalVariantReference()).isEqualTo(variant("variant-l"));
+        assertThat(result.resolvedReference().selectedOptions()).containsExactly(
+                new ProductAttribute("variant-option", "Size", "L"));
+        assertThat(result.facts().price().minorUnits()).isEqualTo(1399L);
+        ArgumentCaptor<ShopifyGlobalCatalogLookupRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogLookupRequest.class);
+        verify(global).lookupCatalog(request.capture());
+        assertThat(request.getValue().ids()).containsExactly("variant-l");
+        verify(global, never()).getProductWithDetails(any());
+    }
+
+    @Test
     void rehydratesLaterProductThroughExactGetProductWhenLookupBatchWasGloballyCapped() {
         ShopifyGlobalCatalogProvider global = providerSource(50);
         CatalogSourceResult cappedLookup = successful(List.of(candidate(
@@ -487,6 +527,8 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
         verify(global).getProductWithDetails(request.capture());
         assertThat(request.getValue().id()).isEqualTo("product-2");
+        assertThat(request.getValue().filters().available()).isFalse();
+        assertThat(request.getValue().filters().shops()).containsExactly("seller-b");
     }
 
     @Test

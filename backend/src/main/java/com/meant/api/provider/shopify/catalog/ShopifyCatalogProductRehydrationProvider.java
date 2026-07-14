@@ -211,7 +211,7 @@ public class ShopifyCatalogProductRehydrationProvider
             Map<CatalogProductReference, CatalogProductRehydrationResult> results
     ) {
         CatalogSourceResult sourceResult = provider.lookupCatalog(new ShopifyGlobalCatalogLookupRequest(
-                batch.stream().map(reference -> reference.externalProductReference().value()).distinct().toList(),
+                batch.stream().map(reference -> reference.externalVariantReference().value()).distinct().toList(),
                 shopifyContext(context),
                 null
         ));
@@ -251,7 +251,7 @@ public class ShopifyCatalogProductRehydrationProvider
                                     .toList(),
                             null,
                             shopifyContext(context),
-                            null
+                            detailFilters(reference)
                     ));
             if (!productResult.catalogResult().successful()) {
                 return failure(

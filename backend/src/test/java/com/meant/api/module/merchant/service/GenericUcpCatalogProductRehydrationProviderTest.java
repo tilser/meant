@@ -98,6 +98,9 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         verify(detailsService).get(query.capture());
         assertThat(query.getValue().addressCountry()).isEqualTo("CZ");
         assertThat(query.getValue().language()).isEqualTo("en");
+        assertThat(query.getValue().selectionRequest()).isTrue();
+        assertThat(query.getValue().selectedOptions()).containsExactly(option("M"));
+        assertThat(query.getValue().preferences()).isEmpty();
     }
 
     @Test
@@ -322,7 +325,13 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         assertThat(result.resolvedReference().externalMerchantDomain()).isEqualTo("merchant.test");
         assertThat(result.facts().selectedVariant().namespace()).isEqualTo("SHOPIFY");
         assertThat(result.facts().selectedVariant().value()).isEqualTo("variant-1");
-        verify(detailsService).get(new GetMerchantProductDetailsQuery(MERCHANT_ID, "product-1", "CZ", "en"));
+        verify(detailsService).get(new GetMerchantProductDetailsQuery(
+                MERCHANT_ID,
+                "product-1",
+                "CZ",
+                "en",
+                reference.selectedOptions(),
+                List.of()));
     }
 
     @Test

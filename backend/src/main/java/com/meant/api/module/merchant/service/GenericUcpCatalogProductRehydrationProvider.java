@@ -132,7 +132,11 @@ public class GenericUcpCatalogProductRehydrationProvider
             MerchantIntegrationResult integration,
             CatalogRehydrationContext context
     ) {
-        return getProduct(reference, integration, null, context);
+        return getProduct(
+                reference,
+                integration,
+                new CatalogProductDetailSelection(reference.selectedOptions(), List.of()),
+                context);
     }
 
     private ProductDetailsResult getProduct(
