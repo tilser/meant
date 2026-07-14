@@ -24,7 +24,17 @@ public record CatalogGetProductArguments(
 
             List<String> preferences,
 
-            CatalogSearchContext context
+            CatalogSearchContext context,
+
+            CatalogGetProductFilters filters
     ) {
+        public Catalog(
+                String id,
+                List<ProductDetailsResponse.SelectedOption> selected,
+                List<String> preferences,
+                CatalogSearchContext context
+        ) {
+            this(id, selected, preferences, context, null);
+        }
     }
 }

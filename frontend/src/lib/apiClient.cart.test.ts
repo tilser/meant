@@ -14,6 +14,7 @@ const {
   cancelEmbeddedCheckout,
   completeEmbeddedCheckout,
   getSavedProduct,
+  selectProductVariant,
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
 let requests: Request[] = []
@@ -84,5 +85,30 @@ describe('saved product detail API', () => {
     expect(requests[0]?.url).toBe(
       'http://localhost:8080/api/users/me/saved-products/detail?productKey=product%2Fkey',
     )
+  })
+})
+
+describe('product variant selection API', () => {
+  test('sends the clicked option name as provider relaxation priority', async () => {
+    await selectProductVariant({
+      anchorOfferKey: 'offer-anchor',
+      selectedOptions: [
+        { name: 'Size', value: 'M' },
+        { name: 'Color', value: 'Blue' },
+      ],
+      preferredOptionName: 'Size',
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('POST')
+    expect(requests[0]?.url).toEndWith('/api/v1/users/me/product-variant-selections')
+    expect(await requests[0]?.json()).toEqual({
+      anchorOfferKey: 'offer-anchor',
+      selectedOptions: [
+        { name: 'Size', value: 'M' },
+        { name: 'Color', value: 'Blue' },
+      ],
+      preferredOptionName: 'Size',
+    })
   })
 })

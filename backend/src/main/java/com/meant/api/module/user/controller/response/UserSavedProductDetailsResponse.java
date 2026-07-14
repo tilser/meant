@@ -126,9 +126,11 @@ public record UserSavedProductDetailsResponse(
                 selected == null ? null : selected.imageUrl(),
                 selected == null ? null : selected.imageAltText(),
                 selected == null ? null : selected.available(),
-                selected == null
-                        ? List.of()
-                        : selected.selectedOptions().stream().map(SelectedOption::from).toList(),
+                !details.selected().isEmpty()
+                        ? details.selected().stream().map(SelectedOption::from).toList()
+                        : selected == null
+                                ? List.of()
+                                : selected.selectedOptions().stream().map(SelectedOption::from).toList(),
                 details.skus(),
                 details.certifications(),
                 details.materials(),
@@ -187,10 +189,30 @@ public record UserSavedProductDetailsResponse(
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String name,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-            List<String> values
+            List<String> values,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<OptionValue> valueDetails
     ) {
         private static Option from(RehydratedProductDetails.Option option) {
-            return new Option(option.name(), option.values());
+            return new Option(
+                    option.name(),
+                    option.values(),
+                    option.valueDetails().stream().map(OptionValue::from).toList()
+            );
+        }
+    }
+
+    @Schema(name = "UserSavedProductDetailOptionValue")
+    public record OptionValue(
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String value,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Boolean available,
+            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Boolean exists
+    ) {
+        private static OptionValue from(RehydratedProductDetails.OptionValue value) {
+            return new OptionValue(value.value(), value.available(), value.exists());
         }
     }
 

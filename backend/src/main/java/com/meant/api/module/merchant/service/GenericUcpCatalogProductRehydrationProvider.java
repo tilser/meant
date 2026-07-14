@@ -5,6 +5,7 @@ import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
@@ -50,20 +51,31 @@ public class GenericUcpCatalogProductRehydrationProvider
             CatalogProductReference reference,
             CatalogRehydrationContext context
     ) {
+        return getDetails(reference, null, context);
+    }
+
+    @Override
+    public CatalogProductDetailResult getDetails(
+            CatalogProductReference reference,
+            CatalogProductDetailSelection selection,
+            CatalogRehydrationContext context
+    ) {
         MerchantIntegrationResult integration = referenceVerifier.verify(List.of(reference)).get(reference);
         if (integration == null) {
             return CatalogProductDetailResult.from(unverified(reference), null);
         }
         try {
-            ProductDetailsResult details = getProduct(reference, integration, context);
-            CatalogProductRehydrationResult rehydrated = observationMapper.map(reference, integration, details);
+            ProductDetailsResult details = getProduct(reference, integration, selection, context);
+            CatalogProductRehydrationResult rehydrated = observationMapper.map(
+                    reference, integration, details, selection);
             if (rehydrated.status() != CatalogRehydrationStatus.FRESH) {
                 return CatalogProductDetailResult.from(rehydrated, null);
             }
             var projection = observationMapper.details(
                     details,
                     rehydrated.resolvedReference(),
-                    integration.merchantName()
+                    integration.merchantName(),
+                    selection
             );
             return projection == null
                     ? CatalogProductDetailResult.failed(
@@ -120,12 +132,31 @@ public class GenericUcpCatalogProductRehydrationProvider
             MerchantIntegrationResult integration,
             CatalogRehydrationContext context
     ) {
-        return productDetailsService.get(new GetMerchantProductDetailsQuery(
-                integration.merchantId(),
-                reference.externalProductReference().value(),
-                context == null ? null : context.country(),
-                context == null ? null : context.language()
-        ));
+        return getProduct(reference, integration, null, context);
+    }
+
+    private ProductDetailsResult getProduct(
+            CatalogProductReference reference,
+            MerchantIntegrationResult integration,
+            CatalogProductDetailSelection selection,
+            CatalogRehydrationContext context
+    ) {
+        String country = context == null ? null : context.country();
+        String language = context == null ? null : context.language();
+        GetMerchantProductDetailsQuery query = selection == null
+                ? new GetMerchantProductDetailsQuery(
+                        integration.merchantId(),
+                        reference.externalProductReference().value(),
+                        country,
+                        language)
+                : new GetMerchantProductDetailsQuery(
+                        integration.merchantId(),
+                        reference.externalProductReference().value(),
+                        country,
+                        language,
+                        selection.selectedOptions(),
+                        selection.preferences());
+        return productDetailsService.get(query);
     }
 
     private CatalogProductRehydrationResult unverified(CatalogProductReference reference) {

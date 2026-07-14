@@ -14,8 +14,19 @@ export function InlineCartBlock({
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
-  onQty: (id: ProductId, merchant: string, qty: number, nextCart: readonly CartItem[]) => void
-  onRemove: (id: ProductId, merchant: string, nextCart: readonly CartItem[]) => void
+  onQty: (
+    id: ProductId,
+    merchant: string,
+    qty: number,
+    nextCart: readonly CartItem[],
+    identity?: string,
+  ) => void
+  onRemove: (
+    id: ProductId,
+    merchant: string,
+    nextCart: readonly CartItem[],
+    identity?: string,
+  ) => void
   onAddCart: (product: Product) => void
   onOpenCart: () => void
   onCheckoutHere: () => void
@@ -70,7 +81,7 @@ export function InlineCartBlock({
       {lines.length > 0 ? (
         <div className="mt-ct-cart-list">
           {lines.map((line) => (
-            <div className="mt-ct-cart-row" key={`${line.id}-${line.merchant}`}>
+            <div className="mt-ct-cart-row" key={cartItemIdentity(line)}>
               <button className="mt-ct-cart-media" type="button" onClick={() => onOpenCart()}>
                 <ProductArtwork
                   product={line.product}
@@ -89,7 +100,13 @@ export function InlineCartBlock({
                     type="button"
                     aria-label="Decrease quantity"
                     onClick={() =>
-                      onQty(line.id, line.merchant, line.qty - 1, cartAfterQty(line, line.qty - 1))
+                      onQty(
+                        line.id,
+                        line.merchant,
+                        line.qty - 1,
+                        cartAfterQty(line, line.qty - 1),
+                        cartItemIdentity(line),
+                      )
                     }
                   >
                     -
@@ -99,7 +116,13 @@ export function InlineCartBlock({
                     type="button"
                     aria-label="Increase quantity"
                     onClick={() =>
-                      onQty(line.id, line.merchant, line.qty + 1, cartAfterQty(line, line.qty + 1))
+                      onQty(
+                        line.id,
+                        line.merchant,
+                        line.qty + 1,
+                        cartAfterQty(line, line.qty + 1),
+                        cartItemIdentity(line),
+                      )
                     }
                   >
                     +
@@ -110,7 +133,9 @@ export function InlineCartBlock({
                   className="mt-ct-cart-remove"
                   type="button"
                   aria-label={`Remove ${line.product.name}`}
-                  onClick={() => onRemove(line.id, line.merchant, cartAfterRemove(line))}
+                  onClick={() =>
+                    onRemove(line.id, line.merchant, cartAfterRemove(line), cartItemIdentity(line))
+                  }
                 >
                   <CloseIcon size={12} />
                 </button>

@@ -16,11 +16,10 @@ import {
   canMerchantShip,
   cartDeliveryOptions,
   cartGroups,
+  cartItemIdentity,
   cartLines,
-  cartMerchantKey,
   computeSmartAlerts,
   money,
-  normalizedMerchantName,
   selectedCartDeliveryOption,
 } from '../utils'
 import type {
@@ -226,23 +225,23 @@ export function CartView({
   onDeliveryAddress,
   onDeliveryOption,
   onCheckout,
-  checkoutMerchant,
+  checkoutMerchantKey,
   checkoutError,
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
   cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
   deliveryLocations: readonly UserLocation[]
-  onRemove: (id: ProductId, merchant: string) => void
-  onQty: (id: ProductId, merchant: string, qty: number) => void
+  onRemove: (id: ProductId, merchant: string, identity?: string) => void
+  onQty: (id: ProductId, merchant: string, qty: number, identity?: string) => void
   onAdd: (id: ProductId, merchant: string) => void
   onApplyCode: (input: ApplyCartCodeInput) => Promise<{ ok: boolean; message?: string }>
   onRemoveCode: (input: RemoveCartCodeInput) => Promise<{ ok: boolean; message?: string }>
   onDeliveryAddress: (payload: DeliveryAddressPayload) => Promise<boolean> | boolean
   onDeliveryOption: (payload: DeliveryOptionPayload) => Promise<boolean> | boolean
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
-  checkoutMerchant: string | null
-  checkoutError: { merchant: string; message: string } | null
+  checkoutMerchantKey: string | null
+  checkoutError: { merchant: string; merchantKey: string; message: string } | null
 }>) {
   const [scanning, setScanning] = useState(true)
   const [codeEntries, setCodeEntries] = useState<
@@ -272,9 +271,7 @@ export function CartView({
       : []
   const groups = cartGroups(lines)
   const groupSummaries = groups.map((group) => {
-    const merchantKey = group.items[0]
-      ? cartMerchantKey(group.items[0])
-      : normalizedMerchantName(group.merchant)
+    const merchantKey = group.merchantKey
     const snapshot = cartSnapshots[merchantKey]
     const fallbackTotal = group.subtotal + group.delivery
     const subtotal = cartSnapshotSubtotal(snapshot, group.subtotal)
@@ -487,7 +484,7 @@ export function CartView({
           {alerts.length > 0 || shipWarnings.length > 0 ? (
             <div className="mt-alerts">
               {shipWarnings.map((line) => (
-                <div key={`ship-${line.id}-${line.merchant}`} className="mt-alert mt-alert-warn">
+                <div key={`ship-${cartItemIdentity(line)}`} className="mt-alert mt-alert-warn">
                   <span className="mt-alert-ico">!</span>
                   <div className="mt-alert-body">
                     <div className="mt-alert-title">Does not ship to selected destinations</div>
@@ -499,7 +496,7 @@ export function CartView({
                   <button
                     className="mt-alert-fix"
                     type="button"
-                    onClick={() => onRemove(line.id, line.merchant)}
+                    onClick={() => onRemove(line.id, line.merchant, cartItemIdentity(line))}
                   >
                     Remove item
                     <span className="mt-alert-fix-sub mt-mono">will not ship</span>
@@ -546,7 +543,7 @@ export function CartView({
               const groupSyncing = group.items.some((item) => item.syncing)
               const groupLineError = group.items.find((item) => item.syncError)?.syncError
               const groupCheckoutError =
-                checkoutError?.merchant === group.merchant ? checkoutError.message : null
+                checkoutError?.merchantKey === merchantKey ? checkoutError.message : null
               const appliedCodes = snapshot?.appliedCodes ?? []
               const entry = codeEntries[merchantKey] ?? { discount: '', giftCard: '' }
               const busy = codeBusy[merchantKey] ?? null
@@ -561,12 +558,12 @@ export function CartView({
                 ),
               )
               const checkoutNeedsDelivery = group.hasDeliveryOptions && !group.hasSelectedDelivery
-              const checkoutBusy = checkoutMerchant === group.merchant
+              const checkoutBusy = checkoutMerchantKey === merchantKey
               const deliveryDisplay = checkoutNeedsDelivery
                 ? 'Choose delivery option'
                 : deliverySummary
               const checkoutBlocked =
-                scanning || groupSyncing || !groupCheckoutable || Boolean(checkoutMerchant)
+                scanning || groupSyncing || !groupCheckoutable || Boolean(checkoutMerchantKey)
               const checkoutSub =
                 groupLineError ??
                 groupCheckoutError ??
@@ -579,7 +576,7 @@ export function CartView({
                       : deliveryDisplay)
 
               return (
-                <div className="mt-mgroup" key={group.merchant}>
+                <div className="mt-mgroup" key={group.merchantKey}>
                   <div className="mt-mgroup-head">
                     <div className="mt-mgroup-name">
                       <span className="mt-mgroup-dot" />
@@ -591,7 +588,7 @@ export function CartView({
                     <div className="mt-mono mt-mgroup-ship">{deliveryDisplay}</div>
                   </div>
                   {group.items.map((line) => (
-                    <div className="mt-citem" key={`${line.id}-${line.merchant}`}>
+                    <div className="mt-citem" key={cartItemIdentity(line)}>
                       <div className="mt-citem-media">
                         <ProductArtwork
                           product={line.product}
@@ -601,6 +598,9 @@ export function CartView({
                       <div className="mt-citem-info">
                         <div className="mt-mono mt-citem-brand">{line.product.brand}</div>
                         <div className="mt-citem-name">{line.product.name}</div>
+                        {line.variantTitle ? (
+                          <div className="mt-mono mt-citem-variant">{line.variantTitle}</div>
+                        ) : null}
                         <div className="mt-mono mt-citem-deliv">
                           {line.syncing
                             ? 'Syncing cart...'
@@ -614,7 +614,9 @@ export function CartView({
                         <div className="mt-qty">
                           <button
                             type="button"
-                            onClick={() => onQty(line.id, line.merchant, line.qty - 1)}
+                            onClick={() =>
+                              onQty(line.id, line.merchant, line.qty - 1, cartItemIdentity(line))
+                            }
                             aria-label="Decrease"
                             disabled={line.syncing}
                           >
@@ -623,7 +625,9 @@ export function CartView({
                           <span>{line.qty}</span>
                           <button
                             type="button"
-                            onClick={() => onQty(line.id, line.merchant, line.qty + 1)}
+                            onClick={() =>
+                              onQty(line.id, line.merchant, line.qty + 1, cartItemIdentity(line))
+                            }
                             aria-label="Increase"
                             disabled={line.syncing}
                           >
@@ -634,7 +638,7 @@ export function CartView({
                         <button
                           className="mt-citem-remove"
                           type="button"
-                          onClick={() => onRemove(line.id, line.merchant)}
+                          onClick={() => onRemove(line.id, line.merchant, cartItemIdentity(line))}
                           aria-label="Remove"
                           disabled={line.syncing}
                         >
@@ -792,6 +796,7 @@ export function CartView({
                                   .join(', ')
                               : '',
                           merchant: group.merchant,
+                          merchantKey,
                           checkoutUrl: snapshot?.checkoutUrl ?? null,
                           continueUrl: snapshot?.continueUrl ?? null,
                         })

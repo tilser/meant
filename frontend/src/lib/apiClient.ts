@@ -132,6 +132,13 @@ export interface MerchantProductDetailMediaProfile {
 export interface ProductOptionProfile {
   name: string | null
   values: string[] | null
+  valueDetails?: ProductOptionValueProfile[] | null
+}
+
+export interface ProductOptionValueProfile {
+  value: string | null
+  available: boolean | null
+  exists: boolean | null
 }
 
 export interface ProductSelectedOptionProfile {
@@ -441,6 +448,13 @@ export type UserSavedProductDetailsProfile = Omit<MerchantProductDetailsProfile,
   merchantName?: string | null
 }
 
+export interface ProductVariantSelectionProfile {
+  details: UserSavedProductDetailsProfile
+  selectedOfferKey?: string | null
+  selectedOffer?: CanonicalOfferProfile | null
+  cartable: boolean
+}
+
 export interface UserSavedProductProfile {
   id: string
   productHash: string | null
@@ -516,6 +530,7 @@ export type SaveUserProductInput = Omit<
 > & {
   offers: Array<Omit<UserSavedProductOfferProfile, 'priceMinorUnits' | 'priceCurrency'>>
   catalogReference?: CatalogProductReferenceInput
+  selectedOfferKey?: string
 }
 
 export interface MerchantProfile {
@@ -1126,6 +1141,33 @@ export async function getCanonicalProductDetail(input: {
   return parseJsonResponse<CanonicalProductDetailProfile>(
     response,
     'Failed to load canonical product details',
+  )
+}
+
+export async function selectProductVariant(input: {
+  anchorOfferKey: string
+  selectedOptions: readonly { name: string; value: string }[]
+  preferredOptionName?: string | null
+  signal?: AbortSignal
+}): Promise<ProductVariantSelectionProfile> {
+  const response = await fetch(`${API_URL}/api/v1/users/me/product-variant-selections`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      anchorOfferKey: input.anchorOfferKey,
+      selectedOptions: input.selectedOptions,
+      ...(input.preferredOptionName?.trim()
+        ? { preferredOptionName: input.preferredOptionName.trim() }
+        : {}),
+    }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<ProductVariantSelectionProfile>(
+    response,
+    'Failed to select product variant',
   )
 }
 

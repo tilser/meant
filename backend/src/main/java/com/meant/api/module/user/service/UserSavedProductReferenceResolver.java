@@ -30,6 +30,13 @@ public class UserSavedProductReferenceResolver {
     private final UserCanonicalProductSessionStore sessionStore;
 
     public CatalogProductReference resolve(SaveUserProductCommand command, Instant now) {
+        if (command.selectedOfferKey() != null && !command.selectedOfferKey().isBlank()) {
+            if (command.catalogReference() != null
+                    && !command.productKey().equals(command.catalogReference().interactionKey())) {
+                throw new UserException("Saved product reference did not match the interaction key");
+            }
+            return selectedSessionReference(command);
+        }
         if (command.catalogReference() != null) {
             if (!command.productKey().equals(command.catalogReference().interactionKey())) {
                 throw new UserException("Saved product reference did not match the interaction key");
@@ -61,6 +68,33 @@ public class UserSavedProductReferenceResolver {
         );
     }
 
+    private CatalogProductReference selectedSessionReference(SaveUserProductCommand command) {
+        var selectedEntry = sessionStore.findOffer(command.userId(), command.selectedOfferKey());
+        if (selectedEntry.isEmpty() && command.catalogReference() != null) {
+            return sessionReference(command);
+        }
+        UserCanonicalProductSessionStore.OfferEntry entry = selectedEntry.orElseThrow(() -> new UserException(
+                "Selected saved-product offer is unknown or expired; select the variant again"));
+        if (!command.productKey().equals(entry.canonicalProductKey())) {
+            throw new UserException("Selected offer does not belong to the saved product");
+        }
+        List<ResolvedCandidate> candidates = entry.offer().provenance().stream()
+                .map(provenance -> new ResolvedCandidate(
+                        reference(command.productKey(), entry.offer(), provenance), entry.offer()))
+                .distinct()
+                .toList();
+        CatalogProductReference requested = command.catalogReference();
+        List<ResolvedCandidate> matches = requested == null
+                ? candidates
+                : candidates.stream()
+                        .filter(candidate -> matches(requested, candidate.reference()))
+                        .toList();
+        if (matches.size() != 1) {
+            throw new UserException("Selected offer does not resolve to one durable product reference");
+        }
+        return matches.getFirst().reference();
+    }
+
     private CatalogProductReference sessionReference(SaveUserProductCommand command) {
         var product = sessionStore.find(command.userId(), command.productKey())
                 .map(UserCanonicalProductSessionStore.Entry::product)
@@ -74,9 +108,9 @@ public class UserSavedProductReferenceResolver {
                 .distinct()
                 .toList();
         List<ResolvedCandidate> matches = candidates.stream()
-                .filter(candidate -> command.catalogOfferKey() == null
-                        || command.catalogOfferKey().isBlank()
-                        || command.catalogOfferKey().equals(candidate.offer().key()))
+                .filter(candidate -> command.selectedOfferKey() == null
+                        || command.selectedOfferKey().isBlank()
+                        || command.selectedOfferKey().equals(candidate.offer().key()))
                 .filter(candidate -> matches(requested, candidate.reference()))
                 .toList();
         if (matches.size() != 1) {

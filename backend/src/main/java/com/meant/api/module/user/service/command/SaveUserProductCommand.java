@@ -86,7 +86,7 @@ public record SaveUserProductCommand(
         @Valid CatalogProductReference catalogReference,
 
         @Size(max = 200)
-        String catalogOfferKey
+        String selectedOfferKey
 ) {
 
     public SaveUserProductCommand(

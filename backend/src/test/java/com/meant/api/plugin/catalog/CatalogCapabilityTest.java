@@ -13,6 +13,7 @@ import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
 import com.meant.api.plugin.catalog.extension.CatalogTool;
 import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;
+import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductFilters;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
 import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupArguments;
@@ -219,6 +220,26 @@ class CatalogCapabilityTest {
     }
 
     @Test
+    void getProductBuildsSelectionHintsAndRequestsUnavailableVariants() throws Exception {
+        CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper, extensionRegistry());
+        CatalogGetProductRequest request = new CatalogGetProductRequest(
+                "gid://shopify/Product/1",
+                List.of(new ProductDetailsResponse.SelectedOption("Color", "Blue")),
+                List.of("Prefer cotton"),
+                new CatalogSearchContext("US", null, null, "en", "USD", "Product detail"),
+                new CatalogGetProductFilters(false)
+        );
+
+        CatalogGetProductArguments arguments = capability.buildArguments(request, NegotiatedCapabilities.none());
+
+        assertThat(arguments.catalog().selected()).containsExactly(
+                new ProductDetailsResponse.SelectedOption("Color", "Blue"));
+        assertThat(arguments.catalog().preferences()).containsExactly("Prefer cotton");
+        assertThat(arguments.catalog().filters().available()).isFalse();
+        assertThat(objectMapper.writeValueAsString(arguments)).contains("\"available\":false");
+    }
+
+    @Test
     void getProductParsesShopifyCatalogProductObject() {
         CatalogGetProductCapability capability = new CatalogGetProductCapability(objectMapper, extensionRegistry());
 
@@ -241,6 +262,25 @@ class CatalogCapabilityTest {
                                 "currency": "USD"
                               }
                             },
+                            "total_variants": 12,
+                            "options": [
+                              {
+                                "name": "Size",
+                                "values": [
+                                  {
+                                    "label": "5",
+                                    "available": false,
+                                    "exists": true
+                                  }
+                                ]
+                              }
+                            ],
+                            "selected": [
+                              {
+                                "name": "Size",
+                                "label": "5"
+                              }
+                            ],
                             "variants": [
                               {
                                 "id": "gid://shopify/ProductVariant/1",
@@ -266,6 +306,13 @@ class CatalogCapabilityTest {
         assertThat(product.productId()).isEqualTo("gid://shopify/Product/1");
         assertThat(product.description()).isEqualTo("Weather-ready wool runner.");
         assertThat(product.priceRange().min()).isEqualTo("65.00");
+        assertThat(product.totalVariants()).isEqualTo(12);
+        assertThat(product.options().getFirst().valueDetails()).singleElement().satisfies(value -> {
+            assertThat(value.value()).isEqualTo("5");
+            assertThat(value.available()).isFalse();
+            assertThat(value.exists()).isTrue();
+        });
+        assertThat(product.selected()).containsExactly(new ProductDetailsResponse.SelectedOption("Size", "5"));
         assertThat(product.selectedOrFirstAvailableVariant().variantId()).isEqualTo("gid://shopify/ProductVariant/1");
         assertThat(product.selectedOrFirstAvailableVariant().sku()).isEqualTo("A10990W050");
     }

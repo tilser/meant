@@ -488,6 +488,12 @@ describe('savedProductFromProfile', () => {
 })
 
 describe('savedProductInput grouped catalog reference', () => {
+  test('passes an exact server offer key for new saves and saved-choice updates', () => {
+    const input = savedProductInput(groupedProduct(), [], ' exact-offer ')
+
+    expect(input.selectedOfferKey).toBe('exact-offer')
+  })
+
   test('maps the first matching recommended-offer provider-catalog provenance', () => {
     const product = groupedProduct()
     product.id = 'display-view-model-id'
@@ -573,7 +579,13 @@ describe('savedProductInput grouped catalog reference', () => {
           value: 'component-variant',
         },
         quantity: 2,
-        selectedOptions: [{ group: 'variant-option', name: 'Color', value: 'Blue' }],
+        selectedOptions: [
+          {
+            group: 'variant-option',
+            name: 'Color',
+            value: 'Blue',
+          },
+        ],
       },
     ]
     offer.identity.sellingPlanIdentity = {

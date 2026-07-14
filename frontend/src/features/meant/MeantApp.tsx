@@ -124,7 +124,9 @@ import type {
   View,
 } from './types'
 import {
+  cartItemIdentity,
   cartLines,
+  cartMerchantKey,
   normalizedMerchantName,
   productsForLocation,
   productsForClothingFit,
@@ -427,7 +429,7 @@ function TopBar({
   onToggleCart: () => void
   onToggleAccount: () => void
   onCloseAccount: () => void
-  onRemoveFromCart: (id: ProductId, merchant: string) => void
+  onRemoveFromCart: (id: ProductId, merchant: string, identity?: string) => void
   onSignOut: () => void
 }>) {
   // Count only items that resolve to a known product, so the badge can never
@@ -727,10 +729,12 @@ export function MeantApp() {
     initialDeliveryLocations(),
   )
   const [clothingFit, setClothingFit] = useStoredState<ClothingFit>('meant.clothingFit', 'none')
-  const [checkoutMerchant, setCheckoutMerchant] = useState<string | null>(null)
-  const [checkoutError, setCheckoutError] = useState<{ merchant: string; message: string } | null>(
-    null,
-  )
+  const [checkoutMerchantKey, setCheckoutMerchantKey] = useState<string | null>(null)
+  const [checkoutError, setCheckoutError] = useState<{
+    merchant: string
+    merchantKey: string
+    message: string
+  } | null>(null)
   const [activeCheckout, setActiveCheckout] = useState<ActiveCheckoutSession | null>(null)
   const [checkoutFlowBusy, setCheckoutFlowBusy] = useState(false)
   const [checkoutFlowError, setCheckoutFlowError] = useState<string | null>(null)
@@ -1542,7 +1546,11 @@ export function MeantApp() {
 
     setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
     setSavedIds((current) => (current.includes(product.id) ? current : [product.id, ...current]))
-    void saveUserProduct(savedProductInput(product, allPreferencesRef.current))
+    const selectedOfferKey =
+      product.canonicalProduct?.recommendedOfferKey?.trim() ||
+      product.offers.find((offer) => offer.offerKey?.trim())?.offerKey?.trim() ||
+      null
+    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, selectedOfferKey))
       .then((savedProduct) => {
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         const confirmedSnapshot = confirmedSavedProductSnapshot(productSnapshot, snapshot)
@@ -1557,6 +1565,45 @@ export function MeantApp() {
         setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
         setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       })
+      .finally(() => endSaveOperation(product.id))
+  }
+
+  const updateSavedChoice = (product: Product, offerKey: string) => {
+    const exactOfferKey = offerKey.trim()
+    if (!exactOfferKey || !beginSaveOperation(product.id)) {
+      return
+    }
+    const productSnapshot = productWithCuratedFields(product, allPreferencesRef.current)
+    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, exactOfferKey))
+      .then((savedProduct) => {
+        const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
+        const confirmedSnapshot = confirmedSavedProductSnapshot(productSnapshot, snapshot)
+        setSavedProducts((current) => upsertProductSnapshot(current, confirmedSnapshot))
+        setSavedIds((current) =>
+          current.includes(snapshot.id) ? current : [snapshot.id, ...current],
+        )
+        setCompareProducts((current) =>
+          current.map((candidate) =>
+            candidate.id === product.id
+              ? refreshedSavedProductSnapshot(candidate, confirmedSnapshot)
+              : candidate,
+          ),
+        )
+        setNavProducts((current) =>
+          current.map((candidate) =>
+            candidate.id === product.id
+              ? refreshedSavedProductSnapshot(candidate, confirmedSnapshot)
+              : candidate,
+          ),
+        )
+        setActiveProduct((current) =>
+          current?.id === product.id
+            ? refreshedSavedProductSnapshot(current, confirmedSnapshot)
+            : current,
+        )
+        refreshSavedProductForOpen(confirmedSnapshot, true)
+      })
+      .catch(() => undefined)
       .finally(() => endSaveOperation(product.id))
   }
 
@@ -1850,10 +1897,16 @@ export function MeantApp() {
     payload: CheckoutPayload,
     checkoutProfile: CheckoutProfile,
   ) => {
-    const checkoutItems = new Set(payload.items.map((item) => `${item.id}:${item.merchant}`))
+    const checkoutCartIds = new Set(
+      payload.items
+        .map((item) => item.cartId?.trim())
+        .filter((cartId): cartId is string => Boolean(cartId)),
+    )
+    const checkoutItems = new Set(payload.items.map(cartItemIdentity))
     updateStoredCart((current) =>
       current.map((item) =>
-        checkoutItems.has(`${item.id}:${item.merchant}`)
+        (item.cartId?.trim() && checkoutCartIds.has(item.cartId.trim())) ||
+        checkoutItems.has(cartItemIdentity(item))
           ? {
               ...item,
               remoteCartId: checkoutProfile.remoteCartId ?? item.remoteCartId,
@@ -1871,16 +1924,20 @@ export function MeantApp() {
     source: ActiveCheckoutSession['source'],
   ): Promise<string | null> => {
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
+    const merchantKey =
+      payload.merchantKey ??
+      (payload.items[0] ? cartMerchantKey(payload.items[0]) : normalizedMerchantName(merchant))
     const cartId = payload.items.find((item) => item.cartId)?.cartId
     if (!cartId) {
       const message = 'Checkout is not available until this merchant cart syncs.'
       setCheckoutError({
         merchant,
+        merchantKey,
         message,
       })
       return message
     }
-    setCheckoutMerchant(merchant)
+    setCheckoutMerchantKey(merchantKey)
     setCheckoutError(null)
     setCheckoutFlowError(null)
     try {
@@ -1902,11 +1959,12 @@ export function MeantApp() {
       const message = 'Could not start checkout. Try again.'
       setCheckoutError({
         merchant,
+        merchantKey,
         message,
       })
       return message
     } finally {
-      setCheckoutMerchant(null)
+      setCheckoutMerchantKey(null)
     }
   }
 
@@ -2089,7 +2147,7 @@ export function MeantApp() {
             onDeliveryAddress={updateDeliveryAddress}
             onDeliveryOption={updateDeliveryOption}
             onCheckout={checkout}
-            checkoutMerchant={checkoutMerchant}
+            checkoutMerchantKey={checkoutMerchantKey}
             checkoutError={checkoutError}
           />
         )
@@ -2320,10 +2378,11 @@ export function MeantApp() {
         inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
         onClose={() => setActiveProduct(null)}
         onToggleSave={toggleSave}
+        onUpdateSavedChoice={updateSavedChoice}
         onCompare={handleProductCompare}
         onAddToCart={addProductOfferToCartResolved}
-        onAddOfferKey={
-          activeProduct ? (offerKey) => addSelectedOfferToCart(activeProduct, offerKey) : undefined
+        onAddOfferKey={(selectedProduct, offerKey) =>
+          addSelectedOfferToCart(selectedProduct, offerKey)
         }
         onRefreshProduct={refreshSavedProductForOpen}
         onResearch={(searchQuery) => {

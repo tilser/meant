@@ -479,7 +479,7 @@ public record UserGroupedProductSearchV1Response(
         }
     }
 
-    @Schema(description = "Typed product or selected-option attribute")
+    @Schema(name = "CanonicalProductAttributeResponse", description = "Typed product or selected-option attribute")
     public record ProductAttributeResponse(
             @Schema(description = "Optional attribute group", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String group,

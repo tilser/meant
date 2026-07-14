@@ -17,6 +17,7 @@ import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
+import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductFilters;
 import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupRequest;
 import com.meant.api.plugin.catalog.lookup.dto.CatalogLookupResponse;
@@ -26,6 +27,7 @@ import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -110,6 +112,36 @@ public class MerchantCatalogPluginDispatchService {
             CatalogSearchContext context,
             NegotiatedCapabilities activeCapabilities
     ) {
+        return getProduct(merchant, productId, List.of(), List.of(), null, context, activeCapabilities);
+    }
+
+    public ProductDetailsResult getProduct(
+            MerchantSemanticSearchResult merchant,
+            String productId,
+            List<ProductDetailsResponse.SelectedOption> selected,
+            List<String> preferences,
+            CatalogSearchContext context,
+            NegotiatedCapabilities activeCapabilities
+    ) {
+        return getProduct(
+                merchant,
+                productId,
+                selected,
+                preferences,
+                new CatalogGetProductFilters(false),
+                context,
+                activeCapabilities);
+    }
+
+    private ProductDetailsResult getProduct(
+            MerchantSemanticSearchResult merchant,
+            String productId,
+            List<ProductDetailsResponse.SelectedOption> selected,
+            List<String> preferences,
+            CatalogGetProductFilters filters,
+            CatalogSearchContext context,
+            NegotiatedCapabilities activeCapabilities
+    ) {
         try {
             CatalogGetProductCapability capability = capability(
                     CatalogGetProductCapability.TOOL_NAME,
@@ -119,7 +151,12 @@ public class MerchantCatalogPluginDispatchService {
                     merchant,
                     CatalogGetProductCapability.TOOL_NAME,
                     capability.buildArguments(
-                            new CatalogGetProductRequest(productId, context),
+                            new CatalogGetProductRequest(
+                                    productId,
+                                    selected,
+                                    preferences,
+                                    context,
+                                    filters),
                             activeCapabilities
                     )
             );

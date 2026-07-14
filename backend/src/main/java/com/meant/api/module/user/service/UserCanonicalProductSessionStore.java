@@ -3,6 +3,7 @@ package com.meant.api.module.user.service;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
+import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
 import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
@@ -76,12 +77,21 @@ public class UserCanonicalProductSessionStore {
         return Optional.ofNullable(offers.getIfPresent(new OfferKey(userId, offerKey)));
     }
 
+    /** Registers one exact provider-resolved offer without widening the retained canonical product snapshot. */
+    public void rememberOffer(UUID userId, String canonicalProductKey, Offer offer) {
+        if (userId == null || canonicalProductKey == null || canonicalProductKey.isBlank() || offer == null) {
+            throw new IllegalArgumentException("User, canonical product key, and offer are required");
+        }
+        offers.put(new OfferKey(userId, offer.key()), new OfferEntry(canonicalProductKey.trim(), offer));
+        recentOfferOwners.put(offer.key(), userId);
+    }
+
     public boolean isOfferOwnedByAnotherUser(UUID userId, String offerKey) {
         UUID recentOwner = recentOfferOwners.getIfPresent(offerKey);
         return recentOwner != null && !recentOwner.equals(userId);
     }
 
-    public record OfferEntry(String canonicalProductKey, com.meant.api.module.catalog.service.dto.Offer offer) {
+    public record OfferEntry(String canonicalProductKey, Offer offer) {
     }
 
     record Entry(

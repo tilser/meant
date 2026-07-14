@@ -282,7 +282,7 @@ export function DiscoverChatMessageRow({
   onOpenPrefs: () => void
   onOpenCart: () => void
   onReviewCartHere: (lines?: readonly CartItem[], products?: readonly Product[]) => void
-  onRestoreCartLine: (product: Product, merchant: string, price?: number) => void
+  onRestoreCartLine: (product: Product, merchant: string, price?: number, offerKey?: string) => void
   onCartQty: (
     messageId: string,
     blockIndex: number,
@@ -290,6 +290,7 @@ export function DiscoverChatMessageRow({
     merchant: string,
     qty: number,
     nextCart: readonly CartItem[],
+    identity?: string,
   ) => void
   onCartRemove: (
     messageId: string,
@@ -297,6 +298,7 @@ export function DiscoverChatMessageRow({
     id: ProductId,
     merchant: string,
     nextCart: readonly CartItem[],
+    identity?: string,
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
@@ -399,11 +401,11 @@ export function DiscoverChatMessageRow({
                 onOpenCart={onOpenCart}
                 onReviewCartHere={onReviewCartHere}
                 onRestoreCartLine={onRestoreCartLine}
-                onCartQty={(id, merchant, qty, nextCart) =>
-                  onCartQty(message.id, index, id, merchant, qty, nextCart)
+                onCartQty={(id, merchant, qty, nextCart, identity) =>
+                  onCartQty(message.id, index, id, merchant, qty, nextCart, identity)
                 }
-                onCartRemove={(id, merchant, nextCart) =>
-                  onCartRemove(message.id, index, id, merchant, nextCart)
+                onCartRemove={(id, merchant, nextCart, identity) =>
+                  onCartRemove(message.id, index, id, merchant, nextCart, identity)
                 }
                 onCheckout={onCheckout}
                 activeCheckout={activeCheckout}

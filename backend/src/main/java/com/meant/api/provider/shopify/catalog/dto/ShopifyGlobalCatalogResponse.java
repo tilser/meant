@@ -56,10 +56,47 @@ public record ShopifyGlobalCatalogResponse(
             List<Option> options,
             List<SelectedOption> selected,
             List<Variant> variants,
+            @JsonProperty("total_variants") @JsonAlias("totalVariants") Integer totalVariants,
             Rating rating,
             List<String> tags,
             Metadata metadata
     ) {
+        public Product(
+                String id,
+                String handle,
+                String title,
+                Description description,
+                String url,
+                List<Category> categories,
+                PriceRange priceRange,
+                PriceRange listPriceRange,
+                List<Media> media,
+                List<Option> options,
+                List<SelectedOption> selected,
+                List<Variant> variants,
+                Rating rating,
+                List<String> tags,
+                Metadata metadata
+        ) {
+            this(
+                    id,
+                    handle,
+                    title,
+                    description,
+                    url,
+                    categories,
+                    priceRange,
+                    listPriceRange,
+                    media,
+                    options,
+                    selected,
+                    variants,
+                    null,
+                    rating,
+                    tags,
+                    metadata
+            );
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

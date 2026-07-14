@@ -1,5 +1,5 @@
 import type { CartItem, Product, ProductId, UserLocation } from '../types'
-import { money, productPriceFrom, readStorage, writeStorage } from '../utils'
+import { cartItemIdentity, money, productPriceFrom, readStorage, writeStorage } from '../utils'
 import type {
   DiscoverChatBlock,
   DiscoverChatMessage,
@@ -179,8 +179,16 @@ export function createMiniCompareBlock(
   return { type: 'minicompare', products: nextProducts, rows, pickIndex }
 }
 
-export function cartItemIdentity(item: Pick<CartItem, 'id' | 'merchant'>): string {
-  return `${item.id}:${item.merchant}`
+export { cartItemIdentity }
+
+function cartSnapshotIdentity(item: CartItem): string {
+  const offerKey = item.offerKey?.trim()
+  if (offerKey) return `offer:${offerKey}`
+  const variantId = item.productVariantId?.trim()
+  if (variantId) {
+    return `variant:${item.merchantId ?? item.merchantDomain ?? item.merchant}:${variantId}`
+  }
+  return cartItemIdentity(item)
 }
 
 export function cartItemsWithFallback(
@@ -190,11 +198,11 @@ export function cartItemsWithFallback(
   if (fallbackCart.length === 0) {
     return liveCart
   }
-  const seen = new Set(liveCart.map(cartItemIdentity))
+  const seen = new Set(liveCart.map(cartSnapshotIdentity))
   return [
     ...liveCart,
     ...fallbackCart.filter((item) => {
-      const key = cartItemIdentity(item)
+      const key = cartSnapshotIdentity(item)
       if (seen.has(key)) {
         return false
       }
@@ -202,6 +210,27 @@ export function cartItemsWithFallback(
       return true
     }),
   ]
+}
+
+export function cartLineForAddedBlock(
+  cart: readonly CartItem[],
+  block: Extract<DiscoverChatBlock, { type: 'added' }>,
+): CartItem | undefined {
+  const exactCartLineIdentity = block.cartLineIdentity?.trim()
+  if (exactCartLineIdentity) {
+    const exactLine = cart.find((item) => cartItemIdentity(item) === exactCartLineIdentity)
+    if (exactLine) return exactLine
+  }
+
+  const exactOfferKey = block.offerKey?.trim()
+  if (exactOfferKey) {
+    return cart.find(
+      (item) => item.id === block.product.id && item.offerKey?.trim() === exactOfferKey,
+    )
+  }
+
+  if (exactCartLineIdentity) return undefined
+  return cart.find((item) => item.id === block.product.id && item.merchant === block.merchant)
 }
 
 export function productsWithFallback(

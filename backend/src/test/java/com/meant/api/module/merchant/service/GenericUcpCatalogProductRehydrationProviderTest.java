@@ -18,6 +18,7 @@ import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
@@ -97,6 +98,54 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         verify(detailsService).get(query.capture());
         assertThat(query.getValue().addressCountry()).isEqualTo("CZ");
         assertThat(query.getValue().language()).isEqualTo("en");
+    }
+
+    @Test
+    void selectionRequestKeepsPartialEffectiveOptionsAndAllCompatibleVariants() {
+        ProductDetailsResponse.Product product = mock(ProductDetailsResponse.Product.class);
+        List<ProductDetailsResponse.SelectedOption> partialSelection = List.of(
+                new ProductDetailsResponse.SelectedOption("Color", "Blue"));
+        List<ProductDetailsResponse.SelectedOption> blueMedium = List.of(
+                new ProductDetailsResponse.SelectedOption("Color", "Blue"),
+                new ProductDetailsResponse.SelectedOption("Size", "M"));
+        List<ProductDetailsResponse.SelectedOption> blueLarge = List.of(
+                new ProductDetailsResponse.SelectedOption("Color", "Blue"),
+                new ProductDetailsResponse.SelectedOption("Size", "L"));
+        ProductDetailsResponse.SelectedVariant featured = selected(
+                "variant-blue-m", "12.99", blueMedium);
+        List<ProductDetailsResponse.Variant> variants = List.of(
+                variant("variant-blue-m", "12.99", blueMedium),
+                variant("variant-blue-l", "13.99", blueLarge));
+        when(product.productId()).thenReturn("product-1");
+        when(product.title()).thenReturn("Current product");
+        when(product.selected()).thenReturn(partialSelection);
+        when(product.selectedOrFirstAvailableVariant()).thenReturn(featured);
+        when(product.variants()).thenReturn(variants);
+        when(detailsService.get(any())).thenReturn(new ProductDetailsResult(
+                "https://merchant.test/mcp", "redacted", product));
+        CatalogProductDetailSelection selection = new CatalogProductDetailSelection(
+                List.of(new ProductAttribute("variant-option", "Color", "Blue")),
+                List.of("Prefer cotton"));
+
+        CatalogProductDetailResult result = provider.getDetails(
+                reference(MERCHANT_ID, INTEGRATION_ID, "merchant-1", "variant-1", List.of(option("M"))),
+                selection,
+                new CatalogRehydrationContext("CZ", "en"));
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().resolvedReference().externalVariantReference().value())
+                .isEqualTo("variant-blue-m");
+        assertThat(result.details().selected()).containsExactly(
+                new com.meant.api.module.catalog.service.dto.RehydratedProductDetails.SelectedOption(
+                        "Color", "Blue"));
+        assertThat(result.details().variants()).extracting(variant -> variant.variantId())
+                .containsExactly("variant-blue-m", "variant-blue-l");
+        ArgumentCaptor<GetMerchantProductDetailsQuery> query =
+                ArgumentCaptor.forClass(GetMerchantProductDetailsQuery.class);
+        verify(detailsService).get(query.capture());
+        assertThat(query.getValue().selectionRequest()).isTrue();
+        assertThat(query.getValue().selectedOptions()).isEqualTo(selection.selectedOptions());
+        assertThat(query.getValue().preferences()).containsExactly("Prefer cotton");
     }
 
     @Test
@@ -547,22 +596,44 @@ class GenericUcpCatalogProductRehydrationProviderTest {
     }
 
     private ProductDetailsResponse.SelectedVariant selected(String id, String price, String size) {
+        return selected(
+                id,
+                price,
+                List.of(new ProductDetailsResponse.SelectedOption("Size", size)));
+    }
+
+    private ProductDetailsResponse.SelectedVariant selected(
+            String id,
+            String price,
+            List<ProductDetailsResponse.SelectedOption> options
+    ) {
         ProductDetailsResponse.SelectedVariant variant = mock(ProductDetailsResponse.SelectedVariant.class);
         when(variant.variantId()).thenReturn(id);
         when(variant.price()).thenReturn(price);
         when(variant.currency()).thenReturn("USD");
         when(variant.available()).thenReturn(true);
-        when(variant.selectedOptions()).thenReturn(List.of(new ProductDetailsResponse.SelectedOption("Size", size)));
+        when(variant.selectedOptions()).thenReturn(options);
         return variant;
     }
 
     private ProductDetailsResponse.Variant variant(String id, String price, String size) {
+        return variant(
+                id,
+                price,
+                List.of(new ProductDetailsResponse.SelectedOption("Size", size)));
+    }
+
+    private ProductDetailsResponse.Variant variant(
+            String id,
+            String price,
+            List<ProductDetailsResponse.SelectedOption> options
+    ) {
         ProductDetailsResponse.Variant variant = mock(ProductDetailsResponse.Variant.class);
         when(variant.variantId()).thenReturn(id);
         when(variant.price()).thenReturn(price);
         when(variant.currency()).thenReturn("USD");
         when(variant.available()).thenReturn(true);
-        when(variant.selectedOptions()).thenReturn(List.of(new ProductDetailsResponse.SelectedOption("Size", size)));
+        when(variant.selectedOptions()).thenReturn(options);
         return variant;
     }
 

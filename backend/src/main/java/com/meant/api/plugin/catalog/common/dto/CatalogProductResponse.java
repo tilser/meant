@@ -26,6 +26,9 @@ public record CatalogProductResponse(
         @JsonAlias({"listPriceRange", "compare_at_price_range", "compareAtPriceRange"})
         PriceRange listPriceRange,
         List<Variant> variants,
+        @JsonProperty("total_variants")
+        @JsonAlias("totalVariants")
+        Integer totalVariants,
         List<Option> options,
         List<Media> media,
         List<Category> categories,
@@ -37,6 +40,45 @@ public record CatalogProductResponse(
         List<Collection> collections,
         List<SelectedOption> selected
 ) {
+
+    public CatalogProductResponse(
+            String id,
+            String title,
+            Description description,
+            String url,
+            String handle,
+            PriceRange priceRange,
+            PriceRange listPriceRange,
+            List<Variant> variants,
+            List<Option> options,
+            List<Media> media,
+            List<Category> categories,
+            List<String> tags,
+            Object metadata,
+            Boolean giftCard,
+            List<Collection> collections,
+            List<SelectedOption> selected
+    ) {
+        this(
+                id,
+                title,
+                description,
+                url,
+                handle,
+                priceRange,
+                listPriceRange,
+                variants,
+                null,
+                options,
+                media,
+                categories,
+                tags,
+                metadata,
+                giftCard,
+                collections,
+                selected
+        );
+    }
 
     public ProductDetailsResponse.Product toProductDetailsProduct() {
         List<Media> safeMedia = safeList(media);
@@ -55,8 +97,13 @@ public record CatalogProductResponse(
                 safeCategories.stream().filter(Objects::nonNull).map(Category::toDetailsCategory).filter(Objects::nonNull).toList(),
                 safeList(tags).stream().filter(value -> value != null && !value.isBlank()).distinct().toList(),
                 safeList(options).stream().filter(Objects::nonNull).map(Option::toDetailsOption).filter(Objects::nonNull).toList(),
+                safeList(selected).stream()
+                        .filter(Objects::nonNull)
+                        .map(SelectedOption::toDetailsSelectedOption)
+                        .filter(Objects::nonNull)
+                        .toList(),
                 safeVariants.stream().filter(Objects::nonNull).map(variant -> variant.toDetailsVariant(selected)).filter(Objects::nonNull).toList(),
-                safeVariants.isEmpty() ? null : safeVariants.size(),
+                totalVariants,
                 priceRange == null ? null : priceRange.toDetailsPriceRange(),
                 listPriceRange == null ? null : listPriceRange.toDetailsPriceRange(),
                 moneyOrRange(listPriceRange),
@@ -82,12 +129,40 @@ public record CatalogProductResponse(
     }
 
     private Variant selectedVariant() {
+        List<String> effectiveSelection = selectedOptionKeys(selected);
+        if (!effectiveSelection.isEmpty()) {
+            Variant effective = safeList(variants).stream()
+                    .filter(Objects::nonNull)
+                    .filter(variant -> selectedOptionKeys(variant.options()).equals(effectiveSelection))
+                    .findFirst()
+                    .orElse(null);
+            if (effective != null) {
+                return effective;
+            }
+        }
         return safeList(variants).stream()
                 .filter(variant -> variant != null
                         && variant.availability() != null
                         && Boolean.TRUE.equals(variant.availability().available()))
                 .findFirst()
                 .orElseGet(() -> safeList(variants).stream().filter(Objects::nonNull).findFirst().orElse(null));
+    }
+
+    private static List<String> selectedOptionKeys(List<SelectedOption> options) {
+        return safeList(options).stream()
+                .filter(Objects::nonNull)
+                .map(CatalogProductResponse::selectedOptionKey)
+                .filter(Objects::nonNull)
+                .sorted()
+                .toList();
+    }
+
+    private static String selectedOptionKey(SelectedOption option) {
+        String name = option.name();
+        String value = firstText(option.label(), option.value());
+        return name == null || name.isBlank() || value == null || value.isBlank()
+                ? null
+                : name + "\u0000" + value;
     }
 
     private List<String> collectionLabels() {
@@ -325,11 +400,15 @@ public record CatalogProductResponse(
     ) {
 
         ProductDetailsResponse.Option toDetailsOption() {
-            List<String> labels = safeList(values).stream()
-                    .map(OptionValue::labelValue)
-                    .filter(value -> value != null && !value.isBlank())
+            List<ProductDetailsResponse.OptionValue> details = safeList(values).stream()
+                    .filter(Objects::nonNull)
+                    .map(OptionValue::toDetailsOptionValue)
+                    .filter(Objects::nonNull)
                     .toList();
-            return name == null && labels.isEmpty() ? null : new ProductDetailsResponse.Option(name, labels);
+            List<String> labels = details.stream().map(ProductDetailsResponse.OptionValue::value).toList();
+            return name == null && labels.isEmpty()
+                    ? null
+                    : new ProductDetailsResponse.Option(name, labels, details);
         }
     }
 
@@ -337,11 +416,24 @@ public record CatalogProductResponse(
     public record OptionValue(
             String label,
             String value,
-            String name
+            String name,
+            Boolean available,
+            Boolean exists
     ) {
+
+        public OptionValue(String label, String value, String name) {
+            this(label, value, name, null, null);
+        }
 
         String labelValue() {
             return firstText(firstText(label, value), name);
+        }
+
+        ProductDetailsResponse.OptionValue toDetailsOptionValue() {
+            String resolved = labelValue();
+            return resolved == null || resolved.isBlank()
+                    ? null
+                    : new ProductDetailsResponse.OptionValue(resolved, available, exists);
         }
     }
 

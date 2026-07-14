@@ -2,7 +2,6 @@ import { type TouchEvent as ReactTouchEvent, useCallback, useEffect, useRef, use
 
 import {
   getMerchantProductDetails,
-  type CanonicalOfferProfile,
   type MerchantProductDetailsProfile,
   type MerchantProductVariantProfile,
   type ProductAttributeProfile,
@@ -24,7 +23,6 @@ import {
   prefLabel,
   productMerchantCount,
   resolveAsk,
-  minorUnitsToMajor,
 } from '../utils'
 import { ProductPriceLine } from './ProductCard'
 import {
@@ -40,8 +38,9 @@ import {
 } from './productMapping'
 import { merchantProductDetailRequest } from './productDetailLoading'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
-import { GroupedOfferSelector } from './GroupedProductModal'
+import { GroupedOfferSelector, type ProductPurchaseSelection } from './GroupedProductModal'
 import { containModalTabFocus } from './modalFocusTrap'
+import { findSelectedVariant } from './variantSelection'
 
 type ProductDetailLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 
@@ -155,56 +154,6 @@ function messageRows(
   )
 }
 
-function selectedOptionValue(
-  variant: MerchantProductVariantProfile,
-  optionName: string,
-): string | null {
-  const normalizedName = optionName.trim().toLowerCase()
-  return (
-    variant.selectedOptions?.find(
-      (option) => option?.name?.trim()?.toLowerCase() === normalizedName,
-    )?.value ?? null
-  )
-}
-
-function optionAvailability(
-  variants: readonly MerchantProductVariantProfile[],
-  optionName: string,
-  optionValue: string,
-): { label: string; className: string } {
-  const matchingVariants = variants.filter(
-    (variant) =>
-      Boolean(variant) &&
-      selectedOptionValue(variant, optionName)?.trim()?.toLowerCase() ===
-        optionValue.trim().toLowerCase(),
-  )
-  if (matchingVariants.length === 0) {
-    return { label: 'Listed', className: 'unknown' }
-  }
-  const availableCount = matchingVariants.filter((variant) => variant.available === true).length
-  if (availableCount > 0) {
-    return {
-      label:
-        availableCount === matchingVariants.length
-          ? 'Available'
-          : `${availableCount}/${matchingVariants.length} available`,
-      className: 'available',
-    }
-  }
-  if (matchingVariants.every((variant) => variant.available === false)) {
-    return { label: 'Unavailable', className: 'unavailable' }
-  }
-  return { label: 'Check merchant', className: 'unknown' }
-}
-
-function variantOptionSummary(variant: MerchantProductVariantProfile): string {
-  const options = productSelectedOptionsFromProfiles(variant.selectedOptions)
-  if (options.length > 0) {
-    return options.map((option) => `${option.name}: ${option.value}`).join(' / ')
-  }
-  return variant.title?.trim() || 'Default'
-}
-
 function availabilityLabel(value: boolean | null | undefined): string {
   if (value === true) {
     return 'Available'
@@ -225,47 +174,6 @@ function availabilityClass(value: boolean | null | undefined): string {
   return 'unknown'
 }
 
-function canonicalOfferAvailability(offer: CanonicalOfferProfile): boolean | null {
-  switch (offer.availability.status) {
-    case 'IN_STOCK':
-    case 'PREORDER':
-    case 'BACKORDER':
-      return true
-    case 'OUT_OF_STOCK':
-    case 'DISCONTINUED':
-      return false
-    default:
-      return null
-  }
-}
-
-function canonicalOfferVariant(offer: CanonicalOfferProfile): MerchantProductVariantProfile {
-  const price = offer.price ? minorUnitsToMajor(offer.price.minorUnits, offer.price.currency) : null
-  const listPrice = offer.listPrice
-    ? minorUnitsToMajor(offer.listPrice.minorUnits, offer.listPrice.currency)
-    : null
-  return {
-    variantId: offer.identity.externalVariantIdentity?.value ?? offer.key,
-    handle: null,
-    title: offer.variantTitle ?? offer.merchantName ?? null,
-    description: null,
-    url: null,
-    priceAmount: price === null ? null : String(price),
-    priceCurrency: offer.price?.currency ?? null,
-    listPriceAmount: listPrice === null ? null : String(listPrice),
-    listPriceCurrency: offer.listPrice?.currency ?? null,
-    sku: null,
-    imageUrl: null,
-    imageAltText: null,
-    media: [],
-    available: canonicalOfferAvailability(offer),
-    selectedOptions: offer.selectedOptions,
-    categories: [],
-    tags: [],
-    attributes: [],
-  }
-}
-
 export function ProductModal({
   product,
   deliveryLocations,
@@ -276,6 +184,7 @@ export function ProductModal({
   inCompare,
   onClose,
   onToggleSave,
+  onUpdateSavedChoice,
   onCompare,
   onAddToCart,
   onAddOfferKey,
@@ -296,9 +205,10 @@ export function ProductModal({
   inCompare: boolean
   onClose: () => void
   onToggleSave: (product: Product) => void
+  onUpdateSavedChoice?: (product: Product, offerKey: string) => void
   onCompare: (product: Product) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
-  onAddOfferKey?: (offerKey: string) => Promise<boolean>
+  onAddOfferKey?: (product: Product, offerKey: string) => Promise<boolean>
   onRefreshProduct?: (product: Product) => void
   onResearch?: (query: string) => void
   onAskInChat?: (product: Product, question: string) => void
@@ -318,15 +228,7 @@ export function ProductModal({
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
-  const [canonicalOfferSelection, setCanonicalOfferSelection] = useState<{
-    offerKey: string | null
-    canAdd: boolean
-    loading: boolean
-  }>({
-    offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null,
-    canAdd: false,
-    loading: Boolean(canonicalProductKey),
-  })
+  const [purchaseSelection, setPurchaseSelection] = useState<ProductPurchaseSelection | null>(null)
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
   const [thumbnailPage, setThumbnailPage] = useState(0)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
@@ -372,25 +274,20 @@ export function ProductModal({
     setAdded(false)
     setAdding(false)
     setAddError(null)
-    setCanonicalOfferSelection({
-      offerKey: product?.canonicalProduct?.recommendedOfferKey ?? null,
-      canAdd: false,
-      loading: Boolean(canonicalProductKey),
-    })
+    setPurchaseSelection(null)
   }, [canonicalProductKey, product?.canonicalProduct?.recommendedOfferKey, product?.id])
 
-  const handleCanonicalOfferSelection = useCallback(
-    (selection: { offerKey: string | null; canAdd: boolean; loading: boolean }) => {
-      setCanonicalOfferSelection((current) =>
-        current.offerKey === selection.offerKey &&
-        current.canAdd === selection.canAdd &&
-        current.loading === selection.loading
-          ? current
-          : selection,
-      )
-    },
-    [],
-  )
+  const handlePurchaseSelection = useCallback((selection: ProductPurchaseSelection) => {
+    setPurchaseSelection(selection)
+    const variantImage = selection.details
+      ? findSelectedVariant(
+          selection.details.variants,
+          selection.selectedVariantId,
+          selection.selectedOptions,
+        )?.imageUrl
+      : null
+    setSelectedMediaUrl(variantImage ?? null)
+  }, [])
 
   useEffect(() => {
     if (!merchantDetailMerchantId || !merchantDetailProductId) {
@@ -509,7 +406,16 @@ export function ProductModal({
 
   const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = refreshingSavedOffers ? [] : offers.length > 0 ? offers : product.offers
-  const modalMedia = mergeProductMedia(product, merchantDetails)
+  const activeMerchantDetails = purchaseSelection?.details ?? merchantDetails
+  const selectedPurchaseVariant = activeMerchantDetails
+    ? findSelectedVariant(
+        activeMerchantDetails.variants,
+        purchaseSelection?.selectedVariantId ?? activeMerchantDetails.selectedVariantId,
+        purchaseSelection?.selectedOptions ?? activeMerchantDetails.selectedOptions,
+      )
+    : null
+  const actionProduct = purchaseSelection?.actionProduct ?? product
+  const modalMedia = mergeProductMedia(actionProduct, activeMerchantDetails)
   const thumbnailPageCount = Math.ceil(modalMedia.length / MODAL_THUMBNAIL_PAGE_SIZE)
   const boundedThumbnailPage = Math.min(thumbnailPage, Math.max(thumbnailPageCount - 1, 0))
   const thumbnailStart = boundedThumbnailPage * MODAL_THUMBNAIL_PAGE_SIZE
@@ -524,94 +430,92 @@ export function ProductModal({
   const selectedImageUrl = selectedMedia?.type?.toLowerCase() === 'image' ? selectedMedia.url : null
   const modalImageUrl =
     selectedImageUrl ??
-    merchantDetails?.selectedVariantImageUrl ??
-    merchantDetails?.imageUrl ??
+    selectedPurchaseVariant?.imageUrl ??
+    activeMerchantDetails?.selectedVariantImageUrl ??
+    activeMerchantDetails?.imageUrl ??
     product.imageUrl
   const curatorTake = productCuratedTake(product, preferences)
   const curatorAdvantages = productCuratedAdvantages(product, preferences)
   const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
   const hasPreferenceMatches = product.satisfies.length > 0 || product.misses.length > 0
   const detailDescription = stripHtml(
-    merchantDetails?.description || product.detailDescription || '',
+    activeMerchantDetails?.description || product.detailDescription || '',
   )
-  const merchantDetailOptions = productOptionsFromProfiles(merchantDetails?.options ?? [])
+  const merchantDetailOptions = productOptionsFromProfiles(activeMerchantDetails?.options ?? [])
   const detailOptions =
     merchantDetailOptions.length > 0 ? merchantDetailOptions : [...(product.detailOptions ?? [])]
   const merchantSelectedOptions = productSelectedOptionsFromProfiles(
-    merchantDetails?.selectedOptions ?? [],
+    purchaseSelection?.selectedOptions ?? activeMerchantDetails?.selectedOptions ?? [],
   )
   const selectedOptions =
     merchantSelectedOptions.length > 0
       ? merchantSelectedOptions
       : [...(product.selectedOptions ?? [])]
-  const detailVariants = merchantDetails
-    ? merchantDetails.variants.filter((variant): variant is MerchantProductVariantProfile =>
+  const detailVariants = activeMerchantDetails
+    ? activeMerchantDetails.variants.filter((variant): variant is MerchantProductVariantProfile =>
         Boolean(variant),
       )
-    : refreshingSavedOffers
-      ? []
-      : (product.canonicalProduct?.offers.map(canonicalOfferVariant) ?? [])
-  const availableVariantCount = detailVariants.filter(
-    (variant) => variant.available === true,
-  ).length
-  const unavailableVariantCount = detailVariants.filter(
-    (variant) => variant.available === false,
-  ).length
-  const unknownVariantCount = Math.max(
-    detailVariants.length - availableVariantCount - unavailableVariantCount,
-    0,
-  )
+    : []
   const merchantDetailCategories = cleanValues(
-    merchantDetails?.categories.map((category) => category?.value),
+    activeMerchantDetails?.categories.map((category) => category?.value),
   )
   const detailCategories =
     merchantDetailCategories.length > 0
       ? merchantDetailCategories
       : cleanValues(product.catalogCategories?.map((category) => category.value))
-  const detailTags = cleanValues(merchantDetails?.tags)
-  const merchantDetailSkus = cleanValues(merchantDetails?.skus)
+  const detailTags = cleanValues(activeMerchantDetails?.tags)
+  const merchantDetailSkus = cleanValues(activeMerchantDetails?.skus)
   const detailSkus = merchantDetailSkus.length > 0 ? merchantDetailSkus : cleanValues(product.skus)
-  const merchantDetailMaterials = cleanValues(merchantDetails?.materials)
+  const merchantDetailMaterials = cleanValues(activeMerchantDetails?.materials)
   const detailMaterials =
     merchantDetailMaterials.length > 0 ? merchantDetailMaterials : cleanValues(product.materials)
-  const merchantDetailCertifications = cleanValues(merchantDetails?.certifications)
+  const merchantDetailCertifications = cleanValues(activeMerchantDetails?.certifications)
   const detailCertifications =
     merchantDetailCertifications.length > 0
       ? merchantDetailCertifications
       : cleanValues(product.certifications)
-  const merchantDetailCollections = cleanValues(merchantDetails?.collections)
+  const merchantDetailCollections = cleanValues(activeMerchantDetails?.collections)
   const detailCollections =
     merchantDetailCollections.length > 0
       ? merchantDetailCollections
       : cleanValues(product.collections)
-  const merchantDetailAttributes = attributeRows(merchantDetails?.attributes)
+  const merchantDetailAttributes = attributeRows(activeMerchantDetails?.attributes)
   const detailAttributes =
     merchantDetailAttributes.length > 0
       ? merchantDetailAttributes
       : attributeRows(product.catalogAttributes)
-  const detailMessages = messageRows(merchantDetails?.messages)
+  const detailMessages = messageRows(activeMerchantDetails?.messages)
   const selectedVariantPrice = detailMoney(
-    merchantDetails?.selectedVariantPriceAmount,
-    merchantDetails?.selectedVariantPriceCurrency,
+    selectedPurchaseVariant?.priceAmount ?? activeMerchantDetails?.selectedVariantPriceAmount,
+    selectedPurchaseVariant?.priceCurrency ?? activeMerchantDetails?.selectedVariantPriceCurrency,
   )
   const selectedVariantListPrice = detailMoney(
-    merchantDetails?.selectedVariantListPriceAmount,
-    merchantDetails?.selectedVariantListPriceCurrency,
+    selectedPurchaseVariant?.listPriceAmount ??
+      activeMerchantDetails?.selectedVariantListPriceAmount,
+    selectedPurchaseVariant?.listPriceCurrency ??
+      activeMerchantDetails?.selectedVariantListPriceCurrency,
   )
   const selectedVariantAvailability =
-    merchantDetails?.selectedVariantAvailable ?? product.selectedVariantAvailable
+    selectedPurchaseVariant?.available ??
+    activeMerchantDetails?.selectedVariantAvailable ??
+    product.selectedVariantAvailable
+  const selectedVariantSku =
+    selectedPurchaseVariant?.sku ?? activeMerchantDetails?.selectedVariantSku
+  const selectedVariantTitle =
+    selectedPurchaseVariant?.title ?? activeMerchantDetails?.selectedVariantTitle
   const hasSelectedVariantFacts =
     selectedOptions.length > 0 ||
-    Boolean(merchantDetails?.selectedVariantSku) ||
+    Boolean(selectedVariantTitle) ||
+    Boolean(selectedPurchaseVariant?.sku ?? activeMerchantDetails?.selectedVariantSku) ||
     Boolean(selectedVariantPrice) ||
     (selectedVariantAvailability !== null && selectedVariantAvailability !== undefined)
   const listPriceRange =
-    merchantDetails?.listPriceMin && merchantDetails?.listPriceMax
-      ? sameAmount(merchantDetails.listPriceMin, merchantDetails.listPriceMax)
-        ? detailMoney(merchantDetails.listPriceMin, merchantDetails.listPriceCurrency)
-        : `${detailMoney(merchantDetails.listPriceMin, merchantDetails.listPriceCurrency)} - ${detailMoney(
-            merchantDetails.listPriceMax,
-            merchantDetails.listPriceCurrency,
+    activeMerchantDetails?.listPriceMin && activeMerchantDetails?.listPriceMax
+      ? sameAmount(activeMerchantDetails.listPriceMin, activeMerchantDetails.listPriceMax)
+        ? detailMoney(activeMerchantDetails.listPriceMin, activeMerchantDetails.listPriceCurrency)
+        : `${detailMoney(activeMerchantDetails.listPriceMin, activeMerchantDetails.listPriceCurrency)} - ${detailMoney(
+            activeMerchantDetails.listPriceMax,
+            activeMerchantDetails.listPriceCurrency,
           )}`
       : null
   const detailDataGroups = [
@@ -622,8 +526,8 @@ export function ProductModal({
     {
       label: 'Identifiers',
       values: cleanValues([
-        merchantDetails?.handle ? `Handle: ${merchantDetails.handle}` : null,
-        merchantDetails?.productId ? `Product: ${merchantDetails.productId}` : null,
+        activeMerchantDetails?.handle ? `Handle: ${activeMerchantDetails.handle}` : null,
+        activeMerchantDetails?.productId ? `Product: ${activeMerchantDetails.productId}` : null,
         ...detailSkus.map((sku) => `SKU: ${sku}`),
       ]),
     },
@@ -639,7 +543,7 @@ export function ProductModal({
     detailMessages.length > 0 ||
     detailCategories.length > 0 ||
     hasMerchantData ||
-    Boolean(merchantDetails?.totalVariants) ||
+    Boolean(activeMerchantDetails?.totalVariants) ||
     detailLoadState === 'error'
   const showProductDetailLoading =
     detailLoadState === 'loading' &&
@@ -672,15 +576,21 @@ export function ProductModal({
       { role: 'ai', text: resolveAsk(question, product, preferences) },
     ])
   }
-  const selectedOffer = bestOffer(product, deliveryLocations)
+  const bestAvailableOffer = bestOffer(product, deliveryLocations)
+  const durableSavedOffer = product.offers.find((offer) => offer.offerKey?.trim()) ?? null
+  const selectedOffer = saved ? (durableSavedOffer ?? bestAvailableOffer) : bestAvailableOffer
   const isCanonicalProduct = Boolean(product.canonicalProduct) && !refreshingSavedOffers
-  const selectedServerOfferKey = isCanonicalProduct
-    ? canonicalOfferSelection.offerKey
+  const hasVariantSelector =
+    !refreshingSavedOffers &&
+    (isCanonicalProduct || Boolean(product.rehydratedDetails && durableSavedOffer))
+  const selectedServerOfferKey = hasVariantSelector
+    ? (purchaseSelection?.offerKey ?? null)
     : selectedOffer?.offerKey?.trim() || null
+  const saveDisabled = savePending || (!saved && hasVariantSelector && !selectedServerOfferKey)
   const canAddToCart =
     !refreshingSavedOffers &&
-    (isCanonicalProduct
-      ? canonicalOfferSelection.canAdd && Boolean(onAddOfferKey)
+    (hasVariantSelector
+      ? Boolean(purchaseSelection?.canAdd && selectedServerOfferKey && onAddOfferKey)
       : saved
         ? Boolean(
             selectedOffer &&
@@ -702,9 +612,9 @@ export function ProductModal({
       ? 'Adding...'
       : refreshingSavedOffers
         ? 'Loading offers…'
-        : isCanonicalProduct && canonicalOfferSelection.loading
+        : hasVariantSelector && purchaseSelection?.loading !== false
           ? 'Loading offers…'
-          : isCanonicalProduct && !canAddToCart
+          : hasVariantSelector && !canAddToCart
             ? 'Unavailable'
             : !selectedOffer || selectedOffer.available === false
               ? 'Unavailable'
@@ -719,7 +629,7 @@ export function ProductModal({
       setAdding(true)
       setAddError(null)
       try {
-        const addedToCart = await onAddOfferKey(selectedServerOfferKey)
+        const addedToCart = await onAddOfferKey(actionProduct, selectedServerOfferKey)
         if (!addedToCart) {
           setAddError('Could not add this exact merchant offer to cart.')
           return
@@ -918,23 +828,42 @@ export function ProductModal({
             </div>
             <h2 className="mt-modal-name">{product.name}</h2>
             <div className="mt-modal-price-row">
-              <ProductPriceLine
-                product={product}
-                deliveryLocations={deliveryLocations}
-                className="mt-modal-price"
-              />
+              {selectedVariantPrice ? (
+                <span className="mt-modal-price">{selectedVariantPrice}</span>
+              ) : (
+                <ProductPriceLine
+                  product={actionProduct}
+                  deliveryLocations={deliveryLocations}
+                  className="mt-modal-price"
+                />
+              )}
               <span className="mt-mono mt-modal-stores">
                 · {productMerchantCount(product, deliveryLocations)} stores
               </span>
             </div>
-            <InventorySignalBadge product={product} />
+            <InventorySignalBadge product={actionProduct} />
+            {hasVariantSelector ? (
+              <GroupedOfferSelector
+                product={product}
+                onResearch={(query) => onResearch?.(query)}
+                onSelectionChange={handlePurchaseSelection}
+              />
+            ) : null}
             <div className="mt-modal-actions">
               <button
                 className={`mt-act mt-act-icon ${saved ? 'on' : ''}`}
                 type="button"
-                onClick={() => onToggleSave(product)}
-                disabled={savePending}
-                aria-label={savePending ? 'Saving saved product' : saved ? 'Saved' : 'Save'}
+                onClick={() => onToggleSave(saved ? product : actionProduct)}
+                disabled={saveDisabled}
+                aria-label={
+                  savePending
+                    ? 'Saving saved product'
+                    : saved
+                      ? 'Saved'
+                      : saveDisabled
+                        ? 'Choose an exact item before saving'
+                        : 'Save'
+                }
               >
                 <HeartIcon filled={saved} />
               </button>
@@ -959,6 +888,16 @@ export function ProductModal({
                 ) : null}
               </button>
             </div>
+            {saved && purchaseSelection?.changedFromSaved && selectedServerOfferKey ? (
+              <button
+                className="mt-act mt-act-ghost mt-update-saved-choice"
+                type="button"
+                disabled={savePending || !onUpdateSavedChoice}
+                onClick={() => onUpdateSavedChoice?.(actionProduct, selectedServerOfferKey)}
+              >
+                {savePending ? 'Updating saved choice…' : 'Update saved choice'}
+              </button>
+            ) : null}
             {addError ? <div className="mt-cart-inline-error">{addError}</div> : null}
             {refreshingSavedOffers && !addError ? (
               <div className="mt-cart-inline-error muted" role="status">
@@ -1026,6 +965,12 @@ export function ProductModal({
                 ) : null}
                 {hasSelectedVariantFacts ? (
                   <div className="mt-product-detail-facts">
+                    {selectedVariantTitle ? (
+                      <span className="mt-product-detail-fact">
+                        <span className="mt-mono">Variant</span>
+                        {selectedVariantTitle}
+                      </span>
+                    ) : null}
                     {selectedOptions.map((option) => (
                       <span
                         className="mt-product-detail-fact"
@@ -1035,10 +980,10 @@ export function ProductModal({
                         {option.value}
                       </span>
                     ))}
-                    {merchantDetails?.selectedVariantSku ? (
+                    {selectedVariantSku ? (
                       <span className="mt-product-detail-fact">
                         <span className="mt-mono">SKU</span>
-                        {merchantDetails.selectedVariantSku}
+                        {selectedVariantSku}
                       </span>
                     ) : null}
                     {selectedVariantPrice ? (
@@ -1083,115 +1028,6 @@ export function ProductModal({
                     {detailLoadError || 'Latest product details are unavailable right now.'}
                   </p>
                 ) : null}
-              </section>
-            ) : null}
-
-            {detailOptions.length > 0 ? (
-              <section className="mt-block">
-                <div className="mt-block-label mt-mono">Options and availability</div>
-                <div className="mt-product-option-groups">
-                  {detailOptions.map((option) => (
-                    <div className="mt-product-option-group" key={option.name}>
-                      <div className="mt-product-option-head">
-                        <span className="mt-mono">{option.name}</span>
-                        <span>
-                          {option.values.length} value{option.values.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                      <div className="mt-product-option-values">
-                        {option.values.map((value) => {
-                          const availability = optionAvailability(
-                            detailVariants,
-                            option.name,
-                            value,
-                          )
-                          return (
-                            <span
-                              className={`mt-product-option-chip ${availability.className}`}
-                              key={`${option.name}-${value}`}
-                            >
-                              <span>{value}</span>
-                              <span className="mt-mono">{availability.label}</span>
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {detailOptions.length > 0 ? (
-                  <p className="mt-product-detail-muted mt-mono">
-                    {merchantDetails?.totalVariants
-                      ? `${merchantDetails.totalVariants.toLocaleString()} merchant variants`
-                      : `${detailVariants.length.toLocaleString()} merchant variants`}
-                    {availableVariantCount > 0 ? ` / ${availableVariantCount} available` : ''}
-                    {unavailableVariantCount > 0 ? ` / ${unavailableVariantCount} unavailable` : ''}
-                    {unknownVariantCount > 0 ? ` / ${unknownVariantCount} check merchant` : ''}
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
-
-            {detailVariants.length > 0 ? (
-              <section className="mt-block">
-                <div className="mt-block-label mt-mono">Variants</div>
-                <div className="mt-product-variant-table" role="table">
-                  <div className="mt-product-variant-head" role="row">
-                    <span>Variant</span>
-                    <span>Options</span>
-                    <span>Price</span>
-                    <span>Availability</span>
-                  </div>
-                  <div className="mt-product-variant-rows">
-                    {detailVariants.map((variant, index) => {
-                      const price = detailMoney(variant.priceAmount, variant.priceCurrency)
-                      const listPrice = detailMoney(
-                        variant.listPriceAmount,
-                        variant.listPriceCurrency,
-                      )
-                      const variantTitle = variant.title?.trim() || `Variant ${index + 1}`
-                      return (
-                        <div
-                          className="mt-product-variant-row"
-                          key={variant.variantId || `${variantTitle}-${index}`}
-                          role="row"
-                        >
-                          <div className="mt-product-variant-main">
-                            {variant.imageUrl ? (
-                              <img
-                                src={variant.imageUrl}
-                                alt={variant.imageAltText || variantTitle}
-                                loading="lazy"
-                              />
-                            ) : null}
-                            <div>
-                              <div className="mt-product-variant-title">{variantTitle}</div>
-                              {variant.sku ? (
-                                <div className="mt-product-variant-sku mt-mono">{variant.sku}</div>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="mt-product-variant-options">
-                            {variantOptionSummary(variant)}
-                          </div>
-                          <div className="mt-product-variant-price">
-                            {listPrice ? <s>{listPrice}</s> : null}
-                            <span>{price ?? 'See merchant'}</span>
-                          </div>
-                          <div>
-                            <span
-                              className={`mt-product-variant-availability ${availabilityClass(
-                                variant.available,
-                              )}`}
-                            >
-                              {availabilityLabel(variant.available)}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
               </section>
             ) : null}
 
@@ -1267,15 +1103,7 @@ export function ProductModal({
 
             <ProductReviewsPanel product={product} />
 
-            {isCanonicalProduct ? (
-              <div>
-                <GroupedOfferSelector
-                  product={product}
-                  onResearch={(query) => onResearch?.(query)}
-                  onSelectionChange={handleCanonicalOfferSelection}
-                />
-              </div>
-            ) : (
+            {!hasVariantSelector ? (
               <section className="mt-block">
                 <div className="mt-block-label mt-mono">Available offers</div>
                 <div className="mt-offers">
@@ -1317,7 +1145,7 @@ export function ProductModal({
                   )}
                 </div>
               </section>
-            )}
+            ) : null}
           </div>
         </div>
 

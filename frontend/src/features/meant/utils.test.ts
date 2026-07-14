@@ -10,6 +10,7 @@ import {
   cartDeliveryOptionAmount,
   cartDeliveryOptions,
   cartGroups,
+  cartItemIdentity,
   cartLines,
   cartMerchantKey,
   cartRebuildItems,
@@ -160,6 +161,23 @@ describe('formatting and lookup utilities', () => {
       'whole.test',
     )
     expect(cartMerchantKey({ merchant: 'Whole Foods' })).toBe('whole foods')
+    expect(
+      cartMerchantKey({
+        merchant: 'Same display name',
+        merchantScopeKey: 'shopify:external:merchant:shop-1',
+      }),
+    ).toBe('shopify:external:merchant:shop-1')
+  })
+
+  test('addresses sibling variants by exact offer or confirmed cart line identity', () => {
+    const base = { id: 'tee', merchant: 'Merchant', qty: 1 }
+
+    expect(cartItemIdentity({ ...base, offerKey: 'offer-medium' })).not.toBe(
+      cartItemIdentity({ ...base, offerKey: 'offer-large' }),
+    )
+    expect(cartItemIdentity({ ...base, cartLineId: 'line-medium' })).not.toBe(
+      cartItemIdentity({ ...base, cartLineId: 'line-large' }),
+    )
   })
 
   test('firstUrl returns the first non-empty trimmed URL', () => {
@@ -573,6 +591,70 @@ describe('cart and order utilities', () => {
     expect(order.savedNote).toBe('Rounded')
   })
 
+  test('totals exact variants without falling back to a same-name sibling offer', () => {
+    const variantProduct = productWith({
+      id: 'variant-order-product',
+      offers: [
+        {
+          offerKey: 'offer-small',
+          productVariantId: 'variant-small',
+          merchant: 'Shared merchant',
+          price: 10,
+          delivery: 'Standard',
+        },
+        {
+          offerKey: 'offer-large',
+          productVariantId: 'variant-large',
+          merchant: 'Shared merchant',
+          price: 18,
+          delivery: 'Standard',
+        },
+      ],
+    })
+
+    expect(
+      orderTotal(
+        {
+          id: 'MNT-variant',
+          date: '2026-07-14',
+          status: 'Processing',
+          statusNote: '',
+          items: [
+            {
+              id: variantProduct.id,
+              merchant: 'Shared merchant',
+              offerKey: 'offer-small',
+              unitPriceAmount: '7.50',
+              qty: 2,
+            },
+            {
+              id: variantProduct.id,
+              merchant: 'Shared merchant',
+              offerKey: 'offer-large',
+              qty: 1,
+            },
+            {
+              id: variantProduct.id,
+              merchant: 'Shared merchant',
+              productVariantId: 'variant-small',
+              qty: 2,
+            },
+            {
+              id: variantProduct.id,
+              merchant: 'Shared merchant',
+              offerKey: 'missing-exact-offer',
+              qty: 1,
+            },
+            { id: variantProduct.id, merchant: 'Shared merchant', qty: 1 },
+          ],
+          saved: 0,
+          savedNote: '',
+        },
+        [variantProduct],
+      ),
+    ).toBe(63)
+  })
+
   test('reads and writes storage safely', () => {
     const originalWindow = globalThis.window
     const store = new Map<string, string>()
@@ -603,6 +685,29 @@ describe('cart and order utilities', () => {
 })
 
 describe('cart delivery groups', () => {
+  test('keeps same-name merchants in separate authoritative cart scopes', () => {
+    const groups = cartGroups([
+      {
+        ...line([]),
+        merchant: 'Shared Store',
+        merchantScopeKey: 'shopify:external:merchant:shared-store',
+      },
+      {
+        ...line([]),
+        merchant: 'Shared Store',
+        merchantScopeKey: 'etsy:external:merchant:shared-store',
+      },
+    ])
+
+    expect(groups).toHaveLength(2)
+    expect(groups.map((cartGroup) => cartGroup.merchantKey)).toEqual([
+      'shopify:external:merchant:shared-store',
+      'etsy:external:merchant:shared-store',
+    ])
+    expect(groups.map((cartGroup) => cartGroup.merchant)).toEqual(['Shared Store', 'Shared Store'])
+    expect(groups.every((cartGroup) => cartGroup.items.length === 1)).toBe(true)
+  })
+
   test('ignores stale zero remote totals when cart lines have prices', () => {
     const [cartGroup] = cartGroups([
       {

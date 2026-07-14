@@ -10,6 +10,7 @@ mock.module('../../../lib/apiClient', () => ({
   getCanonicalProductDetail: () => new Promise(() => undefined),
   getMerchantProductDetails: () => new Promise(() => undefined),
   getProductReviews: () => new Promise(() => undefined),
+  selectProductVariant: () => new Promise(() => undefined),
 }))
 
 const { ProductModal } = await import('./ProductModal')
@@ -146,7 +147,7 @@ describe('canonical product detail', () => {
     expect(markup).toContain('Preference match')
     expect(markup).toContain('Add to compare')
     expect(markup).toContain('Loading offers…')
-    expect(markup).toContain('Loading merchant availability…')
+    expect(markup).toContain('Loading current choices…')
     expect(markup).not.toContain('Add selected offer to cart')
   })
 
@@ -393,6 +394,13 @@ describe('canonical product detail', () => {
       id: 'saved-with-detail',
       canonicalProduct: undefined,
       commercialFactsAuthoritative: true,
+      offers: [
+        {
+          ...product.offers[0]!,
+          offerKey: 'saved_offer_variant_m',
+          productVariantId: 'variant-m',
+        },
+      ],
       rehydratedDetails: {
         endpoint: null,
         productId: 'provider-product-1',
@@ -405,7 +413,17 @@ describe('canonical product detail', () => {
         media: [],
         categories: [{ value: 'T-Shirts', taxonomy: 'Shopify' }],
         tags: ['heavyweight'],
-        options: [{ name: 'Size', values: ['S', 'M', 'L'] }],
+        options: [
+          {
+            name: 'Size',
+            values: ['S', 'M', 'L'],
+            valueDetails: [
+              { value: 'S', exists: false, available: false },
+              { value: 'M', exists: true, available: true },
+              { value: 'L', exists: true, available: false },
+            ],
+          },
+        ],
         variants: [
           {
             variantId: 'variant-m',
@@ -493,6 +511,35 @@ describe('canonical product detail', () => {
     expect(markup).toContain('Organic cotton')
     expect(markup).toContain('GOTS')
     expect(markup).toContain('Medium')
-    expect(markup).toContain('3 merchant variants')
+    expect(markup).not.toContain('mt-product-variant-table')
+    expect(markup).toContain('class="mt-product-option-chip sold-out "')
+    expect(markup).toMatch(/<button class="mt-product-option-chip sold-out "[^>]*><span>L<\/span>/)
+    expect(markup).not.toMatch(/mt-product-option-chip sold-out "[^>]*disabled/)
+
+    const soldOutAnchorMarkup = renderToStaticMarkup(
+      <ProductModal
+        product={{
+          ...savedWithDetail,
+          offers: savedWithDetail.offers.map((offer) => ({ ...offer, available: false })),
+        }}
+        deliveryLocations={[]}
+        preferences={[]}
+        saved={true}
+        savePending={false}
+        inCompare={false}
+        onClose={() => undefined}
+        onToggleSave={() => undefined}
+        onCompare={() => undefined}
+        onAddToCart={() => false}
+        onAddOfferKey={async () => true}
+        canPrev={false}
+        canNext={false}
+        onPrev={() => undefined}
+        onNext={() => undefined}
+      />,
+    )
+    expect(soldOutAnchorMarkup).toContain('Choose your item')
+    expect(soldOutAnchorMarkup).toContain('That exact item is selected')
+    expect(soldOutAnchorMarkup).toContain('<span>L</span>')
   })
 })

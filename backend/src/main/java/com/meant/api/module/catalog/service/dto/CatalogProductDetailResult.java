@@ -3,8 +3,16 @@ package com.meant.api.module.catalog.service.dto;
 /** Full transient detail paired with the exact commercial observation made by the same provider call. */
 public record CatalogProductDetailResult(
         CatalogProductRehydrationResult rehydration,
-        RehydratedProductDetails details
+        RehydratedProductDetails details,
+        CatalogProductDetailSelectionResult selection
 ) {
+    public CatalogProductDetailResult(
+            CatalogProductRehydrationResult rehydration,
+            RehydratedProductDetails details
+    ) {
+        this(rehydration, details, null);
+    }
+
     public CatalogProductDetailResult {
         if (rehydration == null) {
             throw new IllegalArgumentException("Product detail requires a rehydration result");
@@ -18,7 +26,11 @@ public record CatalogProductDetailResult(
             CatalogProductRehydrationResult rehydration,
             RehydratedProductDetails details
     ) {
-        return new CatalogProductDetailResult(rehydration, details);
+        return new CatalogProductDetailResult(rehydration, details, null);
+    }
+
+    public CatalogProductDetailResult withSelection(CatalogProductDetailSelectionResult value) {
+        return new CatalogProductDetailResult(rehydration, details, value);
     }
 
     public static CatalogProductDetailResult failed(
@@ -28,6 +40,7 @@ public record CatalogProductDetailResult(
     ) {
         return new CatalogProductDetailResult(
                 CatalogProductRehydrationResult.failed(reference, status, failure),
+                null,
                 null
         );
     }

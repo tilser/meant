@@ -45,6 +45,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/product-variant-selections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select an exact product variant for the current user
+         * @description Uses a server-issued live or durable saved offer only as a trusted product and merchant anchor. The current provider resolves the requested options. A new offer key is returned only for a complete, unrelaxed, unique exact variant; provider and commerce identifiers are never accepted from the browser.
+         */
+        post: operations["selectUserProductVariantV1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users/me/product-searches": {
         parameters: {
             query?: never;
@@ -165,26 +185,6 @@ export interface paths {
          * @description Removes a product from the current user's saved products.
          */
         delete: operations["removeSavedProduct"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/saved-products/detail": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get a saved product
-         * @description Loads the current user's durable saved-product reference and rehydrates its current merchant offer without relying on the original search session.
-         */
-        get: operations["savedProduct"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -774,6 +774,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/me/saved-products/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a saved product
+         * @description Loads the current user's durable saved-product reference and rehydrates its current merchant offer without relying on the original search session.
+         */
+        get: operations["savedProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me/product-search-suggestions": {
         parameters: {
             query?: never;
@@ -1134,43 +1154,27 @@ export interface components {
             updatedAt: string;
             threadJson: string;
         };
-        UserProductSearchRequest: {
-            query: string;
-            /** Format: uuid */
-            merchantId?: string;
-            /** Format: int32 */
-            offset?: number;
-            /** Format: int32 */
-            limit?: number;
+        /** @description Select one exact product variant from a server-issued live or saved offer anchor */
+        SelectUserProductVariantRequest: {
+            /** @description Server-issued live canonical or durable saved offer key used only as the trusted anchor */
+            anchorOfferKey: string;
+            /** @description Current option choices requested by the shopper; may be partial while selecting */
+            selectedOptions: components["schemas"]["UserProductVariantSelectedOption"][];
+            /** @description Option changed most recently; its name is placed first in provider relaxation priority */
+            preferredOptionName?: string;
         };
-        /** @description Shared product facts plus all exact distinct offers and source observations */
-        CanonicalProductResponse: {
-            /** @description Stable evidence-derived canonical product key */
-            key: string;
-            /** @description Shared product title */
-            title?: string;
-            /** @description Shared product description */
-            description?: string;
-            /** @description Shared product media */
-            media: components["schemas"]["ProductMediaResponse"][];
-            /** @description Shared typed product attributes */
-            attributes: components["schemas"]["ProductAttributeResponse"][];
-            /** @description Shared typed material facts */
-            materials: components["schemas"]["ProductMaterialResponse"][];
-            /** @description Shared typed certification facts */
-            certifications: components["schemas"]["ProductCertificationResponse"][];
-            /** @description Attribution for shared product facts */
-            attribution: components["schemas"]["ProductAttributionResponse"][];
-            /** @description Identity evidence retained for reconciliation */
-            identityEvidence: components["schemas"]["ProductIdentityEvidenceResponse"][];
-            /** @description All product-level source observations */
-            provenance: components["schemas"]["ResultProvenanceResponse"][];
-            /** @description Typed, redacted explanation of canonical-product relevance */
-            rankingExplanation?: components["schemas"]["ProductRankingExplanationResponse"];
-            /** @description Default independently ranked offer key */
-            recommendedOfferKey: string;
-            /** @description Distinct merchant, variant, and selling-plan offers */
-            offers: components["schemas"]["OfferResponse"][];
+        UserProductVariantSelectedOption: {
+            name: string;
+            value: string;
+        };
+        /** @description Typed product or selected-option attribute */
+        CanonicalProductAttributeResponse: {
+            /** @description Optional attribute group */
+            group?: string;
+            /** @description Attribute name */
+            name: string;
+            /** @description Attribute value */
+            value: string;
         };
         /** @description Stable typed identity of one discovery path */
         DiscoverySourceIdentityResponse: {
@@ -1244,7 +1248,7 @@ export interface components {
              */
             quantity: number;
             /** @description Canonically ordered selected component options */
-            selectedOptions: components["schemas"]["ProductAttributeResponse"][];
+            selectedOptions: components["schemas"]["CanonicalProductAttributeResponse"][];
         };
         /** @description Typed delivery method, estimate, destination, and cost */
         OfferDeliveryResponse: {
@@ -1380,7 +1384,7 @@ export interface components {
              */
             checkoutUrl?: string;
             /** @description Selected variant and selling-plan options */
-            selectedOptions: components["schemas"]["ProductAttributeResponse"][];
+            selectedOptions: components["schemas"]["CanonicalProductAttributeResponse"][];
             /**
              * @description Available checkout experience inferred from server-controlled routing facts
              * @enum {string}
@@ -1393,10 +1397,259 @@ export interface components {
             /** @description Every source observation merged into this exact offer */
             provenance: components["schemas"]["ResultProvenanceResponse"][];
         };
-        ProductAttributeResponse: {
-            group?: string;
+        /** @description Observation timestamp and optional source-provided freshness deadline */
+        ResultFreshnessResponse: {
+            /**
+             * Format: date-time
+             * @description Time the source was observed
+             */
+            observedAt: string;
+            /**
+             * Format: date-time
+             * @description Time after which the observation is stale
+             */
+            freshUntil?: string;
+        };
+        /** @description Provider evidence, discovery identity, optional local routing, freshness, and debugging source */
+        ResultProvenanceResponse: {
+            /** @description Commerce provider identity */
+            provider: string;
+            /**
+             * Format: uuid
+             * @deprecated
+             * @description Deprecated compatibility view of localRouting.merchantIntegrationId
+             */
+            merchantIntegrationId?: string;
+            /** @description Stable identity of the catalog, storefront, cache, or other observing path */
+            discoverySource: components["schemas"]["DiscoverySourceIdentityResponse"];
+            /** @description Optional resolved Meant MerchantIntegration execution link */
+            localRouting?: components["schemas"]["LocalMerchantRoutingResponse"];
+            /** @description External merchant reference when supplied by the provider */
+            externalMerchantReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Verified external merchant domain when supplied by the provider */
+            externalMerchantDomain?: string;
+            /** @description External product reference */
+            externalProductReference: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External variant reference */
+            externalVariantReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Observation timestamp and freshness */
+            freshness: components["schemas"]["ResultFreshnessResponse"];
+            /** @description Typed source reference for debugging */
+            sourceReference: components["schemas"]["ResultSourceReferenceResponse"];
+        };
+        /** @description Typed source path sufficient to debug or reconcile an observation */
+        ResultSourceReferenceResponse: {
+            /**
+             * @description Discovery source category
+             * @enum {string}
+             */
+            type: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            /** @description Source-local debugging reference */
+            reference: string;
+            /**
+             * Format: uri
+             * @description Source endpoint or document URL
+             */
+            uri?: string;
+        };
+        /** @description Typed selling-plan references and identity-bearing option context */
+        SellingPlanIdentityResponse: {
+            /** @description External selling-plan group reference */
+            groupReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description External selling-plan reference */
+            planReference?: components["schemas"]["ExternalIdentifierResponse"];
+            /** @description Canonically ordered selling-plan options */
+            options: components["schemas"]["SellingPlanOptionResponse"][];
+        };
+        /** @description One selling-plan option that participates in offer identity */
+        SellingPlanOptionResponse: {
+            /** @description Option name */
             name: string;
+            /** @description Provider-defined option value */
             value: string;
+        };
+        /** @description Authority, freshness, and typed degradation for commercial offer facts */
+        UserOfferCommercialStateResponse: {
+            /**
+             * @description Whether facts are a discovery observation or current rehydration
+             * @enum {string}
+             */
+            authority: "DISCOVERY_OBSERVATION" | "REHYDRATED_CURRENT";
+            /**
+             * @description Detail rehydration status; absent on search observations
+             * @enum {string}
+             */
+            rehydrationStatus?: "FRESH" | "UNSUPPORTED" | "UNAVAILABLE" | "DEGRADED";
+            /**
+             * @description Typed offer-scoped rehydration failure
+             * @enum {string}
+             */
+            degradation?: "NO_PROVIDER" | "AMBIGUOUS_PROVIDER" | "CAPABILITY_UNAVAILABLE" | "INVALID_REFERENCE" | "NOT_FOUND" | "INVALID_RESPONSE" | "UPSTREAM_UNAVAILABLE";
+            /** @description Price observation freshness */
+            priceFreshness?: components["schemas"]["ResultFreshnessResponse"];
+            /** @description Availability observation freshness */
+            availabilityFreshness?: components["schemas"]["ResultFreshnessResponse"];
+            /** @description Delivery observation freshness */
+            deliveryFreshness?: components["schemas"]["ResultFreshnessResponse"];
+        };
+        /** @description Current product detail and an exact offer only when the requested options resolve uniquely */
+        UserProductVariantSelectionResponse: {
+            /** @description Current transient provider detail for the effective selection */
+            details: components["schemas"]["UserSavedProductDetails"];
+            /** @description Server-issued exact offer key; absent for partial, relaxed, or ambiguous selections */
+            selectedOfferKey?: string;
+            /** @description Exact canonical offer; absent for partial, relaxed, or ambiguous selections */
+            selectedOffer?: components["schemas"]["OfferResponse"];
+            /** @description True when the exact offer is currently eligible for the cart */
+            cartable: boolean;
+        };
+        UserSavedProductDetailAttribute: {
+            name?: string;
+            value?: string;
+        };
+        UserSavedProductDetailCategory: {
+            value?: string;
+            taxonomy?: string;
+        };
+        UserSavedProductDetailImage: {
+            url?: string;
+            altText?: string;
+        };
+        UserSavedProductDetailMedia: {
+            type?: string;
+            url?: string;
+            altText?: string;
+            previewImageUrl?: string;
+        };
+        UserSavedProductDetailMessage: {
+            type?: string;
+            code?: string;
+            path?: string;
+            contentType?: string;
+            content?: string;
+            severity?: string;
+            presentation?: string;
+            imageUrl?: string;
+            url?: string;
+        };
+        UserSavedProductDetailOption: {
+            name?: string;
+            values: string[];
+            valueDetails: components["schemas"]["UserSavedProductDetailOptionValue"][];
+        };
+        UserSavedProductDetailOptionValue: {
+            value?: string;
+            available?: boolean;
+            exists?: boolean;
+        };
+        UserSavedProductDetailSelectedOption: {
+            name?: string;
+            value?: string;
+        };
+        UserSavedProductDetailVariant: {
+            variantId?: string;
+            handle?: string;
+            title?: string;
+            description?: string;
+            url?: string;
+            priceAmount?: string;
+            priceCurrency?: string;
+            listPriceAmount?: string;
+            listPriceCurrency?: string;
+            sku?: string;
+            imageUrl?: string;
+            imageAltText?: string;
+            media: components["schemas"]["UserSavedProductDetailMedia"][];
+            available?: boolean;
+            selectedOptions: components["schemas"]["UserSavedProductDetailSelectedOption"][];
+            categories: components["schemas"]["UserSavedProductDetailCategory"][];
+            tags: string[];
+            attributes: components["schemas"]["UserSavedProductDetailAttribute"][];
+        };
+        UserSavedProductDetails: {
+            productId?: string;
+            handle?: string;
+            title?: string;
+            description?: string;
+            url?: string;
+            imageUrl?: string;
+            images: components["schemas"]["UserSavedProductDetailImage"][];
+            media: components["schemas"]["UserSavedProductDetailMedia"][];
+            categories: components["schemas"]["UserSavedProductDetailCategory"][];
+            tags: string[];
+            options: components["schemas"]["UserSavedProductDetailOption"][];
+            variants: components["schemas"]["UserSavedProductDetailVariant"][];
+            /** Format: int32 */
+            totalVariants?: number;
+            priceMin?: string;
+            priceMax?: string;
+            priceCurrency?: string;
+            listPriceMin?: string;
+            listPriceMax?: string;
+            listPriceCurrency?: string;
+            requiresSellingPlan?: boolean;
+            selectedVariantId?: string;
+            selectedVariantTitle?: string;
+            selectedVariantPriceAmount?: string;
+            selectedVariantPriceCurrency?: string;
+            selectedVariantSku?: string;
+            selectedVariantListPriceAmount?: string;
+            selectedVariantListPriceCurrency?: string;
+            selectedVariantImageUrl?: string;
+            selectedVariantImageAltText?: string;
+            selectedVariantAvailable?: boolean;
+            selectedOptions: components["schemas"]["UserSavedProductDetailSelectedOption"][];
+            skus: string[];
+            certifications: string[];
+            materials: string[];
+            collections: string[];
+            attributes: components["schemas"]["UserSavedProductDetailAttribute"][];
+            messages: components["schemas"]["UserSavedProductDetailMessage"][];
+            /** Format: double */
+            ratingScore?: number;
+            /** Format: double */
+            ratingScaleMax?: number;
+            /** Format: int64 */
+            reviewCount?: number;
+            merchantName?: string;
+        };
+        UserProductSearchRequest: {
+            query: string;
+            /** Format: uuid */
+            merchantId?: string;
+            /** Format: int32 */
+            offset?: number;
+            /** Format: int32 */
+            limit?: number;
+        };
+        /** @description Shared product facts plus all exact distinct offers and source observations */
+        CanonicalProductResponse: {
+            /** @description Stable evidence-derived canonical product key */
+            key: string;
+            /** @description Shared product title */
+            title?: string;
+            /** @description Shared product description */
+            description?: string;
+            /** @description Shared product media */
+            media: components["schemas"]["ProductMediaResponse"][];
+            /** @description Shared typed product attributes */
+            attributes: components["schemas"]["CanonicalProductAttributeResponse"][];
+            /** @description Shared typed material facts */
+            materials: components["schemas"]["ProductMaterialResponse"][];
+            /** @description Shared typed certification facts */
+            certifications: components["schemas"]["ProductCertificationResponse"][];
+            /** @description Attribution for shared product facts */
+            attribution: components["schemas"]["ProductAttributionResponse"][];
+            /** @description Identity evidence retained for reconciliation */
+            identityEvidence: components["schemas"]["ProductIdentityEvidenceResponse"][];
+            /** @description All product-level source observations */
+            provenance: components["schemas"]["ResultProvenanceResponse"][];
+            /** @description Typed, redacted explanation of canonical-product relevance */
+            rankingExplanation?: components["schemas"]["ProductRankingExplanationResponse"];
+            /** @description Default independently ranked offer key */
+            recommendedOfferKey: string;
+            /** @description Distinct merchant, variant, and selling-plan offers */
+            offers: components["schemas"]["OfferResponse"][];
         };
         /** @description Attribution for shared product facts */
         ProductAttributionResponse: {
@@ -1549,77 +1802,6 @@ export interface components {
             /** @description Provider-adapter calibration or model versions used */
             evidenceVersions: string[];
         };
-        /** @description Observation timestamp and optional source-provided freshness deadline */
-        ResultFreshnessResponse: {
-            /**
-             * Format: date-time
-             * @description Time the source was observed
-             */
-            observedAt: string;
-            /**
-             * Format: date-time
-             * @description Time after which the observation is stale
-             */
-            freshUntil?: string;
-        };
-        /** @description Provider evidence, discovery identity, optional local routing, freshness, and debugging source */
-        ResultProvenanceResponse: {
-            /** @description Commerce provider identity */
-            provider: string;
-            /**
-             * Format: uuid
-             * @deprecated
-             * @description Deprecated compatibility view of localRouting.merchantIntegrationId
-             */
-            merchantIntegrationId?: string;
-            /** @description Stable identity of the catalog, storefront, cache, or other observing path */
-            discoverySource: components["schemas"]["DiscoverySourceIdentityResponse"];
-            /** @description Optional resolved Meant MerchantIntegration execution link */
-            localRouting?: components["schemas"]["LocalMerchantRoutingResponse"];
-            /** @description External merchant reference when supplied by the provider */
-            externalMerchantReference?: components["schemas"]["ExternalIdentifierResponse"];
-            /** @description Verified external merchant domain when supplied by the provider */
-            externalMerchantDomain?: string;
-            /** @description External product reference */
-            externalProductReference: components["schemas"]["ExternalIdentifierResponse"];
-            /** @description External variant reference */
-            externalVariantReference?: components["schemas"]["ExternalIdentifierResponse"];
-            /** @description Observation timestamp and freshness */
-            freshness: components["schemas"]["ResultFreshnessResponse"];
-            /** @description Typed source reference for debugging */
-            sourceReference: components["schemas"]["ResultSourceReferenceResponse"];
-        };
-        /** @description Typed source path sufficient to debug or reconcile an observation */
-        ResultSourceReferenceResponse: {
-            /**
-             * @description Discovery source category
-             * @enum {string}
-             */
-            type: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
-            /** @description Source-local debugging reference */
-            reference: string;
-            /**
-             * Format: uri
-             * @description Source endpoint or document URL
-             */
-            uri?: string;
-        };
-        /** @description Typed selling-plan references and identity-bearing option context */
-        SellingPlanIdentityResponse: {
-            /** @description External selling-plan group reference */
-            groupReference?: components["schemas"]["ExternalIdentifierResponse"];
-            /** @description External selling-plan reference */
-            planReference?: components["schemas"]["ExternalIdentifierResponse"];
-            /** @description Canonically ordered selling-plan options */
-            options: components["schemas"]["SellingPlanOptionResponse"][];
-        };
-        /** @description One selling-plan option that participates in offer identity */
-        SellingPlanOptionResponse: {
-            /** @description Option name */
-            name: string;
-            /** @description Provider-defined option value */
-            value: string;
-        };
         /** @description Typed source-scoped completion, degradation, and truncation state */
         UserCatalogSourceStateResponse: {
             /** @description Stable provider and discovery-path identity */
@@ -1692,30 +1874,6 @@ export interface components {
             /** @description Typed exact-match and conservative non-match decisions for this page */
             groupingDecisions: components["schemas"]["ProductGroupingDecisionResponse"][];
         };
-        /** @description Authority, freshness, and typed degradation for commercial offer facts */
-        UserOfferCommercialStateResponse: {
-            /**
-             * @description Whether facts are a discovery observation or current rehydration
-             * @enum {string}
-             */
-            authority: "DISCOVERY_OBSERVATION" | "REHYDRATED_CURRENT";
-            /**
-             * @description Detail rehydration status; absent on search observations
-             * @enum {string}
-             */
-            rehydrationStatus?: "FRESH" | "UNSUPPORTED" | "UNAVAILABLE" | "DEGRADED";
-            /**
-             * @description Typed offer-scoped rehydration failure
-             * @enum {string}
-             */
-            degradation?: "NO_PROVIDER" | "AMBIGUOUS_PROVIDER" | "CAPABILITY_UNAVAILABLE" | "INVALID_REFERENCE" | "NOT_FOUND" | "INVALID_RESPONSE" | "UPSTREAM_UNAVAILABLE";
-            /** @description Price observation freshness */
-            priceFreshness?: components["schemas"]["ResultFreshnessResponse"];
-            /** @description Availability observation freshness */
-            availabilityFreshness?: components["schemas"]["ResultFreshnessResponse"];
-            /** @description Delivery observation freshness */
-            deliveryFreshness?: components["schemas"]["ResultFreshnessResponse"];
-        };
         CatalogSourceFailureResponse: {
             /** @enum {string} */
             kind: "AUTHENTICATION" | "INVALID_REQUEST" | "RATE_LIMITED" | "TIMEOUT" | "TRANSIENT_UPSTREAM" | "UNAVAILABLE" | "MALFORMED_RESPONSE";
@@ -1785,22 +1943,6 @@ export interface components {
             components?: components["schemas"]["SavedProductCatalogComponent"][];
             sellingPlan?: components["schemas"]["SavedProductCatalogSellingPlan"];
         };
-        SavedProductCatalogComponent: {
-            externalProductId: string;
-            externalVariantId?: string;
-            /** Format: int32 */
-            quantity: number;
-            selectedOptions: components["schemas"]["SelectedOption"][];
-        };
-        SavedProductCatalogSellingPlan: {
-            groupId?: string;
-            planId?: string;
-            options: components["schemas"]["SavedProductCatalogSellingPlanOption"][];
-        };
-        SavedProductCatalogSellingPlanOption: {
-            name: string;
-            value: string;
-        };
         Offer: {
             merchant: string;
             /** Format: double */
@@ -1851,6 +1993,24 @@ export interface components {
             provides: string[];
             /** @description Provider identifiers for session-only results; omitted only when the server can resolve an admitted cache row */
             catalogReference?: components["schemas"]["CatalogReference"];
+            /** @description Server-issued exact offer selected for this save or explicit saved-choice update */
+            selectedOfferKey?: string;
+        };
+        SavedProductCatalogComponent: {
+            externalProductId: string;
+            externalVariantId?: string;
+            /** Format: int32 */
+            quantity: number;
+            selectedOptions: components["schemas"]["SelectedOption"][];
+        };
+        SavedProductCatalogSellingPlan: {
+            groupId?: string;
+            planId?: string;
+            options: components["schemas"]["SavedProductCatalogSellingPlanOption"][];
+        };
+        SavedProductCatalogSellingPlanOption: {
+            name: string;
+            value: string;
         };
         SelectedOption: {
             group?: string;
@@ -1910,110 +2070,6 @@ export interface components {
             variantTitle?: string;
             available?: boolean;
         };
-        UserSavedProductDetails: {
-            productId?: string;
-            handle?: string;
-            title?: string;
-            description?: string;
-            url?: string;
-            imageUrl?: string;
-            images: components["schemas"]["UserSavedProductDetailImage"][];
-            media: components["schemas"]["UserSavedProductDetailMedia"][];
-            categories: components["schemas"]["UserSavedProductDetailCategory"][];
-            tags: string[];
-            options: components["schemas"]["UserSavedProductDetailOption"][];
-            variants: components["schemas"]["UserSavedProductDetailVariant"][];
-            /** Format: int32 */
-            totalVariants?: number;
-            priceMin?: string;
-            priceMax?: string;
-            priceCurrency?: string;
-            listPriceMin?: string;
-            listPriceMax?: string;
-            listPriceCurrency?: string;
-            requiresSellingPlan?: boolean;
-            selectedVariantId?: string;
-            selectedVariantTitle?: string;
-            selectedVariantPriceAmount?: string;
-            selectedVariantPriceCurrency?: string;
-            selectedVariantSku?: string;
-            selectedVariantListPriceAmount?: string;
-            selectedVariantListPriceCurrency?: string;
-            selectedVariantImageUrl?: string;
-            selectedVariantImageAltText?: string;
-            selectedVariantAvailable?: boolean;
-            selectedOptions: components["schemas"]["UserSavedProductDetailSelectedOption"][];
-            skus: string[];
-            certifications: string[];
-            materials: string[];
-            collections: string[];
-            attributes: components["schemas"]["UserSavedProductDetailAttribute"][];
-            messages: components["schemas"]["UserSavedProductDetailMessage"][];
-            /** Format: double */
-            ratingScore?: number;
-            /** Format: double */
-            ratingScaleMax?: number;
-            /** Format: int64 */
-            reviewCount?: number;
-            merchantName?: string;
-        };
-        UserSavedProductDetailImage: {
-            url?: string;
-            altText?: string;
-        };
-        UserSavedProductDetailMedia: {
-            type?: string;
-            url?: string;
-            altText?: string;
-            previewImageUrl?: string;
-        };
-        UserSavedProductDetailCategory: {
-            value?: string;
-            taxonomy?: string;
-        };
-        UserSavedProductDetailOption: {
-            name?: string;
-            values: string[];
-        };
-        UserSavedProductDetailSelectedOption: {
-            name?: string;
-            value?: string;
-        };
-        UserSavedProductDetailAttribute: {
-            name?: string;
-            value?: string;
-        };
-        UserSavedProductDetailVariant: {
-            variantId?: string;
-            handle?: string;
-            title?: string;
-            description?: string;
-            url?: string;
-            priceAmount?: string;
-            priceCurrency?: string;
-            listPriceAmount?: string;
-            listPriceCurrency?: string;
-            sku?: string;
-            imageUrl?: string;
-            imageAltText?: string;
-            media: components["schemas"]["UserSavedProductDetailMedia"][];
-            available?: boolean;
-            selectedOptions: components["schemas"]["UserSavedProductDetailSelectedOption"][];
-            categories: components["schemas"]["UserSavedProductDetailCategory"][];
-            tags: string[];
-            attributes: components["schemas"]["UserSavedProductDetailAttribute"][];
-        };
-        UserSavedProductDetailMessage: {
-            type?: string;
-            code?: string;
-            path?: string;
-            contentType?: string;
-            content?: string;
-            severity?: string;
-            presentation?: string;
-            imageUrl?: string;
-            url?: string;
-        };
         UserSavedProductResponse: {
             id: string;
             productHash?: string;
@@ -2066,6 +2122,10 @@ export interface components {
             /** Format: int32 */
             count?: number;
             insight?: string;
+        };
+        ProductAttributeResponse: {
+            name: string;
+            value: string;
         };
         ProductCategoryResponse: {
             value: string;
@@ -3634,6 +3694,30 @@ export interface operations {
             };
         };
     };
+    selectUserProductVariantV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectUserProductVariantRequest"];
+            };
+        };
+        responses: {
+            /** @description Current detail with an exact selected offer when the combination is unambiguous */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserProductVariantSelectionResponse"];
+                };
+            };
+        };
+    };
     searchGroupedProductsV1: {
         parameters: {
             query?: never;
@@ -3768,35 +3852,6 @@ export interface operations {
                 content: {
                     "*/*": components["schemas"]["UserSavedProductResponse"][];
                 };
-            };
-        };
-    };
-    savedProduct: {
-        parameters: {
-            query: {
-                productKey: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Saved product with current rehydrated facts when available */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserSavedProductResponse"];
-                };
-            };
-            /** @description Saved product was not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -4726,6 +4781,37 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserTasteProfileResponse"];
+                };
+            };
+        };
+    };
+    savedProduct: {
+        parameters: {
+            query: {
+                productKey: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved product with current rehydrated facts when available */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSavedProductResponse"];
+                };
+            };
+            /** @description Saved product was not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSavedProductResponse"];
                 };
             };
         };

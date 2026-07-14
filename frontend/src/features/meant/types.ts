@@ -41,6 +41,10 @@ export interface Offer {
   delivery: string
   merchantId?: string | null
   merchantDomain?: string | null
+  provider?: string | null
+  merchantIntegrationId?: string | null
+  externalMerchantId?: string | null
+  merchantScopeKey?: string | null
   productVariantId?: string | null
   variantTitle?: string | null
   available?: boolean | null
@@ -160,6 +164,11 @@ export interface CartItem {
   qty: number
   merchantId?: string | null
   merchantDomain?: string | null
+  provider?: string | null
+  merchantIntegrationId?: string | null
+  externalMerchantId?: string | null
+  routingScopeKey?: string | null
+  merchantScopeKey?: string | null
   productVariantId?: string | null
   offerKey?: string | null
   variantTitle?: string | null
@@ -237,6 +246,7 @@ export interface CheckoutPayload {
   saved: number
   savedNote: string
   merchant?: string
+  merchantKey?: string
   chatThreadId?: string | null
   checkoutUrl?: string | null
   continueUrl?: string | null

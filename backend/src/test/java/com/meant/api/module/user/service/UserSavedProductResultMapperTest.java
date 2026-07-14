@@ -350,6 +350,40 @@ class UserSavedProductResultMapperTest {
         assertThat(result.commercialFactsAuthoritative()).isFalse();
     }
 
+    @Test
+    void soldOutSavedVariantKeepsASelectionAnchorForChoosingASibling() {
+        CatalogProductReference reference = reference();
+        ResultFreshness freshness = new ResultFreshness(NOW, NOW.plusSeconds(120));
+        UserSavedProduct entity = entity(reference);
+        CatalogProductRehydrationResult rehydrated = CatalogProductRehydrationResult.fresh(
+                reference,
+                reference,
+                new RehydratedCommercialFacts(
+                        "Current product",
+                        new Money(1299, "USD"),
+                        new OfferAvailability(OfferAvailabilityStatus.OUT_OF_STOCK, 0, null),
+                        reference.externalVariantReference(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        freshness,
+                        CommercialFactsFreshness.fromSingleObservation(freshness)
+                )
+        );
+
+        UserSavedProductResult result = mapper.result(
+                entity,
+                rehydrated,
+                new CatalogRehydrationContext("CZ", null)
+        );
+
+        assertThat(result.offers()).singleElement().satisfies(offer -> {
+            assertThat(offer.available()).isFalse();
+            assertThat(SavedProductOfferKeyCodec.verify(
+                    SavedProductOfferKeyCodec.decode(offer.offerKey()).orElseThrow(), entity)).isTrue();
+        });
+    }
+
     private void assertMoney(String currency, long minorUnits, double majorUnits) {
         UserSavedProductResult result = result(currency, minorUnits);
 

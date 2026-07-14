@@ -1,6 +1,6 @@
 import { CORE_PREFERENCE_IDS, LOCATIONS, MERCHANTS, PRODUCTS, REPLIES } from './data'
 import { ApiError } from '../../lib/apiError'
-import type { CartProfile } from '../../lib/apiClient'
+import type { CanonicalOfferProfile, CartProfile } from '../../lib/apiClient'
 import type {
   CartDeliveryGroup,
   CartDeliveryOption,
@@ -120,12 +120,60 @@ export function cartMerchantKey(input: {
   merchant: string
   merchantId?: string | null
   merchantDomain?: string | null
+  merchantScopeKey?: string | null
 }): string {
   return (
+    input.merchantScopeKey?.trim() ||
     input.merchantId ||
     normalizedMerchantName(input.merchantDomain) ||
     normalizedMerchantName(input.merchant)
   )
+}
+
+export function canonicalMerchantScopeKey(offer: CanonicalOfferProfile): string | null {
+  const provider = offer.identity.provider.trim().toLocaleLowerCase()
+  const scope = offer.identity.merchantScope
+  const external = scope.externalMerchantIdentity
+  if (external?.value?.trim()) {
+    return [
+      provider,
+      'external',
+      external.type,
+      external.namespace?.trim().toLocaleLowerCase() ?? '',
+      external.value.trim(),
+    ].join(':')
+  }
+  const fallback = scope.merchantIntegrationFallbackId?.trim()
+  return fallback ? `${provider}:integration-fallback:${fallback}` : null
+}
+
+export function cartItemIdentity(
+  item: Pick<
+    CartItem,
+    | 'id'
+    | 'merchant'
+    | 'cartId'
+    | 'remoteCartId'
+    | 'cartLineId'
+    | 'remoteCartLineId'
+    | 'offerKey'
+    | 'productVariantId'
+  >,
+): string {
+  const cartScope = item.remoteCartId?.trim() || item.cartId?.trim() || 'local-cart'
+  if (item.remoteCartLineId?.trim()) {
+    return `remote-line:${cartScope}:${item.remoteCartLineId.trim()}`
+  }
+  if (item.cartLineId?.trim()) {
+    return `line:${cartScope}:${item.cartLineId.trim()}`
+  }
+  if (item.offerKey?.trim()) {
+    return `offer:${item.offerKey.trim()}`
+  }
+  if (item.productVariantId?.trim()) {
+    return `variant:${cartMerchantKey(item)}:${item.productVariantId.trim()}`
+  }
+  return `legacy:${item.id}:${cartMerchantKey(item)}`
 }
 
 export function firstUrl(...urls: Array<string | null | undefined>): string | null {
@@ -471,17 +519,29 @@ export function cartLines(cart: readonly CartItem[], products: readonly Product[
     if (!product) {
       return []
     }
-    const offer =
-      product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-    if (!offer) {
+    const exactOffer =
+      product.offers.find(
+        (candidate) => item.offerKey && candidate.offerKey?.trim() === item.offerKey.trim(),
+      ) ??
+      product.offers.find(
+        (candidate) =>
+          item.productVariantId && candidate.productVariantId === item.productVariantId,
+      )
+    const hasExactIdentity = Boolean(item.offerKey?.trim() || item.productVariantId?.trim())
+    const offer = hasExactIdentity
+      ? exactOffer
+      : (product.offers.find((candidate) => candidate.merchant === item.merchant) ??
+        product.offers[0])
+    const price = cartItemUnitPrice(item, product)
+    if (price === null) {
       return []
     }
     return [
       {
         ...item,
         product,
-        price: offer.price,
-        delivery: offer.delivery,
+        price,
+        delivery: offer?.delivery ?? 'Calculated at checkout',
       },
     ]
   })
@@ -528,6 +588,10 @@ export function mergeCartSnapshot(
         ...item,
         merchantId: snapshot.merchantId ?? item.merchantId,
         merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
+        provider: snapshot.provider ?? item.provider,
+        merchantIntegrationId: snapshot.merchantIntegrationId ?? item.merchantIntegrationId,
+        externalMerchantId: snapshot.externalMerchantId ?? item.externalMerchantId,
+        routingScopeKey: snapshot.routingScopeKey ?? item.routingScopeKey,
         cartId: snapshot.cartId ?? item.cartId,
         remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
         checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
@@ -542,6 +606,10 @@ export function mergeCartSnapshot(
       ...item,
       merchantId: snapshot.merchantId ?? item.merchantId,
       merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
+      provider: snapshot.provider ?? item.provider,
+      merchantIntegrationId: snapshot.merchantIntegrationId ?? item.merchantIntegrationId,
+      externalMerchantId: snapshot.externalMerchantId ?? item.externalMerchantId,
+      routingScopeKey: snapshot.routingScopeKey ?? item.routingScopeKey,
       cartId: snapshot.cartId ?? item.cartId,
       remoteCartId: snapshot.remoteCartId ?? item.remoteCartId,
       checkoutUrl: snapshot.checkoutUrl ?? item.checkoutUrl,
@@ -641,6 +709,7 @@ export function computeSmartAlerts(
 }
 
 export interface CartGroup {
+  merchantKey: string
   merchant: string
   items: CartLine[]
   subtotal: number
@@ -655,13 +724,17 @@ export interface CartGroup {
 }
 
 export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
-  const groups = new Map<string, CartLine[]>()
+  const groups = new Map<string, { merchant: string; items: CartLine[] }>()
   lines.forEach((line) => {
-    const existing = groups.get(line.merchant) ?? []
-    groups.set(line.merchant, [...existing, line])
+    const merchantKey = cartMerchantKey(line)
+    const existing = groups.get(merchantKey)
+    groups.set(merchantKey, {
+      merchant: existing?.merchant ?? line.merchant,
+      items: [...(existing?.items ?? []), line],
+    })
   })
 
-  return [...groups.entries()].map(([merchant, items]) => {
+  return [...groups.entries()].map(([merchantKey, { merchant, items }]) => {
     const localSubtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0)
     const rawRemoteSubtotal = firstCartAmount(items, (item) => item.cartSubtotalAmount)
     const remoteSubtotal = reliableRemoteCartSubtotal(rawRemoteSubtotal, localSubtotal)
@@ -685,6 +758,7 @@ export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
       Boolean(selectedCartDeliveryOption(group)),
     )
     return {
+      merchantKey,
       merchant,
       items,
       subtotal,
@@ -818,12 +892,43 @@ function parseCartAmount(value?: string | number | null): number | null {
   return Number.isFinite(amount) ? amount : null
 }
 
-export function orderTotal(order: Order): number {
+export function cartItemUnitPrice(item: CartItem, product: Product): number | null {
+  const remoteUnitPrice = parseCartAmount(item.unitPriceAmount)
+  if (remoteUnitPrice !== null) return remoteUnitPrice
+
+  const offerKey = item.offerKey?.trim()
+  const productVariantId = item.productVariantId?.trim()
+  if (offerKey || productVariantId) {
+    const exactOffer =
+      (offerKey
+        ? product.offers.find((candidate) => candidate.offerKey?.trim() === offerKey)
+        : undefined) ??
+      (productVariantId
+        ? product.offers.find((candidate) => candidate.productVariantId === productVariantId)
+        : undefined)
+    if (exactOffer && Number.isFinite(exactOffer.price)) return exactOffer.price
+
+    const canonicalPrice = offerKey
+      ? product.canonicalProduct?.offers.find((candidate) => candidate.key === offerKey)?.price
+      : null
+    return canonicalPrice
+      ? minorUnitsToMajor(canonicalPrice.minorUnits, canonicalPrice.currency)
+      : null
+  }
+
+  const legacyOffer =
+    product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+  return legacyOffer && Number.isFinite(legacyOffer.price) ? legacyOffer.price : null
+}
+
+export function orderTotal(order: Order, products: readonly Product[] = PRODUCTS): number {
   const total = order.items.reduce((sum, item) => {
-    const product = productById(item.id)
-    const offer =
-      product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-    return offer ? sum + offer.price * item.qty : sum
+    const product = products.find((candidate) => candidate.id === item.id)
+    if (!product) {
+      throw new Error(`Unknown product id: ${item.id}`)
+    }
+    const unitPrice = cartItemUnitPrice(item, product)
+    return unitPrice === null ? sum : sum + unitPrice * item.qty
   }, 0)
   return total - order.saved
 }

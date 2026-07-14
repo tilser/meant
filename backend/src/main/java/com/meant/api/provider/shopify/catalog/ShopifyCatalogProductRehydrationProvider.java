@@ -1,6 +1,7 @@
 package com.meant.api.provider.shopify.catalog;
 
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
@@ -25,6 +26,7 @@ import com.meant.api.module.catalog.service.dto.SellingPlanOption;
 import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogContext;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogSelectedOption;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogGetProductRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogLookupRequest;
@@ -103,7 +105,16 @@ public class ShopifyCatalogProductRehydrationProvider
             CatalogProductReference reference,
             CatalogRehydrationContext context
     ) {
-        if (!matcher.validRequest(reference)) {
+        return getDetails(reference, null, context);
+    }
+
+    @Override
+    public CatalogProductDetailResult getDetails(
+            CatalogProductReference reference,
+            CatalogProductDetailSelection selection,
+            CatalogRehydrationContext context
+    ) {
+        if (!validDetailRequest(reference, selection)) {
             return CatalogProductDetailResult.failed(
                     reference,
                     CatalogRehydrationStatus.UNAVAILABLE,
@@ -114,12 +125,12 @@ public class ShopifyCatalogProductRehydrationProvider
             ShopifyGlobalCatalogProductResult productResult = provider.getProductWithDetails(
                     new ShopifyGlobalCatalogGetProductRequest(
                     reference.externalProductReference().value(),
-                    reference.selectedOptions().stream()
+                    selectedOptions(reference, selection).stream()
                             .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
                             .toList(),
-                    null,
+                    selection == null ? null : selection.preferences(),
                     shopifyDetailContext(context),
-                    null
+                    detailFilters(reference)
             ));
             CatalogSourceResult sourceResult = productResult.catalogResult();
             if (!sourceResult.successful()) {
@@ -129,7 +140,7 @@ public class ShopifyCatalogProductRehydrationProvider
                         CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
                 );
             }
-            ShopifyCatalogReferenceMatcher.Match match = rawMatch(reference, productResult.product());
+            ShopifyCatalogReferenceMatcher.Match match = rawMatch(reference, productResult.product(), selection);
             if (match == null) {
                 return CatalogProductDetailResult.failed(
                         reference,
@@ -139,7 +150,7 @@ public class ShopifyCatalogProductRehydrationProvider
             }
             CatalogProductRehydrationResult rehydrated = fresh(reference, match);
             RehydratedProductDetails details = details(
-                    match.reference(), productResult.product(), productResult.messages());
+                    match.reference(), productResult.product(), productResult.messages(), selection);
             if (details == null) {
                 return CatalogProductDetailResult.failed(
                         reference,
@@ -266,21 +277,49 @@ public class ShopifyCatalogProductRehydrationProvider
             CatalogProductReference reference,
             ShopifyGlobalCatalogResponse.Product product
     ) {
+        return rawMatch(reference, product, null);
+    }
+
+    private ShopifyCatalogReferenceMatcher.Match rawMatch(
+            CatalogProductReference reference,
+            ShopifyGlobalCatalogResponse.Product product,
+            CatalogProductDetailSelection selection
+    ) {
         if (product == null || !reference.discoverySource().equals(provider.discoverySourceIdentity())) {
             return null;
         }
+        List<ProductAttribute> requestedOptions = selection == null
+                ? reference.selectedOptions()
+                : effectiveSelection(product, selection);
+        String anchorVariantId = reference.externalVariantReference() == null
+                ? null
+                : reference.externalVariantReference().value();
         List<ShopifyGlobalCatalogResponse.Variant> matches = safe(product.variants()).stream()
                 .filter(Objects::nonNull)
                 .filter(variant -> rawMerchantMatches(reference, product, variant))
-                .filter(variant -> reference.externalVariantReference().value().equals(variant.id()))
-                .filter(variant -> rawOptionsMatch(
-                        reference.selectedOptions(), rawSelectedOptions(product, variant)))
+                .filter(variant -> selection != null
+                        || Objects.equals(anchorVariantId, variant.id()))
+                .filter(variant -> selection == null
+                        ? rawOptionsMatch(requestedOptions, rawSelectedOptions(product, variant))
+                        : rawOptionsContain(requestedOptions, rawSelectedOptions(product, variant)))
                 .filter(variant -> rawConfigurationMatches(reference, variant))
                 .toList();
-        if (matches.size() != 1) {
+        if (matches.isEmpty() || selection == null && matches.size() != 1) {
             return null;
         }
-        ShopifyGlobalCatalogResponse.Variant variant = matches.getFirst();
+        ShopifyGlobalCatalogResponse.Variant variant = selection == null
+                ? matches.getFirst()
+                : matches.stream()
+                        .sorted(Comparator
+                                .comparing((ShopifyGlobalCatalogResponse.Variant candidate) ->
+                                        anchorVariantId == null || !anchorVariantId.equals(candidate.id()))
+                                .thenComparing(candidate -> candidate.availability() == null
+                                        || !Boolean.TRUE.equals(candidate.availability().available()))
+                                .thenComparing(
+                                        ShopifyGlobalCatalogResponse.Variant::id,
+                                        Comparator.nullsLast(Comparator.naturalOrder())))
+                        .findFirst()
+                        .orElseThrow();
         CatalogProductReference resolved = new CatalogProductReference(
                 reference.interactionKey(),
                 reference.discoverySource(),
@@ -300,6 +339,39 @@ public class ShopifyCatalogProductRehydrationProvider
         return new ShopifyCatalogReferenceMatcher.Match(
                 resolved,
                 normalizer.normalizeExact(product, variant)
+        );
+    }
+
+    private List<ProductAttribute> selectedOptions(
+            CatalogProductReference reference,
+            CatalogProductDetailSelection selection
+    ) {
+        return selection == null ? reference.selectedOptions() : selection.selectedOptions();
+    }
+
+    private boolean validDetailRequest(
+            CatalogProductReference reference,
+            CatalogProductDetailSelection selection
+    ) {
+        return selection == null
+                ? matcher.validRequest(reference)
+                : reference.localMerchantId() == null
+                        && reference.localRouting() == null
+                        && reference.externalMerchantReference() != null;
+    }
+
+    private ShopifyCatalogFilters detailFilters(CatalogProductReference reference) {
+        return new ShopifyCatalogFilters(
+                false,
+                null,
+                null,
+                null,
+                null,
+                List.of(reference.externalMerchantReference().value()),
+                null,
+                null,
+                null,
+                null
         );
     }
 
@@ -367,7 +439,8 @@ public class ShopifyCatalogProductRehydrationProvider
     private RehydratedProductDetails details(
             CatalogProductReference reference,
             ShopifyGlobalCatalogResponse.Product product,
-            List<ShopifyGlobalCatalogResponse.Message> messages
+            List<ShopifyGlobalCatalogResponse.Message> messages,
+            CatalogProductDetailSelection selection
     ) {
         if (product == null) {
             return null;
@@ -416,10 +489,20 @@ public class ShopifyCatalogProductRehydrationProvider
                                         .map(ShopifyGlobalCatalogResponse.OptionValue::label)
                                         .filter(this::hasText)
                                         .distinct()
+                                        .toList(),
+                                safe(option.values()).stream()
+                                        .filter(Objects::nonNull)
+                                        .filter(value -> hasText(value.label()))
+                                        .map(value -> new RehydratedProductDetails.OptionValue(
+                                                value.label(), value.available(), value.exists()))
                                         .toList()))
                         .toList(),
+                effectiveSelectedOptions(product, selected, selection).stream()
+                        .map(option -> new RehydratedProductDetails.SelectedOption(
+                                option.name(), option.label()))
+                        .toList(),
                 detailVariants,
-                detailVariants.size(),
+                product.totalVariants(),
                 priceRange,
                 listPriceRange,
                 requiresSellingPlan(selected),
@@ -498,6 +581,13 @@ public class ShopifyCatalogProductRehydrationProvider
             List<ShopifyGlobalCatalogResponse.SelectedOption> observed
     ) {
         return safe(requested).isEmpty() || optionKeys(requested).equals(rawOptionKeys(observed));
+    }
+
+    private boolean rawOptionsContain(
+            List<ProductAttribute> requested,
+            List<ShopifyGlobalCatalogResponse.SelectedOption> observed
+    ) {
+        return rawOptionKeys(observed).containsAll(optionKeys(requested));
     }
 
     private boolean rawConfigurationMatches(
@@ -611,6 +701,31 @@ public class ShopifyCatalogProductRehydrationProvider
     ) {
         List<ShopifyGlobalCatalogResponse.SelectedOption> options = safe(variant.options());
         return options.isEmpty() ? safe(product.selected()) : options;
+    }
+
+    private List<ProductAttribute> effectiveSelection(
+            ShopifyGlobalCatalogResponse.Product product,
+            CatalogProductDetailSelection selection
+    ) {
+        List<ProductAttribute> responseSelection = rawSelectedAttributes(safe(product.selected()));
+        return responseSelection.isEmpty() ? selection.selectedOptions() : responseSelection;
+    }
+
+    private List<ShopifyGlobalCatalogResponse.SelectedOption> effectiveSelectedOptions(
+            ShopifyGlobalCatalogResponse.Product product,
+            ShopifyGlobalCatalogResponse.Variant selectedVariant,
+            CatalogProductDetailSelection selection
+    ) {
+        List<ShopifyGlobalCatalogResponse.SelectedOption> selected = safe(product.selected());
+        if (!selected.isEmpty()) {
+            return selected;
+        }
+        if (selection != null) {
+            return selection.selectedOptions().stream()
+                    .map(option -> new ShopifyGlobalCatalogResponse.SelectedOption(option.name(), option.value()))
+                    .toList();
+        }
+        return safe(selectedVariant.options());
     }
 
     private List<String> optionKeys(List<ProductAttribute> options) {

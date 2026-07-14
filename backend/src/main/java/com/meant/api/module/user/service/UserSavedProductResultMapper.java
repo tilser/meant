@@ -129,7 +129,7 @@ public class UserSavedProductResultMapper {
         Boolean available = availability(facts);
         List<UserSavedProductResult.Offer> offers = facts == null ? List.of() : List.of(
                 new UserSavedProductResult.Offer(
-                        cartEligible(resolved, facts)
+                        selectionAnchorEligible(resolved)
                                 ? SavedProductOfferKeyCodec.encode(entity)
                                 : null,
                         merchantDisplayName(resolved, facts, details),
@@ -243,18 +243,12 @@ public class UserSavedProductResultMapper {
                 && (requested.localRouting() != null || requested.localMerchantId() != null);
     }
 
-    private boolean cartEligible(CatalogProductReference reference, RehydratedCommercialFacts facts) {
+    private boolean selectionAnchorEligible(CatalogProductReference reference) {
         if (reference.externalVariantReference() == null
                 || (reference.externalMerchantReference() == null && reference.localRouting() == null)) {
             return false;
         }
-        if (!purchaseReferencePolicyResolver.allows(reference)) {
-            return false;
-        }
-        return switch (facts.availability().status()) {
-            case IN_STOCK, PREORDER, BACKORDER -> true;
-            case OUT_OF_STOCK, DISCONTINUED, UNKNOWN -> false;
-        };
+        return purchaseReferencePolicyResolver.allows(reference);
     }
 
     private String merchantDisplayName(

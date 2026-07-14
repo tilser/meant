@@ -934,8 +934,8 @@ export function ChatDiscoverView({
   onAddSelectedOfferToCart: (product: Product, offerKey: string) => Promise<boolean>
   onFallbackAddToCart: (product: Product, offer: Offer) => void
   onCompareProducts: (products: readonly Product[]) => void
-  onCartQty: (id: ProductId, merchant: string, qty: number) => void
-  onCartRemove: (id: ProductId, merchant: string) => void
+  onCartQty: (id: ProductId, merchant: string, qty: number, identity?: string) => void
+  onCartRemove: (id: ProductId, merchant: string, identity?: string) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
   checkoutBusy: boolean
@@ -1711,8 +1711,9 @@ export function ChatDiscoverView({
     merchant: string,
     qty: number,
     nextCart: readonly CartItem[],
+    identity?: string,
   ) => {
-    onCartQty(id, merchant, qty)
+    onCartQty(id, merchant, qty, identity)
     updateChatCartBlock(messageId, blockIndex, nextCart)
   }
 
@@ -1722,8 +1723,9 @@ export function ChatDiscoverView({
     id: ProductId,
     merchant: string,
     nextCart: readonly CartItem[],
+    identity?: string,
   ) => {
-    onCartRemove(id, merchant)
+    onCartRemove(id, merchant, identity)
     updateChatCartBlock(messageId, blockIndex, nextCart)
   }
 
@@ -1939,6 +1941,7 @@ export function ChatDiscoverView({
                   product,
                   merchant: offer.merchant,
                   synced: true,
+                  offerKey: recommendedOfferKey,
                   price: offer.price,
                   count: cart.reduce((sum, item) => sum + item.qty, 0) + 1,
                 },
@@ -2014,6 +2017,7 @@ export function ChatDiscoverView({
               product,
               merchant: offer.merchant,
               synced,
+              offerKey: exactOfferKey || undefined,
               price: offer.price,
               count: cart.reduce((sum, item) => sum + item.qty, 0) + 1,
             },
@@ -2024,7 +2028,27 @@ export function ChatDiscoverView({
     )
   }
 
-  const restoreCartLineFromReview = async (product: Product, merchant: string, price?: number) => {
+  const restoreCartLineFromReview = async (
+    product: Product,
+    merchant: string,
+    price?: number,
+    offerKey?: string,
+  ) => {
+    const exactOfferKey = offerKey?.trim()
+    if (exactOfferKey) {
+      if (cart.some((item) => item.id === product.id && item.offerKey?.trim() === exactOfferKey)) {
+        return
+      }
+      try {
+        if (await onAddSelectedOfferToCart(product, exactOfferKey)) {
+          return
+        }
+      } catch {
+        // Keep exact identity: opening the product is safer than restoring a sibling variant.
+      }
+      onOpen(product)
+      return
+    }
     if (product.canonicalProduct) {
       onOpen(product)
       return
@@ -2326,8 +2350,8 @@ export function ChatDiscoverView({
     onOpenPrefs,
     onOpenCart,
     onReviewCartHere: showCartReviewHere,
-    onRestoreCartLine: (product: Product, merchant: string, price?: number) =>
-      void restoreCartLineFromReview(product, merchant, price),
+    onRestoreCartLine: (product: Product, merchant: string, price?: number, offerKey?: string) =>
+      void restoreCartLineFromReview(product, merchant, price, offerKey),
     onCartQty: updateChatCartQty,
     onCartRemove: removeChatCartLine,
     onCheckout,

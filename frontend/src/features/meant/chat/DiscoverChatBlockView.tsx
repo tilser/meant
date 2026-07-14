@@ -19,7 +19,12 @@ import { InlineCartBlock } from './blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
 import type { DiscoverChatBlock } from './types'
-import { cartItemsWithFallback, copyTextToClipboard, productsWithFallback } from './utils'
+import {
+  cartItemsWithFallback,
+  cartLineForAddedBlock,
+  copyTextToClipboard,
+  productsWithFallback,
+} from './utils'
 
 function discountCodeSourceHost(sourceUrl: string | null | undefined): string | null {
   if (!sourceUrl) {
@@ -103,9 +108,20 @@ export function DiscoverChatBlockView({
   onOpenPrefs: () => void
   onOpenCart: () => void
   onReviewCartHere: (lines?: readonly CartItem[], products?: readonly Product[]) => void
-  onRestoreCartLine: (product: Product, merchant: string, price?: number) => void
-  onCartQty: (id: ProductId, merchant: string, qty: number, nextCart: readonly CartItem[]) => void
-  onCartRemove: (id: ProductId, merchant: string, nextCart: readonly CartItem[]) => void
+  onRestoreCartLine: (product: Product, merchant: string, price?: number, offerKey?: string) => void
+  onCartQty: (
+    id: ProductId,
+    merchant: string,
+    qty: number,
+    nextCart: readonly CartItem[],
+    identity?: string,
+  ) => void
+  onCartRemove: (
+    id: ProductId,
+    merchant: string,
+    nextCart: readonly CartItem[],
+    identity?: string,
+  ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
   checkoutBusy: boolean
@@ -411,11 +427,9 @@ export function DiscoverChatBlockView({
             className="mt-ct-added-go"
             type="button"
             onClick={() => {
-              const liveLine = cart.find(
-                (item) => item.id === block.product.id && item.merchant === block.merchant,
-              )
+              const liveLine = cartLineForAddedBlock(cart, block)
               if (!liveLine && addedPrice != null) {
-                onRestoreCartLine(block.product, block.merchant, addedPrice)
+                onRestoreCartLine(block.product, block.merchant, addedPrice, block.offerKey)
               }
               onReviewCartHere(
                 [
@@ -423,6 +437,7 @@ export function DiscoverChatBlockView({
                     id: block.product.id,
                     merchant: block.merchant,
                     qty: 1,
+                    offerKey: block.offerKey,
                     productTitle: block.product.name,
                     imageUrl: block.product.imageUrl,
                     unitPriceAmount: String(addedPrice),

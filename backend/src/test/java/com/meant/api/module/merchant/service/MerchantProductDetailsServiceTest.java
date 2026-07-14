@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
@@ -50,6 +51,28 @@ class MerchantProductDetailsServiceTest {
         assertThat(result.product().options()).extracting("name").containsExactly("Size");
     }
 
+    @Test
+    void forwardsVariantSelectionAndPreferencesToGetProduct() {
+        UUID merchantId = UUID.randomUUID();
+        FakeMerchantLookupService merchantLookupService = new FakeMerchantLookupService();
+        FakeMerchantCatalogPluginDispatchService dispatchService = new FakeMerchantCatalogPluginDispatchService();
+        MerchantProductDetailsService service = new MerchantProductDetailsService(
+                merchantLookupService, dispatchService);
+
+        service.get(new GetMerchantProductDetailsQuery(
+                merchantId,
+                "gid://shopify/Product/1",
+                "US",
+                "en",
+                List.of(new ProductAttribute("variant-option", "Color", "Blue")),
+                List.of("Prefer cotton")
+        ));
+
+        assertThat(dispatchService.requestedSelected).containsExactly(
+                new ProductDetailsResponse.SelectedOption("Color", "Blue"));
+        assertThat(dispatchService.requestedPreferences).containsExactly("Prefer cotton");
+    }
+
     private static class FakeMerchantLookupService extends MerchantLookupService {
 
         private final MerchantSemanticSearchResult merchant = new MerchantSemanticSearchResult(
@@ -83,6 +106,8 @@ class MerchantProductDetailsServiceTest {
         private MerchantSemanticSearchResult requestedGetProductMerchant;
         private String requestedGetProductId;
         private CatalogSearchContext requestedGetProductContext;
+        private List<ProductDetailsResponse.SelectedOption> requestedSelected;
+        private List<String> requestedPreferences;
 
         FakeMerchantCatalogPluginDispatchService() {
             super(null, null);
@@ -140,6 +165,20 @@ class MerchantProductDetailsServiceTest {
                             )
                     )
             );
+        }
+
+        @Override
+        public ProductDetailsResult getProduct(
+                MerchantSemanticSearchResult merchant,
+                String productId,
+                List<ProductDetailsResponse.SelectedOption> selected,
+                List<String> preferences,
+                CatalogSearchContext context,
+                NegotiatedCapabilities activeCapabilities
+        ) {
+            requestedSelected = selected;
+            requestedPreferences = preferences;
+            return getProduct(merchant, productId, context, activeCapabilities);
         }
     }
 }

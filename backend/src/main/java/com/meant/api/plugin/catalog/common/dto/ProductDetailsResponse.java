@@ -32,6 +32,7 @@ public record ProductDetailsResponse(
             List<Category> categories,
             List<String> tags,
             List<Option> options,
+            List<SelectedOption> selected,
             List<Variant> variants,
             @JsonProperty("total_variants")
             Integer totalVariants,
@@ -68,6 +69,71 @@ public record ProductDetailsResponse(
     ) {
         public Product(
                 String productId,
+                String handle,
+                String title,
+                String description,
+                String url,
+                String imageUrl,
+                List<Image> images,
+                List<Media> media,
+                List<Category> categories,
+                List<String> tags,
+                List<Option> options,
+                List<Variant> variants,
+                Integer totalVariants,
+                PriceRange priceRange,
+                PriceRange listPriceRange,
+                Object listPrice,
+                Object rating,
+                Object reviewCount,
+                Boolean requiresSellingPlan,
+                List<Object> sellingPlanGroups,
+                Object skus,
+                Object certifications,
+                Object materials,
+                Object collections,
+                Object metadata,
+                Object metafields,
+                Object techSpecs,
+                SelectedVariant selectedOrFirstAvailableVariant
+        ) {
+            this(
+                    productId,
+                    handle,
+                    title,
+                    description,
+                    url,
+                    imageUrl,
+                    images,
+                    media,
+                    categories,
+                    tags,
+                    options,
+                    selectedOrFirstAvailableVariant == null
+                            ? List.of()
+                            : selectedOrFirstAvailableVariant.selectedOptions(),
+                    variants,
+                    totalVariants,
+                    priceRange,
+                    listPriceRange,
+                    listPrice,
+                    rating,
+                    reviewCount,
+                    requiresSellingPlan,
+                    sellingPlanGroups,
+                    skus,
+                    certifications,
+                    materials,
+                    collections,
+                    metadata,
+                    metafields,
+                    techSpecs,
+                    selectedOrFirstAvailableVariant
+            );
+        }
+
+        public Product(
+                String productId,
                 String title,
                 String description,
                 String url,
@@ -92,6 +158,9 @@ public record ProductDetailsResponse(
                     List.of(),
                     List.of(),
                     options,
+                    selectedOrFirstAvailableVariant == null
+                            ? List.of()
+                            : selectedOrFirstAvailableVariant.selectedOptions(),
                     List.of(),
                     totalVariants,
                     priceRange,
@@ -137,7 +206,27 @@ public record ProductDetailsResponse(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Option(
             String name,
-            List<String> values
+            List<String> values,
+            @JsonProperty("value_details")
+            @JsonAlias("valueDetails")
+            List<OptionValue> valueDetails
+    ) {
+        public Option(String name, List<String> values) {
+            this(
+                    name,
+                    values,
+                    values == null
+                            ? List.of()
+                            : values.stream().map(value -> new OptionValue(value, null, null)).toList()
+            );
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record OptionValue(
+            String value,
+            Boolean available,
+            Boolean exists
     ) {
     }
 

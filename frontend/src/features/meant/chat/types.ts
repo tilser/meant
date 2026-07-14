@@ -43,6 +43,8 @@ export type DiscoverChatBlock =
       product: Product
       merchant: string
       synced: boolean
+      offerKey?: string
+      cartLineIdentity?: string
       price?: number
       count?: number
     }

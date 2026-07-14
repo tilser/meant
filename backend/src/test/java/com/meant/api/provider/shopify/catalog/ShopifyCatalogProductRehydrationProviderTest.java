@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.meant.api.module.catalog.service.CommercialFreshnessPolicy;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
@@ -340,6 +341,85 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
+    void partialSelectionReturnsCompatibleVariantsAndRequestsTheAnchoredShopIncludingUnavailableValues() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        ShopifyGlobalCatalogResponse.Product base = rawProduct();
+        List<ShopifyGlobalCatalogResponse.SelectedOption> blueMedium = List.of(
+                new ShopifyGlobalCatalogResponse.SelectedOption("Color", "Blue"),
+                new ShopifyGlobalCatalogResponse.SelectedOption("Size", "M"));
+        List<ShopifyGlobalCatalogResponse.SelectedOption> blueLarge = List.of(
+                new ShopifyGlobalCatalogResponse.SelectedOption("Color", "Blue"),
+                new ShopifyGlobalCatalogResponse.SelectedOption("Size", "L"));
+        ShopifyGlobalCatalogResponse.Product selectionProduct = new ShopifyGlobalCatalogResponse.Product(
+                base.id(),
+                base.handle(),
+                base.title(),
+                base.description(),
+                base.url(),
+                base.categories(),
+                base.priceRange(),
+                base.listPriceRange(),
+                base.media(),
+                List.of(
+                        new ShopifyGlobalCatalogResponse.Option("Color", List.of(
+                                new ShopifyGlobalCatalogResponse.OptionValue("Blue", true, true),
+                                new ShopifyGlobalCatalogResponse.OptionValue("Red", false, true))),
+                        new ShopifyGlobalCatalogResponse.Option("Size", List.of(
+                                new ShopifyGlobalCatalogResponse.OptionValue("M", true, true),
+                                new ShopifyGlobalCatalogResponse.OptionValue("L", false, true)))),
+                List.of(new ShopifyGlobalCatalogResponse.SelectedOption("Color", "Blue")),
+                List.of(
+                        withOptions(base.variants().get(0), blueMedium),
+                        withOptions(base.variants().get(1), blueLarge),
+                        withOptions(base.variants().get(2), blueMedium)),
+                9,
+                base.rating(),
+                base.tags(),
+                base.metadata()
+        );
+        CatalogSourceResult sourceResult = successful(List.of());
+        ShopifyGlobalCatalogProductResult detailResult = new ShopifyGlobalCatalogProductResult(
+                sourceResult, selectionProduct, List.of());
+        when(global.getProductWithDetails(any())).thenReturn(detailResult);
+        CatalogProductReference anchor = new CatalogProductReference(
+                "saved-product",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                anchor,
+                new CatalogProductDetailSelection(
+                        List.of(new ProductAttribute("variant-option", "Color", "Blue")),
+                        List.of("Prefer cotton")),
+                new CatalogRehydrationContext("CZ", "cs"));
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().resolvedReference().externalVariantReference()).isEqualTo(variant("variant-m"));
+        assertThat(result.details().selected()).containsExactly(
+                new com.meant.api.module.catalog.service.dto.RehydratedProductDetails.SelectedOption(
+                        "Color", "Blue"));
+        assertThat(result.details().variants()).extracting(detailVariant -> detailVariant.variantId())
+                .containsExactly("variant-m", "variant-l");
+        assertThat(result.details().totalVariants()).isEqualTo(9);
+        assertThat(result.details().options().getFirst().valueDetails().getLast().available()).isFalse();
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global).getProductWithDetails(request.capture());
+        assertThat(request.getValue().selected()).containsExactly(
+                new com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogSelectedOption("Color", "Blue"));
+        assertThat(request.getValue().preferences()).containsExactly("Prefer cotton");
+        assertThat(request.getValue().filters().available()).isFalse();
+        assertThat(request.getValue().filters().shops()).containsExactly("seller-a");
+    }
+
+    @Test
     void savedDetailMatchesExactRawVariantBeyondTheNormalizedCandidateCap() {
         ShopifyGlobalCatalogProvider global = providerSource(1);
         CatalogSourceResult cappedResult = successful(List.of(detailedCandidate(
@@ -595,6 +675,35 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 variant.checkoutUrl(),
                 variant.sellingPlan(),
                 components
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Variant withOptions(
+            ShopifyGlobalCatalogResponse.Variant variant,
+            List<ShopifyGlobalCatalogResponse.SelectedOption> options
+    ) {
+        return new ShopifyGlobalCatalogResponse.Variant(
+                variant.id(),
+                variant.productId(),
+                variant.sku(),
+                variant.handle(),
+                variant.title(),
+                variant.description(),
+                variant.url(),
+                variant.price(),
+                variant.listPrice(),
+                variant.availability(),
+                variant.requires(),
+                options,
+                variant.media(),
+                variant.categories(),
+                variant.tags(),
+                variant.barcodes(),
+                variant.inputs(),
+                variant.seller(),
+                variant.checkoutUrl(),
+                variant.sellingPlan(),
+                variant.components()
         );
     }
 

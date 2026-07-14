@@ -2,14 +2,7 @@ import { useEffect, useRef } from 'react'
 
 import { CartIcon, CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import type { CartItem, Product, ProductId } from '../types'
-import {
-  cartGroups,
-  cartLines,
-  cartMerchantKey,
-  computeSmartAlerts,
-  money,
-  normalizedMerchantName,
-} from '../utils'
+import { cartGroups, cartItemIdentity, cartLines, computeSmartAlerts, money } from '../utils'
 import type { MerchantCartSnapshot } from './types'
 import { cartSnapshotSavings, cartSnapshotSubtotal, cartSnapshotTotal } from './utils'
 
@@ -26,7 +19,7 @@ export function CartPopover({
   cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
   onViewFull: () => void
   onClose: () => void
-  onRemove: (id: ProductId, merchant: string) => void
+  onRemove: (id: ProductId, merchant: string, identity?: string) => void
 }>) {
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -84,10 +77,7 @@ export function CartPopover({
   const warnCount = alerts.filter((alert) => alert.kind === 'warn').length
   const groups = cartGroups(lines)
   const groupSummaries = groups.map((group) => {
-    const merchantKey = group.items[0]
-      ? cartMerchantKey(group.items[0])
-      : normalizedMerchantName(group.merchant)
-    const snapshot = cartSnapshots[merchantKey]
+    const snapshot = cartSnapshots[group.merchantKey]
     const fallbackTotal = group.subtotal + group.delivery
     return {
       group,
@@ -128,7 +118,7 @@ export function CartPopover({
       </div>
       <div className="mt-cart-pop-list">
         {lines.map((line) => (
-          <div className="mt-cart-pop-item" key={`${line.id}-${line.merchant}`}>
+          <div className="mt-cart-pop-item" key={cartItemIdentity(line)}>
             <div className="mt-cart-pop-media">
               <ProductArtwork product={line.product} label={line.product.category.toLowerCase()} />
             </div>
@@ -137,12 +127,15 @@ export function CartPopover({
               <div className="mt-mono mt-cart-pop-meta">
                 {line.qty} × {money(line.price)} · {line.merchant}
               </div>
+              {line.variantTitle ? (
+                <div className="mt-mono mt-cart-pop-meta">{line.variantTitle}</div>
+              ) : null}
             </div>
             <div className="mt-cart-pop-price">{money(line.price * line.qty)}</div>
             <button
               className="mt-cart-pop-x"
               type="button"
-              onClick={() => onRemove(line.id, line.merchant)}
+              onClick={() => onRemove(line.id, line.merchant, cartItemIdentity(line))}
               aria-label="Remove"
             >
               <CloseIcon size={12} />

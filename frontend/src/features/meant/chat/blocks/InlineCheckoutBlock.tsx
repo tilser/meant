@@ -59,7 +59,7 @@ export function InlineCheckoutBlock({
 }>) {
   const [payingMerchant, setPayingMerchant] = useState<string | null>(null)
   const [checkoutStartError, setCheckoutStartError] = useState<{
-    merchant: string
+    merchantKey: string
     message: string
   } | null>(null)
   const [assistantMessages, setAssistantMessages] = useState<CheckoutAssistantMessage[]>([])
@@ -103,12 +103,13 @@ export function InlineCheckoutBlock({
   }, [assistantMessages, assistantBusy])
 
   const payGroup = async (group: (typeof groups)[number]) => {
-    setPayingMerchant(group.merchant)
+    setPayingMerchant(group.merchantKey)
     setCheckoutStartError(null)
     try {
       const saved = Math.max(0, group.subtotal + group.delivery - group.total)
       await onCheckout({
         merchant: group.merchant,
+        merchantKey: group.merchantKey,
         chatThreadId: threadId,
         items: group.items,
         saved,
@@ -118,7 +119,7 @@ export function InlineCheckoutBlock({
       })
     } catch (error) {
       setCheckoutStartError({
-        merchant: group.merchant,
+        merchantKey: group.merchantKey,
         message:
           error instanceof Error && error.message.trim()
             ? error.message
@@ -275,13 +276,13 @@ export function InlineCheckoutBlock({
                 ? groupSyncIssues.length > 0
                   ? 'Resolve cart issues to continue'
                   : 'Merchant cart is syncing...'
-                : payingMerchant === group.merchant
+                : payingMerchant === group.merchantKey
                   ? 'Starting checkout...'
                   : payingMerchant
                     ? 'Checkout is starting...'
                     : 'Start checkout in chat'
               return (
-                <div className="mt-ct-cogroup" key={group.merchant}>
+                <div className="mt-ct-cogroup" key={group.merchantKey}>
                   <div className="mt-ct-cogroup-head">
                     <div>
                       <div className="mt-ct-cogroup-name">{group.merchant}</div>
@@ -292,7 +293,8 @@ export function InlineCheckoutBlock({
                     </div>
                     <strong>{money(group.total)}</strong>
                   </div>
-                  {checkoutStartError?.merchant === group.merchant && payingMerchant === null ? (
+                  {checkoutStartError?.merchantKey === group.merchantKey &&
+                  payingMerchant === null ? (
                     <div className="mt-cart-inline-error">{checkoutStartError.message}</div>
                   ) : null}
                   {!groupReady ? (

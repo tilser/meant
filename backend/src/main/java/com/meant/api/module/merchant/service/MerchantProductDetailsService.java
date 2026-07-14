@@ -2,6 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
@@ -37,12 +38,23 @@ public class MerchantProductDetailsService {
                 context,
                 NegotiatedCapabilities.none()
         );
-        return merchantCatalogPluginDispatchService.getProduct(
-                merchant,
-                lookupResult.productId(),
-                context,
-                activeCapabilities(lookupResult.negotiatedCapabilities(), NegotiatedCapabilities.none())
-        );
+        NegotiatedCapabilities capabilities = activeCapabilities(
+                lookupResult.negotiatedCapabilities(), NegotiatedCapabilities.none());
+        return query.selectionRequest()
+                ? merchantCatalogPluginDispatchService.getProduct(
+                        merchant,
+                        lookupResult.productId(),
+                        query.selectedOptions().stream()
+                                .map(option -> new ProductDetailsResponse.SelectedOption(option.name(), option.value()))
+                                .toList(),
+                        query.preferences(),
+                        context,
+                        capabilities)
+                : merchantCatalogPluginDispatchService.getProduct(
+                        merchant,
+                        lookupResult.productId(),
+                        context,
+                        capabilities);
     }
 
     private NegotiatedCapabilities activeCapabilities(

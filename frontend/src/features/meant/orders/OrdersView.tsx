@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { PrefChip } from '../shared/icons'
 import { CartIcon, EmptyState, ProductArtwork, ViewHead } from '../shared/ui'
-import type { CartItem, Order, Preference, Product } from '../types'
+import type { Order, Preference, Product } from '../types'
 import { formatOrderDate, money, prefLabel } from '../utils'
+import { orderLineTotal, orderLineUnitPrice } from './orderMapping'
 
 export function OrdersView({
   orders,
@@ -120,50 +121,6 @@ export function OrdersView({
       ) : null}
     </main>
   )
-}
-
-function orderLineUnitPrice(item: CartItem, product?: Product): number {
-  if (product) {
-    const offer =
-      product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-    return offer ? offer.price : 0
-  }
-  const unitAmount = parseOrderAmount(item.unitPriceAmount)
-  if (unitAmount !== null) {
-    return unitAmount
-  }
-  const totalAmount = parseOrderAmount(item.lineTotalAmount)
-  return totalAmount !== null && item.qty > 0 ? totalAmount / item.qty : 0
-}
-
-function orderLineTotal(item: CartItem, product?: Product): number {
-  if (product) {
-    return orderLineUnitPrice(item, product) * item.qty
-  }
-  const totalAmount = parseOrderAmount(item.lineTotalAmount)
-  return totalAmount ?? orderLineUnitPrice(item, product) * item.qty
-}
-
-function parseOrderAmount(value?: string | number | null): number | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null
-  }
-  if (typeof value !== 'string') {
-    return null
-  }
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return null
-  }
-  const normalized = trimmed.replace(/[^0-9.-]/g, '')
-  if (!normalized || normalized === '-' || normalized === '.' || normalized === '-.') {
-    return null
-  }
-  const amount = Number(normalized)
-  return Number.isFinite(amount) ? amount : null
 }
 
 function OrderCard({

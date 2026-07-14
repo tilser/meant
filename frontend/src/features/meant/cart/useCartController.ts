@@ -9,7 +9,14 @@ import {
 import { DEFAULT_CART } from '../data'
 import { useStoredState } from '../shared/storage'
 import type { CartItem, Offer, Product, ProductId } from '../types'
-import { cartMerchantKey, cartRebuildItems, isCartNotFoundError, mergeCartSnapshot } from '../utils'
+import {
+  cartItemIdentity,
+  cartMerchantKey,
+  cartRebuildItems,
+  canonicalMerchantScopeKey,
+  isCartNotFoundError,
+  mergeCartSnapshot,
+} from '../utils'
 import type {
   AppliedCartCodeType,
   ApplyCartCodeInput,
@@ -25,9 +32,14 @@ import {
   selectedDeliveryOptionsForCart,
 } from './utils'
 import {
+  bindSelectedOfferWithStaleCartRecovery,
+  cartSnapshotExactOfferLine,
+  cartSnapshotHasExactOfferLine,
+  confirmedCartIdForMerchant,
   confirmedCartIdForOffer,
   mergeConfirmedCartSnapshot,
   mergeInitialSelectedOfferSnapshot,
+  settleUnconfirmedSelectedOfferAddition,
 } from './selectedOfferCartBinding'
 
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
@@ -154,8 +166,8 @@ export function useCartController(products: readonly Product[]) {
     )
   }
 
-  const cartItemMatches = (item: CartItem, id: ProductId, merchant: string) =>
-    item.id === id && item.merchant === merchant
+  const cartItemMatches = (item: CartItem, id: ProductId, merchant: string, identity?: string) =>
+    identity ? cartItemIdentity(item) === identity : item.id === id && item.merchant === merchant
 
   const addProductOfferToCart = async (product: Product, offer: Offer): Promise<boolean> => {
     const productVariantId = offer.productVariantId
@@ -274,23 +286,69 @@ export function useCartController(products: readonly Product[]) {
     if (!exactOfferKey) {
       return false
     }
+    const priorExactQuantity =
+      cartRef.current.find((item) => item.id === product.id && item.offerKey === exactOfferKey)
+        ?.qty ?? 0
+    const expectedExactQuantity =
+      Number.isInteger(priorExactQuantity) && priorExactQuantity > 0 ? priorExactQuantity + 1 : 1
 
     const merchant =
       selectedOffer?.merchantName?.trim() ||
       selectedDisplayOffer?.merchant.trim() ||
       'Selected merchant'
-    const confirmedCartId = confirmedCartIdForOffer(cartRef.current, exactOfferKey)
-    const existingExactOffer = confirmedCartId
-      ? cartRef.current.find(
-          (item) => item.offerKey === exactOfferKey && item.cartId === confirmedCartId,
-        )
+    const sourceMerchantIntegrationId =
+      selectedDisplayOffer?.merchantIntegrationId ??
+      selectedOffer?.provenance.find((item) => item.localRouting?.merchantIntegrationId)
+        ?.localRouting?.merchantIntegrationId ??
+      selectedOffer?.identity.merchantScope.merchantIntegrationFallbackId
+    const externalMerchantId =
+      selectedDisplayOffer?.externalMerchantId ??
+      selectedOffer?.identity.merchantScope.externalMerchantIdentity?.value ??
+      selectedOffer?.provenance.find((item) => item.externalMerchantReference)
+        ?.externalMerchantReference?.value
+    const merchantDomain =
+      selectedOffer?.provenance.find((item) => item.externalMerchantDomain)
+        ?.externalMerchantDomain ?? selectedDisplayOffer?.merchantDomain
+    const provider = selectedDisplayOffer?.provider ?? selectedOffer?.identity.provider
+    const merchantScopeKey =
+      selectedDisplayOffer?.merchantScopeKey ??
+      (selectedOffer ? canonicalMerchantScopeKey(selectedOffer) : null)
+    const confirmedCartId =
+      confirmedCartIdForOffer(cartRef.current, exactOfferKey) ??
+      confirmedCartIdForMerchant(cartRef.current, {
+        merchantScopeKey,
+        merchantIntegrationId: sourceMerchantIntegrationId,
+        externalMerchantId,
+        merchantDomain,
+        provider,
+      })
+    const existingCartItem = confirmedCartId
+      ? cartRef.current.find((item) => item.cartId === confirmedCartId)
       : undefined
+    const existingMerchantScopeKey =
+      existingCartItem?.merchantScopeKey?.trim() === existingCartItem?.routingScopeKey?.trim()
+        ? null
+        : existingCartItem?.merchantScopeKey?.trim()
+    const resolvedMerchantScopeKey = merchantScopeKey ?? existingMerchantScopeKey
+    const merchantKey = resolvedMerchantScopeKey
+      ? cartMerchantKey({ merchant, merchantDomain, merchantScopeKey: resolvedMerchantScopeKey })
+      : existingCartItem
+        ? cartMerchantKey(existingCartItem)
+        : cartMerchantKey({ merchant, merchantDomain })
     updateStoredCart((current) => {
-      const existing = current.find(
+      const merchantScopedCurrent =
+        confirmedCartId && resolvedMerchantScopeKey
+          ? current.map((item) =>
+              item.cartId === confirmedCartId
+                ? { ...item, merchantScopeKey: resolvedMerchantScopeKey }
+                : item,
+            )
+          : current
+      const existing = merchantScopedCurrent.find(
         (item) => item.id === product.id && item.offerKey === exactOfferKey,
       )
       if (existing) {
-        return current.map((item) =>
+        return merchantScopedCurrent.map((item) =>
           item.id === product.id && item.offerKey === exactOfferKey
             ? {
                 ...item,
@@ -302,17 +360,30 @@ export function useCartController(products: readonly Product[]) {
         )
       }
       return [
-        ...current,
+        ...merchantScopedCurrent,
         {
           id: product.id,
           merchant,
-          merchantId: existingExactOffer?.merchantId,
-          merchantDomain: existingExactOffer?.merchantDomain,
+          merchantId: selectedDisplayOffer?.merchantId ?? existingCartItem?.merchantId,
+          merchantDomain: merchantDomain ?? existingCartItem?.merchantDomain,
+          provider: provider ?? existingCartItem?.provider,
+          merchantIntegrationId:
+            existingCartItem?.merchantIntegrationId ?? sourceMerchantIntegrationId,
+          externalMerchantId: externalMerchantId ?? existingCartItem?.externalMerchantId,
+          routingScopeKey: existingCartItem?.routingScopeKey,
+          merchantScopeKey: resolvedMerchantScopeKey,
+          productVariantId: selectedDisplayOffer?.productVariantId,
           offerKey: exactOfferKey,
+          variantTitle: selectedDisplayOffer?.variantTitle,
+          unitPriceAmount:
+            selectedDisplayOffer && Number.isFinite(selectedDisplayOffer.price)
+              ? String(selectedDisplayOffer.price)
+              : undefined,
+          orderCurrency: selectedDisplayOffer?.priceCurrency,
           cartId: confirmedCartId,
-          remoteCartId: existingExactOffer?.remoteCartId,
-          checkoutUrl: existingExactOffer?.checkoutUrl,
-          continueUrl: existingExactOffer?.continueUrl,
+          remoteCartId: existingCartItem?.remoteCartId,
+          checkoutUrl: existingCartItem?.checkoutUrl,
+          continueUrl: existingCartItem?.continueUrl,
           qty: 1,
           syncing: true,
           syncError: null,
@@ -321,41 +392,72 @@ export function useCartController(products: readonly Product[]) {
     })
 
     try {
-      const snapshot = await bindSelectedOfferToCart({
-        offerKey: exactOfferKey,
-        quantity: 1,
-        cartId: confirmedCartId,
-      })
+      const { snapshot, rebuilt } = await bindSelectedOfferWithStaleCartRecovery(
+        confirmedCartId,
+        () =>
+          bindSelectedOfferToCart({
+            offerKey: exactOfferKey,
+            quantity: 1,
+            cartId: confirmedCartId,
+          }),
+        async () => {
+          const addItems = cartAddItemsForMerchant(merchantKey, exactOfferKey)
+          clearMerchantCartState(merchantKey)
+          return createCart({ addItems })
+        },
+      )
+      const returnedExactLine = cartSnapshotExactOfferLine(snapshot, exactOfferKey)
+      const exactLineConfirmed = cartSnapshotHasExactOfferLine(
+        snapshot,
+        exactOfferKey,
+        expectedExactQuantity,
+      )
+      const reconciliationSnapshot = returnedExactLine
+        ? snapshot
+        : {
+            ...snapshot,
+            lines: snapshot.lines?.filter((line) => line.offerKey?.trim() !== exactOfferKey) ?? [],
+          }
       const serverMerchant = snapshot.merchantDomain?.trim() || merchant
       updateStoredCart((current) => {
-        const merged =
-          existingExactOffer && confirmedCartId
-            ? mergeConfirmedCartSnapshot(current, confirmedCartId, snapshot)
-            : mergeInitialSelectedOfferSnapshot(current, product.id, exactOfferKey, snapshot)
-        return merged.map((item) =>
+        const merged = rebuilt
+          ? mergeCartSnapshot(current, merchantKey, reconciliationSnapshot)
+          : confirmedCartId
+            ? mergeConfirmedCartSnapshot(current, confirmedCartId, reconciliationSnapshot)
+            : mergeInitialSelectedOfferSnapshot(
+                current,
+                product.id,
+                exactOfferKey,
+                reconciliationSnapshot,
+              )
+        const named = merged.map((item) =>
           item.id === product.id && item.offerKey === exactOfferKey
-            ? { ...item, merchant: serverMerchant }
+            ? {
+                ...item,
+                merchant: serverMerchant,
+                merchantScopeKey: item.merchantScopeKey ?? resolvedMerchantScopeKey ?? undefined,
+              }
             : item,
+        )
+        if (exactLineConfirmed) return named
+        return settleUnconfirmedSelectedOfferAddition(
+          named,
+          product.id,
+          exactOfferKey,
+          Boolean(returnedExactLine),
         )
       })
       const serverMerchantKey = cartMerchantKey({
         merchant: serverMerchant,
         merchantId: snapshot.merchantId,
         merchantDomain: snapshot.merchantDomain,
+        merchantScopeKey: resolvedMerchantScopeKey,
       })
       storeCartSnapshot(serverMerchantKey, serverMerchant, snapshot)
-      return true
+      return exactLineConfirmed
     } catch (error) {
       updateStoredCart((current) =>
-        current.flatMap((item) => {
-          if (item.id !== product.id || item.offerKey !== exactOfferKey) {
-            return [item]
-          }
-          const qty = item.qty - 1
-          return qty <= 0
-            ? []
-            : [{ ...item, qty, syncing: false, syncError: 'Could not add this exact offer.' }]
-        }),
+        settleUnconfirmedSelectedOfferAddition(current, product.id, exactOfferKey, false),
       )
       throw error
     }
@@ -380,14 +482,16 @@ export function useCartController(products: readonly Product[]) {
     })
   }
 
-  const removeFromCart = (id: ProductId, merchant: string) => {
-    const item = cartRef.current.find((candidate) => cartItemMatches(candidate, id, merchant))
+  const removeFromCart = (id: ProductId, merchant: string, identity?: string) => {
+    const item = cartRef.current.find((candidate) =>
+      cartItemMatches(candidate, id, merchant, identity),
+    )
     if (!item) {
       return
     }
     const merchantKey = cartMerchantKey(item)
     updateStoredCart((current) =>
-      current.filter((candidate) => !cartItemMatches(candidate, id, merchant)),
+      current.filter((candidate) => !cartItemMatches(candidate, id, merchant, identity)),
     )
 
     if (!item.cartId || (!item.cartLineId && !item.remoteCartLineId)) {
@@ -413,10 +517,12 @@ export function useCartController(products: readonly Product[]) {
           return
         }
         updateStoredCart((current) => {
-          const exists = current.some((candidate) => cartItemMatches(candidate, id, merchant))
+          const exists = current.some((candidate) =>
+            cartItemMatches(candidate, id, merchant, identity),
+          )
           if (exists) {
             return current.map((candidate) =>
-              cartItemMatches(candidate, id, merchant)
+              cartItemMatches(candidate, id, merchant, identity)
                 ? { ...candidate, syncError: 'Could not remove this item from the merchant cart.' }
                 : candidate,
             )
@@ -433,13 +539,15 @@ export function useCartController(products: readonly Product[]) {
       })
   }
 
-  const updateQty = (id: ProductId, merchant: string, qty: number) => {
+  const updateQty = (id: ProductId, merchant: string, qty: number, identity?: string) => {
     if (qty <= 0) {
-      removeFromCart(id, merchant)
+      removeFromCart(id, merchant, identity)
       return
     }
 
-    const item = cartRef.current.find((candidate) => cartItemMatches(candidate, id, merchant))
+    const item = cartRef.current.find((candidate) =>
+      cartItemMatches(candidate, id, merchant, identity),
+    )
     if (!item) {
       return
     }
@@ -447,7 +555,7 @@ export function useCartController(products: readonly Product[]) {
     const shouldSync = Boolean(item.cartId && (item.cartLineId || item.remoteCartLineId))
     updateStoredCart((current) =>
       current.map((candidate) =>
-        cartItemMatches(candidate, id, merchant)
+        cartItemMatches(candidate, id, merchant, identity)
           ? { ...candidate, qty, syncing: shouldSync, syncError: null }
           : candidate,
       ),
@@ -480,7 +588,7 @@ export function useCartController(products: readonly Product[]) {
         }
         updateStoredCart((current) =>
           current.map((candidate) =>
-            cartItemMatches(candidate, id, merchant) && candidate.qty === qty
+            cartItemMatches(candidate, id, merchant, identity) && candidate.qty === qty
               ? {
                   ...candidate,
                   qty: item.qty,

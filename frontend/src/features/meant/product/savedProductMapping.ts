@@ -46,11 +46,14 @@ function catalogReferenceForRecommendedOffer(
       ? { externalVariantId: component.externalVariantIdentity.value.trim() }
       : {}),
     quantity: component.quantity,
-    selectedOptions: component.selectedOptions.map((option) => ({
-      ...(option.group?.trim() ? { group: option.group.trim() } : {}),
-      name: option.name,
-      value: option.value,
-    })),
+    selectedOptions: component.selectedOptions.map((option) => {
+      const group = option.group?.trim()
+      return {
+        ...(group ? { group } : {}),
+        name: option.name,
+        value: option.value,
+      }
+    }),
   }))
   const sellingPlan = offer.identity.sellingPlanIdentity
   return {
@@ -62,11 +65,14 @@ function catalogReferenceForRecommendedOffer(
     ...(externalMerchantDomain ? { externalMerchantDomain } : {}),
     externalProductId,
     ...(externalVariantId ? { externalVariantId } : {}),
-    selectedOptions: offer.selectedOptions.map((option) => ({
-      ...(option.group?.trim() ? { group: option.group.trim() } : {}),
-      name: option.name,
-      value: option.value,
-    })),
+    selectedOptions: offer.selectedOptions.map((option) => {
+      const group = option.group?.trim()
+      return {
+        ...(group ? { group } : {}),
+        name: option.name,
+        value: option.value,
+      }
+    }),
     offerKey: offer.key,
     ...(components.length > 0 ? { components } : {}),
     ...(sellingPlan
@@ -428,6 +434,7 @@ export function savedProductFromProfile(
 export function savedProductInput(
   product: Product,
   preferences: readonly Preference[] = [],
+  selectedOfferKey?: string | null,
 ): SaveUserProductInput {
   const curatedFields = productCuratedFields(product, preferences)
   const catalogReference = catalogReferenceForRecommendedOffer(product)
@@ -467,5 +474,6 @@ export function savedProductInput(
     needs: product.needs ?? null,
     provides: product.provides ? [...product.provides] : [],
     ...(catalogReference ? { catalogReference } : {}),
+    ...(selectedOfferKey?.trim() ? { selectedOfferKey: selectedOfferKey.trim() } : {}),
   }
 }

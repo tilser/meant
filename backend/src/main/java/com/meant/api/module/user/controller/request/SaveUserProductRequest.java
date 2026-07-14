@@ -87,7 +87,13 @@ public record SaveUserProductRequest(
                 requiredMode = Schema.RequiredMode.NOT_REQUIRED
         )
         @Valid
-        CatalogReference catalogReference
+        CatalogReference catalogReference,
+        @Schema(
+                description = "Server-issued exact offer selected for this save or explicit saved-choice update",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        @Size(max = 200)
+        String selectedOfferKey
 ) {
 
     public record CatalogReference(

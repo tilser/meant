@@ -6,6 +6,7 @@ import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
@@ -77,6 +78,15 @@ public class GenericUcpProductObservationMapper {
             MerchantIntegrationResult integration,
             ProductDetailsResult details
     ) {
+        return map(reference, integration, details, null);
+    }
+
+    public CatalogProductRehydrationResult map(
+            CatalogProductReference reference,
+            MerchantIntegrationResult integration,
+            ProductDetailsResult details,
+            CatalogProductDetailSelection selection
+    ) {
         // Generic get-product does not expose typed component or selling-plan identities to verify.
         if (!reference.components().isEmpty() || reference.sellingPlanIdentity() != null) {
             return failed(reference, CatalogRehydrationFailureKind.INVALID_REFERENCE);
@@ -85,13 +95,15 @@ public class GenericUcpProductObservationMapper {
         if (product == null || !reference.externalProductReference().value().equals(product.productId())) {
             return failed(reference, CatalogRehydrationFailureKind.NOT_FOUND);
         }
-        if (reference.externalVariantReference() == null) {
+        if (selection == null && reference.externalVariantReference() == null) {
             return failed(reference, CatalogRehydrationFailureKind.INVALID_REFERENCE);
         }
         if (requiresSellingPlan(product)) {
             return failed(reference, CatalogRehydrationFailureKind.INVALID_REFERENCE);
         }
-        GenericUcpVariantObservationResolver.Resolution resolution = variantResolver.resolve(reference, product);
+        GenericUcpVariantObservationResolver.Resolution resolution = selection == null
+                ? variantResolver.resolve(reference, product)
+                : variantResolver.resolveSelection(effectiveSelection(product, selection), product);
         if (resolution.failure() != null) {
             return failed(reference, resolution.failure());
         }
@@ -130,6 +142,15 @@ public class GenericUcpProductObservationMapper {
             CatalogProductReference resolvedReference,
             String merchantName
     ) {
+        return details(details, resolvedReference, merchantName, null);
+    }
+
+    public RehydratedProductDetails details(
+            ProductDetailsResult details,
+            CatalogProductReference resolvedReference,
+            String merchantName,
+            CatalogProductDetailSelection selection
+    ) {
         ProductDetailsResponse.Product product = details == null ? null : details.product();
         if (product == null || resolvedReference == null) {
             return null;
@@ -163,8 +184,11 @@ public class GenericUcpProductObservationMapper {
                 safe(product.options()).stream()
                         .filter(Objects::nonNull)
                         .map(option -> new RehydratedProductDetails.Option(
-                                option.name(), distinctStrings(option.values())))
+                                option.name(),
+                                distinctStrings(option.values()),
+                                detailOptionValues(option)))
                         .toList(),
+                detailSelectedOptions(effectiveSelection(product, resolvedReference, selection)),
                 safe(product.variants()).stream()
                         .filter(Objects::nonNull)
                         .map(this::detailVariant)
@@ -301,12 +325,57 @@ public class GenericUcpProductObservationMapper {
                 .toList();
     }
 
+    private List<ProductAttribute> effectiveSelection(
+            ProductDetailsResponse.Product product,
+            CatalogProductDetailSelection selection
+    ) {
+        List<ProductAttribute> responseSelection = selectedOptions(product.selected());
+        return responseSelection.isEmpty() ? selectedOptions(selection.selectedOptions()) : responseSelection;
+    }
+
+    private List<ProductDetailsResponse.SelectedOption> effectiveSelection(
+            ProductDetailsResponse.Product product,
+            CatalogProductReference resolvedReference,
+            CatalogProductDetailSelection selection
+    ) {
+        List<ProductDetailsResponse.SelectedOption> responseSelection = safe(product.selected());
+        if (!responseSelection.isEmpty()) {
+            return responseSelection;
+        }
+        List<ProductAttribute> fallback = selection == null
+                ? resolvedReference.selectedOptions()
+                : selection.selectedOptions();
+        return fallback.stream()
+                .map(option -> new ProductDetailsResponse.SelectedOption(option.name(), option.value()))
+                .toList();
+    }
+
+    private List<ProductAttribute> selectedOptions(Collection<ProductAttribute> options) {
+        return options == null
+                ? List.of()
+                : options.stream()
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .sorted(OPTION_ORDER)
+                        .toList();
+    }
+
     private List<RehydratedProductDetails.SelectedOption> detailSelectedOptions(
             List<ProductDetailsResponse.SelectedOption> options
     ) {
         return safe(options).stream()
                 .filter(Objects::nonNull)
                 .map(option -> new RehydratedProductDetails.SelectedOption(option.name(), option.value()))
+                .toList();
+    }
+
+    private List<RehydratedProductDetails.OptionValue> detailOptionValues(
+            ProductDetailsResponse.Option option
+    ) {
+        return safe(option.valueDetails()).stream()
+                .filter(Objects::nonNull)
+                .map(value -> new RehydratedProductDetails.OptionValue(
+                        value.value(), value.available(), value.exists()))
                 .toList();
     }
 

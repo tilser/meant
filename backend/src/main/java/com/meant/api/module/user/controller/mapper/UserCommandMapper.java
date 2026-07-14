@@ -143,7 +143,13 @@ public final class UserCommandMapper {
                 request.needs(),
                 request.provides(),
                 catalogReference(request),
-                request.catalogReference() == null ? null : request.catalogReference().offerKey());
+                firstText(
+                        request.selectedOfferKey(),
+                        request.catalogReference() == null ? null : request.catalogReference().offerKey()));
+    }
+
+    private static String firstText(String first, String second) {
+        return first == null || first.isBlank() ? second : first.trim();
     }
 
     private static CatalogProductReference catalogReference(SaveUserProductRequest request) {

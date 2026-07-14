@@ -1,6 +1,7 @@
 package com.meant.api.module.catalog.service.port;
 
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -13,4 +14,12 @@ public interface CatalogProductDetailProvider {
             CatalogProductReference reference,
             CatalogRehydrationContext context
     );
+
+    default CatalogProductDetailResult getDetails(
+            CatalogProductReference reference,
+            CatalogProductDetailSelection selection,
+            CatalogRehydrationContext context
+    ) {
+        return getDetails(reference, context);
+    }
 }

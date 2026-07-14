@@ -7,6 +7,7 @@ import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 /** Resolves one exact, unambiguous variant observation from a generic UCP product response. */
@@ -37,6 +38,46 @@ public class GenericUcpVariantObservationResolver {
             return Resolution.failed(CatalogRehydrationFailureKind.INVALID_RESPONSE);
         }
         return new Resolution(matches.getFirst(), null);
+    }
+
+    /** Resolves a deterministic compatible variant while allowing a partial option selection. */
+    public Resolution resolveSelection(
+            List<ProductAttribute> effectiveOptions,
+            ProductDetailsResponse.Product product
+    ) {
+        List<ProductAttribute> requestedOptions = VariantObservation.options(effectiveOptions);
+        VariantObservation featured = product.selectedOrFirstAvailableVariant() == null
+                ? null
+                : VariantObservation.from(product.selectedOrFirstAvailableVariant());
+        List<VariantObservation> observations = new ArrayList<>();
+        if (featured != null) {
+            observations.add(featured);
+        }
+        if (product.variants() != null) {
+            product.variants().stream()
+                    .filter(Objects::nonNull)
+                    .map(VariantObservation::from)
+                    .forEach(observations::add);
+        }
+        List<VariantObservation> matches = observations.stream()
+                .filter(observation -> observation.options().containsAll(requestedOptions))
+                .distinct()
+                .toList();
+        if (matches.isEmpty()) {
+            return Resolution.failed(CatalogRehydrationFailureKind.NOT_FOUND);
+        }
+        if (featured != null && matches.contains(featured)) {
+            return new Resolution(featured, null);
+        }
+        VariantObservation selected = matches.stream()
+                .sorted(Comparator
+                        .comparing((VariantObservation observation) -> !Boolean.TRUE.equals(observation.available()))
+                        .thenComparing(
+                                VariantObservation::id,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .findFirst()
+                .orElseThrow();
+        return new Resolution(selected, null);
     }
 
     public record Resolution(VariantObservation observation, CatalogRehydrationFailureKind failure) {

@@ -9,6 +9,7 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     '/api/v1/users/me/product-searches',
     '/api/v1/users/me/product-searches:stream',
     '/api/v1/users/me/products/{canonicalProductKey}',
+    '/api/v1/users/me/product-variant-selections',
   ]
   const expectedSchemas: Array<keyof components['schemas']> = [
     'UserGroupedProductSearchV1Response',
@@ -30,6 +31,9 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'UserCanonicalProductDetailV1Response',
     'UserCatalogSourceStateResponse',
     'UserOfferCommercialStateResponse',
+    'SelectUserProductVariantRequest',
+    'UserProductVariantSelectionResponse',
+    'CanonicalProductAttributeResponse',
   ]
   const federatedEventFields: Array<
     keyof components['schemas']['UserFederatedProductSearchStreamEventResponse']
@@ -41,10 +45,15 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'features',
   ]
 
-  expect(expectedPaths).toHaveLength(5)
-  expect(expectedSchemas).toHaveLength(19)
+  expect(expectedPaths).toHaveLength(6)
+  expect(expectedSchemas).toHaveLength(22)
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
+
+  const canonicalAttributeFields: Array<
+    keyof components['schemas']['CanonicalProductAttributeResponse']
+  > = ['group', 'name', 'value']
+  expect(canonicalAttributeFields).toContain('group')
 })
 
 test('cart creation accepts only server-issued offer identity for line selection', () => {
@@ -62,7 +71,7 @@ test('cart creation accepts only server-issued offer identity for line selection
 test('saved products retain typed routing and return a durable exact offer key', () => {
   type SaveProduct = components['schemas']['SaveUserProductRequest']
   type CatalogReference = components['schemas']['CatalogReference']
-  const saveFields: Array<keyof SaveProduct> = ['id', 'catalogReference']
+  const saveFields: Array<keyof SaveProduct> = ['id', 'catalogReference', 'selectedOfferKey']
   const referenceFields: Array<keyof CatalogReference> = [
     'provider',
     'sourceType',
@@ -79,6 +88,7 @@ test('saved products retain typed routing and return a durable exact offer key',
   ]
 
   expect(saveFields).toContain('catalogReference')
+  expect(saveFields).toContain('selectedOfferKey')
   expect(referenceFields).toContain('sourceIdentity')
   expect(referenceFields).toContain('externalMerchantDomain')
   expect(referenceFields).toContain('selectedOptions')
@@ -118,6 +128,37 @@ test('saved products retain typed routing and return a durable exact offer key',
   expect(savedDetailFields).toContain('ratingScaleMax')
   expect(savedDetailFields).toContain('reviewCount')
   expect(savedDetailFields).toContain('merchantName')
+
+  const optionFields: Array<keyof components['schemas']['UserSavedProductDetailOption']> = [
+    'name',
+    'values',
+    'valueDetails',
+  ]
+  const optionValueFields: Array<keyof components['schemas']['UserSavedProductDetailOptionValue']> =
+    ['value', 'available', 'exists']
+  expect(optionFields).toContain('valueDetails')
+  expect(optionValueFields).toContain('available')
+  expect(optionValueFields).toContain('exists')
+})
+
+test('variant selection uses the generated exact-offer contract', () => {
+  type Request = components['schemas']['SelectUserProductVariantRequest']
+  type Response = components['schemas']['UserProductVariantSelectionResponse']
+  const requestFields: Array<keyof Request> = [
+    'anchorOfferKey',
+    'selectedOptions',
+    'preferredOptionName',
+  ]
+  const responseFields: Array<keyof Response> = [
+    'details',
+    'selectedOfferKey',
+    'selectedOffer',
+    'cartable',
+  ]
+
+  expect(requestFields).toContain('selectedOptions')
+  expect(responseFields).toContain('selectedOffer')
+  expect(responseFields).toContain('cartable')
 })
 
 test('embedded checkout bootstrap exposes only short-lived browser instructions', () => {

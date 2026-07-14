@@ -52,7 +52,8 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
                         request.productId(),
                         request.selected(),
                         request.preferences(),
-                        request.context()
+                        request.context(),
+                        request.filters()
                 ),
                 extensionRegistry.extensions(CatalogTool.GET_PRODUCT, activeCapabilities)
         );
