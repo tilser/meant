@@ -162,6 +162,9 @@ class UserProductDiscoveryServiceTest {
                     org.mockito.Mockito.mock(UserSavedProductReferenceResolver.class),
                     org.mockito.Mockito.mock(com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver.class),
                     org.mockito.Mockito.mock(com.meant.api.module.catalog.service.CatalogProductRehydrationService.class),
+                    org.mockito.Mockito.mock(com.meant.api.module.catalog.service.CatalogProductDetailService.class),
+                    org.mockito.Mockito.mock(
+                            com.meant.api.module.catalog.service.CatalogPurchaseReferencePolicyResolver.class),
                     org.mockito.Mockito.mock(UserSavedProductPersistenceService.class),
                     org.mockito.Mockito.mock(UserSavedProductResultMapper.class)
             );

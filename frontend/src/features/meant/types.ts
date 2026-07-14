@@ -1,4 +1,4 @@
-import type { CanonicalProductProfile } from '../../lib/apiClient'
+import type { CanonicalProductProfile, MerchantProductDetailsProfile } from '../../lib/apiClient'
 
 export type CorePreferenceId = string
 export type PreferenceId = string
@@ -126,6 +126,8 @@ export interface Product {
   agentStage?: ProductAgentStage
   agentUpdatedAt?: number
   commercialFactsAuthoritative?: boolean
+  /** Current provider detail loaded through the durable saved-product reference. */
+  rehydratedDetails?: MerchantProductDetailsProfile | null
   /** Generated grouped API payload retained as the single source of truth for exact offers. */
   canonicalProduct?: CanonicalProductProfile
 }

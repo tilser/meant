@@ -83,8 +83,41 @@ public record SaveUserProductCommand(
 
         List<@NotBlank @Size(max = 100) String> provides,
 
-        @Valid CatalogProductReference catalogReference
+        @Valid CatalogProductReference catalogReference,
+
+        @Size(max = 200)
+        String catalogOfferKey
 ) {
+
+    public SaveUserProductCommand(
+            UUID userId,
+            String productKey,
+            String productHash,
+            String name,
+            String brand,
+            String category,
+            String tone,
+            String imageUrl,
+            String productUrl,
+            Boolean remote,
+            Integer matchScore,
+            Double priceFrom,
+            Integer merchantCount,
+            List<String> satisfies,
+            List<String> misses,
+            String note,
+            List<String> pros,
+            List<String> cons,
+            Review review,
+            List<Offer> offers,
+            String needs,
+            List<String> provides,
+            CatalogProductReference catalogReference
+    ) {
+        this(userId, productKey, productHash, name, brand, category, tone, imageUrl, productUrl, remote,
+                matchScore, priceFrom, merchantCount, satisfies, misses, note, pros, cons, review, offers,
+                needs, provides, catalogReference, null);
+    }
 
     public SaveUserProductCommand(
             UUID userId,
@@ -112,7 +145,7 @@ public record SaveUserProductCommand(
     ) {
         this(userId, productKey, productHash, name, brand, category, tone, imageUrl, productUrl, remote,
                 matchScore, priceFrom, merchantCount, satisfies, misses, note, pros, cons, review, offers,
-                needs, provides, null);
+                needs, provides, null, null);
     }
 
     public record Review(

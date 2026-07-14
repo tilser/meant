@@ -189,10 +189,16 @@ export function CompareView({
                 const offer = bestOffer(product, deliveryLocations)
                 return (
                   <div key={product.id} className="mt-cmp-cell">
-                    <span className="mt-cmp-store">{offer.merchant}</span>
-                    <span className="mt-mono mt-cmp-sub">
-                      {money(offer.price, offer.priceCurrency)} · {offer.delivery}
-                    </span>
+                    {offer ? (
+                      <>
+                        <span className="mt-cmp-store">{offer.merchant}</span>
+                        <span className="mt-mono mt-cmp-sub">
+                          {money(offer.price, offer.priceCurrency)} · {offer.delivery}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="mt-mono mt-cmp-sub">Current offer unavailable</span>
+                    )}
                   </div>
                 )
               })}

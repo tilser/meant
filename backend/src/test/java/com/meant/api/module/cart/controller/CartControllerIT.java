@@ -129,9 +129,12 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 .expectBody(String.class)
                 .returnResult()
                 .getResponseBody();
-        JsonNode schemas = new ObjectMapper().readTree(document).path("components").path("schemas");
+        JsonNode openApi = new ObjectMapper().readTree(document);
+        JsonNode schemas = openApi.path("components").path("schemas");
         JsonNode createProperties = schemas.path("CartCreateRequest").path("properties");
         JsonNode addProperties = schemas.path("CartAddItemRequest").path("properties");
+        JsonNode savedOfferProperties = schemas.path("UserSavedProductOffer").path("properties");
+        JsonNode savedDetailProperties = schemas.path("UserSavedProductDetails").path("properties");
         JsonNode cartRequired = schemas.path("CartResponse").path("required");
         JsonNode lineRequired = schemas.path("CartLineResponse").path("required");
         JsonNode embeddedProperties = schemas.path("EmbeddedCheckoutBootstrapResponse").path("properties");
@@ -139,6 +142,15 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         assertThat(createProperties.has("merchantId")).isFalse();
         assertThat(createProperties.has("merchantDomain")).isFalse();
         assertThat(addProperties.has("offerKey")).isTrue();
+        assertThat(addProperties.path("offerKey").path("description").asText())
+                .contains("live product session", "durable saved-product selection");
+        assertThat(openApi.path("paths").path("/api/carts").path("post").path("description").asText())
+                .contains("live catalog session", "durable saved-product selection");
+        assertThat(savedOfferProperties.path("offerKey").path("description").asText())
+                .contains("freshly rehydrated saved offer");
+        assertThat(savedDetailProperties.path("ratingScore").path("format").asText()).isEqualTo("double");
+        assertThat(savedDetailProperties.path("ratingScaleMax").path("format").asText()).isEqualTo("double");
+        assertThat(savedDetailProperties.path("reviewCount").path("format").asText()).isEqualTo("int64");
         assertThat(addProperties.has("productVariantId")).isFalse();
         assertThat(cartRequired.toString()).doesNotContain(
                 "checkoutUrl", "totalAmount", "subtotalAmount", "currency", "expiresAt");
@@ -676,7 +688,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
 
     static class FakeSelectedOfferResolutionService extends UserSelectedOfferResolutionService {
         FakeSelectedOfferResolutionService() {
-            super(null, null, null);
+            super(null, null, null, null);
         }
 
         @Override

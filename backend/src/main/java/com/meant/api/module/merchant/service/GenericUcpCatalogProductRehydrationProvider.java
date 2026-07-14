@@ -4,12 +4,14 @@ import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
+import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +19,8 @@ import org.springframework.stereotype.Component;
 
 /** Reuses lookup/get-product after server-side merchant routing verification. */
 @Component
-public class GenericUcpCatalogProductRehydrationProvider implements CatalogProductRehydrationProvider {
+public class GenericUcpCatalogProductRehydrationProvider
+        implements CatalogProductRehydrationProvider, CatalogProductDetailProvider {
     private final MerchantProductDetailsService productDetailsService;
     private final GenericUcpCatalogReferenceVerifier referenceVerifier;
     private final GenericUcpProductObservationMapper observationMapper;
@@ -35,6 +38,42 @@ public class GenericUcpCatalogProductRehydrationProvider implements CatalogProdu
     @Override
     public boolean supports(DiscoverySourceIdentity source) {
         return referenceVerifier.supportsSource(source);
+    }
+
+    @Override
+    public boolean supportsDetails(DiscoverySourceIdentity source) {
+        return supports(source);
+    }
+
+    @Override
+    public CatalogProductDetailResult getDetails(
+            CatalogProductReference reference,
+            CatalogRehydrationContext context
+    ) {
+        MerchantIntegrationResult integration = referenceVerifier.verify(List.of(reference)).get(reference);
+        if (integration == null) {
+            return CatalogProductDetailResult.from(unverified(reference), null);
+        }
+        try {
+            ProductDetailsResult details = getProduct(reference, integration, context);
+            CatalogProductRehydrationResult rehydrated = observationMapper.map(reference, integration, details);
+            if (rehydrated.status() != CatalogRehydrationStatus.FRESH) {
+                return CatalogProductDetailResult.from(rehydrated, null);
+            }
+            var projection = observationMapper.details(details, rehydrated.resolvedReference());
+            return projection == null
+                    ? CatalogProductDetailResult.failed(
+                            reference,
+                            CatalogRehydrationStatus.UNAVAILABLE,
+                            CatalogRehydrationFailureKind.INVALID_RESPONSE)
+                    : CatalogProductDetailResult.from(rehydrated, projection);
+        } catch (RuntimeException exception) {
+            return CatalogProductDetailResult.failed(
+                    reference,
+                    CatalogRehydrationStatus.DEGRADED,
+                    CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
+            );
+        }
     }
 
     @Override
@@ -61,12 +100,7 @@ public class GenericUcpCatalogProductRehydrationProvider implements CatalogProdu
             CatalogRehydrationContext context
     ) {
         try {
-            ProductDetailsResult details = productDetailsService.get(new GetMerchantProductDetailsQuery(
-                    integration.merchantId(),
-                    reference.externalProductReference().value(),
-                    context == null ? null : context.country(),
-                    context == null ? null : context.language()
-            ));
+            ProductDetailsResult details = getProduct(reference, integration, context);
             return observationMapper.map(reference, integration, details);
         } catch (RuntimeException exception) {
             return CatalogProductRehydrationResult.failed(
@@ -75,6 +109,19 @@ public class GenericUcpCatalogProductRehydrationProvider implements CatalogProdu
                     CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
             );
         }
+    }
+
+    private ProductDetailsResult getProduct(
+            CatalogProductReference reference,
+            MerchantIntegrationResult integration,
+            CatalogRehydrationContext context
+    ) {
+        return productDetailsService.get(new GetMerchantProductDetailsQuery(
+                integration.merchantId(),
+                reference.externalProductReference().value(),
+                context == null ? null : context.country(),
+                context == null ? null : context.language()
+        ));
     }
 
     private CatalogProductRehydrationResult unverified(CatalogProductReference reference) {

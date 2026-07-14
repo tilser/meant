@@ -259,7 +259,7 @@ function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>)
 export function productPriceFrom(product: Product, locations: DeliveryLocations): number | null {
   if (product.canonicalProduct) return product.priceFrom
   const offers = availableOffers(product, locations)
-  const prices = offers.map((offer) => offer.price)
+  const prices = offers.map((offer) => offer.price).filter(Number.isFinite)
   return prices.length > 0 ? Math.min(...prices) : product.priceFrom
 }
 
@@ -268,11 +268,15 @@ export function productMerchantCount(product: Product, locations: DeliveryLocati
   return offers.length > 0 ? offers.length : product.merchants
 }
 
-export function bestOffer(product: Product, locations: DeliveryLocations): Offer {
+export function bestOffer(product: Product, locations: DeliveryLocations): Offer | null {
   const offers = availableOffers(product, locations)
-  return (offers.length > 0 ? offers : product.offers).reduce((best, offer) =>
-    offer.price < best.price ? offer : best,
-  )
+  return (offers.length > 0 ? offers : product.offers).reduce<Offer | null>((best, offer) => {
+    if (!best) return offer
+    const bestHasPrice = Number.isFinite(best.price)
+    const offerHasPrice = Number.isFinite(offer.price)
+    if (offerHasPrice && !bestHasPrice) return offer
+    return offerHasPrice && bestHasPrice && offer.price < best.price ? offer : best
+  }, null)
 }
 
 export function resolveReply(query: string) {
@@ -395,12 +399,15 @@ export function resolveAsk(
     }
 
     if (/cheap|price|cost|afford|budget|deal|expensive|save money/.test(normalized)) {
-      const prices = product.offers.map((offer) => offer.price)
-      return `Best price is ${money(product.offers[0].price)} at ${
-        product.offers[0].merchant
-      }. Across ${product.offers.length} stores it runs ${money(
-        Math.min(...prices),
-      )} to ${money(Math.max(...prices))}.`
+      const pricedOffers = product.offers.filter((offer) => Number.isFinite(offer.price))
+      const firstOffer = pricedOffers[0]
+      if (!firstOffer) {
+        return 'Current merchant prices are unavailable. Open this product again to retry.'
+      }
+      const prices = pricedOffers.map((offer) => offer.price)
+      return `Best price is ${money(firstOffer.price)} at ${firstOffer.merchant}. Across ${
+        product.offers.length
+      } stores it runs ${money(Math.min(...prices))} to ${money(Math.max(...prices))}.`
     }
 
     if (/review|rating|people say|worth it|reliable|how good|quality/.test(normalized)) {
@@ -415,6 +422,9 @@ export function resolveAsk(
 
     if (/deliver|ship|arrive|how fast|when can/.test(normalized)) {
       const fastest = [...product.offers].sort((a, b) => a.delivery.localeCompare(b.delivery))[0]
+      if (!fastest) {
+        return 'Current delivery options are unavailable. Open this product again to retry.'
+      }
       return `Fastest option is ${fastest.merchant}: ${fastest.delivery.toLowerCase()}.`
     }
 
@@ -463,6 +473,9 @@ export function cartLines(cart: readonly CartItem[], products: readonly Product[
     }
     const offer =
       product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
+    if (!offer) {
+      return []
+    }
     return [
       {
         ...item,
@@ -582,6 +595,7 @@ export function computeSmartAlerts(
         (product) =>
           product.provides?.includes(need) &&
           product.needs &&
+          product.offers.length > 0 &&
           provided.has(product.needs) &&
           !lines.some((cartLine) => cartLine.id === product.id),
       )
@@ -809,7 +823,7 @@ export function orderTotal(order: Order): number {
     const product = productById(item.id)
     const offer =
       product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-    return sum + offer.price * item.qty
+    return offer ? sum + offer.price * item.qty : sum
   }, 0)
   return total - order.saved
 }

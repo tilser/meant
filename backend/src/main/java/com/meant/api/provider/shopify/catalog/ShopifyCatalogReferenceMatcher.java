@@ -55,7 +55,9 @@ public class ShopifyCatalogReferenceMatcher {
                 || !domainMatches(requested.externalMerchantDomain(), provenance.externalMerchantDomain())
                 || !requested.externalProductReference().equals(provenance.externalProductReference())
                 || !requested.externalVariantReference().equals(variant)
-                || !optionsMatch(requested.selectedOptions(), offer.selectedOptions())) {
+                || !optionsMatch(requested.selectedOptions(), offer.selectedOptions())
+                || !requested.components().equals(offer.components())
+                || !Objects.equals(requested.sellingPlanIdentity(), offer.sellingPlanIdentity())) {
             return null;
         }
         CatalogProductReference resolved = new CatalogProductReference(
@@ -67,7 +69,9 @@ public class ShopifyCatalogReferenceMatcher {
                 provenance.externalMerchantDomain(),
                 provenance.externalProductReference(),
                 variant,
-                offer.selectedOptions()
+                offer.selectedOptions(),
+                offer.components(),
+                offer.sellingPlanIdentity()
         );
         return new Match(resolved, candidate);
     }

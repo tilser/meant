@@ -231,7 +231,7 @@ class ShopifyGlobalCatalogProviderTest {
                 null,
                 null
         ));
-        var getProduct = provider.getProduct(new ShopifyGlobalCatalogGetProductRequest(
+        var getProduct = provider.getProductWithDetails(new ShopifyGlobalCatalogGetProductRequest(
                 "gid://shopify/p/upid-1",
                 List.of(),
                 List.of("Color", "Size"),
@@ -240,7 +240,27 @@ class ShopifyGlobalCatalogProviderTest {
         ));
 
         assertThat(lookup.successful()).isTrue();
-        assertThat(getProduct.successful()).isTrue();
+        assertThat(getProduct.catalogResult().successful()).isTrue();
+        assertThat(getProduct.product()).satisfies(product -> {
+            assertThat(product.handle()).isEqualTo("trail-runner");
+            assertThat(product.description().preferredText()).isEqualTo("Full trail runner detail");
+            assertThat(product.options()).singleElement()
+                    .satisfies(option -> assertThat(option.values()).singleElement()
+                            .satisfies(value -> assertThat(value.label()).isEqualTo("Black")));
+            assertThat(product.variants()).singleElement().satisfies(variant -> {
+                assertThat(variant.sku()).isEqualTo("TR-BLK-42");
+                assertThat(variant.handle()).isEqualTo("black-42");
+                assertThat(variant.description().preferredText()).isEqualTo("Black trail runner variant");
+                assertThat(variant.media()).singleElement()
+                        .satisfies(media -> assertThat(media.url())
+                                .isEqualTo("https://seller-one.example/trail-runner-black.jpg"));
+            });
+            assertThat(product.rating().value()).isEqualByComparingTo("4.8");
+            assertThat(product.rating().count()).isEqualTo(246L);
+            assertThat(product.metadata().techSpecs()).containsExactly("8 mm drop");
+        });
+        assertThat(getProduct.messages()).singleElement()
+                .satisfies(message -> assertThat(message.content()).isEqualTo("Runs true to size"));
         assertThat(client.calls).extracting(Call::toolName)
                 .containsExactly("lookup_catalog", "get_product");
         ShopifyGlobalCatalogArguments lookupArguments = (ShopifyGlobalCatalogArguments) client.calls.get(0).arguments();

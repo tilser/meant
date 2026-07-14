@@ -72,6 +72,12 @@ public record UserSavedProductResponse(
                 requiredMode = Schema.RequiredMode.REQUIRED
         )
         boolean commercialFactsAuthoritative,
+        @Schema(
+                description = "Full current provider detail returned only by the saved-product detail endpoint",
+                nullable = true,
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        UserSavedProductDetailsResponse details,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -106,6 +112,7 @@ public record UserSavedProductResponse(
                 result.marketCountry(),
                 result.marketContextApplied(),
                 result.commercialFactsAuthoritative(),
+                result.details() == null ? null : UserSavedProductDetailsResponse.from(result.details()),
                 result.createdAt(),
                 result.updatedAt()
         );
@@ -128,6 +135,12 @@ public record UserSavedProductResponse(
 
     @Schema(name = "UserSavedProductOffer")
     public record SavedOffer(
+            @Schema(
+                    description = "Server-issued key for selecting this freshly rehydrated saved offer",
+                    nullable = true,
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED
+            )
+            String offerKey,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchant,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -152,6 +165,7 @@ public record UserSavedProductResponse(
 
         private static SavedOffer from(UserSavedProductResult.Offer result) {
             return new SavedOffer(
+                    result.offerKey(),
                     result.merchant(),
                     result.price(),
                     result.priceMinorUnits(),

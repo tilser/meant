@@ -1,11 +1,18 @@
 package com.meant.api.module.user.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
+import com.meant.api.module.cart.controller.response.CartResponse;
+import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
+import com.meant.api.module.cart.service.SelectedOfferCartRoutingService;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
@@ -17,12 +24,17 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.MerchantSemanticProductSearchService;
 import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
+import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByMerchantsQuery;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsQuery;
 import com.meant.api.module.merchant.service.MerchantProductDetailsService;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchResult;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
+import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
+import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
@@ -50,11 +62,14 @@ import com.meant.api.module.user.repository.UserProductSearchResultItemRepositor
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserProductSearchHashService;
+import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.query.ResolveUserSelectedOfferQuery;
 import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -136,6 +151,9 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private CatalogDataUsePolicyResolver catalogDataUsePolicyResolver;
+
+    @Autowired
+    private UserSelectedOfferResolutionService userSelectedOfferResolutionService;
 
     private RestTestClient client;
 
@@ -338,6 +356,99 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                     );
                 }
             };
+        }
+
+        @Bean
+        @Primary
+        SelectedOfferCartRoutingService testSelectedOfferCartRoutingService() {
+            SelectedOfferCartRoutingService service = mock(SelectedOfferCartRoutingService.class);
+            when(service.resolve(any(ResolvedSelectedOffer.class))).thenAnswer(invocation -> {
+                ResolvedSelectedOffer offer = invocation.getArgument(0);
+                MerchantIntegrationProvider provider = MerchantIntegrationProvider.valueOf(
+                        offer.identity().provider().value());
+                var externalMerchant = offer.identity().merchantScope().externalMerchantIdentity();
+                String externalMerchantId = externalMerchant == null ? null : externalMerchant.value();
+                var localRouting = offer.rehydratedReference().localRouting();
+                MerchantCartProvider merchantProvider = new MerchantCartProvider(
+                        offer.rehydratedReference().localMerchantId(),
+                        "shop.example",
+                        "https://cart.test/mcp",
+                        null
+                );
+                String scopeKey = localRouting == null
+                        ? "test:" + provider + ":" + externalMerchantId
+                        : "test:" + provider + ":" + localRouting.merchantIntegrationId();
+                return new CartRoutingTarget(
+                        scopeKey,
+                        provider,
+                        localRouting == null ? null : localRouting.merchantIntegrationId(),
+                        externalMerchantId,
+                        merchantProvider
+                );
+            });
+            return service;
+        }
+
+        @Bean
+        @Primary
+        MerchantCartPluginDispatchService testMerchantCartPluginDispatchService() {
+            MerchantCartPluginDispatchService service = mock(MerchantCartPluginDispatchService.class);
+            when(service.createCart(
+                    any(CartRoutingTarget.class), any(CreateCartRequest.class), any(UcpSession.class)))
+                    .thenAnswer(invocation -> {
+                        CreateCartRequest request = invocation.getArgument(1);
+                        assertThat(request.addItems()).singleElement().satisfies(item -> {
+                            assertThat(item.productVariantId()).isEqualTo("variant-1");
+                            assertThat(item.quantity()).isEqualTo(2);
+                        });
+                        Instant now = Instant.now();
+                        UcpCartResponse.Line line = new UcpCartResponse.Line(
+                                "remote-line-1",
+                                2,
+                                new UcpCartResponse.Cost(
+                                        new UcpCartResponse.Money("14.80", "USD"),
+                                        new UcpCartResponse.Money("14.80", "USD")
+                                ),
+                                new UcpCartResponse.Merchandise(
+                                        "variant-1",
+                                        "Default",
+                                        new UcpCartResponse.Product(
+                                                "gid://shopify/Product/123", "Current saved product"),
+                                        "gid://shopify/Product/123",
+                                        List.of(),
+                                        List.of(),
+                                        null
+                                )
+                        );
+                        UcpCartResponse response = new UcpCartResponse(
+                                null,
+                                new UcpCartResponse.Cart(
+                                        "remote-saved-cart-1",
+                                        now,
+                                        now,
+                                        now.plusSeconds(3600),
+                                        List.of(line),
+                                        new UcpCartResponse.Cost(
+                                                new UcpCartResponse.Money("14.80", "USD"),
+                                                new UcpCartResponse.Money("14.80", "USD")
+                                        ),
+                                        2,
+                                        "https://shop.example/checkout/remote-saved-cart-1",
+                                        null,
+                                        List.of(),
+                                        List.of(),
+                                        List.of(),
+                                        List.of(),
+                                        List.of(),
+                                        List.of(),
+                                        List.of()
+                                ),
+                                List.of(),
+                                List.of()
+                        );
+                        return new UcpCartToolResult("https://cart.test/mcp", "{}", response);
+                    });
+            return service;
         }
     }
 
@@ -792,7 +903,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 productKey,
                 "hash-1",
                 recentSearchProduct(
-                        "gid://shopify/Product/123",
+                        "1",
                         "Saved Cereal",
                         "Organic and low sugar.",
                         740L,
@@ -860,6 +971,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(saved.name()).isEqualTo("Saved Cereal");
         assertThat(saved.priceFrom()).isNull();
         assertThat(saved.imageUrl()).isEqualTo("https://example.com/cereal.png");
+        assertThat(saved.details()).isNull();
 
         UserSavedProductResponse[] listed = client.get().uri("/api/users/me/saved-products")
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
@@ -873,6 +985,82 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(listed).singleElement()
                 .extracting(UserSavedProductResponse::id)
                 .isEqualTo(productKey);
+        assertThat(listed[0].details()).isNull();
+
+        UserSavedProductResponse detail = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/saved-products/detail")
+                        .queryParam("productKey", productKey)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSavedProductResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(detail).isNotNull();
+        assertThat(detail.id()).isEqualTo(productKey);
+        assertThat(detail.name()).isNotBlank();
+        assertThat(detail.commercialFactsAuthoritative()).isTrue();
+        assertThat(detail.details()).isNotNull();
+        assertThat(detail.details().description()).isEqualTo("Current description");
+        assertThat(detail.details().imageUrl()).isEqualTo("https://merchant.example/media/current.jpg");
+        assertThat(detail.details().selectedVariantId()).isEqualTo("variant-1");
+        assertThat(detail.offers()).singleElement().satisfies(offer -> {
+            assertThat(offer.offerKey()).isNotBlank();
+            assertThat(offer.productVariantId()).isEqualTo("variant-1");
+        });
+
+        String savedOfferKey = detail.offers().getFirst().offerKey();
+        ResolvedSelectedOffer cartSelection = userSelectedOfferResolutionService.resolve(
+                new ResolveUserSelectedOfferQuery(id, savedOfferKey));
+        assertThat(cartSelection.canonicalProductKey()).isEqualTo(productKey);
+        assertThat(cartSelection.offerKey()).isEqualTo(savedOfferKey);
+        assertThat(cartSelection.identity().externalVariantIdentity().value()).isEqualTo("variant-1");
+
+        CartResponse cart = client.post().uri("/api/carts")
+                .headers(headers -> {
+                    headers.setBearerAuth(token(id, email, "Ada Lovelace"));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "addItems": [
+                            {
+                              "offerKey": "%s",
+                              "quantity": 2
+                            }
+                          ],
+                          "discountCodes": [],
+                          "giftCardCodes": []
+                        }
+                        """.formatted(savedOfferKey))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(CartResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(cart).isNotNull();
+        assertThat(cart.remoteCartId()).isEqualTo("remote-saved-cart-1");
+        assertThat(cart.totalQuantity()).isEqualTo(2);
+        assertThat(cart.lines()).singleElement().satisfies(line -> {
+            assertThat(line.offerKey()).isEqualTo(savedOfferKey);
+            assertThat(line.productVariantId()).isEqualTo("variant-1");
+            assertThat(line.quantity()).isEqualTo(2);
+        });
+
+        UUID otherUserId = UUID.randomUUID();
+        client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/users/me/saved-products/detail")
+                        .queryParam("productKey", productKey)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(
+                        otherUserId, otherUserId + "@example.com", "Grace Hopper")))
+                .exchange()
+                .expectStatus().isNotFound();
 
         UserProductDiscoveryResponse discovery = client.get().uri("/api/users/me/product-discovery")
                 .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
@@ -1438,6 +1626,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(openApi)
                 .contains(
                         "\"/api/users/me/product-searches\"",
+                        "\"/api/users/me/saved-products/detail\"",
                         "\"/api/users/me/product-searches:stream\"",
                         "\"/api/v1/users/me/product-searches\"",
                         "\"/api/v1/users/me/product-searches:stream\"",

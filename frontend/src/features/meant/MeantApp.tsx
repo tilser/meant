@@ -39,7 +39,11 @@ import { ProductModal } from './product/ProductModal'
 import { productFromCanonical } from './product/groupedProductMapping'
 import {
   appendProductSnapshots,
+  confirmedSavedProductSnapshot,
   productSnapshotsForIds,
+  refreshedSavedProductSnapshot,
+  savedProductRefreshShell,
+  uniqueProductSnapshotsByPriority,
   upsertProductSnapshot,
 } from './product/productSnapshots'
 import { productFromSearchResult } from './product/productSearchMapping'
@@ -74,6 +78,7 @@ import {
   getOrders,
   getProfilePictureUrl,
   getProductDiscovery,
+  getSavedProduct,
   getUserInventoryItems,
   getUserProductSearchSuggestions,
   getUserSettings,
@@ -691,6 +696,9 @@ export function MeantApp() {
   )
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
+  const [savedProductDetailLoadingId, setSavedProductDetailLoadingId] = useState<ProductId | null>(
+    null,
+  )
   const [shelf, setShelf] = useStoredState<ShelfItem[]>('meant.shelf', [])
   const [shelfOpen, setShelfOpen] = useState(false)
   const [shelfFlashMessageId, setShelfFlashMessageId] = useState<string | null>(null)
@@ -734,6 +742,10 @@ export function MeantApp() {
   const [accountMenu, setAccountMenu] = useState(false)
   const searchRequestRef = useRef(0)
   const searchAbortRef = useRef<AbortController | null>(null)
+  const savedProductDetailRequestRef = useRef<{
+    productId: ProductId
+    controller: AbortController
+  } | null>(null)
   const searchSuggestionsRequestRef = useRef(0)
   const inventoryRequestRef = useRef(0)
   const ordersRequestRef = useRef(0)
@@ -768,22 +780,17 @@ export function MeantApp() {
   const savedSet = useMemo(() => new Set(savedIds), [savedIds])
   const savePendingSet = useMemo(() => new Set(savePendingIds), [savePendingIds])
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
-  const allKnownProducts = useMemo(() => {
-    const seen = new Set<ProductId>()
-    return [
-      ...searchResults,
-      ...remoteProducts,
-      ...savedProducts,
-      ...PRODUCTS,
-      ...compareProducts,
-    ].filter((product) => {
-      if (seen.has(product.id)) {
-        return false
-      }
-      seen.add(product.id)
-      return true
-    })
-  }, [compareProducts, remoteProducts, savedProducts, searchResults])
+  const allKnownProducts = useMemo(
+    () =>
+      uniqueProductSnapshotsByPriority(
+        savedProducts,
+        searchResults,
+        remoteProducts,
+        PRODUCTS,
+        compareProducts,
+      ),
+    [compareProducts, remoteProducts, savedProducts, searchResults],
+  )
   const allKnownProductsMap = useMemo(
     () =>
       new Map<ProductId, Product>(
@@ -808,6 +815,10 @@ export function MeantApp() {
   } = useCartController(allKnownProducts)
   const addProductOfferToCartResolved = useCallback(
     async (product: Product, offer: Offer): Promise<boolean> => {
+      const exactOfferKey = offer.offerKey?.trim()
+      if (exactOfferKey) {
+        return addSelectedOfferToCart(product, exactOfferKey)
+      }
       try {
         const resolved = await resolveCartableOffer({
           product,
@@ -822,7 +833,7 @@ export function MeantApp() {
         return false
       }
     },
-    [addProductOfferToCart, deliveryLocations],
+    [addProductOfferToCart, addSelectedOfferToCart, deliveryLocations],
   )
   const savedListProducts = useMemo(
     () =>
@@ -878,10 +889,78 @@ export function MeantApp() {
   const feedProducts = merchantScopedFeedProducts
   const hiddenByShip = baseFeed.length - shippingScopedFeedProducts.length
 
-  const openProduct = useCallback((product: Product, list?: readonly Product[]) => {
-    setActiveProduct(product)
-    setNavProducts(list ?? [product])
-  }, [])
+  const refreshSavedProductForOpen = useCallback(
+    (product: Product, force = false) => {
+      if (!force && !savedSet.has(product.id)) {
+        savedProductDetailRequestRef.current?.controller.abort()
+        savedProductDetailRequestRef.current = null
+        setSavedProductDetailLoadingId(null)
+        return
+      }
+      savedProductDetailRequestRef.current?.controller.abort()
+      const controller = new AbortController()
+      savedProductDetailRequestRef.current = { productId: product.id, controller }
+      setSavedProductDetailLoadingId(product.id)
+      setSavedProducts((current) =>
+        current.map((candidate) =>
+          candidate.id === product.id ? savedProductRefreshShell(candidate) : candidate,
+        ),
+      )
+      setNavProducts((current) =>
+        current.map((candidate) =>
+          candidate.id === product.id ? savedProductRefreshShell(candidate) : candidate,
+        ),
+      )
+      setActiveProduct((current) =>
+        current?.id === product.id ? savedProductRefreshShell(current) : current,
+      )
+      void getSavedProduct(product.id, controller.signal)
+        .then((profile) => {
+          const currentRequest = savedProductDetailRequestRef.current
+          if (
+            controller.signal.aborted ||
+            currentRequest?.controller !== controller ||
+            currentRequest.productId !== product.id
+          ) {
+            return
+          }
+          const snapshot = savedProductFromProfile(profile, allPreferencesRef.current)
+          setSavedProducts((current) => {
+            const existing = current.find((candidate) => candidate.id === product.id)
+            return upsertProductSnapshot(current, refreshedSavedProductSnapshot(existing, snapshot))
+          })
+          setNavProducts((current) =>
+            current.map((candidate) =>
+              candidate.id === product.id
+                ? refreshedSavedProductSnapshot(candidate, snapshot)
+                : candidate,
+            ),
+          )
+          setActiveProduct((current) =>
+            current?.id === product.id ? refreshedSavedProductSnapshot(current, snapshot) : current,
+          )
+        })
+        .catch(() => {
+          // Keep the saved presentation shell. A later open starts a new durable refresh attempt.
+        })
+        .finally(() => {
+          if (savedProductDetailRequestRef.current?.controller === controller) {
+            savedProductDetailRequestRef.current = null
+            setSavedProductDetailLoadingId((current) => (current === product.id ? null : current))
+          }
+        })
+    },
+    [savedSet],
+  )
+
+  const openProduct = useCallback(
+    (product: Product, list?: readonly Product[]) => {
+      setActiveProduct(product)
+      setNavProducts(list ?? [product])
+      refreshSavedProductForOpen(product)
+    },
+    [refreshSavedProductForOpen],
+  )
 
   const navIndex = activeProduct
     ? navProducts.findIndex((candidate) => candidate.id === activeProduct.id)
@@ -891,22 +970,14 @@ export function MeantApp() {
 
   const navigateProduct = useCallback(
     (direction: -1 | 1) => {
-      setActiveProduct((current) => {
-        if (!current) {
-          return current
-        }
-        const index = navProducts.findIndex((candidate) => candidate.id === current.id)
-        if (index < 0) {
-          return current
-        }
-        const nextIndex = index + direction
-        if (nextIndex < 0 || nextIndex >= navProducts.length) {
-          return current
-        }
-        return navProducts[nextIndex]
-      })
+      if (!activeProduct) return
+      const index = navProducts.findIndex((candidate) => candidate.id === activeProduct.id)
+      const next = index < 0 ? undefined : navProducts[index + direction]
+      if (!next) return
+      setActiveProduct(next)
+      refreshSavedProductForOpen(next)
     },
-    [navProducts],
+    [activeProduct, navProducts, refreshSavedProductForOpen],
   )
 
   useEffect(() => {
@@ -1213,6 +1284,9 @@ export function MeantApp() {
     searchRequestRef.current += 1
     searchAbortRef.current?.abort()
     searchAbortRef.current = null
+    savedProductDetailRequestRef.current?.controller.abort()
+    savedProductDetailRequestRef.current = null
+    setSavedProductDetailLoadingId(null)
     searchSuggestionsRequestRef.current += 1
     setSearchSuggestions([])
     setSelectedMerchantId(null)
@@ -1408,14 +1482,59 @@ export function MeantApp() {
     const productSnapshot = productWithCuratedFields(product, allPreferencesRef.current)
     const wasSaved = savedSet.has(product.id)
     if (wasSaved) {
+      const pendingDetailRequest = savedProductDetailRequestRef.current
+      if (pendingDetailRequest?.productId === product.id) {
+        pendingDetailRequest.controller.abort()
+        savedProductDetailRequestRef.current = null
+        setSavedProductDetailLoadingId((current) => (current === product.id ? null : current))
+      }
+      const savedSnapshot = savedProducts.find((candidate) => candidate.id === product.id)
+      const rollbackSnapshot = savedSnapshot
+        ? refreshedSavedProductSnapshot(productSnapshot, savedSnapshot)
+        : savedProductRefreshShell(productSnapshot)
       setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
+      setCompareProducts((current) =>
+        current.map((candidate) =>
+          candidate.id === product.id ? savedProductRefreshShell(candidate) : candidate,
+        ),
+      )
+      setNavProducts((current) =>
+        current.map((candidate) =>
+          candidate.id === product.id ? savedProductRefreshShell(candidate) : candidate,
+        ),
+      )
+      setActiveProduct((current) =>
+        current?.id === product.id ? savedProductRefreshShell(current) : current,
+      )
       void removeSavedProduct(product.id)
         .catch(() => {
-          setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
+          setSavedProducts((current) => upsertProductSnapshot(current, rollbackSnapshot))
           setSavedIds((current) =>
             current.includes(product.id) ? current : [product.id, ...current],
           )
+          setCompareProducts((current) =>
+            current.map((candidate) =>
+              candidate.id === product.id
+                ? refreshedSavedProductSnapshot(candidate, rollbackSnapshot)
+                : candidate,
+            ),
+          )
+          setNavProducts((current) =>
+            current.map((candidate) =>
+              candidate.id === product.id
+                ? refreshedSavedProductSnapshot(candidate, rollbackSnapshot)
+                : candidate,
+            ),
+          )
+          setActiveProduct((current) =>
+            current?.id === product.id
+              ? refreshedSavedProductSnapshot(current, rollbackSnapshot)
+              : current,
+          )
+          if (!rollbackSnapshot.offers.some((offer) => Boolean(offer.offerKey?.trim()))) {
+            refreshSavedProductForOpen(rollbackSnapshot, true)
+          }
         })
         .finally(() => endSaveOperation(product.id))
       return
@@ -1426,10 +1545,12 @@ export function MeantApp() {
     void saveUserProduct(savedProductInput(product, allPreferencesRef.current))
       .then((savedProduct) => {
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
-        setSavedProducts((current) => upsertProductSnapshot(current, snapshot))
+        const confirmedSnapshot = confirmedSavedProductSnapshot(productSnapshot, snapshot)
+        setSavedProducts((current) => upsertProductSnapshot(current, confirmedSnapshot))
         setSavedIds((current) =>
           current.includes(snapshot.id) ? current : [snapshot.id, ...current],
         )
+        refreshSavedProductForOpen(confirmedSnapshot, true)
         void refreshTasteProfile()
       })
       .catch(() => {
@@ -2193,16 +2314,18 @@ export function MeantApp() {
         preferences={allPreferences}
         saved={activeProduct ? savedSet.has(activeProduct.id) : false}
         savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
+        savedOfferRefreshPending={
+          activeProduct ? savedProductDetailLoadingId === activeProduct.id : false
+        }
         inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
         onClose={() => setActiveProduct(null)}
         onToggleSave={toggleSave}
         onCompare={handleProductCompare}
         onAddToCart={addProductOfferToCartResolved}
         onAddOfferKey={
-          activeProduct?.canonicalProduct
-            ? (offerKey) => addSelectedOfferToCart(activeProduct, offerKey)
-            : undefined
+          activeProduct ? (offerKey) => addSelectedOfferToCart(activeProduct, offerKey) : undefined
         }
+        onRefreshProduct={refreshSavedProductForOpen}
         onResearch={(searchQuery) => {
           setActiveProduct(null)
           void runProductSearch(searchQuery)

@@ -16,6 +16,13 @@ public interface UserSavedProductRepository extends JpaRepository<UserSavedProdu
 
     Optional<UserSavedProduct> findByUserIdAndProductKey(UUID userId, String productKey);
 
+    Optional<UserSavedProduct> findByUserIdAndProductKeyAndReferenceVerifiedAtIsNotNull(
+            UUID userId,
+            String productKey
+    );
+
+    Optional<UserSavedProduct> findByIdAndUserIdAndReferenceVerifiedAtIsNotNull(UUID id, UUID userId);
+
     long countByUserIdAndReferenceVerifiedAtIsNotNull(UUID userId);
 
     long deleteByUserIdAndProductKey(UUID userId, String productKey);

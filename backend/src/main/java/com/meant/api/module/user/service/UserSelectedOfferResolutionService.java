@@ -22,13 +22,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
-/** Owning-module boundary from an authenticated session offer key to a current executable identity. */
+/** Resolves an authenticated server-issued live or saved offer key to a current executable identity. */
 @Service
 @Validated
 @RequiredArgsConstructor
 public class UserSelectedOfferResolutionService {
     private final UserCanonicalProductSessionStore sessionStore;
     private final CatalogProductRehydrationService rehydrationService;
+    private final UserSavedProductOfferResolutionService savedProductOfferResolutionService;
     private final SelectedOfferResolutionMetrics metrics;
 
     public ResolvedSelectedOffer resolve(@NotNull @Valid ResolveUserSelectedOfferQuery query) {
@@ -68,26 +69,42 @@ public class UserSelectedOfferResolutionService {
     }
 
     private Selection selection(UUID userId, String offerKey) {
+        var savedSelection = SavedProductOfferKeyCodec.decode(offerKey);
+        if (savedSelection.isPresent()) {
+            UserSavedProductOfferResolutionService.Selection saved;
+            try {
+                saved = savedProductOfferResolutionService.selection(
+                        userId, savedSelection.get(), offerKey);
+            } catch (SelectedOfferResolutionException exception) {
+                throw failure(exception);
+            }
+            return new Selection(
+                    null,
+                    null,
+                    saved,
+                    List.of(new Reference(null, saved.reference(), saved))
+            );
+        }
         UserCanonicalProductSessionStore.OfferEntry entry = sessionStore.findOffer(userId, offerKey)
                 .orElseThrow(() -> failure(sessionStore.isOfferOwnedByAnotherUser(userId, offerKey)
                         ? SelectedOfferResolutionException.wrongUser()
                         : SelectedOfferResolutionException.unknownOrExpired()));
         Offer offer = entry.offer();
         List<Reference> references = offer.provenance().stream()
-                .map(provenance -> new Reference(provenance, reference(offer, provenance)))
+                .map(provenance -> new Reference(provenance, reference(offer, provenance), null))
                 .toList();
-        return new Selection(entry, offer, references);
+        return new Selection(entry, offer, null, references);
     }
 
     private ResolvedSelectedOffer resolveSelection(Selection selection, List<Resolved> resolved) {
         List<Resolved> eligible = resolved.stream()
                 .filter(this::eligible)
-                .sorted(Comparator.comparing(value -> sourceKey(value.reference().provenance())))
+                .sorted(Comparator.comparing(value -> sourceKey(value.reference())))
                 .toList();
         if (eligible.isEmpty()) {
             boolean freshMismatch = resolved.stream()
                     .anyMatch(value -> value.result().status() == CatalogRehydrationStatus.FRESH
-                            && !exactIdentity(value.reference().reference(), value.result()));
+                            && !exactIdentity(value.reference(), value.result()));
             throw failure(SelectedOfferResolutionException.rejected(
                     freshMismatch
                             ? SelectedOfferResolutionException.Failure.IDENTITY_MISMATCH
@@ -100,11 +117,20 @@ public class UserSelectedOfferResolutionService {
                     SelectedOfferResolutionException.Failure.AMBIGUOUS_PROVENANCE,
                     "Selected offer has ambiguous executable routing"));
         }
+        if (selection.saved() != null) {
+            try {
+                ResolvedSelectedOffer saved = savedProductOfferResolutionService.resolved(
+                        selection.saved(), selected.result());
+                metrics.recordSuccess();
+                return saved;
+            } catch (SelectedOfferResolutionException exception) {
+                throw failure(exception);
+            }
+        }
         metrics.recordSuccess();
         return new ResolvedSelectedOffer(
                 selection.entry().canonicalProductKey(), selection.offer().key(), selection.offer().identity(),
-                selected.reference().provenance(),
-                selected.result().resolvedReference());
+                selected.reference().provenance(), selected.result().resolvedReference());
     }
 
     private CatalogProductReference reference(Offer offer, ResultProvenance provenance) {
@@ -112,10 +138,16 @@ public class UserSelectedOfferResolutionService {
                 offer.key(), provenance.discoverySource(), null, provenance.localRouting(),
                 provenance.externalMerchantReference(), provenance.externalMerchantDomain(),
                 provenance.externalProductReference(),
-                provenance.externalVariantReference(), offer.selectedOptions());
+                provenance.externalVariantReference(),
+                offer.selectedOptions(),
+                offer.identity().components(),
+                offer.identity().sellingPlanIdentity());
     }
 
     private boolean eligible(Resolved value) {
+        if (value.reference().saved() != null) {
+            return savedProductOfferResolutionService.eligible(value.reference().saved(), value.result());
+        }
         CatalogProductRehydrationResult result = value.result();
         return result.status() == CatalogRehydrationStatus.FRESH
                 && exactIdentity(value.reference().reference(), result)
@@ -135,6 +167,12 @@ public class UserSelectedOfferResolutionService {
         return requested.selectedOptions().equals(result.facts().selectedOptions());
     }
 
+    private boolean exactIdentity(Reference requested, CatalogProductRehydrationResult result) {
+        return requested.saved() == null
+                ? exactIdentity(requested.reference(), result)
+                : savedProductOfferResolutionService.exactIdentity(requested.saved(), result);
+    }
+
     private boolean exact(CatalogProductReference requested, CatalogProductReference resolved) {
         return requested.interactionKey().equals(resolved.interactionKey())
                 && requested.discoverySource().equals(resolved.discoverySource())
@@ -143,7 +181,9 @@ public class UserSelectedOfferResolutionService {
                 && Objects.equals(requested.externalMerchantDomain(), resolved.externalMerchantDomain())
                 && requested.externalProductReference().equals(resolved.externalProductReference())
                 && Objects.equals(requested.externalVariantReference(), resolved.externalVariantReference())
-                && requested.selectedOptions().equals(resolved.selectedOptions());
+                && requested.selectedOptions().equals(resolved.selectedOptions())
+                && requested.components().equals(resolved.components())
+                && Objects.equals(requested.sellingPlanIdentity(), resolved.sellingPlanIdentity());
     }
 
     private boolean sameRouting(Resolved first, Resolved second) {
@@ -155,9 +195,9 @@ public class UserSelectedOfferResolutionService {
                 && a.discoverySource().provider().equals(b.discoverySource().provider());
     }
 
-    private String sourceKey(ResultProvenance provenance) {
-        return provenance.discoverySource().provider().value() + "\n"
-                + provenance.discoverySource().type() + "\n" + provenance.discoverySource().value();
+    private String sourceKey(Reference reference) {
+        var source = reference.reference().discoverySource();
+        return source.provider().value() + "\n" + source.type() + "\n" + source.value();
     }
 
     private SelectedOfferResolutionException failure(SelectedOfferResolutionException exception) {
@@ -165,7 +205,11 @@ public class UserSelectedOfferResolutionService {
         return exception;
     }
 
-    private record Reference(ResultProvenance provenance, CatalogProductReference reference) {
+    private record Reference(
+            ResultProvenance provenance,
+            CatalogProductReference reference,
+            UserSavedProductOfferResolutionService.Selection saved
+    ) {
     }
 
     private record Resolved(Reference reference, CatalogProductRehydrationResult result) {
@@ -174,6 +218,7 @@ public class UserSelectedOfferResolutionService {
     private record Selection(
             UserCanonicalProductSessionStore.OfferEntry entry,
             Offer offer,
+            UserSavedProductOfferResolutionService.Selection saved,
             List<Reference> references
     ) {
     }

@@ -13,9 +13,11 @@ import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,8 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class CartOfferRevalidationService {
     private static final TypeReference<List<ProductAttribute>> OPTIONS_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<OfferComponentIdentity>> COMPONENTS_TYPE = new TypeReference<>() {
     };
 
     private final CatalogProductRehydrationService rehydrationService;
@@ -88,19 +92,41 @@ public class CartOfferRevalidationService {
                 cart.getMerchantDomain(),
                 new ExternalIdentifier(ExternalIdentifierType.PRODUCT, provider.value(), line.getExternalProductId()),
                 ExternalIdentifier.optional(ExternalIdentifierType.VARIANT, provider.value(), line.getExternalVariantId()),
-                options(line.getSelectedOptionsJson())
+                options(line.getSelectedOptionsJson()),
+                components(line.getComponentsJson()),
+                sellingPlan(line.getSellingPlanJson())
         );
     }
 
     private List<ProductAttribute> options(String json) {
+        return list(json, OPTIONS_TYPE, "Stored cart offer options are invalid");
+    }
+
+    private List<OfferComponentIdentity> components(String json) {
+        return list(json, COMPONENTS_TYPE, "Stored cart offer components are invalid");
+    }
+
+    private <T> List<T> list(String json, TypeReference<List<T>> type, String message) {
         if (json == null || json.isBlank()) {
             return List.of();
         }
         try {
-            return objectMapper.readValue(json, OPTIONS_TYPE);
+            List<T> values = objectMapper.readValue(json, type);
+            return values == null ? List.of() : values;
+        } catch (JacksonException exception) {
+            throw failure(CartException.BindingFailure.IDENTITY_MISMATCH, message);
+        }
+    }
+
+    private SellingPlanIdentity sellingPlan(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, SellingPlanIdentity.class);
         } catch (JacksonException exception) {
             throw failure(CartException.BindingFailure.IDENTITY_MISMATCH,
-                    "Stored cart offer options are invalid");
+                    "Stored cart offer selling plan is invalid");
         }
     }
 
@@ -112,7 +138,9 @@ public class CartOfferRevalidationService {
                 && Objects.equals(requested.externalMerchantDomain(), resolved.externalMerchantDomain())
                 && requested.externalProductReference().equals(resolved.externalProductReference())
                 && Objects.equals(requested.externalVariantReference(), resolved.externalVariantReference())
-                && requested.selectedOptions().equals(resolved.selectedOptions());
+                && requested.selectedOptions().equals(resolved.selectedOptions())
+                && requested.components().equals(resolved.components())
+                && Objects.equals(requested.sellingPlanIdentity(), resolved.sellingPlanIdentity());
     }
 
     private CartException failure(CartException.BindingFailure failure, String message) {

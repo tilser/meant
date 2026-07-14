@@ -192,7 +192,7 @@ export function DiscoverChatBlockView({
     const offer = bestOffer(block.product, deliveryLocations)
     const codes = discountCodeEntries(block)
     const status = block.status ?? (codes.length > 0 ? 'found' : 'empty')
-    const merchant = block.merchant ?? offer.merchant
+    const merchant = block.merchant ?? offer?.merchant ?? 'merchant'
     const statusLabel =
       status === 'error'
         ? 'Search unavailable'

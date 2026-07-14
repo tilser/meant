@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
@@ -102,12 +103,73 @@ public record SaveUserProductRequest(
             UUID merchantIntegrationId,
             @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             @Size(max = 512) String externalMerchantId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 512) String externalMerchantDomain,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @NotBlank @Size(max = 512) String externalProductId,
             @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             @Size(max = 512) String externalVariantId,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<@Valid SelectedOption> selectedOptions,
+            @Schema(
+                    description = "Server-issued canonical offer key used to disambiguate exact configurations",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED
+            )
+            @Size(max = 200) String offerKey,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            List<@Valid Component> components,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Valid SellingPlan sellingPlan
+    ) {
+
+        public CatalogReference(
+                String provider,
+                ResultSourceType sourceType,
+                String sourceIdentity,
+                UUID localMerchantId,
+                UUID merchantIntegrationId,
+                String externalMerchantId,
+                String externalMerchantDomain,
+                String externalProductId,
+                String externalVariantId,
+                List<SelectedOption> selectedOptions
+        ) {
+            this(provider, sourceType, sourceIdentity, localMerchantId, merchantIntegrationId,
+                    externalMerchantId, externalMerchantDomain, externalProductId, externalVariantId,
+                    selectedOptions, null, null, null);
+        }
+    }
+
+    @Schema(name = "SavedProductCatalogComponent")
+    public record Component(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 512) String externalProductId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 512) String externalVariantId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotNull @Positive Integer quantity,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             List<@Valid SelectedOption> selectedOptions
+    ) {
+    }
+
+    @Schema(name = "SavedProductCatalogSellingPlan")
+    public record SellingPlan(
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 512) String groupId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            @Size(max = 512) String planId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<@Valid SellingPlanOption> options
+    ) {
+    }
+
+    @Schema(name = "SavedProductCatalogSellingPlanOption")
+    public record SellingPlanOption(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 200) String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotBlank @Size(max = 500) String value
     ) {
     }
 

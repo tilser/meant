@@ -13,6 +13,7 @@ const {
   bootstrapEmbeddedCheckout,
   cancelEmbeddedCheckout,
   completeEmbeddedCheckout,
+  getSavedProduct,
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
 let requests: Request[] = []
@@ -71,5 +72,17 @@ describe('bindSelectedOfferToCart', () => {
     expect(await requests[0]?.json()).toEqual({
       addItems: [{ offerKey: 'offer-exact', quantity: 1 }],
     })
+  })
+})
+
+describe('saved product detail API', () => {
+  test('loads one durable saved product with an encoded query parameter', async () => {
+    await getSavedProduct('product/key')
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('GET')
+    expect(requests[0]?.url).toBe(
+      'http://localhost:8080/api/users/me/saved-products/detail?productKey=product%2Fkey',
+    )
   })
 })

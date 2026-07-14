@@ -17,6 +17,7 @@ import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments.
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments.Pagination;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogGetProductRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogLookupRequest;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogProductResult;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogResponse;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequest;
 import com.meant.api.plugin.spi.CapabilityId;
@@ -133,8 +134,18 @@ public class ShopifyGlobalCatalogProvider {
     }
 
     public CatalogSourceResult getProduct(ShopifyGlobalCatalogGetProductRequest request) {
+        return getProductWithDetails(request).catalogResult();
+    }
+
+    /** Makes one get_product call and retains its validated typed detail payload for transient display. */
+    public ShopifyGlobalCatalogProductResult getProductWithDetails(ShopifyGlobalCatalogGetProductRequest request) {
         if (request == null || !hasText(request.id())) {
-            return invalid(CatalogSourceOperation.GET_PRODUCT, "Shopify Global Catalog product identifier was invalid");
+            return new ShopifyGlobalCatalogProductResult(
+                    invalid(CatalogSourceOperation.GET_PRODUCT,
+                            "Shopify Global Catalog product identifier was invalid"),
+                    null,
+                    List.of()
+            );
         }
         ShopifyGlobalCatalogArguments arguments = new ShopifyGlobalCatalogArguments(new Catalog(
                 null,
@@ -147,11 +158,20 @@ public class ShopifyGlobalCatalogProvider {
                 properties.view(),
                 null
         ));
-        return execute(
+        ExecutionResult execution = executeWithPayload(
                 CatalogSourceOperation.GET_PRODUCT,
                 CatalogGetProductCapability.TOOL_NAME,
                 CatalogGetProductCapability.ID,
                 arguments
+        );
+        ShopifyGlobalCatalogResponse payload = execution.payload();
+        List<ShopifyGlobalCatalogResponse.Product> products = payload == null
+                ? List.of()
+                : payload.resolvedProducts();
+        return new ShopifyGlobalCatalogProductResult(
+                execution.catalogResult(),
+                execution.catalogResult().successful() && products.size() == 1 ? products.getFirst() : null,
+                execution.catalogResult().successful() && payload != null ? payload.messages() : List.of()
         );
     }
 
@@ -161,40 +181,47 @@ public class ShopifyGlobalCatalogProvider {
             CapabilityId requiredCapability,
             ShopifyGlobalCatalogArguments arguments
     ) {
-        long started = System.nanoTime();
-        CatalogSourceResult result = executeUnmeasured(operation, toolName, requiredCapability, arguments);
-        recordMetrics(operation, result, System.nanoTime() - started);
-        return result;
+        return executeWithPayload(operation, toolName, requiredCapability, arguments).catalogResult();
     }
 
-    private CatalogSourceResult executeUnmeasured(
+    private ExecutionResult executeWithPayload(
+            CatalogSourceOperation operation,
+            String toolName,
+            CapabilityId requiredCapability,
+            ShopifyGlobalCatalogArguments arguments
+    ) {
+        long started = System.nanoTime();
+        ExecutionResult execution = executeUnmeasured(operation, toolName, requiredCapability, arguments);
+        recordMetrics(operation, execution.catalogResult(), System.nanoTime() - started);
+        return execution;
+    }
+
+    private ExecutionResult executeUnmeasured(
             CatalogSourceOperation operation,
             String toolName,
             CapabilityId requiredCapability,
             ShopifyGlobalCatalogArguments arguments
     ) {
         if (!concurrency.tryAcquire()) {
-            return failure(operation, new CatalogSourceFailure(
+            return failedExecution(operation, new CatalogSourceFailure(
                     CatalogSourceFailureKind.UNAVAILABLE,
                     "Shopify Global Catalog request capacity is exhausted",
                     null,
-                    null
-            ));
+                    null));
         }
         try {
             if (!circuitBreaker.tryAcquire()) {
-                return failure(operation, new CatalogSourceFailure(
+                return failedExecution(operation, new CatalogSourceFailure(
                         CatalogSourceFailureKind.UNAVAILABLE,
                         "Shopify Global Catalog circuit is open",
                         properties.circuitOpenDuration(),
-                        null
-                ));
+                        null));
             }
             UcpToolResponse toolResponse = client.callTool(requestOptions(), toolName, arguments);
             ParsedResponse parsed = parser.parse(toolResponse, requiredCapability, operation);
             if ("error".equalsIgnoreCase(parsed.payload().ucp().status())) {
                 circuitBreaker.recordSuccess();
-                return new CatalogSourceResult(
+                return new ExecutionResult(new CatalogSourceResult(
                         ShopifyGlobalCatalogNormalizer.SHOPIFY,
                         discoverySource(),
                         operation,
@@ -209,11 +236,11 @@ public class ShopifyGlobalCatalogProvider {
                                 null,
                                 null
                         )
-                );
+                ), parsed.payload());
             }
             NormalizedCandidates normalized = normalizer.normalize(parsed.payload());
             circuitBreaker.recordSuccess();
-            return new CatalogSourceResult(
+            return new ExecutionResult(new CatalogSourceResult(
                     ShopifyGlobalCatalogNormalizer.SHOPIFY,
                     discoverySource(),
                     operation,
@@ -223,7 +250,7 @@ public class ShopifyGlobalCatalogProvider {
                     page(parsed.payload()),
                     normalized.truncated(),
                     null
-            );
+            ), parsed.payload());
         } catch (ShopifyUcpTransportException exception) {
             CatalogSourceFailureKind kind = failureKind(exception.failure());
             if (breakerFailure(exception.failure())) {
@@ -231,35 +258,36 @@ public class ShopifyGlobalCatalogProvider {
             } else {
                 circuitBreaker.recordIgnoredFailure();
             }
-            return failure(operation, new CatalogSourceFailure(
+            return failedExecution(operation, new CatalogSourceFailure(
                     kind,
                     exception.getMessage(),
                     exception.retryAfter().orElse(null),
-                    exception.upstreamStatus().orElse(null)
-            ));
+                    exception.upstreamStatus().orElse(null)));
         } catch (ShopifyGlobalCatalogContractException | IllegalArgumentException exception) {
             circuitBreaker.recordFailure(null);
-            return failure(operation, new CatalogSourceFailure(
+            return failedExecution(operation, new CatalogSourceFailure(
                     CatalogSourceFailureKind.MALFORMED_RESPONSE,
                     "Shopify Global Catalog response could not be normalized safely",
                     null,
-                    null
-            ));
+                    null));
         } catch (RuntimeException exception) {
             circuitBreaker.recordFailure(null);
             log.warn(
                     "Shopify Global Catalog request failed unexpectedly; exceptionType={}",
                     exception.getClass().getName()
             );
-            return failure(operation, new CatalogSourceFailure(
+            return failedExecution(operation, new CatalogSourceFailure(
                     CatalogSourceFailureKind.TRANSIENT_UPSTREAM,
                     "Shopify Global Catalog request failed unexpectedly",
                     null,
-                    null
-            ));
+                    null));
         } finally {
             concurrency.release();
         }
+    }
+
+    private ExecutionResult failedExecution(CatalogSourceOperation operation, CatalogSourceFailure failure) {
+        return new ExecutionResult(failure(operation, failure), null);
     }
 
     private void recordMetrics(CatalogSourceOperation operation, CatalogSourceResult result, long elapsedNanos) {
@@ -392,5 +420,11 @@ public class ShopifyGlobalCatalogProvider {
 
     private String trimToNull(String value) {
         return hasText(value) ? value.trim() : null;
+    }
+
+    private record ExecutionResult(
+            CatalogSourceResult catalogResult,
+            ShopifyGlobalCatalogResponse payload
+    ) {
     }
 }

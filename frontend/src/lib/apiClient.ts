@@ -415,6 +415,7 @@ export interface UserAssistantStreamHandlers {
 }
 
 export interface UserSavedProductOfferProfile {
+  offerKey?: string | null
   merchant: string | null
   price: number | null
   priceMinorUnits: number | null
@@ -431,6 +432,13 @@ export interface UserSavedProductReviewProfile {
   score: number | null
   count: number | null
   insight: string | null
+}
+
+export type UserSavedProductDetailsProfile = Omit<MerchantProductDetailsProfile, 'endpoint'> & {
+  ratingScore?: number | null
+  ratingScaleMax?: number | null
+  reviewCount?: number | null
+  merchantName?: string | null
 }
 
 export interface UserSavedProductProfile {
@@ -460,6 +468,7 @@ export interface UserSavedProductProfile {
   marketCountry: string | null
   marketContextApplied: boolean
   commercialFactsAuthoritative: boolean
+  details?: UserSavedProductDetailsProfile | null
   createdAt: string
   updatedAt: string
 }
@@ -476,9 +485,22 @@ export type CatalogProductReferenceInput = {
   localMerchantId?: string
   merchantIntegrationId?: string
   externalMerchantId?: string
+  externalMerchantDomain?: string
   externalProductId: string
   externalVariantId?: string
   selectedOptions: { group?: string; name: string; value: string }[]
+  offerKey?: string
+  components?: Array<{
+    externalProductId: string
+    externalVariantId?: string
+    quantity: number
+    selectedOptions: { group?: string; name: string; value: string }[]
+  }>
+  sellingPlan?: {
+    groupId?: string
+    planId?: string
+    options: { name: string; value: string }[]
+  }
 }
 
 export type SaveUserProductInput = Omit<
@@ -1507,6 +1529,19 @@ export async function getSavedProducts(input?: {
     },
   )
   return parseJsonResponse<UserSavedProductProfile[]>(response, 'Failed to load saved products')
+}
+
+export async function getSavedProduct(
+  productKey: string,
+  signal?: AbortSignal,
+): Promise<UserSavedProductProfile> {
+  const search = new URLSearchParams({ productKey })
+  const response = await fetch(`${API_URL}/api/users/me/saved-products/detail?${search}`, {
+    cache: 'no-store',
+    headers: await authHeaders(),
+    signal,
+  })
+  return parseJsonResponse<UserSavedProductProfile>(response, 'Failed to load saved product')
 }
 
 export async function saveUserProduct(

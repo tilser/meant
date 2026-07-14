@@ -17,6 +17,7 @@ import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
@@ -25,14 +26,18 @@ import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
+import com.meant.api.module.catalog.service.dto.SellingPlanOption;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -91,6 +96,127 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         verify(detailsService).get(query.capture());
         assertThat(query.getValue().addressCountry()).isEqualTo("CZ");
         assertThat(query.getValue().language()).isEqualTo("en");
+    }
+
+    @Test
+    void returnsAllCurrentGetProductFieldsAsTransientSavedDetail() {
+        ProductDetailsResponse.SelectedVariant selected = new ProductDetailsResponse.SelectedVariant(
+                "variant-1",
+                "Large",
+                "12.99",
+                "USD",
+                "sku-large",
+                "15.99",
+                "https://merchant.test/large.jpg",
+                "Large shirt",
+                List.of(new ProductDetailsResponse.Media(
+                        "image", "https://merchant.test/large.jpg", "Large shirt", null)),
+                true,
+                List.of(new ProductDetailsResponse.SelectedOption("Size", "M"))
+        );
+        ProductDetailsResponse.Variant variant = new ProductDetailsResponse.Variant(
+                "variant-1",
+                "large",
+                "Large",
+                "Large variant description",
+                "https://merchant.test/products/product-1?variant=variant-1",
+                "12.99",
+                "USD",
+                "sku-large",
+                "15.99",
+                "https://merchant.test/large.jpg",
+                "Large shirt",
+                List.of(new ProductDetailsResponse.Media(
+                        "image", "https://merchant.test/large.jpg", "Large shirt", null)),
+                true,
+                List.of(new ProductDetailsResponse.SelectedOption("Size", "M")),
+                List.of(new ProductDetailsResponse.Category("Shirts", "apparel")),
+                List.of("organic", "summer"),
+                Map.of("Weight", "180 gsm")
+        );
+        ProductDetailsResponse.Product product = new ProductDetailsResponse.Product(
+                "product-1",
+                "perfect-shirt",
+                "Perfect shirt",
+                "Full current product description",
+                "https://merchant.test/products/product-1",
+                "https://merchant.test/product.jpg",
+                List.of(new ProductDetailsResponse.Image(
+                        "https://merchant.test/product.jpg", "Perfect shirt")),
+                List.of(new ProductDetailsResponse.Media(
+                        "video", "https://merchant.test/product.mp4", "Product video",
+                        "https://merchant.test/video-preview.jpg")),
+                List.of(new ProductDetailsResponse.Category("Shirts", "apparel")),
+                List.of("organic", "summer"),
+                List.of(new ProductDetailsResponse.Option("Size", List.of("S", "M", "L"))),
+                List.of(variant),
+                3,
+                new ProductDetailsResponse.PriceRange("9.99", "12.99", "USD"),
+                new ProductDetailsResponse.PriceRange("14.99", "15.99", "USD"),
+                null,
+                Map.of("ratingValue", 4.6d),
+                Map.of("reviewCount", 321),
+                false,
+                List.of(),
+                List.of("sku-small", "sku-large"),
+                List.of("GOTS"),
+                List.of("Organic cotton"),
+                List.of("Essentials"),
+                Map.of("Fit", "Regular"),
+                Map.of("Care", "Cold wash"),
+                Map.of("Weight", "180 gsm"),
+                selected
+        );
+        ProductDetailsResponse.Message message = new ProductDetailsResponse.Message(
+                "info",
+                "FIT_NOTE",
+                "/variants/variant-1",
+                "text/plain",
+                "True to size",
+                "info",
+                "inline",
+                null,
+                null
+        );
+        when(detailsService.get(any())).thenReturn(new ProductDetailsResult(
+                "https://merchant.test/mcp",
+                "redacted",
+                product,
+                List.of(message),
+                com.meant.api.plugin.spi.NegotiatedCapabilities.none()
+        ));
+
+        CatalogProductDetailResult result = provider.getDetails(
+                reference(MERCHANT_ID, null, "merchant-1", "variant-1", List.of(option("M"))),
+                new CatalogRehydrationContext("CZ", "en")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.details().description()).isEqualTo("Full current product description");
+        assertThat(result.details().images()).singleElement()
+                .extracting(image -> image.url()).isEqualTo("https://merchant.test/product.jpg");
+        assertThat(result.details().media()).singleElement()
+                .extracting(media -> media.type()).isEqualTo("video");
+        assertThat(result.details().options()).singleElement().satisfies(option -> {
+            assertThat(option.name()).isEqualTo("Size");
+            assertThat(option.values()).containsExactly("S", "M", "L");
+        });
+        assertThat(result.details().variants()).singleElement().satisfies(detailVariant -> {
+            assertThat(detailVariant.variantId()).isEqualTo("variant-1");
+            assertThat(detailVariant.description()).isEqualTo("Large variant description");
+            assertThat(detailVariant.attributes()).extracting(attribute -> attribute.value())
+                    .contains("180 gsm");
+        });
+        assertThat(result.details().selectedVariant().sku()).isEqualTo("sku-large");
+        assertThat(result.details().certifications()).containsExactly("GOTS");
+        assertThat(result.details().materials()).containsExactly("Organic cotton");
+        assertThat(result.details().collections()).containsExactly("Essentials");
+        assertThat(result.details().messages()).singleElement()
+                .extracting(detailMessage -> detailMessage.content()).isEqualTo("True to size");
+        assertThat(result.details().ratingScore()).isEqualTo(4.6d);
+        assertThat(result.details().ratingScaleMax()).isEqualTo(5.0d);
+        assertThat(result.details().reviewCount()).isEqualTo(321L);
+        verify(detailsService).get(new GetMerchantProductDetailsQuery(MERCHANT_ID, "product-1", "CZ", "en"));
     }
 
     @Test
@@ -302,6 +428,105 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.UNAVAILABLE);
         assertThat(result.failure()).isEqualTo(CatalogRehydrationFailureKind.NOT_FOUND);
         assertThat(result.resolvedReference()).isNull();
+    }
+
+    @Test
+    void requiredGenericSellingPlanFailsClosedWithoutExactTypedIdentity() {
+        ProductDetailsResult requiringPlan = details(
+                "product-1",
+                selected("variant-1", "12.99", "M"),
+                List.of()
+        );
+        when(requiringPlan.product().requiresSellingPlan()).thenReturn(true);
+        when(detailsService.get(any())).thenReturn(requiringPlan);
+        CatalogProductReference withoutPlan = reference(
+                MERCHANT_ID, INTEGRATION_ID, "merchant-1", "variant-1", List.of(option("M")));
+
+        CatalogProductRehydrationResult rejected = provider.rehydrate(
+                List.of(withoutPlan), new CatalogRehydrationContext(null, null)).getFirst();
+
+        assertThat(rejected.status()).isEqualTo(CatalogRehydrationStatus.UNAVAILABLE);
+        assertThat(rejected.failure()).isEqualTo(CatalogRehydrationFailureKind.INVALID_REFERENCE);
+
+        SellingPlanIdentity plan = new SellingPlanIdentity(
+                identifier(MerchantIntegrationProvider.GENERIC_UCP,
+                        ExternalIdentifierType.SELLING_PLAN_GROUP, "subscriptions"),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP,
+                        ExternalIdentifierType.SELLING_PLAN, "monthly"),
+                List.of(new SellingPlanOption("frequency", "monthly"))
+        );
+        CatalogProductReference withPlan = new CatalogProductReference(
+                withoutPlan.interactionKey(),
+                withoutPlan.discoverySource(),
+                withoutPlan.localMerchantId(),
+                withoutPlan.localRouting(),
+                withoutPlan.externalMerchantReference(),
+                withoutPlan.externalMerchantDomain(),
+                withoutPlan.externalProductReference(),
+                withoutPlan.externalVariantReference(),
+                withoutPlan.selectedOptions(),
+                List.of(),
+                plan
+        );
+
+        CatalogProductRehydrationResult configured = provider.rehydrate(
+                List.of(withPlan), new CatalogRehydrationContext(null, null)).getFirst();
+        assertThat(configured.status()).isEqualTo(CatalogRehydrationStatus.UNAVAILABLE);
+        assertThat(configured.failure()).isEqualTo(CatalogRehydrationFailureKind.INVALID_REFERENCE);
+        assertThat(configured.resolvedReference()).isNull();
+    }
+
+    @Test
+    void configuredGenericOffersFailClosedWhenGetProductCannotVerifyTheirExactIdentity() {
+        CatalogProductReference base = reference(
+                MERCHANT_ID, INTEGRATION_ID, "merchant-1", "variant-1", List.of(option("M")));
+        SellingPlanIdentity plan = new SellingPlanIdentity(
+                identifier(MerchantIntegrationProvider.GENERIC_UCP,
+                        ExternalIdentifierType.SELLING_PLAN_GROUP, "subscriptions"),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP,
+                        ExternalIdentifierType.SELLING_PLAN, "monthly"),
+                List.of(new SellingPlanOption("frequency", "monthly"))
+        );
+        OfferComponentIdentity component = new OfferComponentIdentity(
+                identifier(MerchantIntegrationProvider.GENERIC_UCP,
+                        ExternalIdentifierType.PRODUCT, "component-product"),
+                identifier(MerchantIntegrationProvider.GENERIC_UCP,
+                        ExternalIdentifierType.VARIANT, "component-variant"),
+                2,
+                List.of(option("S"))
+        );
+        CatalogProductReference withPlan = configuredReference(base, List.of(), plan);
+        CatalogProductReference withComponent = configuredReference(base, List.of(component), null);
+
+        List<CatalogProductRehydrationResult> results = provider.rehydrate(
+                List.of(withPlan, withComponent), new CatalogRehydrationContext(null, null));
+
+        assertThat(results).extracting(CatalogProductRehydrationResult::status)
+                .containsOnly(CatalogRehydrationStatus.UNAVAILABLE);
+        assertThat(results).extracting(CatalogProductRehydrationResult::failure)
+                .containsOnly(CatalogRehydrationFailureKind.INVALID_REFERENCE);
+        assertThat(results).extracting(CatalogProductRehydrationResult::resolvedReference)
+                .containsOnlyNulls();
+    }
+
+    private CatalogProductReference configuredReference(
+            CatalogProductReference base,
+            List<OfferComponentIdentity> components,
+            SellingPlanIdentity sellingPlan
+    ) {
+        return new CatalogProductReference(
+                base.interactionKey() + "-configured-" + components.size() + "-" + (sellingPlan != null),
+                base.discoverySource(),
+                base.localMerchantId(),
+                base.localRouting(),
+                base.externalMerchantReference(),
+                base.externalMerchantDomain(),
+                base.externalProductReference(),
+                base.externalVariantReference(),
+                base.selectedOptions(),
+                components,
+                sellingPlan
+        );
     }
 
     private ProductDetailsResult details(

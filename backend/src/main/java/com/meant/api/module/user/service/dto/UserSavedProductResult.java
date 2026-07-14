@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.dto;
 
+import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import java.time.Instant;
 import java.util.List;
 
@@ -31,6 +32,7 @@ public record UserSavedProductResult(
         String marketCountry,
         boolean marketContextApplied,
         boolean commercialFactsAuthoritative,
+        RehydratedProductDetails details,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -47,6 +49,7 @@ public record UserSavedProductResult(
     }
 
     public record Offer(
+            String offerKey,
             String merchant,
             Double price,
             Long priceMinorUnits,

@@ -1417,7 +1417,7 @@ export function ChatDiscoverView({
         return null
       }
       const preferred = bestOffer(product, deliveryLocations)
-      if (offerCartable(preferred) || canResolveCartOffer(product, preferred)) {
+      if (preferred && (offerCartable(preferred) || canResolveCartOffer(product, preferred))) {
         return preferred
       }
       return (
@@ -1918,17 +1918,54 @@ export function ChatDiscoverView({
       return
     }
     const offer = bestOffer(product, deliveryLocations)
-    const synced = offerCartable(offer) || canResolveCartOffer(product, offer)
-    if (synced) {
+    if (!offer) {
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'ai',
+            blocks: [
+              {
+                type: 'text',
+                text: `I couldn't load a current merchant offer for ${product.name}. Open the product again to retry.`,
+              },
+            ],
+          },
+        ],
+        { focusProductId: product.id },
+      )
+      return
+    }
+    const exactOfferKey = offer.offerKey?.trim()
+    const canSync =
+      Boolean(exactOfferKey) || offerCartable(offer) || canResolveCartOffer(product, offer)
+    let synced = false
+    if (canSync) {
       try {
-        const added = await onAddProductToCart(product, offer)
-        if (!added) {
-          onFallbackAddToCart(product, offer)
-        }
+        synced = await onAddProductToCart(product, offer)
       } catch {
-        onFallbackAddToCart(product, offer)
+        synced = false
       }
-    } else {
+    }
+    if (!synced && exactOfferKey) {
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'ai',
+            blocks: [
+              {
+                type: 'text',
+                text: `I couldn't add the current merchant offer for ${product.name}. Open the product and try again.`,
+              },
+            ],
+          },
+        ],
+        { focusProductId: product.id },
+      )
+      return
+    }
+    if (!synced) {
       onFallbackAddToCart(product, offer)
     }
     appendMessagesToActiveThread(

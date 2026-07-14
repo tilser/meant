@@ -59,7 +59,7 @@ test('cart creation accepts only server-issued offer identity for line selection
   expect(addFields).toContain('offerKey')
 })
 
-test('saved products accept a typed session-only catalog reference', () => {
+test('saved products retain typed routing and return a durable exact offer key', () => {
   type SaveProduct = components['schemas']['SaveUserProductRequest']
   type CatalogReference = components['schemas']['CatalogReference']
   const saveFields: Array<keyof SaveProduct> = ['id', 'catalogReference']
@@ -69,14 +69,55 @@ test('saved products accept a typed session-only catalog reference', () => {
     'sourceIdentity',
     'merchantIntegrationId',
     'externalMerchantId',
+    'externalMerchantDomain',
     'externalProductId',
     'externalVariantId',
     'selectedOptions',
+    'offerKey',
+    'components',
+    'sellingPlan',
   ]
 
   expect(saveFields).toContain('catalogReference')
   expect(referenceFields).toContain('sourceIdentity')
+  expect(referenceFields).toContain('externalMerchantDomain')
   expect(referenceFields).toContain('selectedOptions')
+  expect(referenceFields).toContain('offerKey')
+  expect(referenceFields).toContain('components')
+  expect(referenceFields).toContain('sellingPlan')
+
+  const savedPaths: Array<keyof paths> = ['/api/users/me/saved-products/detail']
+  const savedOfferFields: Array<keyof components['schemas']['UserSavedProductOffer']> = [
+    'offerKey',
+    'merchant',
+    'productVariantId',
+  ]
+  expect(savedPaths).toHaveLength(1)
+  expect(savedOfferFields).toContain('offerKey')
+
+  const savedProductFields: Array<keyof components['schemas']['UserSavedProductResponse']> = [
+    'offers',
+    'details',
+  ]
+  const savedDetailFields: Array<keyof components['schemas']['UserSavedProductDetails']> = [
+    'description',
+    'media',
+    'options',
+    'variants',
+    'messages',
+    'selectedOptions',
+    'ratingScore',
+    'ratingScaleMax',
+    'reviewCount',
+    'merchantName',
+  ]
+  expect(savedProductFields).toContain('details')
+  expect(savedDetailFields).toContain('variants')
+  expect(savedDetailFields).toContain('messages')
+  expect(savedDetailFields).toContain('ratingScore')
+  expect(savedDetailFields).toContain('ratingScaleMax')
+  expect(savedDetailFields).toContain('reviewCount')
+  expect(savedDetailFields).toContain('merchantName')
 })
 
 test('embedded checkout bootstrap exposes only short-lived browser instructions', () => {

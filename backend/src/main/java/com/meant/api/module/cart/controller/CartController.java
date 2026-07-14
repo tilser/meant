@@ -67,8 +67,9 @@ public class CartController {
     @PostMapping
     @Operation(
             summary = "Create cart",
-            description = "Resolves server-issued offer keys from the authenticated user's live catalog session, "
-                    + "revalidates exact commercial identity, and creates one merchant-scoped remote cart."
+            description = "Resolves server-issued offer keys from the authenticated user's live catalog session "
+                    + "or durable saved-product selection, revalidates exact commercial identity, and creates one "
+                    + "merchant-scoped remote cart."
     )
     @ApiResponse(
             responseCode = "200",

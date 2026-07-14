@@ -242,6 +242,23 @@ describe('shopping decision utilities', () => {
     expect(productMerchantCount(cereal, uk)).toBe(1)
     expect(bestOffer(cereal, uk)).toEqual({ merchant: 'iHerb', price: 8.2, delivery: '3 days' })
   })
+
+  test('returns no best offer when current product offers are unavailable', () => {
+    expect(bestOffer(product, [])).toBeNull()
+  })
+
+  test('prefers a priced offer when an exact saved offer has no display price', () => {
+    const mixed = {
+      ...product,
+      offers: [
+        { offerKey: 'saved-no-price', merchant: 'Unknown price', price: Number.NaN, delivery: '' },
+        { offerKey: 'saved-priced', merchant: 'Priced', price: 15, delivery: 'Tomorrow' },
+      ],
+    }
+
+    expect(bestOffer(mixed, [])?.offerKey).toBe('saved-priced')
+    expect(productPriceFrom(mixed, [])).toBe(15)
+  })
 })
 
 describe('assistant and preference utilities', () => {
@@ -274,6 +291,15 @@ describe('assistant and preference utilities', () => {
     )
     expect(resolveAsk('compare these', null, PREFERENCES)).toBe(
       'Open Compare and I will line products up against every preference you care about.',
+    )
+  })
+
+  test('answers price and delivery questions safely when offers are unavailable', () => {
+    expect(resolveAsk('What is the price?', product, PREFERENCES)).toContain(
+      'prices are unavailable',
+    )
+    expect(resolveAsk('When can it arrive?', product, PREFERENCES)).toContain(
+      'delivery options are unavailable',
     )
   })
 })
@@ -486,6 +512,10 @@ describe('cart and order utilities', () => {
       price: 7.4,
       delivery: 'Tomorrow',
     })
+  })
+
+  test('skips a cart line whose current product has no offer instead of throwing', () => {
+    expect(cartLines([{ id: product.id, merchant: 'Unavailable', qty: 1 }], [product])).toEqual([])
   })
 
   test('computes smart alerts for connection warnings and fixes', () => {

@@ -1,10 +1,20 @@
 import type {
   CanonicalOfferProfile,
   CatalogProductReferenceInput,
+  MerchantProductDetailsProfile,
   SaveUserProductInput,
+  UserSavedProductDetailsProfile,
   UserSavedProductProfile,
 } from '../../../lib/apiClient'
-import type { Preference, Product } from '../types'
+import type {
+  Preference,
+  Product,
+  ProductCatalogAttribute,
+  ProductCatalogCategory,
+  ProductMedia,
+  ProductOption,
+  ProductSelectedOption,
+} from '../types'
 import { displayProductCategoryValue, minorUnitsToMajor } from '../utils'
 import { productCuratedFields, productWithCuratedFields } from './productCuration'
 
@@ -28,19 +38,53 @@ function catalogReferenceForRecommendedOffer(
   const externalProductId = provenance.externalProductReference.value.trim()
   const merchantIntegrationId = provenance.localRouting?.merchantIntegrationId.trim()
   const externalMerchantId = provenance.externalMerchantReference?.value.trim()
+  const externalMerchantDomain = provenance.externalMerchantDomain?.trim()
   const externalVariantId = provenance.externalVariantReference?.value.trim()
+  const components = offer.identity.components.map((component) => ({
+    externalProductId: component.externalProductIdentity.value.trim(),
+    ...(component.externalVariantIdentity?.value.trim()
+      ? { externalVariantId: component.externalVariantIdentity.value.trim() }
+      : {}),
+    quantity: component.quantity,
+    selectedOptions: component.selectedOptions.map((option) => ({
+      ...(option.group?.trim() ? { group: option.group.trim() } : {}),
+      name: option.name,
+      value: option.value,
+    })),
+  }))
+  const sellingPlan = offer.identity.sellingPlanIdentity
   return {
     provider,
     sourceType: provenance.discoverySource.type,
     sourceIdentity,
     ...(merchantIntegrationId ? { merchantIntegrationId } : {}),
     ...(externalMerchantId ? { externalMerchantId } : {}),
+    ...(externalMerchantDomain ? { externalMerchantDomain } : {}),
     externalProductId,
     ...(externalVariantId ? { externalVariantId } : {}),
     selectedOptions: offer.selectedOptions.map((option) => ({
+      ...(option.group?.trim() ? { group: option.group.trim() } : {}),
       name: option.name,
       value: option.value,
     })),
+    offerKey: offer.key,
+    ...(components.length > 0 ? { components } : {}),
+    ...(sellingPlan
+      ? {
+          sellingPlan: {
+            ...(sellingPlan.groupReference?.value.trim()
+              ? { groupId: sellingPlan.groupReference.value.trim() }
+              : {}),
+            ...(sellingPlan.planReference?.value.trim()
+              ? { planId: sellingPlan.planReference.value.trim() }
+              : {}),
+            options: sellingPlan.options.map((option) => ({
+              name: option.name,
+              value: option.value,
+            })),
+          },
+        }
+      : {}),
   }
 }
 
@@ -61,7 +105,9 @@ function provenanceMatchesOffer(
     provenance.externalProductReference.type !== 'PRODUCT' ||
     offer.identity.externalProductIdentity.type !== 'PRODUCT' ||
     !offer.identity.externalProductIdentity.value.trim() ||
-    offer.selectedOptions.some((option) => !option.name.trim() || !option.value.trim())
+    !offer.key.trim() ||
+    offer.selectedOptions.some((option) => !option.name.trim() || !option.value.trim()) ||
+    !configurationIsValid(offer, provider)
   ) {
     return false
   }
@@ -108,65 +154,228 @@ function provenanceMatchesOffer(
   )
 }
 
+function configurationIsValid(offer: CanonicalOfferProfile, provider: string): boolean {
+  const componentsValid = offer.identity.components.every((component) => {
+    const product = component.externalProductIdentity
+    const variant = component.externalVariantIdentity
+    return (
+      product.type === 'PRODUCT' &&
+      Boolean(product.value.trim()) &&
+      (!product.namespace || product.namespace.trim() === provider) &&
+      (!variant ||
+        (variant.type === 'VARIANT' &&
+          Boolean(variant.value.trim()) &&
+          (!variant.namespace || variant.namespace.trim() === provider))) &&
+      Number.isSafeInteger(component.quantity) &&
+      component.quantity > 0 &&
+      component.selectedOptions.every(
+        (option) => Boolean(option.name.trim()) && Boolean(option.value.trim()),
+      )
+    )
+  })
+  if (!componentsValid) return false
+
+  const plan = offer.identity.sellingPlanIdentity
+  if (!plan) return true
+  const group = plan.groupReference
+  const selected = plan.planReference
+  return (
+    Boolean(group || selected) &&
+    (!group ||
+      (group.type === 'SELLING_PLAN_GROUP' &&
+        Boolean(group.value.trim()) &&
+        (!group.namespace || group.namespace.trim() === provider))) &&
+    (!selected ||
+      (selected.type === 'SELLING_PLAN' &&
+        Boolean(selected.value.trim()) &&
+        (!selected.namespace || selected.namespace.trim() === provider))) &&
+    plan.options.every((option) => Boolean(option.name.trim()) && Boolean(option.value.trim()))
+  )
+}
+
+function cleanDetailStrings(values: readonly (string | null | undefined)[]): string[] {
+  return values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))
+}
+
+function savedDetailMedia(details?: UserSavedProductDetailsProfile | null): ProductMedia[] {
+  if (!details) return []
+  const media = details.media.flatMap((item) => {
+    const url = item.url?.trim()
+    return url
+      ? [{ type: item.type?.trim() || 'image', url, altText: item.altText?.trim() || null }]
+      : []
+  })
+  const images = details.images.flatMap((item) => {
+    const url = item.url?.trim()
+    return url ? [{ type: 'image', url, altText: item.altText?.trim() || null }] : []
+  })
+  const seen = new Set<string>()
+  return [...media, ...images].filter((item) => {
+    const key = `${item.type.toLowerCase()}|${item.url}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function savedDetailCategories(
+  details?: UserSavedProductDetailsProfile | null,
+): ProductCatalogCategory[] {
+  if (!details) return []
+  return details.categories.flatMap((category) => {
+    const value = category.value?.trim()
+    return value ? [{ value, taxonomy: category.taxonomy?.trim() || null }] : []
+  })
+}
+
+function savedDetailAttributes(
+  details?: UserSavedProductDetailsProfile | null,
+): ProductCatalogAttribute[] {
+  if (!details) return []
+  return details.attributes.flatMap((attribute) => {
+    const name = attribute.name?.trim()
+    const value = attribute.value?.trim()
+    return name && value ? [{ name, value }] : []
+  })
+}
+
+function savedDetailOptions(details?: UserSavedProductDetailsProfile | null): ProductOption[] {
+  if (!details) return []
+  return details.options.flatMap((option) => {
+    const name = option.name?.trim()
+    const values = cleanDetailStrings(option.values ?? [])
+    return name && values.length > 0 ? [{ name, values }] : []
+  })
+}
+
+function savedDetailSelectedOptions(
+  details?: UserSavedProductDetailsProfile | null,
+): ProductSelectedOption[] {
+  if (!details) return []
+  return details.selectedOptions.flatMap((option) => {
+    const name = option.name?.trim()
+    const value = option.value?.trim()
+    return name && value ? [{ name, value }] : []
+  })
+}
+
+function savedMerchantDetails(
+  details?: UserSavedProductDetailsProfile | null,
+): MerchantProductDetailsProfile | null {
+  return details ? { endpoint: null, ...details } : null
+}
+
+function normalizedSavedDetailRating(
+  details?: UserSavedProductDetailsProfile | null,
+): number | null {
+  const score = details?.ratingScore
+  if (typeof score !== 'number' || !Number.isFinite(score) || score < 0) return null
+
+  const scaleMax = details?.ratingScaleMax
+  if (typeof scaleMax === 'number' && Number.isFinite(scaleMax) && scaleMax > 0) {
+    return Math.min(5, (score / scaleMax) * 5)
+  }
+  return score <= 5 ? score : null
+}
+
+function savedDetailReviewCount(details?: UserSavedProductDetailsProfile | null): number | null {
+  const count = details?.reviewCount
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null
+}
+
 export function savedProductFromProfile(
   product: UserSavedProductProfile,
   preferences: readonly Preference[] = [],
 ): Product {
   const priceFrom = minorUnitsToMajor(product.priceFromMinorUnits, product.priceCurrency)
-  const authoritative = product.commercialFactsAuthoritative && priceFrom != null
+  const authoritative = product.commercialFactsAuthoritative
+  const details = product.details
+  const currentOffer = authoritative
+    ? (product.offers.find((offer) => Boolean(offer.offerKey?.trim())) ?? product.offers[0])
+    : undefined
+  const currentMerchantId = currentOffer?.merchantId?.trim() || null
+  const currentMerchantDomain = currentOffer?.merchantDomain?.trim() || null
+  const currentMerchantProductId = currentMerchantId ? details?.productId?.trim() || null : null
+  const storedReview = product.review
+    ? {
+        score: product.review.score,
+        count: product.review.count ?? 0,
+        insight: product.review.insight ?? 'Current review facts are unavailable.',
+      }
+    : { score: null, count: 0, insight: 'Current review facts are unavailable.' }
+  const currentRating = normalizedSavedDetailRating(details)
+  const currentReviewCount = savedDetailReviewCount(details)
+  const media = savedDetailMedia(details)
+  const detailImageUrl =
+    details?.selectedVariantImageUrl?.trim() ||
+    details?.imageUrl?.trim() ||
+    media.find((item) => item.type.toLowerCase() === 'image')?.url ||
+    null
   const snapshot: Product = {
     id: product.id,
     productHash: product.productHash,
-    name: product.name ?? 'Saved product unavailable',
+    merchantId: currentMerchantId,
+    merchantDomain: currentMerchantDomain,
+    merchantProductId: currentMerchantProductId,
+    name: product.name ?? details?.title ?? 'Saved product unavailable',
     brand: product.brand ?? 'Unavailable',
     category: displayProductCategoryValue(product.category) ?? 'Product',
     tone: product.tone ?? '#e7ebef',
-    imageUrl: product.imageUrl,
-    productUrl: product.productUrl,
-    remote: product.remote ?? false,
+    imageUrl: product.imageUrl ?? detailImageUrl,
+    productUrl: details?.url?.trim() || product.productUrl,
+    remote: Boolean(currentMerchantId && currentMerchantProductId) || (product.remote ?? false),
     match: product.match ?? 0,
     priceFrom: authoritative ? priceFrom : null,
-    priceFromMinorUnits: authoritative ? product.priceFromMinorUnits : null,
-    priceCurrency: authoritative ? product.priceCurrency : null,
+    priceFromMinorUnits: authoritative && priceFrom != null ? product.priceFromMinorUnits : null,
+    priceCurrency: authoritative && priceFrom != null ? product.priceCurrency : null,
     merchants: product.merchants ?? 0,
     satisfies: product.satisfies,
     misses: product.misses,
     note: product.note ?? 'Current product details are unavailable.',
     pros: product.pros,
     cons: product.cons,
-    review: product.review
-      ? {
-          score: product.review.score,
-          count: product.review.count ?? 0,
-          insight: product.review.insight ?? 'Current review facts are unavailable.',
-        }
-      : { score: null, count: 0, insight: 'Current review facts are unavailable.' },
+    review: {
+      score: currentRating ?? storedReview.score,
+      count: currentReviewCount ?? storedReview.count,
+      insight: storedReview.insight,
+    },
+    media,
+    catalogCategories: savedDetailCategories(details),
+    certifications: cleanDetailStrings(details?.certifications ?? []),
+    materials: cleanDetailStrings(details?.materials ?? []),
+    skus: cleanDetailStrings(details?.skus ?? []),
+    collections: cleanDetailStrings(details?.collections ?? []),
+    catalogAttributes: savedDetailAttributes(details),
+    detailDescription: details?.description?.trim() || null,
+    detailOptions: savedDetailOptions(details),
+    selectedOptions: savedDetailSelectedOptions(details),
+    totalVariants: details?.totalVariants ?? null,
+    selectedVariantAvailable: details?.selectedVariantAvailable ?? null,
     offers: authoritative
       ? product.offers
-          .filter(
-            (
-              offer,
-            ): offer is typeof offer & {
-              merchant: string
-              priceMinorUnits: number
-              priceCurrency: string
-            } =>
-              offer.merchant != null &&
-              minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency) != null,
-          )
-          .map((offer) => ({
-            ...offer,
-            merchant: offer.merchant,
-            price: minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency) as number,
-            priceMinorUnits: offer.priceMinorUnits,
-            priceCurrency: offer.priceCurrency,
-            delivery: offer.delivery ?? 'Calculated at checkout',
-          }))
+          .filter((offer): offer is typeof offer & { merchant: string } => {
+            const hasExactServerKey = Boolean(offer.offerKey?.trim())
+            const hasDisplayPrice =
+              minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency) != null
+            return offer.merchant != null && (hasExactServerKey || hasDisplayPrice)
+          })
+          .map((offer) => {
+            const price = minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency)
+            return {
+              ...offer,
+              merchant: offer.merchant,
+              price: price ?? Number.NaN,
+              priceMinorUnits: price == null ? null : offer.priceMinorUnits,
+              priceCurrency: price == null ? null : offer.priceCurrency,
+              delivery: offer.delivery ?? 'Calculated at checkout',
+            }
+          })
       : [],
     needs: product.needs ? (product.needs as Product['needs']) : undefined,
     provides:
       (product.provides?.length ?? 0) > 0 ? (product.provides as Product['provides']) : undefined,
     commercialFactsAuthoritative: authoritative,
+    rehydratedDetails: savedMerchantDetails(details),
   }
   return productWithCuratedFields(snapshot, preferences)
 }

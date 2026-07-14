@@ -32,11 +32,13 @@ import {
   productCuratedTake,
   productCuratedTradeoffs,
 } from './productCuration'
+import { mergeRehydratedProductDetails, savedProductDetailsRefreshShell } from './productSnapshots'
 import {
   mergeProductMedia,
   productOptionsFromProfiles,
   productSelectedOptionsFromProfiles,
 } from './productMapping'
+import { merchantProductDetailRequest } from './productDetailLoading'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
 import { GroupedOfferSelector } from './GroupedProductModal'
 import { containModalTabFocus } from './modalFocusTrap'
@@ -270,12 +272,14 @@ export function ProductModal({
   preferences,
   saved,
   savePending,
+  savedOfferRefreshPending = false,
   inCompare,
   onClose,
   onToggleSave,
   onCompare,
   onAddToCart,
   onAddOfferKey,
+  onRefreshProduct,
   onResearch,
   onAskInChat,
   canPrev,
@@ -288,12 +292,14 @@ export function ProductModal({
   preferences: readonly Preference[]
   saved: boolean
   savePending: boolean
+  savedOfferRefreshPending?: boolean
   inCompare: boolean
   onClose: () => void
   onToggleSave: (product: Product) => void
   onCompare: (product: Product) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   onAddOfferKey?: (offerKey: string) => Promise<boolean>
+  onRefreshProduct?: (product: Product) => void
   onResearch?: (query: string) => void
   onAskInChat?: (product: Product, question: string) => void
   canPrev: boolean
@@ -301,7 +307,13 @@ export function ProductModal({
   onPrev: () => void
   onNext: () => void
 }>) {
-  const canonicalProductKey = product?.canonicalProduct?.key ?? null
+  const refreshingSavedOffers = saved && savedOfferRefreshPending
+  const canonicalProductKey = refreshingSavedOffers
+    ? null
+    : (product?.canonicalProduct?.key ?? null)
+  const merchantDetailRequest = merchantProductDetailRequest(product)
+  const merchantDetailMerchantId = merchantDetailRequest?.merchantId ?? null
+  const merchantDetailProductId = merchantDetailRequest?.productId ?? null
   const [messages, setMessages] = useState<Message[]>([])
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -318,8 +330,12 @@ export function ProductModal({
   const [selectedMediaUrl, setSelectedMediaUrl] = useState<string | null>(null)
   const [thumbnailPage, setThumbnailPage] = useState(0)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
-  const [merchantDetails, setMerchantDetails] = useState<MerchantProductDetailsProfile | null>(null)
-  const [detailLoadState, setDetailLoadState] = useState<ProductDetailLoadState>('idle')
+  const [merchantDetails, setMerchantDetails] = useState<MerchantProductDetailsProfile | null>(
+    product?.rehydratedDetails ?? null,
+  )
+  const [detailLoadState, setDetailLoadState] = useState<ProductDetailLoadState>(
+    product?.rehydratedDetails ? 'loaded' : 'idle',
+  )
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null)
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
@@ -331,6 +347,28 @@ export function ProductModal({
 
   useEffect(() => {
     setMessages([])
+    setSelectedMediaUrl(null)
+    setThumbnailPage(0)
+    setZoomImageUrl(null)
+    setMerchantDetails(null)
+    setDetailLoadState('idle')
+    setDetailLoadError(null)
+  }, [product?.id])
+
+  useEffect(() => {
+    const details = product?.rehydratedDetails
+    if (!details) return
+    setMerchantDetails((current) => mergeRehydratedProductDetails(current, details))
+    setDetailLoadState('loaded')
+    setDetailLoadError(null)
+  }, [product?.id, product?.rehydratedDetails])
+
+  useEffect(() => {
+    if (!refreshingSavedOffers) return
+    setMerchantDetails((current) => savedProductDetailsRefreshShell(current))
+  }, [refreshingSavedOffers, product?.id])
+
+  useEffect(() => {
     setAdded(false)
     setAdding(false)
     setAddError(null)
@@ -339,12 +377,6 @@ export function ProductModal({
       canAdd: false,
       loading: Boolean(canonicalProductKey),
     })
-    setSelectedMediaUrl(null)
-    setThumbnailPage(0)
-    setZoomImageUrl(null)
-    setMerchantDetails(null)
-    setDetailLoadState('idle')
-    setDetailLoadError(null)
   }, [canonicalProductKey, product?.canonicalProduct?.recommendedOfferKey, product?.id])
 
   const handleCanonicalOfferSelection = useCallback(
@@ -361,7 +393,7 @@ export function ProductModal({
   )
 
   useEffect(() => {
-    if (!product?.remote || !product.merchantId || !product.merchantProductId) {
+    if (!merchantDetailMerchantId || !merchantDetailProductId) {
       return
     }
     const controller = new AbortController()
@@ -370,8 +402,8 @@ export function ProductModal({
     const language =
       typeof window === 'undefined' ? null : window.navigator.language.split('-')[0] || null
     getMerchantProductDetails({
-      merchantId: product.merchantId,
-      productId: product.merchantProductId,
+      merchantId: merchantDetailMerchantId,
+      productId: merchantDetailProductId,
       addressCountry: deliveryCountryCode,
       language,
       signal: controller.signal,
@@ -380,25 +412,18 @@ export function ProductModal({
         if (controller.signal.aborted) {
           return
         }
-        setMerchantDetails(details)
+        setMerchantDetails((current) => mergeRehydratedProductDetails(current, details))
         setDetailLoadState('loaded')
       })
       .catch(() => {
         if (controller.signal.aborted) {
           return
         }
-        setMerchantDetails(null)
         setDetailLoadState('error')
         setDetailLoadError('Latest product details are unavailable right now.')
       })
     return () => controller.abort()
-  }, [
-    deliveryCountryCode,
-    product?.id,
-    product?.merchantId,
-    product?.merchantProductId,
-    product?.remote,
-  ])
+  }, [deliveryCountryCode, merchantDetailMerchantId, merchantDetailProductId, product?.id])
 
   useEffect(
     () => () => {
@@ -483,7 +508,7 @@ export function ProductModal({
   }
 
   const offers = availableOffers(product, deliveryLocations)
-  const visibleOffers = offers.length > 0 ? offers : product.offers
+  const visibleOffers = refreshingSavedOffers ? [] : offers.length > 0 ? offers : product.offers
   const modalMedia = mergeProductMedia(product, merchantDetails)
   const thumbnailPageCount = Math.ceil(modalMedia.length / MODAL_THUMBNAIL_PAGE_SIZE)
   const boundedThumbnailPage = Math.min(thumbnailPage, Math.max(thumbnailPageCount - 1, 0))
@@ -509,17 +534,23 @@ export function ProductModal({
   const detailDescription = stripHtml(
     merchantDetails?.description || product.detailDescription || '',
   )
-  const detailOptions = merchantDetails
-    ? productOptionsFromProfiles(merchantDetails.options)
-    : [...(product.detailOptions ?? [])]
-  const selectedOptions = merchantDetails
-    ? productSelectedOptionsFromProfiles(merchantDetails.selectedOptions)
-    : [...(product.selectedOptions ?? [])]
+  const merchantDetailOptions = productOptionsFromProfiles(merchantDetails?.options ?? [])
+  const detailOptions =
+    merchantDetailOptions.length > 0 ? merchantDetailOptions : [...(product.detailOptions ?? [])]
+  const merchantSelectedOptions = productSelectedOptionsFromProfiles(
+    merchantDetails?.selectedOptions ?? [],
+  )
+  const selectedOptions =
+    merchantSelectedOptions.length > 0
+      ? merchantSelectedOptions
+      : [...(product.selectedOptions ?? [])]
   const detailVariants = merchantDetails
     ? merchantDetails.variants.filter((variant): variant is MerchantProductVariantProfile =>
         Boolean(variant),
       )
-    : (product.canonicalProduct?.offers.map(canonicalOfferVariant) ?? [])
+    : refreshingSavedOffers
+      ? []
+      : (product.canonicalProduct?.offers.map(canonicalOfferVariant) ?? [])
   const availableVariantCount = detailVariants.filter(
     (variant) => variant.available === true,
   ).length
@@ -530,19 +561,34 @@ export function ProductModal({
     detailVariants.length - availableVariantCount - unavailableVariantCount,
     0,
   )
-  const detailCategories = cleanValues(
-    merchantDetails
-      ? merchantDetails.categories.map((category) => category?.value)
-      : product.catalogCategories?.map((category) => category.value),
+  const merchantDetailCategories = cleanValues(
+    merchantDetails?.categories.map((category) => category?.value),
   )
+  const detailCategories =
+    merchantDetailCategories.length > 0
+      ? merchantDetailCategories
+      : cleanValues(product.catalogCategories?.map((category) => category.value))
   const detailTags = cleanValues(merchantDetails?.tags)
-  const detailSkus = cleanValues(merchantDetails?.skus ?? product.skus)
-  const detailMaterials = cleanValues(merchantDetails?.materials ?? product.materials)
-  const detailCertifications = cleanValues(
-    merchantDetails?.certifications ?? product.certifications,
-  )
-  const detailCollections = cleanValues(merchantDetails?.collections ?? product.collections)
-  const detailAttributes = attributeRows(merchantDetails?.attributes ?? product.catalogAttributes)
+  const merchantDetailSkus = cleanValues(merchantDetails?.skus)
+  const detailSkus = merchantDetailSkus.length > 0 ? merchantDetailSkus : cleanValues(product.skus)
+  const merchantDetailMaterials = cleanValues(merchantDetails?.materials)
+  const detailMaterials =
+    merchantDetailMaterials.length > 0 ? merchantDetailMaterials : cleanValues(product.materials)
+  const merchantDetailCertifications = cleanValues(merchantDetails?.certifications)
+  const detailCertifications =
+    merchantDetailCertifications.length > 0
+      ? merchantDetailCertifications
+      : cleanValues(product.certifications)
+  const merchantDetailCollections = cleanValues(merchantDetails?.collections)
+  const detailCollections =
+    merchantDetailCollections.length > 0
+      ? merchantDetailCollections
+      : cleanValues(product.collections)
+  const merchantDetailAttributes = attributeRows(merchantDetails?.attributes)
+  const detailAttributes =
+    merchantDetailAttributes.length > 0
+      ? merchantDetailAttributes
+      : attributeRows(product.catalogAttributes)
   const detailMessages = messageRows(merchantDetails?.messages)
   const selectedVariantPrice = detailMoney(
     merchantDetails?.selectedVariantPriceAmount,
@@ -627,31 +673,53 @@ export function ProductModal({
     ])
   }
   const selectedOffer = bestOffer(product, deliveryLocations)
-  const isCanonicalProduct = Boolean(product.canonicalProduct)
-  const canAddToCart = isCanonicalProduct
-    ? canonicalOfferSelection.canAdd && Boolean(onAddOfferKey)
-    : offerCartable(selectedOffer) || canResolveCartOffer(product, selectedOffer)
+  const isCanonicalProduct = Boolean(product.canonicalProduct) && !refreshingSavedOffers
+  const selectedServerOfferKey = isCanonicalProduct
+    ? canonicalOfferSelection.offerKey
+    : selectedOffer?.offerKey?.trim() || null
+  const canAddToCart =
+    !refreshingSavedOffers &&
+    (isCanonicalProduct
+      ? canonicalOfferSelection.canAdd && Boolean(onAddOfferKey)
+      : saved
+        ? Boolean(
+            selectedOffer &&
+            selectedOffer.available !== false &&
+            selectedServerOfferKey &&
+            onAddOfferKey,
+          )
+        : Boolean(
+            selectedOffer &&
+            selectedOffer.available !== false &&
+            ((selectedServerOfferKey && onAddOfferKey) ||
+              offerCartable(selectedOffer) ||
+              canResolveCartOffer(product, selectedOffer)),
+          ))
   const addDisabled = adding || !canAddToCart
   const addButtonLabel = added
     ? 'Added to cart'
     : adding
       ? 'Adding...'
-      : isCanonicalProduct && canonicalOfferSelection.loading
+      : refreshingSavedOffers
         ? 'Loading offers…'
-        : isCanonicalProduct && !canAddToCart
-          ? 'Unavailable'
-          : selectedOffer.available === false
+        : isCanonicalProduct && canonicalOfferSelection.loading
+          ? 'Loading offers…'
+          : isCanonicalProduct && !canAddToCart
             ? 'Unavailable'
-            : canAddToCart
-              ? 'Add to cart'
-              : 'Checkout unavailable'
+            : !selectedOffer || selectedOffer.available === false
+              ? 'Unavailable'
+              : canAddToCart
+                ? 'Add to cart'
+                : 'Checkout unavailable'
   const addSelectedOffer = async () => {
-    if (isCanonicalProduct) {
-      if (!canonicalOfferSelection.offerKey || !onAddOfferKey || adding) return
+    if (!canAddToCart || adding) {
+      return
+    }
+    if (selectedServerOfferKey && onAddOfferKey) {
       setAdding(true)
       setAddError(null)
       try {
-        const addedToCart = await onAddOfferKey(canonicalOfferSelection.offerKey)
+        const addedToCart = await onAddOfferKey(selectedServerOfferKey)
         if (!addedToCart) {
           setAddError('Could not add this exact merchant offer to cart.')
           return
@@ -669,7 +737,7 @@ export function ProductModal({
       }
       return
     }
-    if (!canAddToCart || adding) {
+    if (!selectedOffer) {
       return
     }
     setAdding(true)
@@ -892,7 +960,15 @@ export function ProductModal({
               </button>
             </div>
             {addError ? <div className="mt-cart-inline-error">{addError}</div> : null}
-            {!isCanonicalProduct && !canAddToCart && !addError ? (
+            {refreshingSavedOffers && !addError ? (
+              <div className="mt-cart-inline-error muted" role="status">
+                Loading current merchant offers…
+              </div>
+            ) : !isCanonicalProduct && !selectedOffer && !addError ? (
+              <div className="mt-cart-inline-error muted">
+                Current merchant offers are unavailable. Close and open this product to retry.
+              </div>
+            ) : !isCanonicalProduct && !canAddToCart && !addError ? (
               <div className="mt-cart-inline-error muted">
                 This offer is not available for merchant checkout.
               </div>
@@ -1191,7 +1267,7 @@ export function ProductModal({
 
             <ProductReviewsPanel product={product} />
 
-            {product.canonicalProduct ? (
+            {isCanonicalProduct ? (
               <div>
                 <GroupedOfferSelector
                   product={product}
@@ -1203,20 +1279,42 @@ export function ProductModal({
               <section className="mt-block">
                 <div className="mt-block-label mt-mono">Available offers</div>
                 <div className="mt-offers">
-                  {visibleOffers.map((offer, index) => (
-                    <div className={`mt-offer ${index === 0 ? 'best' : ''}`} key={offer.merchant}>
-                      <div className="mt-offer-merch">
-                        {offer.merchant}
-                        {index === 0 ? <span className="mt-mono mt-offer-tag">best</span> : null}
-                      </div>
-                      <div className="mt-offer-right">
-                        <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
-                        <span className="mt-offer-price">
-                          {money(offer.price, offer.priceCurrency)}
-                        </span>
-                      </div>
+                  {visibleOffers.length === 0 ? (
+                    <div className="mt-grouped-recovery" role="status">
+                      <p>
+                        {refreshingSavedOffers
+                          ? 'Loading current offers…'
+                          : 'Current offers are unavailable.'}
+                      </p>
+                      {!refreshingSavedOffers && onRefreshProduct ? (
+                        <button
+                          type="button"
+                          className="mt-act mt-act-ghost"
+                          onClick={() => onRefreshProduct(product)}
+                        >
+                          Try again
+                        </button>
+                      ) : null}
                     </div>
-                  ))}
+                  ) : (
+                    visibleOffers.map((offer, index) => (
+                      <div
+                        className={`mt-offer ${index === 0 ? 'best' : ''}`}
+                        key={offer.offerKey ?? `${offer.merchant}-${index}`}
+                      >
+                        <div className="mt-offer-merch">
+                          {offer.merchant}
+                          {index === 0 ? <span className="mt-mono mt-offer-tag">best</span> : null}
+                        </div>
+                        <div className="mt-offer-right">
+                          <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
+                          <span className="mt-offer-price">
+                            {money(offer.price, offer.priceCurrency)}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </section>
             )}

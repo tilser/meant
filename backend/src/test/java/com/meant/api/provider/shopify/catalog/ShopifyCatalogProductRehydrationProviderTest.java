@@ -3,15 +3,21 @@ package com.meant.api.provider.shopify.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.module.catalog.service.CommercialFreshnessPolicy;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
-import com.meant.api.module.catalog.service.dto.CommercialFact;
-import com.meant.api.module.catalog.service.dto.CommercialFreshnessStatus;
+import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
+import com.meant.api.module.catalog.service.dto.CommercialFact;
+import com.meant.api.module.catalog.service.dto.CommercialFreshnessStatus;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
@@ -19,24 +25,33 @@ import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferAvailability;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.OfferIdentity;
 import com.meant.api.module.catalog.service.dto.OfferMerchantScope;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
+import com.meant.api.module.catalog.service.dto.ProductAttribution;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
+import com.meant.api.module.catalog.service.dto.ProductCertification;
+import com.meant.api.module.catalog.service.dto.ProductMaterial;
+import com.meant.api.module.catalog.service.dto.ProductMedia;
+import com.meant.api.module.catalog.service.dto.ProductMediaType;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogGetProductRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogLookupRequest;
-import com.meant.api.module.catalog.service.CommercialFreshnessPolicy;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogProductResult;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogResponse;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.EnumSet;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -208,17 +223,417 @@ class ShopifyCatalogProductRehydrationProviderTest {
         assertThat(request.getValue().context().language()).isEqualTo("cs");
     }
 
+    @Test
+    void savedDetailUsesGetProductAndReturnsOnlyTheExactSellersFullVariants() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        ProductCandidate selected = detailedCandidate(
+                "product-1", "variant-m", "seller-a", "seller.example", "M", 1299);
+        ProductCandidate sibling = detailedCandidate(
+                "product-1", "variant-l", "seller-a", "seller.example", "L", 1399);
+        ProductCandidate otherSeller = detailedCandidate(
+                "product-1", "variant-m", "seller-b", "other.example", "M", 999);
+        CatalogSourceResult productResult = successful(List.of(selected, sibling, otherSeller));
+        ShopifyGlobalCatalogProductResult detailResult = new ShopifyGlobalCatalogProductResult(
+                productResult,
+                rawProduct(),
+                List.of(new ShopifyGlobalCatalogResponse.Message(
+                        "info",
+                        "FIT_NOTE",
+                        "/variants/variant-m",
+                        "text/plain",
+                        "True to size",
+                        "info",
+                        "inline",
+                        null,
+                        null
+                ))
+        );
+        when(global.getProductWithDetails(any())).thenReturn(detailResult);
+        CatalogProductReference requested = new CatalogProductReference(
+                "saved-product",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                requested,
+                new CatalogRehydrationContext("CZ", "cs")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().resolvedReference().externalMerchantReference())
+                .isEqualTo(merchant("seller-a"));
+        assertThat(result.rehydration().resolvedReference().externalMerchantDomain())
+                .isEqualTo("seller.example");
+        assertThat(result.rehydration().resolvedReference().externalVariantReference())
+                .isEqualTo(variant("variant-m"));
+        assertThat(result.details().handle()).isEqualTo("perfect-shirt");
+        assertThat(result.details().description()).isEqualTo("Full current product description");
+        assertThat(result.details().media()).singleElement().satisfies(media -> {
+            assertThat(media.type()).isEqualTo("image");
+            assertThat(media.url()).isEqualTo("https://seller.example/product.jpg");
+        });
+        assertThat(result.details().options()).singleElement().satisfies(option -> {
+            assertThat(option.name()).isEqualTo("Size");
+            assertThat(option.values()).containsExactly("M", "L");
+        });
+        assertThat(result.details().variants())
+                .extracting(detailVariant -> detailVariant.variantId())
+                .containsExactly("variant-m", "variant-l");
+        assertThat(result.details().selectedVariant().variantId()).isEqualTo("variant-m");
+        assertThat(result.details().selectedVariant().handle()).isEqualTo("medium");
+        assertThat(result.details().selectedVariant().description()).isEqualTo("Medium variant description");
+        assertThat(result.details().selectedVariant().sku()).isEqualTo("sku-medium");
+        assertThat(result.details().tags()).containsExactly("organic", "summer");
+        assertThat(result.details().attributes()).extracting(attribute -> attribute.value())
+                .contains("180 gsm", "Machine washable", "Made for travel");
+        assertThat(result.details().messages()).singleElement()
+                .extracting(message -> message.content()).isEqualTo("True to size");
+        assertThat(result.details().ratingScore()).isEqualTo(4.7d);
+        assertThat(result.details().ratingScaleMax()).isEqualTo(5.0d);
+        assertThat(result.details().reviewCount()).isEqualTo(84L);
+        assertThat(result.details().merchantName()).isEqualTo("Seller A");
+
+        CatalogProductReference legacyReference = new CatalogProductReference(
+                "legacy-saved-product",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                null,
+                product("product-1"),
+                variant("variant-m"),
+                List.of()
+        );
+        CatalogProductDetailResult legacyResult = rehydrator(global, 50).getDetails(
+                legacyReference,
+                new CatalogRehydrationContext("CZ", "cs")
+        );
+        assertThat(legacyResult.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(legacyResult.rehydration().resolvedReference().externalMerchantDomain())
+                .isEqualTo("seller.example");
+        assertThat(legacyResult.rehydration().resolvedReference().selectedOptions())
+                .containsExactly(new ProductAttribute("variant-option", "Size", "M"));
+        assertThat(legacyResult.details().variants()).hasSize(2);
+        assertThat(legacyResult.details().selectedVariant().sku()).isEqualTo("sku-medium");
+
+        verify(global, never()).lookupCatalog(any());
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global, times(2)).getProductWithDetails(request.capture());
+        ShopifyGlobalCatalogGetProductRequest currentRequest = request.getAllValues().getFirst();
+        assertThat(currentRequest.id()).isEqualTo("product-1");
+        assertThat(currentRequest.selected()).singleElement().satisfies(option -> {
+            assertThat(option.name()).isEqualTo("Size");
+            assertThat(option.label()).isEqualTo("M");
+        });
+        assertThat(currentRequest.context().addressCountry()).isEqualTo("CZ");
+        assertThat(currentRequest.context().language()).isEqualTo("cs");
+        assertThat(request.getAllValues().getLast().selected()).isEmpty();
+    }
+
+    @Test
+    void savedDetailMatchesExactRawVariantBeyondTheNormalizedCandidateCap() {
+        ShopifyGlobalCatalogProvider global = providerSource(1);
+        CatalogSourceResult cappedResult = successful(List.of(detailedCandidate(
+                "product-1", "variant-m", "seller-a", "seller.example", "M", 1299)));
+        ShopifyGlobalCatalogProductResult productResult = new ShopifyGlobalCatalogProductResult(
+                cappedResult,
+                rawProduct(),
+                List.of()
+        );
+        when(global.getProductWithDetails(any())).thenReturn(productResult);
+        CatalogProductReference requested = new CatalogProductReference(
+                "saved-large",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-l"),
+                List.of(new ProductAttribute("variant-option", "Size", "L"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                requested,
+                new CatalogRehydrationContext("CZ", "cs")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().facts().price().minorUnits()).isEqualTo(1399L);
+        assertThat(result.rehydration().resolvedReference().externalVariantReference())
+                .isEqualTo(variant("variant-l"));
+        assertThat(result.details().selectedVariant().variantId()).isEqualTo("variant-l");
+    }
+
+    @Test
+    void rehydratesLaterProductThroughExactGetProductWhenLookupBatchWasGloballyCapped() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult cappedLookup = successful(List.of(candidate(
+                "product-1", "variant-1", "seller-a", 1000, available())));
+        when(cappedLookup.truncated()).thenReturn(true);
+        when(global.lookupCatalog(any())).thenReturn(cappedLookup);
+        ShopifyGlobalCatalogResponse.Seller seller = new ShopifyGlobalCatalogResponse.Seller(
+                "Seller B", "seller-b", "seller-b.example", "https://seller-b.example", List.of());
+        ShopifyGlobalCatalogResponse.Variant laterVariant = rawVariant(
+                "product-2", "variant-2", "default", "One size", "sku-2", 2200L, seller);
+        ShopifyGlobalCatalogProductResult laterProductResult = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()),
+                rawProduct("product-2", List.of(laterVariant)),
+                List.of()
+        );
+        when(global.getProductWithDetails(any())).thenReturn(laterProductResult);
+        ShopifyCatalogProductRehydrationProvider provider = rehydrator(global, 50);
+
+        var results = provider.rehydrate(List.of(
+                reference("first", "product-1", "variant-1", "seller-a", List.of()),
+                reference("later", "product-2", "variant-2", "seller-b", List.of())
+        ), new CatalogRehydrationContext("CZ", "en"));
+
+        assertThat(results).extracting(CatalogProductRehydrationResult::status)
+                .containsExactly(CatalogRehydrationStatus.FRESH, CatalogRehydrationStatus.FRESH);
+        assertThat(results.getLast().facts().price().minorUnits()).isEqualTo(2200L);
+        assertThat(results.getLast().resolvedReference().externalProductReference())
+                .isEqualTo(product("product-2"));
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global).getProductWithDetails(request.capture());
+        assertThat(request.getValue().id()).isEqualTo("product-2");
+    }
+
+    @Test
+    void savedDetailMatchesBundleWhenProviderReordersRawComponents() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        ShopifyGlobalCatalogResponse.Product base = rawProduct();
+        ShopifyGlobalCatalogResponse.Variant configured = withComponents(
+                base.variants().getFirst(),
+                List.of(
+                        new ShopifyGlobalCatalogResponse.Component(
+                                "component-b", "component-variant-b", 2, List.of()),
+                        new ShopifyGlobalCatalogResponse.Component(
+                                "component-a", "component-variant-a", 1, List.of())
+                )
+        );
+        ShopifyGlobalCatalogProductResult productResult = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()),
+                withVariants(base, List.of(configured)),
+                List.of()
+        );
+        when(global.getProductWithDetails(any())).thenReturn(productResult);
+        List<OfferComponentIdentity> requestedComponents = List.of(
+                new OfferComponentIdentity(
+                        product("component-a"), variant("component-variant-a"), 1, List.of()),
+                new OfferComponentIdentity(
+                        product("component-b"), variant("component-variant-b"), 2, List.of())
+        );
+        CatalogProductReference requested = new CatalogProductReference(
+                "saved-bundle",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M")),
+                requestedComponents,
+                null
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                requested,
+                new CatalogRehydrationContext("CZ", "cs")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().resolvedReference().components()).containsExactlyElementsOf(requestedComponents);
+        assertThat(result.details().selectedVariant().variantId()).isEqualTo("variant-m");
+    }
+
+    private ShopifyGlobalCatalogResponse.Product rawProduct() {
+        ShopifyGlobalCatalogResponse.Seller sellerA = new ShopifyGlobalCatalogResponse.Seller(
+                "Seller A", "seller-a", "seller.example", "https://seller.example", List.of());
+        ShopifyGlobalCatalogResponse.Seller sellerB = new ShopifyGlobalCatalogResponse.Seller(
+                "Seller B", "seller-b", "other.example", "https://other.example", List.of());
+        return new ShopifyGlobalCatalogResponse.Product(
+                "product-1",
+                "perfect-shirt",
+                "Perfect shirt",
+                new ShopifyGlobalCatalogResponse.Description(
+                        "Full current product description", "<p>Full current product description</p>"),
+                "https://seller.example/products/perfect-shirt",
+                List.of(new ShopifyGlobalCatalogResponse.Category("Shirts", "apparel")),
+                new ShopifyGlobalCatalogResponse.PriceRange(
+                        new ShopifyGlobalCatalogResponse.Price(1299L, "USD"),
+                        new ShopifyGlobalCatalogResponse.Price(1399L, "USD")),
+                new ShopifyGlobalCatalogResponse.PriceRange(
+                        new ShopifyGlobalCatalogResponse.Price(1599L, "USD"),
+                        new ShopifyGlobalCatalogResponse.Price(1699L, "USD")),
+                List.of(new ShopifyGlobalCatalogResponse.Media(
+                        "image", "https://seller.example/product.jpg", "Perfect shirt", 1200, 1200)),
+                List.of(new ShopifyGlobalCatalogResponse.Option(
+                        "Size",
+                        List.of(
+                                new ShopifyGlobalCatalogResponse.OptionValue("M", true, true),
+                                new ShopifyGlobalCatalogResponse.OptionValue("L", true, true)
+                        ))),
+                List.of(new ShopifyGlobalCatalogResponse.SelectedOption("Size", "M")),
+                List.of(
+                        rawVariant("variant-m", "medium", "M", "sku-medium", 1299L, sellerA),
+                        rawVariant("variant-l", "large", "L", "sku-large", 1399L, sellerA),
+                        rawVariant("variant-m", "medium", "M", "other-sku", 999L, sellerB)
+                ),
+                new ShopifyGlobalCatalogResponse.Rating(new BigDecimal("4.7"), new BigDecimal("5"), 84L),
+                List.of("organic", "summer"),
+                new ShopifyGlobalCatalogResponse.Metadata(
+                        List.of("180 gsm"), List.of("Machine washable"), List.of("Made for travel"))
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Product rawProduct(
+            String productId,
+            List<ShopifyGlobalCatalogResponse.Variant> variants
+    ) {
+        return new ShopifyGlobalCatalogResponse.Product(
+                productId,
+                productId,
+                "Current " + productId,
+                null,
+                "https://seller-b.example/products/" + productId,
+                List.of(),
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                variants,
+                null,
+                List.of(),
+                null
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Variant rawVariant(
+            String variantId,
+            String handle,
+            String size,
+            String sku,
+            long price,
+            ShopifyGlobalCatalogResponse.Seller seller
+    ) {
+        return rawVariant("product-1", variantId, handle, size, sku, price, seller);
+    }
+
+    private ShopifyGlobalCatalogResponse.Variant rawVariant(
+            String productId,
+            String variantId,
+            String handle,
+            String size,
+            String sku,
+            long price,
+            ShopifyGlobalCatalogResponse.Seller seller
+    ) {
+        return new ShopifyGlobalCatalogResponse.Variant(
+                variantId,
+                productId,
+                sku,
+                handle,
+                "Size " + size,
+                new ShopifyGlobalCatalogResponse.Description(
+                        ("M".equals(size) ? "Medium" : "Large") + " variant description", null),
+                "https://" + seller.domain() + "/products/perfect-shirt?variant=" + variantId,
+                new ShopifyGlobalCatalogResponse.Price(price, "USD"),
+                new ShopifyGlobalCatalogResponse.Price(price + 300, "USD"),
+                new ShopifyGlobalCatalogResponse.Availability(true, "in_stock", 10, false),
+                new ShopifyGlobalCatalogResponse.Requires(true, false, false),
+                List.of(new ShopifyGlobalCatalogResponse.SelectedOption("Size", size)),
+                List.of(new ShopifyGlobalCatalogResponse.Media(
+                        "image", "https://" + seller.domain() + "/" + variantId + ".jpg",
+                        "Shirt " + size, 1200, 1200)),
+                List.of(new ShopifyGlobalCatalogResponse.Category("Shirts", "apparel")),
+                List.of("organic"),
+                List.of(new ShopifyGlobalCatalogResponse.Barcode("SKU", sku)),
+                List.of(),
+                seller,
+                "https://" + seller.domain() + "/cart/" + variantId + ":1",
+                null,
+                List.of()
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Variant withComponents(
+            ShopifyGlobalCatalogResponse.Variant variant,
+            List<ShopifyGlobalCatalogResponse.Component> components
+    ) {
+        return new ShopifyGlobalCatalogResponse.Variant(
+                variant.id(),
+                variant.productId(),
+                variant.sku(),
+                variant.handle(),
+                variant.title(),
+                variant.description(),
+                variant.url(),
+                variant.price(),
+                variant.listPrice(),
+                variant.availability(),
+                variant.requires(),
+                variant.options(),
+                variant.media(),
+                variant.categories(),
+                variant.tags(),
+                variant.barcodes(),
+                variant.inputs(),
+                variant.seller(),
+                variant.checkoutUrl(),
+                variant.sellingPlan(),
+                components
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Product withVariants(
+            ShopifyGlobalCatalogResponse.Product product,
+            List<ShopifyGlobalCatalogResponse.Variant> variants
+    ) {
+        return new ShopifyGlobalCatalogResponse.Product(
+                product.id(),
+                product.handle(),
+                product.title(),
+                product.description(),
+                product.url(),
+                product.categories(),
+                product.priceRange(),
+                product.listPriceRange(),
+                product.media(),
+                product.options(),
+                product.selected(),
+                variants,
+                product.rating(),
+                product.tags(),
+                product.metadata()
+        );
+    }
+
     private ShopifyCatalogProductRehydrationProvider rehydrator(
             ShopifyGlobalCatalogProvider provider,
             int maximumLookupIds
     ) {
         ShopifyGlobalCatalogProperties properties = mock(ShopifyGlobalCatalogProperties.class);
         when(properties.maximumLookupIds()).thenReturn(maximumLookupIds);
+        when(properties.sourceIdentity()).thenReturn("SHOPIFY_GLOBAL_CATALOG");
+        when(properties.endpoint()).thenReturn(URI.create("https://catalog.test"));
         return new ShopifyCatalogProductRehydrationProvider(
                 provider,
                 properties,
                 new ShopifyCatalogDataUseProperties(false, Duration.ofMinutes(15), Duration.ofMinutes(2)),
                 new ShopifyCatalogReferenceMatcher(),
+                new ShopifyGlobalCatalogNormalizer(properties, Clock.fixed(NOW, ZoneOffset.UTC)),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -252,6 +667,76 @@ class ShopifyCatalogProductRehydrationProviderTest {
             OfferAvailability availability
     ) {
         return candidate(productId, variantId, seller, null, price, availability);
+    }
+
+    private ProductCandidate detailedCandidate(
+            String productId,
+            String variantId,
+            String seller,
+            String merchantDomain,
+            String size,
+            long price
+    ) {
+        ExternalIdentifier merchant = merchant(seller);
+        ExternalIdentifier product = product(productId);
+        ExternalIdentifier variant = variant(variantId);
+        ResultSourceReference sourceReference = new ResultSourceReference(
+                ResultSourceType.PROVIDER_CATALOG, "test", URI.create("https://catalog.test"));
+        ResultProvenance provenance = new ResultProvenance(
+                SHOPIFY,
+                SOURCE,
+                null,
+                merchant,
+                merchantDomain,
+                product,
+                variant,
+                new ResultFreshness(NOW, null),
+                sourceReference
+        );
+        Offer offer = new Offer(
+                new OfferIdentity(
+                        SHOPIFY,
+                        OfferMerchantScope.external(merchant),
+                        product,
+                        variant,
+                        List.of(new ProductAttribute("variant-option", "Size", size)),
+                        List.of(),
+                        null
+                ),
+                seller,
+                "Size " + size,
+                new Money(price, "USD"),
+                new Money(price + 300, "USD"),
+                available(),
+                List.of(),
+                URI.create("https://seller.example/cart/" + variantId),
+                List.of(provenance)
+        );
+        return new ProductCandidate(
+                "Perfect shirt",
+                "Full description for " + variantId,
+                List.of(new ProductMedia(
+                        ProductMediaType.IMAGE,
+                        URI.create("https://seller.example/" + variantId + ".jpg"),
+                        "Shirt " + size,
+                        1200,
+                        1200
+                )),
+                List.of(
+                        new ProductAttribute("category", "apparel", "Shirts"),
+                        new ProductAttribute("technical specification", "Weight", "180 gsm")
+                ),
+                List.of(new ProductMaterial("Organic cotton", 10_000)),
+                List.of(new ProductCertification("GOTS", null, null, null)),
+                List.of(new ProductAttribution(
+                        "Product",
+                        URI.create("https://seller.example/products/" + productId),
+                        sourceReference
+                )),
+                List.of(),
+                List.of(provenance),
+                offer
+        );
     }
 
     private ProductCandidate candidate(

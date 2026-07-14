@@ -590,6 +590,8 @@ public record UserGroupedProductSearchV1Response(
             LocalMerchantRoutingResponse localRouting,
             @Schema(description = "External merchant reference when supplied by the provider", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             ExternalIdentifierResponse externalMerchantReference,
+            @Schema(description = "Verified external merchant domain when supplied by the provider", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String externalMerchantDomain,
             @Schema(description = "External product reference", requiredMode = Schema.RequiredMode.REQUIRED)
             ExternalIdentifierResponse externalProductReference,
             @Schema(description = "External variant reference", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -607,6 +609,7 @@ public record UserGroupedProductSearchV1Response(
                     DiscoverySourceIdentityResponse.from(provenance.discoverySource()),
                     LocalMerchantRoutingResponse.from(provenance.localRouting()),
                     ExternalIdentifierResponse.from(provenance.externalMerchantReference()),
+                    provenance.externalMerchantDomain(),
                     ExternalIdentifierResponse.from(provenance.externalProductReference()),
                     ExternalIdentifierResponse.from(provenance.externalVariantReference()),
                     ResultFreshnessResponse.from(provenance.freshness()),

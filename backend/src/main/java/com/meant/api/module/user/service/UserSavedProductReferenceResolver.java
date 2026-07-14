@@ -67,13 +67,17 @@ public class UserSavedProductReferenceResolver {
                 .orElseThrow(() -> new UserException(
                         "Saved product session is unknown or expired; search for the product again"));
         CatalogProductReference requested = command.catalogReference();
-        List<CatalogProductReference> candidates = product.offers().stream()
+        List<ResolvedCandidate> candidates = product.offers().stream()
                 .flatMap(offer -> offer.provenance().stream()
-                        .map(provenance -> reference(product.key(), offer, provenance)))
+                        .map(provenance -> new ResolvedCandidate(
+                                reference(product.key(), offer, provenance), offer)))
                 .distinct()
                 .toList();
-        List<CatalogProductReference> matches = candidates.stream()
-                .filter(candidate -> matches(requested, candidate))
+        List<ResolvedCandidate> matches = candidates.stream()
+                .filter(candidate -> command.catalogOfferKey() == null
+                        || command.catalogOfferKey().isBlank()
+                        || command.catalogOfferKey().equals(candidate.offer().key()))
+                .filter(candidate -> matches(requested, candidate.reference()))
                 .toList();
         if (matches.size() != 1) {
             UserException exception = new UserException(
@@ -84,23 +88,26 @@ public class UserSavedProductReferenceResolver {
                             + "productMatches={} variantMatches={} optionMatches={}",
                     candidates.size(),
                     matches.size(),
-                    matchCount(candidates, value -> requested.discoverySource().equals(value.discoverySource())),
-                    matchCount(candidates, value -> Objects.equals(requested.localRouting(), value.localRouting())),
+                    matchCount(candidates, value -> requested.discoverySource().equals(
+                            value.reference().discoverySource())),
                     matchCount(candidates, value -> Objects.equals(
-                            requested.externalMerchantReference(), value.externalMerchantReference())),
+                            requested.localRouting(), value.reference().localRouting())),
+                    matchCount(candidates, value -> Objects.equals(
+                            requested.externalMerchantReference(), value.reference().externalMerchantReference())),
                     matchCount(candidates, value -> requested.externalMerchantDomain() == null
-                            || Objects.equals(requested.externalMerchantDomain(), value.externalMerchantDomain())),
+                            || Objects.equals(requested.externalMerchantDomain(),
+                                    value.reference().externalMerchantDomain())),
                     matchCount(candidates, value -> requested.externalProductReference().equals(
-                            value.externalProductReference())),
+                            value.reference().externalProductReference())),
                     matchCount(candidates, value -> Objects.equals(
-                            requested.externalVariantReference(), value.externalVariantReference())),
+                            requested.externalVariantReference(), value.reference().externalVariantReference())),
                     matchCount(candidates, value -> selectedOptionsMatch(
-                            requested.selectedOptions(), value.selectedOptions())),
+                            requested.selectedOptions(), value.reference().selectedOptions())),
                     exception
             );
             throw exception;
         }
-        return matches.getFirst();
+        return matches.getFirst().reference();
     }
 
     private CatalogProductReference reference(String productKey, Offer offer, ResultProvenance provenance) {
@@ -113,7 +120,9 @@ public class UserSavedProductReferenceResolver {
                 provenance.externalMerchantDomain(),
                 provenance.externalProductReference(),
                 provenance.externalVariantReference(),
-                offer.selectedOptions()
+                offer.selectedOptions(),
+                offer.identity().components(),
+                offer.identity().sellingPlanIdentity()
         );
     }
 
@@ -125,7 +134,9 @@ public class UserSavedProductReferenceResolver {
                         || Objects.equals(requested.externalMerchantDomain(), trusted.externalMerchantDomain()))
                 && requested.externalProductReference().equals(trusted.externalProductReference())
                 && Objects.equals(requested.externalVariantReference(), trusted.externalVariantReference())
-                && selectedOptionsMatch(requested.selectedOptions(), trusted.selectedOptions());
+                && selectedOptionsMatch(requested.selectedOptions(), trusted.selectedOptions())
+                && requested.components().equals(trusted.components())
+                && Objects.equals(requested.sellingPlanIdentity(), trusted.sellingPlanIdentity());
     }
 
     private boolean selectedOptionsMatch(
@@ -159,9 +170,12 @@ public class UserSavedProductReferenceResolver {
     }
 
     private long matchCount(
-            List<CatalogProductReference> candidates,
-            Predicate<CatalogProductReference> predicate
+            List<ResolvedCandidate> candidates,
+            Predicate<ResolvedCandidate> predicate
     ) {
         return candidates.stream().filter(predicate).count();
+    }
+
+    private record ResolvedCandidate(CatalogProductReference reference, Offer offer) {
     }
 }

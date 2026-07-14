@@ -88,6 +88,11 @@ public class ShopifyGlobalCatalogNormalizer {
         return new NormalizedCandidates(candidates, truncated);
     }
 
+    /** Normalizes one exact variant from an already validated get_product payload without result caps. */
+    ProductCandidate normalizeExact(Product product, Variant variant) {
+        return candidate(product, variant, 1, clock.instant(), sourceReference());
+    }
+
     private ProductCandidate candidate(
             Product product,
             Variant variant,

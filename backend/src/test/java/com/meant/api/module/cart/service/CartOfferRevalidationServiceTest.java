@@ -14,10 +14,14 @@ import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.OfferAvailability;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
+import com.meant.api.module.catalog.service.dto.SellingPlanOption;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
@@ -42,6 +46,34 @@ class CartOfferRevalidationServiceTest {
 
         assertThat(provider.calls).isEqualTo(1);
         assertThat(provider.lastBatch).hasSize(2);
+    }
+
+    @Test
+    void reconstructsPersistedBundleAndSellingPlanForExactRevalidation() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        OfferComponentIdentity component = new OfferComponentIdentity(
+                identifier(ExternalIdentifierType.PRODUCT, "component-product"),
+                identifier(ExternalIdentifierType.VARIANT, "component-variant"),
+                2,
+                List.of(new ProductAttribute("variant-option", "Color", "Blue"))
+        );
+        SellingPlanIdentity plan = new SellingPlanIdentity(
+                identifier(ExternalIdentifierType.SELLING_PLAN_GROUP, "subscription-group"),
+                identifier(ExternalIdentifierType.SELLING_PLAN, "monthly-plan"),
+                List.of(new SellingPlanOption("frequency", "monthly"))
+        );
+
+        service.revalidate(cart(line(
+                "offer-configured",
+                "variant-1",
+                objectMapper.writeValueAsString(List.of(component)),
+                objectMapper.writeValueAsString(plan)
+        )), null);
+
+        assertThat(provider.lastBatch).singleElement().satisfies(reference -> {
+            assertThat(reference.components()).containsExactly(component);
+            assertThat(reference.sellingPlanIdentity()).isEqualTo(plan);
+        });
     }
 
     @Test
@@ -82,6 +114,15 @@ class CartOfferRevalidationServiceTest {
     }
 
     private CartLine line(String offerKey, String variantId) {
+        return line(offerKey, variantId, "[]", null);
+    }
+
+    private CartLine line(
+            String offerKey,
+            String variantId,
+            String componentsJson,
+            String sellingPlanJson
+    ) {
         Instant now = Instant.parse("2026-07-11T10:00:00Z");
         return CartLine.builder()
                 .remoteCartLineId("remote-" + variantId)
@@ -95,6 +136,8 @@ class CartOfferRevalidationServiceTest {
                 .sourceType("PROVIDER_CATALOG")
                 .sourceIdentity("SHOPIFY_GLOBAL_CATALOG")
                 .selectedOptionsJson("[]")
+                .componentsJson(componentsJson)
+                .sellingPlanJson(sellingPlanJson)
                 .rawLineResponse("{}")
                 .createdAt(now)
                 .updatedAt(now)
@@ -114,7 +157,11 @@ class CartOfferRevalidationServiceTest {
     }
 
     private ExternalIdentifier variant(String value) {
-        return new ExternalIdentifier(ExternalIdentifierType.VARIANT, "SHOPIFY", value);
+        return identifier(ExternalIdentifierType.VARIANT, value);
+    }
+
+    private ExternalIdentifier identifier(ExternalIdentifierType type, String value) {
+        return new ExternalIdentifier(type, "SHOPIFY", value);
     }
 
     private OfferAvailability available() {

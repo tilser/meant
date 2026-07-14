@@ -154,6 +154,12 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
             Map<UUID, Optional<MerchantIntegrationResult>> integrations,
             Instant observedAt
     ) {
+        if (Boolean.TRUE.equals(product.requiresSellingPlan())
+                || product.sellingPlanGroups() != null && !product.sellingPlanGroups().isEmpty()) {
+            // Generic UCP currently exposes these groups as an untyped boundary. Do not publish a
+            // purchasable offer until an exact typed SellingPlanIdentity can participate in identity.
+            return java.util.Optional.empty();
+        }
         Optional<MerchantIntegrationResult> integration = integrations.computeIfAbsent(
                 product.merchantId(),
                 merchantId -> Optional.ofNullable(integration(product))

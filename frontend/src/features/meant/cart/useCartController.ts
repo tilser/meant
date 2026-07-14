@@ -268,11 +268,17 @@ export function useCartController(products: readonly Product[]) {
     const selectedOffer = product.canonicalProduct?.offers.find(
       (offer) => offer.key === exactOfferKey,
     )
+    const selectedDisplayOffer = product.offers.find(
+      (offer) => offer.offerKey?.trim() === exactOfferKey,
+    )
     if (!exactOfferKey) {
       return false
     }
 
-    const merchant = selectedOffer?.merchantName?.trim() || 'Selected merchant'
+    const merchant =
+      selectedOffer?.merchantName?.trim() ||
+      selectedDisplayOffer?.merchant.trim() ||
+      'Selected merchant'
     const confirmedCartId = confirmedCartIdForOffer(cartRef.current, exactOfferKey)
     const existingExactOffer = confirmedCartId
       ? cartRef.current.find(

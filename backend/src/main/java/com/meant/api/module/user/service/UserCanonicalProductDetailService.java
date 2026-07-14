@@ -121,9 +121,12 @@ public class UserCanonicalProductDetailService {
                         null,
                         provenance.localRouting(),
                         provenance.externalMerchantReference(),
+                        provenance.externalMerchantDomain(),
                         provenance.externalProductReference(),
                         provenance.externalVariantReference(),
-                        offer.selectedOptions()
+                        offer.selectedOptions(),
+                        offer.identity().components(),
+                        offer.identity().sellingPlanIdentity()
                 )));
             }
         }
@@ -194,7 +197,9 @@ public class UserCanonicalProductDetailService {
                 && Objects.equals(requested.externalMerchantReference(), resolved.externalMerchantReference())
                 && requested.externalProductReference().equals(resolved.externalProductReference())
                 && Objects.equals(requested.externalVariantReference(), resolved.externalVariantReference())
-                && requested.selectedOptions().equals(resolved.selectedOptions());
+                && requested.selectedOptions().equals(resolved.selectedOptions())
+                && requested.components().equals(resolved.components())
+                && Objects.equals(requested.sellingPlanIdentity(), resolved.sellingPlanIdentity());
     }
 
     private boolean localMerchantMatches(

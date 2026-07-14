@@ -10,6 +10,7 @@ import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +34,16 @@ public class UserSavedProductPersistenceService {
                 userId,
                 PageRequest.of(0, candidateLimit)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UserSavedProduct> findVerified(UUID userId, String productKey) {
+        return repository.findByUserIdAndProductKeyAndReferenceVerifiedAtIsNotNull(userId, productKey);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UserSavedProduct> findVerified(UUID userId, UUID savedProductId) {
+        return repository.findByIdAndUserIdAndReferenceVerifiedAtIsNotNull(savedProductId, userId);
     }
 
     @Transactional
@@ -95,16 +106,23 @@ public class UserSavedProductPersistenceService {
                 reference.localMerchantId(),
                 reference.localRouting() == null ? null : reference.localRouting().merchantIntegrationId(),
                 reference.externalMerchantReference() == null ? null : reference.externalMerchantReference().value(),
+                reference.externalMerchantDomain(),
                 reference.externalProductReference().value(),
                 reference.externalVariantReference() == null ? null : reference.externalVariantReference().value(),
                 json(reference.selectedOptions()),
+                json(reference.components()),
+                reference.sellingPlanIdentity() == null ? null : json(reference.sellingPlanIdentity()),
                 policyKey
         );
     }
 
     private <T> String json(List<T> values) {
+        return json((Object) (values == null ? List.of() : values));
+    }
+
+    private String json(Object value) {
         try {
-            return objectMapper.writeValueAsString(values == null ? List.of() : values);
+            return objectMapper.writeValueAsString(value);
         } catch (JacksonException exception) {
             throw new UserException("Could not serialize saved product identifiers", exception);
         }

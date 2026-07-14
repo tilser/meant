@@ -92,11 +92,17 @@ public class UserSavedProduct {
 
     private String externalMerchantId;
 
+    private String externalMerchantDomain;
+
     private String externalProductId;
 
     private String externalVariantId;
 
     private String selectedOptionsJson;
+
+    private String componentsJson;
+
+    private String sellingPlanJson;
 
     private String retentionPolicyKey;
 
@@ -141,9 +147,12 @@ public class UserSavedProduct {
         this.localMerchantId = reference.localMerchantId();
         this.merchantIntegrationId = reference.merchantIntegrationId();
         this.externalMerchantId = reference.externalMerchantId();
+        this.externalMerchantDomain = reference.externalMerchantDomain();
         this.externalProductId = reference.externalProductId();
         this.externalVariantId = reference.externalVariantId();
         this.selectedOptionsJson = reference.selectedOptionsJson();
+        this.componentsJson = reference.componentsJson();
+        this.sellingPlanJson = reference.sellingPlanJson();
         this.retentionPolicyKey = reference.retentionPolicyKey();
         this.referenceVerifiedAt = now;
         this.updatedAt = now;
@@ -206,10 +215,31 @@ public class UserSavedProduct {
             UUID localMerchantId,
             UUID merchantIntegrationId,
             String externalMerchantId,
+            String externalMerchantDomain,
             String externalProductId,
             String externalVariantId,
             String selectedOptionsJson,
+            String componentsJson,
+            String sellingPlanJson,
             String retentionPolicyKey
     ) {
+
+        public DurableReferenceSnapshot(
+                String sourceProvider,
+                String sourceType,
+                String sourceIdentity,
+                UUID localMerchantId,
+                UUID merchantIntegrationId,
+                String externalMerchantId,
+                String externalMerchantDomain,
+                String externalProductId,
+                String externalVariantId,
+                String selectedOptionsJson,
+                String retentionPolicyKey
+        ) {
+            this(sourceProvider, sourceType, sourceIdentity, localMerchantId, merchantIntegrationId,
+                    externalMerchantId, externalMerchantDomain, externalProductId, externalVariantId,
+                    selectedOptionsJson, "[]", null, retentionPolicyKey);
+        }
     }
 }

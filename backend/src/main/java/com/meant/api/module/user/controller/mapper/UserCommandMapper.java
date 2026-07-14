@@ -21,8 +21,11 @@ import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
+import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
+import com.meant.api.module.catalog.service.dto.SellingPlanOption;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.UpdateUserNewsletterCommand;
 import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand;
@@ -139,7 +142,8 @@ public final class UserCommandMapper {
                         .toList(),
                 request.needs(),
                 request.provides(),
-                catalogReference(request));
+                catalogReference(request),
+                request.catalogReference() == null ? null : request.catalogReference().offerKey());
     }
 
     private static CatalogProductReference catalogReference(SaveUserProductRequest request) {
@@ -160,6 +164,7 @@ public final class UserCommandMapper {
                         provider.value(),
                         reference.externalMerchantId()
                 ),
+                reference.externalMerchantDomain(),
                 new ExternalIdentifier(
                         ExternalIdentifierType.PRODUCT,
                         provider.value(),
@@ -174,6 +179,56 @@ public final class UserCommandMapper {
                         ? List.of()
                         : reference.selectedOptions().stream()
                                 .map(option -> new ProductAttribute(option.group(), option.name(), option.value()))
+                                .toList(),
+                reference.components() == null
+                        ? List.of()
+                        : reference.components().stream()
+                                .map(component -> new OfferComponentIdentity(
+                                        new ExternalIdentifier(
+                                                ExternalIdentifierType.PRODUCT,
+                                                provider.value(),
+                                                component.externalProductId()
+                                        ),
+                                        ExternalIdentifier.optional(
+                                                ExternalIdentifierType.VARIANT,
+                                                provider.value(),
+                                                component.externalVariantId()
+                                        ),
+                                        component.quantity(),
+                                        component.selectedOptions() == null
+                                                ? List.of()
+                                                : component.selectedOptions().stream()
+                                                        .map(option -> new ProductAttribute(
+                                                                option.group(), option.name(), option.value()))
+                                                        .toList()
+                                ))
+                                .toList(),
+                sellingPlan(reference.sellingPlan(), provider)
+        );
+    }
+
+    private static SellingPlanIdentity sellingPlan(
+            SaveUserProductRequest.SellingPlan sellingPlan,
+            ProviderIdentity provider
+    ) {
+        if (sellingPlan == null) {
+            return null;
+        }
+        return new SellingPlanIdentity(
+                ExternalIdentifier.optional(
+                        ExternalIdentifierType.SELLING_PLAN_GROUP,
+                        provider.value(),
+                        sellingPlan.groupId()
+                ),
+                ExternalIdentifier.optional(
+                        ExternalIdentifierType.SELLING_PLAN,
+                        provider.value(),
+                        sellingPlan.planId()
+                ),
+                sellingPlan.options() == null
+                        ? List.of()
+                        : sellingPlan.options().stream()
+                                .map(option -> new SellingPlanOption(option.name(), option.value()))
                                 .toList()
         );
     }

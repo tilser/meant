@@ -8,13 +8,55 @@
   },
   "product": {
     "id": "gid://shopify/p/upid-1",
+    "handle": "trail-runner",
     "title": "Trail Runner",
+    "description": {
+      "plain": "Full trail runner detail",
+      "html": "<p>Full trail runner detail</p>"
+    },
+    "url": "https://seller-one.example/products/trail-runner",
+    "categories": [{"value": "Running shoes", "taxonomy": "sporting-goods"}],
+    "price_range": {
+      "min": {"amount": 8999, "currency": "USD"},
+      "max": {"amount": 9999, "currency": "USD"}
+    },
+    "list_price_range": {
+      "min": {"amount": 10999, "currency": "USD"},
+      "max": {"amount": 11999, "currency": "USD"}
+    },
+    "media": [{
+      "type": "image",
+      "url": "https://seller-one.example/trail-runner.jpg",
+      "alt_text": "Trail Runner",
+      "width": 1200,
+      "height": 1200
+    }],
+    "options": [{
+      "name": "Color",
+      "values": [{"label": "Black", "available": true, "exists": true}]
+    }],
     "selected": [{"name": "Color", "label": "Black"}],
     "variants": [{
       "id": "gid://shopify/ProductVariant/variant-1",
+      "product_id": "gid://shopify/p/upid-1",
+      "sku": "TR-BLK-42",
+      "handle": "black-42",
       "title": "Black",
+      "description": {"plain": "Black trail runner variant"},
+      "url": "https://seller-one.example/products/trail-runner?variant=variant-1",
       "price": {"amount": 8999, "currency": "USD"},
+      "list_price": {"amount": 10999, "currency": "USD"},
       "availability": {"available": true, "status": "in_stock"},
+      "requires": {"shipping": true, "selling_plan": false, "components": false},
+      "options": [{"name": "Color", "label": "Black"}],
+      "media": [{
+        "type": "image",
+        "url": "https://seller-one.example/trail-runner-black.jpg",
+        "alt_text": "Trail Runner in black"
+      }],
+      "categories": [{"value": "Running shoes", "taxonomy": "sporting-goods"}],
+      "tags": ["trail", "waterproof"],
+      "barcodes": [{"type": "UPC", "value": "036000291452"}],
       "checkout_url": "https://seller-one.example/cart/variant-1:1",
       "seller": {
         "id": "gid://shopify/Shop/1",
@@ -23,6 +65,22 @@
         "url": "https://seller-one.example",
         "links": []
       }
-    }]
-  }
+    }],
+    "rating": {"value": 4.8, "scale_max": 5, "count": 246},
+    "tags": ["trail", "waterproof"],
+    "metadata": {
+      "tech_specs": ["8 mm drop"],
+      "top_features": ["Waterproof upper"],
+      "unique_selling_points": ["Designed for technical trails"]
+    }
+  },
+  "messages": [{
+    "type": "info",
+    "code": "FIT_NOTE",
+    "path": "/product/variants/0",
+    "content_type": "text/plain",
+    "content": "Runs true to size",
+    "severity": "info",
+    "presentation": "inline"
+  }]
 }

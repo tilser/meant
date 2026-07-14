@@ -7,6 +7,7 @@ import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.command.RemoveSavedProductCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
+import com.meant.api.module.user.service.query.GetSavedProductQuery;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -70,6 +71,29 @@ public class UserSavedProductController {
                 .stream()
                 .map(UserSavedProductResponse::from)
                 .toList();
+    }
+
+    @GetMapping("/me/saved-products/detail")
+    @Operation(
+            summary = "Get a saved product",
+            description = "Loads the current user's durable saved-product reference and rehydrates its current "
+                    + "merchant offer without relying on the original search session."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Saved product with current rehydrated facts when available",
+            content = @Content(schema = @Schema(implementation = UserSavedProductResponse.class))
+    )
+    @ApiResponse(responseCode = "404", description = "Saved product was not found")
+    public UserSavedProductResponse savedProduct(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam String productKey
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserSavedProductResponse.from(userSavedProductService.get(
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
+                new GetSavedProductQuery(authenticatedUser.id(), productKey)
+        ));
     }
 
     @PostMapping("/me/saved-products")

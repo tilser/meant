@@ -6,7 +6,8 @@ import jakarta.validation.constraints.Positive;
 
 public record CartAddItemRequest(
         @NotBlank
-        @Schema(description = "Server-issued exact offer key from the authenticated user's live product session",
+        @Schema(description = "Server-issued exact offer key from the authenticated user's live product session "
+                        + "or durable saved-product selection",
                 requiredMode = Schema.RequiredMode.REQUIRED)
         String offerKey,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)

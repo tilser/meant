@@ -34,9 +34,9 @@ public class ShopifyGlobalCatalogResponseParser {
     ) {
         ShopifyGlobalCatalogResponse payload = payload(response);
         validateEnvelope(payload, requiredCapability);
-        if (operation == CatalogSourceOperation.GET_PRODUCT && payload.product() == null) {
+        if (operation == CatalogSourceOperation.GET_PRODUCT && payload.resolvedProducts().size() != 1) {
             throw new ShopifyGlobalCatalogContractException(
-                    "Shopify Global Catalog get_product response was missing its required product"
+                    "Shopify Global Catalog get_product response did not contain exactly one product"
             );
         }
         validateProducts(payload.resolvedProducts());
