@@ -106,6 +106,7 @@ public class GenericUcpProductObservationMapper {
         Money price = money(variant.price(), variant.currency());
         return CatalogProductRehydrationResult.fresh(reference, resolved, new RehydratedCommercialFacts(
                 product.title(),
+                integration.merchantName(),
                 price,
                 availability(variant.available()),
                 variantId,
@@ -126,7 +127,8 @@ public class GenericUcpProductObservationMapper {
     /** Maps the same verified get-product response into a full, transient presentation projection. */
     public RehydratedProductDetails details(
             ProductDetailsResult details,
-            CatalogProductReference resolvedReference
+            CatalogProductReference resolvedReference,
+            String merchantName
     ) {
         ProductDetailsResponse.Product product = details == null ? null : details.product();
         if (product == null || resolvedReference == null) {
@@ -191,7 +193,7 @@ public class GenericUcpProductObservationMapper {
                 UcpDecimal.ratingValue(product.rating()),
                 UcpDecimal.ratingValue(product.rating()) == null ? null : 5.0d,
                 reviewCount(product.reviewCount()),
-                null
+                merchantName
         );
     }
 

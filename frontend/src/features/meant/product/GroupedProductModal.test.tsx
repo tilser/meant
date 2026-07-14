@@ -14,6 +14,7 @@ mock.module('../../../lib/apiClient', () => ({
 
 const { ProductModal } = await import('./ProductModal')
 const { merchantProductDetailRequest } = await import('./productDetailLoading')
+const { savedProductFromProfile } = await import('./savedProductMapping')
 
 const product: Product = {
   id: 'canonical-1',
@@ -227,6 +228,76 @@ describe('canonical product detail', () => {
     expect(markup).toContain('<span>Add to cart</span>')
     expect(markup).toContain('Price unavailable')
     expect(markup).not.toContain('This offer is not available for merchant checkout')
+  })
+
+  test('does not render an internal storefront identity as the saved-offer merchant', () => {
+    const mappedSavedProduct = savedProductFromProfile({
+      id: 'saved-internal-merchant-reference',
+      productHash: null,
+      name: 'Saved product',
+      brand: null,
+      category: null,
+      tone: null,
+      imageUrl: null,
+      productUrl: null,
+      remote: null,
+      match: null,
+      priceFrom: 11,
+      priceFromMinorUnits: 1100,
+      priceCurrency: 'USD',
+      merchants: 1,
+      satisfies: [],
+      misses: [],
+      note: null,
+      pros: [],
+      cons: [],
+      review: null,
+      offers: [
+        {
+          offerKey: 'saved_offer_internal_merchant_reference',
+          merchant: 'LOCAL_STOREFRONT:2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          price: 11,
+          priceMinorUnits: 1100,
+          priceCurrency: 'USD',
+          delivery: null,
+          merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          merchantDomain: 'shop.example',
+          productVariantId: 'variant-1',
+          variantTitle: null,
+          available: true,
+        },
+      ],
+      needs: null,
+      provides: [],
+      marketCountry: null,
+      marketContextApplied: false,
+      commercialFactsAuthoritative: true,
+      createdAt: '2026-07-14T00:00:00Z',
+      updatedAt: '2026-07-14T00:00:00Z',
+    })
+    const markup = renderToStaticMarkup(
+      <ProductModal
+        product={mappedSavedProduct}
+        deliveryLocations={[]}
+        preferences={[]}
+        saved={true}
+        savePending={false}
+        inCompare={false}
+        onClose={() => undefined}
+        onToggleSave={() => undefined}
+        onCompare={() => undefined}
+        onAddToCart={() => false}
+        onAddOfferKey={async () => true}
+        canPrev={false}
+        canNext={false}
+        onPrev={() => undefined}
+        onNext={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('shop.example')
+    expect(markup).not.toContain('LOCAL_STOREFRONT')
+    expect(markup).not.toContain('2dec9bf6-f8f2-4747-a058-7bb7fa086730')
   })
 
   test('does not expose a retained offer key while durable saved detail is pending', () => {

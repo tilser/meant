@@ -132,7 +132,7 @@ public class UserSavedProductResultMapper {
                         cartEligible(resolved, facts)
                                 ? SavedProductOfferKeyCodec.encode(entity)
                                 : null,
-                        merchantDisplayName(resolved, details),
+                        merchantDisplayName(resolved, facts, details),
                         price == null ? null : price.majorUnits(),
                         price == null ? null : price.minorUnits(),
                         price == null ? null : price.currency(),
@@ -259,18 +259,26 @@ public class UserSavedProductResultMapper {
 
     private String merchantDisplayName(
             CatalogProductReference reference,
+            RehydratedCommercialFacts facts,
             RehydratedProductDetails details
     ) {
-        if (details != null && details.merchantName() != null && !details.merchantName().isBlank()) {
-            return details.merchantName().trim();
+        String detailMerchantName = displayText(details == null ? null : details.merchantName());
+        if (detailMerchantName != null) {
+            return detailMerchantName;
         }
-        String externalMerchant = reference.externalMerchantReference() == null
-                ? null
-                : reference.externalMerchantReference().value();
-        return firstText(
-                externalMerchant,
-                firstText(reference.discoverySource().value(), reference.discoverySource().provider().value())
-        );
+        String factMerchantName = displayText(facts.merchantName());
+        if (factMerchantName != null) {
+            return factMerchantName;
+        }
+        String merchantDomain = displayText(reference.externalMerchantDomain());
+        return merchantDomain == null ? "Merchant" : merchantDomain;
+    }
+
+    private String displayText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private MoneyProjection money(com.meant.api.module.catalog.service.dto.Money money) {

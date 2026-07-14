@@ -13,6 +13,7 @@ import java.util.UUID;
 public record MerchantIntegrationResult(
         UUID id,
         UUID merchantId,
+        String merchantName,
         MerchantIntegrationProvider provider,
         MerchantIntegrationKind kind,
         Set<MerchantIntegrationRole> roles,
@@ -30,5 +31,44 @@ public record MerchantIntegrationResult(
 ) {
     public MerchantIntegrationResult {
         roles = roles == null ? Set.of() : Set.copyOf(roles);
+    }
+
+    public MerchantIntegrationResult(
+            UUID id,
+            UUID merchantId,
+            MerchantIntegrationProvider provider,
+            MerchantIntegrationKind kind,
+            Set<MerchantIntegrationRole> roles,
+            String externalMerchantId,
+            String verifiedDomain,
+            String verifiedShopIdentity,
+            String endpoint,
+            String protocolVersion,
+            MerchantIntegrationAuthStrategy authStrategy,
+            MerchantIntegrationStatus status,
+            MerchantIntegrationSource source,
+            Instant capturedAt,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(
+                id,
+                merchantId,
+                null,
+                provider,
+                kind,
+                roles,
+                externalMerchantId,
+                verifiedDomain,
+                verifiedShopIdentity,
+                endpoint,
+                protocolVersion,
+                authStrategy,
+                status,
+                source,
+                capturedAt,
+                createdAt,
+                updatedAt
+        );
     }
 }

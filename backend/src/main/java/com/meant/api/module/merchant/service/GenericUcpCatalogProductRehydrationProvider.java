@@ -60,7 +60,11 @@ public class GenericUcpCatalogProductRehydrationProvider
             if (rehydrated.status() != CatalogRehydrationStatus.FRESH) {
                 return CatalogProductDetailResult.from(rehydrated, null);
             }
-            var projection = observationMapper.details(details, rehydrated.resolvedReference());
+            var projection = observationMapper.details(
+                    details,
+                    rehydrated.resolvedReference(),
+                    integration.merchantName()
+            );
             return projection == null
                     ? CatalogProductDetailResult.failed(
                             reference,

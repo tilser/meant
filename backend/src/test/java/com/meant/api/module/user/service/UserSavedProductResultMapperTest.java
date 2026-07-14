@@ -6,6 +6,7 @@ import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.catalog.service.CatalogPurchaseReferencePolicyResolver;
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
+import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
@@ -21,6 +22,7 @@ import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
+import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.provider.shopify.catalog.ShopifyCatalogPurchaseReferencePolicy;
 import java.time.Instant;
@@ -61,7 +63,7 @@ class UserSavedProductResultMapperTest {
     }
 
     @Test
-    void localMerchantFallbackKeepsFreshOfferVisibleAndIssuesCartSelectionKey() {
+    void savedProductListUsesCurrentMerchantNameInsteadOfInternalRoutingIdentity() {
         java.util.UUID integrationId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000012");
         java.util.UUID merchantId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000013");
         DiscoverySourceIdentity source = new DiscoverySourceIdentity(
@@ -99,6 +101,7 @@ class UserSavedProductResultMapperTest {
                         resolved,
                         new RehydratedCommercialFacts(
                                 "Current local product",
+                                "Human Merchant",
                                 new Money(1299, "USD"),
                                 new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
                                 resolved.externalVariantReference(),
@@ -113,13 +116,46 @@ class UserSavedProductResultMapperTest {
         );
 
         assertThat(result.offers()).singleElement().satisfies(offer -> {
-            assertThat(offer.merchant()).isEqualTo(source.value());
+            assertThat(offer.merchant()).isEqualTo("Human Merchant");
             assertThat(offer.merchantId()).isEqualTo(merchantId.toString());
             SavedProductOfferKeyCodec.Selection selection = SavedProductOfferKeyCodec.decode(offer.offerKey())
                     .orElseThrow();
             assertThat(selection.savedProductId()).isEqualTo(entity.getId());
             assertThat(SavedProductOfferKeyCodec.verify(selection, entity)).isTrue();
         });
+    }
+
+    @Test
+    void savedProductDetailPrefersDetailMerchantNameOverFactsDomainAndInternalIdentifiers() {
+        CatalogProductReference requested = reference();
+        CatalogProductReference resolved = new CatalogProductReference(
+                requested.interactionKey(),
+                requested.discoverySource(),
+                requested.localMerchantId(),
+                requested.localRouting(),
+                requested.externalMerchantReference(),
+                "merchant.example",
+                requested.externalProductReference(),
+                requested.externalVariantReference(),
+                requested.selectedOptions()
+        );
+        CatalogProductRehydrationResult rehydrated = fresh(
+                requested,
+                resolved,
+                List.of(),
+                "Facts Merchant"
+        );
+
+        UserSavedProductResult result = mapper.detailResult(
+                entity(requested),
+                CatalogProductDetailResult.from(rehydrated, details("Detail Merchant")),
+                new CatalogRehydrationContext("CZ", null)
+        );
+
+        assertThat(result.offers()).singleElement()
+                .extracting(UserSavedProductResult.Offer::merchant)
+                .isEqualTo("Detail Merchant");
+        assertThat(result.details().merchantName()).isEqualTo("Detail Merchant");
     }
 
     @Test
@@ -163,7 +199,7 @@ class UserSavedProductResultMapperTest {
 
         assertThat(result.commercialFactsAuthoritative()).isTrue();
         assertThat(result.offers()).singleElement().satisfies(offer -> {
-            assertThat(offer.merchant()).isEqualTo("merchant-local");
+            assertThat(offer.merchant()).isEqualTo("merchant.example");
             assertThat(offer.merchantId()).isEqualTo(merchantId.toString());
             assertThat(offer.merchantDomain()).isEqualTo("merchant.example");
             assertThat(SavedProductOfferKeyCodec.verify(
@@ -198,6 +234,7 @@ class UserSavedProductResultMapperTest {
 
         assertThat(result.commercialFactsAuthoritative()).isTrue();
         assertThat(result.offers()).singleElement().satisfies(offer -> {
+            assertThat(offer.merchant()).isEqualTo("Merchant");
             assertThat(offer.available()).isTrue();
             assertThat(offer.offerKey()).isNull();
         });
@@ -354,12 +391,22 @@ class UserSavedProductResultMapperTest {
             CatalogProductReference resolved,
             List<ProductAttribute> factOptions
     ) {
+        return fresh(requested, resolved, factOptions, null);
+    }
+
+    private CatalogProductRehydrationResult fresh(
+            CatalogProductReference requested,
+            CatalogProductReference resolved,
+            List<ProductAttribute> factOptions,
+            String merchantName
+    ) {
         ResultFreshness freshness = new ResultFreshness(NOW, NOW.plusSeconds(120));
         return CatalogProductRehydrationResult.fresh(
                 requested,
                 resolved,
                 new RehydratedCommercialFacts(
                         "Current product",
+                        merchantName,
                         new Money(1299, "USD"),
                         new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
                         resolved.externalVariantReference(),
@@ -369,6 +416,38 @@ class UserSavedProductResultMapperTest {
                         freshness,
                         CommercialFactsFreshness.fromSingleObservation(freshness)
                 )
+        );
+    }
+
+    private RehydratedProductDetails details(String merchantName) {
+        return new RehydratedProductDetails(
+                "product-1",
+                null,
+                "Current product",
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                1,
+                null,
+                null,
+                false,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                merchantName
         );
     }
 

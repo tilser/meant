@@ -358,6 +358,133 @@ describe('savedProductFromProfile', () => {
       'Price unavailable',
     )
   })
+
+  test('uses the current detail merchant name instead of an internal storefront reference', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      details: { ...fullSavedDetails(), merchantName: 'Actual Merchant' },
+      offers: [
+        {
+          offerKey: 'saved_offer_current_detail_merchant',
+          merchant: 'LOCAL_STOREFRONT:2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          price: 11,
+          priceMinorUnits: 1100,
+          priceCurrency: 'USD',
+          delivery: null,
+          merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          merchantDomain: 'merchant.example',
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.offers).toHaveLength(1)
+    expect(product.offers[0]?.merchant).toBe('Actual Merchant')
+    expect(product.offers[0]?.merchant).not.toContain('LOCAL_STOREFRONT')
+  })
+
+  test('falls back to the merchant domain when other names are technical references', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      details: { ...fullSavedDetails(), merchantName: 'PROVIDER_CATALOG' },
+      offers: [
+        {
+          offerKey: 'saved_offer_domain_fallback',
+          merchant: 'MERCHANT_INTEGRATION:2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          price: null,
+          priceMinorUnits: null,
+          priceCurrency: null,
+          delivery: null,
+          merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          merchantDomain: 'shop.example',
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.offers[0]?.merchant).toBe('shop.example')
+  })
+
+  test('uses a neutral merchant label instead of exposing an identity value', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      details: { ...fullSavedDetails(), merchantName: 'gid://shopify/Shop/123' },
+      offers: [
+        {
+          offerKey: 'saved_offer_neutral_fallback',
+          merchant: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          price: null,
+          priceMinorUnits: null,
+          priceCurrency: null,
+          delivery: null,
+          merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          merchantDomain: null,
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.offers[0]?.merchant).toBe('Merchant')
+  })
+
+  test('preserves an ordinary merchant name that merely uses storefront words', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      offers: [
+        {
+          offerKey: 'saved_offer_display_name',
+          merchant: 'Local Storefront Goods',
+          price: null,
+          priceMinorUnits: null,
+          priceCurrency: null,
+          delivery: null,
+          merchantId: null,
+          merchantDomain: 'shop.example',
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.offers[0]?.merchant).toBe('Local Storefront Goods')
+  })
+
+  test('keeps an exact server offer when its merchant display name is null', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      offers: [
+        {
+          offerKey: 'saved_offer_null_merchant',
+          merchant: null,
+          price: null,
+          priceMinorUnits: null,
+          priceCurrency: null,
+          delivery: null,
+          merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          merchantDomain: null,
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.offers).toHaveLength(1)
+    expect(product.offers[0]?.offerKey).toBe('saved_offer_null_merchant')
+    expect(product.offers[0]?.merchant).toBe('Merchant')
+  })
 })
 
 describe('savedProductInput grouped catalog reference', () => {

@@ -86,6 +86,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
 
                 assertThat(results).allSatisfy(result -> {
                     String seller = result.resolvedReference().externalMerchantReference().value();
+                    assertThat(result.facts().merchantName()).isEqualTo(seller);
                     assertThat(result.facts().price().minorUnits())
                             .isEqualTo(seller.equals("seller-a") ? 1000L : 2500L);
                 });

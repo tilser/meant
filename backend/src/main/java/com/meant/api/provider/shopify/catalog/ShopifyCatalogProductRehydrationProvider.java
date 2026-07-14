@@ -316,6 +316,7 @@ public class ShopifyCatalogProductRehydrationProvider
         boolean knownAvailability = candidate.offer().availability().status() != OfferAvailabilityStatus.UNKNOWN;
         return CatalogProductRehydrationResult.fresh(requested, match.reference(), new RehydratedCommercialFacts(
                 candidate.title(),
+                candidate.offer().merchantName(),
                 candidate.offer().price(),
                 candidate.offer().availability(),
                 candidate.offer().identity().externalVariantIdentity(),

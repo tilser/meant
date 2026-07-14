@@ -117,10 +117,14 @@ class MerchantIntegrationRepositoryIT extends PostgresIntegrationTestSupport {
                         MerchantIntegrationAuthStrategy.NONE,
                         MerchantIntegrationAuthStrategy.OAUTH_BEARER
                 );
+        assertThat(byMerchant)
+                .extracting(MerchantIntegrationResult::merchantName)
+                .containsOnly(merchant.getName());
         assertThat(byMerchants)
                 .extracting(MerchantIntegrationResult::id)
                 .containsExactlyInAnyOrder(genericUcp.getId(), shopify.getId());
         assertThat(byProviderIdentity.id()).isEqualTo(shopify.getId());
+        assertThat(byProviderIdentity.merchantName()).isEqualTo(merchant.getName());
         assertThat(byProviderIdentity.roles()).contains(MerchantIntegrationRole.ORDERS);
         assertThat(byDomain)
                 .extracting(MerchantIntegrationResult::provider)

@@ -283,6 +283,51 @@ function savedDetailReviewCount(details?: UserSavedProductDetailsProfile | null)
   return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null
 }
 
+const TECHNICAL_MERCHANT_LABELS = new Set([
+  'CACHED_OBSERVATION',
+  'DATASET_IMPORT',
+  'GENERIC_UCP',
+  'GLOBAL_CATALOG',
+  'LOCAL_STOREFRONT',
+  'MANUAL_ASSERTION',
+  'MEANT_MERCHANT_SEMANTIC',
+  'MERCHANT_INTEGRATION',
+  'MERCHANT_STOREFRONT',
+  'PROVIDER_CATALOG',
+  'SHOPIFY_GLOBAL_CATALOG',
+  'USER_PRODUCT_SEARCH_CACHE',
+])
+
+const INTERNAL_MERCHANT_REFERENCE = /^(?:LOCAL_STOREFRONT|MERCHANT_INTEGRATION)\s*:/i
+const UUID_REFERENCE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+const GID_REFERENCE = /(?:^|:)gid:\/\/[^\s]+$/i
+
+function nonTechnicalMerchantLabel(value: string | null | undefined): string | null {
+  const label = value?.trim()
+  if (
+    !label ||
+    INTERNAL_MERCHANT_REFERENCE.test(label) ||
+    TECHNICAL_MERCHANT_LABELS.has(label.toUpperCase()) ||
+    UUID_REFERENCE.test(label) ||
+    GID_REFERENCE.test(label)
+  ) {
+    return null
+  }
+  return label
+}
+
+function savedOfferMerchantLabel(
+  details: UserSavedProductDetailsProfile | null | undefined,
+  offer: UserSavedProductProfile['offers'][number],
+): string {
+  return (
+    nonTechnicalMerchantLabel(details?.merchantName) ??
+    nonTechnicalMerchantLabel(offer.merchant) ??
+    nonTechnicalMerchantLabel(offer.merchantDomain) ??
+    'Merchant'
+  )
+}
+
 export function savedProductFromProfile(
   product: UserSavedProductProfile,
   preferences: readonly Preference[] = [],
@@ -353,17 +398,17 @@ export function savedProductFromProfile(
     selectedVariantAvailable: details?.selectedVariantAvailable ?? null,
     offers: authoritative
       ? product.offers
-          .filter((offer): offer is typeof offer & { merchant: string } => {
+          .filter((offer) => {
             const hasExactServerKey = Boolean(offer.offerKey?.trim())
             const hasDisplayPrice =
               minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency) != null
-            return offer.merchant != null && (hasExactServerKey || hasDisplayPrice)
+            return hasExactServerKey || hasDisplayPrice
           })
           .map((offer) => {
             const price = minorUnitsToMajor(offer.priceMinorUnits, offer.priceCurrency)
             return {
               ...offer,
-              merchant: offer.merchant,
+              merchant: savedOfferMerchantLabel(details, offer),
               price: price ?? Number.NaN,
               priceMinorUnits: price == null ? null : offer.priceMinorUnits,
               priceCurrency: price == null ? null : offer.priceCurrency,

@@ -87,6 +87,7 @@ public class MerchantIntegrationLookupService {
         return new MerchantIntegrationResult(
                 integration.getId(),
                 integration.getMerchant().getId(),
+                integration.getMerchant().getName(),
                 integration.getProvider(),
                 integration.getKind(),
                 integration.getRoles(),

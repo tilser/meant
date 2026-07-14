@@ -5,6 +5,7 @@ import java.util.List;
 /** Current commercial facts from a lookup/get-product response; never reconstructed from a saved snapshot. */
 public record RehydratedCommercialFacts(
         String title,
+        String merchantName,
         Money price,
         OfferAvailability availability,
         ExternalIdentifier selectedVariant,
@@ -22,5 +23,30 @@ public record RehydratedCommercialFacts(
         if (freshness == null || purchaseFreshness == null) {
             throw new IllegalArgumentException("Rehydrated commercial facts require current freshness");
         }
+    }
+
+    public RehydratedCommercialFacts(
+            String title,
+            Money price,
+            OfferAvailability availability,
+            ExternalIdentifier selectedVariant,
+            List<ProductAttribute> selectedOptions,
+            List<OfferDelivery> fulfillment,
+            List<ProductMedia> sourceMedia,
+            ResultFreshness freshness,
+            CommercialFactsFreshness purchaseFreshness
+    ) {
+        this(
+                title,
+                null,
+                price,
+                availability,
+                selectedVariant,
+                selectedOptions,
+                fulfillment,
+                sourceMedia,
+                freshness,
+                purchaseFreshness
+        );
     }
 }

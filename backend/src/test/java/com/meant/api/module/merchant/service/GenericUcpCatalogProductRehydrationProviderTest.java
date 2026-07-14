@@ -87,6 +87,7 @@ class GenericUcpCatalogProductRehydrationProviderTest {
 
         assertThat(transactionActive).isFalse();
         assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.facts().merchantName()).isEqualTo("Merchant display name");
         assertThat(result.facts().price().minorUnits()).isEqualTo(1299);
         assertThat(result.facts().selectedVariant().value()).isEqualTo("variant-1");
         assertThat(result.resolvedReference().localRouting().merchantIntegrationId()).isEqualTo(INTEGRATION_ID);
@@ -216,6 +217,7 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         assertThat(result.details().ratingScore()).isEqualTo(4.6d);
         assertThat(result.details().ratingScaleMax()).isEqualTo(5.0d);
         assertThat(result.details().reviewCount()).isEqualTo(321L);
+        assertThat(result.details().merchantName()).isEqualTo("Merchant display name");
         verify(detailsService).get(new GetMerchantProductDetailsQuery(MERCHANT_ID, "product-1", "CZ", "en"));
     }
 
@@ -576,6 +578,7 @@ class GenericUcpCatalogProductRehydrationProviderTest {
         return new MerchantIntegrationResult(
                 integrationId,
                 merchantId,
+                "Merchant display name",
                 provider,
                 null,
                 Set.of(MerchantIntegrationRole.STOREFRONT_CATALOG),
