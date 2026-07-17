@@ -83,7 +83,9 @@ class UserGroupedProductSearchServiceTest {
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
                 new StubRankingContextFactory(),
-                sessionStore()
+                sessionStore(),
+                referencePersistence(),
+                new UserProductPreferenceMatchCuratorService()
         );
         EnsureUserProfileCommand profile = profile();
         SearchUserProductsCommand command = command(profile.id());
@@ -253,7 +255,9 @@ class UserGroupedProductSearchServiceTest {
                 new ExactProductGroupingService(new ProductGroupingMetrics(registry)),
                 ProductRankingTestFactory.service(),
                 new StubRankingContextFactory(),
-                sessionStore()
+                sessionStore(),
+                referencePersistence(),
+                new UserProductPreferenceMatchCuratorService()
         );
 
         var result = service.search(profile(), command(profile().id(), 0, 20));
@@ -299,7 +303,9 @@ class UserGroupedProductSearchServiceTest {
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
                 new StubRankingContextFactory(),
-                sessionStore()
+                sessionStore(),
+                referencePersistence(),
+                new UserProductPreferenceMatchCuratorService()
         );
 
         var result = service.search(profile(), command(profile().id(), 40, 20));
@@ -428,12 +434,22 @@ class UserGroupedProductSearchServiceTest {
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
                 new StubRankingContextFactory(),
-                sessionStore()
+                sessionStore(),
+                referencePersistence(),
+                new UserProductPreferenceMatchCuratorService()
         );
     }
 
     private static UserCanonicalProductSessionStore sessionStore() {
         return new UserCanonicalProductSessionStore(Duration.ofMinutes(30), 100);
+    }
+
+    private static UserCanonicalProductReferencePersistenceService referencePersistence() {
+        return new UserCanonicalProductReferencePersistenceService(null, null, null, List.of()) {
+            @Override
+            public void replace(UUID userId, List<CanonicalProduct> products) {
+            }
+        };
     }
 
     private static final class StubRankingContextFactory extends UserProductRankingContextFactory {

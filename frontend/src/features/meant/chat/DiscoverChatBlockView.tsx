@@ -23,6 +23,7 @@ import {
   cartItemsWithFallback,
   cartLineForAddedBlock,
   copyTextToClipboard,
+  productOpenWithResearchQuery,
   productsWithFallback,
 } from './utils'
 
@@ -44,6 +45,7 @@ function discountCodeEntries(block: Extract<DiscoverChatBlock, { type: 'code' }>
 export function DiscoverChatBlockView({
   threadId,
   block,
+  researchQuery,
   deliveryLocations,
   preferences,
   cart,
@@ -85,6 +87,7 @@ export function DiscoverChatBlockView({
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
+  researchQuery?: string | null
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   cart: readonly CartItem[]
@@ -94,7 +97,7 @@ export function DiscoverChatBlockView({
   pinnedSet: ReadonlySet<ProductId>
   watchedSet: ReadonlySet<ProductId>
   shelfProductSet: ReadonlySet<ProductId>
-  onOpen: (product: Product, products?: readonly Product[]) => void
+  onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
@@ -135,6 +138,8 @@ export function DiscoverChatBlockView({
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
+  const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
+
   if (block.type === 'text') {
     return <p className="mt-ct-intro">{block.text}</p>
   }
@@ -188,7 +193,7 @@ export function DiscoverChatBlockView({
         pinnedSet={pinnedSet}
         watchedSet={watchedSet}
         shelfProductSet={shelfProductSet}
-        onOpen={onOpen}
+        onOpen={openProduct}
         onToggleSave={onToggleSave}
         onAddCart={onAddCart}
         onPin={onPin}
@@ -288,7 +293,7 @@ export function DiscoverChatBlockView({
           pinnedSet={pinnedSet}
           watchedSet={watchedSet}
           shelfProductSet={shelfProductSet}
-          onOpen={onOpen}
+          onOpen={openProduct}
           onToggleSave={onToggleSave}
           onAddCart={onAddCart}
           onPin={onPin}
@@ -313,7 +318,11 @@ export function DiscoverChatBlockView({
             {Math.max(76, block.product.match)}% confident
           </span>
         </div>
-        <button className="mt-ct-decision-prod" type="button" onClick={() => onOpen(block.product)}>
+        <button
+          className="mt-ct-decision-prod"
+          type="button"
+          onClick={() => openProduct(block.product)}
+        >
           <span className="mt-ct-decision-media">
             <ProductArtwork product={block.product} label={block.product.category.toLowerCase()} />
           </span>
@@ -379,7 +388,11 @@ export function DiscoverChatBlockView({
             </span>
           </div>
           <p className="mt-ct-friend-quote">"{block.note}"</p>
-          <button className="mt-ct-friend-prod" type="button" onClick={() => onOpen(block.product)}>
+          <button
+            className="mt-ct-friend-prod"
+            type="button"
+            onClick={() => openProduct(block.product)}
+          >
             <span className="mt-ct-friend-thumb">
               <ProductArtwork
                 product={block.product}
@@ -470,7 +483,7 @@ export function DiscoverChatBlockView({
                 key={product.id}
                 className="mt-ct-mini2-card"
                 type="button"
-                onClick={() => onOpen(product)}
+                onClick={() => openProduct(product)}
               >
                 <span className="mt-ct-mini2-media">
                   <ProductArtwork product={product} label={product.category.toLowerCase()} />
@@ -574,7 +587,7 @@ export function DiscoverChatBlockView({
     <InlineMiniCompareBlock
       block={block}
       deliveryLocations={deliveryLocations}
-      onOpen={onOpen}
+      onOpen={openProduct}
       onAddCart={onAddCart}
       onOpenFullCompare={onOpenFullCompare}
     />

@@ -697,6 +697,7 @@ export function MeantApp() {
     null,
   )
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
+  const [activeProductResearchQuery, setActiveProductResearchQuery] = useState<string | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
   const [savedProductDetailLoadingId, setSavedProductDetailLoadingId] = useState<ProductId | null>(
     null,
@@ -958,8 +959,9 @@ export function MeantApp() {
   )
 
   const openProduct = useCallback(
-    (product: Product, list?: readonly Product[]) => {
+    (product: Product, list?: readonly Product[], researchQuery?: string | null) => {
       setActiveProduct(product)
+      setActiveProductResearchQuery(researchQuery?.trim() || null)
       setNavProducts(list ?? [product])
       refreshSavedProductForOpen(product)
     },
@@ -1455,6 +1457,7 @@ export function MeantApp() {
   const sendProductQuestionToDiscover = useCallback(
     (product: Product, question: string) => {
       setActiveProduct(null)
+      setActiveProductResearchQuery(null)
       setProductDetailChatRequest({
         id: `detail-chat-${Date.now().toString(36)}`,
         product,
@@ -1630,6 +1633,7 @@ export function MeantApp() {
   const handleProductCompare = (product: Product) => {
     if (compareIdsRef.current.includes(product.id)) {
       setActiveProduct(null)
+      setActiveProductResearchQuery(null)
       nav('compare')
       return
     }
@@ -2233,7 +2237,9 @@ export function MeantApp() {
             onMerchant={(merchant) => {
               setSelectedMerchantId(merchant?.id ?? null)
             }}
-            onOpen={(product, products) => openProduct(product, products ?? feedProducts)}
+            onOpen={(product, products, researchQuery) =>
+              openProduct(product, products ?? feedProducts, researchQuery)
+            }
             savedSet={savedSet}
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
@@ -2376,7 +2382,10 @@ export function MeantApp() {
           activeProduct ? savedProductDetailLoadingId === activeProduct.id : false
         }
         inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
-        onClose={() => setActiveProduct(null)}
+        onClose={() => {
+          setActiveProduct(null)
+          setActiveProductResearchQuery(null)
+        }}
         onToggleSave={toggleSave}
         onUpdateSavedChoice={updateSavedChoice}
         onCompare={handleProductCompare}
@@ -2385,10 +2394,7 @@ export function MeantApp() {
           addSelectedOfferToCart(selectedProduct, offerKey)
         }
         onRefreshProduct={refreshSavedProductForOpen}
-        onResearch={(searchQuery) => {
-          setActiveProduct(null)
-          void runProductSearch(searchQuery)
-        }}
+        researchQuery={activeProductResearchQuery}
         onAskInChat={sendProductQuestionToDiscover}
         canPrev={canNavPrev}
         canNext={canNavNext}

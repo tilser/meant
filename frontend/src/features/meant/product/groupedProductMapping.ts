@@ -27,18 +27,8 @@ function productTone(key: string): string {
   return tones[code % tones.length] ?? tones[0]
 }
 
-function recommendationNote(product: CanonicalProductProfile): string {
-  const explanation = product.rankingExplanation
-  if (!explanation) {
-    return 'Grouped across merchants because it matches the available product evidence.'
-  }
-  const preferenceFeature = explanation.features.find(
-    (feature) => feature.name === 'DURABLE_PREFERENCE_FIT' && feature.availability === 'AVAILABLE',
-  )
-  return preferenceFeature
-    ? `Ranked #${explanation.finalRank} using product relevance and your saved preferences.`
-    : `Ranked #${explanation.finalRank} for relevance to this search.`
-}
+const SEARCH_RELEVANCE_TAKE =
+  'This looks relevant to your search based on the available product details.'
 
 function groupedCardPriceOffer(product: CanonicalProductProfile) {
   const recommended = product.offers.find((offer) => offer.key === product.recommendedOfferKey)
@@ -74,6 +64,7 @@ function canonicalProductOptions(product: CanonicalProductProfile) {
 }
 
 export function productFromCanonical(product: CanonicalProductProfile): Product {
+  const personalization = product.personalization
   const recommended =
     product.offers.find((offer) => offer.key === product.recommendedOfferKey) ?? product.offers[0]
   const displayedPriceOffer = groupedCardPriceOffer(product)
@@ -114,9 +105,9 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     priceCurrency: displayedPrice?.currency ?? null,
     listPrice: null,
     merchants: uniqueMerchantCount(product),
-    satisfies: [],
-    misses: [],
-    note: recommendationNote(product),
+    satisfies: personalization?.matchedFilterIds ?? [],
+    misses: personalization?.missedFilterIds ?? [],
+    note: personalization?.whyMeantForYou?.trim() || SEARCH_RELEVANCE_TAKE,
     pros: [],
     cons: [],
     review: { score: null, count: 0, insight: 'Review data varies by merchant.' },

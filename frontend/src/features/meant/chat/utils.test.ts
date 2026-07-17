@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import type { CartItem, Product } from '../types'
 import {
@@ -6,7 +6,9 @@ import {
   cartLineForAddedBlock,
   createDiscoverChatThread,
   deleteStoredDiscoverChatThread,
+  discoverProductResearchQuery,
   initialDiscoverChatThreads,
+  productOpenWithResearchQuery,
   saveStoredDiscoverChatThreads,
 } from './utils'
 
@@ -72,6 +74,36 @@ describe('discover chat history storage', () => {
     deleteStoredDiscoverChatThread(thread.id)
 
     expect(initialDiscoverChatThreads()[0]?.messages).toHaveLength(0)
+  })
+})
+
+describe('historical product context', () => {
+  test('prefers the products-block query and falls back to the message query', () => {
+    const product = { id: 'product-1' } as Product
+
+    expect(
+      discoverProductResearchQuery(
+        { type: 'products', products: [product], query: '  original search  ' },
+        'message search',
+      ),
+    ).toBe('original search')
+    expect(
+      discoverProductResearchQuery(
+        { type: 'products', products: [product], query: '   ' },
+        '  message search  ',
+      ),
+    ).toBe('message search')
+    expect(discoverProductResearchQuery({ type: 'reviews', product }, '   ')).toBeNull()
+  })
+
+  test('passes the saved query when a historical product is opened', () => {
+    const product = { id: 'product-1' } as Product
+    const products = [product]
+    const onOpen = mock(() => undefined)
+
+    productOpenWithResearchQuery(onOpen, '  original search  ')(product, products)
+
+    expect(onOpen).toHaveBeenCalledWith(product, products, 'original search')
   })
 })
 

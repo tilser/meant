@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   ApiError,
-  getCanonicalProductDetail,
   selectProductVariant,
   type CanonicalOfferProfile,
   type CanonicalProductDetailProfile,
@@ -13,6 +12,7 @@ import {
 } from '../../../lib/apiClient'
 import type { Product } from '../types'
 import { minorUnitsToMajor, money } from '../utils'
+import { loadCanonicalProductDetailWithRecovery } from './canonicalProductSessionRecovery'
 import { trackCommerceEvent } from './commerceAnalytics'
 import {
   cleanSelectedOptions,
@@ -119,6 +119,23 @@ function optionValues(option: MerchantProductDetailsProfile['options'][number]):
     })
 }
 
+function optionStateLabel(state: ReturnType<typeof optionValueState>): string {
+  switch (state) {
+    case 'available':
+      return 'Available'
+    case 'impossible':
+      return 'Not offered'
+    case 'sold-out':
+      return 'Sold out'
+    default:
+      return 'Check stock'
+  }
+}
+
+function compactOptionGroup(values: readonly string[]): boolean {
+  return values.length <= 6 && values.every((value) => value.length <= 8)
+}
+
 function selectionValue(
   selections: readonly ProductSelectedOptionProfile[],
   optionName: string,
@@ -139,11 +156,11 @@ function exactSelection(selection: ProductVariantSelectionProfile): boolean {
 
 export function GroupedOfferSelector({
   product,
-  onResearch,
+  researchQuery,
   onSelectionChange,
 }: Readonly<{
   product: Product
-  onResearch: (query: string) => void
+  researchQuery?: string | null
   onSelectionChange?: (selection: ProductPurchaseSelection) => void
 }>) {
   const canonicalKey = product.canonicalProduct?.key ?? null
@@ -249,7 +266,7 @@ export function GroupedOfferSelector({
         setStatus(error instanceof ApiError && error.status === 404 ? 'not-found' : 'loaded')
         setSelectionError(
           error instanceof ApiError && error.status === 404
-            ? 'This product session has expired. Search again for current choices.'
+            ? 'Current product choices changed. Try again to reload them.'
             : 'Current variant availability could not be loaded. Try again.',
         )
       } finally {
@@ -286,8 +303,9 @@ export function GroupedOfferSelector({
 
     const controller = new AbortController()
     setStatus('loading')
-    getCanonicalProductDetail({
-      canonicalProductKey: canonicalKey,
+    loadCanonicalProductDetailWithRecovery({
+      product,
+      historicalQuery: researchQuery,
       selectedOfferKey: product.canonicalProduct?.recommendedOfferKey,
       signal: controller.signal,
     })
@@ -317,6 +335,7 @@ export function GroupedOfferSelector({
   }, [
     canonicalKey,
     product,
+    researchQuery,
     refreshVersion,
     resolveSelection,
     savedBaselineCartable,
@@ -444,14 +463,14 @@ export function GroupedOfferSelector({
   if (status === 'not-found') {
     return (
       <div className="mt-grouped-recovery" role="alert">
-        <h3>This product session has expired</h3>
-        <p>Search again to get current merchant and variant choices.</p>
+        <h3>Product choices could not be restored</h3>
+        <p>Current merchant and variant choices are unavailable.</p>
         <button
           type="button"
-          className="mt-act mt-act-primary"
-          onClick={() => onResearch(product.name)}
+          className="mt-act mt-act-ghost"
+          onClick={() => setRefreshVersion((value) => value + 1)}
         >
-          Re-search this product
+          Try again
         </button>
       </div>
     )
@@ -474,23 +493,10 @@ export function GroupedOfferSelector({
   }
 
   return (
-    <section className="mt-grouped-offers" aria-labelledby="product-choices-title">
-      <div className="mt-grouped-offers-heading">
-        <div>
-          <h3 id="product-choices-title">Choose your item</h3>
-          <p>Pick a store first, then choose the exact options you want.</p>
-        </div>
-        {canonicalKey ? (
-          <button
-            type="button"
-            className="mt-grouped-refresh"
-            onClick={() => setRefreshVersion((value) => value + 1)}
-          >
-            Refresh choices
-          </button>
-        ) : null}
-      </div>
-
+    <section
+      className="mt-grouped-offers mt-grouped-offers-compact"
+      aria-label="Product purchase options"
+    >
       {status === 'loading' ? (
         <div className="mt-grouped-loading" role="status" aria-live="polite">
           <span className="mt-grouped-skeleton wide" />
@@ -501,8 +507,7 @@ export function GroupedOfferSelector({
 
       {choices.length > 0 ? (
         <div className="mt-product-choice-section">
-          <div className="mt-block-label mt-mono">1. Store</div>
-          <div className="mt-merchant-choice-list">
+          <div className="mt-merchant-choice-list" role="group" aria-label="Store">
             {choices.map((choice) => {
               const selected = choice.key === selectedMerchantKey
               return (
@@ -525,19 +530,22 @@ export function GroupedOfferSelector({
 
       {details?.options.length ? (
         <div className="mt-product-choice-section">
-          <div className="mt-block-label mt-mono">2. Options</div>
           <div className="mt-product-option-groups">
             {details.options.map((option) => {
               const name = option.name?.trim()
               if (!name) return null
+              const values = optionValues(option)
               return (
-                <fieldset className="mt-product-option-group" key={name}>
+                <fieldset
+                  className={`mt-product-option-group ${compactOptionGroup(values) ? 'compact' : 'wide'}`}
+                  key={name}
+                >
                   <legend className="mt-product-option-head">
                     <span className="mt-mono">{name}</span>
                     <span>{selectionValue(selectedOptions, name) ?? 'Choose one'}</span>
                   </legend>
                   <div className="mt-product-option-values">
-                    {optionValues(option).map((value) => {
+                    {values.map((value) => {
                       const state = optionValueState(
                         option,
                         details.variants,
@@ -547,25 +555,20 @@ export function GroupedOfferSelector({
                       const selected =
                         selectionValue(selectedOptions, name)?.trim().toLowerCase() ===
                         value.trim().toLowerCase()
+                      const stateLabel = optionStateLabel(state)
                       return (
                         <button
                           className={`mt-product-option-chip ${state} ${selected ? 'selected' : ''}`}
                           key={`${name}-${value}`}
                           type="button"
+                          title={state === 'unknown' ? stateLabel : undefined}
+                          aria-label={`${name}: ${value}. ${stateLabel}.`}
                           aria-pressed={selected}
                           disabled={selecting || (state === 'impossible' && !selected)}
                           onClick={() => selectOption(name, value)}
                         >
                           <span>{value}</span>
-                          <span className="mt-mono">
-                            {state === 'available'
-                              ? 'Available'
-                              : state === 'impossible'
-                                ? 'Not offered'
-                                : state === 'sold-out'
-                                  ? 'Sold out'
-                                  : 'Check stock'}
-                          </span>
+                          <span className="mt-mono mt-product-option-chip-state">{stateLabel}</span>
                         </button>
                       )
                     })}

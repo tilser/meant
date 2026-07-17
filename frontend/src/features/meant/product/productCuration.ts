@@ -5,6 +5,7 @@ export const NO_CONFIRMED_PREFERENCE_TAKE =
   'No preference matches are confirmed yet; review the details and offers.'
 const SEARCH_RELEVANCE_TAKE =
   'This looks relevant to your search based on the available product details.'
+const GENERIC_RANKING_TAKE = /^ranked\b/i
 
 function preferenceLabels(
   ids: readonly PreferenceId[],
@@ -98,12 +99,16 @@ function productPreferenceMatchPhrase(product: Product, labels: readonly string[
   return null
 }
 
-function productFallbackTake(product: Product): string {
+function productProvidedTake(product: Product): string | null {
   const note = product.note.trim()
-  if (note && note !== NO_CONFIRMED_PREFERENCE_TAKE) {
+  if (note && note !== NO_CONFIRMED_PREFERENCE_TAKE && !GENERIC_RANKING_TAKE.test(note)) {
     return note
   }
-  return SEARCH_RELEVANCE_TAKE
+  return null
+}
+
+function productFallbackTake(product: Product): string {
+  return productProvidedTake(product) ?? SEARCH_RELEVANCE_TAKE
 }
 
 export function productCuratedTake(product: Product, preferences: readonly Preference[]): string {
@@ -112,6 +117,10 @@ export function productCuratedTake(product: Product, preferences: readonly Prefe
   }
   if (product.inventoryRelationship === 'DUPLICATE') {
     return `This looks close to ${product.inventoryItemName ?? 'something you already own'}, so compare before buying.`
+  }
+  const providedTake = productProvidedTake(product)
+  if (providedTake) {
+    return providedTake
   }
   const matched = preferenceLabels(product.satisfies, preferences)
   const missed = preferenceLabels(product.misses, preferences)

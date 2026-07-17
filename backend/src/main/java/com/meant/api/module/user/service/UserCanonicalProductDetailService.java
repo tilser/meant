@@ -14,6 +14,7 @@ import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserOfferCommercialState;
 import com.meant.api.module.user.service.dto.UserCatalogSourceState;
 import com.meant.api.module.user.service.dto.UserProductDetailResult;
@@ -37,8 +38,10 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserCanonicalProductDetailService {
     private final UserCanonicalProductSessionStore sessionStore;
+    private final UserCanonicalProductReferencePersistenceService productReferencePersistenceService;
     private final CatalogProductRehydrationService rehydrationService;
     private final UserSettingsService userSettingsService;
+    private final UserProductPreferenceMatchCuratorService preferenceMatchCuratorService;
 
     public UserProductDetailResult get(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -47,8 +50,19 @@ public class UserCanonicalProductDetailService {
         if (!profileCommand.id().equals(query.userId())) {
             throw UserException.forbidden("Product detail user does not match authenticated user");
         }
-        UserCanonicalProductSessionStore.Entry entry = sessionStore.find(query.userId(), query.canonicalProductKey())
-                .orElseThrow(() -> UserException.notFound("Canonical product is unknown or expired"));
+        UserCanonicalProductSessionStore.Entry entry = sessionStore.find(
+                        query.userId(), query.canonicalProductKey())
+                .orElseGet(() -> productReferencePersistenceService.findProduct(
+                                query.userId(), query.canonicalProductKey())
+                        .map(product -> new UserCanonicalProductSessionStore.Entry(
+                                product,
+                                null,
+                                Map.of(),
+                                UserCanonicalProductPersonalizationResult.searchRelevance(),
+                                List.of()
+                        ))
+                        .orElseThrow(() -> UserException.notFound(
+                                "Canonical product is unknown or expired")));
         CanonicalProduct product = entry.product();
         String recommendedOfferKey = product.offers().getFirst().key();
         String selectedOfferKey = query.selectedOfferKey() == null ? recommendedOfferKey : query.selectedOfferKey();
@@ -71,6 +85,13 @@ public class UserCanonicalProductDetailService {
         List<Offer> offers = product.offers().stream()
                 .map(offer -> refreshed(offer, observations, states))
                 .toList();
+        CanonicalProduct currentProduct = currentProduct(product, offers, observations);
+        UserCanonicalProductPersonalizationResult personalization = preferenceMatchCuratorService
+                .curateCanonical(List.of(currentProduct), settings)
+                .getOrDefault(
+                        currentProduct.key(),
+                        UserCanonicalProductPersonalizationResult.searchRelevance()
+                );
         List<UserCatalogSourceState> sourceStates = new ArrayList<>(entry.sourceStates());
         observations.stream()
                 .filter(observation -> observation.result().status() != CatalogRehydrationStatus.FRESH)
@@ -99,11 +120,21 @@ public class UserCanonicalProductDetailService {
                 ))
                 .distinct()
                 .forEach(sourceStates::add);
+        sessionStore.remember(
+                query.userId(),
+                List.of(currentProduct),
+                entry.productExplanation() == null
+                        ? Map.of() : Map.of(currentProduct.key(), entry.productExplanation()),
+                entry.offerExplanations(),
+                Map.of(currentProduct.key(), personalization),
+                sourceStates
+        );
         return new UserProductDetailResult(
-                product.withOffers(offers),
+                currentProduct,
                 recommendedOfferKey,
                 selectedOfferKey,
                 entry.productExplanation(),
+                personalization,
                 entry.offerExplanations(),
                 states,
                 sourceStates
@@ -170,9 +201,41 @@ public class UserCanonicalProductDetailService {
                 freshness.fulfillment()
         ));
         return new Offer(
-                offer.identity(), offer.merchantName(), offer.variantTitle(), fresh.facts().price(), offer.listPrice(),
+                offer.identity(), firstText(fresh.facts().merchantName(), offer.merchantName()),
+                offer.variantTitle(), fresh.facts().price(), offer.listPrice(),
                 fresh.facts().availability(), fresh.facts().fulfillment(), offer.checkoutUrl(),
                 offer.rankingEvidence(), offer.provenance());
+    }
+
+    private CanonicalProduct currentProduct(
+            CanonicalProduct product,
+            List<Offer> offers,
+            List<OfferObservation> observations
+    ) {
+        var facts = observations.stream()
+                .filter(observation -> observation.result().status() == CatalogRehydrationStatus.FRESH)
+                .filter(this::exactReference)
+                .sorted(Comparator.comparing(observation -> sourceKey(observation.requested().reference())))
+                .map(observation -> observation.result().facts())
+                .findFirst()
+                .orElse(null);
+        if (facts == null) {
+            return product.withOffers(offers);
+        }
+        return new CanonicalProduct(
+                product.key(),
+                firstText(product.title(), facts.title()),
+                product.description(),
+                product.media().isEmpty() ? facts.sourceMedia() : product.media(),
+                product.attributes(),
+                product.materials(),
+                product.certifications(),
+                product.attribution(),
+                product.identityEvidence(),
+                product.provenance(),
+                product.retrievalSignals(),
+                offers
+        );
     }
 
     private List<OfferObservation> pair(
@@ -217,6 +280,10 @@ public class UserCanonicalProductDetailService {
     private String sourceKey(CatalogProductReference reference) {
         var source = reference.discoverySource();
         return source.provider().value() + "\n" + source.type().name() + "\n" + source.value();
+    }
+
+    private String firstText(String first, String second) {
+        return first != null && !first.isBlank() ? first.trim() : second;
     }
 
     private record OfferReference(String offerKey, CatalogProductReference reference) {

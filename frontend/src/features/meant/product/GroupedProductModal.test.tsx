@@ -10,6 +10,7 @@ mock.module('../../../lib/apiClient', () => ({
   getCanonicalProductDetail: () => new Promise(() => undefined),
   getMerchantProductDetails: () => new Promise(() => undefined),
   getProductReviews: () => new Promise(() => undefined),
+  searchGroupedProducts: () => new Promise(() => undefined),
   selectProductVariant: () => new Promise(() => undefined),
 }))
 
@@ -25,6 +26,7 @@ const product: Product = {
   tone: '#eeeeee',
   match: 90,
   priceFrom: 10,
+  priceCurrency: 'USD',
   listPrice: null,
   merchants: 2,
   satisfies: [],
@@ -52,6 +54,11 @@ const product: Product = {
     attribution: [],
     identityEvidence: [],
     provenance: [],
+    personalization: {
+      whyMeantForYou: 'This looks relevant to your search based on the available product details.',
+      matchedFilterIds: [],
+      missedFilterIds: [],
+    },
     recommendedOfferKey: 'offer-a',
     offers: [],
   },
@@ -131,7 +138,6 @@ describe('canonical product detail', () => {
         onToggleSave={() => undefined}
         onCompare={() => undefined}
         onAddToCart={() => false}
-        onResearch={() => undefined}
         canPrev={true}
         canNext={true}
         onPrev={() => undefined}
@@ -141,14 +147,60 @@ describe('canonical product detail', () => {
 
     expect(markup).toContain('role="dialog"')
     expect(markup).toContain('aria-modal="true"')
+    expect(markup).toContain('class="mt-modal-right-shell"')
     expect(markup).toContain('Previous product')
     expect(markup).toContain('Next product')
     expect(markup).toContain('Meant&#x27;s take')
     expect(markup).toContain('Preference match')
     expect(markup).toContain('Add to compare')
+    expect(markup).toContain('aria-label="Price and availability"')
+    expect(markup).toContain('Price from')
+    expect(markup).toContain('$10.00')
+    expect(markup).toContain('2 stores')
+    expect(markup).toContain('Checking stock…')
     expect(markup).toContain('Loading offers…')
     expect(markup).toContain('Loading current choices…')
+    expect(markup).toContain('aria-label="Product purchase options"')
+    expect(markup).not.toContain('Choose your item')
+    expect(markup).not.toContain('Store, then exact options.')
+    expect(markup).not.toContain('Refresh choices')
+    expect(markup).not.toContain('1. Store')
+    expect(markup).not.toContain('2. Options')
     expect(markup).not.toContain('Add selected offer to cart')
+  })
+
+  test('filters technical and placeholder category values at the modal render boundary', () => {
+    const markup = renderToStaticMarkup(
+      <ProductModal
+        product={{
+          ...product,
+          category: 'gid://shopify/TaxonomyCategory/na',
+          catalogCategories: [
+            { value: 'gid://shopify/TaxonomyCategory/aa-1', taxonomy: 'Shopify' },
+            { value: 'not_applicable', taxonomy: null },
+            { value: 'T-Shirts', taxonomy: 'Shopify' },
+          ],
+        }}
+        deliveryLocations={[]}
+        preferences={[]}
+        saved={false}
+        savePending={false}
+        inCompare={false}
+        onClose={() => undefined}
+        onToggleSave={() => undefined}
+        onCompare={() => undefined}
+        onAddToCart={() => false}
+        canPrev={false}
+        canNext={false}
+        onPrev={() => undefined}
+        onNext={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('<div class="mt-mono mt-card-brand">Shared brand</div>')
+    expect(markup).toContain('T-Shirts')
+    expect(markup).not.toContain('gid://')
+    expect(markup).not.toContain('not_applicable')
   })
 
   test('renders a saved-product shell and retry action when no current offer is available', () => {
@@ -416,12 +468,18 @@ describe('canonical product detail', () => {
         options: [
           {
             name: 'Size',
-            values: ['S', 'M', 'L'],
+            values: ['S', 'M', 'L', 'XL'],
             valueDetails: [
               { value: 'S', exists: false, available: false },
               { value: 'M', exists: true, available: true },
               { value: 'L', exists: true, available: false },
+              { value: 'XL', exists: true, available: null },
             ],
+          },
+          {
+            name: 'Color',
+            values: ['Power Red'],
+            valueDetails: [{ value: 'Power Red', exists: true, available: true }],
           },
         ],
         variants: [
@@ -433,8 +491,8 @@ describe('canonical product detail', () => {
             url: null,
             priceAmount: '11.00',
             priceCurrency: 'USD',
-            listPriceAmount: null,
-            listPriceCurrency: null,
+            listPriceAmount: '15.00',
+            listPriceCurrency: 'USD',
             sku: 'SHIRT-M',
             imageUrl: null,
             imageAltText: null,
@@ -450,17 +508,17 @@ describe('canonical product detail', () => {
         priceMin: '11.00',
         priceMax: '13.00',
         priceCurrency: 'USD',
-        listPriceMin: null,
-        listPriceMax: null,
-        listPriceCurrency: null,
+        listPriceMin: '15.00',
+        listPriceMax: '15.00',
+        listPriceCurrency: 'USD',
         requiresSellingPlan: false,
         selectedVariantId: 'variant-m',
         selectedVariantTitle: 'Medium',
         selectedVariantPriceAmount: '11.00',
         selectedVariantPriceCurrency: 'USD',
         selectedVariantSku: 'SHIRT-M',
-        selectedVariantListPriceAmount: null,
-        selectedVariantListPriceCurrency: null,
+        selectedVariantListPriceAmount: '15.00',
+        selectedVariantListPriceCurrency: 'USD',
         selectedVariantImageUrl: null,
         selectedVariantImageAltText: null,
         selectedVariantAvailable: true,
@@ -485,60 +543,107 @@ describe('canonical product detail', () => {
         ],
       },
     }
-    const markup = renderToStaticMarkup(
-      <ProductModal
-        product={savedWithDetail}
-        deliveryLocations={[]}
-        preferences={[]}
-        saved={true}
-        savePending={false}
-        inCompare={false}
-        onClose={() => undefined}
-        onToggleSave={() => undefined}
-        onCompare={() => undefined}
-        onAddToCart={() => false}
-        onAddOfferKey={async () => true}
-        canPrev={false}
-        canNext={false}
-        onPrev={() => undefined}
-        onNext={() => undefined}
-      />,
-    )
+    const renderSavedDetail = (detailProduct: Product) =>
+      renderToStaticMarkup(
+        <ProductModal
+          product={detailProduct}
+          deliveryLocations={[]}
+          preferences={[]}
+          saved={true}
+          savePending={false}
+          inCompare={false}
+          onClose={() => undefined}
+          onToggleSave={() => undefined}
+          onCompare={() => undefined}
+          onAddToCart={() => false}
+          onAddOfferKey={async () => true}
+          canPrev={false}
+          canNext={false}
+          onPrev={() => undefined}
+          onNext={() => undefined}
+        />,
+      )
+    const withPriceCurrencies = (
+      exactCurrency: string | null,
+      fallbackCurrency: string | null,
+    ): Product => ({
+      ...savedWithDetail,
+      priceCurrency: fallbackCurrency,
+      rehydratedDetails: {
+        ...savedWithDetail.rehydratedDetails!,
+        selectedVariantPriceCurrency: exactCurrency,
+        variants: savedWithDetail.rehydratedDetails!.variants.map((variant) =>
+          variant ? { ...variant, priceCurrency: exactCurrency } : variant,
+        ),
+      },
+    })
+    const markup = renderSavedDetail(savedWithDetail)
 
     expect(markup).toContain('Heavyweight organic cotton.')
     expect(markup).toContain('Machine wash cold')
-    expect(markup).toContain('SHIRT-M')
-    expect(markup).toContain('Organic cotton')
-    expect(markup).toContain('GOTS')
+    expect(markup).toContain('aria-label="Price and availability"')
+    expect(markup).toContain('Sale price')
+    expect(markup).toContain('$11.00')
+    expect(markup).toContain('Was <s>$15.00</s>')
+    expect(markup).toContain('Save $4.00 (27%)')
+    expect(markup).toContain('1 store')
+    expect(markup).toContain('Available')
     expect(markup).toContain('Medium')
+    expect(markup).not.toContain('mt-product-detail-facts')
+    expect(markup).not.toContain('Product data')
+    expect(markup).not.toContain('Merchant data')
+    expect(markup).not.toContain('List price')
+    expect(markup).not.toContain('SHIRT-M')
+    expect(markup).not.toContain('Organic cotton')
+    expect(markup).not.toContain('GOTS')
+    expect(markup).not.toContain('Essentials')
     expect(markup).not.toContain('mt-product-variant-table')
+    expect(markup).toContain('mt-grouped-offers mt-grouped-offers-compact')
+    expect(markup).toContain('aria-label="Product purchase options"')
+    expect(markup).toContain('Merchant A')
+    expect(markup).toContain('class="mt-merchant-choice-list" role="group" aria-label="Store"')
+    expect(markup).toMatch(
+      /<legend class="mt-product-option-head"><span class="mt-mono">Size<\/span>/,
+    )
+    expect(markup).toMatch(
+      /<legend class="mt-product-option-head"><span class="mt-mono">Color<\/span>/,
+    )
+    expect(markup).not.toContain('Choose your item')
+    expect(markup).not.toContain('Store, then exact options.')
+    expect(markup).not.toContain('Refresh choices')
+    expect(markup).not.toContain('1. Store')
+    expect(markup).not.toContain('2. Options')
+    expect(markup).toContain('mt-product-option-group compact')
+    expect(markup).toContain('mt-product-option-group wide')
+    expect(markup).toContain('aria-label="Color: Power Red. Available."')
+    expect(markup).toContain('aria-label="Size: M. Available."')
+    expect(markup).toContain('aria-label="Size: XL. Check stock."')
+    expect(markup).toContain('title="Check stock"')
     expect(markup).toContain('class="mt-product-option-chip sold-out "')
     expect(markup).toMatch(/<button class="mt-product-option-chip sold-out "[^>]*><span>L<\/span>/)
     expect(markup).not.toMatch(/mt-product-option-chip sold-out "[^>]*disabled/)
 
-    const soldOutAnchorMarkup = renderToStaticMarkup(
-      <ProductModal
-        product={{
-          ...savedWithDetail,
-          offers: savedWithDetail.offers.map((offer) => ({ ...offer, available: false })),
-        }}
-        deliveryLocations={[]}
-        preferences={[]}
-        saved={true}
-        savePending={false}
-        inCompare={false}
-        onClose={() => undefined}
-        onToggleSave={() => undefined}
-        onCompare={() => undefined}
-        onAddToCart={() => false}
-        onAddOfferKey={async () => true}
-        canPrev={false}
-        canNext={false}
-        onPrev={() => undefined}
-        onNext={() => undefined}
-      />,
+    const missingExactCurrencyMarkup = renderSavedDetail(withPriceCurrencies(null, 'USD'))
+    expect(missingExactCurrencyMarkup).toContain('<strong class="mt-modal-price">$10.00</strong>')
+    expect(missingExactCurrencyMarkup).toContain('Price from')
+    expect(missingExactCurrencyMarkup).not.toContain(
+      '<strong class="mt-modal-price">$11.00</strong>',
     )
-    expect(soldOutAnchorMarkup).toContain('Choose your item')
+    expect(missingExactCurrencyMarkup).not.toContain('mt-modal-price-saving')
+
+    const invalidCurrencyMarkup = renderSavedDetail(withPriceCurrencies('US_DOLLARS', 'US_DOLLARS'))
+    expect(invalidCurrencyMarkup).toContain(
+      '<strong class="mt-modal-price">Price unavailable</strong>',
+    )
+    expect(invalidCurrencyMarkup).not.toContain('Sale price')
+    expect(invalidCurrencyMarkup).not.toContain('mt-modal-price-was')
+    expect(invalidCurrencyMarkup).not.toContain('mt-modal-price-saving')
+
+    const soldOutAnchorMarkup = renderSavedDetail({
+      ...savedWithDetail,
+      offers: savedWithDetail.offers.map((offer) => ({ ...offer, available: false })),
+    })
+    expect(soldOutAnchorMarkup).toContain('aria-label="Product purchase options"')
     expect(soldOutAnchorMarkup).toContain('That exact item is selected')
     expect(soldOutAnchorMarkup).toContain('<span>L</span>')
   })

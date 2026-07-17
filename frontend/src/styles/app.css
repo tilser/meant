@@ -5443,6 +5443,7 @@ button:disabled {
   appearance: none;
   display: block;
   position: relative;
+  flex: 0 0 auto;
   overflow: hidden;
   width: 100%;
   margin-bottom: 18px;
@@ -5470,6 +5471,7 @@ button:disabled {
 }
 
 .mt-modal-thumbs-wrap {
+  flex-shrink: 0;
   margin: -6px 0 16px;
 }
 
@@ -5633,17 +5635,106 @@ button:disabled {
   line-height: 1.15;
 }
 
-.mt-modal-price-row {
+.mt-modal-price-panel {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  border: 1px solid var(--accent-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent-tint) 78%, var(--surface));
+  padding: 14px 16px;
+}
+
+.mt-modal-price-main {
+  min-width: 0;
+}
+
+.mt-modal-price-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--faint);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.mt-modal-price-values {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  margin-bottom: 20px;
+  gap: 9px;
 }
 
 .mt-modal-price {
-  font-size: 22px;
-  font-weight: 600;
+  color: var(--ink);
+  font-size: 27px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.mt-modal-price-was {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mt-modal-price-was s {
+  color: var(--faint);
+}
+
+.mt-modal-price-saving {
+  display: block;
+  margin-top: 7px;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.mt-modal-price-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.mt-modal-price-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.mt-modal-price-stock.available {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+}
+
+.mt-modal-price-stock.unavailable {
+  border-color: color-mix(in srgb, var(--cart-warn) 42%, var(--line));
+  color: var(--cart-warn);
+}
+
+.mt-modal-price-stock.unknown {
+  color: var(--muted);
+}
+
+.mt-modal-price-stock-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .mt-modal-actions {
@@ -5652,7 +5743,17 @@ button:disabled {
   margin-top: auto;
 }
 
+.mt-modal-right-shell {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .mt-modal-right {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 26px;
 }
@@ -6067,6 +6168,10 @@ button:disabled {
 .mt-product-option-chip.sold-out {
   border-style: dashed;
   opacity: 0.7;
+}
+
+.mt-product-option-chip.unknown {
+  border-style: dotted;
 }
 
 .mt-product-option-chip.selected {
@@ -10589,6 +10694,11 @@ button:disabled {
     padding-bottom: 18px;
   }
 
+  .mt-modal-right-shell {
+    display: block;
+    overflow: visible;
+  }
+
   .mt-modal-media {
     max-height: 270px;
   }
@@ -10640,6 +10750,18 @@ button:disabled {
   .mt-modal-name {
     padding-right: 40px;
     font-size: 22px;
+  }
+
+  .mt-modal-price-panel {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .mt-modal-price-meta {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
   .mt-modal-actions {
@@ -12891,7 +13013,6 @@ body.mt-ins-resizing .mt-ins {
   padding-top: 24px;
 }
 
-.mt-grouped-offers-heading,
 .mt-grouped-offer-head,
 .mt-grouped-offer-flags {
   display: flex;
@@ -12900,13 +13021,11 @@ body.mt-ins-resizing .mt-ins {
   gap: 12px;
 }
 
-.mt-grouped-offers-heading h3,
 .mt-grouped-recovery h3 {
   margin: 0 0 5px;
   font-size: 20px;
 }
 
-.mt-grouped-offers-heading p,
 .mt-grouped-recovery p {
   margin: 0;
   color: var(--muted, #68645c);
@@ -12914,8 +13033,8 @@ body.mt-ins-resizing .mt-ins {
 
 .mt-product-choice-section {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 12px;
 }
 
 .mt-merchant-choice-list {
@@ -13058,16 +13177,6 @@ body.mt-ins-resizing .mt-ins {
   color: #6d4910;
 }
 
-.mt-grouped-refresh {
-  border: 0;
-  padding: 6px 8px;
-  background: transparent;
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
 .mt-grouped-recovery-actions {
   display: flex;
   justify-content: flex-end;
@@ -13111,9 +13220,307 @@ body.mt-ins-resizing .mt-ins {
   .mt-grouped-offer-selector {
     padding: 0 18px 22px;
   }
+}
 
-  .mt-grouped-offers-heading {
-    align-items: stretch;
-    flex-direction: column;
+@media (min-width: 721px) {
+  .mt-modal-left {
+    padding-block: 18px 16px;
+  }
+
+  .mt-modal-media {
+    margin-bottom: 10px;
+  }
+
+  .mt-modal-thumbs-wrap {
+    margin: -2px 0 10px;
+  }
+
+  .mt-modal-thumbs-wrap.paged {
+    gap: 6px;
+  }
+
+  .mt-modal-thumbs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mt-modal-left > .mt-card-brand {
+    margin-bottom: 2px;
+    font-size: 9.5px;
+  }
+
+  .mt-modal-name {
+    margin: 3px 0 8px;
+    font-size: 22px;
+    line-height: 1.1;
+  }
+
+  .mt-modal-price-panel {
+    gap: 10px;
+    margin-bottom: 10px;
+    border-radius: 11px;
+    padding: 10px 12px;
+  }
+
+  .mt-modal-price-label {
+    margin-bottom: 3px;
+  }
+
+  .mt-modal-price-values {
+    gap: 7px;
+  }
+
+  .mt-modal-price {
+    font-size: 24px;
+  }
+
+  .mt-modal-price-saving {
+    margin-top: 4px;
+  }
+
+  .mt-modal-price-meta {
+    gap: 5px;
+  }
+
+  .mt-modal-price-stock {
+    padding: 5px 7px;
+  }
+
+  .mt-modal-left > .mt-inv-signal {
+    margin-bottom: 6px;
+  }
+
+  .mt-grouped-offers-compact {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-choice-section {
+    margin-top: 6px;
+  }
+
+  .mt-grouped-offers-compact .mt-merchant-choice-list {
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 6px;
+  }
+
+  .mt-grouped-offers-compact .mt-merchant-choice {
+    min-height: 40px;
+    gap: 7px;
+    border-radius: 8px;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-groups {
+    gap: 8px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-group {
+    padding: 8px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-head {
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-values {
+    gap: 6px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-chip {
+    gap: 5px;
+    padding: 6px 8px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-chip.available .mt-product-option-chip-state,
+  .mt-grouped-offers-compact .mt-product-option-chip.unknown .mt-product-option-chip-state {
+    display: none;
+  }
+
+  .mt-grouped-offers-compact .mt-product-selection-status {
+    min-height: 18px;
+    margin-top: 8px;
+    line-height: 1.3;
+  }
+
+  .mt-grouped-offers-compact .mt-grouped-loading {
+    gap: 6px;
+    margin-top: 10px;
+    padding: 10px 12px;
+  }
+
+  .mt-grouped-offers-compact .mt-grouped-skeleton.wide {
+    height: 48px;
+  }
+
+  .mt-modal-left .mt-cart-inline-error {
+    margin-top: 6px;
+  }
+}
+
+@media (min-width: 900px) {
+  .mt-grouped-offers-compact .mt-product-option-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-group.wide,
+  .mt-grouped-offers-compact .mt-product-option-group:only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 721px) and (max-height: 1050px) {
+  .mt-modal-root {
+    padding: 12px;
+  }
+
+  .mt-modal {
+    max-height: calc(100dvh - 24px);
+  }
+
+  .mt-modal-media {
+    height: clamp(230px, 31dvh, 300px);
+    aspect-ratio: auto;
+  }
+
+  .mt-modal-media .mt-product-img {
+    object-fit: contain;
+  }
+}
+
+@media (min-width: 721px) and (max-height: 850px) {
+  .mt-modal-left {
+    padding-block: 12px;
+  }
+
+  .mt-modal-media {
+    height: 220px;
+    margin-bottom: 6px;
+  }
+
+  .mt-modal-thumbs-wrap {
+    margin: 0 0 6px;
+  }
+
+  .mt-modal-thumbs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .mt-modal-thumb {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+  }
+
+  .mt-modal-name {
+    margin: 2px 0 6px;
+    font-size: 20px;
+    line-height: 1.05;
+  }
+
+  .mt-modal-price-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 8px 10px;
+  }
+
+  .mt-modal-price-main {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 3px 7px;
+  }
+
+  .mt-modal-price-label {
+    flex-basis: 100%;
+    margin-bottom: 0;
+  }
+
+  .mt-modal-price {
+    font-size: 22px;
+  }
+
+  .mt-modal-price-saving {
+    display: inline;
+    margin-top: 0;
+    font-size: 10.5px;
+  }
+
+  .mt-modal-price-meta {
+    gap: 3px;
+  }
+
+  .mt-modal-price-stock {
+    font-size: 10px;
+    padding: 4px 6px;
+  }
+
+  .mt-grouped-offers-compact {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-choice-section {
+    margin-top: 4px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-group {
+    padding: 6px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-group.wide,
+  .mt-grouped-offers-compact .mt-product-option-group:only-child {
+    grid-column: 1 / -1;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-head {
+    margin-bottom: 4px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-values {
+    gap: 4px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-option-chip {
+    gap: 3px;
+    padding-inline: 2px;
+    font-size: 11.5px;
+  }
+
+  .mt-grouped-offers-compact .mt-product-selection-status {
+    min-height: 16px;
+    margin-top: 4px;
+    font-size: 11px;
+  }
+
+  .mt-modal-actions {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .mt-modal-actions .mt-act {
+    width: auto;
+    min-width: 0;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .mt-modal-actions .mt-act-icon {
+    padding: 0;
   }
 }

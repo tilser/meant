@@ -1,20 +1,13 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.module.catalog.service.dto.*;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.exception.UserProductSearchGroupingException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserCatalogSourceState;
-import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
-import com.meant.api.module.catalog.service.dto.CatalogDiscoveryTerminalStatus;
-import com.meant.api.module.catalog.service.dto.CanonicalProduct;
-import com.meant.api.module.catalog.service.dto.FederatedCatalogDiscoveryResult;
-import com.meant.api.module.catalog.service.dto.ProductGroupingDecision;
-import com.meant.api.module.catalog.service.dto.ProductGroupingResult;
-import com.meant.api.module.catalog.service.dto.ProductRankingResult;
-import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
-import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.catalog.service.ExactProductGroupingService;
 import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
 import com.meant.api.module.catalog.service.ProductRankingService;
@@ -41,6 +34,8 @@ public class UserGroupedProductSearchService {
     private final ProductRankingService productRankingService;
     private final UserProductRankingContextFactory rankingContextFactory;
     private final UserCanonicalProductSessionStore productSessionStore;
+    private final UserCanonicalProductReferencePersistenceService productReferencePersistenceService;
+    private final UserProductPreferenceMatchCuratorService preferenceMatchCuratorService;
 
     public UserGroupedProductSearchResult search(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -75,7 +70,7 @@ public class UserGroupedProductSearchService {
         boolean hasMore = ranking.products().size() > pageEnd;
         Set<String> visibleOfferKeys = page.stream()
                 .flatMap(product -> product.offers().stream())
-                .map(offer -> offer.key())
+                .map(Offer::key)
                 .collect(Collectors.toUnmodifiableSet());
         List<ProductGroupingDecision> visibleDecisions = grouping.decisions().stream()
                 .filter(decision -> visibleOfferKeys.contains(decision.leftOfferKey())
@@ -101,8 +96,12 @@ public class UserGroupedProductSearchService {
                 ranking.offerExplanations().entrySet().stream()
                         .filter(entry -> visibleOfferKeys.contains(entry.getKey()))
                         .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, UserCanonicalProductPersonalizationResult> pagePersonalizations =
+                preferenceMatchCuratorService.curateCanonical(page, preparation.settings());
+        productReferencePersistenceService.replace(command.userId(), page);
         productSessionStore.remember(
-                command.userId(), page, pageProductExplanations, pageOfferExplanations, sourceStates);
+                command.userId(), page, pageProductExplanations, pageOfferExplanations,
+                pagePersonalizations, sourceStates);
         return new UserGroupedProductSearchResult(
                 preparation.query(),
                 preparation.normalizedQuery(),
@@ -116,6 +115,7 @@ public class UserGroupedProductSearchService {
                 page,
                 pageProductExplanations,
                 pageOfferExplanations,
+                pagePersonalizations,
                 sourceStates,
                 grouping.decisions().size(),
                 grouping.decisions().size() > visibleDecisions.size(),

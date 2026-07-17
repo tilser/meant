@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { CanonicalProductProfile } from '../../../lib/apiClient'
 import { isRenderableSearchProduct } from '../chat/utils'
 import { productPriceFrom } from '../utils'
+import { productCuratedTake } from './productCuration'
 import { productFromCanonical } from './groupedProductMapping'
 
 function canonicalProduct(key: string): CanonicalProductProfile {
@@ -16,6 +17,11 @@ function canonicalProduct(key: string): CanonicalProductProfile {
     attribution: [],
     identityEvidence: [],
     provenance: [],
+    personalization: {
+      whyMeantForYou: 'This looks relevant to your search based on the available product details.',
+      matchedFilterIds: [],
+      missedFilterIds: [],
+    },
     recommendedOfferKey: `${key}-offer-b`,
     offers: ['a', 'b'].map((suffix, index) => ({
       key: `${key}-offer-${suffix}`,
@@ -165,5 +171,28 @@ describe('grouped product card mapping', () => {
       { name: 'Size', value: 'L' },
       { name: 'Color', value: 'Black' },
     ])
+  })
+
+  test('maps evidence-backed personalization instead of exposing ranking mechanics', () => {
+    const canonical = canonicalProduct('personalized')
+    canonical.personalization = {
+      whyMeantForYou:
+        'Product details list organic and gluten-free, matching your saved preferences.',
+      matchedFilterIds: ['organic', 'gluten-free'],
+      missedFilterIds: [],
+    }
+
+    const mapped = productFromCanonical(canonical)
+
+    expect(mapped.satisfies).toEqual(['organic', 'gluten-free'])
+    expect(mapped.misses).toEqual([])
+    expect(mapped.note).toBe(canonical.personalization.whyMeantForYou)
+    expect(
+      productCuratedTake(mapped, [
+        { id: 'organic', label: 'Organic', desc: '' },
+        { id: 'gluten-free', label: 'Gluten-free', desc: '' },
+      ]),
+    ).toBe(canonical.personalization.whyMeantForYou)
+    expect(mapped.note).not.toContain('Ranked #')
   })
 })

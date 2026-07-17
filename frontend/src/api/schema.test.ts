@@ -14,6 +14,7 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
   const expectedSchemas: Array<keyof components['schemas']> = [
     'UserGroupedProductSearchV1Response',
     'CanonicalProductResponse',
+    'CanonicalProductPersonalizationResponse',
     'OfferResponse',
     'OfferIdentityResponse',
     'OfferMerchantScopeResponse',
@@ -46,9 +47,14 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
   ]
 
   expect(expectedPaths).toHaveLength(6)
-  expect(expectedSchemas).toHaveLength(22)
+  expect(expectedSchemas).toHaveLength(23)
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
+
+  const personalizationFields: Array<
+    keyof components['schemas']['CanonicalProductPersonalizationResponse']
+  > = ['whyMeantForYou', 'matchedFilterIds', 'missedFilterIds']
+  expect(personalizationFields).toContain('whyMeantForYou')
 
   const canonicalAttributeFields: Array<
     keyof components['schemas']['CanonicalProductAttributeResponse']

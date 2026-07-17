@@ -2,6 +2,7 @@ package com.meant.api.module.user.controller.response;
 
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserOfferCommercialState;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DeliveryMethod;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -96,6 +97,7 @@ public record UserGroupedProductSearchV1Response(
                         .map(product -> CanonicalProductResponse.from(
                                 product,
                                 result.productRankingExplanations().get(product.key()),
+                                result.productPersonalizations().get(product.key()),
                                 result.offerRankingExplanations(),
                                 product.offers().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
                                         Offer::key, UserOfferCommercialState::discovery))
@@ -162,6 +164,8 @@ public record UserGroupedProductSearchV1Response(
             List<ResultProvenanceResponse> provenance,
             @Schema(description = "Typed, redacted explanation of canonical-product relevance", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             ProductRankingExplanationResponse rankingExplanation,
+            @Schema(description = "Evidence-backed explanation of this product for the current user", requiredMode = Schema.RequiredMode.REQUIRED)
+            CanonicalProductPersonalizationResponse personalization,
             @Schema(description = "Default independently ranked offer key", requiredMode = Schema.RequiredMode.REQUIRED)
             String recommendedOfferKey,
             @Schema(description = "Distinct merchant, variant, and selling-plan offers", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -169,13 +173,23 @@ public record UserGroupedProductSearchV1Response(
     ) {
 
         public static CanonicalProductResponse from(CanonicalProduct product) {
-            return from(product, null, java.util.Map.of(), product == null ? java.util.Map.of() : product.offers().stream()
+            return from(product, null, null, java.util.Map.of(), product == null ? java.util.Map.of() : product.offers().stream()
                     .collect(java.util.stream.Collectors.toUnmodifiableMap(Offer::key, UserOfferCommercialState::discovery)));
         }
 
         public static CanonicalProductResponse from(
                 CanonicalProduct product,
                 ProductRankingExplanation explanation,
+                Map<String, OfferRankingExplanation> offerExplanations,
+                Map<String, UserOfferCommercialState> commercialStates
+        ) {
+            return from(product, explanation, null, offerExplanations, commercialStates);
+        }
+
+        public static CanonicalProductResponse from(
+                CanonicalProduct product,
+                ProductRankingExplanation explanation,
+                UserCanonicalProductPersonalizationResult personalization,
                 Map<String, OfferRankingExplanation> offerExplanations,
                 Map<String, UserOfferCommercialState> commercialStates
         ) {
@@ -189,6 +203,7 @@ public record UserGroupedProductSearchV1Response(
                     product.identityEvidence().stream().map(ProductIdentityEvidenceResponse::from).toList(),
                     product.provenance().stream().map(ResultProvenanceResponse::from).toList(),
                     ProductRankingExplanationResponse.from(explanation),
+                    CanonicalProductPersonalizationResponse.from(personalization),
                     product.offers().getFirst().key(),
                     product.offers().stream()
                             .map(offer -> OfferResponse.from(
@@ -196,6 +211,29 @@ public record UserGroupedProductSearchV1Response(
                                     offerExplanations.get(offer.key()),
                                     commercialStates.getOrDefault(offer.key(), UserOfferCommercialState.discovery(offer))))
                             .toList()
+            );
+        }
+    }
+
+    @Schema(description = "Evidence-backed preference matches and user-facing explanation for one canonical product")
+    public record CanonicalProductPersonalizationResponse(
+            @Schema(description = "Concise evidence-backed explanation of why this product fits the current user", requiredMode = Schema.RequiredMode.REQUIRED)
+            String whyMeantForYou,
+            @Schema(description = "Active user filter IDs supported by explicit canonical-product evidence", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<String> matchedFilterIds,
+            @Schema(description = "Active avoid-filter IDs contradicted by explicit canonical-product evidence", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<String> missedFilterIds
+    ) {
+        static CanonicalProductPersonalizationResponse from(
+                UserCanonicalProductPersonalizationResult personalization
+        ) {
+            UserCanonicalProductPersonalizationResult resolved = personalization == null
+                    ? UserCanonicalProductPersonalizationResult.searchRelevance()
+                    : personalization;
+            return new CanonicalProductPersonalizationResponse(
+                    resolved.whyMeantForYou(),
+                    resolved.matchedFilterIds(),
+                    resolved.missedFilterIds()
             );
         }
     }

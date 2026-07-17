@@ -1,9 +1,11 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserProductRecommendationExplanationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
 public class UserProductPreferenceMatchCuratorService {
 
     private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
+    private static final Pattern NEGATIVE_CONTRACTION_PATTERN = Pattern.compile("\\b[\\p{L}]+n['’]t\\b");
     private static final Pattern PUNCTUATION_PATTERN = Pattern.compile("[^\\p{L}\\p{N}\\s-]+");
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
     private static final Pattern TOKEN_SPLIT_PATTERN = Pattern.compile("[^\\p{L}\\p{N}]+");
@@ -33,6 +36,16 @@ public class UserProductPreferenceMatchCuratorService {
             "that", "the", "to", "when", "where", "with", "without"
     );
     private static final Set<String> AVOID_PREFIXES = Set.of("no", "avoid", "without");
+    private static final List<String> ORGANIC_EVIDENCE =
+            List.of("organic", "certified organic", "usda organic", "gots");
+    private static final List<String> NATURAL_MATERIAL_EVIDENCE = List.of(
+            "natural fiber", "natural fibre", "cotton", "organic cotton", "wool", "merino", "linen", "silk",
+            "hemp", "bamboo"
+    );
+    private static final List<String> SUSTAINABILITY_EVIDENCE = List.of(
+            "sustainable", "sustainability", "responsibly made", "ethical", "fair trade", "b corp",
+            "recycled", "carbon neutral", "gots"
+    );
 
     public Map<String, UserProductRecommendationExplanationResult> curate(
             List<UserProductSearchProductSnapshot> products,
@@ -77,6 +90,46 @@ public class UserProductPreferenceMatchCuratorService {
             ));
         }
         return curated;
+    }
+
+    public Map<String, UserCanonicalProductPersonalizationResult> curateCanonical(
+            List<CanonicalProduct> products,
+            UserSettingsResult settings
+    ) {
+        Map<String, CuratorFilter> filtersById = curatorFiltersById(settings);
+        Map<String, UserCanonicalProductPersonalizationResult> curated = new LinkedHashMap<>();
+        for (CanonicalProduct product : safeList(products)) {
+            if (product == null) {
+                continue;
+            }
+            ProductEvidence evidence = ProductEvidence.from(product);
+            Map<String, String> matchedFactsByFilterId = new LinkedHashMap<>();
+            filtersById.forEach((filterId, filter) -> {
+                String fact = confirmedMatchFact(filter, evidence);
+                if (fact != null) {
+                    matchedFactsByFilterId.put(filterId, fact);
+                }
+            });
+            List<String> matchedFilterIds = List.copyOf(matchedFactsByFilterId.keySet());
+            Set<String> matched = Set.copyOf(matchedFilterIds);
+            Map<String, String> missedFactsByFilterId = new LinkedHashMap<>();
+            filtersById.forEach((filterId, filter) -> {
+                if (matched.contains(filterId)) {
+                    return;
+                }
+                String fact = confirmedMissFact(filter, evidence);
+                if (fact != null) {
+                    missedFactsByFilterId.put(filterId, fact);
+                }
+            });
+            List<String> missedFilterIds = List.copyOf(missedFactsByFilterId.keySet());
+            curated.put(product.key(), new UserCanonicalProductPersonalizationResult(
+                    canonicalTake(matchedFactsByFilterId.values(), missedFactsByFilterId.values()),
+                    matchedFilterIds,
+                    missedFilterIds
+            ));
+        }
+        return Map.copyOf(curated);
     }
 
     private Map<String, CuratorFilter> curatorFiltersById(UserSettingsResult settings) {
@@ -135,19 +188,13 @@ public class UserProductPreferenceMatchCuratorService {
             return evidence.reviewCount() != null && evidence.reviewCount() >= 100;
         }
         if ("organic".equals(id)) {
-            return evidence.containsAny(List.of("organic", "certified organic", "usda organic", "gots"));
+            return evidence.containsAny(ORGANIC_EVIDENCE);
         }
         if ("natural-materials".equals(id)) {
-            return evidence.containsAny(List.of(
-                    "natural fiber", "natural fibre", "cotton", "organic cotton", "wool", "merino", "linen", "silk",
-                    "hemp", "bamboo"
-            ));
+            return evidence.containsAny(NATURAL_MATERIAL_EVIDENCE);
         }
         if ("sustainable-brands".equals(id)) {
-            return evidence.containsAny(List.of(
-                    "sustainable", "sustainability", "responsibly made", "ethical", "fair trade", "b corp",
-                    "recycled", "carbon neutral", "gots"
-            ));
+            return evidence.containsAny(SUSTAINABILITY_EVIDENCE);
         }
         if (filter.avoid()) {
             return hasFreeEvidence(filter, evidence);
@@ -167,19 +214,81 @@ public class UserProductPreferenceMatchCuratorService {
             return true;
         }
         return filter.evidenceTokenGroups().stream()
-                .anyMatch(tokens -> tokens.stream().allMatch(evidence::containsToken));
+                .anyMatch(evidence::containsAllTokens);
     }
 
     private boolean hasFreeEvidence(CuratorFilter filter, ProductEvidence evidence) {
-        return filter.avoidedTerms().stream().anyMatch(term -> evidence.contains("no " + term)
+        return filter.avoidedTerms().stream().anyMatch(term -> hasFreeEvidence(term, evidence));
+    }
+
+    private boolean hasFreeEvidence(String term, ProductEvidence evidence) {
+        return evidence.contains("no " + term)
                 || evidence.contains("without " + term)
                 || evidence.contains(term + " free")
                 || evidence.contains(term + "-free")
-                || evidence.contains("free of " + term));
+                || evidence.contains("free of " + term);
     }
 
     private boolean containsAvoidedTerm(CuratorFilter filter, ProductEvidence evidence) {
         return filter.avoidedTerms().stream().anyMatch(evidence::contains);
+    }
+
+    private String confirmedMatchFact(CuratorFilter filter, ProductEvidence evidence) {
+        if (!supportsMatch(filter, evidence)) {
+            return null;
+        }
+        if (filter.avoid()) {
+            return confirmedFreeFact(filter);
+        }
+        if ("organic".equals(filter.id())) {
+            return firstEvidenceLabel(ORGANIC_EVIDENCE, evidence);
+        }
+        if ("natural-materials".equals(filter.id())) {
+            return firstEvidenceLabel(NATURAL_MATERIAL_EVIDENCE, evidence);
+        }
+        if ("sustainable-brands".equals(filter.id())) {
+            return firstEvidenceLabel(SUSTAINABILITY_EVIDENCE, evidence);
+        }
+        String label = filter.label() == null ? filter.id() : filter.label();
+        return preferenceTarget(label).text();
+    }
+
+    private String confirmedMissFact(CuratorFilter filter, ProductEvidence evidence) {
+        if (!filter.avoid() || hasFreeEvidence(filter, evidence)) {
+            return null;
+        }
+        String target = avoidTarget(filter);
+        return target.isBlank() || !evidence.contains(target) ? null : target;
+    }
+
+    private String confirmedFreeFact(CuratorFilter filter) {
+        String target = avoidTarget(filter);
+        if (target.isBlank()) {
+            return null;
+        }
+        String normalizedLabel = normalized(filter.label() == null ? filter.id() : filter.label());
+        return normalizedLabel.startsWith("no ") ? "no " + target : target + "-free";
+    }
+
+    private String avoidTarget(CuratorFilter filter) {
+        String value = normalized(filter.label() == null ? filter.id() : filter.label());
+        for (String prefix : List.of("no ", "avoid ", "without ")) {
+            if (value.startsWith(prefix)) {
+                value = value.substring(prefix.length()).trim();
+                break;
+            }
+        }
+        return value.endsWith(" free")
+                ? value.substring(0, value.length() - " free".length()).trim()
+                : value;
+    }
+
+    private static String firstEvidenceLabel(List<String> candidates, ProductEvidence evidence) {
+        return candidates.stream()
+                .filter(evidence::contains)
+                .map(candidate -> "gots".equals(candidate) ? "GOTS certification" : candidate)
+                .findFirst()
+                .orElse(null);
     }
 
     private static List<String> evidenceTokens(String value) {
@@ -197,6 +306,36 @@ public class UserProductPreferenceMatchCuratorService {
 
     private static String firstToken(String value) {
         return tokens(value).stream().findFirst().orElse("");
+    }
+
+    private String canonicalTake(Collection<String> matchedEvidence, Collection<String> missedEvidence) {
+        List<String> matchedFacts = matchedEvidence.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .limit(3)
+                .toList();
+        List<String> missedFacts = missedEvidence.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .limit(3)
+                .toList();
+        if (!matchedFacts.isEmpty() && !missedFacts.isEmpty()) {
+            String preferenceWord = matchedFacts.size() == 1 ? "preference" : "preferences";
+            String conflict = missedFacts.size() == 1 ? "another saved preference" : "other saved preferences";
+            return limit("Product details list %s, matching your saved %s, but also list %s, which may conflict with %s."
+                    .formatted(humanList(matchedFacts), preferenceWord, humanList(missedFacts), conflict));
+        }
+        if (!matchedFacts.isEmpty()) {
+            String preferenceWord = matchedFacts.size() == 1 ? "preference" : "preferences";
+            return limit("Product details list %s, matching your saved %s."
+                    .formatted(humanList(matchedFacts), preferenceWord));
+        }
+        if (!missedFacts.isEmpty()) {
+            String preferenceWord = missedFacts.size() == 1 ? "preference" : "preferences";
+            return limit("Product details list %s, which may conflict with your saved %s."
+                    .formatted(humanList(missedFacts), preferenceWord));
+        }
+        return fallbackTake(null);
     }
 
     private String curatorTake(
@@ -320,7 +459,8 @@ public class UserProductPreferenceMatchCuratorService {
         String normalized = Normalizer.normalize(value, Normalizer.Form.NFKC)
                 .trim()
                 .toLowerCase(Locale.ROOT);
-        String cleaned = PUNCTUATION_PATTERN.matcher(normalized)
+        String expanded = NEGATIVE_CONTRACTION_PATTERN.matcher(normalized).replaceAll(" not ");
+        String cleaned = PUNCTUATION_PATTERN.matcher(expanded)
                 .replaceAll(" ")
                 .replace('-', ' ');
         return SPACE_PATTERN.matcher(cleaned).replaceAll(" ").trim();
@@ -398,55 +538,152 @@ public class UserProductPreferenceMatchCuratorService {
     }
 
     private record ProductEvidence(
-            String text,
-            Set<String> tokens,
+            List<String> statements,
             Double ratingScore,
             Integer reviewCount
     ) {
 
+        private static final int NEGATION_LOOKBACK_TOKENS = 5;
+        private static final Set<String> NEGATION_TOKENS = Set.of(
+                "no", "not", "never", "without", "non", "false", "absent", "lacks", "lacking",
+                "excludes", "excluding"
+        );
+        private static final Set<String> NEGATIVE_SUFFIX_TOKENS = Set.of(
+                "no", "not", "false", "absent", "negative"
+        );
+        private static final Set<String> NEGATIVE_ATTRIBUTE_VALUES = Set.of(
+                "no", "false", "none", "absent", "negative", "0"
+        );
+
+        ProductEvidence {
+            statements = statements == null
+                    ? List.of()
+                    : statements.stream()
+                            .map(UserProductPreferenceMatchCuratorService::normalized)
+                            .filter(value -> !value.isBlank())
+                            .map(value -> " " + value + " ")
+                            .toList();
+        }
+
         static ProductEvidence from(MerchantSemanticProductResult product) {
-            String text = normalized(Stream.of(
-                            product.title(),
-                            plainText(product.descriptionHtml()),
-                            plainText(product.detailDescription()),
-                            product.merchantName(),
-                            product.merchantDomain(),
-                            join(stream(product.categories())
-                                    .filter(Objects::nonNull)
-                                    .map(ProductCatalogCategory::value)),
-                            join(stream(product.certifications())),
-                            join(stream(product.materials())),
-                            join(stream(product.collections())),
-                            join(stream(product.attributes())
-                                    .filter(Objects::nonNull)
-                                    .flatMap(attribute -> Stream.of(
-                                            attribute.name(),
-                                            attribute.value()
-                                    )))
-                    )
-                    .filter(value -> value != null && !value.isBlank())
-                    .collect(Collectors.joining(" ")));
-            return new ProductEvidence(
-                    " " + text + " ",
-                    TOKEN_SPLIT_PATTERN.splitAsStream(text)
-                            .filter(token -> !token.isBlank())
-                            .collect(Collectors.toSet()),
-                    product.ratingScore(),
-                    product.reviewCount()
-            );
+            List<String> statements = new ArrayList<>();
+            add(statements, product.title());
+            add(statements, plainText(product.descriptionHtml()));
+            add(statements, plainText(product.detailDescription()));
+            add(statements, product.merchantName());
+            add(statements, product.merchantDomain());
+            stream(product.categories())
+                    .filter(Objects::nonNull)
+                    .map(ProductCatalogCategory::value)
+                    .forEach(value -> add(statements, value));
+            stream(product.certifications()).forEach(value -> add(statements, value));
+            stream(product.materials()).forEach(value -> add(statements, value));
+            stream(product.collections()).forEach(value -> add(statements, value));
+            stream(product.attributes())
+                    .filter(Objects::nonNull)
+                    .map(attribute -> attributeStatement(null, attribute.name(), attribute.value()))
+                    .forEach(value -> add(statements, value));
+            return new ProductEvidence(statements, product.ratingScore(), product.reviewCount());
+        }
+
+        static ProductEvidence from(CanonicalProduct product) {
+            List<String> statements = new ArrayList<>();
+            add(statements, product.title());
+            add(statements, plainText(product.description()));
+            product.attributes().stream()
+                    .map(attribute -> attributeStatement(
+                            attribute.group(),
+                            attribute.name(),
+                            attribute.value()
+                    ))
+                    .forEach(value -> add(statements, value));
+            product.materials().forEach(material -> add(statements, material.name()));
+            product.certifications().forEach(certification -> {
+                add(statements, certification.name());
+                add(statements, certification.issuer());
+            });
+            return new ProductEvidence(statements, null, null);
         }
 
         private boolean contains(String phrase) {
-            String normalized = normalized(phrase);
-            return !normalized.isBlank() && text.contains(" " + normalized + " ");
+            String expected = normalized(phrase);
+            return !expected.isBlank() && statements.stream()
+                    .anyMatch(statement -> containsSupported(statement, expected));
         }
 
         private boolean containsAny(List<String> phrases) {
             return phrases.stream().anyMatch(this::contains);
         }
 
-        private boolean containsToken(String token) {
-            return tokens.contains(token);
+        private boolean containsAllTokens(List<String> expectedTokens) {
+            if (expectedTokens == null || expectedTokens.isEmpty()) {
+                return false;
+            }
+            return statements.stream().anyMatch(statement -> {
+                Set<String> actualTokens = TOKEN_SPLIT_PATTERN.splitAsStream(statement)
+                        .filter(token -> !token.isBlank())
+                        .collect(Collectors.toSet());
+                return actualTokens.containsAll(expectedTokens)
+                        && expectedTokens.stream().allMatch(token -> containsSupported(statement, token));
+            });
+        }
+
+        private static boolean containsSupported(String statement, String expected) {
+            String needle = " " + expected + " ";
+            int offset = 0;
+            while (offset < statement.length()) {
+                int index = statement.indexOf(needle, offset);
+                if (index < 0) {
+                    return false;
+                }
+                if (explicitNegativePhrase(expected)
+                        || !negated(statement, index, index + needle.length())) {
+                    return true;
+                }
+                offset = index + 1;
+            }
+            return false;
+        }
+
+        private static boolean explicitNegativePhrase(String expected) {
+            return expected.startsWith("no ")
+                    || expected.startsWith("not ")
+                    || expected.startsWith("without ")
+                    || expected.startsWith("free of ");
+        }
+
+        private static boolean negated(String statement, int matchStart, int matchEnd) {
+            List<String> before = tokens(statement.substring(0, matchStart));
+            int from = Math.max(0, before.size() - NEGATION_LOOKBACK_TOKENS);
+            if (before.subList(from, before.size()).stream().anyMatch(NEGATION_TOKENS::contains)) {
+                return true;
+            }
+            return tokens(statement.substring(matchEnd)).stream()
+                    .limit(2)
+                    .anyMatch(NEGATIVE_SUFFIX_TOKENS::contains);
+        }
+
+        private static String attributeStatement(String group, String name, String value) {
+            String normalizedName = normalized(name);
+            String normalizedValue = normalized(value);
+            if (NEGATIVE_ATTRIBUTE_VALUES.contains(normalizedValue)) {
+                String subject = normalizedName.startsWith("contains ")
+                        ? normalizedName.substring("contains ".length()).trim()
+                        : normalizedName;
+                String prefix = normalizedName.endsWith(" free") ? "not " : "no ";
+                return Stream.of(prefix + subject, group)
+                        .filter(part -> part != null && !part.isBlank())
+                        .collect(Collectors.joining(" "));
+            }
+            return Stream.of(group, name, value)
+                    .filter(part -> part != null && !part.isBlank())
+                    .collect(Collectors.joining(" "));
+        }
+
+        private static void add(List<String> statements, Object value) {
+            if (value != null && !value.toString().isBlank()) {
+                statements.add(value.toString());
+            }
         }
 
         private static String plainText(String value) {
@@ -454,14 +691,6 @@ public class UserProductPreferenceMatchCuratorService {
                 return "";
             }
             return HTML_TAG_PATTERN.matcher(value).replaceAll(" ");
-        }
-
-        private static <T> String join(Stream<T> values) {
-            return values
-                    .filter(Objects::nonNull)
-                    .map(Object::toString)
-                    .filter(value -> !value.isBlank())
-                    .collect(Collectors.joining(" "));
         }
 
         private static <T> Stream<T> stream(List<T> values) {

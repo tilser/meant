@@ -94,7 +94,19 @@ export function listJoin(values: readonly string[]): string {
   return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`
 }
 
-const HIDDEN_PRODUCT_CATEGORY_VALUES = new Set(['n/a', 'na', 'none', 'not available', 'unknown'])
+const HIDDEN_PRODUCT_CATEGORY_VALUES = new Set([
+  'n/a',
+  'na',
+  'none',
+  'not available',
+  'not applicable',
+  'not-applicable',
+  'not_applicable',
+  'null',
+  'undefined',
+  'unknown',
+])
+const TECHNICAL_PRODUCT_CATEGORY_PATTERN = /^(?:[a-z][a-z0-9+.-]*:\/\/|urn:)/i
 
 export function displayProductCategoryValue(value: string | null | undefined): string | null {
   const trimmed = value?.trim()
@@ -103,8 +115,7 @@ export function displayProductCategoryValue(value: string | null | undefined): s
   }
   const normalized = trimmed.toLowerCase()
   if (
-    normalized.startsWith('gid://') ||
-    normalized.startsWith('urn:') ||
+    TECHNICAL_PRODUCT_CATEGORY_PATTERN.test(normalized) ||
     HIDDEN_PRODUCT_CATEGORY_VALUES.has(normalized)
   ) {
     return null

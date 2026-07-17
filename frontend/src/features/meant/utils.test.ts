@@ -857,7 +857,11 @@ describe('cart delivery groups', () => {
 describe('product category display values', () => {
   test('hides Shopify taxonomy ids and placeholder values', () => {
     expect(displayProductCategoryValue('gid://shopify/TaxonomyCategory/na')).toBeNull()
+    expect(displayProductCategoryValue('shopify://taxonomy/category/aa-1')).toBeNull()
+    expect(displayProductCategoryValue('urn:shopify:taxonomy:category:aa-1')).toBeNull()
     expect(displayProductCategoryValue(' na ')).toBeNull()
+    expect(displayProductCategoryValue('not_applicable')).toBeNull()
+    expect(displayProductCategoryValue('undefined')).toBeNull()
   })
 
   test('keeps readable category labels', () => {

@@ -1646,10 +1646,21 @@ export interface components {
             provenance: components["schemas"]["ResultProvenanceResponse"][];
             /** @description Typed, redacted explanation of canonical-product relevance */
             rankingExplanation?: components["schemas"]["ProductRankingExplanationResponse"];
+            /** @description Evidence-backed explanation of this product for the current user */
+            personalization: components["schemas"]["CanonicalProductPersonalizationResponse"];
             /** @description Default independently ranked offer key */
             recommendedOfferKey: string;
             /** @description Distinct merchant, variant, and selling-plan offers */
             offers: components["schemas"]["OfferResponse"][];
+        };
+        /** @description Evidence-backed preference matches and user-facing explanation for one canonical product */
+        CanonicalProductPersonalizationResponse: {
+            /** @description Concise evidence-backed explanation of why this product fits the current user */
+            whyMeantForYou: string;
+            /** @description Active user filter IDs supported by explicit canonical-product evidence */
+            matchedFilterIds: string[];
+            /** @description Active avoid-filter IDs contradicted by explicit canonical-product evidence */
+            missedFilterIds: string[];
         };
         /** @description Attribution for shared product facts */
         ProductAttributionResponse: {

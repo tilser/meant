@@ -90,7 +90,7 @@ class UserGroupedProductSearchV1ControllerTest {
         private SearchUserProductsCommand searchCommand;
 
         private CapturingGroupedProductSearchService() {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null, null);
         }
 
         @Override
@@ -110,7 +110,7 @@ class UserGroupedProductSearchV1ControllerTest {
         private GetUserCanonicalProductDetailQuery query;
 
         private CapturingProductDetailService() {
-            super(null, null, null);
+            super(null, null, null, null, null);
         }
 
         @Override

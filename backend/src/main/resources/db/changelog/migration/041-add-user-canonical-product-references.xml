@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-user-canonical-product-references" author="meant">
+        <createTable tableName="user_canonical_product_references">
+            <column name="id" type="uuid">
+                <constraints nullable="false" primaryKey="true"
+                        primaryKeyName="pk_user_canonical_product_references"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="canonical_product_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="offer_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="offer_rank" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_provider" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_type" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_identity" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="local_merchant_id" type="uuid"/>
+            <column name="merchant_integration_id" type="uuid"/>
+            <column name="external_merchant_id" type="text"/>
+            <column name="external_merchant_domain" type="text"/>
+            <column name="external_product_id" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="external_variant_id" type="text"/>
+            <column name="selected_options_json" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="components_json" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="selling_plan_json" type="text"/>
+            <column name="retention_policy_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reference_verified_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_canonical_product_references"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                constraintName="fk_user_canonical_product_references_user"
+                onDelete="CASCADE"/>
+        <createIndex
+                tableName="user_canonical_product_references"
+                indexName="idx_user_canonical_product_references_lookup">
+            <column name="user_id"/>
+            <column name="canonical_product_key"/>
+            <column name="offer_rank"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

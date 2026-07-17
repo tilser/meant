@@ -20,7 +20,11 @@ import type {
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
 import { DiscoverChatBlockView } from './DiscoverChatBlockView'
 import type { DiscoverChatMessage } from './types'
-import { copyTextToClipboard, discoverChatMessageCopyText } from './utils'
+import {
+  copyTextToClipboard,
+  discoverChatMessageCopyText,
+  discoverProductResearchQuery,
+} from './utils'
 
 function stableDustSeed(value: string): number {
   return Array.from(value).reduce((seed, character) => seed + character.charCodeAt(0), 0) || 1
@@ -268,7 +272,7 @@ export function DiscoverChatMessageRow({
   shelfProductSet: ReadonlySet<ProductId>
   flash: boolean
   celebrateArrival: boolean
-  onOpen: (product: Product, products?: readonly Product[]) => void
+  onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
@@ -377,6 +381,7 @@ export function DiscoverChatMessageRow({
                 key={`${message.id}-${index}`}
                 threadId={threadId}
                 block={block}
+                researchQuery={discoverProductResearchQuery(block, message.query)}
                 deliveryLocations={deliveryLocations}
                 preferences={preferences}
                 cart={cart}

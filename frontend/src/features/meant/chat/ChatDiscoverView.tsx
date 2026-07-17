@@ -928,7 +928,7 @@ export function ChatDiscoverView({
   onSubmit: (query: string) => void
   onClear: () => void
   onMerchant: (merchant: MerchantProfile | null) => void
-  onOpen: (product: Product, products?: readonly Product[]) => void
+  onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
   onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   onAddSelectedOfferToCart: (product: Product, offerKey: string) => Promise<boolean>

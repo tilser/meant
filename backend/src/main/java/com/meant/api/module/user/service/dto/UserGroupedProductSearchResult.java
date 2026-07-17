@@ -20,6 +20,7 @@ public record UserGroupedProductSearchResult(
         List<CanonicalProduct> products,
         Map<String, ProductRankingExplanation> productRankingExplanations,
         Map<String, OfferRankingExplanation> offerRankingExplanations,
+        Map<String, UserCanonicalProductPersonalizationResult> productPersonalizations,
         List<UserCatalogSourceState> sourceStates,
         int groupingDecisionCount,
         boolean groupingDecisionsTruncated,
@@ -32,6 +33,8 @@ public record UserGroupedProductSearchResult(
                 ? Map.of() : Map.copyOf(productRankingExplanations);
         offerRankingExplanations = offerRankingExplanations == null
                 ? Map.of() : Map.copyOf(offerRankingExplanations);
+        productPersonalizations = productPersonalizations == null
+                ? Map.of() : Map.copyOf(productPersonalizations);
         sourceStates = sourceStates == null ? List.of() : List.copyOf(sourceStates);
         groupingDecisions = groupingDecisions == null ? List.of() : List.copyOf(groupingDecisions);
     }
@@ -56,7 +59,7 @@ public record UserGroupedProductSearchResult(
         this(
                 query, normalizedQuery, profileHash, cached, offset, limit, nextOffset, hasMore,
                 upstreamTruncated, products, productRankingExplanations, offerRankingExplanations,
-                List.of(), groupingDecisionCount, groupingDecisionsTruncated, groupingDecisions);
+                Map.of(), List.of(), groupingDecisionCount, groupingDecisionsTruncated, groupingDecisions);
     }
 
     public UserGroupedProductSearchResult(
@@ -85,6 +88,7 @@ public record UserGroupedProductSearchResult(
                 hasMore,
                 upstreamTruncated,
                 products,
+                Map.of(),
                 Map.of(),
                 Map.of(),
                 List.of(),

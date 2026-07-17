@@ -23,24 +23,31 @@ import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.OfferIdentity;
 import com.meant.api.module.catalog.service.dto.OfferMerchantScope;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.ProductMedia;
+import com.meant.api.module.catalog.service.dto.ProductMediaType;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
+import com.meant.api.module.user.controller.response.UserCanonicalProductDetailV1Response;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserOfferCommercialState;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
 import com.meant.api.provider.shopify.catalog.ShopifyOfferIdentityStrategy;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -70,7 +77,10 @@ class UserCanonicalProductDetailServiceTest {
     private final UserCanonicalProductSessionStore store =
             new UserCanonicalProductSessionStore(Duration.ofMinutes(30), 100);
     private final StubUserSettingsService userSettingsService = new StubUserSettingsService();
+    private final StubCanonicalProductReferencePersistenceService productReferencePersistenceService =
+            new StubCanonicalProductReferencePersistenceService();
     private CanonicalProduct product;
+    private CatalogProductRehydrationService productRehydrationService;
     private UserCanonicalProductDetailService service;
 
     @BeforeEach
@@ -103,23 +113,33 @@ class UserCanonicalProductDetailServiceTest {
                     CatalogProductReference resolved = resolvedReferenceMutation.get().apply(reference);
                     return CatalogProductRehydrationResult.fresh(reference, resolved, new RehydratedCommercialFacts(
                             "Fresh product",
+                            "Current merchant",
                             new Money(1300, "USD"),
                             new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, 4, null),
                             reference.externalVariantReference(),
                             reference.selectedOptions(),
                             List.of(),
-                            List.of(),
+                            List.of(new ProductMedia(
+                                    ProductMediaType.IMAGE,
+                                    URI.create("https://current.example/product.jpg"),
+                                    "Fresh product",
+                                    null,
+                                    null
+                            )),
                             freshness,
                             CommercialFactsFreshness.fromSingleObservation(freshness)
                     ));
                 }).toList();
             }
         };
+        productRehydrationService = new CatalogProductRehydrationService(
+                List.of(provider), new CatalogProductRehydrationMetrics(new SimpleMeterRegistry()));
         service = new UserCanonicalProductDetailService(
                 store,
-                new CatalogProductRehydrationService(
-                        List.of(provider), new CatalogProductRehydrationMetrics(new SimpleMeterRegistry())),
-                userSettingsService);
+                productReferencePersistenceService,
+                productRehydrationService,
+                userSettingsService,
+                new UserProductPreferenceMatchCuratorService());
     }
 
     @Test
@@ -142,6 +162,84 @@ class UserCanonicalProductDetailServiceTest {
             assertThat(state.rehydrationFailureKind()).isEqualTo(CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE);
         });
         assertThat(providerCalls).hasValue(1);
+    }
+
+    @Test
+    void reopensDurableIdentifiersAfterSessionLossAndRepopulatesVariantAnchors() {
+        UserCanonicalProductSessionStore restartedStore =
+                new UserCanonicalProductSessionStore(Duration.ofMinutes(30), 100);
+        productReferencePersistenceService.product(USER_ID, identifierOnlyProduct(product));
+        UserCanonicalProductDetailService restartedService = new UserCanonicalProductDetailService(
+                restartedStore,
+                productReferencePersistenceService,
+                productRehydrationService,
+                userSettingsService,
+                new UserProductPreferenceMatchCuratorService()
+        );
+
+        var result = restartedService.get(profile(USER_ID), query(USER_ID, null));
+
+        assertThat(result.product().title()).isEqualTo("Fresh product");
+        assertThat(result.product().media()).singleElement().satisfies(media ->
+                assertThat(media.url()).isEqualTo(URI.create("https://current.example/product.jpg")));
+        assertThat(result.product().offers()).hasSize(2);
+        assertThat(result.product().offers().getFirst().merchantName()).isEqualTo("Current merchant");
+        assertThat(result.product().offers().getFirst().price()).isEqualTo(new Money(1300, "USD"));
+        assertThat(result.selectedOfferKey()).isEqualTo(product.offers().getFirst().key());
+        assertThat(restartedStore.find(USER_ID, product.key())).isPresent();
+        assertThat(restartedStore.findOffer(USER_ID, result.selectedOfferKey())).isPresent();
+        assertThat(providerCalls).hasValue(1);
+    }
+
+    @Test
+    void recomputesPersonalizationFromCurrentSettingsForTheRehydratedDetailResponse() {
+        UserCanonicalProductPersonalizationResult stalePersonalization =
+                new UserCanonicalProductPersonalizationResult(
+                        "Product details list gluten-free, matching your saved preference.",
+                        List.of("gluten-free"),
+                        List.of()
+                );
+        product = new CanonicalProduct(
+                product.key(),
+                product.title(),
+                "A certified organic product.",
+                product.media(),
+                product.attributes(),
+                product.materials(),
+                product.certifications(),
+                product.attribution(),
+                product.identityEvidence(),
+                product.provenance(),
+                product.retrievalSignals(),
+                product.offers()
+        );
+        store.remember(
+                USER_ID,
+                List.of(product),
+                Map.of(),
+                Map.of(),
+                Map.of(product.key(), stalePersonalization),
+                List.of()
+        );
+        userSettingsService.filters(List.of(new ShoppingFilterResult(
+                "organic",
+                "Organic",
+                "Prefer organic products.",
+                "shopping",
+                "prefer",
+                10
+        )));
+
+        var result = service.get(profile(USER_ID), query(USER_ID, null));
+        UserCanonicalProductDetailV1Response response = UserCanonicalProductDetailV1Response.from(result);
+
+        assertThat(result.personalization()).isNotEqualTo(stalePersonalization);
+        assertThat(result.personalization().whyMeantForYou())
+                .isEqualTo("Product details list organic, matching your saved preference.");
+        assertThat(result.personalization().matchedFilterIds()).containsExactly("organic");
+        assertThat(response.product().personalization().whyMeantForYou())
+                .isEqualTo(result.personalization().whyMeantForYou());
+        assertThat(response.product().personalization().matchedFilterIds()).containsExactly("organic");
     }
 
     @Test
@@ -367,6 +465,36 @@ class UserCanonicalProductDetailServiceTest {
         store.remember(USER_ID, List.of(product), Map.of(), Map.of(), List.of());
     }
 
+    private CanonicalProduct identifierOnlyProduct(CanonicalProduct source) {
+        List<Offer> offers = source.offers().stream()
+                .map(offer -> new Offer(
+                        offer.identity(),
+                        offer.provenance().getFirst().externalMerchantDomain(),
+                        null,
+                        null,
+                        null,
+                        OfferAvailability.unknown(),
+                        List.of(),
+                        null,
+                        offer.rankingEvidence(),
+                        offer.provenance()
+                ))
+                .toList();
+        return new CanonicalProduct(
+                source.key(),
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                source.provenance(),
+                offers
+        );
+    }
+
     private Offer withRouting(Offer source, UUID routingId) {
         ResultProvenance provenance = source.provenance().getFirst();
         ResultProvenance routed = new ResultProvenance(
@@ -424,6 +552,7 @@ class UserCanonicalProductDetailServiceTest {
     private static final class StubUserSettingsService extends UserSettingsService {
         private final AtomicInteger calls = new AtomicInteger();
         private String locationCode;
+        private List<ShoppingFilterResult> filters = List.of();
 
         private StubUserSettingsService() {
             super(null, null, null, null, null);
@@ -431,6 +560,10 @@ class UserCanonicalProductDetailServiceTest {
 
         private void locationCode(String value) {
             locationCode = value;
+        }
+
+        private void filters(List<ShoppingFilterResult> values) {
+            filters = List.copyOf(values);
         }
 
         private int calls() {
@@ -444,8 +577,33 @@ class UserCanonicalProductDetailServiceTest {
                     ? null
                     : new UserLocationResult("Fixture", locationCode, "Fixture City");
             return new UserSettingsResult(
-                    null, null, location, List.of(), List.of(), List.of(), List.of(), List.of(),
+                    null, null, location, List.of(), filters, List.of(), List.of(), List.of(),
                     OBSERVED_AT, OBSERVED_AT);
+        }
+    }
+
+    private static final class StubCanonicalProductReferencePersistenceService
+            extends UserCanonicalProductReferencePersistenceService {
+        private UUID userId;
+        private CanonicalProduct product;
+
+        private StubCanonicalProductReferencePersistenceService() {
+            super(null, null, null, List.of());
+        }
+
+        private void product(UUID owner, CanonicalProduct value) {
+            userId = owner;
+            product = value;
+        }
+
+        @Override
+        public Optional<CanonicalProduct> findProduct(UUID owner, String canonicalProductKey) {
+            return userId != null
+                    && userId.equals(owner)
+                    && product != null
+                    && product.key().equals(canonicalProductKey)
+                    ? Optional.of(product)
+                    : Optional.empty();
         }
     }
 }

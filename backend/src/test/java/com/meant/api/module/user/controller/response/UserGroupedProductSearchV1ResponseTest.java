@@ -3,6 +3,7 @@ package com.meant.api.module.user.controller.response;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
@@ -123,6 +124,12 @@ class UserGroupedProductSearchV1ResponseTest {
                                         30
                                 ))
                         )),
+                        Map.of(canonicalProduct.key(), new UserCanonicalProductPersonalizationResult(
+                                "Product details list organic, matching your saved preference.",
+                                List.of("organic"),
+                                List.of()
+                        )),
+                        List.of(),
                         1,
                         false,
                         List.of(new ProductGroupingDecision(
@@ -141,6 +148,10 @@ class UserGroupedProductSearchV1ResponseTest {
             assertThat(mappedProduct.key()).isEqualTo("product_v1_fixture");
             assertThat(mappedProduct.recommendedOfferKey()).isEqualTo(offer.key());
             assertThat(mappedProduct.rankingExplanation().rankingVersion()).isEqualTo("product-v1");
+            assertThat(mappedProduct.personalization().whyMeantForYou())
+                    .isEqualTo("Product details list organic, matching your saved preference.");
+            assertThat(mappedProduct.personalization().matchedFilterIds()).containsExactly("organic");
+            assertThat(mappedProduct.personalization().missedFilterIds()).isEmpty();
             assertThat(mappedProduct.offers()).singleElement().satisfies(mappedOffer -> {
                 assertThat(mappedOffer.key()).isEqualTo(offer.key());
                 assertThat(mappedOffer.price().minorUnits()).isEqualTo(1234);

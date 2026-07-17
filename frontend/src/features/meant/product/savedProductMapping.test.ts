@@ -185,6 +185,12 @@ function groupedProduct(): Product {
       attribution: [],
       identityEvidence: [],
       provenance: [],
+      personalization: {
+        whyMeantForYou:
+          'This looks relevant to your search based on the available product details.',
+        matchedFilterIds: [],
+        missedFilterIds: [],
+      },
       recommendedOfferKey: offer.key,
       offers: [offer],
     },

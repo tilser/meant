@@ -23,6 +23,28 @@ const nextDiscoverChatThreadId = () => {
 
 export const DEFAULT_DISCOVER_CHAT_TITLE = 'New chat'
 
+type ProductOpenHandler = (
+  product: Product,
+  products?: readonly Product[],
+  researchQuery?: string | null,
+) => void
+
+export function discoverProductResearchQuery(
+  block: DiscoverChatBlock,
+  messageQuery: string | null | undefined,
+): string | null {
+  const blockQuery = block.type === 'products' ? block.query?.trim() : null
+  return blockQuery || messageQuery?.trim() || null
+}
+
+export function productOpenWithResearchQuery(
+  onOpen: ProductOpenHandler,
+  researchQuery: string | null | undefined,
+): (product: Product, products?: readonly Product[]) => void {
+  const normalizedQuery = researchQuery?.trim() || null
+  return (product, products) => onOpen(product, products, normalizedQuery)
+}
+
 export function createDiscoverChatThread(
   messages: readonly DiscoverChatMessage[] = [],
   title = DEFAULT_DISCOVER_CHAT_TITLE,

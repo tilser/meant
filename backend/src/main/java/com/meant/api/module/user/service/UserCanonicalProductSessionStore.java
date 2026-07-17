@@ -8,6 +8,7 @@ import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
 import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.UserCatalogSourceState;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,26 @@ public class UserCanonicalProductSessionStore {
             Map<String, OfferRankingExplanation> offerExplanations,
             List<UserCatalogSourceState> sourceStates
     ) {
+        remember(
+                userId,
+                products,
+                productExplanations,
+                offerExplanations,
+                Map.of(),
+                sourceStates
+        );
+    }
+
+    void remember(
+            UUID userId,
+            List<CanonicalProduct> products,
+            Map<String, ProductRankingExplanation> productExplanations,
+            Map<String, OfferRankingExplanation> offerExplanations,
+            Map<String, UserCanonicalProductPersonalizationResult> productPersonalizations,
+            List<UserCatalogSourceState> sourceStates
+    ) {
+        Map<String, UserCanonicalProductPersonalizationResult> safePersonalizations =
+                productPersonalizations == null ? Map.of() : productPersonalizations;
         for (CanonicalProduct product : products) {
             Map<String, OfferRankingExplanation> visibleOffers = product.offers().stream()
                     .filter(offer -> offerExplanations.containsKey(offer.key()))
@@ -59,6 +80,9 @@ public class UserCanonicalProductSessionStore {
                     product,
                     productExplanations.get(product.key()),
                     visibleOffers,
+                    safePersonalizations.getOrDefault(
+                            product.key(),
+                            UserCanonicalProductPersonalizationResult.searchRelevance()),
                     sourceStates
             ));
             product.offers().forEach(offer -> offers.put(
@@ -98,10 +122,14 @@ public class UserCanonicalProductSessionStore {
             CanonicalProduct product,
             ProductRankingExplanation productExplanation,
             Map<String, OfferRankingExplanation> offerExplanations,
+            UserCanonicalProductPersonalizationResult personalization,
             List<UserCatalogSourceState> sourceStates
     ) {
         Entry {
             offerExplanations = Map.copyOf(offerExplanations);
+            personalization = personalization == null
+                    ? UserCanonicalProductPersonalizationResult.searchRelevance()
+                    : personalization;
             sourceStates = List.copyOf(sourceStates);
         }
     }

@@ -3,8 +3,6 @@ import { type TouchEvent as ReactTouchEvent, useCallback, useEffect, useRef, use
 import {
   getMerchantProductDetails,
   type MerchantProductDetailsProfile,
-  type MerchantProductVariantProfile,
-  type ProductAttributeProfile,
   type ProductMessageProfile,
 } from '../../../lib/apiClient'
 import { AskComposer } from '../ask/AskComposer'
@@ -19,23 +17,20 @@ import type { Offer, Preference, Product, UserLocation } from '../types'
 import {
   availableOffers,
   bestOffer,
+  displayProductCategoryValue,
   money,
   prefLabel,
   productMerchantCount,
+  productPriceFrom,
   resolveAsk,
 } from '../utils'
-import { ProductPriceLine } from './ProductCard'
 import {
   productCuratedAdvantages,
   productCuratedTake,
   productCuratedTradeoffs,
 } from './productCuration'
 import { mergeRehydratedProductDetails, savedProductDetailsRefreshShell } from './productSnapshots'
-import {
-  mergeProductMedia,
-  productOptionsFromProfiles,
-  productSelectedOptionsFromProfiles,
-} from './productMapping'
+import { mergeProductMedia } from './productMapping'
 import { merchantProductDetailRequest } from './productDetailLoading'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
 import { GroupedOfferSelector, type ProductPurchaseSelection } from './GroupedProductModal'
@@ -80,39 +75,31 @@ function detailMoney(
   amount: string | null | undefined,
   currency: string | null | undefined,
 ): string | null {
-  if (!amount) {
+  const normalizedAmount = amount?.trim()
+  const normalizedCurrency = currency?.trim().toUpperCase()
+  if (!normalizedAmount || !normalizedCurrency || !/^[A-Z]{3}$/.test(normalizedCurrency)) {
     return null
   }
-  const value = Number(amount)
-  if (!Number.isFinite(value)) {
-    return amount
+  const value = Number(normalizedAmount)
+  if (!Number.isFinite(value) || value < 0) {
+    return null
   }
-  if (currency && /^[A-Z]{3}$/i.test(currency)) {
-    try {
-      return new Intl.NumberFormat(undefined, {
-        style: 'currency',
-        currency: currency.toUpperCase(),
-      }).format(value)
-    } catch {
-      return `${currency.toUpperCase()} ${value.toFixed(2)}`
-    }
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: normalizedCurrency,
+    }).format(value)
+  } catch {
+    return null
   }
-  return `$${value.toFixed(2)}`
 }
 
-function sameAmount(first: string | null | undefined, second: string | null | undefined): boolean {
-  const firstValue = Number(first)
-  const secondValue = Number(second)
-  if (Number.isFinite(firstValue) && Number.isFinite(secondValue)) {
-    return firstValue === secondValue
-  }
-  return first === second
-}
-
-function cleanValues(values: readonly (string | null | undefined)[] | null | undefined): string[] {
+function cleanCategoryValues(
+  values: readonly (string | null | undefined)[] | null | undefined,
+): string[] {
   const seen = new Set<string>()
   return (values ?? [])
-    .map((value) => value?.trim())
+    .map(displayProductCategoryValue)
     .filter((value): value is string => Boolean(value))
     .filter((value) => {
       const key = value.toLowerCase()
@@ -122,27 +109,6 @@ function cleanValues(values: readonly (string | null | undefined)[] | null | und
       seen.add(key)
       return true
     })
-}
-
-function attributeRows(
-  attributes: readonly ProductAttributeProfile[] | null | undefined,
-): ProductAttributeProfile[] {
-  const seen = new Set<string>()
-  return (attributes ?? [])
-    .map((attribute): ProductAttributeProfile | null => {
-      const name = attribute?.name?.trim()
-      const value = attribute?.value?.trim()
-      if (!name || !value) {
-        return null
-      }
-      const key = `${name.toLowerCase()}|${value.toLowerCase()}`
-      if (seen.has(key)) {
-        return null
-      }
-      seen.add(key)
-      return { name, value }
-    })
-    .filter((attribute): attribute is ProductAttributeProfile => attribute !== null)
 }
 
 function messageRows(
@@ -174,6 +140,48 @@ function availabilityClass(value: boolean | null | undefined): string {
   return 'unknown'
 }
 
+function purchaseSelectionKey(selection: ProductPurchaseSelection): string {
+  const options = selection.selectedOptions
+    .map((option) => `${option.name?.trim().toLowerCase()}:${option.value?.trim().toLowerCase()}`)
+    .sort()
+    .join('|')
+  return `${selection.offerKey ?? ''}|${selection.selectedVariantId ?? ''}|${options}`
+}
+
+function variantSavings(
+  currentAmount: string | null | undefined,
+  currentCurrency: string | null | undefined,
+  listAmount: string | null | undefined,
+  listCurrency: string | null | undefined,
+): { amount: string; percent: number } | null {
+  if (!currentAmount?.trim() || !listAmount?.trim()) {
+    return null
+  }
+  const normalizedCurrentCurrency = currentCurrency?.trim().toUpperCase()
+  const normalizedListCurrency = listCurrency?.trim().toUpperCase()
+  const currentValue = Number(currentAmount)
+  const listValue = Number(listAmount)
+  if (
+    !normalizedCurrentCurrency ||
+    !/^[A-Z]{3}$/.test(normalizedCurrentCurrency) ||
+    normalizedCurrentCurrency !== normalizedListCurrency ||
+    !Number.isFinite(currentValue) ||
+    !Number.isFinite(listValue) ||
+    currentValue < 0 ||
+    listValue <= currentValue
+  ) {
+    return null
+  }
+  const amount = detailMoney(String(listValue - currentValue), normalizedCurrentCurrency)
+  if (!amount) {
+    return null
+  }
+  return {
+    amount,
+    percent: Math.round(((listValue - currentValue) / listValue) * 100),
+  }
+}
+
 export function ProductModal({
   product,
   deliveryLocations,
@@ -189,7 +197,7 @@ export function ProductModal({
   onAddToCart,
   onAddOfferKey,
   onRefreshProduct,
-  onResearch,
+  researchQuery,
   onAskInChat,
   canPrev,
   canNext,
@@ -210,7 +218,7 @@ export function ProductModal({
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   onAddOfferKey?: (product: Product, offerKey: string) => Promise<boolean>
   onRefreshProduct?: (product: Product) => void
-  onResearch?: (query: string) => void
+  researchQuery?: string | null
   onAskInChat?: (product: Product, question: string) => void
   canPrev: boolean
   canNext: boolean
@@ -245,6 +253,8 @@ export function ProductModal({
   const modalDockRef = useRef<HTMLDivElement | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
+  const settledSelectionKeyRef = useRef<string | null>(null)
+  const settledSelectionProductIdRef = useRef<string | null>(product?.id ?? null)
   const deliveryCountryCode = deliveryLocations[0]?.code ?? null
 
   useEffect(() => {
@@ -255,6 +265,8 @@ export function ProductModal({
     setMerchantDetails(null)
     setDetailLoadState('idle')
     setDetailLoadError(null)
+    settledSelectionKeyRef.current = null
+    settledSelectionProductIdRef.current = product?.id ?? null
   }, [product?.id])
 
   useEffect(() => {
@@ -277,17 +289,33 @@ export function ProductModal({
     setPurchaseSelection(null)
   }, [canonicalProductKey, product?.canonicalProduct?.recommendedOfferKey, product?.id])
 
-  const handlePurchaseSelection = useCallback((selection: ProductPurchaseSelection) => {
-    setPurchaseSelection(selection)
-    const variantImage = selection.details
-      ? findSelectedVariant(
-          selection.details.variants,
-          selection.selectedVariantId,
-          selection.selectedOptions,
-        )?.imageUrl
-      : null
-    setSelectedMediaUrl(variantImage ?? null)
-  }, [])
+  const handlePurchaseSelection = useCallback(
+    (selection: ProductPurchaseSelection) => {
+      setPurchaseSelection(selection)
+      if (settledSelectionProductIdRef.current !== product?.id) {
+        settledSelectionProductIdRef.current = product?.id ?? null
+        settledSelectionKeyRef.current = null
+      }
+      if (selection.loading || !selection.offerKey || !selection.details) {
+        return
+      }
+      const nextSelectionKey = purchaseSelectionKey(selection)
+      const previousSelectionKey = settledSelectionKeyRef.current
+      settledSelectionKeyRef.current = nextSelectionKey
+      // Initial hydration establishes the default selection without replacing the image the user
+      // opened. A later settled selection represents an explicit merchant/variant choice.
+      if (previousSelectionKey === null || previousSelectionKey === nextSelectionKey) {
+        return
+      }
+      const variantImage = findSelectedVariant(
+        selection.details.variants,
+        selection.selectedVariantId,
+        selection.selectedOptions,
+      )?.imageUrl
+      setSelectedMediaUrl(variantImage ?? null)
+    },
+    [product?.id],
+  )
 
   useEffect(() => {
     if (!merchantDetailMerchantId || !merchantDetailProductId) {
@@ -430,10 +458,10 @@ export function ProductModal({
   const selectedImageUrl = selectedMedia?.type?.toLowerCase() === 'image' ? selectedMedia.url : null
   const modalImageUrl =
     selectedImageUrl ??
+    product.imageUrl ??
     selectedPurchaseVariant?.imageUrl ??
     activeMerchantDetails?.selectedVariantImageUrl ??
-    activeMerchantDetails?.imageUrl ??
-    product.imageUrl
+    activeMerchantDetails?.imageUrl
   const curatorTake = productCuratedTake(product, preferences)
   const curatorAdvantages = productCuratedAdvantages(product, preferences)
   const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
@@ -441,115 +469,51 @@ export function ProductModal({
   const detailDescription = stripHtml(
     activeMerchantDetails?.description || product.detailDescription || '',
   )
-  const merchantDetailOptions = productOptionsFromProfiles(activeMerchantDetails?.options ?? [])
-  const detailOptions =
-    merchantDetailOptions.length > 0 ? merchantDetailOptions : [...(product.detailOptions ?? [])]
-  const merchantSelectedOptions = productSelectedOptionsFromProfiles(
-    purchaseSelection?.selectedOptions ?? activeMerchantDetails?.selectedOptions ?? [],
-  )
-  const selectedOptions =
-    merchantSelectedOptions.length > 0
-      ? merchantSelectedOptions
-      : [...(product.selectedOptions ?? [])]
-  const detailVariants = activeMerchantDetails
-    ? activeMerchantDetails.variants.filter((variant): variant is MerchantProductVariantProfile =>
-        Boolean(variant),
-      )
-    : []
-  const merchantDetailCategories = cleanValues(
+  const productCategory = displayProductCategoryValue(product.category)
+  const productMeta = [product.brand.trim(), productCategory].filter(Boolean).join(' · ')
+  const merchantDetailCategories = cleanCategoryValues(
     activeMerchantDetails?.categories.map((category) => category?.value),
   )
   const detailCategories =
     merchantDetailCategories.length > 0
       ? merchantDetailCategories
-      : cleanValues(product.catalogCategories?.map((category) => category.value))
-  const detailTags = cleanValues(activeMerchantDetails?.tags)
-  const merchantDetailSkus = cleanValues(activeMerchantDetails?.skus)
-  const detailSkus = merchantDetailSkus.length > 0 ? merchantDetailSkus : cleanValues(product.skus)
-  const merchantDetailMaterials = cleanValues(activeMerchantDetails?.materials)
-  const detailMaterials =
-    merchantDetailMaterials.length > 0 ? merchantDetailMaterials : cleanValues(product.materials)
-  const merchantDetailCertifications = cleanValues(activeMerchantDetails?.certifications)
-  const detailCertifications =
-    merchantDetailCertifications.length > 0
-      ? merchantDetailCertifications
-      : cleanValues(product.certifications)
-  const merchantDetailCollections = cleanValues(activeMerchantDetails?.collections)
-  const detailCollections =
-    merchantDetailCollections.length > 0
-      ? merchantDetailCollections
-      : cleanValues(product.collections)
-  const merchantDetailAttributes = attributeRows(activeMerchantDetails?.attributes)
-  const detailAttributes =
-    merchantDetailAttributes.length > 0
-      ? merchantDetailAttributes
-      : attributeRows(product.catalogAttributes)
+      : cleanCategoryValues(product.catalogCategories?.map((category) => category.value))
   const detailMessages = messageRows(activeMerchantDetails?.messages)
-  const selectedVariantPrice = detailMoney(
-    selectedPurchaseVariant?.priceAmount ?? activeMerchantDetails?.selectedVariantPriceAmount,
-    selectedPurchaseVariant?.priceCurrency ?? activeMerchantDetails?.selectedVariantPriceCurrency,
-  )
-  const selectedVariantListPrice = detailMoney(
+  const selectedVariantPriceAmount =
+    selectedPurchaseVariant?.priceAmount ?? activeMerchantDetails?.selectedVariantPriceAmount
+  const selectedVariantPriceCurrency =
+    selectedPurchaseVariant?.priceCurrency ?? activeMerchantDetails?.selectedVariantPriceCurrency
+  const selectedVariantListPriceAmount =
     selectedPurchaseVariant?.listPriceAmount ??
-      activeMerchantDetails?.selectedVariantListPriceAmount,
+    activeMerchantDetails?.selectedVariantListPriceAmount
+  const selectedVariantListPriceCurrency =
     selectedPurchaseVariant?.listPriceCurrency ??
-      activeMerchantDetails?.selectedVariantListPriceCurrency,
+    activeMerchantDetails?.selectedVariantListPriceCurrency
+  const selectedVariantPrice = detailMoney(selectedVariantPriceAmount, selectedVariantPriceCurrency)
+  const selectedVariantSavings = variantSavings(
+    selectedVariantPriceAmount,
+    selectedVariantPriceCurrency,
+    selectedVariantListPriceAmount,
+    selectedVariantListPriceCurrency,
   )
+  const selectedVariantListPrice = selectedVariantSavings
+    ? detailMoney(selectedVariantListPriceAmount, selectedVariantListPriceCurrency)
+    : null
   const selectedVariantAvailability =
     selectedPurchaseVariant?.available ??
     activeMerchantDetails?.selectedVariantAvailable ??
     product.selectedVariantAvailable
-  const selectedVariantSku =
-    selectedPurchaseVariant?.sku ?? activeMerchantDetails?.selectedVariantSku
-  const selectedVariantTitle =
-    selectedPurchaseVariant?.title ?? activeMerchantDetails?.selectedVariantTitle
-  const hasSelectedVariantFacts =
-    selectedOptions.length > 0 ||
-    Boolean(selectedVariantTitle) ||
-    Boolean(selectedPurchaseVariant?.sku ?? activeMerchantDetails?.selectedVariantSku) ||
-    Boolean(selectedVariantPrice) ||
-    (selectedVariantAvailability !== null && selectedVariantAvailability !== undefined)
-  const listPriceRange =
-    activeMerchantDetails?.listPriceMin && activeMerchantDetails?.listPriceMax
-      ? sameAmount(activeMerchantDetails.listPriceMin, activeMerchantDetails.listPriceMax)
-        ? detailMoney(activeMerchantDetails.listPriceMin, activeMerchantDetails.listPriceCurrency)
-        : `${detailMoney(activeMerchantDetails.listPriceMin, activeMerchantDetails.listPriceCurrency)} - ${detailMoney(
-            activeMerchantDetails.listPriceMax,
-            activeMerchantDetails.listPriceCurrency,
-          )}`
-      : null
-  const detailDataGroups = [
-    { label: 'Materials', values: detailMaterials },
-    { label: 'Certifications', values: detailCertifications },
-    { label: 'Collections', values: detailCollections },
-    { label: 'Tags', values: detailTags },
-    {
-      label: 'Identifiers',
-      values: cleanValues([
-        activeMerchantDetails?.handle ? `Handle: ${activeMerchantDetails.handle}` : null,
-        activeMerchantDetails?.productId ? `Product: ${activeMerchantDetails.productId}` : null,
-        ...detailSkus.map((sku) => `SKU: ${sku}`),
-      ]),
-    },
-  ].filter((group) => group.values.length > 0)
-  const hasMerchantData = detailDataGroups.length > 0 || detailAttributes.length > 0
   const hasProductDetails =
     detailLoadState === 'loading' ||
     Boolean(detailDescription) ||
-    detailOptions.length > 0 ||
-    selectedOptions.length > 0 ||
-    hasSelectedVariantFacts ||
-    detailVariants.length > 0 ||
     detailMessages.length > 0 ||
     detailCategories.length > 0 ||
-    hasMerchantData ||
-    Boolean(activeMerchantDetails?.totalVariants) ||
     detailLoadState === 'error'
   const showProductDetailLoading =
     detailLoadState === 'loading' &&
     !detailDescription &&
-    detailOptions.length === 0 &&
-    selectedOptions.length === 0
+    detailMessages.length === 0 &&
+    detailCategories.length === 0
   const showThumbnailPage = (nextPage: number) => {
     const page = Math.max(0, Math.min(nextPage, thumbnailPageCount - 1))
     const pageMedia = modalMedia.slice(
@@ -621,6 +585,31 @@ export function ProductModal({
               : canAddToCart
                 ? 'Add to cart'
                 : 'Checkout unavailable'
+  const fallbackPriceAmount = productPriceFrom(actionProduct, deliveryLocations)
+  const fallbackPrice =
+    fallbackPriceAmount === null
+      ? null
+      : detailMoney(String(fallbackPriceAmount), actionProduct.priceCurrency)
+  const displayedPrice = selectedVariantPrice ?? fallbackPrice ?? 'Price unavailable'
+  const priceLabel = selectedVariantSavings
+    ? 'Sale price'
+    : selectedVariantPrice
+      ? 'Current price'
+      : fallbackPrice
+        ? 'Price from'
+        : 'Price'
+  const merchantCount = product.canonicalProduct
+    ? product.merchants
+    : productMerchantCount(product, deliveryLocations)
+  const merchantCountLabel = `${merchantCount} ${merchantCount === 1 ? 'store' : 'stores'}`
+  const stockPending =
+    refreshingSavedOffers ||
+    purchaseSelection?.loading === true ||
+    (hasVariantSelector && !purchaseSelection && !activeMerchantDetails)
+  const stockLabel = stockPending
+    ? 'Checking stock…'
+    : availabilityLabel(selectedVariantAvailability)
+  const stockClass = stockPending ? 'unknown' : availabilityClass(selectedVariantAvailability)
   const addSelectedOffer = async () => {
     if (!canAddToCart || adding) {
       return
@@ -762,7 +751,7 @@ export function ProductModal({
             >
               <ProductArtwork
                 product={product}
-                label={`${product.category.toLowerCase()} shot`}
+                label={`${(productCategory ?? 'product').toLowerCase()} shot`}
                 imageUrl={modalImageUrl}
               />
               <div className="mt-modal-ring">
@@ -823,29 +812,46 @@ export function ProductModal({
                 ) : null}
               </div>
             ) : null}
-            <div className="mt-mono mt-card-brand">
-              {product.brand} · {product.category}
-            </div>
+            {productMeta ? <div className="mt-mono mt-card-brand">{productMeta}</div> : null}
             <h2 className="mt-modal-name">{product.name}</h2>
-            <div className="mt-modal-price-row">
-              {selectedVariantPrice ? (
-                <span className="mt-modal-price">{selectedVariantPrice}</span>
-              ) : (
-                <ProductPriceLine
-                  product={actionProduct}
-                  deliveryLocations={deliveryLocations}
-                  className="mt-modal-price"
-                />
-              )}
-              <span className="mt-mono mt-modal-stores">
-                · {productMerchantCount(product, deliveryLocations)} stores
-              </span>
-            </div>
+            <section
+              className="mt-modal-price-panel"
+              aria-label="Price and availability"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <div className="mt-modal-price-main">
+                <span className="mt-mono mt-modal-price-label">{priceLabel}</span>
+                <div className="mt-modal-price-values">
+                  <strong className="mt-modal-price">{displayedPrice}</strong>
+                  {selectedVariantListPrice ? (
+                    <span className="mt-modal-price-was">
+                      Was <s>{selectedVariantListPrice}</s>
+                    </span>
+                  ) : null}
+                </div>
+                {selectedVariantSavings ? (
+                  <span className="mt-modal-price-saving">
+                    Save {selectedVariantSavings.amount}
+                    {selectedVariantSavings.percent > 0
+                      ? ` (${selectedVariantSavings.percent}%)`
+                      : ''}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-modal-price-meta">
+                <span className="mt-mono">{merchantCountLabel}</span>
+                <span className={`mt-modal-price-stock ${stockClass}`}>
+                  <span className="mt-modal-price-stock-dot" aria-hidden />
+                  {stockLabel}
+                </span>
+              </div>
+            </section>
             <InventorySignalBadge product={actionProduct} />
             {hasVariantSelector ? (
               <GroupedOfferSelector
                 product={product}
-                onResearch={(query) => onResearch?.(query)}
+                researchQuery={researchQuery}
                 onSelectionChange={handlePurchaseSelection}
               />
             ) : null}
@@ -914,258 +920,180 @@ export function ProductModal({
             ) : null}
           </div>
 
-          <div className="mt-modal-right">
-            <div className="mt-drawer-note">
-              <span className="mt-note-key">Meant's take</span>
-              {curatorTake}
-            </div>
-
-            {hasProductDetails ? (
-              <section className="mt-block">
-                <div className="mt-block-label mt-mono">About this product</div>
-                {showProductDetailLoading ? (
-                  <p className="mt-product-detail-muted mt-mono">
-                    Loading latest product details...
-                  </p>
-                ) : null}
-                {detailDescription ? (
-                  <p className="mt-product-detail-description">{detailDescription}</p>
-                ) : null}
-                {detailMessages.length > 0 ? (
-                  <div className="mt-product-messages">
-                    {detailMessages.map((message, index) => {
-                      const messageUrl = safeMessageUrl(message.url)
-                      return (
-                        <div
-                          className={`mt-product-message ${message.presentation === 'disclosure' ? 'disclosure' : ''} ${message.type || 'info'}`}
-                          key={`${message.code ?? message.type ?? 'message'}-${index}`}
-                        >
-                          <div className="mt-product-message-main">
-                            <span className="mt-mono">
-                              {message.presentation === 'disclosure'
-                                ? 'Disclosure'
-                                : message.type || 'Notice'}
-                            </span>
-                            <p>{stripMarkdown(message.content)}</p>
-                          </div>
-                          {messageUrl ? (
-                            <a
-                              className="mt-product-message-link mt-mono"
-                              href={messageUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Source
-                            </a>
-                          ) : null}
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : null}
-                {hasSelectedVariantFacts ? (
-                  <div className="mt-product-detail-facts">
-                    {selectedVariantTitle ? (
-                      <span className="mt-product-detail-fact">
-                        <span className="mt-mono">Variant</span>
-                        {selectedVariantTitle}
-                      </span>
-                    ) : null}
-                    {selectedOptions.map((option) => (
-                      <span
-                        className="mt-product-detail-fact"
-                        key={`${option.name}-${option.value}`}
-                      >
-                        <span className="mt-mono">{option.name}</span>
-                        {option.value}
-                      </span>
-                    ))}
-                    {selectedVariantSku ? (
-                      <span className="mt-product-detail-fact">
-                        <span className="mt-mono">SKU</span>
-                        {selectedVariantSku}
-                      </span>
-                    ) : null}
-                    {selectedVariantPrice ? (
-                      <span className="mt-product-detail-fact">
-                        <span className="mt-mono">Selected</span>
-                        {selectedVariantListPrice ? (
-                          <>
-                            <s>{selectedVariantListPrice}</s> {selectedVariantPrice}
-                          </>
-                        ) : (
-                          selectedVariantPrice
-                        )}
-                      </span>
-                    ) : null}
-                    {selectedVariantAvailability !== null &&
-                    selectedVariantAvailability !== undefined ? (
-                      <span
-                        className={`mt-product-detail-fact ${availabilityClass(
-                          selectedVariantAvailability,
-                        )}`}
-                      >
-                        <span className="mt-mono">Stock</span>
-                        {availabilityLabel(selectedVariantAvailability)}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                {detailCategories.length > 0 ? (
-                  <div className="mt-product-category-strip">
-                    {detailCategories.map((category) => (
-                      <span className="mt-product-category-chip" key={category}>
-                        {category}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                {listPriceRange ? (
-                  <p className="mt-product-detail-muted mt-mono">List price {listPriceRange}</p>
-                ) : null}
-                {detailLoadState === 'error' && !detailDescription ? (
-                  <p className="mt-product-detail-muted mt-product-detail-error">
-                    {detailLoadError || 'Latest product details are unavailable right now.'}
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
-
-            {hasMerchantData ? (
-              <section className="mt-block">
-                <div className="mt-block-label mt-mono">
-                  {product.canonicalProduct ? 'Product data' : 'Merchant data'}
-                </div>
-                <div className="mt-product-data">
-                  {detailDataGroups.map((group) => (
-                    <div className="mt-product-data-group" key={group.label}>
-                      <div className="mt-mono">{group.label}</div>
-                      <div>
-                        {group.values.map((value) => (
-                          <span key={value}>{value}</span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {detailAttributes.map((attribute) => (
-                    <div
-                      className="mt-product-data-group"
-                      key={`${attribute.name}-${attribute.value}`}
-                    >
-                      <div className="mt-mono">{attribute.name}</div>
-                      <div>
-                        <span>{attribute.value}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            <section className="mt-block">
-              <div className="mt-block-label mt-mono">Preference match</div>
-              {hasPreferenceMatches ? (
-                <div className="mt-chips">
-                  {product.satisfies.map((id) => (
-                    <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" />
-                  ))}
-                  {product.misses.map((id) => (
-                    <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" />
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-mono mt-pref-empty-inline">
-                  No confirmed preference matches yet
-                </div>
-              )}
-            </section>
-
-            <section className="mt-block">
-              <div className="mt-procon">
-                <div>
-                  <div className="mt-block-label mt-mono">Advantages</div>
-                  <ul className="mt-list mt-list-pro">
-                    {curatorAdvantages.map((pro) => (
-                      <li key={pro}>{pro}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <div className="mt-block-label mt-mono">Trade-offs</div>
-                  <ul className="mt-list mt-list-con">
-                    {curatorTradeoffs.map((con) => (
-                      <li key={con}>{con}</li>
-                    ))}
-                  </ul>
-                </div>
+          <div className="mt-modal-right-shell">
+            <div className="mt-modal-right">
+              <div className="mt-drawer-note">
+                <span className="mt-note-key">Meant's take</span>
+                {curatorTake}
               </div>
-            </section>
 
-            <ProductReviewsPanel product={product} />
-
-            {!hasVariantSelector ? (
-              <section className="mt-block">
-                <div className="mt-block-label mt-mono">Available offers</div>
-                <div className="mt-offers">
-                  {visibleOffers.length === 0 ? (
-                    <div className="mt-grouped-recovery" role="status">
-                      <p>
-                        {refreshingSavedOffers
-                          ? 'Loading current offers…'
-                          : 'Current offers are unavailable.'}
-                      </p>
-                      {!refreshingSavedOffers && onRefreshProduct ? (
-                        <button
-                          type="button"
-                          className="mt-act mt-act-ghost"
-                          onClick={() => onRefreshProduct(product)}
-                        >
-                          Try again
-                        </button>
-                      ) : null}
+              {hasProductDetails ? (
+                <section className="mt-block">
+                  <div className="mt-block-label mt-mono">About this product</div>
+                  {showProductDetailLoading ? (
+                    <p className="mt-product-detail-muted mt-mono">
+                      Loading latest product details...
+                    </p>
+                  ) : null}
+                  {detailDescription ? (
+                    <p className="mt-product-detail-description">{detailDescription}</p>
+                  ) : null}
+                  {detailMessages.length > 0 ? (
+                    <div className="mt-product-messages">
+                      {detailMessages.map((message, index) => {
+                        const messageUrl = safeMessageUrl(message.url)
+                        return (
+                          <div
+                            className={`mt-product-message ${message.presentation === 'disclosure' ? 'disclosure' : ''} ${message.type || 'info'}`}
+                            key={`${message.code ?? message.type ?? 'message'}-${index}`}
+                          >
+                            <div className="mt-product-message-main">
+                              <span className="mt-mono">
+                                {message.presentation === 'disclosure'
+                                  ? 'Disclosure'
+                                  : message.type || 'Notice'}
+                              </span>
+                              <p>{stripMarkdown(message.content)}</p>
+                            </div>
+                            {messageUrl ? (
+                              <a
+                                className="mt-product-message-link mt-mono"
+                                href={messageUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Source
+                              </a>
+                            ) : null}
+                          </div>
+                        )
+                      })}
                     </div>
-                  ) : (
-                    visibleOffers.map((offer, index) => (
-                      <div
-                        className={`mt-offer ${index === 0 ? 'best' : ''}`}
-                        key={offer.offerKey ?? `${offer.merchant}-${index}`}
-                      >
-                        <div className="mt-offer-merch">
-                          {offer.merchant}
-                          {index === 0 ? <span className="mt-mono mt-offer-tag">best</span> : null}
-                        </div>
-                        <div className="mt-offer-right">
-                          <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
-                          <span className="mt-offer-price">
-                            {money(offer.price, offer.priceCurrency)}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                  ) : null}
+                  {detailCategories.length > 0 ? (
+                    <div className="mt-product-category-strip">
+                      {detailCategories.map((category) => (
+                        <span className="mt-product-category-chip" key={category}>
+                          {category}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {detailLoadState === 'error' && !detailDescription ? (
+                    <p className="mt-product-detail-muted mt-product-detail-error">
+                      {detailLoadError || 'Latest product details are unavailable right now.'}
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
+
+              <section className="mt-block">
+                <div className="mt-block-label mt-mono">Preference match</div>
+                {hasPreferenceMatches ? (
+                  <div className="mt-chips">
+                    {product.satisfies.map((id) => (
+                      <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" />
+                    ))}
+                    {product.misses.map((id) => (
+                      <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-mono mt-pref-empty-inline">
+                    No confirmed preference matches yet
+                  </div>
+                )}
+              </section>
+
+              <section className="mt-block">
+                <div className="mt-procon">
+                  <div>
+                    <div className="mt-block-label mt-mono">Advantages</div>
+                    <ul className="mt-list mt-list-pro">
+                      {curatorAdvantages.map((pro) => (
+                        <li key={pro}>{pro}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="mt-block-label mt-mono">Trade-offs</div>
+                    <ul className="mt-list mt-list-con">
+                      {curatorTradeoffs.map((con) => (
+                        <li key={con}>{con}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </section>
-            ) : null}
-          </div>
-        </div>
 
-        <div className="mt-modal-dock" ref={modalDockRef}>
-          <AskThread messages={messages} />
-          <AskComposer
-            placeholder={`Ask Meant about ${product.name}...`}
-            suggestions={[
-              'Does this match my preferences?',
-              'Is there a cheaper option?',
-              'What do reviewers say?',
-            ]}
-            showChips={messages.length === 0}
-            onAsk={ask}
-          />
-          {onAskInChat ? (
-            <div className="mt-mono mt-modal-dock-hint">
-              Your question moves into the chat, where Meant answers in full.
+              <ProductReviewsPanel product={product} />
+
+              {!hasVariantSelector ? (
+                <section className="mt-block">
+                  <div className="mt-block-label mt-mono">Available offers</div>
+                  <div className="mt-offers">
+                    {visibleOffers.length === 0 ? (
+                      <div className="mt-grouped-recovery" role="status">
+                        <p>
+                          {refreshingSavedOffers
+                            ? 'Loading current offers…'
+                            : 'Current offers are unavailable.'}
+                        </p>
+                        {!refreshingSavedOffers && onRefreshProduct ? (
+                          <button
+                            type="button"
+                            className="mt-act mt-act-ghost"
+                            onClick={() => onRefreshProduct(product)}
+                          >
+                            Try again
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      visibleOffers.map((offer, index) => (
+                        <div
+                          className={`mt-offer ${index === 0 ? 'best' : ''}`}
+                          key={offer.offerKey ?? `${offer.merchant}-${index}`}
+                        >
+                          <div className="mt-offer-merch">
+                            {offer.merchant}
+                            {index === 0 ? (
+                              <span className="mt-mono mt-offer-tag">best</span>
+                            ) : null}
+                          </div>
+                          <div className="mt-offer-right">
+                            <span className="mt-mono mt-offer-deliv">{offer.delivery}</span>
+                            <span className="mt-offer-price">
+                              {money(offer.price, offer.priceCurrency)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              ) : null}
             </div>
-          ) : null}
+
+            <div className="mt-modal-dock" ref={modalDockRef}>
+              <AskThread messages={messages} />
+              <AskComposer
+                placeholder={`Ask Meant about ${product.name}...`}
+                suggestions={[
+                  'Does this match my preferences?',
+                  'Is there a cheaper option?',
+                  'What do reviewers say?',
+                ]}
+                showChips={messages.length === 0}
+                onAsk={ask}
+              />
+              {onAskInChat ? (
+                <div className="mt-mono mt-modal-dock-hint">
+                  Your question moves into the chat, where Meant answers in full.
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
       {zoomImageUrl ? (

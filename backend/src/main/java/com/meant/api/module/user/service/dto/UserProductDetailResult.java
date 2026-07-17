@@ -11,11 +11,15 @@ public record UserProductDetailResult(
         String recommendedOfferKey,
         String selectedOfferKey,
         ProductRankingExplanation productRankingExplanation,
+        UserCanonicalProductPersonalizationResult personalization,
         Map<String, OfferRankingExplanation> offerRankingExplanations,
         Map<String, UserOfferCommercialState> commercialStates,
         List<UserCatalogSourceState> sourceStates
 ) {
     public UserProductDetailResult {
+        personalization = personalization == null
+                ? UserCanonicalProductPersonalizationResult.searchRelevance()
+                : personalization;
         offerRankingExplanations = offerRankingExplanations == null ? Map.of() : Map.copyOf(offerRankingExplanations);
         commercialStates = commercialStates == null ? Map.of() : Map.copyOf(commercialStates);
         sourceStates = sourceStates == null ? List.of() : List.copyOf(sourceStates);

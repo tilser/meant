@@ -20,6 +20,7 @@ public record UserCanonicalProductDetailV1Response(
                 UserGroupedProductSearchV1Response.CanonicalProductResponse.from(
                         result.product(),
                         result.productRankingExplanation(),
+                        result.personalization(),
                         result.offerRankingExplanations(),
                         result.commercialStates()),
                 result.recommendedOfferKey(),
