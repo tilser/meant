@@ -102,7 +102,7 @@ public class FederatedCatalogDiscoveryService {
         Set<ProviderIdentity> coveredProviders = eligibleSources.stream()
                 .map(CatalogDiscoverySource::sourceIdentity)
                 .filter(identity -> identity.type() == ResultSourceType.PROVIDER_CATALOG)
-                .map(identity -> identity.provider())
+                .map(DiscoverySourceIdentity::provider)
                 .collect(Collectors.toUnmodifiableSet());
         CatalogDiscoveryRequest coveredRequest = request.withCoveredProviders(coveredProviders);
 
