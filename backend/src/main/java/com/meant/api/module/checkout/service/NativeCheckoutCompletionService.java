@@ -17,6 +17,7 @@ import com.meant.api.module.checkout.service.command.StartCheckoutCompletionComm
 import com.meant.api.module.checkout.service.dto.NativeCheckoutInterpretation;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
+import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.signing.Ap2MandateException;
@@ -55,6 +56,7 @@ public class NativeCheckoutCompletionService {
             @NotNull @Valid NativeCheckoutCompletionCommand command,
             @NotNull UcpSession session
     ) {
+        CheckoutToolCallContext callContext = CheckoutToolCallContext.forBuyer(command.buyerIp());
         if (!provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)) {
             return featureDisabledResult(provider, command.checkoutId(), ap2MandateBuilder.isRequired(command, session), session);
         }
@@ -65,13 +67,15 @@ public class NativeCheckoutCompletionService {
         try {
             completionStateStore.authorize(new AuthorizeCheckoutCompletionCommand(command.checkoutId(), command.cartId()));
         } catch (CheckoutSafetyException exception) {
-            return statusFirstAfterLocalStateConflict(provider, command.checkoutId(), session, stateCommand, exception);
+            return statusFirstAfterLocalStateConflict(
+                    provider, command.checkoutId(), session, stateCommand, exception, callContext);
         }
 
         UcpCheckoutToolResult refreshedCheckout = dispatchService.getCheckout(
                 provider,
                 new GetCheckoutRequest(command.checkoutId()),
-                session
+                session,
+                callContext
         );
         NativeCheckoutInterpretation terminalStatus = resultInterpreter.terminalStatusResult(refreshedCheckout, true, false);
         if (terminalStatus != null) {
@@ -82,7 +86,8 @@ public class NativeCheckoutCompletionService {
         totalsReconciler.rejectIfMismatch(expectedCheckout(consent), refreshedCheckout.rawResponse());
 
         if (!completionStateStore.tryStartCompletion(stateCommand)) {
-            return statusFirstWithoutRepost(provider, command.checkoutId(), session, true, stateCommand);
+            return statusFirstWithoutRepost(
+                    provider, command.checkoutId(), session, true, stateCommand, callContext);
         }
 
         boolean remoteCompletionPosted = false;
@@ -116,7 +121,8 @@ public class NativeCheckoutCompletionService {
                         provider,
                         completeRequest,
                         session,
-                        signedHeaders
+                        signedHeaders,
+                        callContext
                 );
             } catch (RuntimeException exception) {
                 return statusFirstAfterAmbiguousFailure(
@@ -125,7 +131,8 @@ public class NativeCheckoutCompletionService {
                         session,
                         stateCommand,
                         idempotencyKey,
-                        exception
+                        exception,
+                        callContext
                 );
             }
             return handleCompletionResponse(provider, completed, stateCommand, idempotencyKey);
@@ -145,7 +152,8 @@ public class NativeCheckoutCompletionService {
                 completionStateStore.releaseCompletionStart(stateCommand);
                 throw exception;
             }
-            return statusFirstAfterAmbiguousFailure(provider, command.checkoutId(), session, stateCommand, idempotencyKey, exception);
+            return statusFirstAfterAmbiguousFailure(
+                    provider, command.checkoutId(), session, stateCommand, idempotencyKey, exception, callContext);
         }
     }
 
@@ -154,6 +162,7 @@ public class NativeCheckoutCompletionService {
             @NotNull @Valid NativeCheckoutCancellationCommand command,
             @NotNull UcpSession session
     ) {
+        CheckoutToolCallContext callContext = CheckoutToolCallContext.forBuyer(command.buyerIp());
         if (!provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)) {
             return featureDisabledResult(
                     provider,
@@ -166,10 +175,10 @@ public class NativeCheckoutCompletionService {
         try {
             completionStateStore.authorize(new AuthorizeCheckoutCompletionCommand(command.checkoutId(), command.cartId()));
         } catch (CheckoutSafetyException exception) {
-            return blockedCancelStatus(provider, command.checkoutId(), session, exception);
+            return blockedCancelStatus(provider, command.checkoutId(), session, exception, callContext);
         }
         if (!completionStateStore.tryCancel(stateCommand)) {
-            return blockedCancelStatus(provider, command.checkoutId(), session, null);
+            return blockedCancelStatus(provider, command.checkoutId(), session, null, callContext);
         }
 
         CancelCheckoutRequest cancelRequest = new CancelCheckoutRequest(command.checkoutId(), command.reason());
@@ -183,7 +192,8 @@ public class NativeCheckoutCompletionService {
                 provider,
                 cancelRequest,
                 session,
-                signedHeaders
+                signedHeaders,
+                callContext
         );
         NativeCheckoutInterpretation result = resultInterpreter.cancelResult(canceled);
         canaryRecorder.record(provider, result);
@@ -271,9 +281,11 @@ public class NativeCheckoutCompletionService {
             String checkoutId,
             UcpSession session,
             boolean nativeAttempted,
-            StartCheckoutCompletionCommand stateCommand
+            StartCheckoutCompletionCommand stateCommand,
+            CheckoutToolCallContext callContext
     ) {
-        UcpCheckoutToolResult status = dispatchService.getCheckout(provider, new GetCheckoutRequest(checkoutId), session);
+        UcpCheckoutToolResult status = dispatchService.getCheckout(
+                provider, new GetCheckoutRequest(checkoutId), session, callContext);
         NativeCheckoutInterpretation result = resultInterpreter.terminalStatusResult(status, nativeAttempted, true);
         if (result != null) {
             canaryRecorder.record(provider, result);
@@ -290,10 +302,11 @@ public class NativeCheckoutCompletionService {
             String checkoutId,
             UcpSession session,
             StartCheckoutCompletionCommand stateCommand,
-            CheckoutSafetyException originalException
+            CheckoutSafetyException originalException,
+            CheckoutToolCallContext callContext
     ) {
         try {
-            return statusFirstWithoutRepost(provider, checkoutId, session, true, stateCommand);
+            return statusFirstWithoutRepost(provider, checkoutId, session, true, stateCommand, callContext);
         } catch (RuntimeException statusException) {
             originalException.addSuppressed(statusException);
             throw originalException;
@@ -306,10 +319,12 @@ public class NativeCheckoutCompletionService {
             UcpSession session,
             StartCheckoutCompletionCommand stateCommand,
             String idempotencyKey,
-            RuntimeException originalException
+            RuntimeException originalException,
+            CheckoutToolCallContext callContext
     ) {
         try {
-            UcpCheckoutToolResult status = dispatchService.getCheckout(provider, new GetCheckoutRequest(checkoutId), session);
+            UcpCheckoutToolResult status = dispatchService.getCheckout(
+                    provider, new GetCheckoutRequest(checkoutId), session, callContext);
             NativeCheckoutInterpretation terminal = resultInterpreter.terminalStatusResult(status, true, true);
             if (terminal != null) {
                 canaryRecorder.record(provider, terminal);
@@ -370,14 +385,16 @@ public class NativeCheckoutCompletionService {
             MerchantCartProvider provider,
             String checkoutId,
             UcpSession session,
-            RuntimeException originalException
+            RuntimeException originalException,
+            CheckoutToolCallContext callContext
     ) {
         NativeCheckoutResult status = statusFirstWithoutRepost(
                 provider,
                 checkoutId,
                 session,
                 true,
-                new StartCheckoutCompletionCommand(checkoutId)
+                new StartCheckoutCompletionCommand(checkoutId),
+                callContext
         );
         if (status.status() == NativeCheckoutStatus.COMPLETED || status.status() == NativeCheckoutStatus.CANCELED) {
             return status;

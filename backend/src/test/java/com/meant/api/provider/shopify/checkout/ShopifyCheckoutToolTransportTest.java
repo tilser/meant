@@ -74,10 +74,14 @@ class ShopifyCheckoutToolTransportTest {
                 .thenReturn(new MerchantMcpToolCallResult(
                         "https://shop.test/api/ucp/mcp", "{}", Map.of(), NegotiatedCapabilities.none()));
 
-        transport.call(target, "cancel_checkout", Map.of(), new CheckoutToolCallContext(key, true));
+        transport.call(target, "cancel_checkout", Map.of(),
+                new CheckoutToolCallContext(key, true, "203.0.113.42"));
 
         verify(merchant).call(eq(target), eq(CommerceOperation.CHECKOUT_SESSION), eq("cancel_checkout"),
-                any(), eq(Map.of("Idempotency-Key", key.toString())), eq(true));
+                any(), eq(Map.of(
+                        "Idempotency-Key", key.toString(),
+                        ShopifyCheckoutRequestHeaderContributor.BUYER_IP_HEADER, "203.0.113.42"
+                )), eq(true));
         verifyNoInteractions(external);
     }
 

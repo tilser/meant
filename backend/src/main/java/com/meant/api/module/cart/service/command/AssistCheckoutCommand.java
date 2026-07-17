@@ -19,11 +19,22 @@ public record AssistCheckoutCommand(
         @Size(max = 1000)
         String merchantDeliveryHint,
         @Size(max = 40)
-        List<@Valid HistoryMessage> history
+        List<@Valid HistoryMessage> history,
+        String buyerIp
 ) {
 
     public AssistCheckoutCommand {
         history = history == null ? List.of() : List.copyOf(history);
+    }
+
+    public AssistCheckoutCommand(
+            UUID cartId,
+            UUID userId,
+            String message,
+            String merchantDeliveryHint,
+            List<HistoryMessage> history
+    ) {
+        this(cartId, userId, message, merchantDeliveryHint, history, null);
     }
 
     public record HistoryMessage(

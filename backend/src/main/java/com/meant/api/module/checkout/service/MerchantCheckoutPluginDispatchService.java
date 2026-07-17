@@ -21,12 +21,14 @@ import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.UpdateCheckoutCapability;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.module.checkout.service.port.CheckoutToolTransport;
+import com.meant.api.module.checkout.service.port.CheckoutRequestHeaderContributor;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +46,16 @@ public class MerchantCheckoutPluginDispatchService {
     private final CapabilityRegistry capabilityRegistry;
     private final ObjectMapper objectMapper;
     private final List<CheckoutToolTransport> checkoutToolTransports;
+    private final List<CheckoutRequestHeaderContributor> checkoutRequestHeaderContributors;
+
+    public MerchantCheckoutPluginDispatchService(
+            MerchantMcpToolClient merchantMcpToolClient,
+            CapabilityRegistry capabilityRegistry,
+            ObjectMapper objectMapper,
+            List<CheckoutToolTransport> checkoutToolTransports
+    ) {
+        this(merchantMcpToolClient, capabilityRegistry, objectMapper, checkoutToolTransports, List.of());
+    }
 
     public UcpCheckoutToolResult createCheckout(
             MerchantCartProvider provider,
@@ -88,12 +100,22 @@ public class MerchantCheckoutPluginDispatchService {
             GetCheckoutRequest request,
             UcpSession session
     ) {
+        return getCheckout(provider, request, session, CheckoutToolCallContext.standard());
+    }
+
+    public UcpCheckoutToolResult getCheckout(
+            MerchantCartProvider provider,
+            GetCheckoutRequest request,
+            UcpSession session,
+            CheckoutToolCallContext context
+    ) {
         provider = provider.forOperation(CommerceOperation.CHECKOUT_SESSION);
         GetCheckoutCapability capability = capability(GetCheckoutCapability.TOOL_NAME, GetCheckoutCapability.class);
         MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
                 GetCheckoutCapability.TOOL_NAME,
-                capability.buildArguments(request, session.activeCapabilities())
+                capability.buildArguments(request, session.activeCapabilities()),
+                providerHeaders(provider, CommerceOperation.CHECKOUT_SESSION, Map.of(), context)
         );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "get checkout");
         rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
@@ -190,6 +212,16 @@ public class MerchantCheckoutPluginDispatchService {
             UcpSession session,
             Map<String, String> signedHeaders
     ) {
+        return completeCheckout(provider, request, session, signedHeaders, CheckoutToolCallContext.standard());
+    }
+
+    public UcpCheckoutToolResult completeCheckout(
+            MerchantCartProvider provider,
+            CompleteCheckoutRequest request,
+            UcpSession session,
+            Map<String, String> signedHeaders,
+            CheckoutToolCallContext context
+    ) {
         provider = provider.forOperation(CommerceOperation.DIRECT_CHECKOUT_COMPLETION);
         CompleteCheckoutCapability capability = capability(
                 CompleteCheckoutCapability.TOOL_NAME,
@@ -199,7 +231,7 @@ public class MerchantCheckoutPluginDispatchService {
                 provider,
                 CompleteCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()),
-                signedHeaders
+                providerHeaders(provider, CommerceOperation.DIRECT_CHECKOUT_COMPLETION, signedHeaders, context)
         );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "complete checkout");
         updateSessionIfCheckoutPresent(session, result, response);
@@ -212,17 +244,46 @@ public class MerchantCheckoutPluginDispatchService {
             UcpSession session,
             Map<String, String> signedHeaders
     ) {
+        return cancelCheckout(provider, request, session, signedHeaders, CheckoutToolCallContext.standard());
+    }
+
+    public UcpCheckoutToolResult cancelCheckout(
+            MerchantCartProvider provider,
+            CancelCheckoutRequest request,
+            UcpSession session,
+            Map<String, String> signedHeaders,
+            CheckoutToolCallContext context
+    ) {
         provider = provider.forOperation(CommerceOperation.DIRECT_CHECKOUT_COMPLETION);
         CancelCheckoutCapability capability = capability(CancelCheckoutCapability.TOOL_NAME, CancelCheckoutCapability.class);
         MerchantMcpToolCallResult result = merchantMcpToolClient.callToolReturningJsonToolErrors(
                 provider,
                 CancelCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()),
-                signedHeaders
+                providerHeaders(provider, CommerceOperation.DIRECT_CHECKOUT_COMPLETION, signedHeaders, context)
         );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "cancel checkout");
         updateSessionIfCheckoutPresent(session, result, response);
         return checkoutResult(result, response);
+    }
+
+    private Map<String, String> providerHeaders(
+            MerchantCartProvider provider,
+            CommerceOperation operation,
+            Map<String, String> baseHeaders,
+            CheckoutToolCallContext context
+    ) {
+        Map<String, String> headers = new LinkedHashMap<>(baseHeaders == null ? Map.of() : baseHeaders);
+        checkoutRequestHeaderContributors.stream()
+                .filter(contributor -> contributor.supports(provider, operation))
+                .map(contributor -> contributor.headers(context))
+                .forEach(contributed -> contributed.forEach((name, value) -> {
+                    String previous = headers.putIfAbsent(name, value);
+                    if (previous != null && !previous.equals(value)) {
+                        throw CartException.rejected("Checkout provider header contribution is ambiguous");
+                    }
+                }));
+        return Map.copyOf(headers);
     }
 
     private UcpCheckoutResponse parseCheckoutResponse(

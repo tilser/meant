@@ -17,6 +17,7 @@ import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.cart.service.dto.CheckoutConsentResult;
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
@@ -109,7 +110,8 @@ public class CartService {
         validateUnambiguousConfigurations(List.of(), resolved.offers());
         CreateCartRequest request = createCartRequest(command, resolved, commerceContext);
         UcpSession session = UcpSession.start();
-        UcpCartToolResult result = merchantCartPluginDispatchService.createCart(target, request, session);
+        UcpCartToolResult result = merchantCartPluginDispatchService.createCart(
+                target, request, session, CartToolCallContext.forBuyer(command.buyerIp()));
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
                 (Cart) null,
                 command.userId(),
@@ -129,7 +131,8 @@ public class CartService {
         UcpSession session = session(cart);
         GetCartRequest request = new GetCartRequest(cart.getRemoteCartId());
         CartRoutingTarget target = routingTarget(cart);
-        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(target, request, session);
+        UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
+                target, request, session, CartToolCallContext.forBuyer(query.buyerIp()));
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
                 cart, query.userId(), target, result, null, List.of(), CartSnapshotPurpose.READ_REFRESH),
                 result.response());
@@ -152,9 +155,10 @@ public class CartService {
         }
         validateUnambiguousConfigurations(cart.getLines(), resolved.offers());
         UcpSession session = session(cart);
+        CartToolCallContext callContext = CartToolCallContext.forBuyer(command.buyerIp());
         UcpCartResponse currentRemote = providerBound(cart)
                 ? merchantCartPluginDispatchService.getCart(
-                        target, new GetCartRequest(cart.getRemoteCartId()), session).response()
+                        target, new GetCartRequest(cart.getRemoteCartId()), session, callContext).response()
                 : null;
         List<CartAddItem> addedItems = resolved.items().entrySet().stream()
                 .map(entry -> cartAddItem(resolved.byKey().get(entry.getKey()), entry.getValue()))
@@ -163,13 +167,13 @@ public class CartService {
                 cart, command, addedItems, cartBuyerContextService.buyerContext(commerceContext), currentRemote);
         UcpCartToolResult result;
         try {
-            result = merchantCartPluginDispatchService.updateCart(target, request, session);
+            result = merchantCartPluginDispatchService.updateCart(target, request, session, callContext);
         } catch (CartException exception) {
             if (!commerceMutationPolicy.requiresReconciliation(exception) || request.replacementState() == null) {
                 throw exception;
             }
             UcpCartToolResult reconciled = merchantCartPluginDispatchService.getCart(
-                    target, new GetCartRequest(cart.getRemoteCartId()), session);
+                    target, new GetCartRequest(cart.getRemoteCartId()), session, callContext);
             if (!cartReplacementService.proves(reconciled.response(), request.replacementState())) {
                 throw exception;
             }
@@ -199,18 +203,19 @@ public class CartService {
             return checkoutResultMapper.from(cart, provider.executionPolicy());
         }
         UcpSession session = session(cart);
+        CheckoutToolCallContext callContext = CheckoutToolCallContext.forBuyer(query.buyerIp());
         Cart checkoutCart = hasText(cart.getCheckoutId())
                 ? cart
-                : refreshEmptyCartBeforeCheckout(cart, query.userId(), target, session);
+                : refreshEmptyCartBeforeCheckout(cart, query.userId(), target, session, query.buyerIp());
         UcpCheckoutToolResult result;
         if (query.refresh() && hasText(cart.getCheckoutId())) {
             result = merchantCheckoutPluginDispatchService.getCheckout(
                         target,
                         new GetCheckoutRequest(cart.getCheckoutId()),
-                        session);
+                        session,
+                        callContext);
         } else {
             CreateCheckoutRequest request = createCheckoutRequest(checkoutCart);
-            CheckoutToolCallContext callContext = CheckoutToolCallContext.standard();
             try {
                 result = merchantCheckoutPluginDispatchService.createCheckout(target, request, session, callContext);
             } catch (CartException exception) {
@@ -231,7 +236,8 @@ public class CartService {
             Cart cart,
             UUID userId,
             CartRoutingTarget target,
-            UcpSession session
+            UcpSession session,
+            String buyerIp
     ) {
         if (!cart.getLines().isEmpty()) {
             return cart;
@@ -239,7 +245,8 @@ public class CartService {
         UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
                 target,
                 new GetCartRequest(cart.getRemoteCartId()),
-                session
+                session,
+                CartToolCallContext.forBuyer(buyerIp)
         );
         return cartPersistenceService.saveSnapshot(
                 cart, userId, target, result, null, List.of(), CartSnapshotPurpose.READ_REFRESH);
@@ -253,10 +260,12 @@ public class CartService {
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         UcpSession session = session(cart);
+        CheckoutToolCallContext callContext = CheckoutToolCallContext.forBuyer(command.buyerIp());
         UcpCheckoutToolResult currentCheckout = merchantCheckoutPluginDispatchService.getCheckout(
                 target,
                 new GetCheckoutRequest(cart.getCheckoutId()),
-                session
+                session,
+                callContext
         );
         List<UpdateCheckoutRequest.LineItem> lineItems = updateCheckoutLineItems(
                 cart,
@@ -277,7 +286,6 @@ public class CartService {
                         discountCodes,
                         fulfillment(command.buyer(), command.shippingAddress(), lineItems));
         UcpCheckoutToolResult result;
-        CheckoutToolCallContext callContext = CheckoutToolCallContext.standard();
         try {
             result = merchantCheckoutPluginDispatchService.updateCheckout(
                     target, updateRequest, session, callContext);
@@ -299,7 +307,8 @@ public class CartService {
                 result = merchantCheckoutPluginDispatchService.getCheckout(
                         target,
                         new GetCheckoutRequest(cart.getCheckoutId()),
-                        session
+                        session,
+                        callContext
                 );
             }
             Map<String, Object> defaultFulfillmentSelection =
@@ -318,7 +327,8 @@ public class CartService {
                                 discountCodes,
                                 defaultFulfillmentSelection
                         ),
-                        session
+                        session,
+                        callContext
                 );
             }
         }
@@ -425,7 +435,8 @@ public class CartService {
                 cart,
                 command.userId(),
                 provider,
-                command.ap2SecurityLock()
+                command.ap2SecurityLock(),
+                command.buyerIp()
         );
         NativeCheckoutResult result = nativeCheckoutCompletionService.complete(
                 provider,
@@ -453,7 +464,8 @@ public class CartService {
         UUID idempotencyKey = UUID.nameUUIDFromBytes(
                 ("cancel_checkout:" + cart.getId() + ':' + command.checkoutId())
                         .getBytes(StandardCharsets.UTF_8));
-        CheckoutToolCallContext callContext = new CheckoutToolCallContext(idempotencyKey, true);
+        CheckoutToolCallContext callContext = new CheckoutToolCallContext(
+                idempotencyKey, true, command.buyerIp());
         UcpCheckoutToolResult result;
         try {
             result = merchantCheckoutPluginDispatchService.cancelCheckout(
@@ -492,7 +504,8 @@ public class CartService {
         Cart cart = findCart(command.cartId(), command.userId());
         CancelCartRequest request = new CancelCartRequest(cart.getRemoteCartId());
         CartRoutingTarget target = routingTarget(cart);
-        merchantCartPluginDispatchService.cancelCart(target, request, session(cart), cart.getId());
+        merchantCartPluginDispatchService.cancelCart(
+                target, request, session(cart), new CartToolCallContext(cart.getId(), command.buyerIp()));
         cartPersistenceService.deactivate(cart.getId(), command.userId());
     }
 
@@ -533,7 +546,8 @@ public class CartService {
             Cart cart,
             UUID userId,
             MerchantCartProvider provider,
-            boolean ap2SecurityLock
+            boolean ap2SecurityLock,
+            String buyerIp
     ) {
         if (provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)
                 || ap2SecurityLock
@@ -543,7 +557,8 @@ public class CartService {
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
                 checkoutRoutingTarget(cart),
                 createCheckoutRequest(cart),
-                session(cart)
+                session(cart),
+                CheckoutToolCallContext.forBuyer(buyerIp)
         );
         return cartPersistenceService.saveCheckoutHandoff(cart.getId(), userId, result);
     }
@@ -754,7 +769,8 @@ public class CartService {
                 command.idempotencyKey(),
                 command.ap2SecurityLock(),
                 ap2MandateInput(command.ap2Mandate()),
-                checkoutSignals(command.signals())
+                checkoutSignals(command.signals()),
+                command.buyerIp()
         );
     }
 
@@ -926,9 +942,10 @@ public class CartService {
 
     private CartAddItem cartAddItem(ResolvedSelectedOffer offer, Integer quantity) {
         var identity = offer.identity();
+        var reference = offer.rehydratedReference();
         return new CartAddItem(
-                identity.externalProductIdentity().value(),
-                identity.externalVariantIdentity() == null ? null : identity.externalVariantIdentity().value(),
+                null,
+                reference.externalVariantReference() == null ? null : reference.externalVariantReference().value(),
                 identity.selectedOptions().stream()
                         .map(option -> new CartAddItem.SelectedOption(option.group(), option.name(), option.value()))
                         .toList(),

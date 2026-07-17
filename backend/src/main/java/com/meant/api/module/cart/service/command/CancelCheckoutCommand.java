@@ -9,6 +9,16 @@ public record CancelCheckoutCommand(
         @NotNull UUID userId,
         @NotBlank String checkoutId,
         String reason,
-        boolean ap2SecurityLock
+        boolean ap2SecurityLock,
+        String buyerIp
 ) {
+    public CancelCheckoutCommand(
+            UUID cartId,
+            UUID userId,
+            String checkoutId,
+            String reason,
+            boolean ap2SecurityLock
+    ) {
+        this(cartId, userId, checkoutId, reason, ap2SecurityLock, null);
+    }
 }

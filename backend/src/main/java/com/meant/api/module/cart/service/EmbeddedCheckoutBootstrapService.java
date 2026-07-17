@@ -34,8 +34,17 @@ public class EmbeddedCheckoutBootstrapService {
 
     public EmbeddedCheckoutBootstrapResult bootstrap(
             @NotNull UUID cartId, @NotNull UUID userId, @NotNull String origin) {
+        return bootstrap(cartId, userId, origin, null);
+    }
+
+    public EmbeddedCheckoutBootstrapResult bootstrap(
+            @NotNull UUID cartId,
+            @NotNull UUID userId,
+            @NotNull String origin,
+            String buyerIp
+    ) {
         String allowedOrigin = originPolicy.requireAllowed(origin);
-        CheckoutResult checkout = cartService.checkout(new GetCheckoutQuery(cartId, userId, true));
+        CheckoutResult checkout = cartService.checkout(new GetCheckoutQuery(cartId, userId, true, buyerIp));
         Cart cart = cartPersistenceService.findCart(cartId, userId);
         EmbeddedCheckoutBootstrapResult result = checkout.nextAction() == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT
                 ? embedded(cart, checkout, allowedOrigin)
@@ -56,11 +65,21 @@ public class EmbeddedCheckoutBootstrapService {
 
     public CheckoutResult complete(
             @NotNull UUID cartId, @NotNull UUID sessionId, @NotNull UUID userId, @NotNull String origin) {
+        return complete(cartId, sessionId, userId, origin, null);
+    }
+
+    public CheckoutResult complete(
+            @NotNull UUID cartId,
+            @NotNull UUID sessionId,
+            @NotNull UUID userId,
+            @NotNull String origin,
+            String buyerIp
+    ) {
         String allowedOrigin = originPolicy.requireAllowed(origin);
         Cart before = cartPersistenceService.findCart(cartId, userId);
         UseEmbeddedCheckoutSessionCommand command = useCommand(sessionId, userId, before, allowedOrigin);
         sessionStore.requireActive(command);
-        CheckoutResult refreshed = cartService.checkout(new GetCheckoutQuery(cartId, userId, true));
+        CheckoutResult refreshed = cartService.checkout(new GetCheckoutQuery(cartId, userId, true, buyerIp));
         if (!same(refreshed.checkoutId(), before.getCheckoutId())
                 || refreshed.nextAction() != CheckoutNextAction.DONE
                 || !"completed".equals(normalized(refreshed.status()))) {

@@ -135,7 +135,7 @@ public class CheckoutAssistantService {
 
     public CheckoutAssistResult assist(@NotNull @Valid AssistCheckoutCommand command) {
         CheckoutResult checkout = cartService.checkout(
-                new GetCheckoutQuery(command.cartId(), command.userId(), false)
+                new GetCheckoutQuery(command.cartId(), command.userId(), false, command.buyerIp())
         );
 
         AssistantTurn turn;
@@ -358,7 +358,8 @@ public class CheckoutAssistantService {
                         address.postalCode().trim(),
                         countryCode
                 ),
-                null
+                null,
+                command.buyerIp()
         );
     }
 

@@ -13,6 +13,7 @@ import com.meant.api.plugin.cart.get.GetCartCapability;
 import com.meant.api.provider.shopify.auth.ShopifyMerchantUcpTransport;
 import com.meant.api.provider.shopify.auth.ShopifyCommerceFailureMapper;
 import com.meant.api.provider.shopify.auth.ShopifyUcpTransportException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,8 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ShopifyCartToolTransport implements CartToolTransport {
+    static final String BUYER_IP_HEADER = "Shopify-Buyer-IP";
+
     private final ShopifyMerchantUcpTransport merchantTransport;
     private final CartBindingMetrics metrics;
     private final ShopifyExternalOfferCartRoutingProvider routingProvider;
@@ -65,10 +68,20 @@ public class ShopifyCartToolTransport implements CartToolTransport {
     private MerchantMcpToolCallResult invoke(
             CartRoutingTarget target, String toolName, Object arguments, CartToolCallContext context,
             boolean unauthorizedRefreshAllowed) {
-        Map<String, String> headers = context.idempotencyKey() == null
-                ? Map.of() : Map.of("Idempotency-Key", context.idempotencyKey().toString());
+        Map<String, String> headers = headers(context);
         return merchantTransport.call(
                 target, CommerceOperation.CART, toolName, arguments, headers, unauthorizedRefreshAllowed);
+    }
+
+    private Map<String, String> headers(CartToolCallContext context) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (context.idempotencyKey() != null) {
+            headers.put("Idempotency-Key", context.idempotencyKey().toString());
+        }
+        if (context.buyerIp() != null) {
+            headers.put(BUYER_IP_HEADER, context.buyerIp());
+        }
+        return Map.copyOf(headers);
     }
 
     private boolean isSafeToRetry(String toolName, CartToolCallContext context) {

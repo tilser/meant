@@ -19,11 +19,27 @@ public record CompleteCheckoutCommand(
         String idempotencyKey,
         boolean ap2SecurityLock,
         @Valid Ap2MandateCommand ap2Mandate,
-        CheckoutSignalsCommand signals
+        CheckoutSignalsCommand signals,
+        String buyerIp
 ) {
 
     public CompleteCheckoutCommand {
         paymentInstruments = paymentInstruments == null ? null : List.copyOf(paymentInstruments);
+    }
+
+    public CompleteCheckoutCommand(
+            UUID cartId,
+            UUID userId,
+            UUID buyerConsentId,
+            String checkoutId,
+            List<PaymentInstrument> paymentInstruments,
+            String idempotencyKey,
+            boolean ap2SecurityLock,
+            Ap2MandateCommand ap2Mandate,
+            CheckoutSignalsCommand signals
+    ) {
+        this(cartId, userId, buyerConsentId, checkoutId, paymentInstruments, idempotencyKey,
+                ap2SecurityLock, ap2Mandate, signals, null);
     }
 
     public record Ap2MandateCommand(

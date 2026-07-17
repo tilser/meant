@@ -33,7 +33,7 @@ class CartCapabilityTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void createBuildsTypedArgumentsAndParsesTypedResponse() {
+    void createBuildsTypedArgumentsAndParsesTypedResponse() throws Exception {
         CreateCartCapability capability = new CreateCartCapability(objectMapper);
 
         CreateCartArguments arguments = capability.buildArguments(
@@ -54,6 +54,8 @@ class CartCapabilityTest {
 
         assertThat(arguments.cart().lineItems()).extracting(lineItem -> lineItem.item().id())
                 .containsExactly("gid://shopify/ProductVariant/1");
+        assertThat(arguments.cart().lineItems().getFirst().item().productId()).isNull();
+        assertThat(objectMapper.writeValueAsString(arguments)).doesNotContain("product_id");
         assertThat(arguments.cart().discounts().codes()).containsExactly("SAVE5");
         assertThat(arguments.cart().giftCardCodes()).containsExactly("CARD1234");
         assertThat(arguments.cart().note()).isEqualTo("Please gift wrap");

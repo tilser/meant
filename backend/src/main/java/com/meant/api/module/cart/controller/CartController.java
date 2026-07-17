@@ -31,6 +31,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -78,11 +79,13 @@ public class CartController {
     )
     public CartResponse create(
             @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody CartCreateRequest request
+            @Valid @RequestBody CartCreateRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         userService.ensureProfile(toEnsureProfileCommand(authenticatedUser));
-        return CartResponse.from(cartService.create(CartCommandMapper.toCommand(authenticatedUser.id(), request)));
+        return CartResponse.from(cartService.create(CartCommandMapper.toCommand(
+                authenticatedUser.id(), request, httpRequest.getRemoteAddr())));
     }
 
     @GetMapping("/{cartId}")
@@ -100,10 +103,12 @@ public class CartController {
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
             @Parameter(description = "Refresh the local snapshot from the remote MCP cart before returning it.")
-            @RequestParam(defaultValue = "false") boolean refresh
+            @RequestParam(defaultValue = "false") boolean refresh,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        return CartResponse.from(cartService.get(new GetCartQuery(cartId, authenticatedUser.id(), refresh)));
+        return CartResponse.from(cartService.get(new GetCartQuery(
+                cartId, authenticatedUser.id(), refresh, httpRequest.getRemoteAddr())));
     }
 
     @PatchMapping("/{cartId}")
@@ -121,11 +126,13 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
-            @Valid @RequestBody CartUpdateRequest request
+            @Valid @RequestBody CartUpdateRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CartResponse.from(
-                cartService.update(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
+                cartService.update(CartCommandMapper.toCommand(
+                        cartId, authenticatedUser.id(), request, httpRequest.getRemoteAddr()))
         );
     }
 
@@ -139,10 +146,11 @@ public class CartController {
     public void cancel(
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
-            @PathVariable UUID cartId
+            @PathVariable UUID cartId,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        cartService.cancel(new CancelCartCommand(cartId, authenticatedUser.id()));
+        cartService.cancel(new CancelCartCommand(cartId, authenticatedUser.id(), httpRequest.getRemoteAddr()));
     }
 
     @GetMapping("/{cartId}/checkout")
@@ -160,11 +168,13 @@ public class CartController {
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
             @Parameter(description = "Refresh the checkout session from the remote UCP checkout when possible.")
-            @RequestParam(defaultValue = "false") boolean refresh
+            @RequestParam(defaultValue = "false") boolean refresh,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutResponse.from(
-                cartService.checkout(new GetCheckoutQuery(cartId, authenticatedUser.id(), refresh))
+                cartService.checkout(new GetCheckoutQuery(
+                        cartId, authenticatedUser.id(), refresh, httpRequest.getRemoteAddr()))
         );
     }
 
@@ -175,13 +185,15 @@ public class CartController {
     public ResponseEntity<EmbeddedCheckoutBootstrapResponse> bootstrapEmbeddedCheckout(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID cartId,
-            @RequestHeader("Origin") String origin
+            @RequestHeader("Origin") String origin,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(EmbeddedCheckoutBootstrapResponse.from(
-                        embeddedCheckoutBootstrapService.bootstrap(cartId, authenticatedUser.id(), origin)));
+                        embeddedCheckoutBootstrapService.bootstrap(
+                                cartId, authenticatedUser.id(), origin, httpRequest.getRemoteAddr())));
     }
 
     @PostMapping("/{cartId}/checkout/embedded/{sessionId}/complete")
@@ -192,13 +204,15 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID cartId,
             @PathVariable UUID sessionId,
-            @RequestHeader("Origin") String origin
+            @RequestHeader("Origin") String origin,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(CheckoutResponse.from(
-                        embeddedCheckoutBootstrapService.complete(cartId, sessionId, authenticatedUser.id(), origin)));
+                        embeddedCheckoutBootstrapService.complete(
+                                cartId, sessionId, authenticatedUser.id(), origin, httpRequest.getRemoteAddr())));
     }
 
     @PostMapping("/{cartId}/checkout/embedded/{sessionId}/cancel")
@@ -229,11 +243,13 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
-            @Valid @RequestBody CheckoutUpdateRequest request
+            @Valid @RequestBody CheckoutUpdateRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutResponse.from(
-                cartService.updateCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
+                cartService.updateCheckout(CartCommandMapper.toCommand(
+                        cartId, authenticatedUser.id(), request, httpRequest.getRemoteAddr()))
         );
     }
 
@@ -252,7 +268,8 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
-            @Valid @RequestBody AssistCheckoutRequest request
+            @Valid @RequestBody AssistCheckoutRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutAssistResponse.from(checkoutAssistantService.assist(new AssistCheckoutCommand(
@@ -267,7 +284,8 @@ public class CartController {
                                         message.role(),
                                         message.content()
                                 ))
-                                .toList()
+                                .toList(),
+                httpRequest.getRemoteAddr()
         )));
     }
 
@@ -307,11 +325,13 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
-            @Valid @RequestBody CompleteCheckoutRequest request
+            @Valid @RequestBody CompleteCheckoutRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutCompletionResponse.from(
-                cartService.completeCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
+                cartService.completeCheckout(CartCommandMapper.toCommand(
+                        cartId, authenticatedUser.id(), request, httpRequest.getRemoteAddr()))
         );
     }
 
@@ -329,11 +349,13 @@ public class CartController {
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
-            @Valid @RequestBody CancelCheckoutRequest request
+            @Valid @RequestBody CancelCheckoutRequest request,
+            HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
         return CheckoutCompletionResponse.from(
-                cartService.cancelCheckout(CartCommandMapper.toCommand(cartId, authenticatedUser.id(), request))
+                cartService.cancelCheckout(CartCommandMapper.toCommand(
+                        cartId, authenticatedUser.id(), request, httpRequest.getRemoteAddr()))
         );
     }
 

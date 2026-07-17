@@ -154,7 +154,8 @@ class ShopifyGlobalCatalogProviderTest {
         String ignoredFilterResponse = globalResponse().replace(
                 "\"pagination\":",
                 "\"messages\":[{\"type\":\"info\",\"code\":\"unsupported\","
-                        + "\"content\":\"Attribute Brand is not supported and was ignored.\"}],"
+                        + "\"path\":\"/catalog/filters/attributes/0\","
+                        + "\"content\":\"Attribute Color was ignored.\"}],"
                         + "\"pagination\":"
         );
         ShopifyGlobalCatalogProvider provider = provider(
@@ -165,12 +166,120 @@ class ShopifyGlobalCatalogProviderTest {
         var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
                 "trail running shoes",
                 new ShopifyCatalogContext("US", null, null, "en", "USD", null),
-                null
+                new ShopifyCatalogFilters(
+                        true,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of(new ShopifyCatalogFilters.Attribute("Color", List.of("Black"))),
+                        null,
+                        null
+                )
         ));
 
         assertThat(result.successful()).isFalse();
         assertThat(result.failure().kind()).isEqualTo(CatalogSourceFailureKind.INVALID_REQUEST);
         assertThat(result.candidates()).isEmpty();
+    }
+
+    @Test
+    void failsClosedWhenPathlessMessageNamesAnIgnoredRequestedHardFilter() throws Exception {
+        String ignoredFilterResponse = globalResponse().replace(
+                "\"pagination\":",
+                "\"messages\":[{\"type\":\"info\",\"code\":\"unsupported\","
+                        + "\"content\":\"Attribute Color was ignored.\"}],"
+                        + "\"pagination\":"
+        );
+        ShopifyGlobalCatalogProvider provider = provider(
+                new CapturingClient(response(ignoredFilterResponse)),
+                properties(3)
+        );
+
+        var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                "trail running shoes",
+                new ShopifyCatalogContext("US", null, null, "en", "USD", null),
+                new ShopifyCatalogFilters(
+                        true,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of(new ShopifyCatalogFilters.Attribute("Color", List.of("Black"))),
+                        null,
+                        null
+                )
+        ));
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.failure().kind()).isEqualTo(CatalogSourceFailureKind.INVALID_REQUEST);
+        assertThat(result.candidates()).isEmpty();
+    }
+
+    @Test
+    void doesNotTreatAnUnrequestedPathlessAttributeAsAnIgnoredHardFilter() throws Exception {
+        String ignoredPreferenceResponse = globalResponse().replace(
+                "\"pagination\":",
+                "\"messages\":[{\"type\":\"info\",\"code\":\"unsupported\","
+                        + "\"content\":\"Attribute Brand was ignored.\"}],"
+                        + "\"pagination\":"
+        );
+
+        var result = provider(new CapturingClient(response(ignoredPreferenceResponse)), properties(3))
+                .searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                        "trail running shoes",
+                        null,
+                        new ShopifyCatalogFilters(
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                List.of(new ShopifyCatalogFilters.Attribute("Color", List.of("Black"))),
+                                null,
+                                null
+                        )
+                ));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.candidates()).isNotEmpty();
+    }
+
+    @Test
+    void getProductKeepsPathlessInformationalMessagesThatDoNotIdentifyAnIgnoredFilter() throws Exception {
+        String response = fixture("get-product-success.json")
+                .replace("    \"path\": \"/product/variants/0\",\n", "")
+                .replace("Runs true to size", "An optional preference was ignored; runs true to size");
+
+        var result = provider(new CapturingClient(response(response)), properties(3))
+                .getProductWithDetails(new ShopifyGlobalCatalogGetProductRequest(
+                        "gid://shopify/ProductVariant/variant-1",
+                        null,
+                        List.of("Prefer a wide fit"),
+                        null,
+                        new ShopifyCatalogFilters(
+                                false,
+                                null,
+                                null,
+                                null,
+                                null,
+                                List.of("gid://shopify/Shop/1"),
+                                null,
+                                null,
+                                null,
+                                null
+                        )));
+
+        assertThat(result.catalogResult().successful()).isTrue();
+        assertThat(result.product()).isNotNull();
+        assertThat(result.messages()).singleElement()
+                .satisfies(message -> assertThat(message.path()).isNull());
     }
 
     @Test
@@ -566,7 +675,7 @@ class ShopifyGlobalCatalogProviderTest {
         String missingGetProduct = """
                 {
                   "ucp":{"version":"2026-04-08","capabilities":{
-                    "dev.ucp.shopping.catalog.get_product":[{"version":"2026-04-08"}],
+                    "dev.ucp.shopping.catalog.lookup":[{"version":"2026-04-08"}],
                     "dev.shopify.catalog.global":[{"version":"2026-04-08"}]
                   }}
                 }

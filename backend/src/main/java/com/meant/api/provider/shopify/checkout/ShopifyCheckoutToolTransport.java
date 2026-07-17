@@ -18,6 +18,7 @@ import com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessPrope
 import com.meant.api.provider.shopify.cart.ShopifyCartProperties;
 import com.meant.api.provider.shopify.cart.ShopifyExternalOfferCartRoutingProvider;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -42,8 +43,7 @@ public class ShopifyCheckoutToolTransport implements CheckoutToolTransport {
     public MerchantMcpToolCallResult call(
             CartRoutingTarget target, String toolName, Object arguments, CheckoutToolCallContext context) {
         CartRoutingTarget ready = readyTarget(target);
-        Map<String, String> headers = context.idempotencyKey() == null ? Map.of()
-                : Map.of("Idempotency-Key", context.idempotencyKey().toString());
+        Map<String, String> headers = headers(context);
         try {
             return merchantTransport.call(ready, CommerceOperation.CHECKOUT_SESSION, toolName, arguments,
                     headers, context.unauthorizedRefreshAllowed());
@@ -53,6 +53,17 @@ public class ShopifyCheckoutToolTransport implements CheckoutToolTransport {
                     ? "Shopify checkout read failed" : "Shopify checkout mutation outcome is unknown";
             throw CartException.bindingUpstream(message, ShopifyCommerceFailureMapper.map(exception));
         }
+    }
+
+    private Map<String, String> headers(CheckoutToolCallContext context) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (context.idempotencyKey() != null) {
+            headers.put("Idempotency-Key", context.idempotencyKey().toString());
+        }
+        if (context.buyerIp() != null) {
+            headers.put(ShopifyCheckoutRequestHeaderContributor.BUYER_IP_HEADER, context.buyerIp());
+        }
+        return Map.copyOf(headers);
     }
 
     private CartRoutingTarget readyTarget(CartRoutingTarget target) {

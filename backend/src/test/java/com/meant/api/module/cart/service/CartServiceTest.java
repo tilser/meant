@@ -29,6 +29,7 @@ import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -183,6 +184,29 @@ class CartServiceTest {
         return new ResolvedSelectedOffer("canonical", key, identity, provenance, reference);
     }
 
+    private ResolvedSelectedOffer resolvedShopifyOfferWithCanonicalProductAnchor(String key) {
+        ProviderIdentity provider = new ProviderIdentity("SHOPIFY");
+        ExternalIdentifier merchantIdentity = new ExternalIdentifier(
+                ExternalIdentifierType.MERCHANT, provider.value(), "gid://shopify/Shop/1");
+        ExternalIdentifier canonicalProduct = new ExternalIdentifier(
+                ExternalIdentifierType.PRODUCT, provider.value(), "variant-product:v1:" + key);
+        ExternalIdentifier wireProduct = new ExternalIdentifier(
+                ExternalIdentifierType.PRODUCT, provider.value(), "gid://shopify/p/upid-42");
+        ExternalIdentifier variant = new ExternalIdentifier(ExternalIdentifierType.VARIANT, provider.value(), key);
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                provider, ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL_CATALOG");
+        OfferIdentity identity = new OfferIdentity(
+                provider, OfferMerchantScope.external(merchantIdentity), canonicalProduct, variant,
+                List.of(), List.of(), null);
+        ResultProvenance provenance = new ResultProvenance(
+                provider, source, null, merchantIdentity, "merchant.example", wireProduct, variant,
+                new ResultFreshness(Instant.now(), null),
+                new ResultSourceReference(ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL_CATALOG", null));
+        CatalogProductReference reference = new CatalogProductReference(
+                key, source, null, null, merchantIdentity, "merchant.example", wireProduct, variant, List.of());
+        return new ResolvedSelectedOffer("canonical", key, identity, provenance, reference);
+    }
+
     @Test
     void createCallsRemoteCartAndSavesSnapshot() {
         CartResult result = cartService.create(new CreateCartCommand(
@@ -206,6 +230,34 @@ class CartServiceTest {
         assertThat(cartRepository.saveCount).isEqualTo(1);
         assertThat(cartDispatchService.createCount).isEqualTo(1);
         assertThat(cartDispatchService.updateCount).isZero();
+    }
+
+    @Test
+    void createUsesRehydratedShopifyWireIdentityAndPropagatesBuyerIp() {
+        String variantId = "gid://shopify/ProductVariant/42";
+        doReturn(List.of(resolvedShopifyOfferWithCanonicalProductAnchor(variantId)))
+                .when(offerResolution).resolveAll(any());
+
+        cartService.create(new CreateCartCommand(
+                USER_ID,
+                merchant.getId(),
+                null,
+                List.of(new CreateCartCommand.AddItem(variantId, 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                "203.0.113.42"
+        ));
+
+        assertThat(cartDispatchService.lastCreateRequest.addItems()).singleElement().satisfies(item -> {
+            assertThat(item.productId()).isNull();
+            assertThat(item.productVariantId()).isEqualTo(variantId);
+        });
+        assertThat(cartDispatchService.lastCallContext.buyerIp()).isEqualTo("203.0.113.42");
     }
 
     @Test
@@ -621,12 +673,14 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, null));
 
-        CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
+        CheckoutResult result = cartService.checkout(
+                new GetCheckoutQuery(cartId, USER_ID, false, "203.0.113.42"));
 
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(result.continueUrl()).isEqualTo("https://merchant.example/continue");
         assertThat(checkoutDispatchService.createCount).isEqualTo(1);
         assertThat(checkoutDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
+        assertThat(checkoutDispatchService.lastCallContext.buyerIp()).isEqualTo("203.0.113.42");
         assertThat(cartDispatchService.getCount).isZero();
         assertThat(cartRepository.findWithLinesCount).isEqualTo(2);
         assertImportedCandle();
@@ -1233,6 +1287,8 @@ class CartServiceTest {
     static class FakeCartDispatchService extends MerchantCartPluginDispatchService {
 
         private UcpCartToolResult cartToolResult;
+        private CreateCartRequest lastCreateRequest;
+        private CartToolCallContext lastCallContext;
         private UpdateCartRequest lastUpdateRequest;
         private RuntimeException updateException;
         private String lastRemoteCartId;
@@ -1258,6 +1314,17 @@ class CartServiceTest {
         }
 
         @Override
+        public UcpCartToolResult createCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                CreateCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext = callContext;
+            return createCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
         public UcpCartToolResult updateCart(
                 com.meant.api.module.cart.service.dto.CartRoutingTarget target,
                 UpdateCartRequest request, UcpSession session) {
@@ -1265,9 +1332,31 @@ class CartServiceTest {
         }
 
         @Override
+        public UcpCartToolResult updateCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                UpdateCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext = callContext;
+            return updateCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
         public UcpCartToolResult getCart(
                 com.meant.api.module.cart.service.dto.CartRoutingTarget target,
                 GetCartRequest request, UcpSession session) {
+            return getCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
+        public UcpCartToolResult getCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                GetCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext = callContext;
             return getCart(target.merchantProvider(), request, session);
         }
 
@@ -1280,12 +1369,25 @@ class CartServiceTest {
         }
 
         @Override
+        public CancelCartResponse cancelCart(
+                com.meant.api.module.cart.service.dto.CartRoutingTarget target,
+                CancelCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext = callContext;
+            lastCancelIdempotencyKey = callContext.idempotencyKey();
+            return cancelCart(target.merchantProvider(), request, session);
+        }
+
+        @Override
         public UcpCartToolResult createCart(
                 MerchantCartProvider provider,
                 CreateCartRequest request,
                 UcpSession session
         ) {
             createCount++;
+            lastCreateRequest = request;
             return cartToolResult;
         }
 
@@ -1332,6 +1434,7 @@ class CartServiceTest {
         private String lastRemoteCartId;
         private String lastCheckoutId;
         private UpdateCheckoutRequest lastUpdateRequest;
+        private CheckoutToolCallContext lastCallContext;
         private int createCount;
         private int getCount;
         private int updateCount;
@@ -1376,6 +1479,7 @@ class CartServiceTest {
                 UcpSession session,
                 CheckoutToolCallContext context
         ) {
+            lastCallContext = context;
             return createCheckout(target.merchantProvider(), request, session);
         }
 
@@ -1398,6 +1502,7 @@ class CartServiceTest {
                 UcpSession session,
                 CheckoutToolCallContext context
         ) {
+            lastCallContext = context;
             return getCheckout(target.merchantProvider(), request, session);
         }
 
@@ -1420,6 +1525,7 @@ class CartServiceTest {
                 UcpSession session,
                 CheckoutToolCallContext context
         ) {
+            lastCallContext = context;
             return updateCheckout(target.merchantProvider(), request, session);
         }
 

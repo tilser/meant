@@ -124,7 +124,7 @@ public class ShopifyCatalogProductRehydrationProvider
         try {
             ShopifyGlobalCatalogProductResult productResult = provider.getProductWithDetails(
                     new ShopifyGlobalCatalogGetProductRequest(
-                    reference.externalProductReference().value(),
+                    detailIdentifier(reference),
                     selectedOptions(reference, selection).stream()
                             .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
                             .toList(),
@@ -245,7 +245,7 @@ public class ShopifyCatalogProductRehydrationProvider
         try {
             ShopifyGlobalCatalogProductResult productResult = provider.getProductWithDetails(
                     new ShopifyGlobalCatalogGetProductRequest(
-                            reference.externalProductReference().value(),
+                            detailIdentifier(reference),
                             reference.selectedOptions().stream()
                                     .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
                                     .toList(),
@@ -373,6 +373,12 @@ public class ShopifyCatalogProductRehydrationProvider
                 null,
                 null
         );
+    }
+
+    private String detailIdentifier(CatalogProductReference reference) {
+        return reference.externalVariantReference() == null
+                ? reference.externalProductReference().value()
+                : reference.externalVariantReference().value();
     }
 
     private CatalogProductRehydrationResult fresh(

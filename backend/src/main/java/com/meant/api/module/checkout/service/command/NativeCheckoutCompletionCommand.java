@@ -20,11 +20,27 @@ public record NativeCheckoutCompletionCommand(
         String idempotencyKey,
         boolean ap2SecurityLock,
         @Valid Ap2MandateInput ap2Mandate,
-        CheckoutSignals signals
+        CheckoutSignals signals,
+        String buyerIp
 ) {
 
     public NativeCheckoutCompletionCommand {
         paymentInstruments = paymentInstruments == null ? null : List.copyOf(paymentInstruments);
+    }
+
+    public NativeCheckoutCompletionCommand(
+            UUID cartId,
+            UUID userId,
+            UUID buyerConsentId,
+            String checkoutId,
+            List<PaymentInstrument> paymentInstruments,
+            String idempotencyKey,
+            boolean ap2SecurityLock,
+            Ap2MandateInput ap2Mandate,
+            CheckoutSignals signals
+    ) {
+        this(cartId, userId, buyerConsentId, checkoutId, paymentInstruments, idempotencyKey,
+                ap2SecurityLock, ap2Mandate, signals, null);
     }
 
     public record Ap2MandateInput(

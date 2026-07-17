@@ -24,6 +24,7 @@ import com.meant.api.module.checkout.service.command.ReserveIdempotencyKeyComman
 import com.meant.api.module.checkout.service.command.StartCheckoutCompletionCommand;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
+import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.complete.CompleteCheckoutCapability;
 import com.meant.api.plugin.checkout.complete.dto.CheckoutSignals;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
@@ -107,7 +108,8 @@ class NativeCheckoutCompletionServiceTest {
         dispatchService.getResults.add(toolResult(openCheckoutJson()));
         dispatchService.completeResult = toolResult(completedCheckoutJson("order-123"));
 
-        NativeCheckoutResult result = service.complete(provider(true), command(false), UcpSession.cart("cart-1", null, null));
+        NativeCheckoutResult result = service.complete(
+                provider(true), command(false, "203.0.113.42"), UcpSession.cart("cart-1", null, null));
 
         assertThat(result.status()).isEqualTo(NativeCheckoutStatus.COMPLETED);
         assertThat(result.orderRef()).isEqualTo("order-123");
@@ -115,6 +117,8 @@ class NativeCheckoutCompletionServiceTest {
         assertThat(idempotencyKeyStore.recordCommands)
                 .extracting(RecordIdempotencyResponseCommand::status)
                 .contains(CheckoutIdempotencyStatus.COMPLETED);
+        assertThat(dispatchService.lastGetContext.buyerIp()).isEqualTo("203.0.113.42");
+        assertThat(dispatchService.lastCompleteContext.buyerIp()).isEqualTo("203.0.113.42");
     }
 
     @Test
@@ -317,6 +321,10 @@ class NativeCheckoutCompletionServiceTest {
     }
 
     private NativeCheckoutCompletionCommand command(boolean ap2SecurityLock) {
+        return command(ap2SecurityLock, null);
+    }
+
+    private NativeCheckoutCompletionCommand command(boolean ap2SecurityLock, String buyerIp) {
         return new NativeCheckoutCompletionCommand(
                 CART_ID,
                 USER_ID,
@@ -326,7 +334,8 @@ class NativeCheckoutCompletionServiceTest {
                 "idem-1",
                 ap2SecurityLock,
                 null,
-                new CheckoutSignals("test", null)
+                new CheckoutSignals("test", null),
+                buyerIp
         );
     }
 
@@ -590,6 +599,9 @@ class NativeCheckoutCompletionServiceTest {
         private int getCount;
         private int completeCount;
         private int cancelCount;
+        private CheckoutToolCallContext lastGetContext;
+        private CheckoutToolCallContext lastCompleteContext;
+        private CheckoutToolCallContext lastCancelContext;
 
         private FakeDispatchService() {
             super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
@@ -608,6 +620,17 @@ class NativeCheckoutCompletionServiceTest {
         }
 
         @Override
+        public UcpCheckoutToolResult getCheckout(
+                MerchantCartProvider provider,
+                GetCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            lastGetContext = context;
+            return getCheckout(provider, request, session);
+        }
+
+        @Override
         public UcpCheckoutToolResult completeCheckout(
                 MerchantCartProvider provider,
                 CompleteCheckoutRequest request,
@@ -622,6 +645,18 @@ class NativeCheckoutCompletionServiceTest {
         }
 
         @Override
+        public UcpCheckoutToolResult completeCheckout(
+                MerchantCartProvider provider,
+                CompleteCheckoutRequest request,
+                UcpSession session,
+                Map<String, String> signedHeaders,
+                CheckoutToolCallContext context
+        ) {
+            lastCompleteContext = context;
+            return completeCheckout(provider, request, session, signedHeaders);
+        }
+
+        @Override
         public UcpCheckoutToolResult cancelCheckout(
                 MerchantCartProvider provider,
                 CancelCheckoutRequest request,
@@ -630,6 +665,18 @@ class NativeCheckoutCompletionServiceTest {
         ) {
             cancelCount++;
             throw new AssertionError("cancel_checkout should not be posted in this test");
+        }
+
+        @Override
+        public UcpCheckoutToolResult cancelCheckout(
+                MerchantCartProvider provider,
+                CancelCheckoutRequest request,
+                UcpSession session,
+                Map<String, String> signedHeaders,
+                CheckoutToolCallContext context
+        ) {
+            lastCancelContext = context;
+            return cancelCheckout(provider, request, session, signedHeaders);
         }
     }
 

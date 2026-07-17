@@ -330,7 +330,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
         verify(global, times(2)).getProductWithDetails(request.capture());
         ShopifyGlobalCatalogGetProductRequest currentRequest = request.getAllValues().getFirst();
-        assertThat(currentRequest.id()).isEqualTo("product-1");
+        assertThat(currentRequest.id()).isEqualTo("variant-m");
         assertThat(currentRequest.selected()).singleElement().satisfies(option -> {
             assertThat(option.name()).isEqualTo("Size");
             assertThat(option.label()).isEqualTo("M");
@@ -526,7 +526,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
         ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
                 ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
         verify(global).getProductWithDetails(request.capture());
-        assertThat(request.getValue().id()).isEqualTo("product-2");
+        assertThat(request.getValue().id()).isEqualTo("variant-2");
         assertThat(request.getValue().filters().available()).isFalse();
         assertThat(request.getValue().filters().shops()).containsExactly("seller-b");
     }

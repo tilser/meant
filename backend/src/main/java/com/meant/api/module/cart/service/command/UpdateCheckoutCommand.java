@@ -18,8 +18,19 @@ public record UpdateCheckoutCommand(
         @NotNull
         @Valid
         PostalAddress shippingAddress,
-        List<@NotBlank String> discountCodes
+        List<@NotBlank String> discountCodes,
+        String buyerIp
 ) {
+
+    public UpdateCheckoutCommand(
+            UUID cartId,
+            UUID userId,
+            Buyer buyer,
+            PostalAddress shippingAddress,
+            List<String> discountCodes
+    ) {
+        this(cartId, userId, buyer, shippingAddress, discountCodes, null);
+    }
 
     public record Buyer(
             @NotBlank

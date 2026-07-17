@@ -22,6 +22,7 @@ import com.meant.api.module.cart.service.CartOfferRevalidationService;
 import com.meant.api.module.cart.service.SelectedOfferCartRoutingService;
 import com.meant.api.module.cart.service.CartBindingMetrics;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOfferQuery;
@@ -237,6 +238,8 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         assertThat(checkout.continueUrl()).contains("continue");
         assertThat(checkout.nextAction()).isEqualTo(CheckoutNextAction.UNKNOWN);
         assertThat(checkoutDispatchService.createCount()).isEqualTo(1);
+        assertThat(checkoutDispatchService.lastCallContext()).isNotNull();
+        assertThat(checkoutDispatchService.lastCallContext().buyerIp()).isNotBlank();
 
         Cart persisted = cartRepository.findById(created.cartId()).orElseThrow();
         assertThat(persisted.getUserId()).isEqualTo(userId);
@@ -282,6 +285,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 .expectStatus().isOk();
 
         assertThat(cartDispatchService.lastCreatedVariant()).isEqualTo(selectedVariant);
+        assertThat(cartDispatchService.lastCallContext().buyerIp()).isNotBlank();
     }
 
     @Test
@@ -475,6 +479,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         private final AtomicInteger cancelCount = new AtomicInteger();
         private final AtomicInteger cartSequence = new AtomicInteger();
         private final AtomicReference<String> lastCreatedVariant = new AtomicReference<>();
+        private final AtomicReference<CartToolCallContext> lastCallContext = new AtomicReference<>();
 
         FakeCartDispatchService() {
             super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
@@ -489,6 +494,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             getCount.set(0);
             cancelCount.set(0);
             lastCreatedVariant.set(null);
+            lastCallContext.set(null);
         }
 
         int createCount() {
@@ -511,6 +517,10 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             return lastCreatedVariant.get();
         }
 
+        CartToolCallContext lastCallContext() {
+            return lastCallContext.get();
+        }
+
         @Override
         public UcpCartToolResult createCart(
                 CartRoutingTarget target,
@@ -524,6 +534,17 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         }
 
         @Override
+        public UcpCartToolResult createCart(
+                CartRoutingTarget target,
+                CreateCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext.set(callContext);
+            return createCart(target, request, session);
+        }
+
+        @Override
         public UcpCartToolResult updateCart(
                 CartRoutingTarget target,
                 UpdateCartRequest request,
@@ -534,6 +555,17 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             return cartToolResult(request.addItems().isEmpty()
                     ? "gid://shopify/ProductVariant/1"
                     : request.addItems().getFirst().productVariantId());
+        }
+
+        @Override
+        public UcpCartToolResult updateCart(
+                CartRoutingTarget target,
+                UpdateCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext.set(callContext);
+            return updateCart(target, request, session);
         }
 
         @Override
@@ -549,6 +581,17 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         }
 
         @Override
+        public CancelCartResponse cancelCart(
+                CartRoutingTarget target,
+                CancelCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext.set(callContext);
+            return cancelCart(target, request, session, callContext.idempotencyKey());
+        }
+
+        @Override
         public UcpCartToolResult createCart(
                 MerchantCartProvider provider,
                 CreateCartRequest request,
@@ -569,6 +612,17 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
             return cartToolResult(request.addItems().isEmpty()
                     ? "gid://shopify/ProductVariant/1"
                     : request.addItems().getFirst().productVariantId());
+        }
+
+        @Override
+        public UcpCartToolResult getCart(
+                CartRoutingTarget target,
+                GetCartRequest request,
+                UcpSession session,
+                CartToolCallContext callContext
+        ) {
+            lastCallContext.set(callContext);
+            return getCart(target.merchantProvider(), request, session);
         }
 
         @Override
@@ -762,6 +816,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
     static class FakeCheckoutDispatchService extends MerchantCheckoutPluginDispatchService {
 
         private final AtomicInteger createCount = new AtomicInteger();
+        private final AtomicReference<CheckoutToolCallContext> lastCallContext = new AtomicReference<>();
 
         FakeCheckoutDispatchService() {
             super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
@@ -771,10 +826,15 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
 
         void reset() {
             createCount.set(0);
+            lastCallContext.set(null);
         }
 
         int createCount() {
             return createCount.get();
+        }
+
+        CheckoutToolCallContext lastCallContext() {
+            return lastCallContext.get();
         }
 
         @Override
@@ -849,6 +909,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 UcpSession session,
                 CheckoutToolCallContext context
         ) {
+            lastCallContext.set(context);
             return createCheckout(target.merchantProvider(), request, session);
         }
 

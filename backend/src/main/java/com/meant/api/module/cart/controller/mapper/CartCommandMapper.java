@@ -27,6 +27,10 @@ import lombok.NoArgsConstructor;
 public final class CartCommandMapper {
 
     public static CreateCartCommand toCommand(UUID userId, CartCreateRequest request) {
+        return toCommand(userId, request, null);
+    }
+
+    public static CreateCartCommand toCommand(UUID userId, CartCreateRequest request, String buyerIp) {
         return new CreateCartCommand(
                 userId,
                 null,
@@ -43,11 +47,21 @@ public final class CartCommandMapper {
                 safeList(request.selectedDeliveryOptions()),
                 request.discountCodes(),
                 request.giftCardCodes(),
-                request.note()
+                request.note(),
+                buyerIp
         );
     }
 
     public static UpdateCartCommand toCommand(UUID cartId, UUID userId, CartUpdateRequest request) {
+        return toCommand(cartId, userId, request, null);
+    }
+
+    public static UpdateCartCommand toCommand(
+            UUID cartId,
+            UUID userId,
+            CartUpdateRequest request,
+            String buyerIp
+    ) {
         return new UpdateCartCommand(
                 cartId,
                 userId,
@@ -72,11 +86,21 @@ public final class CartCommandMapper {
                 request.selectedDeliveryOptions(),
                 request.discountCodes(),
                 request.giftCardCodes(),
-                request.note()
+                request.note(),
+                buyerIp
         );
     }
 
     public static CompleteCheckoutCommand toCommand(UUID cartId, UUID userId, CompleteCheckoutRequest request) {
+        return toCommand(cartId, userId, request, null);
+    }
+
+    public static CompleteCheckoutCommand toCommand(
+            UUID cartId,
+            UUID userId,
+            CompleteCheckoutRequest request,
+            String buyerIp
+    ) {
         return new CompleteCheckoutCommand(
                 cartId,
                 userId,
@@ -88,11 +112,21 @@ public final class CartCommandMapper {
                 request.idempotencyKey(),
                 request.ap2SecurityLock(),
                 ap2MandateCommand(request.ap2Mandate()),
-                checkoutSignalsCommand(request.signals())
+                checkoutSignalsCommand(request.signals()),
+                buyerIp
         );
     }
 
     public static UpdateCheckoutCommand toCommand(UUID cartId, UUID userId, CheckoutUpdateRequest request) {
+        return toCommand(cartId, userId, request, null);
+    }
+
+    public static UpdateCheckoutCommand toCommand(
+            UUID cartId,
+            UUID userId,
+            CheckoutUpdateRequest request,
+            String buyerIp
+    ) {
         return new UpdateCheckoutCommand(
                 cartId,
                 userId,
@@ -110,7 +144,8 @@ public final class CartCommandMapper {
                         request.shippingAddress().postalCode(),
                         request.shippingAddress().addressCountry()
                 ),
-                safeList(request.discountCodes())
+                safeList(request.discountCodes()),
+                buyerIp
         );
     }
 
@@ -130,12 +165,22 @@ public final class CartCommandMapper {
     }
 
     public static CancelCheckoutCommand toCommand(UUID cartId, UUID userId, CancelCheckoutRequest request) {
+        return toCommand(cartId, userId, request, null);
+    }
+
+    public static CancelCheckoutCommand toCommand(
+            UUID cartId,
+            UUID userId,
+            CancelCheckoutRequest request,
+            String buyerIp
+    ) {
         return new CancelCheckoutCommand(
                 cartId,
                 userId,
                 request.checkoutId(),
                 request.reason(),
-                request.ap2SecurityLock()
+                request.ap2SecurityLock(),
+                buyerIp
         );
     }
 

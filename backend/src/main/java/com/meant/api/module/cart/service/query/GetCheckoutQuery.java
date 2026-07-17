@@ -8,6 +8,10 @@ public record GetCheckoutQuery(
         UUID cartId,
         @NotNull
         UUID userId,
-        boolean refresh
+        boolean refresh,
+        String buyerIp
 ) {
+    public GetCheckoutQuery(UUID cartId, UUID userId, boolean refresh) {
+        this(cartId, userId, refresh, null);
+    }
 }

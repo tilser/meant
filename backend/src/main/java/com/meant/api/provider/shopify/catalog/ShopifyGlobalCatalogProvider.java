@@ -15,6 +15,7 @@ import com.meant.api.provider.shopify.catalog.ShopifyGlobalCatalogResponseParser
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments.Catalog;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments.Pagination;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogGetProductRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogLookupRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogProductResult;
@@ -161,7 +162,7 @@ public class ShopifyGlobalCatalogProvider {
         ExecutionResult execution = executeWithPayload(
                 CatalogSourceOperation.GET_PRODUCT,
                 CatalogGetProductCapability.TOOL_NAME,
-                CatalogGetProductCapability.ID,
+                CatalogLookupCapability.ID,
                 arguments
         );
         ShopifyGlobalCatalogResponse payload = execution.payload();
@@ -238,7 +239,8 @@ public class ShopifyGlobalCatalogProvider {
                         )
                 ), parsed.payload());
             }
-            List<String> ignoredFilterPaths = ignoredFilterPaths(parsed.payload().messages());
+            List<String> ignoredFilterPaths = ignoredFilterPaths(
+                    parsed.payload().messages(), arguments.catalog().filters());
             if (!ignoredFilterPaths.isEmpty()) {
                 circuitBreaker.recordSuccess();
                 log.warn(
@@ -430,29 +432,136 @@ public class ShopifyGlobalCatalogProvider {
                 : values.stream().filter(this::hasText).map(String::trim).distinct().toList();
     }
 
-    private List<String> ignoredFilterPaths(List<ShopifyGlobalCatalogResponse.Message> messages) {
-        if (messages == null) {
+    private List<String> ignoredFilterPaths(
+            List<ShopifyGlobalCatalogResponse.Message> messages,
+            ShopifyCatalogFilters requestedFilters
+    ) {
+        if (messages == null || !hasRequestedFilters(requestedFilters)) {
             return List.of();
         }
         return messages.stream()
                 .filter(java.util.Objects::nonNull)
-                .filter(this::ignoredFilterMessage)
+                .filter(message -> ignoredFilterMessage(message, requestedFilters))
                 .map(message -> hasText(message.path()) ? message.path().trim() : "<unspecified>")
                 .distinct()
                 .toList();
     }
 
-    private boolean ignoredFilterMessage(ShopifyGlobalCatalogResponse.Message message) {
+    private boolean ignoredFilterMessage(
+            ShopifyGlobalCatalogResponse.Message message,
+            ShopifyCatalogFilters requestedFilters
+    ) {
         String code = trimToNull(message.code());
         String content = trimToNull(message.content());
         boolean explicitlyIgnored = content != null
                 && content.toLowerCase(Locale.ROOT).contains("ignored");
         if (!hasText(message.path())) {
-            return explicitlyIgnored;
+            return explicitlyIgnored && mentionsRequestedFilter(content, requestedFilters);
         }
         String normalizedPath = message.path().trim().toLowerCase(Locale.ROOT);
         boolean filterPath = normalizedPath.contains("filters");
         return filterPath && (explicitlyIgnored || code != null && "not_found".equalsIgnoreCase(code));
+    }
+
+    private boolean mentionsRequestedFilter(String content, ShopifyCatalogFilters filters) {
+        String normalized = content.toLowerCase(Locale.ROOT);
+        if (normalized.contains("filter")) {
+            return true;
+        }
+        if (filters.available() != null && containsAny(normalized, "available", "availability")) {
+            return true;
+        }
+        if (filters.condition() != null && !filters.condition().isEmpty()
+                && (normalized.contains("condition") || containsAny(normalized, filters.condition()))) {
+            return true;
+        }
+        if (filters.shipsTo() != null && (containsAny(normalized, "ships to", "shipping destination")
+                || mentionsLocation(normalized, filters.shipsTo()))) {
+            return true;
+        }
+        if (filters.shipsFrom() != null && !filters.shipsFrom().isEmpty()) {
+            if (containsAny(normalized, "ships from", "shipping origin")
+                    || filters.shipsFrom().stream()
+                            .filter(java.util.Objects::nonNull)
+                            .anyMatch(location -> mentionsLocation(normalized, location))) {
+                return true;
+            }
+        }
+        if (filters.price() != null && normalized.contains("price")) {
+            return true;
+        }
+        if (filters.shops() != null && !filters.shops().isEmpty()
+                && (containsAny(normalized, "shop", "merchant")
+                        || containsAny(normalized, filters.shops()))) {
+            return true;
+        }
+        if (filters.categories() != null && !filters.categories().isEmpty()
+                && (normalized.contains("categor") || containsAny(normalized, filters.categories()))) {
+            return true;
+        }
+        if (filters.attributes() != null && !filters.attributes().isEmpty()) {
+            for (ShopifyCatalogFilters.Attribute attribute : filters.attributes()) {
+                if (attribute != null && (hasText(attribute.name())
+                        && normalized.contains(attribute.name().trim().toLowerCase(Locale.ROOT))
+                        || containsAny(normalized, attribute.values()))) {
+                    return true;
+                }
+            }
+            if (containsAny(normalized,
+                    "attribute was ignored", "an attribute was ignored", "attributes were ignored")) {
+                return true;
+            }
+        }
+        if (filters.rating() != null && normalized.contains("rating")) {
+            return true;
+        }
+        return filters.priceTier() != null && !filters.priceTier().isEmpty()
+                && (containsAny(normalized, "price tier", "price_tier")
+                        || containsAny(normalized, filters.priceTier()));
+    }
+
+    private boolean mentionsLocation(String content, ShopifyCatalogFilters.Location location) {
+        return containsAny(content, location.country(), location.region(), location.postalCode());
+    }
+
+    private boolean hasRequestedFilters(ShopifyCatalogFilters filters) {
+        return filters != null && (filters.available() != null
+                || filters.condition() != null && !filters.condition().isEmpty()
+                || filters.shipsTo() != null
+                || filters.shipsFrom() != null && !filters.shipsFrom().isEmpty()
+                || filters.price() != null
+                || filters.shops() != null && !filters.shops().isEmpty()
+                || filters.categories() != null && !filters.categories().isEmpty()
+                || filters.attributes() != null && !filters.attributes().isEmpty()
+                || filters.rating() != null
+                || filters.priceTier() != null && !filters.priceTier().isEmpty());
+    }
+
+    private boolean containsAny(String content, String... candidates) {
+        return candidates != null && java.util.Arrays.stream(candidates)
+                .filter(this::hasText)
+                .anyMatch(value -> containsCandidate(content, value));
+    }
+
+    private boolean containsAny(String content, List<String> candidates) {
+        return candidates != null && candidates.stream()
+                .filter(this::hasText)
+                .anyMatch(value -> containsCandidate(content, value));
+    }
+
+    private boolean containsCandidate(String content, String candidate) {
+        String normalizedCandidate = candidate.trim().toLowerCase(Locale.ROOT);
+        int start = content.indexOf(normalizedCandidate);
+        while (start >= 0) {
+            int end = start + normalizedCandidate.length();
+            if (normalizedCandidate.length() > 3
+                    || (start == 0 || !Character.isLetterOrDigit(content.charAt(start - 1)))
+                    && (end == content.length() || !Character.isLetterOrDigit(content.charAt(end)))) {
+                return true;
+            }
+            start = content.indexOf(normalizedCandidate, start + 1);
+        }
+        return false;
     }
 
     private boolean invalidLimit(Integer limit) {

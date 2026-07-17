@@ -310,10 +310,35 @@ class ShopifyOfferCartRoutingTest {
         var target = routingProvider.resolve(offer()).orElseThrow();
         UUID key = UUID.randomUUID();
 
-        transport.call(target, "cancel_cart", Map.of("cart_id", "cart"), new CartToolCallContext(key));
+        transport.call(target, "cancel_cart", Map.of("cart_id", "cart"),
+                new CartToolCallContext(key, "203.0.113.42"));
 
         verify(client).call(any(), eq(CommerceOperation.CART), eq("cancel_cart"), any(),
-                eq(Map.of("Idempotency-Key", key.toString())), eq(true));
+                eq(Map.of(
+                        "Idempotency-Key", key.toString(),
+                        ShopifyCartToolTransport.BUYER_IP_HEADER, "203.0.113.42"
+                )), eq(true));
+    }
+
+    @Test
+    void buyerIpReachesShopifyCartTransportAsServerControlledHeader() {
+        ShopifyMerchantUcpTransport client = mock(ShopifyMerchantUcpTransport.class);
+        when(client.call(any(), any(), any(), any(), any(), any(Boolean.class))).thenReturn(
+                new MerchantMcpToolCallResult(
+                        "https://shop.example/api/ucp/mcp", "{}", null, NegotiatedCapabilities.none()));
+        ShopifyExternalOfferCartRoutingProvider routingProvider = routeProvider();
+        ShopifyCartToolTransport transport = new ShopifyCartToolTransport(
+                client, new CartBindingMetrics(new SimpleMeterRegistry()), routingProvider, retryPolicy());
+
+        transport.call(
+                routingProvider.resolve(offer()).orElseThrow(),
+                "create_cart",
+                Map.of(),
+                CartToolCallContext.forBuyer("203.0.113.42")
+        );
+
+        verify(client).call(any(), eq(CommerceOperation.CART), eq("create_cart"), any(),
+                eq(Map.of(ShopifyCartToolTransport.BUYER_IP_HEADER, "203.0.113.42")), eq(true));
     }
 
     @Test
