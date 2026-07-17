@@ -238,6 +238,31 @@ public class ShopifyGlobalCatalogProvider {
                         )
                 ), parsed.payload());
             }
+            List<String> ignoredFilterPaths = ignoredFilterPaths(parsed.payload().messages());
+            if (!ignoredFilterPaths.isEmpty()) {
+                circuitBreaker.recordSuccess();
+                log.warn(
+                        "Shopify Global Catalog ignored requested hard filters; operation={}, paths={}",
+                        operation,
+                        ignoredFilterPaths
+                );
+                return new ExecutionResult(new CatalogSourceResult(
+                        ShopifyGlobalCatalogNormalizer.SHOPIFY,
+                        discoverySource(),
+                        operation,
+                        parsed.payload().ucp().version(),
+                        parsed.negotiatedCapabilities(),
+                        List.of(),
+                        null,
+                        false,
+                        new CatalogSourceFailure(
+                                CatalogSourceFailureKind.INVALID_REQUEST,
+                                "Shopify Global Catalog ignored one or more requested hard filters",
+                                null,
+                                null
+                        )
+                ), parsed.payload());
+            }
             NormalizedCandidates normalized = normalizer.normalize(parsed.payload());
             circuitBreaker.recordSuccess();
             return new ExecutionResult(new CatalogSourceResult(
@@ -263,8 +288,21 @@ public class ShopifyGlobalCatalogProvider {
                     exception.getMessage(),
                     exception.retryAfter().orElse(null),
                     exception.upstreamStatus().orElse(null)));
-        } catch (ShopifyGlobalCatalogContractException | IllegalArgumentException exception) {
+        } catch (ShopifyGlobalCatalogContractException exception) {
             circuitBreaker.recordFailure(null);
+            log.warn(
+                    "Shopify Global Catalog contract validation failed; operation={}, reason={}",
+                    operation,
+                    exception.getMessage()
+            );
+            return failedExecution(operation, new CatalogSourceFailure(
+                    CatalogSourceFailureKind.MALFORMED_RESPONSE,
+                    "Shopify Global Catalog response could not be normalized safely",
+                    null,
+                    null));
+        } catch (IllegalArgumentException exception) {
+            circuitBreaker.recordFailure(null);
+            log.warn("Shopify Global Catalog normalization rejected a value; operation={}", operation);
             return failedExecution(operation, new CatalogSourceFailure(
                     CatalogSourceFailureKind.MALFORMED_RESPONSE,
                     "Shopify Global Catalog response could not be normalized safely",
@@ -390,6 +428,31 @@ public class ShopifyGlobalCatalogProvider {
         return values == null
                 ? null
                 : values.stream().filter(this::hasText).map(String::trim).distinct().toList();
+    }
+
+    private List<String> ignoredFilterPaths(List<ShopifyGlobalCatalogResponse.Message> messages) {
+        if (messages == null) {
+            return List.of();
+        }
+        return messages.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(this::ignoredFilterMessage)
+                .map(message -> hasText(message.path()) ? message.path().trim() : "<unspecified>")
+                .distinct()
+                .toList();
+    }
+
+    private boolean ignoredFilterMessage(ShopifyGlobalCatalogResponse.Message message) {
+        String code = trimToNull(message.code());
+        String content = trimToNull(message.content());
+        boolean explicitlyIgnored = content != null
+                && content.toLowerCase(Locale.ROOT).contains("ignored");
+        if (!hasText(message.path())) {
+            return explicitlyIgnored;
+        }
+        String normalizedPath = message.path().trim().toLowerCase(Locale.ROOT);
+        boolean filterPath = normalizedPath.contains("filters");
+        return filterPath && (explicitlyIgnored || code != null && "not_found".equalsIgnoreCase(code));
     }
 
     private boolean invalidLimit(Integer limit) {

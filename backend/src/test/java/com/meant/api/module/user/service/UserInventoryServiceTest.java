@@ -492,7 +492,7 @@ class UserInventoryServiceTest {
 
     private UserCollectionProperties collectionProperties(int inventoryQuota) {
         return new UserCollectionProperties(
-                new UserCollectionProperties.SavedProducts(50, 100, 500, 50, 20),
+                new UserCollectionProperties.SavedProducts(50, 100, 500, 50),
                 new UserCollectionProperties.Inventory(50, 100, inventoryQuota)
         );
     }

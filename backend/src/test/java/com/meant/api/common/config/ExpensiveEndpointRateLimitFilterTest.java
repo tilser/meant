@@ -38,16 +38,16 @@ class ExpensiveEndpointRateLimitFilterTest {
     void limitsExpensiveAuthenticatedRequestsByUserSubject() throws Exception {
         ExpensiveEndpointRateLimitFilter filter = filter(
                 2,
-                endpoint("POST", "/api/users/me/product-searches")
+                endpoint("POST", "/api/v1/users/me/product-searches")
         );
         authenticate("user-1");
 
-        assertAllowed(filter, request("POST", "/api/users/me/product-searches", "203.0.113.10"));
-        assertAllowed(filter, request("POST", "/api/users/me/product-searches", "203.0.113.11"));
+        assertAllowed(filter, request("POST", "/api/v1/users/me/product-searches", "203.0.113.10"));
+        assertAllowed(filter, request("POST", "/api/v1/users/me/product-searches", "203.0.113.11"));
 
         MockHttpServletResponse response = doFilter(
                 filter,
-                request("POST", "/api/users/me/product-searches", "203.0.113.12")
+                request("POST", "/api/v1/users/me/product-searches", "203.0.113.12")
         );
 
         assertThat(response.getStatus()).isEqualTo(429);
@@ -106,15 +106,15 @@ class ExpensiveEndpointRateLimitFilterTest {
     void matchesMatrixParameterVariantsOfConfiguredExpensivePaths() throws Exception {
         ExpensiveEndpointRateLimitFilter filter = filter(
                 1,
-                endpoint("POST", "/api/users/me/product-searches")
+                endpoint("POST", "/api/v1/users/me/product-searches")
         );
         authenticate("user-1");
 
-        assertAllowed(filter, request("POST", "/api/users/me/product-searches;v=1", "203.0.113.10"));
+        assertAllowed(filter, request("POST", "/api/v1/users/me/product-searches;v=1", "203.0.113.10"));
 
         MockHttpServletResponse limited = doFilter(
                 filter,
-                request("POST", "/api/users/me/product-searches;v=2", "203.0.113.10")
+                request("POST", "/api/v1/users/me/product-searches;v=2", "203.0.113.10")
         );
 
         assertThat(limited.getStatus()).isEqualTo(429);
@@ -124,13 +124,13 @@ class ExpensiveEndpointRateLimitFilterTest {
     void allowsUnmatchedTrafficWithoutConsumingRateLimit() throws Exception {
         ExpensiveEndpointRateLimitFilter filter = filter(
                 1,
-                endpoint("POST", "/api/users/me/product-searches")
+                endpoint("POST", "/api/v1/users/me/product-searches")
         );
         authenticate("user-1");
 
         assertAllowed(filter, request("GET", "/actuator/health", "203.0.113.10"));
         assertAllowed(filter, request("GET", "/actuator/health", "203.0.113.10"));
-        assertAllowed(filter, request("POST", "/api/users/me/product-searches", "203.0.113.10"));
+        assertAllowed(filter, request("POST", "/api/v1/users/me/product-searches", "203.0.113.10"));
     }
 
     private static ExpensiveEndpointRateLimitFilter filter(

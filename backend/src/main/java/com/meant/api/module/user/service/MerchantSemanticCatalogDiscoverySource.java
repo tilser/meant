@@ -35,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import org.springframework.stereotype.Component;
 
-/** Canonical adapter around the existing Meant merchant-semantic search and fan-out. */
+/** Merchant-scoped adapter around the existing Meant semantic storefront search and fan-out. */
 @Component
 public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoverySource {
 
@@ -76,6 +76,11 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
     @Override
     public Duration timeout() {
         return timeout;
+    }
+
+    @Override
+    public boolean supports(CatalogDiscoveryRequest request) {
+        return !request.broad();
     }
 
     @Override

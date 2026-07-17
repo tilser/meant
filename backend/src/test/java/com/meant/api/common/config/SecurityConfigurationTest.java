@@ -26,7 +26,7 @@ class SecurityConfigurationTest {
         assertThat(apiConfiguration).isNotNull();
         assertThat(apiConfiguration.getAllowedOrigins()).containsExactly("https://app.example.com");
         assertThat(apiConfiguration.getAllowedMethods())
-                .containsExactly("GET", "POST", "PATCH", "DELETE", "OPTIONS");
+                .containsExactly("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
         assertThat(source.getCorsConfiguration(request("/actuator/health"))).isNull();
     }
 

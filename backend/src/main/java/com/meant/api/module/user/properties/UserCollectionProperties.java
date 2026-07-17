@@ -31,10 +31,7 @@ public record UserCollectionProperties(
             int quota,
 
             @Positive
-            int discoveryLimit,
-
-            @Positive
-            int assistantContextLimit
+            int discoveryLimit
     ) {
 
         @AssertTrue(message = "saved product default limit must be less than or equal to the max limit")
@@ -45,11 +42,6 @@ public record UserCollectionProperties(
         @AssertTrue(message = "saved product discovery limit must be less than or equal to the quota")
         public boolean isDiscoveryLimitValid() {
             return discoveryLimit <= quota;
-        }
-
-        @AssertTrue(message = "saved product assistant context limit must be less than or equal to the quota")
-        public boolean isAssistantContextLimitValid() {
-            return assistantContextLimit <= quota;
         }
     }
 

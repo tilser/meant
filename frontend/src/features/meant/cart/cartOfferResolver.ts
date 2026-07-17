@@ -45,6 +45,7 @@ export async function resolveCartableOffer(input: {
   product: Product
   offer: Offer | null
   location?: UserLocation
+  expectedUserId?: string
 }): Promise<ResolveCartableOfferResult> {
   const { product, offer, location } = input
   if (!offer) {
@@ -84,6 +85,7 @@ export async function resolveCartableOffer(input: {
     productId: merchantProductId,
     addressCountry: location?.code,
     language: browserLanguage(),
+    expectedUserId: input.expectedUserId,
   })
   const resolvedVariantId = details.selectedVariantId?.trim()
   const resolvedOffer: Offer = {

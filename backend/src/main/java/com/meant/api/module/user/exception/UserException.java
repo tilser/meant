@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatusCode;
 public class UserException extends RuntimeException implements ApiException {
 
     private static final String BAD_REQUEST_DETAIL = "The request could not be processed.";
+    private static final String CONFLICT_DETAIL = "The resource changed while the request was being processed.";
     private static final String FORBIDDEN_DETAIL = "You are not allowed to access this resource.";
     private static final String NOT_FOUND_DETAIL = "The requested resource was not found.";
 
@@ -44,5 +45,9 @@ public class UserException extends RuntimeException implements ApiException {
 
     public static UserException notFound(String message) {
         return new UserException(message, null, HttpStatus.NOT_FOUND, ApiErrorCode.NOT_FOUND, NOT_FOUND_DETAIL);
+    }
+
+    public static UserException conflict(String message) {
+        return new UserException(message, null, HttpStatus.CONFLICT, ApiErrorCode.BAD_REQUEST, CONFLICT_DETAIL);
     }
 }

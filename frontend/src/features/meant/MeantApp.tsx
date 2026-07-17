@@ -50,15 +50,29 @@ import { productFromSearchResult } from './product/productSearchMapping'
 import { savedProductFromProfile, savedProductInput } from './product/savedProductMapping'
 import { OrdersView } from './orders/OrdersView'
 import { orderFromProfile } from './orders/orderMapping'
-import { FloatingAsk } from './ask/FloatingAsk'
-import { assistantProductContext } from './ask/assistantContext'
-import type { AgentActivity, DiscoverFindRequest, ProductDetailChatRequest } from './chat/types'
+import type {
+  DiscoverFindRequest,
+  DiscoverProductSearchTurnInput,
+  DiscoverProductSearchTurnResult,
+  ProductDetailChatRequest,
+} from './chat/types'
 import { isRenderableSearchProduct } from './chat/utils'
 import type { ProductOpenProps, ProductSaveProps } from './product/types'
 import { productWithCuratedFields } from './product/productCuration'
 import { deliveryLocationSummary } from './shared/locations'
+import {
+  beginAccountOwnedOperation,
+  endAccountOwnedOperation,
+  isAccountOwnedOperationCurrent,
+  type AccountOwnedOperation,
+} from './shared/accountOwnedOperation'
+import {
+  accountSessionStorageKey,
+  accountStorageKey,
+  purgeLegacyAccountStorage,
+} from './shared/accountStorage'
 import { DustingContainer } from './shared/DustingContainer'
-import { useStoredState } from './shared/storage'
+import { useSessionStoredState, useStoredState } from './shared/storage'
 import { CartIcon, EmptyState, ViewHead } from './shared/ui'
 import { HeartIcon, MoonIcon, SunIcon } from './shared/icons'
 import { Shelf } from './shelf/Shelf'
@@ -70,6 +84,7 @@ import {
   createUserInventoryItem,
   createUserInventoryPhotoItem,
   deleteUserInventoryItem,
+  deleteUserProductSearchPreference,
   exportUserInventory,
   getCartCheckout,
   getCurrentUser,
@@ -86,11 +101,11 @@ import {
   removeSavedProduct,
   removeUserTasteSignal,
   rejectUserTasteSuggestion,
+  qualifyProductSearch,
   revokeMerchantIdentityLink,
   saveUserProduct,
   startMerchantIdentityAuthorization,
   searchGroupedProducts,
-  type AssistantChatContextInput,
   type CheckoutAssistantMessage,
   type CheckoutProfile,
   type MerchantIdentityLinkProfile,
@@ -100,6 +115,7 @@ import {
   type UserInventoryItemProfile,
   type UserInventoryItemUpdateInput,
   type UserInventoryPhotoInput,
+  type UserProductSearchPreferenceProfile,
   type UserTasteProfile,
   updateUserInventoryItem,
   updateNewsletterSubscription,
@@ -130,7 +146,6 @@ import {
   normalizedMerchantName,
   productsForLocation,
   productsForClothingFit,
-  readStorage,
 } from './utils'
 
 const EMPTY_TASTE_PROFILE: UserTasteProfile = {
@@ -139,47 +154,10 @@ const EMPTY_TASTE_PROFILE: UserTasteProfile = {
   suggestions: [],
 }
 
+purgeLegacyAccountStorage()
+
 interface NavOptions {
   home?: boolean
-}
-
-const askContexts: Readonly<Record<View, { label: string; suggestions: readonly string[] }>> = {
-  discover: {
-    label: 'Your feed',
-    suggestions: [
-      "What's the best value here?",
-      'Find me something healthy',
-      'Help me pick clothing',
-    ],
-  },
-  saved: {
-    label: 'Your saved items',
-    suggestions: ['Compare my saved items', 'Best value in my list?'],
-  },
-  compare: {
-    label: 'Comparing products',
-    suggestions: ['Which one is better for me?', 'Cheaper of these?'],
-  },
-  inventory: {
-    label: 'Your inventory',
-    suggestions: ['What should I restock?', 'What complements this?'],
-  },
-  preferences: {
-    label: 'Your profile',
-    suggestions: ['What should I add?', 'Suggest products for these filters'],
-  },
-  cart: {
-    label: 'Your cart',
-    suggestions: ['Is everything compatible?', 'Find me more codes'],
-  },
-  orders: {
-    label: 'Your orders',
-    suggestions: ["Where's my latest order?", 'What did I buy last month?'],
-  },
-  account: {
-    label: 'Your account',
-    suggestions: ['Where are my saved items?', 'How do I change preferences?'],
-  },
 }
 
 const DEFAULT_GREETING = 'Good afternoon'
@@ -284,15 +262,6 @@ function preferenceFromFilter(filter: ShoppingFilterProfile): Preference {
   }
 }
 
-function initialDeliveryLocations(): UserLocation[] {
-  const locations = readStorage<UserLocation[]>('meant.locations', [])
-  if (Array.isArray(locations) && locations.length > 0) {
-    return locations
-  }
-  const legacyLocation = readStorage<UserLocation | null>('meant.location', null)
-  return legacyLocation ? [legacyLocation] : []
-}
-
 function settingsLocations(settings: UserSettingsProfile): UserLocation[] {
   if (settings.locations?.length) {
     return settings.locations
@@ -317,36 +286,6 @@ function applySettingsPayload(
   setBudget(settings.budget)
   setDeliveryLocations(settingsLocations(settings))
   setClothingFit(clothingFitFromSettings(settings))
-}
-
-function merchantNameSet(merchant: MerchantProfile): ReadonlySet<string> {
-  return new Set(
-    [normalizedMerchantName(merchant.name), normalizedMerchantName(merchant.domain)].filter(
-      Boolean,
-    ),
-  )
-}
-
-function productForMerchant(product: Product, merchant: MerchantProfile): Product | null {
-  const merchantNames = merchantNameSet(merchant)
-  const offers = product.offers.filter(
-    (offer) =>
-      offer.merchantId === merchant.id ||
-      merchantNames.has(normalizedMerchantName(offer.merchantDomain)) ||
-      merchantNames.has(normalizedMerchantName(offer.merchant)),
-  )
-  if (offers.length > 0) {
-    return {
-      ...product,
-      offers,
-      priceFrom: Math.min(...offers.map((offer) => offer.price)),
-      merchants: 1,
-    }
-  }
-  if (merchantNames.has(normalizedMerchantName(product.brand))) {
-    return product
-  }
-  return null
 }
 
 const nextShelfUid = () =>
@@ -673,17 +612,13 @@ export function MeantApp() {
   const [authMode, setAuthMode] = useState<AuthMode>('signin')
   const { session, loading: authLoading, signOut, ...authActions } = useSupabaseAuth()
   const authed = Boolean(session)
+  const userId = session?.user?.id
+  const userEmail = session?.user?.email
   const [theme, setTheme] = useStoredState<Theme>('meant.theme', 'light')
-  const [reply, setReply] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Product[]>([])
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
-  const [productSearchActivities, setProductSearchActivities] = useState<AgentActivity[]>([])
+  const [accountStateOwnerId, setAccountStateOwnerId] = useState<string | null>(userId ?? null)
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
-  const [merchantsLoading, setMerchantsLoading] = useState(false)
   const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>(
     [],
   )
@@ -692,17 +627,16 @@ export function MeantApp() {
   const [inventoryItems, setInventoryItems] = useState<UserInventoryItemProfile[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
-  const [selectedMerchantId, setSelectedMerchantId] = useStoredState<string | null>(
-    'meant.merchant',
-    null,
-  )
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [activeProductResearchQuery, setActiveProductResearchQuery] = useState<string | null>(null)
   const [navProducts, setNavProducts] = useState<readonly Product[]>([])
   const [savedProductDetailLoadingId, setSavedProductDetailLoadingId] = useState<ProductId | null>(
     null,
   )
-  const [shelf, setShelf] = useStoredState<ShelfItem[]>('meant.shelf', [])
+  const [shelf, setShelf] = useSessionStoredState<ShelfItem[]>(
+    accountSessionStorageKey('meant.shelf', userId),
+    [],
+  )
   const [shelfOpen, setShelfOpen] = useState(false)
   const [shelfFlashMessageId, setShelfFlashMessageId] = useState<string | null>(null)
   const [discoverFindRequest, setDiscoverFindRequest] = useState<DiscoverFindRequest | null>(null)
@@ -712,24 +646,39 @@ export function MeantApp() {
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
   const [savedProducts, setSavedProducts] = useState<Product[]>([])
   const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
-  const [compareIds, setCompareIds] = useStoredState<ProductId[]>('meant.compare', [
-    ...DEFAULT_COMPARE,
-  ])
-  const [compareProducts, setCompareProducts] = useStoredState<Product[]>(
-    'meant.compareProducts',
+  const [compareIds, setCompareIds] = useSessionStoredState<ProductId[]>(
+    accountSessionStorageKey('meant.compare', userId),
+    [...DEFAULT_COMPARE],
+  )
+  const [compareProducts, setCompareProducts] = useSessionStoredState<Product[]>(
+    accountSessionStorageKey('meant.compareProducts', userId),
     [],
   )
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
-  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>('meant.prefsOn', [
-    ...DEFAULT_PREFERENCE_IDS,
-  ])
-  const [tasteProfile, setTasteProfile] = useState<UserTasteProfile>(EMPTY_TASTE_PROFILE)
-  const [budget, setBudget] = useStoredState<number | null>('meant.budget', DEFAULT_BUDGET)
-  const [deliveryLocations, setDeliveryLocations] = useStoredState<UserLocation[]>(
-    'meant.locations',
-    initialDeliveryLocations(),
+  const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>(
+    accountStorageKey('meant.prefsOn', userId),
+    [...DEFAULT_PREFERENCE_IDS],
   )
-  const [clothingFit, setClothingFit] = useStoredState<ClothingFit>('meant.clothingFit', 'none')
+  const [tasteProfile, setTasteProfile] = useState<UserTasteProfile>(EMPTY_TASTE_PROFILE)
+  const [budget, setBudget] = useStoredState<number | null>(
+    accountStorageKey('meant.budget', userId),
+    DEFAULT_BUDGET,
+  )
+  const [deliveryLocations, setDeliveryLocations] = useStoredState<UserLocation[]>(
+    accountStorageKey('meant.locations', userId),
+    [],
+  )
+  const [clothingFit, setClothingFit] = useStoredState<ClothingFit>(
+    accountStorageKey('meant.clothingFit', userId),
+    'none',
+  )
+  const [productSearchPreferences, setProductSearchPreferences] = useState<
+    UserProductSearchPreferenceProfile[]
+  >([])
+  const [productSearchPreferencesBusy, setProductSearchPreferencesBusy] = useState(false)
+  const [productSearchPreferencesError, setProductSearchPreferencesError] = useState<string | null>(
+    null,
+  )
   const [checkoutMerchantKey, setCheckoutMerchantKey] = useState<string | null>(null)
   const [checkoutError, setCheckoutError] = useState<{
     merchant: string
@@ -742,28 +691,100 @@ export function MeantApp() {
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersError, setOrdersError] = useState<string | null>(null)
-  const [user, setUser] = useStoredState<UserAccount>('meant.user', DEFAULT_USER)
+  const [user, setUser] = useStoredState<UserAccount>(
+    accountStorageKey('meant.user', userId),
+    DEFAULT_USER,
+  )
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
-  const searchRequestRef = useRef(0)
-  const searchAbortRef = useRef<AbortController | null>(null)
+  const searchRequestSequenceRef = useRef(0)
+  const searchRequestsRef = useRef(
+    new Map<string, { requestId: number; controller: AbortController }>(),
+  )
+  const activeUserIdRef = useRef(userId)
+  activeUserIdRef.current = userId
+  const productSearchPreferencesQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const productSearchPreferencesPendingOperationsRef = useRef(0)
+  const productSearchPreferencesRefreshPendingRef = useRef(false)
+  const productSearchPreferencesSessionRef = useRef(0)
   const savedProductDetailRequestRef = useRef<{
     productId: ProductId
+    ownerId: string
     controller: AbortController
   } | null>(null)
   const searchSuggestionsRequestRef = useRef(0)
   const inventoryRequestRef = useRef(0)
   const ordersRequestRef = useRef(0)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
-  const savePendingRef = useRef(new Set<ProductId>())
+  const savePendingRef = useRef(new Map<ProductId, AccountOwnedOperation<ProductId>>())
   const allPreferencesRef = useRef<readonly Preference[]>(availablePrefs)
   const greeting = useBrowserGreeting()
   const closeAccountMenu = useCallback(() => {
     setAccountMenu(false)
   }, [])
 
+  useEffect(() => {
+    searchRequestsRef.current.forEach(({ controller }) => controller.abort())
+    searchRequestsRef.current.clear()
+    searchSuggestionsRequestRef.current += 1
+    inventoryRequestRef.current += 1
+    ordersRequestRef.current += 1
+    productSearchPreferencesSessionRef.current += 1
+    savedProductDetailRequestRef.current?.controller.abort()
+    savedProductDetailRequestRef.current = null
+    setSavedProductDetailLoadingId(null)
+    setRemoteProducts([])
+    setSavedIds([])
+    setSavedProducts([])
+    setActiveProduct(null)
+    setActiveProductResearchQuery(null)
+    setNavProducts([])
+    setDiscoverFindRequest(null)
+    setProductDetailChatRequest(null)
+    setSearchSuggestions([])
+    setMerchants([])
+    setMerchantIdentityLinks([])
+    setMerchantIdentityLinksLoading(false)
+    setMerchantIdentityLinksError(null)
+    setInventoryItems([])
+    setInventoryLoading(false)
+    setInventoryError(null)
+    setOrders([])
+    setOrdersLoading(false)
+    setOrdersError(null)
+    setTasteProfile(EMPTY_TASTE_PROFILE)
+    setProductSearchPreferences([])
+    setProductSearchPreferencesError(null)
+    setActiveCheckout(null)
+    setCheckoutMerchantKey(null)
+    setCheckoutError(null)
+    setCheckoutFlowBusy(false)
+    setCheckoutFlowError(null)
+    setCartPeek(false)
+    savePendingRef.current.clear()
+    setSavePendingIds([])
+    setAccountStateOwnerId(userId ?? null)
+  }, [userId])
+
+  const enqueueProductSearchPreferencesOperation = useCallback((operation: () => Promise<void>) => {
+    productSearchPreferencesPendingOperationsRef.current += 1
+    setProductSearchPreferencesBusy(true)
+    const queued = productSearchPreferencesQueueRef.current.then(operation)
+    productSearchPreferencesQueueRef.current = queued.catch(() => undefined)
+    void queued
+      .finally(() => {
+        productSearchPreferencesPendingOperationsRef.current -= 1
+        if (productSearchPreferencesPendingOperationsRef.current === 0) {
+          setProductSearchPreferencesBusy(false)
+        }
+      })
+      .catch(() => undefined)
+    return queued
+  }, [])
+
   const refreshMerchantIdentityLinks = useCallback(async () => {
-    if (!authed) {
+    const requestedUserId = userId
+    if (!requestedUserId) {
       setMerchantIdentityLinks([])
       setMerchantIdentityLinksError(null)
       return
@@ -771,30 +792,76 @@ export function MeantApp() {
     setMerchantIdentityLinksLoading(true)
     setMerchantIdentityLinksError(null)
     try {
-      setMerchantIdentityLinks(await getMerchantIdentityLinks())
+      const links = await getMerchantIdentityLinks({ expectedUserId: requestedUserId })
+      if (activeUserIdRef.current !== requestedUserId) return
+      setMerchantIdentityLinks(links)
     } catch {
+      if (activeUserIdRef.current !== requestedUserId) return
       setMerchantIdentityLinks([])
       setMerchantIdentityLinksError('Could not load connected stores')
     } finally {
-      setMerchantIdentityLinksLoading(false)
+      if (activeUserIdRef.current === requestedUserId) {
+        setMerchantIdentityLinksLoading(false)
+      }
     }
-  }, [authed])
+  }, [userId])
 
   const allPreferences = availablePrefs
+  compareIdsRef.current = compareIds
+  allPreferencesRef.current = allPreferences
   const activePreferences = allPreferences.filter((preference) => prefsOn.includes(preference.id))
-  const savedSet = useMemo(() => new Set(savedIds), [savedIds])
-  const savePendingSet = useMemo(() => new Set(savePendingIds), [savePendingIds])
+  const accountStateCurrent = accountStateOwnerId === (userId ?? null)
+  const currentSearchSuggestions = accountStateCurrent ? searchSuggestions : []
+  const currentMerchants = accountStateCurrent ? merchants : []
+  const currentMerchantIdentityLinks = accountStateCurrent ? merchantIdentityLinks : []
+  const currentMerchantIdentityLinksLoading = accountStateCurrent
+    ? merchantIdentityLinksLoading
+    : false
+  const currentMerchantIdentityLinksError = accountStateCurrent ? merchantIdentityLinksError : null
+  const currentInventoryItems = accountStateCurrent ? inventoryItems : []
+  const currentInventoryLoading = accountStateCurrent ? inventoryLoading : false
+  const currentInventoryError = accountStateCurrent ? inventoryError : null
+  const currentOrders = accountStateCurrent ? orders : []
+  const currentOrdersLoading = accountStateCurrent ? ordersLoading : false
+  const currentOrdersError = accountStateCurrent ? ordersError : null
+  const currentTasteProfile = accountStateCurrent ? tasteProfile : EMPTY_TASTE_PROFILE
+  const currentProductSearchPreferences = accountStateCurrent ? productSearchPreferences : []
+  const currentProductSearchPreferencesBusy = accountStateCurrent
+    ? productSearchPreferencesBusy
+    : false
+  const currentProductSearchPreferencesError = accountStateCurrent
+    ? productSearchPreferencesError
+    : null
+  const currentRemoteProducts = useMemo(
+    () => (accountStateCurrent ? remoteProducts : []),
+    [accountStateCurrent, remoteProducts],
+  )
+  const currentSavedIds = useMemo(
+    () => (accountStateCurrent ? savedIds : []),
+    [accountStateCurrent, savedIds],
+  )
+  const currentSavedProducts = useMemo(
+    () => (accountStateCurrent ? savedProducts : []),
+    [accountStateCurrent, savedProducts],
+  )
+  const currentActiveProduct = accountStateCurrent ? activeProduct : null
+  const currentProductDetailChatRequest = accountStateCurrent ? productDetailChatRequest : null
+  const currentDiscoverFindRequest = accountStateCurrent ? discoverFindRequest : null
+  const savedSet = useMemo(() => new Set(currentSavedIds), [currentSavedIds])
+  const savePendingSet = useMemo(
+    () => new Set(accountStateCurrent ? savePendingIds : []),
+    [accountStateCurrent, savePendingIds],
+  )
   const compareSet = useMemo(() => new Set(compareIds), [compareIds])
   const allKnownProducts = useMemo(
     () =>
       uniqueProductSnapshotsByPriority(
-        savedProducts,
-        searchResults,
-        remoteProducts,
+        currentSavedProducts,
+        currentRemoteProducts,
         PRODUCTS,
         compareProducts,
       ),
-    [compareProducts, remoteProducts, savedProducts, searchResults],
+    [compareProducts, currentRemoteProducts, currentSavedProducts],
   )
   const allKnownProductsMap = useMemo(
     () =>
@@ -817,9 +884,13 @@ export function MeantApp() {
     removeCartCode,
     updateDeliveryAddress,
     updateDeliveryOption,
-  } = useCartController(allKnownProducts)
+  } = useCartController(allKnownProducts, userId)
   const addProductOfferToCartResolved = useCallback(
     async (product: Product, offer: Offer): Promise<boolean> => {
+      const requestedUserId = userId
+      if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
+        return false
+      }
       const exactOfferKey = offer.offerKey?.trim()
       if (exactOfferKey) {
         return addSelectedOfferToCart(product, exactOfferKey)
@@ -829,8 +900,9 @@ export function MeantApp() {
           product,
           offer,
           location: deliveryLocations[0],
+          expectedUserId: requestedUserId,
         })
-        if (!resolved.ok) {
+        if (!resolved.ok || activeUserIdRef.current !== requestedUserId) {
           return false
         }
         return addProductOfferToCart(resolved.product, resolved.offer)
@@ -838,25 +910,25 @@ export function MeantApp() {
         return false
       }
     },
-    [addProductOfferToCart, addSelectedOfferToCart, deliveryLocations],
+    [addProductOfferToCart, addSelectedOfferToCart, deliveryLocations, userId],
   )
   const savedListProducts = useMemo(
     () =>
-      savedIds
+      currentSavedIds
         .map((id) => allKnownProductsMap.get(id))
         .filter((product): product is Product => Boolean(product)),
-    [allKnownProductsMap, savedIds],
+    [allKnownProductsMap, currentSavedIds],
   )
   const discoveryProducts = useMemo(() => {
     const seen = new Set<ProductId>()
-    return [...savedListProducts, ...remoteProducts].filter((product) => {
+    return [...savedListProducts, ...currentRemoteProducts].filter((product) => {
       if (seen.has(product.id)) {
         return false
       }
       seen.add(product.id)
       return true
     })
-  }, [remoteProducts, savedListProducts])
+  }, [currentRemoteProducts, savedListProducts])
 
   const liveProfile = useMemo(
     () => ({
@@ -866,36 +938,18 @@ export function MeantApp() {
     [user.name],
   )
 
-  const searchActive = Boolean(query || searchLoading || searchError)
-  const baseFeed = searchActive ? searchResults : discoveryProducts
+  const baseFeed = discoveryProducts
   const shippingScopedFeedProducts = productsForLocation(baseFeed, deliveryLocations)
   const unscopedFeedProducts = productsForClothingFit(shippingScopedFeedProducts, clothingFit)
-  const selectedMerchant = useMemo(
-    () => merchants.find((merchant) => merchant.id === selectedMerchantId) ?? null,
-    [merchants, selectedMerchantId],
-  )
-  const merchantCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    merchants.forEach((merchant) => counts.set(merchant.id, 0))
-    unscopedFeedProducts.forEach((product) => {
-      merchants.forEach((merchant) => {
-        if (productForMerchant(product, merchant)) {
-          counts.set(merchant.id, (counts.get(merchant.id) ?? 0) + 1)
-        }
-      })
-    })
-    return counts
-  }, [merchants, unscopedFeedProducts])
-  const merchantScopedFeedProducts = selectedMerchant
-    ? unscopedFeedProducts
-        .map((product) => productForMerchant(product, selectedMerchant))
-        .filter((product): product is Product => Boolean(product))
-    : unscopedFeedProducts
-  const feedProducts = merchantScopedFeedProducts
+  const feedProducts = unscopedFeedProducts
   const hiddenByShip = baseFeed.length - shippingScopedFeedProducts.length
 
   const refreshSavedProductForOpen = useCallback(
     (product: Product, force = false) => {
+      const requestOwnerId = userId
+      if (!requestOwnerId || activeUserIdRef.current !== requestOwnerId) {
+        return
+      }
       if (!force && !savedSet.has(product.id)) {
         savedProductDetailRequestRef.current?.controller.abort()
         savedProductDetailRequestRef.current = null
@@ -904,7 +958,11 @@ export function MeantApp() {
       }
       savedProductDetailRequestRef.current?.controller.abort()
       const controller = new AbortController()
-      savedProductDetailRequestRef.current = { productId: product.id, controller }
+      savedProductDetailRequestRef.current = {
+        productId: product.id,
+        ownerId: requestOwnerId,
+        controller,
+      }
       setSavedProductDetailLoadingId(product.id)
       setSavedProducts((current) =>
         current.map((candidate) =>
@@ -919,13 +977,18 @@ export function MeantApp() {
       setActiveProduct((current) =>
         current?.id === product.id ? savedProductRefreshShell(current) : current,
       )
-      void getSavedProduct(product.id, controller.signal)
+      void getSavedProduct(product.id, {
+        expectedUserId: requestOwnerId,
+        signal: controller.signal,
+      })
         .then((profile) => {
           const currentRequest = savedProductDetailRequestRef.current
           if (
             controller.signal.aborted ||
+            activeUserIdRef.current !== requestOwnerId ||
             currentRequest?.controller !== controller ||
-            currentRequest.productId !== product.id
+            currentRequest.productId !== product.id ||
+            currentRequest.ownerId !== requestOwnerId
           ) {
             return
           }
@@ -955,7 +1018,7 @@ export function MeantApp() {
           }
         })
     },
-    [savedSet],
+    [savedSet, userId],
   )
 
   const openProduct = useCallback(
@@ -968,8 +1031,8 @@ export function MeantApp() {
     [refreshSavedProductForOpen],
   )
 
-  const navIndex = activeProduct
-    ? navProducts.findIndex((candidate) => candidate.id === activeProduct.id)
+  const navIndex = currentActiveProduct
+    ? navProducts.findIndex((candidate) => candidate.id === currentActiveProduct.id)
     : -1
   const canNavPrev = navIndex > 0
   const canNavNext = navIndex >= 0 && navIndex < navProducts.length - 1
@@ -987,49 +1050,37 @@ export function MeantApp() {
   )
 
   useEffect(() => {
-    compareIdsRef.current = compareIds
-  }, [compareIds])
-
-  useEffect(() => {
-    allPreferencesRef.current = allPreferences
-  }, [allPreferences])
-
-  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
   useEffect(() => {
-    if (!authed) {
+    const requestedUserId = userId
+    if (!requestedUserId) {
       setMerchants([])
-      setMerchantsLoading(false)
       return
     }
     let active = true
-    setMerchantsLoading(true)
-    getMerchants()
+    getMerchants({ expectedUserId: requestedUserId })
       .then((result) => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setMerchants(result)
       })
       .catch(() => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setMerchants([])
-      })
-      .finally(() => {
-        if (!active) return
-        setMerchantsLoading(false)
       })
     return () => {
       active = false
     }
-  }, [authed])
+  }, [userId])
 
   useEffect(() => {
     void refreshMerchantIdentityLinks()
   }, [refreshMerchantIdentityLinks])
 
   useEffect(() => {
-    if (!authed) {
+    const requestedUserId = userId
+    if (!requestedUserId) {
       return
     }
     const params = new URLSearchParams(window.location.search)
@@ -1053,9 +1104,14 @@ export function MeantApp() {
       window.location.pathname + (remainingSearch ? `?${remainingSearch}` : ''),
     )
     let active = true
-    completeMerchantIdentityAuthorization({ state, code, issuer })
+    completeMerchantIdentityAuthorization({
+      state,
+      code,
+      issuer,
+      expectedUserId: requestedUserId,
+    })
       .then((link) => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setMerchantIdentityLinks((current) => [
           link,
           ...current.filter((candidate) => candidate.merchantId !== link.merchantId),
@@ -1063,29 +1119,22 @@ export function MeantApp() {
         setMerchantIdentityLinksError(null)
       })
       .catch(() => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setMerchantIdentityLinksError('Could not complete store connection')
       })
     return () => {
       active = false
     }
-  }, [authed])
-
-  useEffect(() => {
-    if (selectedMerchantId && merchants.length > 0 && !selectedMerchant) {
-      setSelectedMerchantId(null)
-    }
-  }, [merchants.length, selectedMerchant, selectedMerchantId, setSelectedMerchantId])
+  }, [userId])
 
   // Once authenticated, hydrate the profile from the backend (which creates the users row on first
   // call). Falls back to the JWT email if the backend is unreachable so the shell still renders.
   // Keyed on the user identity rather than the whole session object so periodic token refreshes
   // (which replace `session` hourly) don't trigger a redundant re-fetch.
-  const userId = session?.user?.id
-  const userEmail = session?.user?.email
   const loadInventory = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!userId) {
+      const requestedUserId = userId
+      if (!requestedUserId) {
         setInventoryItems([])
         setInventoryError(null)
         return
@@ -1097,18 +1146,28 @@ export function MeantApp() {
       }
       setInventoryError(null)
       try {
-        const items = await getUserInventoryItems()
-        if (inventoryRequestRef.current !== requestId) {
+        const items = await getUserInventoryItems({ expectedUserId: requestedUserId })
+        if (
+          inventoryRequestRef.current !== requestId ||
+          activeUserIdRef.current !== requestedUserId
+        ) {
           return
         }
         setInventoryItems(items)
       } catch {
-        if (inventoryRequestRef.current !== requestId) {
+        if (
+          inventoryRequestRef.current !== requestId ||
+          activeUserIdRef.current !== requestedUserId
+        ) {
           return
         }
         setInventoryError('Could not load inventory')
       } finally {
-        if (inventoryRequestRef.current === requestId && !options?.silent) {
+        if (
+          inventoryRequestRef.current === requestId &&
+          activeUserIdRef.current === requestedUserId &&
+          !options?.silent
+        ) {
           setInventoryLoading(false)
         }
       }
@@ -1118,7 +1177,8 @@ export function MeantApp() {
 
   const loadOrders = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!userId) {
+      const requestedUserId = userId
+      if (!requestedUserId) {
         setOrders([])
         setOrdersError(null)
         setOrdersLoading(false)
@@ -1131,19 +1191,23 @@ export function MeantApp() {
       }
       setOrdersError(null)
       try {
-        const result = await getOrders()
-        if (ordersRequestRef.current !== requestId) {
+        const result = await getOrders({ expectedUserId: requestedUserId })
+        if (ordersRequestRef.current !== requestId || activeUserIdRef.current !== requestedUserId) {
           return
         }
         setOrders(result.map(orderFromProfile))
       } catch {
-        if (ordersRequestRef.current !== requestId) {
+        if (ordersRequestRef.current !== requestId || activeUserIdRef.current !== requestedUserId) {
           return
         }
         setOrdersError('Could not load orders')
         setOrders([])
       } finally {
-        if (ordersRequestRef.current === requestId && !options?.silent) {
+        if (
+          ordersRequestRef.current === requestId &&
+          activeUserIdRef.current === requestedUserId &&
+          !options?.silent
+        ) {
           setOrdersLoading(false)
         }
       }
@@ -1172,7 +1236,8 @@ export function MeantApp() {
   }, [authed, loadOrders])
 
   const refreshSearchSuggestions = useCallback(async () => {
-    if (!userId) {
+    const requestedUserId = userId
+    if (!requestedUserId) {
       setSearchSuggestions([])
       return
     }
@@ -1180,13 +1245,19 @@ export function MeantApp() {
     const requestId = searchSuggestionsRequestRef.current + 1
     searchSuggestionsRequestRef.current = requestId
     try {
-      const result = await getUserProductSearchSuggestions()
-      if (searchSuggestionsRequestRef.current !== requestId) {
+      const result = await getUserProductSearchSuggestions({ expectedUserId: requestedUserId })
+      if (
+        searchSuggestionsRequestRef.current !== requestId ||
+        activeUserIdRef.current !== requestedUserId
+      ) {
         return
       }
       setSearchSuggestions(completeSearchSuggestions(result.suggestions))
     } catch {
-      if (searchSuggestionsRequestRef.current !== requestId) {
+      if (
+        searchSuggestionsRequestRef.current !== requestId ||
+        activeUserIdRef.current !== requestedUserId
+      ) {
         return
       }
       setSearchSuggestions([...PROMPTS])
@@ -1198,15 +1269,20 @@ export function MeantApp() {
   }, [refreshSearchSuggestions])
 
   useEffect(() => {
-    if (!userId) {
+    const requestedUserId = userId
+    if (!requestedUserId) {
       return
     }
     let active = true
+    const settingsSession = productSearchPreferencesSessionRef.current + 1
+    productSearchPreferencesSessionRef.current = settingsSession
+    setProductSearchPreferences([])
+    setProductSearchPreferencesError(null)
     getCurrentUser()
       .then(async (profile) => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         const avatar = await getProfilePictureUrl(profile.profilePicturePath).catch(() => null)
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         const fullName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim()
         setUser((current) => ({
           ...current,
@@ -1218,14 +1294,26 @@ export function MeantApp() {
         }))
       })
       .catch(() => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         if (userEmail) {
           setUser((current) => ({ ...current, email: userEmail }))
         }
       })
-    getUserSettings()
-      .then((settings) => {
-        if (!active) return
+    void enqueueProductSearchPreferencesOperation(async () => {
+      try {
+        if (
+          !active ||
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        const settings = await getUserSettings({ expectedUserId: requestedUserId })
+        if (
+          !active ||
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
         applySettingsPayload(
           settings,
           setAvailablePrefs,
@@ -1234,23 +1322,31 @@ export function MeantApp() {
           setDeliveryLocations,
           setClothingFit,
         )
-      })
-      .catch(() => {
-        if (!active) return
+        setProductSearchPreferences(settings.productSearchPreferences ?? [])
+        setProductSearchPreferencesError(null)
+      } catch {
+        if (
+          !active ||
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
         setAvailablePrefs([...PREFERENCES])
-      })
-    getUserTasteProfile()
+        setProductSearchPreferencesError('Could not load saved sizes. Retry before editing them.')
+      }
+    })
+    getUserTasteProfile({ expectedUserId: requestedUserId })
       .then((profile) => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setTasteProfile(profile)
       })
       .catch(() => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setTasteProfile(EMPTY_TASTE_PROFILE)
       })
-    getProductDiscovery()
+    getProductDiscovery({ expectedUserId: requestedUserId })
       .then((discovery) => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         const snapshots = discovery.savedProducts.map((product) =>
           savedProductFromProfile(product, allPreferencesRef.current),
         )
@@ -1266,36 +1362,44 @@ export function MeantApp() {
         })
       })
       .catch(() => {
-        if (!active) return
+        if (!active || activeUserIdRef.current !== requestedUserId) return
         setSavedProducts([])
         setSavedIds([])
       })
     return () => {
       active = false
+      if (productSearchPreferencesSessionRef.current === settingsSession) {
+        productSearchPreferencesSessionRef.current += 1
+      }
     }
-  }, [userId, userEmail, setUser, setPrefsOn, setBudget, setDeliveryLocations, setClothingFit])
+  }, [
+    enqueueProductSearchPreferencesOperation,
+    userId,
+    userEmail,
+    setUser,
+    setPrefsOn,
+    setBudget,
+    setDeliveryLocations,
+    setClothingFit,
+  ])
 
   const handleSignOut = () => {
     void signOut()
     setAuthMode('signin')
     setView('discover')
-    setQuery('')
-    setReply(null)
-    setSearchResults([])
     setRemoteProducts([])
-    setSearchError(null)
-    setSearchLoading(false)
-    setProductSearchActivities([])
     setTasteProfile(EMPTY_TASTE_PROFILE)
-    searchRequestRef.current += 1
-    searchAbortRef.current?.abort()
-    searchAbortRef.current = null
+    setProductSearchPreferences([])
+    setProductSearchPreferencesBusy(false)
+    setProductSearchPreferencesError(null)
+    productSearchPreferencesSessionRef.current += 1
+    searchRequestsRef.current.forEach(({ controller }) => controller.abort())
+    searchRequestsRef.current.clear()
     savedProductDetailRequestRef.current?.controller.abort()
     savedProductDetailRequestRef.current = null
     setSavedProductDetailLoadingId(null)
     searchSuggestionsRequestRef.current += 1
     setSearchSuggestions([])
-    setSelectedMerchantId(null)
     setMerchantIdentityLinks([])
     setMerchantIdentityLinksError(null)
     setMerchantIdentityLinksLoading(false)
@@ -1306,22 +1410,29 @@ export function MeantApp() {
   }
 
   const connectMerchantIdentity = (merchant: MerchantProfile) => {
+    const requestedUserId = requireCurrentAccountUser()
     setMerchantIdentityLinksError(null)
-    void startMerchantIdentityAuthorization(merchant.id)
+    void startMerchantIdentityAuthorization(merchant.id, { expectedUserId: requestedUserId })
       .then((authorization) => {
+        if (activeUserIdRef.current !== requestedUserId) return
         window.location.assign(authorization.authorizationUrl)
       })
       .catch(() => {
+        if (activeUserIdRef.current !== requestedUserId) return
         setMerchantIdentityLinksError(`Could not start account linking for ${merchant.name}`)
       })
   }
 
   const revokeMerchantIdentity = (merchantId: string) => {
+    const requestedUserId = requireCurrentAccountUser()
     setMerchantIdentityLinksError(null)
     setMerchantIdentityLinks((current) => current.filter((link) => link.merchantId !== merchantId))
-    void revokeMerchantIdentityLink(merchantId)
-      .then(() => refreshMerchantIdentityLinks())
+    void revokeMerchantIdentityLink(merchantId, { expectedUserId: requestedUserId })
+      .then(() => {
+        if (activeUserIdRef.current === requestedUserId) void refreshMerchantIdentityLinks()
+      })
       .catch(() => {
+        if (activeUserIdRef.current !== requestedUserId) return
         setMerchantIdentityLinksError('Could not revoke store connection')
         void refreshMerchantIdentityLinks()
       })
@@ -1329,14 +1440,23 @@ export function MeantApp() {
 
   const updateNewsletter = useCallback(
     async (newsletter: boolean) => {
-      const profile = await updateNewsletterSubscription(newsletter)
+      const requestedUserId = userId
+      if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
+        throw new Error('Account changed before newsletter update')
+      }
+      const profile = await updateNewsletterSubscription(newsletter, {
+        expectedUserId: requestedUserId,
+      })
+      if (activeUserIdRef.current !== requestedUserId) {
+        throw new Error('Account changed during newsletter update')
+      }
       setUser((current) => ({
         ...current,
         email: profile.email || current.email,
         newsletter: profile.newsletter ?? newsletter,
       }))
     },
-    [setUser],
+    [setUser, userId],
   )
 
   const nav = useCallback(
@@ -1469,21 +1589,31 @@ export function MeantApp() {
   )
 
   const beginSaveOperation = (id: ProductId) => {
-    if (savePendingRef.current.has(id)) {
-      return false
+    const operationOwnerId = userId
+    if (!operationOwnerId || activeUserIdRef.current !== operationOwnerId) {
+      return null
     }
-    savePendingRef.current.add(id)
-    setSavePendingIds(Array.from(savePendingRef.current))
-    return true
+    const operation = beginAccountOwnedOperation(savePendingRef.current, id, operationOwnerId)
+    if (!operation) {
+      return null
+    }
+    setSavePendingIds(Array.from(savePendingRef.current.keys()))
+    return operation
   }
 
-  const endSaveOperation = (id: ProductId) => {
-    savePendingRef.current.delete(id)
-    setSavePendingIds(Array.from(savePendingRef.current))
+  const isSaveOperationCurrent = (operation: AccountOwnedOperation<ProductId>) =>
+    isAccountOwnedOperationCurrent(savePendingRef.current, operation, activeUserIdRef.current)
+
+  const endSaveOperation = (operation: AccountOwnedOperation<ProductId>) => {
+    if (!endAccountOwnedOperation(savePendingRef.current, operation)) {
+      return
+    }
+    setSavePendingIds(Array.from(savePendingRef.current.keys()))
   }
 
   const toggleSave = (product: Product) => {
-    if (!beginSaveOperation(product.id)) {
+    const saveOperation = beginSaveOperation(product.id)
+    if (!saveOperation) {
       return
     }
     const productSnapshot = productWithCuratedFields(product, allPreferencesRef.current)
@@ -1514,8 +1644,11 @@ export function MeantApp() {
       setActiveProduct((current) =>
         current?.id === product.id ? savedProductRefreshShell(current) : current,
       )
-      void removeSavedProduct(product.id)
+      void removeSavedProduct(product.id, { expectedUserId: saveOperation.ownerId })
         .catch(() => {
+          if (!isSaveOperationCurrent(saveOperation)) {
+            return
+          }
           setSavedProducts((current) => upsertProductSnapshot(current, rollbackSnapshot))
           setSavedIds((current) =>
             current.includes(product.id) ? current : [product.id, ...current],
@@ -1543,7 +1676,7 @@ export function MeantApp() {
             refreshSavedProductForOpen(rollbackSnapshot, true)
           }
         })
-        .finally(() => endSaveOperation(product.id))
+        .finally(() => endSaveOperation(saveOperation))
       return
     }
 
@@ -1553,8 +1686,13 @@ export function MeantApp() {
       product.canonicalProduct?.recommendedOfferKey?.trim() ||
       product.offers.find((offer) => offer.offerKey?.trim())?.offerKey?.trim() ||
       null
-    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, selectedOfferKey))
+    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, selectedOfferKey), {
+      expectedUserId: saveOperation.ownerId,
+    })
       .then((savedProduct) => {
+        if (!isSaveOperationCurrent(saveOperation)) {
+          return
+        }
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         const confirmedSnapshot = confirmedSavedProductSnapshot(productSnapshot, snapshot)
         setSavedProducts((current) => upsertProductSnapshot(current, confirmedSnapshot))
@@ -1565,20 +1703,32 @@ export function MeantApp() {
         void refreshTasteProfile()
       })
       .catch(() => {
+        if (!isSaveOperationCurrent(saveOperation)) {
+          return
+        }
         setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
         setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
       })
-      .finally(() => endSaveOperation(product.id))
+      .finally(() => endSaveOperation(saveOperation))
   }
 
   const updateSavedChoice = (product: Product, offerKey: string) => {
     const exactOfferKey = offerKey.trim()
-    if (!exactOfferKey || !beginSaveOperation(product.id)) {
+    if (!exactOfferKey) {
+      return
+    }
+    const saveOperation = beginSaveOperation(product.id)
+    if (!saveOperation) {
       return
     }
     const productSnapshot = productWithCuratedFields(product, allPreferencesRef.current)
-    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, exactOfferKey))
+    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, exactOfferKey), {
+      expectedUserId: saveOperation.ownerId,
+    })
       .then((savedProduct) => {
+        if (!isSaveOperationCurrent(saveOperation)) {
+          return
+        }
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         const confirmedSnapshot = confirmedSavedProductSnapshot(productSnapshot, snapshot)
         setSavedProducts((current) => upsertProductSnapshot(current, confirmedSnapshot))
@@ -1607,7 +1757,7 @@ export function MeantApp() {
         refreshSavedProductForOpen(confirmedSnapshot, true)
       })
       .catch(() => undefined)
-      .finally(() => endSaveOperation(product.id))
+      .finally(() => endSaveOperation(saveOperation))
   }
 
   const commitCompareProducts = (nextIds: ProductId[], product?: Product) => {
@@ -1665,14 +1815,68 @@ export function MeantApp() {
     )
   }
 
+  const requireCurrentAccountUser = () => {
+    const expectedUserId = userId
+    if (!expectedUserId || activeUserIdRef.current !== expectedUserId) {
+      throw new Error('Account changed during user operation')
+    }
+    return expectedUserId
+  }
+
+  const refreshProductSearchPreferences = useCallback(() => {
+    const requestedUserId = userId
+    if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
+      setProductSearchPreferences([])
+      setProductSearchPreferencesError(null)
+      return
+    }
+    if (productSearchPreferencesRefreshPendingRef.current) {
+      return
+    }
+    productSearchPreferencesRefreshPendingRef.current = true
+    const settingsSession = productSearchPreferencesSessionRef.current
+    setProductSearchPreferencesError(null)
+    void enqueueProductSearchPreferencesOperation(async () => {
+      try {
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        const settings = await getUserSettings({ expectedUserId: requestedUserId })
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        setProductSearchPreferences(settings.productSearchPreferences ?? [])
+      } catch {
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        setProductSearchPreferencesError(
+          'Could not refresh saved sizes. Retry before editing them.',
+        )
+      } finally {
+        productSearchPreferencesRefreshPendingRef.current = false
+      }
+    })
+  }, [enqueueProductSearchPreferencesOperation, userId])
+
   const refreshTasteProfile = useCallback(async () => {
-    if (!userId) {
+    const requestedUserId = userId
+    if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
       setTasteProfile(EMPTY_TASTE_PROFILE)
       return
     }
     try {
-      setTasteProfile(await getUserTasteProfile())
+      const profile = await getUserTasteProfile({ expectedUserId: requestedUserId })
+      if (activeUserIdRef.current !== requestedUserId) return
+      setTasteProfile(profile)
     } catch {
+      if (activeUserIdRef.current !== requestedUserId) return
       setTasteProfile(EMPTY_TASTE_PROFILE)
     }
   }, [userId])
@@ -1684,14 +1888,86 @@ export function MeantApp() {
     filterIds?: readonly PreferenceId[]
     preferenceDescription?: string
   }) => {
+    const requestedUserId = requireCurrentAccountUser()
     try {
-      applySavedSettings(await updateUserSettings(input))
+      const settings = await updateUserSettings(input, { expectedUserId: requestedUserId })
+      if (activeUserIdRef.current !== requestedUserId) return false
+      applySavedSettings(settings)
       void refreshSearchSuggestions()
       void refreshTasteProfile()
       return true
     } catch {
       return false
     }
+  }
+
+  const saveProductSearchPreference = (preference: UserProductSearchPreferenceProfile) => {
+    const requestedUserId = requireCurrentAccountUser()
+    const settingsSession = productSearchPreferencesSessionRef.current
+    setProductSearchPreferencesError(null)
+    void enqueueProductSearchPreferencesOperation(async () => {
+      try {
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        const settings = await updateUserSettings(
+          { productSearchPreferences: [preference] },
+          { expectedUserId: requestedUserId },
+        )
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        applySavedSettings(settings)
+        setProductSearchPreferences(settings.productSearchPreferences ?? [])
+        void refreshSearchSuggestions()
+        void refreshTasteProfile()
+      } catch {
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        setProductSearchPreferencesError('Saved size was not updated. Please try again.')
+      }
+    })
+  }
+
+  const removeProductSearchPreference = (scope: string) => {
+    const requestedUserId = requireCurrentAccountUser()
+    const settingsSession = productSearchPreferencesSessionRef.current
+    setProductSearchPreferencesError(null)
+    void enqueueProductSearchPreferencesOperation(async () => {
+      try {
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        const settings = await deleteUserProductSearchPreference(scope, {
+          expectedUserId: requestedUserId,
+        })
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        applySavedSettings(settings)
+        setProductSearchPreferences(settings.productSearchPreferences ?? [])
+        void refreshSearchSuggestions()
+        void refreshTasteProfile()
+      } catch {
+        if (
+          activeUserIdRef.current !== requestedUserId ||
+          productSearchPreferencesSessionRef.current !== settingsSession
+        )
+          return
+        setProductSearchPreferencesError('Saved size was not removed. Please try again.')
+      }
+    })
   }
 
   const applyDescription = async (text: string) => {
@@ -1702,72 +1978,98 @@ export function MeantApp() {
   }
 
   const acceptTasteSuggestion = (filterId: string) => {
-    void acceptUserTasteSuggestion(filterId).then((settings) => {
-      applySavedSettings(settings)
-      void refreshTasteProfile()
-    })
+    const requestedUserId = requireCurrentAccountUser()
+    void acceptUserTasteSuggestion(filterId, { expectedUserId: requestedUserId }).then(
+      (settings) => {
+        if (activeUserIdRef.current !== requestedUserId) return
+        applySavedSettings(settings)
+        void refreshTasteProfile()
+      },
+    )
   }
 
   const rejectTasteSuggestion = (filterId: string) => {
+    const requestedUserId = requireCurrentAccountUser()
     setTasteProfile((current) => ({
       ...current,
       suggestions: current.suggestions.filter((suggestion) => suggestion.filterId !== filterId),
     }))
-    void rejectUserTasteSuggestion(filterId)
-      .then(() => refreshTasteProfile())
-      .catch(() => refreshTasteProfile())
+    void rejectUserTasteSuggestion(filterId, { expectedUserId: requestedUserId })
+      .then(() => {
+        if (activeUserIdRef.current === requestedUserId) void refreshTasteProfile()
+      })
+      .catch(() => {
+        if (activeUserIdRef.current === requestedUserId) void refreshTasteProfile()
+      })
   }
 
   const disableTasteSignal = (signalId: string, disabled: boolean) => {
+    const requestedUserId = requireCurrentAccountUser()
     setTasteProfile((current) => ({
       ...current,
       signals: current.signals.map((signal) =>
         signal.id === signalId ? { ...signal, status: disabled ? 'DISABLED' : 'ACTIVE' } : signal,
       ),
     }))
-    void updateUserTasteSignal({ signalId, disabled })
+    void updateUserTasteSignal({ signalId, disabled, expectedUserId: requestedUserId })
       .then((updated) => {
+        if (activeUserIdRef.current !== requestedUserId) return
         setTasteProfile((current) => ({
           ...current,
           signals: current.signals.map((signal) => (signal.id === updated.id ? updated : signal)),
         }))
       })
-      .catch(() => refreshTasteProfile())
+      .catch(() => {
+        if (activeUserIdRef.current === requestedUserId) void refreshTasteProfile()
+      })
   }
 
   const removeTasteSignal = (signalId: string) => {
+    const requestedUserId = requireCurrentAccountUser()
     setTasteProfile((current) => ({
       ...current,
       signals: current.signals.filter((signal) => signal.id !== signalId),
     }))
-    void removeUserTasteSignal(signalId).catch(() => refreshTasteProfile())
+    void removeUserTasteSignal(signalId, { expectedUserId: requestedUserId }).catch(() => {
+      if (activeUserIdRef.current === requestedUserId) void refreshTasteProfile()
+    })
   }
 
   const addInventoryItem = async (input: UserInventoryItemInput) => {
-    const item = await createUserInventoryItem(input)
+    const requestedUserId = requireCurrentAccountUser()
+    const item = await createUserInventoryItem(input, { expectedUserId: requestedUserId })
+    if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
     setInventoryItems((current) => upsertInventorySnapshot(current, item))
     return item
   }
 
   const addInventoryPhotoItem = async (input: UserInventoryPhotoInput) => {
-    const item = await createUserInventoryPhotoItem(input)
+    const requestedUserId = requireCurrentAccountUser()
+    const item = await createUserInventoryPhotoItem(input, { expectedUserId: requestedUserId })
+    if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
     setInventoryItems((current) => upsertInventorySnapshot(current, item))
     return item
   }
 
   const editInventoryItem = async (itemId: string, item: UserInventoryItemUpdateInput) => {
-    const updated = await updateUserInventoryItem({ itemId, item })
+    const requestedUserId = requireCurrentAccountUser()
+    const updated = await updateUserInventoryItem({ itemId, item, expectedUserId: requestedUserId })
+    if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
     setInventoryItems((current) => upsertInventorySnapshot(current, updated))
     return updated
   }
 
   const removeInventoryItem = async (itemId: string) => {
-    await deleteUserInventoryItem(itemId)
+    const requestedUserId = requireCurrentAccountUser()
+    await deleteUserInventoryItem(itemId, { expectedUserId: requestedUserId })
+    if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
     setInventoryItems((current) => current.filter((item) => item.id !== itemId))
   }
 
   const downloadInventory = async () => {
-    const exported = await exportUserInventory()
+    const requestedUserId = requireCurrentAccountUser()
+    const exported = await exportUserInventory({ expectedUserId: requestedUserId })
+    if (activeUserIdRef.current !== requestedUserId) return
     const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
@@ -1779,54 +2081,100 @@ export function MeantApp() {
     URL.revokeObjectURL(url)
   }
 
-  const runProductSearch = async (nextQuery: string) => {
-    const submittedQuery = nextQuery.trim()
-    if (!submittedQuery) {
-      return
+  const runProductSearch = async (
+    turn: DiscoverProductSearchTurnInput,
+  ): Promise<DiscoverProductSearchTurnResult> => {
+    const submittedMessage = turn.message.trim()
+    if (!submittedMessage) {
+      throw new Error('Tell Meant what you want to find.')
     }
-    const merchantId = selectedMerchant?.id ?? null
-    const merchantAtSubmit = merchants.find((merchant) => merchant.id === merchantId) ?? null
-    const requestId = searchRequestRef.current + 1
-    searchRequestRef.current = requestId
-    searchAbortRef.current?.abort()
+    const merchantId = null
+    const searchUserId = userId
+    if (!searchUserId) {
+      throw new Error('Sign in before starting a product search.')
+    }
+    const requestId = searchRequestSequenceRef.current + 1
+    searchRequestSequenceRef.current = requestId
+    searchRequestsRef.current.get(turn.conversationId)?.controller.abort()
     const controller = new AbortController()
-    searchAbortRef.current = controller
-    setQuery(submittedQuery)
-    setSearchError(null)
-    setReply(null)
-    setSearchLoading(true)
-    setSearchResults([])
-    setProductSearchActivities([
+    searchRequestsRef.current.set(turn.conversationId, { requestId, controller })
+    const isCurrentRequest = () =>
+      searchRequestsRef.current.get(turn.conversationId)?.requestId === requestId &&
+      !controller.signal.aborted &&
+      activeUserIdRef.current === searchUserId
+    turn.onActivities?.([
       {
-        agent: 'search',
-        label: 'Grouping products and ranking merchant offers',
+        agent: 'qualification',
+        label: 'Understanding which filters matter for this search',
         state: 'active',
         updatedAt: Date.now(),
       },
     ])
     try {
+      const qualification = await qualifyProductSearch({
+        conversationId: turn.conversationId,
+        qualificationId: turn.qualificationId,
+        message: submittedMessage,
+        merchantId,
+        signal: controller.signal,
+        expectedUserId: searchUserId,
+      })
+      if (!isCurrentRequest()) {
+        throw new Error('Product search was cancelled.')
+      }
+
+      const effectiveQuery = qualification.effectiveQuery.trim() || submittedMessage
+      void refreshProductSearchPreferences()
+      if (qualification.status === 'NEEDS_INPUT') {
+        turn.onActivities?.([
+          {
+            agent: 'qualification',
+            label: 'Waiting for one more search preference',
+            state: 'done',
+            updatedAt: Date.now(),
+          },
+        ])
+        return {
+          status: 'NEEDS_INPUT',
+          qualificationId: qualification.qualificationId,
+          assistantMessage: qualification.assistantMessage,
+          suggestedReplies: qualification.suggestedReplies,
+          effectiveQuery,
+        }
+      }
+
+      turn.onActivities?.([
+        {
+          agent: 'search',
+          label: 'Grouping products and ranking merchant offers',
+          state: 'active',
+          updatedAt: Date.now(),
+        },
+      ])
       const result = await searchGroupedProducts({
-        query: submittedQuery,
+        query: effectiveQuery,
+        qualificationId: qualification.qualificationId,
         merchantId,
         offset: 0,
         limit: PRODUCT_SEARCH_PAGE_SIZE,
         signal: controller.signal,
+        expectedUserId: searchUserId,
       })
-      if (searchRequestRef.current !== requestId || controller.signal.aborted) return
+      if (!isCurrentRequest()) {
+        throw new Error('Product search was cancelled.')
+      }
       const products = result.products.map(productFromCanonical).filter(isRenderableSearchProduct)
-      setSearchResults(products)
       setRemoteProducts((current) => appendProductSnapshots(current, products))
       const degradedCount = result.sourceStates.filter((source) => source.degraded).length
       const sourceNote =
         degradedCount > 0
           ? ` ${degradedCount} source${degradedCount === 1 ? ' is' : 's are'} limited; healthy offers are still shown.`
           : ''
-      setReply(
-        result.cached
-          ? `Showing ${products.length} cached grouped match${products.length === 1 ? '' : 'es'} for "${submittedQuery}".${sourceNote}`
-          : `Found ${products.length} grouped product${products.length === 1 ? '' : 's'} for "${submittedQuery}"${merchantAtSubmit ? ` on ${merchantAtSubmit.name}` : ''}.${sourceNote}`,
-      )
-      setProductSearchActivities([
+      const resultMessage = result.cached
+        ? `Showing ${products.length} cached grouped match${products.length === 1 ? '' : 'es'} for "${effectiveQuery}".${sourceNote}`
+        : `Found ${products.length} grouped product${products.length === 1 ? '' : 's'} for "${effectiveQuery}".${sourceNote}`
+      const qualificationMessage = qualification.assistantMessage.trim()
+      turn.onActivities?.([
         {
           agent: 'search',
           label: 'Grouped products and ranked offers',
@@ -1834,16 +2182,22 @@ export function MeantApp() {
           updatedAt: Date.now(),
         },
       ])
-    } catch {
-      if (searchRequestRef.current !== requestId) {
-        return
+      return {
+        status: 'READY',
+        qualificationId: qualification.qualificationId,
+        assistantMessage: qualificationMessage
+          ? `${qualificationMessage} ${resultMessage}`
+          : resultMessage,
+        suggestedReplies: qualification.suggestedReplies,
+        effectiveQuery,
+        products,
       }
-      if (controller.signal.aborted) {
-        return
-      }
-      setSearchResults([])
-      setSearchError('Product search failed. Please try again.')
-      setProductSearchActivities([
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Product search failed. Please try again.'
+      turn.onActivities?.([
         {
           agent: 'search',
           label: 'Grouped product search failed',
@@ -1851,34 +2205,12 @@ export function MeantApp() {
           updatedAt: Date.now(),
         },
       ])
+      throw error instanceof Error ? error : new Error(errorMessage)
     } finally {
-      if (searchRequestRef.current === requestId) {
-        if (searchAbortRef.current === controller) {
-          searchAbortRef.current = null
-        }
-        setSearchLoading(false)
+      if (searchRequestsRef.current.get(turn.conversationId)?.requestId === requestId) {
+        searchRequestsRef.current.delete(turn.conversationId)
       }
     }
-  }
-
-  const applyAssistantProducts = (products: readonly Product[], sourceQuery: string) => {
-    const renderableProducts = products.filter(isRenderableSearchProduct)
-    searchAbortRef.current?.abort()
-    searchAbortRef.current = null
-    setView('discover')
-    setQuery(sourceQuery)
-    setReply(
-      `Ask Meant found ${renderableProducts.length} match${renderableProducts.length === 1 ? '' : 'es'} for "${sourceQuery}".`,
-    )
-    setSearchError(null)
-    setSearchLoading(false)
-    setProductSearchActivities([])
-    setSearchResults([...renderableProducts])
-    setRemoteProducts((current) => {
-      const byId = new Map(current.map((product) => [product.id, product]))
-      renderableProducts.forEach((product) => byId.set(product.id, product))
-      return Array.from(byId.values())
-    })
   }
 
   const compareChatProducts = (products: readonly Product[]) => {
@@ -1927,6 +2259,7 @@ export function MeantApp() {
     payload: CheckoutPayload,
     source: ActiveCheckoutSession['source'],
   ): Promise<string | null> => {
+    const requestedUserId = requireCurrentAccountUser()
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
     const merchantKey =
       payload.merchantKey ??
@@ -1945,9 +2278,17 @@ export function MeantApp() {
     setCheckoutError(null)
     setCheckoutFlowError(null)
     try {
-      const checkoutProfile = await getCartCheckout({ cartId, refresh: true })
+      const checkoutProfile = await getCartCheckout({
+        cartId,
+        refresh: true,
+        expectedUserId: requestedUserId,
+      })
+      if (activeUserIdRef.current !== requestedUserId) {
+        return 'Account changed during checkout.'
+      }
       updateCartWithCheckoutProfile(payload, checkoutProfile)
       setActiveCheckout({
+        ownerId: requestedUserId,
         cartId,
         threadId: payload.chatThreadId ?? null,
         merchant,
@@ -1961,14 +2302,18 @@ export function MeantApp() {
       return null
     } catch {
       const message = 'Could not start checkout. Try again.'
-      setCheckoutError({
-        merchant,
-        merchantKey,
-        message,
-      })
+      if (activeUserIdRef.current === requestedUserId) {
+        setCheckoutError({
+          merchant,
+          merchantKey,
+          message,
+        })
+      }
       return message
     } finally {
-      setCheckoutMerchantKey(null)
+      if (activeUserIdRef.current === requestedUserId) {
+        setCheckoutMerchantKey(null)
+      }
     }
   }
 
@@ -1990,18 +2335,25 @@ export function MeantApp() {
     if (!activeCheckout) {
       return
     }
+    const requestedUserId = requireCurrentAccountUser()
+    const checkoutSession = activeCheckout
+    if (checkoutSession.ownerId !== requestedUserId) {
+      return
+    }
     setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
       const checkoutProfile =
         verifiedCheckout ??
         (await getCartCheckout({
-          cartId: activeCheckout.cartId,
+          cartId: checkoutSession.cartId,
           refresh: true,
+          expectedUserId: requestedUserId,
         }))
-      updateCartWithCheckoutProfile(activeCheckout, checkoutProfile)
+      if (activeUserIdRef.current !== requestedUserId) return
+      updateCartWithCheckoutProfile(checkoutSession, checkoutProfile)
       setActiveCheckout((current) =>
-        current
+        current?.ownerId === requestedUserId && current.cartId === checkoutSession.cartId
           ? {
               ...current,
               profile: checkoutProfile,
@@ -2010,9 +2362,13 @@ export function MeantApp() {
           : current,
       )
     } catch {
-      setCheckoutFlowError('Could not refresh checkout.')
+      if (activeUserIdRef.current === requestedUserId) {
+        setCheckoutFlowError('Could not refresh checkout.')
+      }
     } finally {
-      setCheckoutFlowBusy(false)
+      if (activeUserIdRef.current === requestedUserId) {
+        setCheckoutFlowBusy(false)
+      }
     }
   }
 
@@ -2024,7 +2380,11 @@ export function MeantApp() {
     if (!activeCheckout) {
       return null
     }
+    const requestedUserId = requireCurrentAccountUser()
     const checkoutSession = activeCheckout
+    if (checkoutSession.ownerId !== requestedUserId) {
+      return null
+    }
     setCheckoutFlowError(null)
     try {
       const result = await assistCartCheckout({
@@ -2032,10 +2392,12 @@ export function MeantApp() {
         message,
         merchantDeliveryHint: context?.merchantDeliveryHint,
         history,
+        expectedUserId: requestedUserId,
       })
+      if (activeUserIdRef.current !== requestedUserId) return null
       updateCartWithCheckoutProfile(checkoutSession, result.checkout)
       setActiveCheckout((current) =>
-        current?.cartId === checkoutSession.cartId
+        current?.ownerId === requestedUserId && current.cartId === checkoutSession.cartId
           ? {
               ...current,
               profile: result.checkout,
@@ -2086,9 +2448,9 @@ export function MeantApp() {
       case 'inventory':
         return (
           <InventoryView
-            items={inventoryItems}
-            loading={inventoryLoading}
-            error={inventoryError}
+            items={currentInventoryItems}
+            loading={currentInventoryLoading}
+            error={currentInventoryError}
             onRefresh={() => void loadInventory()}
             onAddItem={addInventoryItem}
             onAddPhotoItem={addInventoryPhotoItem}
@@ -2127,7 +2489,13 @@ export function MeantApp() {
               setClothingFit(nextClothingFit)
               void saveSettings({ clothingFit: nextClothingFit })
             }}
-            tasteProfile={tasteProfile}
+            productSearchPreferences={currentProductSearchPreferences}
+            productSearchPreferencesBusy={currentProductSearchPreferencesBusy}
+            productSearchPreferencesError={currentProductSearchPreferencesError}
+            onSaveProductSearchPreference={saveProductSearchPreference}
+            onRemoveProductSearchPreference={removeProductSearchPreference}
+            onRefreshProductSearchPreferences={refreshProductSearchPreferences}
+            tasteProfile={currentTasteProfile}
             onAcceptTasteSuggestion={acceptTasteSuggestion}
             onRejectTasteSuggestion={rejectTasteSuggestion}
             onDisableTasteSignal={disableTasteSignal}
@@ -2158,10 +2526,10 @@ export function MeantApp() {
       case 'orders':
         return (
           <OrdersView
-            orders={orders}
+            orders={currentOrders}
             products={allKnownProducts}
-            loading={ordersLoading}
-            error={ordersError}
+            loading={currentOrdersLoading}
+            error={currentOrdersError}
             preferences={allPreferences}
             flashId={null}
             onOpen={(product) => openProduct(product)}
@@ -2174,13 +2542,18 @@ export function MeantApp() {
       case 'account':
         return (
           <AccountView
+            key={userId ?? 'anonymous'}
             user={user}
             userId={userId}
-            merchants={merchants}
-            merchantIdentityLinks={merchantIdentityLinks}
-            merchantIdentityLinksLoading={merchantIdentityLinksLoading}
-            merchantIdentityLinksError={merchantIdentityLinksError}
-            onSave={setUser}
+            merchants={currentMerchants}
+            merchantIdentityLinks={currentMerchantIdentityLinks}
+            merchantIdentityLinksLoading={currentMerchantIdentityLinksLoading}
+            merchantIdentityLinksError={currentMerchantIdentityLinksError}
+            onSave={(nextUser) => {
+              if (activeUserIdRef.current === userId) {
+                setUser(nextUser)
+              }
+            }}
             onSignOut={handleSignOut}
             onEditPrefs={() => nav('preferences')}
             onConnectMerchant={connectMerchantIdentity}
@@ -2193,50 +2566,26 @@ export function MeantApp() {
       default:
         return (
           <ChatDiscoverView
+            key={userId ?? 'anonymous'}
             profile={liveProfile}
+            storageScope={userId ?? 'anonymous'}
             greeting={greeting}
             products={feedProducts}
             hiddenByShip={hiddenByShip}
-            agentActivities={productSearchActivities}
             deliveryLocations={deliveryLocations}
-            prompts={searchSuggestions}
-            reply={reply}
-            query={query}
-            loading={searchLoading}
-            error={searchError}
+            prompts={currentSearchSuggestions}
             preferences={allPreferences}
-            merchants={merchants}
-            selectedMerchant={selectedMerchant}
-            merchantCounts={merchantCounts}
-            totalProductCount={unscopedFeedProducts.length}
-            merchantsLoading={merchantsLoading}
             savedProducts={savedListProducts}
             cart={cart}
             cartProducts={allKnownProducts}
-            orders={orders}
+            orders={currentOrders}
             shelf={shelf}
             shelfFlashMessageId={shelfFlashMessageId}
-            discoverFindRequest={discoverFindRequest}
+            discoverFindRequest={currentDiscoverFindRequest}
             homeRequestId={discoverHomeRequestId}
-            productDetailChatRequest={productDetailChatRequest}
+            productDetailChatRequest={currentProductDetailChatRequest}
             newsletter={user.newsletter}
-            onSubmit={(nextQuery) => {
-              void runProductSearch(nextQuery)
-            }}
-            onClear={() => {
-              searchRequestRef.current += 1
-              searchAbortRef.current?.abort()
-              searchAbortRef.current = null
-              setReply(null)
-              setQuery('')
-              setSearchResults([])
-              setSearchError(null)
-              setSearchLoading(false)
-              setProductSearchActivities([])
-            }}
-            onMerchant={(merchant) => {
-              setSelectedMerchantId(merchant?.id ?? null)
-            }}
+            onSubmit={runProductSearch}
             onOpen={(product, products, researchQuery) =>
               openProduct(product, products ?? feedProducts, researchQuery)
             }
@@ -2274,56 +2623,6 @@ export function MeantApp() {
 
   if (!authed) {
     return content
-  }
-
-  const askContext = askContexts[view]
-  const assistantCartLines = cartLines(cart, allKnownProducts)
-  const cartCount = assistantCartLines.reduce((sum, line) => sum + line.qty, 0)
-  const assistantVisibleProducts = (() => {
-    switch (view) {
-      case 'saved':
-        return savedListProducts
-      case 'compare':
-        return compareIds
-          .map((id) => allKnownProductsMap.get(id))
-          .filter((product): product is Product => Boolean(product))
-      case 'cart':
-        return assistantCartLines.map((line) => line.product)
-      case 'orders':
-        return orders
-          .flatMap((order) => order.items)
-          .map((item) => allKnownProductsMap.get(item.id))
-          .filter((product): product is Product => Boolean(product))
-      case 'inventory':
-        return []
-      case 'discover':
-      default:
-        return feedProducts
-    }
-  })()
-  const assistantContext: AssistantChatContextInput = {
-    view,
-    contextLabel: askContext.label,
-    currentSearchQuery: query || null,
-    selectedMerchantName: selectedMerchant?.name ?? null,
-    savedProductCount: savedIds.length,
-    cartItemCount: cartCount,
-    visibleProducts: assistantVisibleProducts
-      .slice(0, 8)
-      .map((product) => assistantProductContext(product, deliveryLocations, allPreferences)),
-    cartItems: assistantCartLines.slice(0, 8).map((line) => ({
-      name: line.product.name,
-      merchant: line.merchant,
-      quantity: line.qty,
-      price: line.price,
-    })),
-    orders: orders.slice(0, 5).map((order) => ({
-      id: order.id,
-      date: order.date,
-      status: order.status,
-      statusNote: order.statusNote,
-      itemCount: order.items.reduce((sum, item) => sum + item.qty, 0),
-    })),
   }
 
   return (
@@ -2373,15 +2672,16 @@ export function MeantApp() {
         />
       ) : null}
       <ProductModal
-        product={activeProduct}
+        product={currentActiveProduct}
+        userId={userId}
         deliveryLocations={deliveryLocations}
         preferences={allPreferences}
-        saved={activeProduct ? savedSet.has(activeProduct.id) : false}
-        savePending={activeProduct ? savePendingSet.has(activeProduct.id) : false}
+        saved={currentActiveProduct ? savedSet.has(currentActiveProduct.id) : false}
+        savePending={currentActiveProduct ? savePendingSet.has(currentActiveProduct.id) : false}
         savedOfferRefreshPending={
-          activeProduct ? savedProductDetailLoadingId === activeProduct.id : false
+          currentActiveProduct ? savedProductDetailLoadingId === currentActiveProduct.id : false
         }
-        inCompare={activeProduct ? compareSet.has(activeProduct.id) : false}
+        inCompare={currentActiveProduct ? compareSet.has(currentActiveProduct.id) : false}
         onClose={() => {
           setActiveProduct(null)
           setActiveProductResearchQuery(null)
@@ -2401,16 +2701,6 @@ export function MeantApp() {
         onPrev={() => navigateProduct(-1)}
         onNext={() => navigateProduct(1)}
       />
-      <FloatingAsk
-        contextLabel={askContext.label}
-        context={assistantContext}
-        suggestions={askContext.suggestions}
-        preferences={allPreferences}
-        onProducts={applyAssistantProducts}
-        onProductOpen={(product) => openProduct(product, [product])}
-        onAddProductToCart={addProductOfferToCartResolved}
-        hidden={view === 'discover' || Boolean(activeProduct)}
-      />
       <Shelf
         open={shelfOpen}
         items={shelf}
@@ -2426,9 +2716,6 @@ export function MeantApp() {
         onFindProduct={findShelfProduct}
         onOpenProduct={(product) => openProduct(product, [product])}
       />
-      <span className="mt-cart-count-debug" aria-hidden>
-        {cartCount}
-      </span>
     </div>
   )
 }

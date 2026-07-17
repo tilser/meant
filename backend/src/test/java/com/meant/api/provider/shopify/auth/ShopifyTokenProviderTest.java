@@ -205,6 +205,42 @@ class ShopifyTokenProviderTest {
     }
 
     @Test
+    void extractsSpaceSeparatedScopesFromShopifyJwtStringClaim() {
+        TestContext context = context(Duration.ofSeconds(5));
+        String token = jwt("""
+                {
+                  "exp": %d,
+                  "scopes": "read_global_api_catalog_search write_global_api_app_events",
+                  "limits": {
+                    "catalog": {
+                      "requests_per_minute": 120,
+                      "burst": 20
+                    },
+                    "future_metadata": "ignored"
+                  }
+                }
+                """.formatted(NOW.plusSeconds(120).getEpochSecond()));
+        context.server().expect(requestTo(context.endpoint()))
+                .andRespond(withSuccess("{\"access_token\":\"" + token + "\"}", MediaType.APPLICATION_JSON));
+
+        ShopifyBearerAuthenticationResult result = context.strategy()
+                .prepare(Set.of("read_global_api_catalog_search"));
+
+        assertThat(result.decision().available()).isTrue();
+        assertThat(result.decision().metadata()).hasValueSatisfying(metadata ->
+                assertThat(metadata.scopes()).containsExactlyInAnyOrder(
+                        "read_global_api_catalog_search",
+                        "write_global_api_app_events"
+                ));
+        assertThat(result.decision().metadata()).hasValueSatisfying(metadata ->
+                assertThat(metadata.limits().values())
+                        .containsEntry("catalog.requests_per_minute", 120L)
+                        .containsEntry("catalog.burst", 20L)
+                        .doesNotContainKey("future_metadata"));
+        context.server().verify();
+    }
+
+    @Test
     void usesConfiguredFallbackTtlWhenResponseAndOpaqueTokenLackExpiry() {
         TestContext context = context(Duration.ofSeconds(5));
         context.server().expect(requestTo(context.endpoint()))

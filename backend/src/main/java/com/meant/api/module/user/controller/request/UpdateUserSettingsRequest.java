@@ -29,6 +29,12 @@ public record UpdateUserSettingsRequest(
         Set<@NotBlank String> filterIds,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Size(max = 12000)
-        String preferenceDescription
+        String preferenceDescription,
+        @Schema(
+                description = "Stable product-scoped search preferences to merge when present; omitted scopes are unchanged",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        @Size(max = 20)
+        List<@NotNull @Valid UserProductSearchPreferenceRequest> productSearchPreferences
 ) {
 }

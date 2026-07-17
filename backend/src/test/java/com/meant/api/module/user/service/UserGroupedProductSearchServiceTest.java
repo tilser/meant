@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
 import com.meant.api.module.merchant.constant.MerchantIntegrationKind;
@@ -14,6 +15,7 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
+import com.meant.api.module.user.exception.UserProductSearchGroupingException;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
@@ -53,7 +55,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class UserGroupedProductSearchServiceTest {
 
     private static final ScheduledExecutorService DEADLINE_SCHEDULER =
@@ -320,6 +326,84 @@ class UserGroupedProductSearchServiceTest {
         });
         assertThat(discovery.calls).isEqualTo(1);
         assertThat(discovery.request.candidateLimit()).isEqualTo(100);
+    }
+
+    @Test
+    void failedDiscoveryWithoutEligibleSourcesIsDiagnosedSeparately(CapturedOutput output) {
+        UserGroupedProductSearchService service = serviceWithDiscoveryResult(
+                new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.FAILED,
+                        List.of(),
+                        List.of(),
+                        false
+                )
+        );
+
+        assertThatThrownBy(() -> service.search(profile(), command(profile().id())))
+                .isInstanceOf(UserProductSearchGroupingException.class)
+                .hasMessage("No eligible catalog discovery source was available");
+        assertThat(output)
+                .contains("Catalog discovery failed with no eligible sources. terminalStatus=FAILED")
+                .doesNotContain("Every catalog discovery source failed");
+    }
+
+    @Test
+    void failedDiscoveryLogsOnlySafeSourceFailureDiagnostics(CapturedOutput output) {
+        DiscoverySourceIdentity sourceIdentity = new DiscoverySourceIdentity(
+                new ProviderIdentity("SHOPIFY"),
+                ResultSourceType.PROVIDER_CATALOG,
+                "SHOPIFY_GLOBAL"
+        );
+        CatalogSourceResult failedSource = new CatalogSourceResult(
+                sourceIdentity.provider(),
+                sourceIdentity,
+                CatalogSourceOperation.SEARCH,
+                null,
+                NegotiatedCapabilities.none(),
+                List.of(),
+                null,
+                false,
+                new CatalogSourceFailure(
+                        CatalogSourceFailureKind.AUTHENTICATION,
+                        "sensitive upstream body and bearer token",
+                        null,
+                        401
+                )
+        );
+        UserGroupedProductSearchService service = serviceWithDiscoveryResult(
+                new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.FAILED,
+                        List.of(failedSource),
+                        List.of(),
+                        false
+                )
+        );
+
+        assertThatThrownBy(() -> service.search(profile(), command(profile().id())))
+                .isInstanceOf(UserProductSearchGroupingException.class)
+                .hasMessage("Every catalog discovery source failed");
+        assertThat(output)
+                .contains("Every catalog discovery source failed. terminalStatus=FAILED")
+                .contains("provider=SHOPIFY")
+                .contains("type=PROVIDER_CATALOG")
+                .contains("operation=SEARCH")
+                .contains("failureKind=AUTHENTICATION")
+                .contains("upstreamStatus=401")
+                .doesNotContain("sensitive upstream body")
+                .doesNotContain("bearer token");
+    }
+
+    private UserGroupedProductSearchService serviceWithDiscoveryResult(FederatedCatalogDiscoveryResult result) {
+        return new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                new StubFederatedDiscoveryService(result),
+                new ExactProductGroupingService(),
+                ProductRankingTestFactory.service(),
+                new StubRankingContextFactory(),
+                sessionStore(),
+                referencePersistence(),
+                new UserProductPreferenceMatchCuratorService()
+        );
     }
 
     private UserProductSearchPreparation preparation() {

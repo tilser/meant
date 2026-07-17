@@ -18,6 +18,8 @@ public record SaveUserDiscoverConversationCommand(
 
         @NotBlank
         @Size(max = 5_000_000)
-        String threadJson
+        String threadJson,
+
+        Long expectedRevision
 ) {
 }

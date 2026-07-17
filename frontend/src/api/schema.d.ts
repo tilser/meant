@@ -28,6 +28,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/discover/conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a Discover chat conversation
+         * @description Returns one persisted Discover chat snapshot owned by the authenticated user.
+         */
+        get: operations["discoverConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/webhooks/shopify/orders": {
         parameters: {
             query?: never;
@@ -65,6 +85,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/product-search-qualifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Qualify a product search before catalog discovery
+         * @description Uses the current turn, prior qualification state, and durable user context to decide which supported hard filters need values. Catalog discovery is authorized only when READY.
+         */
+        post: operations["qualifyProductSearchV1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users/me/product-searches": {
         parameters: {
             query?: never;
@@ -76,7 +116,7 @@ export interface paths {
         put?: never;
         /**
          * Search grouped canonical products for the current user
-         * @description Federates provider catalogs and Meant merchant-semantic discovery, then returns version 1 provider-neutral products with exact merchant offers and provenance. The unversioned JSON and SSE routes remain flat during frontend migration.
+         * @description Executes a server-issued READY qualification plan against eligible catalog providers, then returns provider-neutral products with exact merchant offers and provenance.
          */
         post: operations["searchGroupedProductsV1"];
         delete?: never;
@@ -190,46 +230,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users/me/product-searches": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Search products for the current user
-         * @description Searches merchant catalogs for the query, explains why products fit the user's shopping profile, and caches product snapshots and explanations for repeated searches.
-         */
-        post: operations["searchProducts"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/product-searches:stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stream product search results for the current user
-         * @description Streams Discovery Agent catalog candidates, Meant Curator score and order updates, and final pagination metadata as soon as each piece is available.
-         */
-        post: operations["streamSearchProducts"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/users/me/inventory": {
         parameters: {
             query?: never;
@@ -268,26 +268,6 @@ export interface paths {
          * @description Adds an owned item from a photo URL or data URL. When AI recognition is available, recognized fields are merged with user-provided fallback fields.
          */
         post: operations["addInventoryPhoto"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/assistant/messages:stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stream an Ask Meant response
-         * @description Persists the user's floating Ask Meant message, streams the assistant answer, and stores the completed assistant message.
-         */
-        post: operations["streamAssistantMessage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -614,6 +594,26 @@ export interface paths {
         patch: operations["updateSettings"];
         trace?: never;
     };
+    "/api/users/me/settings/product-search-preferences/{scope}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a scoped product-search size preference
+         * @description Deletes the authenticated user's stable SIZE preference for one normalized product scope. Preferences for every other scope remain unchanged.
+         */
+        delete: operations["deleteProductSearchPreference"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me/profile-picture": {
         parameters: {
             query?: never;
@@ -894,66 +894,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users/me/assistant/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Ask Meant conversations
-         * @description Returns recent persisted Ask Meant conversations for the authenticated user.
-         */
-        get: operations["assistantConversations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/assistant/conversations/{conversationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get an Ask Meant conversation
-         * @description Returns one persisted Ask Meant conversation and its messages for the authenticated user.
-         */
-        get: operations["assistantConversation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/me/assistant/conversations/latest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get latest Ask Meant conversation
-         * @description Returns the latest persisted floating Ask Meant conversation for the authenticated user.
-         */
-        get: operations["latestAssistantConversation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/reviews/merchants/{merchantId}/products": {
         parameters: {
             query?: never;
@@ -1142,6 +1082,8 @@ export interface components {
         UserDiscoverConversationRequest: {
             title: string;
             threadJson: string;
+            /** @description Last server revision observed by the caller; omitted only when creating a new chat */
+            expectedRevision?: number;
         };
         /** @description Persisted Discover chat snapshot. */
         UserDiscoverConversationResponse: {
@@ -1153,6 +1095,8 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             threadJson: string;
+            /** Format: int64 */
+            revision: number;
         };
         /** @description Select one exact product variant from a server-issued live or saved offer anchor */
         SelectUserProductVariantRequest: {
@@ -1616,11 +1560,37 @@ export interface components {
         UserProductSearchRequest: {
             query: string;
             /** Format: uuid */
+            qualificationId: string;
+            /** Format: uuid */
             merchantId?: string;
             /** Format: int32 */
             offset?: number;
             /** Format: int32 */
             limit?: number;
+        };
+        /** @description One user turn in product-search qualification before catalog discovery. */
+        UserProductSearchQualificationRequest: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            qualificationId?: string;
+            message: string;
+            /** Format: uuid */
+            merchantId?: string;
+        };
+        /** @enum {string} */
+        UserProductSearchQualificationStatus: "NEEDS_INPUT" | "READY";
+        /** @enum {string} */
+        UserProductSearchFilterKind: "AVAILABLE" | "CONDITION" | "SHIPS_TO" | "SHIPS_FROM" | "PRICE" | "SHOPS" | "CATEGORIES" | "ATTRIBUTES" | "RATING" | "PRICE_TIER";
+        /** @description Qualification state that either asks for more input or authorizes catalog discovery. */
+        UserProductSearchQualificationResponse: {
+            /** Format: uuid */
+            qualificationId: string;
+            status: components["schemas"]["UserProductSearchQualificationStatus"];
+            assistantMessage: string;
+            suggestedReplies: string[];
+            missingFilters: components["schemas"]["UserProductSearchFilterKind"][];
+            effectiveQuery: string;
         };
         /** @description Shared product facts plus all exact distinct offers and source observations */
         CanonicalProductResponse: {
@@ -1920,6 +1890,12 @@ export interface components {
             code: string;
             city: string;
         };
+        UserProductSearchPreferenceResponse: {
+            scope: string;
+            /** @enum {string} */
+            attributeName: "SIZE";
+            values: string[];
+        };
         UserSettingsResponse: {
             /** Format: int32 */
             budget: number;
@@ -1930,6 +1906,7 @@ export interface components {
             availableFilters: components["schemas"]["ShoppingFilterResponse"][];
             parsedFilterIds: string[];
             unmappedPreferences: string[];
+            productSearchPreferences: components["schemas"]["UserProductSearchPreferenceResponse"][];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2211,20 +2188,6 @@ export interface components {
             inventoryItemId: string;
             inventoryItemName: string;
         };
-        UserProductSearchResponse: {
-            query: string;
-            normalizedQuery: string;
-            profileHash: string;
-            cached: boolean;
-            /** Format: int32 */
-            offset: number;
-            /** Format: int32 */
-            limit: number;
-            /** Format: int32 */
-            nextOffset: number;
-            hasMore: boolean;
-            products: components["schemas"]["UserProductSearchProductResponse"][];
-        };
         SseEmitter: {
             /** Format: int64 */
             timeout?: number;
@@ -2298,53 +2261,6 @@ export interface components {
             /** Format: int32 */
             restockThreshold?: number;
         };
-        CartItem: {
-            name?: string;
-            merchant?: string;
-            /** Format: int32 */
-            quantity?: number;
-            /** Format: double */
-            price?: number;
-        };
-        Order: {
-            id?: string;
-            date?: string;
-            status?: string;
-            statusNote?: string;
-            /** Format: int32 */
-            itemCount?: number;
-        };
-        Product: {
-            id?: string;
-            name?: string;
-            brand?: string;
-            category?: string;
-            /** Format: int32 */
-            match?: number;
-            /** Format: double */
-            priceFrom?: number;
-            note?: string;
-        };
-        UserAssistantChatContextRequest: {
-            view?: string;
-            contextLabel?: string;
-            currentSearchQuery?: string;
-            selectedMerchantName?: string;
-            /** Format: int32 */
-            savedProductCount?: number;
-            /** Format: int32 */
-            cartItemCount?: number;
-            visibleProducts?: components["schemas"]["Product"][];
-            cartItems?: components["schemas"]["CartItem"][];
-            orders?: components["schemas"]["Order"][];
-        };
-        UserAssistantChatRequest: {
-            /** Format: uuid */
-            conversationId?: string;
-            message: string;
-            context?: components["schemas"]["UserAssistantChatContextRequest"];
-        };
-        StreamingResponseBody: unknown;
         MerchantIdentityAuthorizationResponse: {
             /** Format: uuid */
             merchantId: string;
@@ -3173,6 +3089,13 @@ export interface components {
             locations: components["schemas"]["UserLocationRequest"][];
             filterIds: string[];
             preferenceDescription?: string;
+            productSearchPreferences?: components["schemas"]["UserProductSearchPreferenceRequest"][];
+        };
+        UserProductSearchPreferenceRequest: {
+            scope: string;
+            /** @enum {string} */
+            attributeName: "SIZE";
+            values: string[];
         };
         UserLocationRequest: {
             country: string;
@@ -3283,34 +3206,6 @@ export interface components {
             /** Format: date-time */
             exportedAt: string;
             items: components["schemas"]["UserInventoryItemResponse"][];
-        };
-        UserAssistantConversationSummaryResponse: {
-            /** Format: uuid */
-            conversationId: string;
-            title: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        UserAssistantConversationResponse: {
-            /** Format: uuid */
-            conversationId: string;
-            title: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            messages: components["schemas"]["UserAssistantMessageResponse"][];
-        };
-        UserAssistantMessageResponse: {
-            /** Format: uuid */
-            id: string;
-            role: string;
-            content: string;
-            products: components["schemas"]["UserProductSearchProductResponse"][];
-            /** Format: date-time */
-            createdAt: string;
         };
         /** @description Single product review returned by a merchant review provider. */
         ProductReviewResponse: {
@@ -3632,6 +3527,28 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    discoverConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted Discover chat snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserDiscoverConversationResponse"];
+                };
+            };
+        };
+    };
     saveDiscoverConversation: {
         parameters: {
             query?: never;
@@ -3725,6 +3642,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserProductVariantSelectionResponse"];
+                };
+            };
+        };
+    };
+    qualifyProductSearchV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProductSearchQualificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Current product-search qualification state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserProductSearchQualificationResponse"];
                 };
             };
         };
@@ -3910,54 +3851,6 @@ export interface operations {
             };
         };
     };
-    searchProducts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserProductSearchRequest"];
-            };
-        };
-        responses: {
-            /** @description Product search results for the current user */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserProductSearchResponse"];
-                };
-            };
-        };
-    };
-    streamSearchProducts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserProductSearchRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["SseEmitter"];
-                };
-            };
-        };
-    };
     inventory: {
         parameters: {
             query?: {
@@ -4027,30 +3920,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserInventoryItemResponse"];
-                };
-            };
-        };
-    };
-    streamAssistantMessage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserAssistantChatRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["StreamingResponseBody"];
                 };
             };
         };
@@ -4511,6 +4380,29 @@ export interface operations {
             };
         };
     };
+    deleteProductSearchPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Product scope whose stable SIZE preference should be deleted */
+                scope: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated user settings and remaining product-search preferences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSettingsResponse"];
+                };
+            };
+        };
+    };
     removeProfilePicture: {
         parameters: {
             query?: never;
@@ -4929,70 +4821,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserDiscoverConversationResponse"][];
-                };
-            };
-        };
-    };
-    assistantConversations: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Recent Ask Meant conversations */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserAssistantConversationSummaryResponse"][];
-                };
-            };
-        };
-    };
-    assistantConversation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ask Meant conversation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserAssistantConversationResponse"];
-                };
-            };
-        };
-    };
-    latestAssistantConversation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Latest Ask Meant conversation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserAssistantConversationResponse"];
                 };
             };
         };

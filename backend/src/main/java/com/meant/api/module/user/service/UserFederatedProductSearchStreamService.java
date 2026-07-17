@@ -5,6 +5,7 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserFederatedProductSearchStreamEvent;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEvent;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.module.catalog.service.ExactProductGroupingService;
 import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
@@ -30,14 +31,24 @@ public class UserFederatedProductSearchStreamService {
             @NotNull @Valid SearchUserProductsCommand command,
             @NotNull Consumer<UserFederatedProductSearchStreamEvent> eventConsumer
     ) {
-        var preparation = preparationService.prepare(profileCommand, command);
+        stream(profileCommand, command, null, eventConsumer);
+    }
+
+    public void stream(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            @NotNull Consumer<UserFederatedProductSearchStreamEvent> eventConsumer
+    ) {
+        var preparation = preparationService.prepare(profileCommand, command, discoveryFilters);
         federatedDiscoveryService.search(new CatalogDiscoveryRequest(
                 preparation.catalogInput().searchQuery(),
                 command.merchantId(),
                 preparation.fetchLimit(),
                 preparation.catalogInput().context(),
                 preparation.catalogInput().signals(),
-                preparation.catalogInput().filters()
+                preparation.catalogInput().filters(),
+                preparation.catalogInput().discoveryFilters()
         ), event -> eventConsumer.accept(map(event)));
     }
 

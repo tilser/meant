@@ -24,7 +24,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,8 +31,6 @@ import tools.jackson.databind.ObjectMapper;
 class ShopifyTokenProvider {
 
     private static final Pattern SCOPE_SEPARATOR = Pattern.compile("[\\s,]+");
-    private static final TypeReference<Map<String, Long>> LIMITS_TYPE = new TypeReference<>() {
-    };
 
     private final ShopifyTokenClient tokenClient;
     private final ShopifyAgentAuthProperties properties;
@@ -255,20 +252,33 @@ class ShopifyTokenProvider {
             return Map.of();
         }
         try {
-            Map<String, Long> values = objectMapper.convertValue(limits, LIMITS_TYPE);
-            if (values == null) {
-                return Map.of();
-            }
             Map<String, Long> clean = new TreeMap<>();
-            values.forEach((key, value) -> {
-                if (key != null && value != null) {
-                    clean.put(key, value);
-                }
-            });
+            collectNumericLimits(limits, "", clean);
             return Collections.unmodifiableMap(clean);
-        } catch (IllegalArgumentException exception) {
+        } catch (RuntimeException exception) {
+            // Limits are optional token metadata. An unknown future shape must never discard
+            // independently valid expiry or scope claims and make a valid token unusable.
             return Map.of();
         }
+    }
+
+    private void collectNumericLimits(JsonNode node, String path, Map<String, Long> values) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return;
+        }
+        if (node.isIntegralNumber()) {
+            if (!path.isBlank() && node.canConvertToLong()) {
+                values.put(path, node.longValue());
+            }
+            return;
+        }
+        if (!node.isObject()) {
+            return;
+        }
+        node.properties().forEach(entry -> {
+            String childPath = path.isBlank() ? entry.getKey() : path + "." + entry.getKey();
+            collectNumericLimits(entry.getValue(), childPath, values);
+        });
     }
 
     private Set<String> scopes(String scopeText) {

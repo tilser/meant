@@ -6,6 +6,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.web.servlet.client.RestTestClient;
@@ -48,6 +50,28 @@ class SecurityConfigurationIT extends PostgresIntegrationTestSupport {
         client.get().uri("/api/carts/{cartId}/checkout", cartId)
                 .exchange()
                 .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void discoverConversationPutPreflightAllowsLocalFrontend() {
+        UUID conversationId = UUID.randomUUID();
+
+        client.method(HttpMethod.OPTIONS)
+                .uri("/api/users/me/discover/conversations/{conversationId}", conversationId)
+                .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PUT")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "authorization,content-type")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000")
+                .expectHeader().value(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, value -> {
+                    org.assertj.core.api.Assertions.assertThat(value.split(","))
+                            .contains("PUT");
+                })
+                .expectHeader().value(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, value -> {
+                    org.assertj.core.api.Assertions.assertThat(value.toLowerCase())
+                            .contains("authorization", "content-type");
+                });
     }
 
     @Test

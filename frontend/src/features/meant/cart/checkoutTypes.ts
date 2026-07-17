@@ -9,6 +9,7 @@ import type {
 import type { CartItem } from '../types'
 
 export interface ActiveCheckoutSession {
+  ownerId: string
   cartId: string
   threadId?: string | null
   merchant: string

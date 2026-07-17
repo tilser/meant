@@ -152,6 +152,47 @@ class UcpMcpClientTest {
     }
 
     @Test
+    void callToolAcceptsShopifyStructuredContentWithoutOptionalContentOrErrorFlag() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andRespond(withSuccess("""
+                        {
+                          "jsonrpc": "2.0",
+                          "id": 1,
+                          "result": {
+                            "structuredContent": {
+                              "ucp": {
+                                "version": "2026-04-08",
+                                "capabilities": {
+                                  "dev.ucp.shopping.catalog.search": [
+                                    {"version": "2026-04-08"}
+                                  ]
+                                }
+                              },
+                              "products": []
+                            }
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        UcpToolResponse response = client.callTool(
+                restClientBuilder.build(),
+                URI.create("https://merchant.example/api/mcp"),
+                "search_catalog",
+                Map.of("catalog", Map.of("query", "jacket"))
+        );
+
+        assertThat(response.textContent()).isNull();
+        assertThat(response.structuredContent()).isInstanceOf(Map.class);
+        assertThat(response.negotiatedCapabilities().version(
+                CapabilityId.of("dev.ucp.shopping.catalog.search")
+        )).contains("2026-04-08");
+        server.verify();
+    }
+
+    @Test
     void listToolsSendsAgentProfileMetaAndReturnsResultJson() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();

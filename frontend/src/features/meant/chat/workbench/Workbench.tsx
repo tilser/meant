@@ -11,7 +11,8 @@ import type { AskReplyDraft } from '../../ask/types'
 import { DustingContainer } from '../../shared/DustingContainer'
 import { ChevronIcon, OpenIcon } from '../../shared/icons'
 import { CloseIcon, SparkMark } from '../../shared/ui'
-import { useStoredState } from '../../shared/storage'
+import { accountSessionStorageKey } from '../../shared/accountStorage'
+import { useSessionStoredState, useStoredState } from '../../shared/storage'
 import type { Preference, Product } from '../../types'
 import {
   buildMockWorkbenchInsights,
@@ -211,12 +212,14 @@ function WorkbenchAgentCard({
 }
 
 export function Workbench({
+  storageScope,
   product,
   query,
   preferences,
   onReply,
   onAgentReport,
 }: Readonly<{
+  storageScope: string
   product: Product | null
   query: string
   preferences: readonly Preference[]
@@ -228,13 +231,14 @@ export function Workbench({
   const [taskDraft, setTaskDraft] = useState('')
   const [clearing, setClearing] = useState(false)
   const [width, setWidth] = useStoredState('meant.workbench.width', 360)
-  const [insights, setInsights] = useStoredState<WorkbenchInsight[]>(
-    'meant.workbench.insights',
+  const [insights, setInsights] = useSessionStoredState<WorkbenchInsight[]>(
+    accountSessionStorageKey('meant.workbench.insights', storageScope),
     () => [...MOCK_WORKBENCH_INSIGHTS],
   )
-  const [agents, setAgents] = useStoredState<WorkbenchAgent[]>('meant.workbench.agents', () => [
-    ...MOCK_WORKBENCH_AGENTS,
-  ])
+  const [agents, setAgents] = useSessionStoredState<WorkbenchAgent[]>(
+    accountSessionStorageKey('meant.workbench.agents', storageScope),
+    () => [...MOCK_WORKBENCH_AGENTS],
+  )
   const seenInsightIdsRef = useRef(new Set(insights.map((insight) => insight.id)))
   const resizeCleanupRef = useRef<(() => void) | null>(null)
   const peekTimerRef = useRef<number | null>(null)

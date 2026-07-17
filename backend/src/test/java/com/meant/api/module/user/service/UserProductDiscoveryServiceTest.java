@@ -117,7 +117,7 @@ class UserProductDiscoveryServiceTest {
 
     private UserCollectionProperties collectionProperties() {
         return new UserCollectionProperties(
-                new UserCollectionProperties.SavedProducts(20, 100, 200, 50, 20),
+                new UserCollectionProperties.SavedProducts(20, 100, 200, 50),
                 new UserCollectionProperties.Inventory(20, 100, 200)
         );
     }

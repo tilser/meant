@@ -6,7 +6,11 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record McpToolResult(
         List<McpContent> content,
-        boolean isError,
+        Boolean isError,
         Object structuredContent
 ) {
+
+    public McpToolResult {
+        isError = Boolean.TRUE.equals(isError);
+    }
 }

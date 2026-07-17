@@ -12,9 +12,10 @@ import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
 import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.review.exception.ReviewException;
+import com.meant.api.module.user.exception.SelectedOfferResolutionException;
+import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.exception.UserProductSearchException;
-import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
@@ -155,6 +156,7 @@ public class GlobalApiExceptionHandler {
             MerchantIdentityLinkException.class,
             OrderException.class,
             SelectedOfferResolutionException.class,
+            UnsupportedProductSearchCurrencyException.class,
             UserException.class
     })
     ResponseEntity<ProblemDetail> handleBusinessException(RuntimeException exception, HttpServletRequest request) {

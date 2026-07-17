@@ -6,6 +6,7 @@ import com.meant.api.module.user.controller.request.UpdateUserTasteSignalRequest
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.controller.response.UserTasteProfileResponse;
 import com.meant.api.module.user.controller.response.UserTasteSignalResponse;
+import com.meant.api.module.user.service.UserProductSearchPreferenceService;
 import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.AcceptUserTasteSuggestionCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserTasteProfileController {
 
     private final UserTasteProfileService userTasteProfileService;
+    private final UserProductSearchPreferenceService userProductSearchPreferenceService;
 
     @GetMapping("/me/taste-profile")
     @Operation(
@@ -129,9 +131,11 @@ public class UserTasteProfileController {
             @PathVariable String filterId
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        return UserSettingsResponse.from(userTasteProfileService.acceptSuggestion(
-                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
-                new AcceptUserTasteSuggestionCommand(authenticatedUser.id(), filterId)));
+        return UserSettingsResponse.from(
+                userTasteProfileService.acceptSuggestion(
+                        UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
+                        new AcceptUserTasteSuggestionCommand(authenticatedUser.id(), filterId)),
+                userProductSearchPreferenceService.list(authenticatedUser.id()));
     }
 
     @PostMapping("/me/taste-profile/suggestions/{filterId}:reject")

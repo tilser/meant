@@ -59,6 +59,39 @@ export function createDiscoverChatThread(
   }
 }
 
+export function discoverSuggestedReplies(
+  messages: readonly DiscoverChatMessage[],
+): readonly string[] {
+  const latestMessage = messages[messages.length - 1]
+  if (!latestMessage || latestMessage.role !== 'ai' || latestMessage.pending) {
+    return []
+  }
+  return Array.from(
+    new Set(
+      (latestMessage.suggestedReplies ?? []).map((suggestion) => suggestion.trim()).filter(Boolean),
+    ),
+  )
+}
+
+export function discoverThreadSearchContext(thread: DiscoverChatThread): {
+  query: string
+  products: readonly Product[]
+} {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message = thread.messages[index]
+    const query = message?.query?.trim()
+    if (!query) {
+      continue
+    }
+    const products = message.blocks?.find(
+      (block): block is Extract<DiscoverChatBlock, { type: 'products' }> =>
+        block.type === 'products',
+    )?.products
+    return { query, products: products ?? [] }
+  }
+  return { query: '', products: [] }
+}
+
 export function normalizeDiscoverChatThreads(
   threads: readonly DiscoverChatThread[],
 ): DiscoverChatThread[] {
@@ -75,24 +108,131 @@ export function normalizeDiscoverChatThreads(
     return {
       ...thread,
       id,
+      messages: thread.messages.map((message) =>
+        message.pending
+          ? {
+              ...message,
+              pending: false,
+              pendingText: undefined,
+              suggestedReplies: undefined,
+              blocks:
+                message.blocks && message.blocks.length > 0
+                  ? message.blocks
+                  : [
+                      {
+                        type: 'system' as const,
+                        text: 'This search was interrupted. Send your last answer again to continue.',
+                      },
+                    ],
+            }
+          : message,
+      ),
       createdAt,
       updatedAt: thread.updatedAt ?? createdAt,
     }
   })
 }
 
-export function initialDiscoverChatThreads(): DiscoverChatThread[] {
+const SESSION_ONLY_RESULTS_MESSAGE =
+  'Product results are available only in the active session. Search again to refresh them.'
+
+function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock | null {
+  switch (block.type) {
+    case 'text':
+      return { type: 'text', text: block.text }
+    case 'newsletter':
+      return { type: 'newsletter' }
+    case 'prefs':
+      return {
+        type: 'prefs',
+        preferences: block.preferences.map((preference) => ({
+          id: preference.id,
+          label: preference.label,
+          desc: preference.desc,
+          category: preference.category,
+          polarity: preference.polarity,
+          displayOrder: preference.displayOrder,
+        })),
+      }
+    case 'system':
+      return { type: 'system', text: block.text }
+    default:
+      return null
+  }
+}
+
+function durableDiscoverMessage(message: DiscoverChatMessage): DiscoverChatMessage {
+  const sourceBlocks = message.blocks ?? []
+  const durableBlocks = sourceBlocks
+    .map(durableDiscoverBlock)
+    .filter((block): block is DiscoverChatBlock => block !== null)
+  const removedSessionData =
+    message.sessionOnly === true ||
+    Boolean(message.productContext) ||
+    durableBlocks.length !== sourceBlocks.length
+
+  if (message.role === 'ai' && removedSessionData) {
+    return {
+      id: message.id,
+      role: 'ai',
+      blocks: [{ type: 'system', text: SESSION_ONLY_RESULTS_MESSAGE }],
+    }
+  }
+
+  return {
+    id: message.id,
+    role: message.role,
+    text: message.text,
+    blocks: durableBlocks.length > 0 ? durableBlocks : undefined,
+    pending: message.pending,
+    pendingText: message.pendingText,
+    suggestedReplies: message.suggestedReplies ? [...message.suggestedReplies] : undefined,
+    query: message.query,
+  }
+}
+
+/** Removes Shopify search facts, media, offers, and transaction snapshots before durable storage. */
+export function durableDiscoverChatThread(
+  thread: DiscoverChatThread,
+  archived: boolean | undefined = thread.archived,
+): DiscoverChatThread {
+  return {
+    id: thread.id,
+    title: thread.title,
+    archived,
+    messages: thread.messages.map(durableDiscoverMessage),
+    qualificationId: thread.qualificationId,
+    named: thread.named,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    persistedRevision: thread.persistedRevision,
+  }
+}
+
+function scopedStorageKey(baseKey: string, storageScope?: string): string {
+  const normalizedScope = storageScope?.trim()
+  return normalizedScope ? `${baseKey}.${normalizedScope}` : baseKey
+}
+
+export function initialDiscoverChatThreads(storageScope?: string): DiscoverChatThread[] {
+  if (storageScope) {
+    // Pre-account-scoping builds stored whole Shopify results under shared keys. Never migrate
+    // those facts into an authenticated account; purge them once scoped storage is available.
+    writeStorage(DISCOVER_CHAT_THREADS_STORAGE_KEY, [])
+    writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
+  }
   const storedThreads = readStorage<DiscoverChatThread[] | null>(
-    DISCOVER_CHAT_THREADS_STORAGE_KEY,
+    scopedStorageKey(DISCOVER_CHAT_THREADS_STORAGE_KEY, storageScope),
     null,
   )
   if (storedThreads?.length) {
-    return normalizeDiscoverChatThreads(storedThreads)
+    return normalizeDiscoverChatThreads(storedThreads).map((thread) =>
+      durableDiscoverChatThread(thread),
+    )
   }
-  const legacyMessages = readStorage<DiscoverChatMessage[]>(
-    LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY,
-    [],
-  )
+  const legacyMessages = storageScope
+    ? []
+    : readStorage<DiscoverChatMessage[]>(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
   return [
     createDiscoverChatThread(
       legacyMessages,
@@ -101,28 +241,75 @@ export function initialDiscoverChatThreads(): DiscoverChatThread[] {
   ]
 }
 
-export function saveStoredDiscoverChatThreads(threads: readonly DiscoverChatThread[]): void {
+export function saveStoredDiscoverChatThreads(
+  threads: readonly DiscoverChatThread[],
+  storageScope?: string,
+): void {
   writeStorage(
-    DISCOVER_CHAT_THREADS_STORAGE_KEY,
-    threads.map((thread) => ({
-      ...thread,
-      messages: [...thread.messages],
-    })),
+    scopedStorageKey(DISCOVER_CHAT_THREADS_STORAGE_KEY, storageScope),
+    threads.map((thread) => durableDiscoverChatThread(thread)),
   )
 }
 
-export function deleteStoredDiscoverChatThread(threadId: string): void {
-  const storedThreads = readStorage<DiscoverChatThread[] | null>(
-    DISCOVER_CHAT_THREADS_STORAGE_KEY,
-    null,
-  )
+/**
+ * Keeps unsaved local edits only while they are based on the currently observed server revision.
+ * A newer remote revision always wins, regardless of client timestamps, so a stale tab cannot
+ * launder an old snapshot through localStorage and overwrite newer history after a reload.
+ */
+export function mergeDiscoverThreadSources(
+  remoteThreads: readonly DiscoverChatThread[],
+  localThreads: readonly DiscoverChatThread[],
+): DiscoverChatThread[] {
+  const hasHistory = (thread: DiscoverChatThread) =>
+    thread.messages.length > 0 || Boolean(thread.focusProductId) || thread.named === true
+  const remoteById = new Map(remoteThreads.map((thread) => [thread.id, thread]))
+  const merged = new Map<string, DiscoverChatThread>()
+
+  for (const local of localThreads) {
+    if (!hasHistory(local)) continue
+    const remote = remoteById.get(local.id)
+    if (!remote) {
+      merged.set(local.id, local)
+      continue
+    }
+    const sameBaseRevision =
+      local.persistedRevision !== undefined && local.persistedRevision === remote.persistedRevision
+    merged.set(
+      local.id,
+      sameBaseRevision && (local.updatedAt ?? 0) > (remote.updatedAt ?? 0) ? local : remote,
+    )
+    remoteById.delete(local.id)
+  }
+
+  for (const remote of remoteById.values()) {
+    if (hasHistory(remote)) merged.set(remote.id, remote)
+  }
+
+  return Array.from(merged.values()).sort((left, right) => {
+    const timeDifference = (discoverThreadTime(right) ?? 0) - (discoverThreadTime(left) ?? 0)
+    return timeDifference || left.title.localeCompare(right.title)
+  })
+}
+
+export function canRestoreDiscoverThreadAfterConflict(
+  currentThread: DiscoverChatThread | undefined,
+  expectedLocalUpdatedAt: number | undefined,
+): boolean {
+  return Boolean(currentThread && currentThread.updatedAt === expectedLocalUpdatedAt)
+}
+
+export function deleteStoredDiscoverChatThread(threadId: string, storageScope?: string): void {
+  const storageKey = scopedStorageKey(DISCOVER_CHAT_THREADS_STORAGE_KEY, storageScope)
+  const storedThreads = readStorage<DiscoverChatThread[] | null>(storageKey, null)
   if (!storedThreads?.length) {
-    writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
+    if (!storageScope) {
+      writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
+    }
     return
   }
   const nextThreads = storedThreads.filter((thread) => thread.id !== threadId)
-  writeStorage(DISCOVER_CHAT_THREADS_STORAGE_KEY, nextThreads)
-  if (nextThreads.length === 0) {
+  writeStorage(storageKey, nextThreads)
+  if (nextThreads.length === 0 && !storageScope) {
     writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
   }
 }

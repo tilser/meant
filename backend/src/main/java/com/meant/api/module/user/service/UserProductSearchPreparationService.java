@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.constant.UserProductSearchPagination;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
@@ -30,12 +31,29 @@ public class UserProductSearchPreparationService {
             EnsureUserProfileCommand profileCommand,
             SearchUserProductsCommand command
     ) {
-        return prepare(profileCommand, command, ignored -> { });
+        return prepare(profileCommand, command, null, ignored -> { });
     }
 
     public UserProductSearchPreparation prepare(
             EnsureUserProfileCommand profileCommand,
             SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters
+    ) {
+        return prepare(profileCommand, command, discoveryFilters, ignored -> { });
+    }
+
+    public UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            Consumer<Stage> stageConsumer
+    ) {
+        return prepare(profileCommand, command, null, stageConsumer);
+    }
+
+    public UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
             Consumer<Stage> stageConsumer
     ) {
         if (!profileCommand.id().equals(command.userId())) {
@@ -53,7 +71,8 @@ public class UserProductSearchPreparationService {
                 queryIntent,
                 settings,
                 command.buyerIp(),
-                command.userAgent()
+                command.userAgent(),
+                discoveryFilters
         );
         int offset = command.offset();
         int limit = command.limit();

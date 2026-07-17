@@ -2,19 +2,23 @@ package com.meant.api.module.user.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.module.user.constant.UserClothingFit;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
+import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Currency;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -25,11 +29,42 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserProductSearchCatalogInputBuilder {
 
+    private static final String SEARCH_CURRENCY = "USD";
     private static final String AMOUNT_NUMBER_PATTERN =
-            "(?:\\d{1,3}(?:[\\.,]\\d{3})+|\\d+)(?:[\\.,]\\d{1,2})?";
-    private static final String AMOUNT_PATTERN = "(?:[$€£¥]\\s*)?" + AMOUNT_NUMBER_PATTERN;
+            "(?:\\d{1,3}(?:[\\s\\.,]\\d{3})+|\\d+)(?:[\\.,]\\d{1,2})?";
+    private static final String NON_USD_CURRENCY_SYMBOLS = "€£¥₹₩₽₺₴₫฿₱₪₦₲₵";
+    private static final String AMOUNT_PATTERN = "(?:[$" + NON_USD_CURRENCY_SYMBOLS + "]\\s*)?"
+            + AMOUNT_NUMBER_PATTERN;
+    private static final String ISO_CURRENCY_CODE_PATTERN = Currency.getAvailableCurrencies().stream()
+            .map(Currency::getCurrencyCode)
+            .sorted()
+            .collect(Collectors.joining("|"));
     private static final String CURRENCY_PATTERN =
-            "(?:usd|u\\.s\\. dollars?|us dollars?|dollars?|eur|euros?|gbp|pounds?|czk|crowns?|cad|canadian dollars?|aud|australian dollars?|jpy|yen)";
+            "(?:usd|u\\.s\\. dollars?|us dollars?|dollars?|eur|euros?|gbp|pounds?|czk|kč|"
+                    + "czech crowns?|crowns?|koruna|koruny|cad|canadian dollars?|aud|australian dollars?|"
+                    + "nzd|new zealand dollars?|jpy|yen|chf|swiss francs?|sek|swedish kronor?|nok|"
+                    + "norwegian kroner?|dkk|danish kroner?|pln|polish zloty|huf|ron|bgn|inr|indian rupees?|"
+                    + "cny|rmb|chinese yuan|renminbi|hkd|hong kong dollars?|sgd|singapore dollars?|mxn|"
+                    + "mexican pesos?|brl|brazilian reais?|zar|south african rand|krw|korean won|aed|sar|"
+                    + "ils|thb|idr|myr|php|twd|(?-i:" + ISO_CURRENCY_CODE_PATTERN + "))";
+    private static final String NON_USD_CURRENCY_SYMBOL_CLASS = "[" + NON_USD_CURRENCY_SYMBOLS + "]";
+    private static final Pattern EXPLICIT_NON_USD_SYMBOL_AMOUNT_PATTERN = Pattern.compile(
+            "(?:%s\\s*%s|%s\\s*%s)".formatted(
+                    NON_USD_CURRENCY_SYMBOL_CLASS,
+                    AMOUNT_NUMBER_PATTERN,
+                    AMOUNT_NUMBER_PATTERN,
+                    NON_USD_CURRENCY_SYMBOL_CLASS)
+    );
+    private static final Pattern PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN = Pattern.compile(
+            "(?<![\\p{L}\\p{N}])(?<currency>%s)(?![\\p{L}\\p{N}])\\s+(?<amount>%s)"
+                    .formatted(CURRENCY_PATTERN, AMOUNT_NUMBER_PATTERN),
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN = Pattern.compile(
+            "(?<!\\d)(?<amount>%s)\\s+(?<currency>%s)(?![\\p{L}\\p{N}])"
+                    .formatted(AMOUNT_NUMBER_PATTERN, CURRENCY_PATTERN),
+            Pattern.CASE_INSENSITIVE
+    );
     private static final Pattern BETWEEN_PRICE_PATTERN = Pattern.compile(
             "\\b(?:between|from)\\s+(?<min>%s)\\s+(?:and|to|-)\\s+(?<max>%s)\\s*(?<currency>%s)?\\b"
                     .formatted(AMOUNT_PATTERN, AMOUNT_PATTERN, CURRENCY_PATTERN),
@@ -62,6 +97,10 @@ public class UserProductSearchCatalogInputBuilder {
             MIN_PRICE_PATTERN,
             MIN_PRICE_WITH_PREFIXED_CURRENCY_PATTERN
     );
+    private static final Pattern TRAILING_CURRENCY_PATTERN = Pattern.compile(
+            "^\\s*(?<currency>%s)(?![\\p{L}\\p{N}])".formatted(CURRENCY_PATTERN),
+            Pattern.CASE_INSENSITIVE
+    );
     private static final int MAX_INTENT_LENGTH = 1200;
 
     private final UserProductSearchHashService userProductSearchHashService;
@@ -75,7 +114,7 @@ public class UserProductSearchCatalogInputBuilder {
             UserProductSearchQueryIntentResult queryIntent,
             UserSettingsResult settings
     ) {
-        return build(originalQuery, queryIntent, settings, null, null);
+        return build(originalQuery, queryIntent, settings, null, null, null);
     }
 
     public UserProductSearchCatalogInput build(
@@ -85,29 +124,84 @@ public class UserProductSearchCatalogInputBuilder {
             String buyerIp,
             String userAgent
     ) {
+        return build(originalQuery, queryIntent, settings, buyerIp, userAgent, null);
+    }
+
+    public UserProductSearchCatalogInput build(
+            String originalQuery,
+            UserProductSearchQueryIntentResult queryIntent,
+            UserSettingsResult settings,
+            String buyerIp,
+            String userAgent,
+            CatalogDiscoveryFilters qualifiedFilters
+    ) {
+        validateSupportedCurrency(originalQuery);
         ParsedPrice parsedPrice = parsePrice(originalQuery, queryIntent.searchQuery());
-        ParsedPrice priceFilter = priceFilter(parsedPrice, settings);
+        validateCurrency(parsedPrice);
+        ParsedPrice priceFilter = qualifiedFilters == null
+                ? parsedPrice
+                : parsedPrice(qualifiedFilters);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
-        String country = countryCode(settings.location());
-        String currency = firstPresent(
-                parsedPrice == null ? null : parsedPrice.currency(),
-                defaultCurrency(country),
-                priceFilter == null ? null : "USD"
-        );
+        CatalogDiscoveryLocation shipsTo = qualifiedFilters == null ? null : qualifiedFilters.shipsTo();
+        String country = shipsTo != null
+                ? shipsTo.country()
+                : countryCode(settings.location());
+        String currency = SEARCH_CURRENCY;
         CatalogSearchContext context = context(
                 country,
+                shipsTo == null ? null : shipsTo.region(),
+                shipsTo == null ? null : shipsTo.postalCode(),
                 currency,
-                intent(originalQuery, searchQuery, parsedPrice, priceFilter, currency, queryIntent, settings)
+                intent(
+                        originalQuery,
+                        searchQuery,
+                        parsedPrice,
+                        priceFilter,
+                        currency,
+                        queryIntent,
+                        qualifiedFilters == null ? settings : null
+                )
         );
         CatalogSearchSignals signals = signals(buyerIp, userAgent);
-        CatalogSearchFilters filters = filters(priceFilter, currency);
+        CatalogSearchFilters filters = filters(priceFilter, qualifiedFilters);
         return new UserProductSearchCatalogInput(
                 searchQuery,
-                cacheKey(queryIntent, searchQuery, context, filters),
+                cacheKey(queryIntent, searchQuery, context, filters, qualifiedFilters),
                 context,
                 signals,
-                filters
+                filters,
+                qualifiedFilters
         );
+    }
+
+    /** Rejects explicitly stated non-USD prices before an LLM can rewrite them out of the catalog query. */
+    public void validateSupportedCurrency(String value) {
+        rejectExplicitNonUsdAmount(value);
+        ParsedPrice parsedPrice = parsePrice(value);
+        if (parsedPrice == null && value != null && !value.isBlank()) {
+            parsedPrice = parsePrice("under " + value.trim());
+        }
+        validateCurrency(parsedPrice);
+    }
+
+    private void rejectExplicitNonUsdAmount(String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (EXPLICIT_NON_USD_SYMBOL_AMOUNT_PATTERN.matcher(value).find()
+                || containsNonUsdTextCurrency(PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value))
+                || containsNonUsdTextCurrency(SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value))) {
+            throw new UnsupportedProductSearchCurrencyException("NON_USD");
+        }
+    }
+
+    private boolean containsNonUsdTextCurrency(Matcher matcher) {
+        while (matcher.find()) {
+            if (!SEARCH_CURRENCY.equalsIgnoreCase(currencyFromToken(matcher.group("currency")))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private CatalogSearchSignals signals(String buyerIp, String userAgent) {
@@ -119,14 +213,15 @@ public class UserProductSearchCatalogInputBuilder {
         return new CatalogSearchSignals(sanitizedBuyerIp, sanitizedUserAgent);
     }
 
-    private ParsedPrice priceFilter(ParsedPrice parsedPrice, UserSettingsResult settings) {
-        if (parsedPrice != null) {
-            return parsedPrice;
-        }
-        if (settings.budget() == null) {
+    private ParsedPrice parsedPrice(CatalogDiscoveryFilters filters) {
+        if (filters.price() == null) {
             return null;
         }
-        return new ParsedPrice(null, BigDecimal.valueOf(settings.budget()), null);
+        return new ParsedPrice(
+                majorUnits(filters.price().min()),
+                majorUnits(filters.price().max()),
+                SEARCH_CURRENCY
+        );
     }
 
     private String searchQuery(String queryIntentSearchQuery, ParsedPrice parsedPrice) {
@@ -142,26 +237,38 @@ public class UserProductSearchCatalogInputBuilder {
         return searchQuery;
     }
 
-    private CatalogSearchContext context(String country, String currency, String intent) {
+    private CatalogSearchContext context(
+            String country,
+            String region,
+            String postalCode,
+            String currency,
+            String intent
+    ) {
         return new CatalogSearchContext(
                 country,
-                null,
-                null,
+                region,
+                postalCode,
                 "en",
                 currency,
                 intent
         );
     }
 
-    private CatalogSearchFilters filters(ParsedPrice parsedPrice, String currency) {
-        if (parsedPrice == null) {
+    private CatalogSearchFilters filters(
+            ParsedPrice parsedPrice,
+            CatalogDiscoveryFilters qualifiedFilters
+    ) {
+        List<String> categories = qualifiedFilters == null
+                ? List.of()
+                : qualifiedFilters.categoryIds();
+        if (parsedPrice == null && categories.isEmpty()) {
             return null;
         }
         return new CatalogSearchFilters(
-                List.of(),
-                new CatalogSearchPriceFilter(
-                        minorUnits(parsedPrice.minAmount(), currency),
-                        minorUnits(parsedPrice.maxAmount(), currency)
+                categories,
+                parsedPrice == null ? null : new CatalogSearchPriceFilter(
+                        minorUnits(parsedPrice.minAmount()),
+                        minorUnits(parsedPrice.maxAmount())
                 )
         );
     }
@@ -204,10 +311,13 @@ public class UserProductSearchCatalogInputBuilder {
         }
         String min = matcher.group("min");
         String max = matcher.group("max");
-        String currency = firstPresent(
+        String currency = parsedCurrency(
                 currencyFromAmount(min),
                 currencyFromAmount(max),
-                currencyFromToken(group(matcher, "currency"))
+                currencyFromToken(firstPresent(
+                        group(matcher, "currency"),
+                        trailingCurrencyToken(query, matcher.end("max"))
+                ))
         );
         return new ParsedPrice(amount(min), amount(max), currency);
     }
@@ -218,9 +328,12 @@ public class UserProductSearchCatalogInputBuilder {
             return null;
         }
         String amount = group(matcher, bound);
-        String currency = firstPresent(
+        String currency = parsedCurrency(
                 currencyFromAmount(amount),
-                currencyFromToken(group(matcher, "currency"))
+                currencyFromToken(firstPresent(
+                        group(matcher, "currency"),
+                        trailingCurrencyToken(query, matcher.end(bound))
+                ))
         );
         if ("min".equals(bound)) {
             return new ParsedPrice(amount(amount), null, currency);
@@ -251,9 +364,11 @@ public class UserProductSearchCatalogInputBuilder {
         addPart(parts, priceIntent(parsedPrice, priceFilter, currency));
         addPart(parts, listPart("Hard constraints", queryIntent.constraints()));
         addPart(parts, listPart("Preference hints", queryIntent.preferenceHints()));
-        addPart(parts, locationsIntent(settings.locations()));
-        addPart(parts, clothingFitIntent(settings.clothingFit()));
-        addPart(parts, activeFiltersIntent(settings.filters()));
+        if (settings != null) {
+            addPart(parts, locationsIntent(settings.locations()));
+            addPart(parts, clothingFitIntent(settings.clothingFit()));
+            addPart(parts, activeFiltersIntent(settings.filters()));
+        }
 
         String intent = parts.stream()
                 .filter(part -> part != null && !part.isBlank())
@@ -322,7 +437,8 @@ public class UserProductSearchCatalogInputBuilder {
             UserProductSearchQueryIntentResult queryIntent,
             String searchQuery,
             CatalogSearchContext context,
-            CatalogSearchFilters filters
+            CatalogSearchFilters filters,
+            CatalogDiscoveryFilters discoveryFilters
     ) {
         CatalogSearchPriceFilter price = filters == null ? null : filters.price();
         return String.join("\n",
@@ -332,15 +448,20 @@ public class UserProductSearchCatalogInputBuilder {
                 "language=" + value(context.language()),
                 "currency=" + value(context.currency()),
                 "priceMin=" + value(price == null ? null : price.min()),
-                "priceMax=" + value(price == null ? null : price.max())
+                "priceMax=" + value(price == null ? null : price.max()),
+                "discoveryFilters=" + value(discoveryFilters)
         );
     }
 
-    private Long minorUnits(BigDecimal amount, String currency) {
+    private BigDecimal majorUnits(Long amount) {
+        return amount == null ? null : BigDecimal.valueOf(amount, 2);
+    }
+
+    private Long minorUnits(BigDecimal amount) {
         if (amount == null) {
             return null;
         }
-        return amount.movePointRight(currencyExponent(currency))
+        return amount.movePointRight(2)
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValue();
     }
@@ -373,15 +494,6 @@ public class UserProductSearchCatalogInputBuilder {
         return cleaned;
     }
 
-    private int currencyExponent(String currency) {
-        return switch (value(currency).toUpperCase(Locale.ROOT)) {
-            case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND",
-                    "VUV", "XAF", "XOF", "XPF" -> 0;
-            case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND" -> 3;
-            default -> 2;
-        };
-    }
-
     private String countryCode(UserLocationResult location) {
         if (location == null) {
             return null;
@@ -402,24 +514,6 @@ public class UserProductSearchCatalogInputBuilder {
         };
     }
 
-    private String defaultCurrency(String countryCode) {
-        if (countryCode == null || countryCode.isBlank()) {
-            return null;
-        }
-        return switch (countryCode.toUpperCase(Locale.ROOT)) {
-            case "US" -> "USD";
-            case "CA" -> "CAD";
-            case "GB" -> "GBP";
-            case "AU" -> "AUD";
-            case "NZ" -> "NZD";
-            case "CZ" -> "CZK";
-            case "JP" -> "JPY";
-            case "AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE", "IT", "LT", "LU", "LV",
-                    "MT", "NL", "PT", "SI", "SK" -> "EUR";
-            default -> null;
-        };
-    }
-
     private String currencyFromAmount(String amount) {
         if (amount == null || amount.isBlank()) {
             return null;
@@ -428,14 +522,8 @@ public class UserProductSearchCatalogInputBuilder {
         if (trimmed.startsWith("$")) {
             return "USD";
         }
-        if (trimmed.startsWith("€")) {
-            return "EUR";
-        }
-        if (trimmed.startsWith("£")) {
-            return "GBP";
-        }
-        if (trimmed.startsWith("¥")) {
-            return "JPY";
+        if (!trimmed.isEmpty() && NON_USD_CURRENCY_SYMBOLS.indexOf(trimmed.charAt(0)) >= 0) {
+            return "NON_USD";
         }
         return null;
     }
@@ -445,28 +533,36 @@ public class UserProductSearchCatalogInputBuilder {
             return null;
         }
         String normalized = token.trim().toLowerCase(Locale.ROOT);
-        if (normalized.startsWith("usd") || normalized.contains("dollar")) {
+        if (normalized.equals("usd")
+                || normalized.matches("u\\.s\\. dollars?")
+                || normalized.matches("us dollars?")
+                || normalized.matches("dollars?")) {
             return "USD";
         }
-        if (normalized.startsWith("eur") || normalized.contains("euro")) {
-            return "EUR";
+        return "NON_USD";
+    }
+
+    private String parsedCurrency(String... currencies) {
+        for (String currency : currencies) {
+            if (currency != null && !SEARCH_CURRENCY.equalsIgnoreCase(currency)) {
+                return currency;
+            }
         }
-        if (normalized.startsWith("gbp") || normalized.contains("pound")) {
-            return "GBP";
-        }
-        if (normalized.startsWith("czk") || normalized.contains("crown")) {
-            return "CZK";
-        }
-        if (normalized.startsWith("cad") || normalized.contains("canadian")) {
-            return "CAD";
-        }
-        if (normalized.startsWith("aud") || normalized.contains("australian")) {
-            return "AUD";
-        }
-        if (normalized.startsWith("jpy") || normalized.contains("yen")) {
-            return "JPY";
+        for (String currency : currencies) {
+            if (currency != null && !currency.isBlank()) {
+                return currency;
+            }
         }
         return null;
+    }
+
+    private void validateCurrency(ParsedPrice parsedPrice) {
+        if (parsedPrice == null || parsedPrice.currency() == null) {
+            return;
+        }
+        if (!SEARCH_CURRENCY.equalsIgnoreCase(parsedPrice.currency())) {
+            throw new UnsupportedProductSearchCurrencyException(parsedPrice.currency());
+        }
     }
 
     private String value(Object value) {
@@ -514,6 +610,14 @@ public class UserProductSearchCatalogInputBuilder {
         } catch (IllegalArgumentException exception) {
             return null;
         }
+    }
+
+    private String trailingCurrencyToken(String query, int amountEnd) {
+        if (query == null || amountEnd < 0 || amountEnd >= query.length()) {
+            return null;
+        }
+        Matcher matcher = TRAILING_CURRENCY_PATTERN.matcher(query.substring(amountEnd));
+        return matcher.find() ? matcher.group("currency") : null;
     }
 
     private record ParsedPrice(

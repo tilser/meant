@@ -71,7 +71,7 @@ app:
         expire-after-access: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_BUCKET_CACHE_EXPIRE_AFTER_ACCESS:25h}
       endpoints:
         - method: POST
-          path: /api/users/me/product-searches
+          path: /api/v1/users/me/product-search-qualifications
         - method: POST
           path: /api/v1/users/me/product-searches
         - method: POST
@@ -80,14 +80,10 @@ app:
           path: /api/v1/users/me/products/{canonicalProductKey}
         - method: POST
           path: /api/v1/users/me/product-variant-selections
-        - method: POST
-          path: /api/users/me/product-searches:stream
         - method: GET
           path: /api/users/me/product-search-suggestions
         - method: POST
           path: /api/users/me/inventory/photos
-        - method: POST
-          path: /api/users/me/assistant/messages:stream
         - method: POST
           path: /api/merchants/semantic-search
         - method: POST
@@ -107,7 +103,7 @@ app:
 
 ucp:
   agent:
-    profile-url: ${UCP_AGENT_PROFILE_URL:https://www.machinecommerce.dev/ucp/agent-profile/ucp-agent.json}
+    profile-url: ${UCP_AGENT_PROFILE_URL:https://shopify.dev/ucp/agent-profiles/2026-04-08/valid-with-capabilities.json}
     protocol-version: ${UCP_AGENT_PROTOCOL_VERSION:2026-04-08}
     signing-key-id: ${UCP_AGENT_SIGNING_KEY_ID:meant-local}
   diagnostics:
@@ -235,7 +231,7 @@ ai:
     app-title: ${OPENROUTER_APP_TITLE:Meant}
     models:
       preference-filter-parser: ${OPENROUTER_PREFERENCE_FILTER_MODEL:google/gemini-2.5-flash-lite}
-      product-search-query-parser: ${OPENROUTER_PRODUCT_SEARCH_QUERY_MODEL:openrouter/free}
+      product-search-query-parser: ${OPENROUTER_PRODUCT_SEARCH_QUERY_MODEL:google/gemini-2.5-flash-lite}
       product-recommendation-explainer: ${OPENROUTER_PRODUCT_EXPLAINER_MODEL:google/gemini-2.5-flash-lite}
       chat-model: ${OPENROUTER_CHAT_MODEL:google/gemini-2.5-flash-lite}
 
@@ -246,7 +242,6 @@ user:
       max-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_MAX_LIMIT:100}
       quota: ${USER_COLLECTIONS_SAVED_PRODUCTS_QUOTA:500}
       discovery-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_DISCOVERY_LIMIT:50}
-      assistant-context-limit: ${USER_COLLECTIONS_SAVED_PRODUCTS_ASSISTANT_CONTEXT_LIMIT:20}
     inventory:
       default-limit: ${USER_COLLECTIONS_INVENTORY_DEFAULT_LIMIT:50}
       max-limit: ${USER_COLLECTIONS_INVENTORY_MAX_LIMIT:100}

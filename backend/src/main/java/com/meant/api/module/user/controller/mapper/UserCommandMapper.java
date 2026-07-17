@@ -14,8 +14,10 @@ import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.RecordUserTasteBehaviorCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
+import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
@@ -32,7 +34,7 @@ import com.meant.api.module.user.service.command.UpdateUserProfilePictureCommand
 import com.meant.api.module.user.service.command.UpdateUserProfileCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UpdateUserTasteSignalCommand;
-import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.UserProductSearchPreferenceCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
@@ -103,6 +105,20 @@ public final class UserCommandMapper {
                 request.filterIds() == null ? null : new LinkedHashSet<>(request.filterIds()),
                 parsedFilters == null ? Set.of() : new LinkedHashSet<>(parsedFilters.filterIds()),
                 parsedFilters == null ? List.of() : parsedFilters.unmappedPreferences());
+    }
+
+    public static SaveUserProductSearchPreferencesCommand toSaveProductSearchPreferencesCommand(
+            UUID userId,
+            UpdateUserSettingsRequest request
+    ) {
+        return new SaveUserProductSearchPreferencesCommand(
+                userId,
+                request.productSearchPreferences().stream()
+                        .map(preference -> new UserProductSearchPreferenceCommand(
+                                preference.scope(),
+                                preference.attributeName(),
+                                preference.values()))
+                        .toList());
     }
 
     public static SaveUserProductCommand toSaveUserProductCommand(UUID userId, SaveUserProductRequest request) {

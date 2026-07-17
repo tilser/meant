@@ -8,6 +8,7 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserCatalogSourceState;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import com.meant.api.module.catalog.service.ExactProductGroupingService;
 import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
 import com.meant.api.module.catalog.service.ProductRankingService;
@@ -18,12 +19,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class UserGroupedProductSearchService {
 
     static final int MAX_PUBLIC_GROUPING_DECISIONS = 100;
@@ -41,16 +44,52 @@ public class UserGroupedProductSearchService {
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SearchUserProductsCommand command
     ) {
-        var preparation = preparationService.prepare(profileCommand, command);
+        return search(command, preparationService.prepare(profileCommand, command));
+    }
+
+    public UserGroupedProductSearchResult search(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters
+    ) {
+        return search(command, preparationService.prepare(profileCommand, command, discoveryFilters));
+    }
+
+    private UserGroupedProductSearchResult search(
+            SearchUserProductsCommand command,
+            UserProductSearchPreparation preparation
+    ) {
         FederatedCatalogDiscoveryResult discovery = federatedDiscoveryService.search(new CatalogDiscoveryRequest(
                 preparation.catalogInput().searchQuery(),
                 command.merchantId(),
                 UserProductSearchPagination.MAX_RESULT_WINDOW,
                 preparation.catalogInput().context(),
                 preparation.catalogInput().signals(),
-                preparation.catalogInput().filters()
+                preparation.catalogInput().filters(),
+                preparation.catalogInput().discoveryFilters()
         ));
         if (discovery.status() == CatalogDiscoveryTerminalStatus.FAILED) {
+            if (discovery.sources().isEmpty()) {
+                log.error("Catalog discovery failed with no eligible sources. terminalStatus={}", discovery.status());
+                throw new UserProductSearchGroupingException(
+                        "No eligible catalog discovery source was available");
+            }
+            String sourceDiagnostics = discovery.sources().stream()
+                    .map(source -> {
+                        CatalogSourceFailure failure = source.failure();
+                        return "provider=%s,type=%s,operation=%s,failureKind=%s,upstreamStatus=%s".formatted(
+                                source.provider().value(),
+                                source.discoverySource().type(),
+                                source.operation(),
+                                failure == null ? "NONE" : failure.kind(),
+                                failure == null || failure.upstreamStatus() == null
+                                        ? "NONE"
+                                        : failure.upstreamStatus()
+                        );
+                    })
+                    .collect(Collectors.joining("; "));
+            log.error("Every catalog discovery source failed. terminalStatus={}, sources=[{}]",
+                    discovery.status(), sourceDiagnostics);
             throw new UserProductSearchGroupingException("Every catalog discovery source failed");
         }
 

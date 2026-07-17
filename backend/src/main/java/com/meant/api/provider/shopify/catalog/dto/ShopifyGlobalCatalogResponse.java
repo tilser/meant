@@ -1,6 +1,7 @@
 package com.meant.api.provider.shopify.catalog.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
@@ -231,9 +232,15 @@ public record ShopifyGlobalCatalogResponse(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Metadata(
-            @JsonProperty("tech_specs") List<String> techSpecs,
-            @JsonProperty("top_features") List<String> topFeatures,
-            @JsonProperty("unique_selling_points") List<String> uniqueSellingPoints
+            @JsonProperty("tech_specs")
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+            List<String> techSpecs,
+            @JsonProperty("top_features")
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+            List<String> topFeatures,
+            @JsonProperty("unique_selling_points")
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+            List<String> uniqueSellingPoints
     ) {
     }
 

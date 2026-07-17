@@ -294,7 +294,6 @@ Current responsibilities include:
 - taste profile endpoints,
 - product search/discovery endpoints,
 - inventory endpoints,
-- assistant chat endpoints,
 - saved product endpoints,
 - SSE session implementation.
 
@@ -306,45 +305,9 @@ Split by user subdomain:
 - taste profile controller,
 - product search/discovery controller,
 - inventory controller,
-- assistant chat controller,
 - saved products controller.
 
 Move the SSE session helper out of the controller into a support/service class.
-
-### UserAssistantChatService
-
-File:
-
-- `backend/src/main/java/com/meant/api/module/user/service/UserAssistantChatService.java`
-
-Approximate size:
-
-- 1000+ lines
-
-Current responsibilities include:
-
-- conversation persistence,
-- conversation listing and lookup,
-- message history loading,
-- route classification,
-- prompt construction,
-- product-search context assembly,
-- LLM response generation,
-- fallback rendering,
-- streaming event handling.
-
-Recommendation:
-
-Split into:
-
-- chat persistence service,
-- route classifier,
-- prompt/context builder,
-- assistant response generator,
-- streaming event adapter.
-
-Also decide the intended consistency behavior when streaming fails after the user
-message has been persisted but before the assistant message is saved.
 
 ### NativeCheckoutCompletionService
 

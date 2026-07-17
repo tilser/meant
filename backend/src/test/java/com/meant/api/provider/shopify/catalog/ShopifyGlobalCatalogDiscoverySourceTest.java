@@ -3,6 +3,14 @@ package com.meant.api.provider.shopify.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryCondition;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
@@ -15,6 +23,7 @@ import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequ
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
 import java.time.Duration;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -50,7 +59,10 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
                 12,
                 new CatalogSearchContext("US", "CA", "90210", "en", "USD", "summer"),
                 null,
-                new CatalogSearchFilters(List.of("apparel"), new CatalogSearchPriceFilter(1000L, 5000L))
+                new CatalogSearchFilters(
+                        List.of("gid://shopify/TaxonomyCategory/aa-8-1"),
+                        new CatalogSearchPriceFilter(1000L, 5000L)
+                )
         ), ignored -> { });
 
         assertThat(result.successful()).isTrue();
@@ -59,8 +71,72 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
         assertThat(provider.request.limit()).isEqualTo(12);
         assertThat(provider.request.context().addressCountry()).isEqualTo("US");
         assertThat(provider.request.filters().price().min()).isEqualTo(1000L);
-        assertThat(provider.request.filters().categories()).extracting(category -> category.id())
-                .containsExactly("apparel");
+        assertThat(provider.request.filters().categories())
+                .containsExactly("gid://shopify/TaxonomyCategory/aa-8-1");
+    }
+
+    @Test
+    void mapsEveryQualifiedDiscoveryFilterToTheShopifyExtension() {
+        ShopifyGlobalCatalogProperties properties = properties();
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                new ProviderIdentity("SHOPIFY"),
+                ResultSourceType.PROVIDER_CATALOG,
+                properties.sourceIdentity()
+        );
+        CatalogSourceResult providerResult = new CatalogSourceResult(
+                source.provider(), source, CatalogSourceOperation.SEARCH, properties.protocolVersion(),
+                NegotiatedCapabilities.none(), List.of(), null, false, null);
+        FakeProvider provider = new FakeProvider(properties, source, providerResult);
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                provider, properties, authProperties(true));
+
+        adapter.search(new CatalogDiscoveryRequest(
+                "trail running shoes",
+                null,
+                10,
+                new CatalogSearchContext("US", null, null, "en", "USD", "marathon training"),
+                null,
+                null,
+                new CatalogDiscoveryFilters(
+                        true,
+                        List.of(CatalogDiscoveryCondition.NEW, CatalogDiscoveryCondition.SECONDHAND),
+                        new CatalogDiscoveryLocation("US", "CA", "90210"),
+                        List.of(new CatalogDiscoveryLocation("CA", "ON", "M5V")),
+                        new CatalogDiscoveryPrice(5000L, 15000L),
+                        List.of("gid://shopify/Shop/123"),
+                        List.of("gid://shopify/TaxonomyCategory/aa-8-1"),
+                        List.of(
+                                new CatalogDiscoveryAttributeFilter(
+                                        CatalogDiscoveryAttributeName.COLOR, List.of("Black")),
+                                new CatalogDiscoveryAttributeFilter(
+                                        CatalogDiscoveryAttributeName.SIZE, List.of("10", "10.5")),
+                                new CatalogDiscoveryAttributeFilter(
+                                        CatalogDiscoveryAttributeName.TARGET_GENDER, List.of("Men"))
+                        ),
+                        new CatalogDiscoveryRating(new BigDecimal("4.5"), 10L),
+                        List.of(CatalogDiscoveryPriceTier.LOW, CatalogDiscoveryPriceTier.MEDIUM)
+                )
+        ), ignored -> { });
+
+        assertThat(provider.request.filters().available()).isTrue();
+        assertThat(provider.request.filters().condition()).containsExactly("new", "secondhand");
+        assertThat(provider.request.filters().shipsTo())
+                .isEqualTo(new com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters.Location(
+                        "US", "CA", "90210"));
+        assertThat(provider.request.filters().shipsFrom())
+                .containsExactly(new com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters.Location(
+                        "CA", null, null));
+        assertThat(provider.request.filters().price().min()).isEqualTo(5000L);
+        assertThat(provider.request.filters().price().max()).isEqualTo(15000L);
+        assertThat(provider.request.filters().shops()).containsExactly("gid://shopify/Shop/123");
+        assertThat(provider.request.filters().categories())
+                .containsExactly("gid://shopify/TaxonomyCategory/aa-8-1");
+        assertThat(provider.request.filters().attributes())
+                .extracting(com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters.Attribute::name)
+                .containsExactly("Color", "Size", "Target gender");
+        assertThat(provider.request.filters().rating().variant().min()).isEqualByComparingTo("4.5");
+        assertThat(provider.request.filters().rating().variant().minCount()).isEqualTo(10L);
+        assertThat(provider.request.filters().priceTier()).containsExactly("low", "medium");
     }
 
     @Test

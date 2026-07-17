@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { UserTasteProfile } from '../../../lib/apiClient'
+import type { UserProductSearchPreferenceProfile, UserTasteProfile } from '../../../lib/apiClient'
 import { LOCATIONS } from '../data'
 import { deliveryLocationSummary } from '../shared/locations'
 import { PlusIcon, SearchIcon } from '../shared/icons'
@@ -19,6 +19,7 @@ import {
   preferenceMatchesSearch,
   sortPreferences,
 } from './preferencesUtils'
+import { productSearchPreferenceValues } from './productSearchPreferences'
 export function PreferencesView({
   allPrefs,
   prefsOn,
@@ -30,6 +31,12 @@ export function PreferencesView({
   onDeliveryLocations,
   clothingFit,
   onClothingFit,
+  productSearchPreferences,
+  productSearchPreferencesBusy,
+  productSearchPreferencesError,
+  onSaveProductSearchPreference,
+  onRemoveProductSearchPreference,
+  onRefreshProductSearchPreferences,
   tasteProfile,
   onAcceptTasteSuggestion,
   onRejectTasteSuggestion,
@@ -48,6 +55,12 @@ export function PreferencesView({
   onDeliveryLocations: (locations: UserLocation[]) => void
   clothingFit: ClothingFit
   onClothingFit: (value: ClothingFit) => void
+  productSearchPreferences: readonly UserProductSearchPreferenceProfile[]
+  productSearchPreferencesBusy: boolean
+  productSearchPreferencesError: string | null
+  onSaveProductSearchPreference: (preference: UserProductSearchPreferenceProfile) => void
+  onRemoveProductSearchPreference: (scope: string) => void
+  onRefreshProductSearchPreferences: () => void
   tasteProfile: UserTasteProfile
   onAcceptTasteSuggestion: (filterId: string) => void
   onRejectTasteSuggestion: (filterId: string) => void
@@ -187,6 +200,51 @@ export function PreferencesView({
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="mt-prefs-section">
+        <div className="mt-sechead">
+          <div>
+            <h3 className="mt-sectitle">Saved sizes</h3>
+            <p className="mt-secsub">
+              Stable sizes learned during search are reused only for the matching product scope.
+              Separate multiple accepted sizes with commas.
+            </p>
+          </div>
+          <span className="mt-mono mt-sec-count">
+            {productSearchPreferencesBusy ? 'Syncing…' : `${productSearchPreferences.length} saved`}
+          </span>
+        </div>
+        {productSearchPreferencesError ? (
+          <div className="mt-size-preference-error" role="alert">
+            <span>{productSearchPreferencesError}</span>
+            <button
+              className="mt-act mt-act-ghost"
+              type="button"
+              disabled={productSearchPreferencesBusy}
+              onClick={onRefreshProductSearchPreferences}
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
+        {productSearchPreferences.length > 0 ? (
+          <div className="mt-size-preferences">
+            {productSearchPreferences.map((preference) => (
+              <SavedSizePreferenceRow
+                key={`${preference.scope}:${preference.attributeName}`}
+                preference={preference}
+                disabled={productSearchPreferencesBusy || Boolean(productSearchPreferencesError)}
+                onSave={(values) => onSaveProductSearchPreference({ ...preference, values })}
+                onRemove={() => onRemoveProductSearchPreference(preference.scope)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-pref-empty">
+            No saved sizes yet. Meant will add a stable size after you confirm it while searching.
+          </div>
+        )}
       </section>
 
       <section className="mt-prefs-section">
@@ -445,6 +503,77 @@ export function PreferencesView({
         </div>
       </section>
     </main>
+  )
+}
+
+function preferenceScopeLabel(scope: string): string {
+  const label = scope.replaceAll(/[-_]+/g, ' ').trim()
+  return label ? `${label[0].toUpperCase()}${label.slice(1)}` : 'Products'
+}
+
+function SavedSizePreferenceRow({
+  preference,
+  disabled,
+  onSave,
+  onRemove,
+}: Readonly<{
+  preference: UserProductSearchPreferenceProfile
+  disabled: boolean
+  onSave: (values: string[]) => void
+  onRemove: () => void
+}>) {
+  const [draft, setDraft] = useState(preference.values.join(', '))
+  const values = productSearchPreferenceValues(draft)
+  const unchanged =
+    values.length === preference.values.length &&
+    values.every((value, index) => value === preference.values[index])
+  const label = preferenceScopeLabel(preference.scope)
+
+  useEffect(() => {
+    setDraft(preference.values.join(', '))
+  }, [preference.values])
+
+  return (
+    <div className="mt-size-preference-row">
+      <div className="mt-size-preference-copy">
+        <div className="mt-pref-name">{label}</div>
+        <div className="mt-pref-desc">Size is applied only when this scope matches the search.</div>
+      </div>
+      <label className="mt-size-preference-field">
+        <span className="mt-field-label mt-mono">Sizes</span>
+        <input
+          className="mt-input"
+          value={draft}
+          aria-label={`Sizes for ${label}`}
+          placeholder="10, 10.5"
+          disabled={disabled}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && values.length > 0 && !unchanged) {
+              onSave(values)
+            }
+          }}
+        />
+      </label>
+      <div className="mt-size-preference-actions">
+        <button
+          className="mt-act mt-act-primary"
+          type="button"
+          disabled={disabled || values.length === 0 || unchanged}
+          onClick={() => onSave(values)}
+        >
+          Save
+        </button>
+        <button
+          className="mt-act mt-act-ghost"
+          type="button"
+          disabled={disabled}
+          onClick={onRemove}
+        >
+          Remove
+        </button>
+      </div>
+    </div>
   )
 }
 

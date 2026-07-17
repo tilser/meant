@@ -13,7 +13,7 @@ public record ShopifyCatalogFilters(
         @JsonProperty("ships_from") List<Location> shipsFrom,
         Price price,
         List<String> shops,
-        List<Category> categories,
+        List<String> categories,
         List<Attribute> attributes,
         Rating rating,
         @JsonProperty("price_tier") List<String> priceTier
@@ -25,10 +25,6 @@ public record ShopifyCatalogFilters(
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Price(Long min, Long max) {
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public record Category(String id, String taxonomy) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

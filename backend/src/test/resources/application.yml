@@ -40,21 +40,17 @@ app:
         expire-after-access: 25h
       endpoints:
         - method: POST
-          path: /api/users/me/product-searches
+          path: /api/v1/users/me/product-search-qualifications
         - method: POST
           path: /api/v1/users/me/product-searches
         - method: POST
           path: /api/v1/users/me/product-searches:stream
         - method: GET
           path: /api/v1/users/me/products/{canonicalProductKey}
-        - method: POST
-          path: /api/users/me/product-searches:stream
         - method: GET
           path: /api/users/me/product-search-suggestions
         - method: POST
           path: /api/users/me/inventory/photos
-        - method: POST
-          path: /api/users/me/assistant/messages:stream
         - method: POST
           path: /api/merchants/semantic-search
         - method: POST
@@ -209,7 +205,6 @@ user:
       max-limit: 100
       quota: 500
       discovery-limit: 50
-      assistant-context-limit: 20
     inventory:
       default-limit: 50
       max-limit: 100

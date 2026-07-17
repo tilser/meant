@@ -184,6 +184,7 @@ function variantSavings(
 
 export function ProductModal({
   product,
+  userId,
   deliveryLocations,
   preferences,
   saved,
@@ -205,6 +206,7 @@ export function ProductModal({
   onNext,
 }: Readonly<{
   product: Product | null
+  userId?: string
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   saved: boolean
@@ -332,6 +334,7 @@ export function ProductModal({
       addressCountry: deliveryCountryCode,
       language,
       signal: controller.signal,
+      expectedUserId: userId,
     })
       .then((details) => {
         if (controller.signal.aborted) {
@@ -348,7 +351,7 @@ export function ProductModal({
         setDetailLoadError('Latest product details are unavailable right now.')
       })
     return () => controller.abort()
-  }, [deliveryCountryCode, merchantDetailMerchantId, merchantDetailProductId, product?.id])
+  }, [deliveryCountryCode, merchantDetailMerchantId, merchantDetailProductId, product?.id, userId])
 
   useEffect(
     () => () => {
@@ -852,6 +855,7 @@ export function ProductModal({
               <GroupedOfferSelector
                 product={product}
                 researchQuery={researchQuery}
+                userId={userId}
                 onSelectionChange={handlePurchaseSelection}
               />
             ) : null}
@@ -1026,7 +1030,7 @@ export function ProductModal({
                 </div>
               </section>
 
-              <ProductReviewsPanel product={product} />
+              <ProductReviewsPanel product={product} userId={userId} />
 
               {!hasVariantSelector ? (
                 <section className="mt-block">
@@ -1078,7 +1082,7 @@ export function ProductModal({
             <div className="mt-modal-dock" ref={modalDockRef}>
               <AskThread messages={messages} />
               <AskComposer
-                placeholder={`Ask Meant about ${product.name}...`}
+                placeholder={`Ask about ${product.name}...`}
                 suggestions={[
                   'Does this match my preferences?',
                   'Is there a cheaper option?',

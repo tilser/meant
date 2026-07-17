@@ -8,6 +8,7 @@ public record UserDiscoverConversationResult(
         String title,
         Instant createdAt,
         Instant updatedAt,
-        String threadJson
+        String threadJson,
+        long revision
 ) {
 }

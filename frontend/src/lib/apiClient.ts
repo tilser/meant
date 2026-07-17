@@ -33,6 +33,12 @@ export interface UserSettingsLocation {
   city: string
 }
 
+export interface UserProductSearchPreferenceProfile {
+  scope: string
+  attributeName: 'SIZE'
+  values: string[]
+}
+
 export interface UserSettingsProfile {
   budget: number | null
   clothingFit: 'men' | 'women' | 'other' | null
@@ -42,6 +48,7 @@ export interface UserSettingsProfile {
   availableFilters: ShoppingFilterProfile[]
   parsedFilterIds: string[]
   unmappedPreferences: string[]
+  productSearchPreferences?: UserProductSearchPreferenceProfile[]
   createdAt: string
   updatedAt: string
 }
@@ -246,51 +253,13 @@ export interface ProductReviewsProfile {
   message: string | null
 }
 
-export interface UserProductSearchProfile {
-  query: string
-  normalizedQuery: string
-  profileHash: string
-  cached: boolean
-  offset: number
-  limit: number
-  nextOffset: number | null
-  hasMore: boolean
-  products: UserProductSearchProductProfile[]
-}
-
-export type UserProductSearchStreamEventType =
-  'phase' | 'product' | 'product_update' | 'rank_update' | 'done' | 'error'
-
-export interface UserProductSearchStreamEventProfile {
-  type: UserProductSearchStreamEventType
-  agent: string | null
-  label: string | null
-  productKey: string | null
-  product: UserProductSearchProductProfile | null
-  products: UserProductSearchProductProfile[]
-  query: string | null
-  normalizedQuery: string | null
-  profileHash: string | null
-  cached: boolean | null
-  offset: number | null
-  limit: number | null
-  nextOffset: number | null
-  hasMore: boolean | null
-  message: string | null
-}
-
-export interface UserProductSearchStreamHandlers {
-  onPhase?: (event: UserProductSearchStreamEventProfile) => void
-  onProduct?: (event: UserProductSearchStreamEventProfile) => void
-  onProductUpdate?: (event: UserProductSearchStreamEventProfile) => void
-  onRankUpdate?: (event: UserProductSearchStreamEventProfile) => void
-  onDone?: (event: UserProductSearchStreamEventProfile) => void
-  onError?: (message: string) => void
-}
-
 export interface UserProductSearchSuggestionsProfile {
   suggestions: string[]
 }
+
+export type ProductSearchQualificationFilter = components['schemas']['UserProductSearchFilterKind']
+export type ProductSearchQualificationProfile =
+  components['schemas']['UserProductSearchQualificationResponse']
 
 export type UserTasteBehaviorType = 'SAVE' | 'PURCHASE' | 'DISMISS'
 export type UserTasteSignalStatus = 'ACTIVE' | 'DISABLED'
@@ -338,87 +307,13 @@ export interface UserPopularProductSearchProfile {
   query: string
 }
 
-export interface AssistantProductContextInput {
-  id: string
-  name: string
-  brand: string
-  category: string
-  match: number
-  priceFrom: number | null
-  note: string
-}
-
-export interface AssistantCartItemContextInput {
-  name: string
-  merchant: string
-  quantity: number
-  price: number
-}
-
-export interface AssistantOrderContextInput {
-  id: string
-  date: string
-  status: string
-  statusNote: string
-  itemCount: number
-}
-
-export interface AssistantChatContextInput {
-  view: string
-  contextLabel: string
-  currentSearchQuery?: string | null
-  selectedMerchantName?: string | null
-  savedProductCount: number
-  cartItemCount: number
-  visibleProducts: readonly AssistantProductContextInput[]
-  cartItems: readonly AssistantCartItemContextInput[]
-  orders: readonly AssistantOrderContextInput[]
-}
-
-export interface UserAssistantMessageProfile {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  products: UserProductSearchProductProfile[]
-  createdAt: string
-}
-
-export interface UserAssistantConversationProfile {
-  conversationId: string | null
-  title: string | null
-  createdAt: string | null
-  updatedAt: string | null
-  messages: UserAssistantMessageProfile[]
-}
-
-export interface UserAssistantConversationSummaryProfile {
-  conversationId: string
-  title: string
-  createdAt: string
-  updatedAt: string
-}
-
 export interface UserDiscoverConversationProfile {
   conversationId: string
   title: string
   createdAt: string
   updatedAt: string
   threadJson: string
-}
-
-export interface UserAssistantStreamEventProfile {
-  type: 'metadata' | 'delta' | 'done' | 'error'
-  conversationId: string | null
-  messageId: string | null
-  text: string | null
-  products: UserProductSearchProductProfile[]
-}
-
-export interface UserAssistantStreamHandlers {
-  onMetadata?: (event: UserAssistantStreamEventProfile) => void
-  onDelta?: (text: string) => void
-  onDone?: (event: UserAssistantStreamEventProfile) => void
-  onError?: (message: string) => void
+  revision: number
 }
 
 export interface UserSavedProductOfferProfile {
@@ -590,6 +485,7 @@ export interface UpdateCheckoutInput {
   buyer: CheckoutBuyerInput
   shippingAddress: CheckoutShippingAddressInput
   discountCodes?: readonly string[]
+  expectedUserId?: string
 }
 
 export interface CreateCheckoutConsentInput {
@@ -598,6 +494,7 @@ export interface CreateCheckoutConsentInput {
   paymentInstrumentReference: string
   shippingMethod?: string | null
   presentedTermsHash?: string | null
+  expectedUserId?: string
 }
 
 export interface CompleteCartCheckoutInput {
@@ -611,6 +508,7 @@ export interface CompleteCartCheckoutInput {
   credentialType?: string
   credentialDetails?: CheckoutCredentialDetailsInput
   idempotencyKey?: string
+  expectedUserId?: string
 }
 
 export interface CheckoutCredentialDetailsInput {
@@ -820,6 +718,7 @@ export interface SearchDiscountCodesInput {
     deliveryOptionHandle?: string | null
     selectedOptionId?: string | null
   }[]
+  expectedUserId?: string
 }
 
 /** Injects the current Supabase access token as a Bearer header on every request. */
@@ -837,10 +736,19 @@ const authMiddleware: Middleware = {
 const client = createClient<paths>({ baseUrl: API_URL })
 client.use(authMiddleware)
 
-async function authHeaders(): Promise<HeadersInit> {
+async function authHeaders(expectedUserId?: string): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
+  const session = data.session
+  if (expectedUserId && session?.user.id !== expectedUserId) {
+    throw new Error('Authenticated user changed before request')
+  }
+  const token = session?.access_token
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export interface AccountBoundRequestOptions {
+  expectedUserId?: string
+  signal?: AbortSignal
 }
 
 /** Fetches the current user, creating the backend profile row on first call (upsert-on-read). */
@@ -852,45 +760,61 @@ export async function getCurrentUser(): Promise<UserProfile> {
   return data
 }
 
-export async function updateProfile(input: {
-  firstName: string
-  surname: string | null
-}): Promise<UserProfile> {
-  const { data, error } = await client.PATCH('/api/users/me', {
-    body: { firstName: input.firstName, surname: input.surname ?? undefined },
+export async function updateProfile(
+  input: { firstName: string; surname: string | null },
+  options?: AccountBoundRequestOptions,
+): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/users/me`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders(options?.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ firstName: input.firstName, surname: input.surname ?? undefined }),
+    signal: options?.signal,
   })
-  if (error || !data) {
-    throw new Error('Failed to update profile')
-  }
-  return data
+  return parseJsonResponse<UserProfile>(response, 'Failed to update profile')
 }
 
-export async function updateProfilePicture(profilePicturePath: string): Promise<UserProfile> {
+export async function updateProfilePicture(
+  profilePicturePath: string,
+  options?: AccountBoundRequestOptions,
+): Promise<UserProfile> {
   const response = await fetch(`${API_URL}/api/users/me/profile-picture`, {
     method: 'PATCH',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(options?.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ profilePicturePath }),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserProfile>(response, 'Failed to update profile picture')
 }
 
-export async function updateNewsletterSubscription(newsletter: boolean): Promise<UserProfile> {
-  const { data, error } = await client.PATCH('/api/users/me/newsletter', {
-    body: { newsletter },
+export async function updateNewsletterSubscription(
+  newsletter: boolean,
+  options?: AccountBoundRequestOptions,
+): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/users/me/newsletter`, {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders(options?.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ newsletter }),
+    signal: options?.signal,
   })
-  if (error || !data) {
-    throw new Error('Failed to update newsletter subscription')
-  }
-  return data
+  return parseJsonResponse<UserProfile>(response, 'Failed to update newsletter subscription')
 }
 
-export async function removeProfilePicture(): Promise<UserProfile> {
+export async function removeProfilePicture(
+  options?: AccountBoundRequestOptions,
+): Promise<UserProfile> {
   const response = await fetch(`${API_URL}/api/users/me/profile-picture`, {
     method: 'DELETE',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserProfile>(response, 'Failed to remove profile picture')
 }
@@ -917,6 +841,7 @@ export async function uploadProfilePictureFile(
   path: string
   signedUrl: string | null
 }> {
+  await authHeaders(userId)
   const extension = profilePictureExtension(file)
   const path = `${userId}/${randomUuid()}.${extension}`
   const { data, error } = await supabase.storage.from(PROFILE_PICTURE_BUCKET).upload(path, file, {
@@ -933,10 +858,14 @@ export async function uploadProfilePictureFile(
   }
 }
 
-export async function deleteProfilePictureFile(profilePicturePath?: string | null): Promise<void> {
+export async function deleteProfilePictureFile(
+  profilePicturePath?: string | null,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
   if (!profilePicturePath) {
     return
   }
+  await authHeaders(options?.expectedUserId)
   await supabase.storage.from(PROFILE_PICTURE_BUCKET).remove([profilePicturePath])
 }
 
@@ -971,23 +900,32 @@ function randomUuid(): string {
   })
 }
 
-export async function getUserSettings(): Promise<UserSettingsProfile> {
+export async function getUserSettings(
+  options?: AccountBoundRequestOptions,
+): Promise<UserSettingsProfile> {
   const response = await fetch(`${API_URL}/api/users/me/settings`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to load user settings')
 }
 
-export async function getMerchants(): Promise<MerchantProfile[]> {
+export async function getMerchants(
+  options?: AccountBoundRequestOptions,
+): Promise<MerchantProfile[]> {
   const response = await fetch(`${API_URL}/api/merchants`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<MerchantProfile[]>(response, 'Failed to load merchants')
 }
 
-export async function getMerchantIdentityLinks(): Promise<MerchantIdentityLinkProfile[]> {
+export async function getMerchantIdentityLinks(
+  options?: AccountBoundRequestOptions,
+): Promise<MerchantIdentityLinkProfile[]> {
   const response = await fetch(`${API_URL}/api/merchants/identity-links`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<MerchantIdentityLinkProfile[]>(
     response,
@@ -997,12 +935,14 @@ export async function getMerchantIdentityLinks(): Promise<MerchantIdentityLinkPr
 
 export async function startMerchantIdentityAuthorization(
   merchantId: string,
+  options?: AccountBoundRequestOptions,
 ): Promise<MerchantIdentityAuthorizationProfile> {
   const response = await fetch(
     `${API_URL}/api/merchants/${merchantId}/identity-link/authorization`,
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
     },
   )
   return parseJsonResponse<MerchantIdentityAuthorizationProfile>(
@@ -1015,11 +955,13 @@ export async function completeMerchantIdentityAuthorization(input: {
   state: string
   code: string
   issuer?: string | null
+  expectedUserId?: string
+  signal?: AbortSignal
 }): Promise<MerchantIdentityLinkProfile> {
   const response = await fetch(`${API_URL}/api/merchants/identity-links/oauth/callback`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1027,6 +969,7 @@ export async function completeMerchantIdentityAuthorization(input: {
       code: input.code,
       issuer: input.issuer ?? undefined,
     }),
+    signal: input.signal,
   })
   return parseJsonResponse<MerchantIdentityLinkProfile>(
     response,
@@ -1034,28 +977,36 @@ export async function completeMerchantIdentityAuthorization(input: {
   )
 }
 
-export async function revokeMerchantIdentityLink(merchantId: string): Promise<void> {
+export async function revokeMerchantIdentityLink(
+  merchantId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
   const response = await fetch(`${API_URL}/api/merchants/identity-links/${merchantId}`, {
     method: 'DELETE',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   if (!response.ok) {
     throw new Error('Failed to revoke merchant account connection')
   }
 }
 
-export async function updateUserSettings(input: {
-  budget?: number | null
-  clothingFit?: 'men' | 'women' | 'other' | 'none'
-  location?: UserSettingsLocation | null
-  locations?: readonly UserSettingsLocation[]
-  filterIds?: readonly string[]
-  preferenceDescription?: string
-}): Promise<UserSettingsProfile> {
+export async function updateUserSettings(
+  input: {
+    budget?: number | null
+    clothingFit?: 'men' | 'women' | 'other' | 'none'
+    location?: UserSettingsLocation | null
+    locations?: readonly UserSettingsLocation[]
+    filterIds?: readonly string[]
+    preferenceDescription?: string
+    productSearchPreferences?: readonly UserProductSearchPreferenceProfile[]
+  },
+  options?: AccountBoundRequestOptions,
+): Promise<UserSettingsProfile> {
   const response = await fetch(`${API_URL}/api/users/me/settings`, {
     method: 'PATCH',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(options?.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1066,48 +1017,77 @@ export async function updateUserSettings(input: {
       locations: input.locations,
       filterIds: input.filterIds,
       preferenceDescription: input.preferenceDescription,
+      productSearchPreferences: input.productSearchPreferences,
     }),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to update user settings')
 }
 
-export async function searchUserProducts(input: {
-  query: string
+export async function deleteUserProductSearchPreference(
+  scope: string,
+  options?: AccountBoundRequestOptions,
+): Promise<UserSettingsProfile> {
+  const response = await fetch(
+    `${API_URL}/api/users/me/settings/product-search-preferences/${encodeURIComponent(scope)}`,
+    {
+      method: 'DELETE',
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<UserSettingsProfile>(
+    response,
+    'Failed to remove saved product search preference',
+  )
+}
+
+export async function qualifyProductSearch(input: {
+  conversationId: string
+  qualificationId?: string | null
+  message: string
   merchantId?: string | null
-  offset?: number
-  limit?: number
-}): Promise<UserProductSearchProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/product-searches`, {
+  signal?: AbortSignal
+  expectedUserId?: string
+}): Promise<ProductSearchQualificationProfile> {
+  const response = await fetch(`${API_URL}/api/v1/users/me/product-search-qualifications`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      query: input.query,
+      conversationId: input.conversationId,
+      qualificationId: input.qualificationId ?? undefined,
+      message: input.message,
       merchantId: input.merchantId ?? undefined,
-      offset: input.offset ?? undefined,
-      limit: input.limit ?? undefined,
     }),
+    signal: input.signal,
   })
-  return parseJsonResponse<UserProductSearchProfile>(response, 'Failed to search products')
+  return parseJsonResponse<ProductSearchQualificationProfile>(
+    response,
+    'Failed to qualify product search',
+  )
 }
 
 export async function searchGroupedProducts(input: {
   query: string
+  qualificationId: string
   merchantId?: string | null
   offset?: number
   limit?: number
   signal?: AbortSignal
+  expectedUserId?: string
 }): Promise<GroupedProductSearchProfile> {
   const response = await fetch(`${API_URL}/api/v1/users/me/product-searches`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       query: input.query,
+      qualificationId: input.qualificationId ?? undefined,
       merchantId: input.merchantId ?? undefined,
       offset: input.offset ?? undefined,
       limit: input.limit ?? undefined,
@@ -1124,6 +1104,7 @@ export async function getCanonicalProductDetail(input: {
   canonicalProductKey: string
   selectedOfferKey?: string | null
   signal?: AbortSignal
+  expectedUserId?: string
 }): Promise<CanonicalProductDetailProfile> {
   const search = new URLSearchParams()
   if (input.selectedOfferKey) {
@@ -1134,7 +1115,7 @@ export async function getCanonicalProductDetail(input: {
     `${API_URL}/api/v1/users/me/products/${encodeURIComponent(input.canonicalProductKey)}${suffix}`,
     {
       cache: 'no-store',
-      headers: await authHeaders(),
+      headers: await authHeaders(input.expectedUserId),
       signal: input.signal,
     },
   )
@@ -1149,11 +1130,12 @@ export async function selectProductVariant(input: {
   selectedOptions: readonly { name: string; value: string }[]
   preferredOptionName?: string | null
   signal?: AbortSignal
+  expectedUserId?: string
 }): Promise<ProductVariantSelectionProfile> {
   const response = await fetch(`${API_URL}/api/v1/users/me/product-variant-selections`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1171,65 +1153,13 @@ export async function selectProductVariant(input: {
   )
 }
 
-export async function streamUserProductSearch(
-  input: {
-    query: string
-    merchantId?: string | null
-    offset?: number
-    limit?: number
-    signal?: AbortSignal
-  },
-  handlers: UserProductSearchStreamHandlers,
-): Promise<void> {
-  const response = await fetch(`${API_URL}/api/users/me/product-searches:stream`, {
-    method: 'POST',
-    headers: {
-      ...(await authHeaders()),
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query: input.query,
-      merchantId: input.merchantId ?? undefined,
-      offset: input.offset ?? undefined,
-      limit: input.limit ?? undefined,
-    }),
-    signal: input.signal,
-  })
-
-  if (!response.ok || !response.body) {
-    throw new Error('Failed to stream product search')
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        break
-      }
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split(/\r?\n\r?\n/)
-      buffer = events.pop() ?? ''
-      events.forEach((rawEvent) => handleProductSearchStreamEvent(rawEvent, handlers))
-    }
-
-    buffer += decoder.decode()
-    if (buffer.trim()) {
-      handleProductSearchStreamEvent(buffer, handlers)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-}
-
-export async function getUserProductSearchSuggestions(): Promise<UserProductSearchSuggestionsProfile> {
+export async function getUserProductSearchSuggestions(
+  options?: AccountBoundRequestOptions,
+): Promise<UserProductSearchSuggestionsProfile> {
   const response = await fetch(`${API_URL}/api/users/me/product-search-suggestions`, {
     cache: 'no-store',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserProductSearchSuggestionsProfile>(
     response,
@@ -1237,9 +1167,12 @@ export async function getUserProductSearchSuggestions(): Promise<UserProductSear
   )
 }
 
-export async function getProductDiscovery(): Promise<UserProductDiscoveryProfile> {
+export async function getProductDiscovery(
+  options?: AccountBoundRequestOptions,
+): Promise<UserProductDiscoveryProfile> {
   const response = await fetch(`${API_URL}/api/users/me/product-discovery`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserProductDiscoveryProfile>(
     response,
@@ -1253,6 +1186,7 @@ export async function getMerchantProductDetails(input: {
   addressCountry?: string | null
   language?: string | null
   signal?: AbortSignal
+  expectedUserId?: string
 }): Promise<MerchantProductDetailsProfile> {
   const search = new URLSearchParams({ productId: input.productId })
   if (input.addressCountry) {
@@ -1265,7 +1199,7 @@ export async function getMerchantProductDetails(input: {
     `${API_URL}/api/merchants/${encodeURIComponent(input.merchantId)}/product-details?${search.toString()}`,
     {
       cache: 'no-store',
-      headers: await authHeaders(),
+      headers: await authHeaders(input.expectedUserId),
       signal: input.signal,
     },
   )
@@ -1281,6 +1215,7 @@ export async function getProductReviews(input: {
   limit?: number
   offset?: number
   signal?: AbortSignal
+  expectedUserId?: string
 }): Promise<ProductReviewsProfile> {
   const search = new URLSearchParams({ productId: input.productId })
   if (input.limit !== undefined) {
@@ -1293,7 +1228,7 @@ export async function getProductReviews(input: {
     `${API_URL}/api/reviews/merchants/${encodeURIComponent(input.merchantId)}/products?${search.toString()}`,
     {
       cache: 'no-store',
-      headers: await authHeaders(),
+      headers: await authHeaders(input.expectedUserId),
       signal: input.signal,
     },
   )
@@ -1305,6 +1240,8 @@ export async function getUserInventoryItems(input?: {
   restockOnly?: boolean
   page?: number
   limit?: number
+  expectedUserId?: string
+  signal?: AbortSignal
 }): Promise<UserInventoryItemProfile[]> {
   const search = new URLSearchParams()
   if (input?.category) {
@@ -1322,43 +1259,51 @@ export async function getUserInventoryItems(input?: {
   const query = search.toString()
   const response = await fetch(`${API_URL}/api/users/me/inventory${query ? `?${query}` : ''}`, {
     cache: 'no-store',
-    headers: await authHeaders(),
+    headers: await authHeaders(input?.expectedUserId),
+    signal: input?.signal,
   })
   return parseJsonResponse<UserInventoryItemProfile[]>(response, 'Failed to load inventory')
 }
 
-export async function exportUserInventory(): Promise<UserInventoryExportProfile> {
+export async function exportUserInventory(
+  options?: AccountBoundRequestOptions,
+): Promise<UserInventoryExportProfile> {
   const response = await fetch(`${API_URL}/api/users/me/inventory/export`, {
     cache: 'no-store',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserInventoryExportProfile>(response, 'Failed to export inventory')
 }
 
 export async function createUserInventoryItem(
   input: UserInventoryItemInput,
+  options?: AccountBoundRequestOptions,
 ): Promise<UserInventoryItemProfile> {
   const response = await fetch(`${API_URL}/api/users/me/inventory`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(options?.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(input),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to add inventory item')
 }
 
 export async function createUserInventoryPhotoItem(
   input: UserInventoryPhotoInput,
+  options?: AccountBoundRequestOptions,
 ): Promise<UserInventoryItemProfile> {
   const response = await fetch(`${API_URL}/api/users/me/inventory/photos`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(options?.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(input),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to add photo inventory item')
 }
@@ -1366,34 +1311,44 @@ export async function createUserInventoryPhotoItem(
 export async function updateUserInventoryItem(input: {
   itemId: string
   item: UserInventoryItemUpdateInput
+  expectedUserId?: string
+  signal?: AbortSignal
 }): Promise<UserInventoryItemProfile> {
   const response = await fetch(
     `${API_URL}/api/users/me/inventory/${encodeURIComponent(input.itemId)}`,
     {
       method: 'PATCH',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(input.item),
+      signal: input.signal,
     },
   )
   return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to update inventory item')
 }
 
-export async function deleteUserInventoryItem(itemId: string): Promise<void> {
+export async function deleteUserInventoryItem(
+  itemId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
   const response = await fetch(`${API_URL}/api/users/me/inventory/${encodeURIComponent(itemId)}`, {
     method: 'DELETE',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   if (!response.ok) {
     throw new Error('Failed to delete inventory item')
   }
 }
 
-export async function getPopularProductSearches(): Promise<UserPopularProductSearchProfile[]> {
+export async function getPopularProductSearches(
+  options?: AccountBoundRequestOptions,
+): Promise<UserPopularProductSearchProfile[]> {
   const response = await fetch(`${API_URL}/api/users/me/popular-product-searches`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserPopularProductSearchProfile[]>(
     response,
@@ -1401,56 +1356,12 @@ export async function getPopularProductSearches(): Promise<UserPopularProductSea
   )
 }
 
-export async function getLatestAssistantConversation(options?: {
-  signal?: AbortSignal
-}): Promise<UserAssistantConversationProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/assistant/conversations/latest`, {
-    headers: await authHeaders(),
-    signal: options?.signal,
-  })
-  return parseJsonResponse<UserAssistantConversationProfile>(
-    response,
-    'Failed to load Ask Meant conversation',
-  )
-}
-
-export async function getAssistantConversations(options?: {
-  signal?: AbortSignal
-}): Promise<UserAssistantConversationSummaryProfile[]> {
-  const response = await fetch(`${API_URL}/api/users/me/assistant/conversations`, {
-    headers: await authHeaders(),
-    signal: options?.signal,
-  })
-  return parseJsonResponse<UserAssistantConversationSummaryProfile[]>(
-    response,
-    'Failed to load Ask Meant conversations',
-  )
-}
-
-export async function getAssistantConversation(
-  conversationId: string,
-  options?: {
-    signal?: AbortSignal
-  },
-): Promise<UserAssistantConversationProfile> {
-  const response = await fetch(
-    `${API_URL}/api/users/me/assistant/conversations/${encodeURIComponent(conversationId)}`,
-    {
-      headers: await authHeaders(),
-      signal: options?.signal,
-    },
-  )
-  return parseJsonResponse<UserAssistantConversationProfile>(
-    response,
-    'Failed to load Ask Meant conversation',
-  )
-}
-
 export async function getDiscoverConversations(options?: {
+  expectedUserId?: string
   signal?: AbortSignal
 }): Promise<UserDiscoverConversationProfile[]> {
   const response = await fetch(`${API_URL}/api/users/me/discover/conversations`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
     signal: options?.signal,
   })
   return parseJsonResponse<UserDiscoverConversationProfile[]>(
@@ -1459,10 +1370,29 @@ export async function getDiscoverConversations(options?: {
   )
 }
 
+export async function getDiscoverConversation(
+  conversationId: string,
+  options?: { expectedUserId?: string; signal?: AbortSignal },
+): Promise<UserDiscoverConversationProfile> {
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/discover/conversations/${encodeURIComponent(conversationId)}`,
+    {
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<UserDiscoverConversationProfile>(
+    response,
+    'Failed to load Discover conversation',
+  )
+}
+
 export async function saveDiscoverConversation(input: {
   conversationId: string
   title: string
   threadJson: string
+  expectedRevision?: number
+  expectedUserId?: string
   signal?: AbortSignal
 }): Promise<UserDiscoverConversationProfile> {
   const response = await fetch(
@@ -1470,12 +1400,13 @@ export async function saveDiscoverConversation(input: {
     {
       method: 'PUT',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         title: input.title,
         threadJson: input.threadJson,
+        expectedRevision: input.expectedRevision,
       }),
       signal: input.signal,
     },
@@ -1486,12 +1417,16 @@ export async function saveDiscoverConversation(input: {
   )
 }
 
-export async function deleteDiscoverConversation(conversationId: string): Promise<void> {
+export async function deleteDiscoverConversation(
+  conversationId: string,
+  options?: { expectedUserId?: string; signal?: AbortSignal },
+): Promise<void> {
   const response = await fetch(
     `${API_URL}/api/users/me/discover/conversations/${encodeURIComponent(conversationId)}`,
     {
       method: 'DELETE',
-      headers: await authHeaders(),
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
     },
   )
   if (!response.ok && response.status !== 404) {
@@ -1499,62 +1434,11 @@ export async function deleteDiscoverConversation(conversationId: string): Promis
   }
 }
 
-export async function streamAssistantMessage(
-  input: {
-    conversationId?: string | null
-    message: string
-    context: AssistantChatContextInput
-    signal?: AbortSignal
-  },
-  handlers: UserAssistantStreamHandlers,
-): Promise<void> {
-  const response = await fetch(`${API_URL}/api/users/me/assistant/messages:stream`, {
-    method: 'POST',
-    headers: {
-      ...(await authHeaders()),
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      conversationId: input.conversationId ?? undefined,
-      message: input.message,
-      context: input.context,
-    }),
-    signal: input.signal,
-  })
-
-  if (!response.ok || !response.body) {
-    throw new Error('Failed to stream Ask Meant response')
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        break
-      }
-      buffer += decoder.decode(value, { stream: true })
-      const events = buffer.split(/\r?\n\r?\n/)
-      buffer = events.pop() ?? ''
-      events.forEach((rawEvent) => handleAssistantStreamEvent(rawEvent, handlers))
-    }
-
-    buffer += decoder.decode()
-    if (buffer.trim()) {
-      handleAssistantStreamEvent(buffer, handlers)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-}
-
 export async function getSavedProducts(input?: {
   page?: number
   limit?: number
+  expectedUserId?: string
+  signal?: AbortSignal
 }): Promise<UserSavedProductProfile[]> {
   const search = new URLSearchParams()
   if (input?.page !== undefined) {
@@ -1567,7 +1451,8 @@ export async function getSavedProducts(input?: {
   const response = await fetch(
     `${API_URL}/api/users/me/saved-products${query ? `?${query}` : ''}`,
     {
-      headers: await authHeaders(),
+      headers: await authHeaders(input?.expectedUserId),
+      signal: input?.signal,
     },
   )
   return parseJsonResponse<UserSavedProductProfile[]>(response, 'Failed to load saved products')
@@ -1575,24 +1460,25 @@ export async function getSavedProducts(input?: {
 
 export async function getSavedProduct(
   productKey: string,
-  signal?: AbortSignal,
+  options?: { expectedUserId?: string; signal?: AbortSignal },
 ): Promise<UserSavedProductProfile> {
   const search = new URLSearchParams({ productKey })
   const response = await fetch(`${API_URL}/api/users/me/saved-products/detail?${search}`, {
     cache: 'no-store',
-    headers: await authHeaders(),
-    signal,
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserSavedProductProfile>(response, 'Failed to load saved product')
 }
 
 export async function saveUserProduct(
   input: SaveUserProductInput,
+  options?: { expectedUserId?: string },
 ): Promise<UserSavedProductProfile> {
   const response = await fetch(`${API_URL}/api/users/me/saved-products`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(options?.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(input),
@@ -1600,35 +1486,45 @@ export async function saveUserProduct(
   return parseJsonResponse<UserSavedProductProfile>(response, 'Failed to save product')
 }
 
-export async function removeSavedProduct(productKey: string): Promise<void> {
+export async function removeSavedProduct(
+  productKey: string,
+  options?: { expectedUserId?: string },
+): Promise<void> {
   const search = new URLSearchParams({ productKey })
   const response = await fetch(`${API_URL}/api/users/me/saved-products?${search.toString()}`, {
     method: 'DELETE',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
   })
   if (!response.ok) {
     throw new Error('Failed to remove saved product')
   }
 }
 
-export async function getUserTasteProfile(): Promise<UserTasteProfile> {
+export async function getUserTasteProfile(
+  options?: AccountBoundRequestOptions,
+): Promise<UserTasteProfile> {
   const response = await fetch(`${API_URL}/api/users/me/taste-profile`, {
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserTasteProfile>(response, 'Failed to load learned taste profile')
 }
 
-export async function recordUserTasteBehavior(input: {
-  behavior: UserTasteBehaviorType
-  product: SaveUserProductInput
-}): Promise<UserTasteProfile> {
+export async function recordUserTasteBehavior(
+  input: {
+    behavior: UserTasteBehaviorType
+    product: SaveUserProductInput
+  },
+  options?: AccountBoundRequestOptions,
+): Promise<UserTasteProfile> {
   const response = await fetch(`${API_URL}/api/users/me/taste-profile/behaviors`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(options?.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(input),
+    signal: options?.signal,
   })
   return parseJsonResponse<UserTasteProfile>(response, 'Failed to record taste behavior')
 }
@@ -1637,30 +1533,37 @@ export async function updateUserTasteSignal(input: {
   signalId: string
   weight?: number
   disabled?: boolean
+  expectedUserId?: string
+  signal?: AbortSignal
 }): Promise<UserTasteSignalProfile> {
   const response = await fetch(
     `${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(input.signalId)}`,
     {
       method: 'PATCH',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         weight: input.weight,
         disabled: input.disabled,
       }),
+      signal: input.signal,
     },
   )
   return parseJsonResponse<UserTasteSignalProfile>(response, 'Failed to update taste signal')
 }
 
-export async function removeUserTasteSignal(signalId: string): Promise<void> {
+export async function removeUserTasteSignal(
+  signalId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
   const response = await fetch(
     `${API_URL}/api/users/me/taste-profile/signals/${encodeURIComponent(signalId)}`,
     {
       method: 'DELETE',
-      headers: await authHeaders(),
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
     },
   )
   if (!response.ok) {
@@ -1668,23 +1571,31 @@ export async function removeUserTasteSignal(signalId: string): Promise<void> {
   }
 }
 
-export async function acceptUserTasteSuggestion(filterId: string): Promise<UserSettingsProfile> {
+export async function acceptUserTasteSuggestion(
+  filterId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<UserSettingsProfile> {
   const response = await fetch(
     `${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:accept`,
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
     },
   )
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to accept taste suggestion')
 }
 
-export async function rejectUserTasteSuggestion(filterId: string): Promise<void> {
+export async function rejectUserTasteSuggestion(
+  filterId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
   const response = await fetch(
     `${API_URL}/api/users/me/taste-profile/suggestions/${encodeURIComponent(filterId)}:reject`,
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
     },
   )
   if (!response.ok) {
@@ -1699,11 +1610,12 @@ export async function createCart(input: {
   deliveryAddressesToAdd?: readonly CartToolMapInput[]
   deliveryAddressesToReplace?: readonly CartToolMapInput[]
   selectedDeliveryOptions?: readonly CartToolMapInput[]
+  expectedUserId?: string
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1733,11 +1645,12 @@ export async function updateCart(input: {
   deliveryAddressesToAdd?: readonly CartToolMapInput[]
   deliveryAddressesToReplace?: readonly CartToolMapInput[]
   selectedDeliveryOptions?: readonly CartToolMapInput[]
+  expectedUserId?: string
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}`, {
     method: 'PATCH',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1760,14 +1673,22 @@ export async function bindSelectedOfferToCart(input: {
   offerKey: string
   quantity?: number
   cartId?: string | null
+  expectedUserId?: string
 }): Promise<CartProfile> {
   const addItems = [{ offerKey: input.offerKey, quantity: input.quantity ?? 1 }]
-  return input.cartId ? updateCart({ cartId: input.cartId, addItems }) : createCart({ addItems })
+  return input.cartId
+    ? updateCart({
+        cartId: input.cartId,
+        addItems,
+        expectedUserId: input.expectedUserId,
+      })
+    : createCart({ addItems, expectedUserId: input.expectedUserId })
 }
 
 export async function getCartCheckout(input: {
   cartId: string
   refresh?: boolean
+  expectedUserId?: string
 }): Promise<CheckoutProfile> {
   const search = new URLSearchParams()
   if (input.refresh !== undefined) {
@@ -1778,7 +1699,7 @@ export async function getCartCheckout(input: {
   const response = await fetch(
     `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout${suffix}`,
     {
-      headers: await authHeaders(),
+      headers: await authHeaders(input.expectedUserId),
     },
   )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to get checkout')
@@ -1786,12 +1707,14 @@ export async function getCartCheckout(input: {
 
 export async function bootstrapEmbeddedCheckout(
   cartId: string,
+  options?: AccountBoundRequestOptions,
 ): Promise<EmbeddedCheckoutBootstrapProfile> {
   const response = await fetch(
     `${API_URL}/api/carts/${encodeURIComponent(cartId)}/checkout/embedded`,
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
     },
   )
   return parseJsonResponse<EmbeddedCheckoutBootstrapProfile>(
@@ -1803,12 +1726,13 @@ export async function bootstrapEmbeddedCheckout(
 export async function completeEmbeddedCheckout(input: {
   cartId: string
   sessionId: string
+  expectedUserId?: string
 }): Promise<CheckoutProfile> {
   const response = await fetch(
     `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/embedded/${encodeURIComponent(input.sessionId)}/complete`,
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(input.expectedUserId),
     },
   )
   return parseJsonResponse<CheckoutProfile>(response, 'Failed to verify embedded checkout')
@@ -1817,12 +1741,13 @@ export async function completeEmbeddedCheckout(input: {
 export async function cancelEmbeddedCheckout(input: {
   cartId: string
   sessionId: string
+  expectedUserId?: string
 }): Promise<void> {
   const response = await fetch(
     `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/embedded/${encodeURIComponent(input.sessionId)}/cancel`,
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(input.expectedUserId),
     },
   )
   if (!response.ok) {
@@ -1836,7 +1761,7 @@ export async function updateCartCheckout(input: UpdateCheckoutInput): Promise<Ch
     {
       method: 'PATCH',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -1859,6 +1784,7 @@ export interface AssistCheckoutInput {
   message: string
   merchantDeliveryHint?: string | null
   history?: readonly CheckoutAssistantMessage[]
+  expectedUserId?: string
 }
 
 export interface CheckoutAssistantResult {
@@ -1875,7 +1801,7 @@ export async function assistCartCheckout(
     {
       method: 'POST',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -1896,7 +1822,7 @@ export async function createCheckoutConsent(
     {
       method: 'POST',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -1920,7 +1846,7 @@ export async function completeCartCheckout(
     {
       method: 'POST',
       headers: {
-        ...(await authHeaders()),
+        ...(await authHeaders(input.expectedUserId)),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -1960,7 +1886,7 @@ export async function searchDiscountCodes(
   const response = await fetch(`${API_URL}/api/discounts/search`, {
     method: 'POST',
     headers: {
-      ...(await authHeaders()),
+      ...(await authHeaders(input.expectedUserId)),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1976,81 +1902,11 @@ export async function searchDiscountCodes(
   return parseJsonResponse<DiscountCodeSearchProfile>(response, 'Failed to find discount codes')
 }
 
-export async function getOrders(): Promise<OrderProfile[]> {
+export async function getOrders(options?: AccountBoundRequestOptions): Promise<OrderProfile[]> {
   const response = await fetch(`${API_URL}/api/orders`, {
     cache: 'no-store',
-    headers: await authHeaders(),
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
   })
   return parseJsonResponse<OrderProfile[]>(response, 'Failed to load orders')
-}
-
-function handleAssistantStreamEvent(rawEvent: string, handlers: UserAssistantStreamHandlers) {
-  const data = streamEventData(rawEvent)
-
-  if (!data) {
-    return
-  }
-
-  const event = JSON.parse(data) as UserAssistantStreamEventProfile
-  switch (event.type) {
-    case 'metadata':
-      handlers.onMetadata?.(event)
-      break
-    case 'delta':
-      if (event.text) {
-        handlers.onDelta?.(event.text)
-      }
-      break
-    case 'done':
-      handlers.onDone?.(event)
-      break
-    case 'error':
-      handlers.onError?.(event.text ?? 'Ask Meant could not respond right now.')
-      break
-    default:
-      break
-  }
-}
-
-function handleProductSearchStreamEvent(
-  rawEvent: string,
-  handlers: UserProductSearchStreamHandlers,
-) {
-  const data = streamEventData(rawEvent)
-
-  if (!data) {
-    return
-  }
-
-  const event = JSON.parse(data) as UserProductSearchStreamEventProfile
-  switch (event.type) {
-    case 'phase':
-      handlers.onPhase?.(event)
-      break
-    case 'product':
-      handlers.onProduct?.(event)
-      break
-    case 'product_update':
-      handlers.onProductUpdate?.(event)
-      break
-    case 'rank_update':
-      handlers.onRankUpdate?.(event)
-      break
-    case 'done':
-      handlers.onDone?.(event)
-      break
-    case 'error':
-      handlers.onError?.(event.message ?? 'Product search failed. Please try again.')
-      break
-    default:
-      break
-  }
-}
-
-function streamEventData(rawEvent: string): string {
-  return rawEvent
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice('data:'.length).trimStart())
-    .join('\n')
 }

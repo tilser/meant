@@ -15,6 +15,7 @@ public record CatalogDiscoveryRequest(
         CatalogSearchContext context,
         CatalogSearchSignals signals,
         CatalogSearchFilters filters,
+        CatalogDiscoveryFilters discoveryFilters,
         Set<ProviderIdentity> coveredProviders
 ) {
 
@@ -37,7 +38,19 @@ public record CatalogDiscoveryRequest(
             CatalogSearchSignals signals,
             CatalogSearchFilters filters
     ) {
-        this(query, merchantId, candidateLimit, context, signals, filters, Set.of());
+        this(query, merchantId, candidateLimit, context, signals, filters, null, Set.of());
+    }
+
+    public CatalogDiscoveryRequest(
+            String query,
+            UUID merchantId,
+            int candidateLimit,
+            CatalogSearchContext context,
+            CatalogSearchSignals signals,
+            CatalogSearchFilters filters,
+            CatalogDiscoveryFilters discoveryFilters
+    ) {
+        this(query, merchantId, candidateLimit, context, signals, filters, discoveryFilters, Set.of());
     }
 
     public boolean broad() {
@@ -45,10 +58,12 @@ public record CatalogDiscoveryRequest(
     }
 
     public CatalogDiscoveryRequest withCandidateLimit(int limit) {
-        return new CatalogDiscoveryRequest(query, merchantId, limit, context, signals, filters, coveredProviders);
+        return new CatalogDiscoveryRequest(
+                query, merchantId, limit, context, signals, filters, discoveryFilters, coveredProviders);
     }
 
     public CatalogDiscoveryRequest withCoveredProviders(Set<ProviderIdentity> providers) {
-        return new CatalogDiscoveryRequest(query, merchantId, candidateLimit, context, signals, filters, providers);
+        return new CatalogDiscoveryRequest(
+                query, merchantId, candidateLimit, context, signals, filters, discoveryFilters, providers);
     }
 }

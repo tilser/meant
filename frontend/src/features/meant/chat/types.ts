@@ -68,20 +68,50 @@ export interface DiscoverChatMessage {
   blocks?: readonly DiscoverChatBlock[]
   pending?: boolean
   pendingText?: string
+  suggestedReplies?: readonly string[]
   query?: string
   productContext?: Product
+  /** Marks assistant output derived from transient catalog/product facts. Never stored durably. */
+  sessionOnly?: boolean
 }
 
 export interface DiscoverChatThread {
   id: string
   title: string
   messages: readonly DiscoverChatMessage[]
+  qualificationId?: string
   named?: boolean
   archived?: boolean
   focusProductId?: ProductId
   createdAt?: number
   updatedAt?: number
+  /** Server revision this local snapshot was based on. Stored locally, never sent in the snapshot. */
+  persistedRevision?: number
 }
+
+export interface DiscoverProductSearchTurnInput {
+  conversationId: string
+  qualificationId?: string
+  message: string
+  onActivities?: (activities: readonly AgentActivity[]) => void
+}
+
+export type DiscoverProductSearchTurnResult =
+  | {
+      status: 'NEEDS_INPUT'
+      qualificationId: string
+      assistantMessage: string
+      suggestedReplies: readonly string[]
+      effectiveQuery: string
+    }
+  | {
+      status: 'READY'
+      qualificationId: string
+      assistantMessage: string
+      suggestedReplies: readonly string[]
+      effectiveQuery: string
+      products: readonly Product[]
+    }
 
 export interface ProductDetailChatRequest {
   id: string

@@ -8,9 +8,12 @@ import com.meant.api.module.user.controller.response.UserCanonicalProductDetailV
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.UserFederatedProductSearchStreamService;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserQualifiedProductSearchResolver;
 import com.meant.api.module.user.service.UserCanonicalProductDetailService;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
+import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
+import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -21,6 +24,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import java.util.Objects;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,14 +49,14 @@ public class UserGroupedProductSearchV1Controller {
     private final UserFederatedProductSearchStreamService userFederatedProductSearchStreamService;
     private final UserProductSearchProperties userProductSearchProperties;
     private final UserStreamEventWriter userStreamEventWriter;
+    private final UserQualifiedProductSearchResolver qualifiedSearchResolver;
 
     @PostMapping("/me/product-searches")
     @Operation(
             operationId = "searchGroupedProductsV1",
             summary = "Search grouped canonical products for the current user",
-            description = "Federates provider catalogs and Meant merchant-semantic discovery, then returns version 1 "
-                    + "provider-neutral products with exact merchant offers and provenance. The unversioned JSON and "
-                    + "SSE routes remain flat during frontend migration."
+            description = "Executes a server-issued READY qualification plan against eligible catalog providers, "
+                    + "then returns provider-neutral products with exact merchant offers and provenance."
     )
     @ApiResponse(
             responseCode = "200",
@@ -65,17 +69,19 @@ public class UserGroupedProductSearchV1Controller {
             HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        UserQualifiedProductSearchInput qualified = qualifiedSearch(authenticatedUser, request);
         return UserGroupedProductSearchV1Response.from(userGroupedProductSearchService.search(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new SearchUserProductsCommand(
                         authenticatedUser.id(),
-                        request.query(),
-                        request.merchantId(),
+                        qualified.effectiveQuery(),
+                        qualified.merchantId(),
                         httpRequest.getRemoteAddr(),
                         userAgent(httpRequest),
                         request.offset(),
                         request.limit()
-                )
+                ),
+                qualified.filters()
         ));
     }
 
@@ -123,10 +129,11 @@ public class UserGroupedProductSearchV1Controller {
             HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        UserQualifiedProductSearchInput qualified = qualifiedSearch(authenticatedUser, request);
         SearchUserProductsCommand command = new SearchUserProductsCommand(
                 authenticatedUser.id(),
-                request.query(),
-                request.merchantId(),
+                qualified.effectiveQuery(),
+                qualified.merchantId(),
                 httpRequest.getRemoteAddr(),
                 userAgent(httpRequest),
                 request.offset(),
@@ -145,6 +152,7 @@ public class UserGroupedProductSearchV1Controller {
         session.start(() -> userFederatedProductSearchStreamService.stream(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 command,
+                qualified.filters(),
                 event -> session.send(UserFederatedProductSearchStreamEventResponse.from(event))
         ));
         return emitter;
@@ -153,5 +161,22 @@ public class UserGroupedProductSearchV1Controller {
     private String userAgent(HttpServletRequest request) {
         String userAgent = request.getHeader("User-Agent");
         return userAgent == null || userAgent.isBlank() ? null : userAgent.trim();
+    }
+
+    private UserQualifiedProductSearchInput qualifiedSearch(
+            AuthenticatedUser authenticatedUser,
+            UserProductSearchRequest request
+    ) {
+        UserQualifiedProductSearchInput qualified = qualifiedSearchResolver.resolve(
+                authenticatedUser.id(), request.qualificationId());
+        if (qualified.merchantId() != null) {
+            throw new UserException(
+                    "Merchant-scoped search is unavailable until the merchant has a trusted Shopify Shop GID"
+            );
+        }
+        if (!Objects.equals(qualified.merchantId(), request.merchantId())) {
+            throw new UserException("Product-search qualification merchant scope does not match the request");
+        }
+        return qualified;
     }
 }

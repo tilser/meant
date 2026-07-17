@@ -7,7 +7,7 @@ import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record OpenRouterJsonSchemaDefinition(
-        String type,
+        Object type,
         Boolean additionalProperties,
         List<String> required,
         Map<String, OpenRouterJsonSchemaDefinition> properties,
@@ -70,6 +70,10 @@ public record OpenRouterJsonSchemaDefinition(
         );
     }
 
+    public static OpenRouterJsonSchemaDefinition nullableString() {
+        return nullableType("string");
+    }
+
     public static OpenRouterJsonSchemaDefinition number() {
         return new OpenRouterJsonSchemaDefinition(
                 "number",
@@ -81,6 +85,10 @@ public record OpenRouterJsonSchemaDefinition(
                 null,
                 null
         );
+    }
+
+    public static OpenRouterJsonSchemaDefinition nullableNumber() {
+        return nullableType("number");
     }
 
     public static OpenRouterJsonSchemaDefinition stringEnum(List<String> values) {
@@ -99,6 +107,23 @@ public record OpenRouterJsonSchemaDefinition(
     public static OpenRouterJsonSchemaDefinition bool() {
         return new OpenRouterJsonSchemaDefinition(
                 "boolean",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public static OpenRouterJsonSchemaDefinition nullableBool() {
+        return nullableType("boolean");
+    }
+
+    private static OpenRouterJsonSchemaDefinition nullableType(String valueType) {
+        return new OpenRouterJsonSchemaDefinition(
+                List.of(valueType, "null"),
                 null,
                 null,
                 null,

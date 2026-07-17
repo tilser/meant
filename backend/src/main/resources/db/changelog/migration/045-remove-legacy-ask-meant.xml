@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-remove-legacy-ask-meant" author="meant">
+        <comment>
+            Ask Meant no longer exists. Remove its message storage and retain only Discover
+            conversation snapshots under a domain-specific table name.
+        </comment>
+        <dropTable tableName="user_assistant_messages" cascadeConstraints="true"/>
+        <delete tableName="user_assistant_conversations">
+            <where>kind &lt;&gt; 'DISCOVER'</where>
+        </delete>
+        <dropDefaultValue tableName="user_assistant_conversations" columnName="kind"/>
+        <renameTable
+                oldTableName="user_assistant_conversations"
+                newTableName="user_discover_conversations"/>
+        <sql>
+            ALTER INDEX idx_user_assistant_conversations_user_updated
+                RENAME TO idx_user_discover_conversations_user_updated;
+            ALTER INDEX idx_user_assistant_conversations_user_kind_updated
+                RENAME TO idx_user_discover_conversations_user_kind_updated;
+            ALTER TABLE user_discover_conversations
+                RENAME CONSTRAINT user_assistant_conversations_pkey
+                TO user_discover_conversations_pkey;
+        </sql>
+    </changeSet>
+</databaseChangeLog>

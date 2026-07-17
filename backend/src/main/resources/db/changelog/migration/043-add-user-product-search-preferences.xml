@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-user-product-search-preferences" author="meant">
+        <createTable tableName="user_product_search_preferences">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="scope" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="attribute_name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="values_json" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_preferences"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_search_preferences_user"/>
+        <addUniqueConstraint
+                tableName="user_product_search_preferences"
+                columnNames="user_id, scope, attribute_name"
+                constraintName="uk_user_product_search_preference_scope_attribute"/>
+        <createIndex
+                tableName="user_product_search_preferences"
+                indexName="idx_user_product_search_preferences_user">
+            <column name="user_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

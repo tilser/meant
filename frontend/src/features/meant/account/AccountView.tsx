@@ -68,6 +68,8 @@ export function AccountView({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const activeUserIdRef = useRef(userId)
+  activeUserIdRef.current = userId
   const savedTimeoutRef = useRef<number | null>(null)
   const newsletterSavedTimeoutRef = useRef<number | null>(null)
   const preview: UserAccount = { name, email: user.email, avatar, avatarPath, newsletter }
@@ -80,6 +82,7 @@ export function AccountView({
 
   useEffect(() => {
     return () => {
+      activeUserIdRef.current = undefined
       if (savedTimeoutRef.current !== null) {
         window.clearTimeout(savedTimeoutRef.current)
       }
@@ -144,6 +147,16 @@ export function AccountView({
   }
 
   const saveAccount = async () => {
+    const requestUserId = userId
+    if (!requestUserId) {
+      setError('Missing authenticated user id')
+      return
+    }
+    const ensureCurrentAccount = () => {
+      if (activeUserIdRef.current !== requestUserId) {
+        throw new Error('Account changed while saving profile')
+      }
+    }
     const nextName = name.trim() || user.name
     const { firstName, surname } = splitName(nextName)
     let uploadedPath: string | null = null
@@ -156,31 +169,38 @@ export function AccountView({
       let savedAvatarPath = avatarPath
 
       if (nextName !== user.name) {
-        const profile = await updateProfile({ firstName, surname })
+        const profile = await updateProfile(
+          { firstName, surname },
+          { expectedUserId: requestUserId },
+        )
+        ensureCurrentAccount()
         savedName =
           [profile.firstName, profile.surname].filter(Boolean).join(' ').trim() || nextName
         savedEmail = profile.email || user.email
       }
 
       if (pendingFile) {
-        if (!userId) {
-          throw new Error('Missing authenticated user id')
-        }
-        const uploaded = await uploadProfilePictureFile(userId, pendingFile)
+        const uploaded = await uploadProfilePictureFile(requestUserId, pendingFile)
+        ensureCurrentAccount()
         uploadedPath = uploaded.path
-        const profile = await updateProfilePicture(uploaded.path)
+        const profile = await updateProfilePicture(uploaded.path, {
+          expectedUserId: requestUserId,
+        })
+        ensureCurrentAccount()
         savedAvatarPath = profile.profilePicturePath ?? uploaded.path
         savedAvatar = uploaded.signedUrl
         if (user.avatarPath && user.avatarPath !== savedAvatarPath) {
-          void deleteProfilePictureFile(user.avatarPath)
+          void deleteProfilePictureFile(user.avatarPath, { expectedUserId: requestUserId })
         }
       } else if (avatarPath === null && user.avatarPath) {
-        const profile = await removeProfilePicture()
+        const profile = await removeProfilePicture({ expectedUserId: requestUserId })
+        ensureCurrentAccount()
         savedAvatarPath = profile.profilePicturePath ?? null
         savedAvatar = null
-        void deleteProfilePictureFile(user.avatarPath)
+        void deleteProfilePictureFile(user.avatarPath, { expectedUserId: requestUserId })
       }
 
+      ensureCurrentAccount()
       onSave({
         name: savedName,
         email: savedEmail,
@@ -195,7 +215,7 @@ export function AccountView({
       showSaved()
     } catch {
       if (uploadedPath) {
-        void deleteProfilePictureFile(uploadedPath)
+        void deleteProfilePictureFile(uploadedPath, { expectedUserId: requestUserId })
       }
       setError('Could not save your changes. Please try again.')
     } finally {

@@ -134,7 +134,7 @@ export function AskComposer({
           onChange={(event) => setValue(event.target.value)}
           placeholder={placeholder}
           disabled={disabled}
-          aria-label="Ask Meant message"
+          aria-label="Message Meant"
         />
         <button type="submit" className="mt-ask-go" aria-label="Ask" disabled={!canSend}>
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden>

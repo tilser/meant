@@ -120,9 +120,11 @@ function ReviewRow({ review }: Readonly<{ review: ProductReviewProfile }>) {
 
 export function ProductReviewsPanel({
   product,
+  userId,
   mode = 'modal',
 }: Readonly<{
   product: Product
+  userId?: string
   mode?: ProductReviewsPanelMode
 }>) {
   const [response, setResponse] = useState<ProductReviewsProfile | null>(null)
@@ -154,6 +156,7 @@ export function ProductReviewsPanel({
       limit: REVIEW_PAGE_SIZE,
       offset: 0,
       signal: controller.signal,
+      expectedUserId: userId,
     })
       .then((nextResponse) => {
         if (controller.signal.aborted) {
@@ -172,7 +175,7 @@ export function ProductReviewsPanel({
       })
 
     return () => controller.abort()
-  }, [canFetchReviews, merchantId, product.id, productId])
+  }, [canFetchReviews, merchantId, product.id, productId, userId])
 
   const loadMoreReviews = async () => {
     if (!merchantId || !productId || loadMorePending) {
@@ -186,6 +189,7 @@ export function ProductReviewsPanel({
         productId,
         limit: REVIEW_PAGE_SIZE,
         offset: nextOffset,
+        expectedUserId: userId,
       })
       setResponse(nextResponse)
       setReviews((current) => mergeReviewPages(current, nextResponse.reviews ?? []))

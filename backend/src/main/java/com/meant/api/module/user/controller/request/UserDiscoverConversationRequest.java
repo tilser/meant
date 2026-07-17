@@ -14,6 +14,12 @@ public record UserDiscoverConversationRequest(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         @Size(max = 5_000_000)
-        String threadJson
+        String threadJson,
+
+        @Schema(
+                description = "Last server revision observed by the caller; omitted only when creating a new chat",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        Long expectedRevision
 ) {
 }

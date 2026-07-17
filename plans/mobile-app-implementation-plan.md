@@ -268,19 +268,15 @@ Primary mobile endpoint groups (verified against current backend controllers):
   - `PATCH /api/users/me/profile-picture`
   - `DELETE /api/users/me/profile-picture`
 - Product discovery (Phase 2):
-  - `POST /api/users/me/product-searches` (non-streaming; use this for the first mobile result path)
-  - `POST /api/users/me/product-searches:stream` (SSE; this is what web actually uses as its primary search path — mobile adopts it only after device streaming verification)
+  - `POST /api/v1/users/me/product-search-qualifications` (required before discovery; continue the conversation until `READY`)
+  - `POST /api/v1/users/me/product-searches` (non-streaming; use this for the first mobile result path)
+  - `POST /api/v1/users/me/product-searches:stream` (SSE; adopt only after device streaming verification)
   - `GET /api/users/me/product-discovery`
   - `GET /api/users/me/product-search-suggestions`
   - `GET /api/users/me/popular-product-searches`
 - Product detail (Phase 2 — required by the product detail screen):
-  - `GET /api/merchants/{merchantId}/product-details`
+  - `GET /api/v1/users/me/products/{canonicalProductKey}`
   - `GET /api/reviews/merchants/{merchantId}/products` (product reviews shown on detail)
-- Assistant (Phase 5):
-  - `GET /api/users/me/assistant/conversations`
-  - `GET /api/users/me/assistant/conversations/latest`
-  - `GET /api/users/me/assistant/conversations/{conversationId}`
-  - `POST /api/users/me/assistant/messages:stream` (SSE)
 - Saved products (Phase 2):
   - `GET /api/users/me/saved-products`
   - `POST /api/users/me/saved-products`
@@ -413,8 +409,9 @@ Deliverables:
 
 - Discover screen matching the current web app's hybrid chat and search behavior.
 - Direct search input.
-- Chat-style assistant/discovery surface.
-- Call `POST /api/users/me/product-searches`.
+- Chat-style conversational discovery surface.
+- Qualify with `POST /api/v1/users/me/product-search-qualifications`, then call
+  `POST /api/v1/users/me/product-searches` only after the qualification is ready.
 - Product result list.
 - Product detail screen.
 - Save/unsave product flow.
@@ -424,7 +421,7 @@ Acceptance:
 
 - User can search or use the chat-style discovery surface, view products, open detail, save a product, and see it in `Saved`.
 - Product and price rendering uses shared pure helpers where practical.
-- Streaming is not required for the first product result path, but the screen architecture must leave room for assistant streaming.
+- Streaming is not required for the first product result path, but the screen architecture must leave room for catalog-result streaming.
 
 ### Phase 3 - Cart and Checkout
 
@@ -551,8 +548,8 @@ Risk: browser streaming assumptions may not hold in React Native.
 Mitigation:
 
 - Use non-streaming product search for the first result-loading path where possible.
-- Keep assistant streaming as a separately verified mobile behavior inside the hybrid discovery surface.
-- Verify SSE/fetch streaming on iOS and Android before committing assistant streaming UX.
+- Keep catalog-result streaming as a separately verified mobile behavior inside the hybrid discovery surface.
+- Verify SSE/fetch streaming on iOS and Android before committing streaming UX.
 - Provide fallback behavior.
 
 ### Shared code becoming a dumping ground

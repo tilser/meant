@@ -114,7 +114,7 @@ function renderAssistantMarkdown(text: string, pending?: boolean): ReactNode {
 
 function AskThinkingIndicator() {
   return (
-    <span className="mt-msg-thinking" role="status" aria-label="Ask Meant is thinking">
+    <span className="mt-msg-thinking" role="status" aria-label="Meant is thinking">
       <span aria-hidden="true" />
       <span aria-hidden="true" />
       <span aria-hidden="true" />

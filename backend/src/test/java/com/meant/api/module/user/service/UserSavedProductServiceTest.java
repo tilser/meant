@@ -628,7 +628,7 @@ class UserSavedProductServiceTest {
     private UserCollectionProperties properties(int quota) {
         int limit = Math.min(50, quota);
         return new UserCollectionProperties(
-                new UserCollectionProperties.SavedProducts(limit, 100, quota, limit, limit),
+                new UserCollectionProperties.SavedProducts(limit, 100, quota, limit),
                 new UserCollectionProperties.Inventory(50, 100, 500)
         );
     }

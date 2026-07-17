@@ -53,6 +53,20 @@ class MerchantSemanticCatalogDiscoverySourceTest {
             Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon(true).factory());
 
     @Test
+    void doesNotParticipateInBroadProviderCatalogSearches() {
+        MerchantSemanticCatalogDiscoverySource source = source(mock(MerchantIntegrationLookupService.class));
+
+        assertThat(source.supports(new CatalogDiscoveryRequest(
+                "linen shirt",
+                null,
+                10,
+                null,
+                null,
+                null
+        ))).isFalse();
+    }
+
+    @Test
     void streamsPreliminaryAndEnrichedCandidateWithinOneUniqueBudgetAndModelsBothSourceSemantics() {
         MerchantIntegrationLookupService integrationLookup = mock(MerchantIntegrationLookupService.class);
         when(integrationLookup.listByMerchant(any())).thenReturn(List.of(integration()));

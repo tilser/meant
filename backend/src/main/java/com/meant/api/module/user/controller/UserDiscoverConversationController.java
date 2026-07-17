@@ -90,7 +90,8 @@ public class UserDiscoverConversationController {
                         authenticatedUser.id(),
                         conversationId,
                         request.title(),
-                        request.threadJson()
+                        request.threadJson(),
+                        request.expectedRevision()
                 )));
     }
 

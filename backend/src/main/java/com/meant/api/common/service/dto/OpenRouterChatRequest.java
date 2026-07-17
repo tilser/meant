@@ -29,16 +29,6 @@ public record OpenRouterChatRequest(
             List<OpenRouterChatMessage> messages,
             Double temperature,
             OpenRouterResponseFormat responseFormat,
-            Boolean stream
-    ) {
-        this(model, messages, temperature, responseFormat, null, stream);
-    }
-
-    public OpenRouterChatRequest(
-            String model,
-            List<OpenRouterChatMessage> messages,
-            Double temperature,
-            OpenRouterResponseFormat responseFormat,
             List<OpenRouterPlugin> plugins
     ) {
         this(model, messages, temperature, responseFormat, plugins, false);

@@ -44,17 +44,17 @@ import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
-import com.meant.api.module.user.controller.response.UserAssistantConversationSummaryResponse;
+import com.meant.api.module.user.controller.response.UserDiscoverConversationResponse;
 import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
 import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchProductResponse;
+import com.meant.api.module.user.controller.response.UserProductSearchQualificationResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.controller.response.UserTasteProfileResponse;
-import com.meant.api.module.user.entity.UserAssistantConversation;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductSearch;
 import com.meant.api.module.user.entity.UserProductSearchEvent;
@@ -63,7 +63,6 @@ import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.repository.UserProductRecommendationExplanationRepository;
 import com.meant.api.module.user.repository.UserProductSearchEventRepository;
 import com.meant.api.module.user.repository.UserProductSearchRepository;
-import com.meant.api.module.user.repository.UserAssistantConversationRepository;
 import com.meant.api.module.user.repository.UserProductSearchResultItemRepository;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserInventoryService;
@@ -113,9 +112,6 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class UserControllerIT extends PostgresIntegrationTestSupport {
 
-    /** Mirrors the assistant conversations controller limit; kept local to avoid exposing the constant. */
-    private static final int MAX_CONVERSATION_LIMIT_FIXTURE = 50;
-
     @LocalServerPort
     private int port;
 
@@ -145,9 +141,6 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private UserProductRecommendationExplanationRepository userProductRecommendationExplanationRepository;
-
-    @Autowired
-    private UserAssistantConversationRepository userAssistantConversationRepository;
 
     @Autowired
     private UserProductSearchProperties userProductSearchProperties;
@@ -253,6 +246,40 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                                   ]
                                 }
                                 """;
+                    }
+                    if ("product_search_qualification".equals(schemaName)) {
+                        boolean sizeAnswered = userPrompt.contains("Latest user turn:\n10");
+                        return """
+                                {
+                                  "effectiveQuery": "running shoes",
+                                  "assistantMessage": "%s",
+                                  "suggestedReplies": %s,
+                                  "available": {"state": "VALUE", "value": true},
+                                  "condition": {"state": "NOT_APPLICABLE", "values": []},
+                                  "shipsTo": {
+                                    "state": "NOT_APPLICABLE",
+                                    "country": null,
+                                    "region": null,
+                                    "postalCode": null
+                                  },
+                                  "shipsFrom": {"state": "NOT_APPLICABLE", "values": []},
+                                  "price": {"state": "ANY", "minUsd": null, "maxUsd": null},
+                                  "shops": {"state": "NOT_APPLICABLE", "values": []},
+                                  "categories": {"state": "NOT_APPLICABLE", "values": []},
+                                  "attributes": {"state": "%s", "values": %s},
+                                  "rating": {"state": "NOT_APPLICABLE", "min": null, "minCount": null},
+                                  "priceTier": {"state": "NOT_APPLICABLE", "values": []},
+                                  "durableAttributes": %s
+                                }
+                                """.formatted(
+                                sizeAnswered ? "Ready to search." : "What shoe size should I use?",
+                                sizeAnswered ? "[]" : "[\"10\", \"10.5\", \"Any size\"]",
+                                sizeAnswered ? "VALUE" : "MISSING",
+                                sizeAnswered ? "[{\"name\":\"SIZE\",\"values\":[\"10\"]}]" : "[]",
+                                sizeAnswered
+                                        ? "[{\"scope\":\"footwear\",\"name\":\"SIZE\",\"values\":[\"10\"]}]"
+                                        : "[]"
+                        );
                     }
                     return """
                             {
@@ -662,6 +689,111 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
+    void qualificationAsksGenericallyThenPersistsConfirmedScopedSize() {
+        UUID id = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String email = id + "@example.com";
+        String bearer = token(id, email, "Ada Lovelace");
+
+        client.put().uri("/api/users/me/discover/conversations/{conversationId}", conversationId)
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"title\":\"Running shoes\",\"threadJson\":\"{}\"}")
+                .exchange()
+                .expectStatus().isOk();
+
+        UserProductSearchQualificationResponse question = client.post()
+                .uri("/api/v1/users/me/product-search-qualifications")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {"conversationId":"%s","message":"running shoes"}
+                        """.formatted(conversationId))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductSearchQualificationResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(question).isNotNull();
+        assertThat(question.status().name()).isEqualTo("NEEDS_INPUT");
+        assertThat(question.assistantMessage()).contains("shoe size");
+
+        UserProductSearchQualificationResponse ready = client.post()
+                .uri("/api/v1/users/me/product-search-qualifications")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {"conversationId":"%s","qualificationId":"%s","message":"10"}
+                        """.formatted(conversationId, question.qualificationId()))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserProductSearchQualificationResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(ready).isNotNull();
+        assertThat(ready.status().name()).isEqualTo("READY");
+        assertThat(ready.missingFilters()).isEmpty();
+
+        UserSettingsResponse settings = client.get().uri("/api/users/me/settings")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(settings).isNotNull();
+        assertThat(settings.productSearchPreferences()).singleElement().satisfies(preference -> {
+            assertThat(preference.scope()).isEqualTo("footwear");
+            assertThat(preference.values()).containsExactly("10");
+        });
+    }
+
+    @Test
+    void discoverConversationDetailReturnsOnlyTheAuthenticatedUsersConversation() {
+        UUID id = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String bearer = token(id, id + "@example.com", "Ada Lovelace");
+
+        client.put().uri("/api/users/me/discover/conversations/{conversationId}", conversationId)
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"title\":\"Old chat\",\"threadJson\":\"{\\\"messages\\\":[]}\"}")
+                .exchange()
+                .expectStatus().isOk();
+
+        UserDiscoverConversationResponse response = client.get()
+                .uri("/api/v1/users/me/discover/conversations/{conversationId}", conversationId)
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserDiscoverConversationResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(response).isNotNull();
+        assertThat(response.conversationId()).isEqualTo(conversationId);
+        assertThat(response.title()).isEqualTo("Old chat");
+
+        client.get().uri("/api/v1/users/me/discover/conversations/{conversationId}", conversationId)
+                .headers(headers -> headers.setBearerAuth(
+                        token(otherUserId, otherUserId + "@example.com", "Other User")))
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
     void tasteProfileHandlesConcurrentFirstSettingsCreation() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
@@ -756,6 +888,131 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
+    void patchSettingsMergesPreferencesAndScopedDeleteLeavesOtherScopesUntouched() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String bearer = token(id, email, null);
+
+        UserSettingsResponse updated = client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "productSearchPreferences": [
+                            {
+                              "scope": "Footwear",
+                              "attributeName": "SIZE",
+                              "values": ["10", "10.5"]
+                            },
+                            {
+                              "scope": "T-Shirts",
+                              "attributeName": "SIZE",
+                              "values": ["M"]
+                            }
+                          ]
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(updated).isNotNull();
+        assertThat(updated.productSearchPreferences()).hasSize(2);
+        assertThat(updated.productSearchPreferences())
+                .filteredOn(preference -> preference.scope().equals("footwear"))
+                .singleElement()
+                .satisfies(preference -> {
+                    assertThat(preference.attributeName().name()).isEqualTo("SIZE");
+                    assertThat(preference.values()).containsExactly("10", "10.5");
+                });
+
+        UserSettingsResponse merged = client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "productSearchPreferences": [
+                            {
+                              "scope": "Footwear",
+                              "attributeName": "SIZE",
+                              "values": ["11"]
+                            }
+                          ]
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(merged).isNotNull();
+        assertThat(merged.productSearchPreferences()).hasSize(2);
+        assertThat(merged.productSearchPreferences())
+                .filteredOn(preference -> preference.scope().equals("footwear"))
+                .singleElement()
+                .satisfies(preference -> assertThat(preference.values()).containsExactly("11"));
+        assertThat(merged.productSearchPreferences())
+                .filteredOn(preference -> preference.scope().equals("t-shirts"))
+                .singleElement()
+                .satisfies(preference -> assertThat(preference.values()).containsExactly("M"));
+
+        UserSettingsResponse loaded = client.get().uri("/api/users/me/settings")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(loaded).isNotNull();
+        assertThat(loaded.productSearchPreferences()).hasSize(2);
+
+        UserSettingsResponse unchanged = client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("{\"productSearchPreferences\":[]}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(unchanged).isNotNull();
+        assertThat(unchanged.productSearchPreferences()).hasSize(2);
+
+        UserSettingsResponse deleted = client.delete()
+                .uri("/api/users/me/settings/product-search-preferences/{scope}", "Footwear")
+                .headers(headers -> headers.setBearerAuth(bearer))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(deleted).isNotNull();
+        assertThat(deleted.productSearchPreferences()).singleElement().satisfies(preference -> {
+            assertThat(preference.scope()).isEqualTo("t-shirts");
+            assertThat(preference.values()).containsExactly("M");
+        });
+    }
+
+    @Test
+    void deleteProductSearchPreferenceRequiresAuthentication() {
+        client.delete().uri("/api/users/me/settings/product-search-preferences/footwear")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void patchSettingsClearsBudgetLocationsAndClothingFit() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
@@ -804,102 +1061,6 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(body.clothingFit()).isNull();
         assertThat(body.location()).isNull();
         assertThat(body.locations()).isEmpty();
-    }
-
-    @Test
-    void streamProductSearchesReturnsDiscoveryThenCuratorProgressionAndDoneEvent() {
-        UUID id = UUID.randomUUID();
-        String email = id + "@example.com";
-        String query = "organic cotton tee";
-        String userAgent = "meant-stream-test";
-
-        String body = client.post().uri("/api/users/me/product-searches:stream")
-                .headers(headers -> {
-                    headers.setBearerAuth(token(id, email, "Ada Lovelace"));
-                    headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                    headers.set("User-Agent", userAgent);
-                })
-                .body("""
-                        {
-                          "query": "%s",
-                          "offset": 0,
-                          "limit": 3
-                        }
-                        """.formatted(query))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(body).isNotNull();
-        assertThat(body).contains(
-                "\"type\":\"phase\"",
-                "\"agent\":\"discovery\"",
-                "\"type\":\"product\"",
-                "\"label\":\"Product candidate found\"",
-                "\"type\":\"product_update\"",
-                "\"label\":\"Product details updated\"",
-                "\"agent\":\"curator\"",
-                "\"label\":\"Curator score updated\"",
-                "\"type\":\"rank_update\"",
-                "\"label\":\"Curator order updated\"",
-                "\"type\":\"done\"",
-                "\"label\":\"Curated results ready\"",
-                "\"title\":\"Organic Cotton Tee\"",
-                "\"cached\":false",
-                "\"hasMore\":false"
-        );
-        assertThat(body).doesNotContain(
-                "\"agent\":\"query\"",
-                "\"agent\":\"profile\"",
-                "\"agent\":\"catalog\"",
-                "\"agent\":\"taste\"",
-                "\"agent\":\"reasoning\"",
-                "\"agent\":\"ranking\""
-        );
-        assertBefore(body, "\"agent\":\"discovery\"", "\"type\":\"product\"");
-        assertBefore(body, "\"label\":\"Product candidate found\"", "\"label\":\"Product details updated\"");
-        assertBefore(body, "\"label\":\"Product details updated\"", "\"agent\":\"curator\"");
-        assertBefore(body, "\"label\":\"Curator score updated\"", "\"type\":\"rank_update\"");
-        assertBefore(body, "\"type\":\"rank_update\"", "\"type\":\"done\"");
-    }
-
-    @Test
-    void streamProductSearchesEmitsErrorEventWhenSearchFails() {
-        UUID id = UUID.randomUUID();
-        String email = id + "@example.com";
-
-        String body = client.post().uri("/api/users/me/product-searches:stream")
-                .headers(headers -> {
-                    headers.setBearerAuth(token(id, email, "Ada Lovelace"));
-                    headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                })
-                .body("""
-                        {
-                          "query": "organic cotton tee",
-                          "merchantId": "%s",
-                          "offset": 0,
-                          "limit": 3
-                        }
-                        """.formatted(UUID.randomUUID()))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(body).isNotNull();
-        assertThat(body).contains(
-                "\"type\":\"phase\"",
-                "\"agent\":\"discovery\"",
-                "\"type\":\"error\"",
-                "\"agent\":\"search\"",
-                "\"message\":\"Product search failed. Please try again.\""
-        );
-        assertBefore(body, "\"agent\":\"discovery\"", "\"type\":\"error\"");
     }
 
     @Test
@@ -1591,50 +1752,6 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void assistantConversationsClampsOversizedAndNonPositiveLimit() {
-        UUID id = UUID.randomUUID();
-        String email = id + "@example.com";
-
-        // Seed more conversations than the server-side cap so an oversized page request can be observed
-        // to return a bounded slice rather than every row (MEA-27 — OWASP API4 Unrestricted Resource
-        // Consumption). The endpoint ensures the user profile on read, so no users row is required up front.
-        Instant now = Instant.now();
-        int seeded = MAX_CONVERSATION_LIMIT_FIXTURE + 5;
-        for (int i = 0; i < seeded; i++) {
-            userAssistantConversationRepository.save(
-                    UserAssistantConversation.create(id, "Conversation " + i, now.plusSeconds(i)));
-        }
-
-        // An unbounded page size must be clamped to MAX_CONVERSATION_LIMIT_FIXTURE, not pull excessive rows.
-        var clamped = client.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/users/me/assistant/conversations")
-                        .queryParam("limit", 1_000_000)
-                        .build())
-                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(UserAssistantConversationSummaryResponse[].class)
-                .returnResult()
-                .getResponseBody();
-        assertThat(clamped).hasSize(MAX_CONVERSATION_LIMIT_FIXTURE);
-
-        // A non-positive limit must clamp to a single row rather than throwing from PageRequest.of.
-        var floored = client.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/users/me/assistant/conversations")
-                        .queryParam("limit", 0)
-                        .build())
-                .headers(headers -> headers.setBearerAuth(token(id, email, "Ada Lovelace")))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(UserAssistantConversationSummaryResponse[].class)
-                .returnResult()
-                .getResponseBody();
-        assertThat(floored).hasSize(1);
-    }
-
-    @Test
     void publicHealthEndpointStaysOpen() {
         client.get().uri("/actuator/health")
                 .exchange()
@@ -1642,7 +1759,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void openApiPublishesFederatedGroupedAndStreamingV1WithoutReplacingFlatRoutes() {
+    void openApiPublishesOnlyFederatedGroupedAndStreamingSearchRoutes() {
         String openApi = client.get().uri("/v3/api-docs")
                 .exchange()
                 .expectStatus().isOk()
@@ -1652,15 +1769,20 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(openApi)
                 .contains(
-                        "\"/api/users/me/product-searches\"",
                         "\"/api/users/me/saved-products/detail\"",
-                        "\"/api/users/me/product-searches:stream\"",
+                        "\"/api/users/me/settings/product-search-preferences/{scope}\"",
+                        "\"/api/v1/users/me/product-search-qualifications\"",
                         "\"/api/v1/users/me/product-searches\"",
                         "\"/api/v1/users/me/product-searches:stream\"",
                         "\"/api/v1/users/me/product-variant-selections\"",
-                        "\"operationId\":\"searchProducts\"",
+                        "\"operationId\":\"qualifyProductSearchV1\"",
+                        "\"operationId\":\"deleteProductSearchPreference\"",
                         "\"operationId\":\"searchGroupedProductsV1\"",
                         "\"operationId\":\"streamFederatedProductsV1\"",
+                        "UserProductSearchQualificationRequest",
+                        "UserProductSearchQualificationResponse",
+                        "UserProductSearchPreferenceRequest",
+                        "UserProductSearchPreferenceResponse",
                         "UserGroupedProductSearchV1Response",
                         "UserFederatedProductSearchStreamEventResponse",
                         "SelectUserProductVariantRequest",
@@ -1681,12 +1803,12 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "\"minorUnits\"",
                         "\"groupingDecisions\"",
                         "\"CONTRADICTION_VETO\""
+                )
+                .doesNotContain(
+                        "\"/api/users/me/product-searches\"",
+                        "\"/api/users/me/product-searches:stream\"",
+                        "\"operationId\":\"searchProducts\""
                 );
-    }
-
-    private static void assertBefore(String value, String first, String second) {
-        assertThat(value).contains(first, second);
-        assertThat(value.indexOf(first)).isLessThan(value.indexOf(second));
     }
 
     private String currentSearchPolicyFingerprint() {

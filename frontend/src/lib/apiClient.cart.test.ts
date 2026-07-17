@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
+let authenticatedUserId = 'user-a'
+
 mock.module('./supabase', () => ({
   supabase: {
     auth: {
-      getSession: async () => ({ data: { session: { access_token: 'test-token' } } }),
+      getSession: async () => ({
+        data: {
+          session: { access_token: 'test-token', user: { id: authenticatedUserId } },
+        },
+      }),
     },
   },
 }))
@@ -13,19 +19,43 @@ const {
   bootstrapEmbeddedCheckout,
   cancelEmbeddedCheckout,
   completeEmbeddedCheckout,
+  createUserInventoryItem,
+  deleteDiscoverConversation,
+  deleteUserProductSearchPreference,
+  getDiscoverConversation,
+  getCartCheckout,
   getSavedProduct,
+  qualifyProductSearch,
+  saveDiscoverConversation,
+  searchGroupedProducts,
   selectProductVariant,
+  updateUserSettings,
+  updateUserTasteSignal,
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
 let requests: Request[] = []
 
 beforeEach(() => {
+  authenticatedUserId = 'user-a'
   requests = []
   globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init)
     requests.push(request)
     if (request.url.endsWith('/cancel')) {
       return new Response(null, { status: 204 })
+    }
+    if (request.url.endsWith('/api/v1/users/me/product-search-qualifications')) {
+      return Response.json({
+        qualificationId: 'qualification-1',
+        status: 'NEEDS_INPUT',
+        assistantMessage: 'Which color do you prefer?',
+        suggestedReplies: ['Black', 'Any color'],
+        missingFilters: ['ATTRIBUTES'],
+        effectiveQuery: 'running shoes',
+      })
+    }
+    if (request.url.endsWith('/api/v1/users/me/product-searches')) {
+      return Response.json({ products: [] })
     }
     return Response.json({ cartId: 'cart-1', lines: [] })
   }) as unknown as typeof fetch
@@ -86,6 +116,50 @@ describe('saved product detail API', () => {
       'http://localhost:8080/api/users/me/saved-products/detail?productKey=product%2Fkey',
     )
   })
+
+  test('does not send an account-bound request with the next user session', async () => {
+    authenticatedUserId = 'user-b'
+
+    await expect(getSavedProduct('product/key', { expectedUserId: 'user-a' })).rejects.toThrow(
+      'Authenticated user changed before request',
+    )
+    expect(requests).toHaveLength(0)
+  })
+})
+
+describe('account-bound mutation APIs', () => {
+  test('do not send settings, inventory, taste, or search mutations with the next session', async () => {
+    authenticatedUserId = 'user-b'
+
+    await expect(updateUserSettings({ budget: 100 }, { expectedUserId: 'user-a' })).rejects.toThrow(
+      'Authenticated user changed before request',
+    )
+    await expect(
+      createUserInventoryItem({ name: 'Shoes' }, { expectedUserId: 'user-a' }),
+    ).rejects.toThrow('Authenticated user changed before request')
+    await expect(
+      updateUserTasteSignal({
+        signalId: 'signal-1',
+        disabled: true,
+        expectedUserId: 'user-a',
+      }),
+    ).rejects.toThrow('Authenticated user changed before request')
+    await expect(
+      qualifyProductSearch({
+        conversationId: 'conversation-1',
+        message: 'running shoes',
+        expectedUserId: 'user-a',
+      }),
+    ).rejects.toThrow('Authenticated user changed before request')
+    await expect(getCartCheckout({ cartId: 'cart-1', expectedUserId: 'user-a' })).rejects.toThrow(
+      'Authenticated user changed before request',
+    )
+    await expect(bootstrapEmbeddedCheckout('cart-1', { expectedUserId: 'user-a' })).rejects.toThrow(
+      'Authenticated user changed before request',
+    )
+
+    expect(requests).toHaveLength(0)
+  })
 })
 
 describe('product variant selection API', () => {
@@ -110,5 +184,139 @@ describe('product variant selection API', () => {
       ],
       preferredOptionName: 'Size',
     })
+  })
+})
+
+describe('qualified product search API', () => {
+  test('continues one generic qualification conversation without category-specific fields', async () => {
+    const response = await qualifyProductSearch({
+      conversationId: 'conversation-1',
+      qualificationId: 'qualification-1',
+      message: 'Black, please',
+      merchantId: 'merchant-1',
+    })
+
+    expect(response.status).toBe('NEEDS_INPUT')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('POST')
+    expect(requests[0]?.url).toEndWith('/api/v1/users/me/product-search-qualifications')
+    expect(await requests[0]?.json()).toEqual({
+      conversationId: 'conversation-1',
+      qualificationId: 'qualification-1',
+      message: 'Black, please',
+      merchantId: 'merchant-1',
+    })
+  })
+
+  test('binds a ready search to its qualification id', async () => {
+    await searchGroupedProducts({
+      query: 'black running shoes size 10',
+      qualificationId: 'qualification-1',
+      offset: 0,
+      limit: 20,
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('POST')
+    expect(requests[0]?.url).toEndWith('/api/v1/users/me/product-searches')
+    expect(await requests[0]?.json()).toEqual({
+      query: 'black running shoes size 10',
+      qualificationId: 'qualification-1',
+      offset: 0,
+      limit: 20,
+    })
+  })
+})
+
+describe('product search preferences API', () => {
+  test('sends one scoped size preference for merge', async () => {
+    await updateUserSettings({
+      productSearchPreferences: [
+        { scope: 'footwear', attributeName: 'SIZE', values: ['10', '10.5'] },
+      ],
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('PATCH')
+    expect(requests[0]?.url).toEndWith('/api/users/me/settings')
+    expect(await requests[0]?.json()).toEqual({
+      productSearchPreferences: [
+        { scope: 'footwear', attributeName: 'SIZE', values: ['10', '10.5'] },
+      ],
+    })
+  })
+
+  test('deletes only the requested scoped size preference', async () => {
+    await deleteUserProductSearchPreference('trail footwear')
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('DELETE')
+    expect(requests[0]?.url).toEndWith(
+      '/api/users/me/settings/product-search-preferences/trail%20footwear',
+    )
+  })
+})
+
+describe('Discover conversation persistence API', () => {
+  test('loads one conversation directly instead of relying on the top-50 history page', async () => {
+    await getDiscoverConversation('conversation/51')
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('GET')
+    expect(requests[0]?.url).toBe(
+      'http://localhost:8080/api/v1/users/me/discover/conversations/conversation%2F51',
+    )
+  })
+
+  test('sends the last observed revision with a conversation update', async () => {
+    await saveDiscoverConversation({
+      conversationId: 'conversation-1',
+      title: 'Running shoes',
+      threadJson: '{"messages":[]}',
+      expectedRevision: 3,
+    })
+
+    expect(requests[0]?.method).toBe('PUT')
+    expect(await requests[0]?.json()).toEqual({
+      title: 'Running shoes',
+      threadJson: '{"messages":[]}',
+      expectedRevision: 3,
+    })
+  })
+
+  test('does not send a stale conversation write with the next user session', async () => {
+    authenticatedUserId = 'user-b'
+
+    await expect(
+      saveDiscoverConversation({
+        conversationId: 'conversation-1',
+        title: 'Running shoes',
+        threadJson: '{"messages":[]}',
+        expectedRevision: 3,
+        expectedUserId: 'user-a',
+      }),
+    ).rejects.toThrow('Authenticated user changed before request')
+    expect(requests).toHaveLength(0)
+  })
+
+  test('rejects a failed delete so the UI can keep the conversation visible', async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(new Request(input, init))
+      return Response.json({ detail: 'Delete failed' }, { status: 500 })
+    }) as unknown as typeof fetch
+
+    await expect(deleteDiscoverConversation('conversation-1')).rejects.toThrow(
+      'Failed to delete Discover conversation',
+    )
+    expect(requests[0]?.method).toBe('DELETE')
+  })
+
+  test('treats an already deleted conversation as success', async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(new Request(input, init))
+      return new Response(null, { status: 404 })
+    }) as unknown as typeof fetch
+
+    await expect(deleteDiscoverConversation('conversation-1')).resolves.toBeUndefined()
   })
 })

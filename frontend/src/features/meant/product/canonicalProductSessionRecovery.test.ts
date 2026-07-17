@@ -4,7 +4,6 @@ import type {
   CanonicalOfferProfile,
   CanonicalProductDetailProfile,
   CanonicalProductProfile,
-  GroupedProductSearchProfile,
 } from '../../../lib/apiClient'
 import type { Product } from '../types'
 import {
@@ -83,10 +82,6 @@ function productSnapshot(canonical: CanonicalProductProfile): Product {
   } as Product
 }
 
-function searchResult(products: readonly CanonicalProductProfile[]): GroupedProductSearchProfile {
-  return { products } as GroupedProductSearchProfile
-}
-
 describe('canonical product session recovery', () => {
   test('uses the historical product-search query and falls back to the product title', () => {
     const product = productSnapshot(canonicalProduct('old-key', canonicalOffer('old-offer', 'v1')))
@@ -107,45 +102,15 @@ describe('canonical product session recovery', () => {
     expect(findRestoredCanonicalProduct(previous, [unrelated])).toBeNull()
   })
 
-  test('re-searches and retries detail in place with the restored offer identity', async () => {
+  test('loads a canonical detail directly without starting another product search', async () => {
     const previous = canonicalProduct('old-key', canonicalOffer('old-offer', 'variant-1'))
-    const restored = canonicalProduct('fresh-key', canonicalOffer('fresh-offer', 'variant-1'))
-    const restoredDetail = {
-      product: restored,
-      recommendedOfferKey: 'fresh-offer',
-      selectedOfferKey: 'fresh-offer',
+    const detail = {
+      product: previous,
+      recommendedOfferKey: 'old-offer',
+      selectedOfferKey: 'old-offer',
       sourceStates: [],
     } satisfies CanonicalProductDetailProfile
-    const detailCalls: Array<{
-      canonicalProductKey: string
-      selectedOfferKey?: string | null
-      signal?: AbortSignal
-    }> = []
-    const searchCalls: Array<{
-      query: string
-      offset?: number
-      limit?: number
-      signal?: AbortSignal
-    }> = []
-    const loadDetail = mock(
-      async (input: {
-        canonicalProductKey: string
-        selectedOfferKey?: string | null
-        signal?: AbortSignal
-      }) => {
-        detailCalls.push(input)
-        if (input.canonicalProductKey === 'old-key') {
-          throw { status: 404 }
-        }
-        return restoredDetail
-      },
-    )
-    const search = mock(
-      async (input: { query: string; offset?: number; limit?: number; signal?: AbortSignal }) => {
-        searchCalls.push(input)
-        return searchResult([restored])
-      },
-    )
+    const loadDetail = mock(async () => detail)
 
     await expect(
       loadCanonicalProductDetailWithRecovery(
@@ -154,61 +119,23 @@ describe('canonical product session recovery', () => {
           historicalQuery: 'organic snacks',
           selectedOfferKey: 'old-offer',
         },
-        { loadDetail, search },
+        { loadDetail },
       ),
-    ).resolves.toBe(restoredDetail)
+    ).resolves.toBe(detail)
 
-    expect(searchCalls).toEqual([{ query: 'organic snacks', offset: 0, limit: 20 }])
-    expect(detailCalls).toEqual([
-      { canonicalProductKey: 'old-key', selectedOfferKey: 'old-offer', signal: undefined },
-      { canonicalProductKey: 'fresh-key', selectedOfferKey: 'fresh-offer', signal: undefined },
-    ])
+    expect(loadDetail).toHaveBeenCalledWith({
+      canonicalProductKey: 'old-key',
+      selectedOfferKey: 'old-offer',
+      signal: undefined,
+    })
   })
 
-  test('falls back to the product title when a legacy product moved beyond the broad result page', async () => {
+  test('rethrows an expired detail instead of bypassing qualification with a blind search', async () => {
     const previous = canonicalProduct('old-key', canonicalOffer('old-offer', 'variant-1'))
-    const unrelated = canonicalProduct(
-      'unrelated-key',
-      canonicalOffer('unrelated-offer', 'variant-2'),
-    )
-    const restored = canonicalProduct('fresh-key', canonicalOffer('fresh-offer', 'variant-1'))
-    const searchCalls: string[] = []
-
-    const result = await loadCanonicalProductDetailWithRecovery(
-      {
-        product: productSnapshot(previous),
-        historicalQuery: 'broad historical query',
-        selectedOfferKey: 'old-offer',
-      },
-      {
-        loadDetail: async ({ canonicalProductKey }) => {
-          if (canonicalProductKey === 'old-key') throw { status: 404 }
-          return {
-            product: restored,
-            recommendedOfferKey: 'fresh-offer',
-            selectedOfferKey: 'fresh-offer',
-            sourceStates: [],
-          } as CanonicalProductDetailProfile
-        },
-        search: async ({ query }) => {
-          searchCalls.push(query)
-          return searchResult(query === previous.title ? [restored] : [unrelated])
-        },
-      },
-    )
-
-    expect(result.product).toBe(restored)
-    expect(searchCalls).toEqual(['broad historical query', 'Organic gluten-free snack'])
-  })
-
-  test('does not substitute an unrelated product after both recovery searches', async () => {
-    const previous = canonicalProduct('old-key', canonicalOffer('old-offer', 'variant-1'))
-    const unrelated = canonicalProduct(
-      'unrelated-key',
-      canonicalOffer('unrelated-offer', 'variant-2'),
-    )
     const expired = { status: 404 }
-    const search = mock(async () => searchResult([unrelated]))
+    const loadDetail = mock(async () => {
+      throw expired
+    })
 
     await expect(
       loadCanonicalProductDetailWithRecovery(
@@ -216,33 +143,9 @@ describe('canonical product session recovery', () => {
           product: productSnapshot(previous),
           historicalQuery: 'broad historical query',
         },
-        {
-          loadDetail: async () => {
-            throw expired
-          },
-          search,
-        },
+        { loadDetail },
       ),
     ).rejects.toBe(expired)
-    expect(search).toHaveBeenCalledTimes(2)
-  })
-
-  test('does not re-search when the detail failure is not a 404', async () => {
-    const previous = canonicalProduct('old-key', canonicalOffer('old-offer', 'variant-1'))
-    const failure = { status: 503 }
-    const search = mock(async () => searchResult([]))
-
-    await expect(
-      loadCanonicalProductDetailWithRecovery(
-        { product: productSnapshot(previous) },
-        {
-          loadDetail: async () => {
-            throw failure
-          },
-          search,
-        },
-      ),
-    ).rejects.toBe(failure)
-    expect(search).not.toHaveBeenCalled()
+    expect(loadDetail).toHaveBeenCalledTimes(1)
   })
 })

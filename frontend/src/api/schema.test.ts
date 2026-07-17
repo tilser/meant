@@ -2,16 +2,19 @@ import { expect, test } from 'bun:test'
 
 import type { components, paths } from './schema'
 
-test('generated OpenAPI schema exposes federated V1 routes without replacing flat search routes', () => {
+test('generated OpenAPI schema exposes only federated V1 search routes', () => {
   const expectedPaths: Array<keyof paths> = [
-    '/api/users/me/product-searches',
-    '/api/users/me/product-searches:stream',
+    '/api/v1/users/me/product-search-qualifications',
     '/api/v1/users/me/product-searches',
     '/api/v1/users/me/product-searches:stream',
     '/api/v1/users/me/products/{canonicalProductKey}',
     '/api/v1/users/me/product-variant-selections',
   ]
   const expectedSchemas: Array<keyof components['schemas']> = [
+    'UserProductSearchQualificationRequest',
+    'UserProductSearchQualificationResponse',
+    'UserProductSearchQualificationStatus',
+    'UserProductSearchFilterKind',
     'UserGroupedProductSearchV1Response',
     'CanonicalProductResponse',
     'CanonicalProductPersonalizationResponse',
@@ -46,8 +49,8 @@ test('generated OpenAPI schema exposes federated V1 routes without replacing fla
     'features',
   ]
 
-  expect(expectedPaths).toHaveLength(6)
-  expect(expectedSchemas).toHaveLength(23)
+  expect(expectedPaths).toHaveLength(5)
+  expect(expectedSchemas).toHaveLength(27)
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
 
@@ -72,6 +75,39 @@ test('cart creation accepts only server-issued offer identity for line selection
   expect(createFields as string[]).not.toContain('merchantDomain')
   expect(addFields as string[]).not.toContain('productVariantId')
   expect(addFields).toContain('offerKey')
+})
+
+test('settings expose editable scoped product size preferences', () => {
+  type Settings = components['schemas']['UserSettingsResponse']
+  type UpdateSettings = components['schemas']['UpdateUserSettingsRequest']
+  type Preference = components['schemas']['UserProductSearchPreferenceResponse']
+  const settingsFields: Array<keyof Settings> = ['productSearchPreferences']
+  const updateFields: Array<keyof UpdateSettings> = ['productSearchPreferences']
+  const preferenceFields: Array<keyof Preference> = ['scope', 'attributeName', 'values']
+
+  expect(settingsFields).toContain('productSearchPreferences')
+  expect(updateFields).toContain('productSearchPreferences')
+  expect(preferenceFields).toContain('values')
+
+  const preferencePaths: Array<keyof paths> = [
+    '/api/users/me/settings/product-search-preferences/{scope}',
+  ]
+  expect(preferencePaths).toHaveLength(1)
+})
+
+test('Discover conversation persistence uses optimistic revisions', () => {
+  type Request = components['schemas']['UserDiscoverConversationRequest']
+  type Response = components['schemas']['UserDiscoverConversationResponse']
+  const requestFields: Array<keyof Request> = ['expectedRevision']
+  const responseFields: Array<keyof Response> = ['revision']
+
+  expect(requestFields).toContain('expectedRevision')
+  expect(responseFields).toContain('revision')
+
+  const ownedDetailPaths: Array<keyof paths> = [
+    '/api/v1/users/me/discover/conversations/{conversationId}',
+  ]
+  expect(ownedDetailPaths).toHaveLength(1)
 })
 
 test('saved products retain typed routing and return a durable exact offer key', () => {

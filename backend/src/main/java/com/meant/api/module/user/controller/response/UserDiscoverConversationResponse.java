@@ -20,7 +20,10 @@ public record UserDiscoverConversationResponse(
         Instant updatedAt,
 
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        String threadJson
+        String threadJson,
+
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        long revision
 ) {
 
     public static UserDiscoverConversationResponse from(UserDiscoverConversationResult result) {
@@ -29,7 +32,8 @@ public record UserDiscoverConversationResponse(
                 result.title(),
                 result.createdAt(),
                 result.updatedAt(),
-                result.threadJson()
+                result.threadJson(),
+                result.revision()
         );
     }
 }

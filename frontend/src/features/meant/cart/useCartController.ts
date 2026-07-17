@@ -1,13 +1,14 @@
-import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react'
+import { type Dispatch, type SetStateAction, useRef } from 'react'
 
 import {
-  bindSelectedOfferToCart,
-  createCart,
-  updateCart,
+  bindSelectedOfferToCart as bindSelectedOfferToRemoteCart,
+  createCart as createRemoteCart,
+  updateCart as updateRemoteCart,
   type CartProfile,
 } from '../../../lib/apiClient'
 import { DEFAULT_CART } from '../data'
-import { useStoredState } from '../shared/storage'
+import { accountSessionStorageKey } from '../shared/accountStorage'
+import { useSessionStoredState } from '../shared/storage'
 import type { CartItem, Offer, Product, ProductId } from '../types'
 import {
   cartItemIdentity,
@@ -46,23 +47,60 @@ function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
   return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
 }
 
-export function useCartController(products: readonly Product[]) {
-  const [cart, setStoredCart] = useStoredState<CartItem[]>('meant.cart', [...DEFAULT_CART])
-  const [cartSnapshots, setStoredCartSnapshots] = useStoredState<
+export function useCartController(products: readonly Product[], ownerId: string | undefined) {
+  const [cart, setStoredCart] = useSessionStoredState<CartItem[]>(
+    accountSessionStorageKey('meant.cart', ownerId),
+    [...DEFAULT_CART],
+  )
+  const [cartSnapshots, setStoredCartSnapshots] = useSessionStoredState<
     Record<string, MerchantCartSnapshot>
-  >('meant.cartSnapshots', {})
+  >(accountSessionStorageKey('meant.cartSnapshots', ownerId), {})
+  const activeOwnerIdRef = useRef(ownerId)
+  activeOwnerIdRef.current = ownerId
   const cartRef = useRef<CartItem[]>(cart)
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
+  cartRef.current = cart
+  cartSnapshotsRef.current = cartSnapshots
 
-  useEffect(() => {
-    cartRef.current = cart
-  }, [cart])
+  const isAccountCurrent = () => Boolean(ownerId && activeOwnerIdRef.current === ownerId)
+  const requireCurrentOwner = (): string => {
+    if (!ownerId || activeOwnerIdRef.current !== ownerId) {
+      throw new Error('Account changed during cart operation')
+    }
+    return ownerId
+  }
 
-  useEffect(() => {
-    cartSnapshotsRef.current = cartSnapshots
-  }, [cartSnapshots])
+  const createCart = async (
+    input: Omit<Parameters<typeof createRemoteCart>[0], 'expectedUserId'>,
+  ): Promise<CartProfile> => {
+    const expectedUserId = requireCurrentOwner()
+    const snapshot = await createRemoteCart({ ...input, expectedUserId })
+    requireCurrentOwner()
+    return snapshot
+  }
+
+  const updateCart = async (
+    input: Omit<Parameters<typeof updateRemoteCart>[0], 'expectedUserId'>,
+  ): Promise<CartProfile> => {
+    const expectedUserId = requireCurrentOwner()
+    const snapshot = await updateRemoteCart({ ...input, expectedUserId })
+    requireCurrentOwner()
+    return snapshot
+  }
+
+  const bindSelectedOfferToCart = async (
+    input: Omit<Parameters<typeof bindSelectedOfferToRemoteCart>[0], 'expectedUserId'>,
+  ): Promise<CartProfile> => {
+    const expectedUserId = requireCurrentOwner()
+    const snapshot = await bindSelectedOfferToRemoteCart({ ...input, expectedUserId })
+    requireCurrentOwner()
+    return snapshot
+  }
 
   const setCart: Dispatch<SetStateAction<CartItem[]>> = (action) => {
+    if (!isAccountCurrent()) {
+      return
+    }
     const next = resolveSetStateAction(action, cartRef.current)
     cartRef.current = next
     setStoredCart(next)
@@ -71,6 +109,9 @@ export function useCartController(products: readonly Product[]) {
   const setCartSnapshots: Dispatch<SetStateAction<Record<string, MerchantCartSnapshot>>> = (
     action,
   ) => {
+    if (!isAccountCurrent()) {
+      return
+    }
     const next = resolveSetStateAction(action, cartSnapshotsRef.current)
     cartSnapshotsRef.current = next
     setStoredCartSnapshots(next)
@@ -131,6 +172,9 @@ export function useCartController(products: readonly Product[]) {
     merchantKey: string,
     fallbackOfferKey: string,
   ): { offerKey: string; quantity: number }[] => {
+    if (!isAccountCurrent()) {
+      return []
+    }
     const addItems = cartRebuildItems(cartRef.current, merchantKey)
     return addItems.length > 0 ? addItems : [{ offerKey: fallbackOfferKey, quantity: 1 }]
   }
@@ -143,6 +187,9 @@ export function useCartController(products: readonly Product[]) {
    * nothing left to rebuild (e.g. the merchant has no remaining cartable items).
    */
   const recreateMerchantCart = async (merchantKey: string): Promise<CartProfile | null> => {
+    if (!isAccountCurrent()) {
+      return null
+    }
     const merchantItem = cartRef.current.find((item) => cartMerchantKey(item) === merchantKey)
     const rebuildItems = cartRebuildItems(cartRef.current, merchantKey)
     clearMerchantCartState(merchantKey)
@@ -170,6 +217,9 @@ export function useCartController(products: readonly Product[]) {
     identity ? cartItemIdentity(item) === identity : item.id === id && item.merchant === merchant
 
   const addProductOfferToCart = async (product: Product, offer: Offer): Promise<boolean> => {
+    if (!isAccountCurrent()) {
+      return false
+    }
     const productVariantId = offer.productVariantId
     const offerKey = offer.offerKey?.trim()
     if (!offerKey || !productVariantId || !offerCartable(offer)) {
@@ -276,6 +326,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const addSelectedOfferToCart = async (product: Product, offerKey: string): Promise<boolean> => {
+    if (!isAccountCurrent()) {
+      return false
+    }
     const exactOfferKey = offerKey.trim()
     const selectedOffer = product.canonicalProduct?.offers.find(
       (offer) => offer.key === exactOfferKey,
@@ -464,6 +517,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const addToCart = (id: ProductId, merchant: string) => {
+    if (!isAccountCurrent()) {
+      return
+    }
     const product = products.find((candidate) => candidate.id === id)
     const offer = product?.offers.find((candidate) => candidate.merchant === merchant)
     if (product && offer && offerCartable(offer)) {
@@ -483,6 +539,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const removeFromCart = (id: ProductId, merchant: string, identity?: string) => {
+    if (!isAccountCurrent()) {
+      return
+    }
     const item = cartRef.current.find((candidate) =>
       cartItemMatches(candidate, id, merchant, identity),
     )
@@ -540,6 +599,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const updateQty = (id: ProductId, merchant: string, qty: number, identity?: string) => {
+    if (!isAccountCurrent()) {
+      return
+    }
     if (qty <= 0) {
       removeFromCart(id, merchant, identity)
       return
@@ -617,6 +679,9 @@ export function useCartController(products: readonly Product[]) {
   const applyCartCode = async (
     input: ApplyCartCodeInput,
   ): Promise<{ ok: boolean; message?: string }> => {
+    if (!isAccountCurrent()) {
+      return { ok: false, message: 'Account changed during cart operation.' }
+    }
     const code = input.code.trim()
     if (!code) {
       return { ok: false, message: 'Enter a code first.' }
@@ -666,6 +731,9 @@ export function useCartController(products: readonly Product[]) {
   const removeCartCode = async (
     input: RemoveCartCodeInput,
   ): Promise<{ ok: boolean; message?: string }> => {
+    if (!isAccountCurrent()) {
+      return { ok: false, message: 'Account changed during cart operation.' }
+    }
     const codeToRemove = input.code.code
     if (!codeToRemove) {
       return {
@@ -719,6 +787,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const updateDeliveryAddress = async (payload: DeliveryAddressPayload): Promise<boolean> => {
+    if (!isAccountCurrent()) {
+      return false
+    }
     updateMerchantCartItems(payload.merchantKey, { syncing: true, syncError: null })
     try {
       let cartId = payload.cartId
@@ -757,6 +828,9 @@ export function useCartController(products: readonly Product[]) {
   }
 
   const updateDeliveryOption = async (payload: DeliveryOptionPayload): Promise<boolean> => {
+    if (!isAccountCurrent()) {
+      return false
+    }
     const selectedDeliveryOptions = selectedDeliveryOptionsForCart(
       cartRef.current,
       payload.merchantKey,

@@ -12,6 +12,7 @@ import {
 
 function session(profile: Partial<CheckoutProfile>): ActiveCheckoutSession {
   return {
+    ownerId: 'user-a',
     cartId: 'cart-1',
     merchant: 'MyGiftStop',
     source: 'cart',

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-user-discover-conversation-revision" author="meant">
+        <addColumn tableName="user_assistant_conversations">
+            <column name="revision" type="bigint" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="002-create-user-discover-conversation-tombstones" author="meant">
+        <createTable tableName="user_discover_conversation_tombstones">
+            <column name="conversation_id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deleted_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_discover_conversation_tombstones"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_discover_conversation_tombstones_user"/>
+        <createIndex
+                tableName="user_discover_conversation_tombstones"
+                indexName="idx_user_discover_conversation_tombstones_user">
+            <column name="user_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="003-purge-legacy-discover-session-snapshots" author="meant">
+        <comment>
+            Pre-retention-boundary Discover payloads may contain complete Shopify products, offers,
+            media, transaction snapshots, and product-derived assistant text. Replace those legacy
+            snapshots with a safe marker while retaining the conversation shell and title.
+        </comment>
+        <sql><![CDATA[
+            UPDATE user_assistant_conversations
+            SET payload = jsonb_build_object(
+                    'id', id::text,
+                    'title', title,
+                    'messages', jsonb_build_array(
+                            jsonb_build_object(
+                                    'id', 'session-retention-' || id::text,
+                                    'role', 'ai',
+                                    'blocks', jsonb_build_array(
+                                            jsonb_build_object(
+                                                    'type', 'system',
+                                                    'text', 'Product results are available only in the active session. Search again to refresh them.'
+                                            )
+                                    )
+                            )
+                    ),
+                    'createdAt', round(extract(epoch FROM created_at) * 1000)::bigint,
+                    'updatedAt', round(extract(epoch FROM updated_at) * 1000)::bigint
+            )::text,
+                revision = revision + 1
+            WHERE kind = 'DISCOVER'
+              AND payload IS NOT NULL
+        ]]></sql>
+    </changeSet>
+</databaseChangeLog>

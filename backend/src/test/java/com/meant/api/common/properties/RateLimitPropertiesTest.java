@@ -14,7 +14,7 @@ class RateLimitPropertiesTest {
 
     @Test
     void rejectsEndpointPathWithoutLeadingSlash() {
-        RateLimitProperties properties = properties("api/users/me/product-searches");
+        RateLimitProperties properties = properties("api/v1/users/me/product-searches");
 
         assertThat(validator.validate(properties))
                 .anySatisfy(violation -> assertThat(violation.getMessage()).isEqualTo("Path must start with '/'"));

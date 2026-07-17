@@ -6,9 +6,12 @@ import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserGroupedProductSearchV1Response;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
 import com.meant.api.module.user.service.UserCanonicalProductDetailService;
+import com.meant.api.module.user.service.UserQualifiedProductSearchResolver;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
 import com.meant.api.module.user.exception.UserException;
 import java.time.Instant;
@@ -38,11 +41,16 @@ class UserGroupedProductSearchV1ControllerTest {
         httpRequest.setRemoteAddr("192.0.2.10");
         httpRequest.addHeader("User-Agent", " grouped-client ");
         UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
-                service, null, null, null, null);
+                service, null, null, null, null, new FixedQualifiedSearchResolver());
 
         UserGroupedProductSearchV1Response response = controller.searchProducts(
                 jwt,
-                new UserProductSearchRequest("linen", null, 5, 10),
+                new UserProductSearchRequest(
+                        "initial linen request",
+                        FixedQualifiedSearchResolver.QUALIFICATION_ID,
+                        null,
+                        5,
+                        10),
                 httpRequest
         );
 
@@ -74,7 +82,7 @@ class UserGroupedProductSearchV1ControllerTest {
                 .expiresAt(Instant.parse("2026-07-10T11:00:00Z"))
                 .build();
         UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
-                null, detailService, null, null, null);
+                null, detailService, null, null, null, null);
 
         assertThatThrownBy(() -> controller.getProductDetail(jwt, "grouped-product-v3_key", "offer-v2_key"))
                 .isInstanceOf(UserException.class);
@@ -96,13 +104,36 @@ class UserGroupedProductSearchV1ControllerTest {
         @Override
         public UserGroupedProductSearchResult search(
                 EnsureUserProfileCommand profileCommand,
-                SearchUserProductsCommand searchCommand
+                SearchUserProductsCommand searchCommand,
+                CatalogDiscoveryFilters discoveryFilters
         ) {
             this.profileCommand = profileCommand;
             this.searchCommand = searchCommand;
             return new UserGroupedProductSearchResult(
                     "linen", "linen", "profile", false, 5, 10, 15, true, false,
                     List.of(), 0, false, List.of());
+        }
+    }
+
+    private static final class FixedQualifiedSearchResolver extends UserQualifiedProductSearchResolver {
+        private static final UUID QUALIFICATION_ID =
+                UUID.fromString("60000000-0000-0000-0000-000000000099");
+
+        private FixedQualifiedSearchResolver() {
+            super(null, null, null);
+        }
+
+        @Override
+        public UserQualifiedProductSearchInput resolve(UUID userId, UUID qualificationId) {
+            assertThat(qualificationId).isEqualTo(QUALIFICATION_ID);
+            return new UserQualifiedProductSearchInput(
+                    QUALIFICATION_ID,
+                    UUID.fromString("60000000-0000-0000-0000-000000000098"),
+                    null,
+                    "linen",
+                    new CatalogDiscoveryFilters(
+                            true, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of())
+            );
         }
     }
 

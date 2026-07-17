@@ -1,7 +1,13 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
+import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -41,13 +47,13 @@ class UserProductSearchCatalogInputBuilderTest {
     @Test
     void buildsRangePriceFilter() {
         UserProductSearchCatalogInput input = builder.build(
-                "linen shirt between 50 and 100 eur",
-                intent("linen shirt between 50 and 100 eur"),
+                "linen shirt between 50 and 100 USD",
+                intent("linen shirt between 50 and 100 usd"),
                 settings(new UserLocationResult("France", "FR", "Paris"))
         );
 
         assertThat(input.searchQuery()).isEqualTo("linen shirt");
-        assertThat(input.context().currency()).isEqualTo("EUR");
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.filters().price().min()).isEqualTo(5000L);
         assertThat(input.filters().price().max()).isEqualTo(10000L);
     }
@@ -55,18 +61,102 @@ class UserProductSearchCatalogInputBuilderTest {
     @Test
     void parsesGroupedEuropeanPriceAmounts() {
         UserProductSearchCatalogInput input = builder.build(
-                "linen shirt under 1.234,56 eur",
-                intent("linen shirt under 1.234,56 eur"),
+                "linen shirt under 1.234,56 USD",
+                intent("linen shirt under 1.234,56 usd"),
                 settings(new UserLocationResult("France", "FR", "Paris"))
         );
 
         assertThat(input.searchQuery()).isEqualTo("linen shirt");
-        assertThat(input.context().currency()).isEqualTo("EUR");
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.filters().price().max()).isEqualTo(123456L);
     }
 
     @Test
-    void sendsLocationSignalsAndBudgetAsHardPriceFilterWhenQueryHasNoPrice() {
+    void rejectsExplicitNonUsdPrice() {
+        assertThatThrownBy(() -> builder.build(
+                        "linen shirt under 100 EUR",
+                        intent("linen shirt under 100 eur"),
+                        settings(new UserLocationResult("France", "FR", "Paris"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    }
+
+    @Test
+    void rejectsExplicitCzechKorunaPrice() {
+        assertThatThrownBy(() -> builder.build(
+                        "linen shirt under 2 000 Kč",
+                        intent("linen shirt under 2 000 Kč"),
+                        settings(new UserLocationResult("Czechia", "CZ", "Prague"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    }
+
+    @Test
+    void rejectsCanadianAndAustralianDollarPrices() {
+        assertThatThrownBy(() -> builder.build(
+                        "hiking boots under 100 Canadian dollars",
+                        intent("hiking boots under 100 Canadian dollars"),
+                        settings(new UserLocationResult("Canada", "CA", "Toronto"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+
+        assertThatThrownBy(() -> builder.build(
+                        "hiking boots under 100 Australian dollars",
+                        intent("hiking boots under 100 Australian dollars"),
+                        settings(new UserLocationResult("Australia", "AU", "Sydney"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    }
+
+    @Test
+    void rejectsMixedCurrencyRange() {
+        assertThatThrownBy(() -> builder.build(
+                        "hiking boots between $50 and €100",
+                        intent("hiking boots between $50 and €100"),
+                        settings(new UserLocationResult("United States", "US", "New York"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    }
+
+    @Test
+    void rejectsConflictingSuffixAndAdditionalIsoCurrencies() {
+        assertThatThrownBy(() -> builder.build(
+                        "hiking boots under $100 EUR",
+                        intent("hiking boots under $100 EUR"),
+                        settings(new UserLocationResult("United States", "US", "New York"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+
+        for (String query : List.of(
+                "hiking boots under 100 CHF",
+                "hiking boots under 100 SEK",
+                "hiking boots under 100 INR",
+                "hiking boots under ₹100"
+        )) {
+            assertThatThrownBy(() -> builder.build(
+                            query,
+                            intent(query),
+                            settings(new UserLocationResult("United States", "US", "New York"))))
+                    .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+        }
+    }
+
+    @Test
+    void rejectsNonUsdSymbolsAndCurrenciesInConversationalBudgetText() {
+        for (String value : List.of(
+                "under 100€",
+                "my budget is €100",
+                "my budget is 100 EUR",
+                "I can spend CAD 150"
+        )) {
+            assertThatThrownBy(() -> builder.validateSupportedCurrency(value))
+                    .as(value)
+                    .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+        }
+
+        assertThatThrownBy(() -> builder.build(
+                        "linen shirt under 100€",
+                        intent("linen shirt under 100€"),
+                        settings(new UserLocationResult("France", "FR", "Paris"))))
+                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    }
+
+    @Test
+    void sendsLocationSignalsWithoutTreatingAnUnconfirmedAccountBudgetAsHard() {
         UserProductSearchCatalogInput input = builder.build(
                 "throw pillow",
                 intent("throw pillow"),
@@ -77,18 +167,58 @@ class UserProductSearchCatalogInputBuilderTest {
 
         assertThat(input.searchQuery()).isEqualTo("throw pillow");
         assertThat(input.context().addressCountry()).isEqualTo("CZ");
-        assertThat(input.context().currency()).isEqualTo("CZK");
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.context().intent())
-                .contains("Hard budget price filter: at most 120 CZK")
                 .contains("User delivery location signals: Prague, Czechia (CZ)")
                 .contains("Hard apparel audience filter: men's sizing")
                 .contains("Organic - Prefer organic materials.");
         assertThat(input.signals().buyerIp()).isEqualTo("203.0.113.4");
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");
-        assertThat(input.filters().price().max()).isEqualTo(12000L);
+        assertThat(input.filters()).isNull();
         assertThat(input.cacheKey())
-                .contains("country=CZ", "currency=CZK", "priceMax=12000")
+                .contains("country=CZ", "currency=USD", "priceMax=")
                 .doesNotContain("buyerIp", "userAgent", "203.0.113.4", "Meant Test");
+    }
+
+    @Test
+    void qualifiedSearchUsesOnlyLlmSelectedDurableContext() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                new CatalogDiscoveryLocation("US", "NY", "10001"),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(new CatalogDiscoveryAttributeFilter(
+                        CatalogDiscoveryAttributeName.SIZE,
+                        List.of("10")
+                )),
+                null,
+                List.of()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "trail running shoes",
+                intent("trail running shoes"),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague"), "men"),
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.context().addressCountry()).isEqualTo("US");
+        assertThat(input.context().addressRegion()).isEqualTo("NY");
+        assertThat(input.context().postalCode()).isEqualTo("10001");
+        assertThat(input.context().intent())
+                .contains("Catalog query: trail running shoes")
+                .doesNotContain(
+                        "Prague",
+                        "Czechia",
+                        "men's sizing",
+                        "Organic - Prefer organic materials."
+                );
+        assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
     }
 
     private UserProductSearchQueryIntentResult intent(String searchQuery) {

@@ -1,17 +1,10 @@
 import {
   getCanonicalProductDetail,
-  searchGroupedProducts,
   type CanonicalOfferProfile,
   type CanonicalProductDetailProfile,
   type CanonicalProductProfile,
 } from '../../../lib/apiClient'
 import type { Product } from '../types'
-
-const RECOVERY_SEARCH_LIMIT = 20
-
-function isNotFound(error: unknown): error is { status: number } {
-  return typeof error === 'object' && error !== null && 'status' in error && error.status === 404
-}
 
 function identifierKey(
   identifier: CanonicalOfferProfile['identity']['externalProductIdentity'] | null | undefined,
@@ -76,23 +69,6 @@ export function findRestoredCanonicalProduct(
   )
 }
 
-function restoredSelectedOfferKey(
-  previous: CanonicalProductProfile,
-  restored: CanonicalProductProfile,
-  previousSelectedOfferKey: string | null | undefined,
-): string | null {
-  const previousOffer = previous.offers.find((offer) => offer.key === previousSelectedOfferKey)
-  if (!previousOffer) {
-    return restored.recommendedOfferKey?.trim() || null
-  }
-  const previousIdentity = canonicalOfferIdentityKey(previousOffer)
-  return (
-    restored.offers.find((offer) => canonicalOfferIdentityKey(offer) === previousIdentity)?.key ||
-    restored.recommendedOfferKey?.trim() ||
-    null
-  )
-}
-
 export function canonicalProductRecoveryQuery(
   product: Product,
   historicalQuery: string | null | undefined,
@@ -102,12 +78,10 @@ export function canonicalProductRecoveryQuery(
 
 interface RecoveryDependencies {
   loadDetail: typeof getCanonicalProductDetail
-  search: typeof searchGroupedProducts
 }
 
 const DEFAULT_RECOVERY_DEPENDENCIES: RecoveryDependencies = {
   loadDetail: getCanonicalProductDetail,
-  search: searchGroupedProducts,
 }
 
 export async function loadCanonicalProductDetailWithRecovery(
@@ -116,6 +90,7 @@ export async function loadCanonicalProductDetailWithRecovery(
     historicalQuery?: string | null
     selectedOfferKey?: string | null
     signal?: AbortSignal
+    expectedUserId?: string
   },
   dependencies: RecoveryDependencies = DEFAULT_RECOVERY_DEPENDENCIES,
 ): Promise<CanonicalProductDetailProfile> {
@@ -124,45 +99,10 @@ export async function loadCanonicalProductDetailWithRecovery(
     throw new Error('Canonical product detail recovery requires a canonical product')
   }
 
-  let expiredError: unknown
-  try {
-    return await dependencies.loadDetail({
-      canonicalProductKey: previous.key,
-      selectedOfferKey: input.selectedOfferKey,
-      signal: input.signal,
-    })
-  } catch (error: unknown) {
-    if (!isNotFound(error)) {
-      throw error
-    }
-    expiredError = error
-  }
-
-  const historicalQuery = canonicalProductRecoveryQuery(input.product, input.historicalQuery)
-  const productTitleQuery = canonicalProductRecoveryQuery(input.product, null)
-  const recoveryQueries = [historicalQuery]
-  if (productTitleQuery.toLocaleLowerCase() !== historicalQuery.toLocaleLowerCase()) {
-    recoveryQueries.push(productTitleQuery)
-  }
-
-  let restored: CanonicalProductProfile | null = null
-  for (const query of recoveryQueries) {
-    const searchResult = await dependencies.search({
-      query,
-      offset: 0,
-      limit: RECOVERY_SEARCH_LIMIT,
-      signal: input.signal,
-    })
-    restored = findRestoredCanonicalProduct(previous, searchResult.products)
-    if (restored) break
-  }
-  if (!restored) {
-    throw expiredError
-  }
-
   return dependencies.loadDetail({
-    canonicalProductKey: restored.key,
-    selectedOfferKey: restoredSelectedOfferKey(previous, restored, input.selectedOfferKey),
+    canonicalProductKey: previous.key,
+    selectedOfferKey: input.selectedOfferKey,
     signal: input.signal,
+    expectedUserId: input.expectedUserId,
   })
 }

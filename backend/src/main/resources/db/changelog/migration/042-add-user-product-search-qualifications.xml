@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-user-product-search-qualifications" author="meant">
+        <createTable tableName="user_product_search_qualifications">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="conversation_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid"/>
+            <column name="original_query" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="plan_json" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prompt_version" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_qualifications"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_search_qualifications_user"/>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_qualifications"
+                baseColumnNames="conversation_id"
+                referencedTableName="user_assistant_conversations"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_search_qualifications_conversation"/>
+        <createIndex
+                tableName="user_product_search_qualifications"
+                indexName="idx_user_product_search_qualifications_conversation_updated">
+            <column name="user_id"/>
+            <column name="conversation_id"/>
+            <column name="updated_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

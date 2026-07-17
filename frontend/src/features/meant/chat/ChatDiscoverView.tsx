@@ -9,12 +9,13 @@ import {
 } from 'react'
 
 import {
+  ApiError,
   deleteDiscoverConversation,
+  getDiscoverConversation,
   getDiscoverConversations,
   saveDiscoverConversation,
   searchDiscountCodes,
   type DiscountCodeProfile,
-  type MerchantProfile,
   type UserDiscoverConversationProfile,
 } from '../../../lib/apiClient'
 import { PRODUCTS, PROFILE } from '../data'
@@ -28,13 +29,7 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
-import {
-  bestOffer,
-  cartLines,
-  normalizedMerchantName,
-  productPriceFrom,
-  resolveAsk,
-} from '../utils'
+import { bestOffer, cartLines, productPriceFrom, resolveAsk } from '../utils'
 import { resolveCartableOffer } from '../cart/cartOfferResolver'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
 import { canResolveCartOffer, offerCartable } from '../cart/utils'
@@ -44,7 +39,8 @@ import { flyToShelf } from '../shared/animations'
 import { DustingContainer } from '../shared/DustingContainer'
 import { MerchantIcon } from '../shared/icons'
 import { deliveryLocationSummary } from '../shared/locations'
-import { useStoredState } from '../shared/storage'
+import { accountSessionStorageKey } from '../shared/accountStorage'
+import { useSessionStoredState } from '../shared/storage'
 import { CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import { productImageUrl } from '../product/productSnapshots'
 import type {
@@ -57,6 +53,7 @@ import type {
 import { SHELF_DRAG_MIME } from '../shelf/types'
 import { AgentActivityPanel } from './AgentActivityPanel'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
+import { createConversationPersistenceCoordinator } from './conversationPersistence'
 import { DiscoverChatMessageRow } from './DiscoverChatMessageRow'
 import { DiscoverShareSheet } from './DiscoverShareSheet'
 import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
@@ -68,81 +65,28 @@ import type {
   DiscoverChatMessage,
   DiscoverChatThread,
   DiscoverFindRequest,
+  DiscoverProductSearchTurnInput,
+  DiscoverProductSearchTurnResult,
   ProductDetailChatRequest,
 } from './types'
 import {
   cartItemsWithFallback,
+  canRestoreDiscoverThreadAfterConflict,
   createDiscoverChatThread,
   createMiniCompareBlock,
   DEFAULT_DISCOVER_CHAT_TITLE,
   deleteStoredDiscoverChatThread,
+  durableDiscoverChatThread,
+  discoverSuggestedReplies,
+  discoverThreadSearchContext,
   discoverThreadTime,
   initialDiscoverChatThreads,
-  isRenderableSearchProduct,
+  mergeDiscoverThreadSources,
   normalizeDiscoverChatThreads,
   saveStoredDiscoverChatThreads,
 } from './utils'
 
 const DISCOVER_HISTORY_SYNC_DELAY = 500
-
-function merchantPrimarySearchValues(merchant: MerchantProfile): string[] {
-  return [normalizedMerchantName(merchant.name), normalizedMerchantName(merchant.domain)].filter(
-    Boolean,
-  )
-}
-
-function merchantSearchValues(merchant: MerchantProfile): string[] {
-  return [
-    ...merchantPrimarySearchValues(merchant),
-    normalizedMerchantName(merchant.description),
-    normalizedMerchantName(merchant.advertisedMcpEndpoint),
-    normalizedMerchantName(merchant.profileMcpEndpoint),
-  ].filter(Boolean)
-}
-
-function merchantSearchRank(merchant: MerchantProfile, searchText: string): number {
-  if (!searchText) {
-    return 0
-  }
-
-  const primaryValues = merchantPrimarySearchValues(merchant)
-  if (primaryValues.some((value) => value.startsWith(searchText))) {
-    return 0
-  }
-  if (primaryValues.some((value) => value.includes(searchText))) {
-    return 1
-  }
-  if (merchantSearchValues(merchant).some((value) => value.includes(searchText))) {
-    return 2
-  }
-  return 3
-}
-
-function orderedMerchantMatches(
-  merchants: readonly MerchantProfile[],
-  merchantCounts: ReadonlyMap<string, number>,
-  searchText: string,
-): MerchantProfile[] {
-  return merchants
-    .map((merchant) => ({
-      merchant,
-      count: merchantCounts.get(merchant.id) ?? 0,
-      rank: merchantSearchRank(merchant, searchText),
-    }))
-    .filter((item) => !searchText || item.rank < 3)
-    .sort((left, right) => {
-      if (left.rank !== right.rank) {
-        return left.rank - right.rank
-      }
-      if (left.count !== right.count) {
-        return right.count - left.count
-      }
-      return left.merchant.name.localeCompare(right.merchant.name, undefined, {
-        sensitivity: 'base',
-      })
-    })
-    .map((item) => item.merchant)
-}
 
 function hasDiscoverThreadHistory(thread: DiscoverChatThread): boolean {
   return thread.messages.length > 0 || Boolean(thread.focusProductId) || thread.named === true
@@ -163,19 +107,20 @@ function discoverThreadFromProfile(
     }
     const snapshot = parsed as Partial<DiscoverChatThread>
     const messages = Array.isArray(snapshot.messages) ? snapshot.messages : []
-    return (
-      normalizeDiscoverChatThreads([
-        {
-          ...snapshot,
-          id: profile.conversationId,
-          title: snapshot.title?.trim() || profile.title || DEFAULT_DISCOVER_CHAT_TITLE,
-          messages,
-          archived: snapshot.archived === true,
-          createdAt: snapshot.createdAt ?? timestampFromProfile(profile.createdAt),
-          updatedAt: snapshot.updatedAt ?? timestampFromProfile(profile.updatedAt),
-        },
-      ])[0] ?? null
-    )
+    const normalized = normalizeDiscoverChatThreads([
+      {
+        ...snapshot,
+        id: profile.conversationId,
+        title: snapshot.title?.trim() || profile.title || DEFAULT_DISCOVER_CHAT_TITLE,
+        messages,
+        archived: snapshot.archived === true,
+        createdAt: snapshot.createdAt ?? timestampFromProfile(profile.createdAt),
+        updatedAt: snapshot.updatedAt ?? timestampFromProfile(profile.updatedAt),
+      },
+    ])[0]
+    return normalized
+      ? durableDiscoverChatThread({ ...normalized, persistedRevision: profile.revision })
+      : null
   } catch {
     return null
   }
@@ -183,34 +128,14 @@ function discoverThreadFromProfile(
 
 function discoverThreadJson(thread: DiscoverChatThread, archived: boolean): string {
   return JSON.stringify({
-    ...thread,
-    archived,
+    ...durableDiscoverChatThread(thread, archived),
+    persistedRevision: undefined,
   })
 }
 
 function discoverThreadTitle(thread: DiscoverChatThread): string {
   const title = thread.title.trim() || DEFAULT_DISCOVER_CHAT_TITLE
   return title.length <= 120 ? title : `${title.slice(0, 117)}...`
-}
-
-function mergeDiscoverThreadSources(
-  remoteThreads: readonly DiscoverChatThread[],
-  localThreads: readonly DiscoverChatThread[],
-): DiscoverChatThread[] {
-  const byId = new Map<string, DiscoverChatThread>()
-  for (const thread of [...localThreads, ...remoteThreads]) {
-    if (!hasDiscoverThreadHistory(thread)) {
-      continue
-    }
-    const current = byId.get(thread.id)
-    if (!current || (thread.updatedAt ?? 0) >= (current.updatedAt ?? 0)) {
-      byId.set(thread.id, thread)
-    }
-  }
-  return Array.from(byId.values()).sort((left, right) => {
-    const timeDifference = (discoverThreadTime(right) ?? 0) - (discoverThreadTime(left) ?? 0)
-    return timeDifference || left.title.localeCompare(right.title)
-  })
 }
 
 function activeAndArchivedDiscoverThreads(restoredThreads: readonly DiscoverChatThread[]): {
@@ -231,15 +156,8 @@ function ChatHero({
   prompts,
   onSubmit,
   loading,
-  merchants,
-  selectedMerchant,
-  merchantCounts,
-  totalProductCount,
-  merchantsLoading,
-  merchantsError,
   historyThreads,
   activeThreadId,
-  onMerchant,
   onHistorySelect,
   onHistoryDelete,
   replyDraft,
@@ -250,15 +168,8 @@ function ChatHero({
   prompts: readonly string[]
   onSubmit: (query: string) => void
   loading: boolean
-  merchants: readonly MerchantProfile[]
-  selectedMerchant: MerchantProfile | null
-  merchantCounts: ReadonlyMap<string, number>
-  totalProductCount: number
-  merchantsLoading: boolean
-  merchantsError: string | null
   historyThreads: readonly DiscoverChatThread[]
   activeThreadId: string
-  onMerchant: (merchant: MerchantProfile | null) => void
   onHistorySelect: (threadId: string) => void
   onHistoryDelete: (threadId: string) => void
   replyDraft: AskReplyDraft | null
@@ -352,7 +263,7 @@ function ChatHero({
           className="mt-search-input"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder='Ask Meant anything - "a good cotton T-shirt under $50"'
+          placeholder='Search with Meant - "a good cotton T-shirt under $50"'
           disabled={loading}
         />
         <button type="submit" className="mt-search-go" aria-label="Ask" disabled={loading}>
@@ -368,15 +279,7 @@ function ChatHero({
         </button>
       </form>
       <div className="mt-hero-context">
-        <MerchantScope
-          merchants={merchants}
-          selectedMerchant={selectedMerchant}
-          merchantCounts={merchantCounts}
-          totalProductCount={totalProductCount}
-          loading={merchantsLoading}
-          error={merchantsError}
-          onMerchant={onMerchant}
-        />
+        <MerchantScope />
         <DiscoverThreadHistoryButton
           threads={historyThreads}
           activeId={activeThreadId}
@@ -401,160 +304,21 @@ function ChatHero({
   )
 }
 
-function MerchantScope({
-  merchants,
-  selectedMerchant,
-  merchantCounts,
-  totalProductCount,
-  loading,
-  error,
-  onMerchant,
-}: Readonly<{
-  merchants: readonly MerchantProfile[]
-  selectedMerchant: MerchantProfile | null
-  merchantCounts: ReadonlyMap<string, number>
-  totalProductCount: number
-  loading: boolean
-  error: string | null
-  onMerchant: (merchant: MerchantProfile | null) => void
-}>) {
-  const [open, setOpen] = useState(false)
-  const [merchantSearch, setMerchantSearch] = useState('')
-  const ref = useRef<HTMLDivElement | null>(null)
-  const searchRef = useRef<HTMLInputElement | null>(null)
-  const merchantSearchText = merchantSearch.trim().toLowerCase()
-  const filteredMerchants = useMemo(
-    () => orderedMerchantMatches(merchants, merchantCounts, merchantSearchText),
-    [merchantCounts, merchantSearchText, merchants],
-  )
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-    const onDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (!open) {
-      setMerchantSearch('')
-      return
-    }
-    const timeout = window.setTimeout(() => searchRef.current?.focus(), 0)
-    return () => window.clearTimeout(timeout)
-  }, [open])
-
-  if (merchants.length === 0) {
-    return (
-      <div className="mt-scope">
-        <button
-          className="mt-scope-btn"
-          type="button"
-          disabled
-          title={error ?? (loading ? 'Loading merchants' : 'No merchants loaded')}
-        >
-          <MerchantIcon />
-          <span>{loading ? 'Loading merchants' : 'All merchants'}</span>
-        </button>
-      </div>
-    )
-  }
-
+function MerchantScope() {
   return (
     <div className="mt-scope">
-      <div className="mt-scope-combo" ref={ref}>
-        <button
-          className={`mt-scope-btn ${selectedMerchant ? 'on' : ''}`}
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-        >
-          {selectedMerchant ? <span className="mt-scope-dot" aria-hidden /> : <MerchantIcon />}
-          <span>{selectedMerchant?.name ?? 'All merchants'}</span>
-          <span className={`mt-caret ${open ? 'up' : ''}`}>v</span>
-        </button>
-        {open ? (
-          <div className="mt-scope-menu">
-            <label className="mt-scope-search">
-              <span className="mt-scope-search-icon" aria-hidden>
-                <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
-                  <circle cx="8" cy="8" r="4.6" stroke="currentColor" strokeWidth="1.4" />
-                  <path
-                    d="M11.4 11.4 15 15"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-              <input
-                ref={searchRef}
-                className="mt-scope-search-input"
-                value={merchantSearch}
-                onChange={(event) => setMerchantSearch(event.target.value)}
-                placeholder="Search merchants"
-                aria-label="Search merchants"
-              />
-            </label>
-            <div className="mt-scope-list" role="listbox">
-              <button
-                className={`mt-scope-opt ${selectedMerchant ? '' : 'on'}`}
-                type="button"
-                role="option"
-                aria-selected={!selectedMerchant}
-                onClick={() => {
-                  onMerchant(null)
-                  setOpen(false)
-                }}
-              >
-                <span className="mt-scope-opt-name">All merchants</span>
-                <span className="mt-mono mt-scope-opt-count">{totalProductCount}</span>
-              </button>
-              <div className="mt-scope-sep" />
-              {filteredMerchants.map((merchant) => (
-                <button
-                  key={merchant.id}
-                  className={`mt-scope-opt ${selectedMerchant?.id === merchant.id ? 'on' : ''}`}
-                  type="button"
-                  role="option"
-                  aria-selected={selectedMerchant?.id === merchant.id}
-                  onClick={() => {
-                    onMerchant(merchant)
-                    setOpen(false)
-                  }}
-                >
-                  <span className="mt-scope-opt-main">
-                    <span className="mt-scope-opt-name">{merchant.name}</span>
-                    <span className="mt-mono mt-scope-opt-domain">{merchant.domain}</span>
-                  </span>
-                  <span className="mt-mono mt-scope-opt-count">
-                    {merchantCounts.get(merchant.id) ?? 0}
-                  </span>
-                </button>
-              ))}
-              {filteredMerchants.length === 0 ? (
-                <div className="mt-scope-empty mt-mono">No merchants found</div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-      </div>
+      <button
+        className="mt-scope-btn"
+        type="button"
+        disabled
+        title="Store-specific search requires a verified Shopify Shop ID"
+      >
+        <MerchantIcon />
+        <span>All merchants</span>
+      </button>
+      <span className="mt-mono mt-scope-unavailable">
+        Store filters unavailable until verified Shop IDs are supported
+      </span>
     </div>
   )
 }
@@ -840,22 +604,13 @@ function similarChatProducts(product: Product, products: readonly Product[]): re
 
 export function ChatDiscoverView({
   profile,
+  storageScope,
   greeting,
   products,
   hiddenByShip,
-  agentActivities,
   deliveryLocations,
   prompts,
-  reply,
-  query,
-  loading,
-  error,
   preferences,
-  merchants,
-  selectedMerchant,
-  merchantCounts,
-  totalProductCount,
-  merchantsLoading,
   savedProducts,
   cart,
   cartProducts,
@@ -869,8 +624,6 @@ export function ChatDiscoverView({
   savedSet,
   savePendingSet,
   onSubmit,
-  onClear,
-  onMerchant,
   onOpen,
   onToggleSave,
   onAddProductToCart,
@@ -897,22 +650,13 @@ export function ChatDiscoverView({
   onFlashMessage,
 }: Readonly<{
   profile: typeof PROFILE
+  storageScope: string
   greeting: string
   products: readonly Product[]
   hiddenByShip: number
-  agentActivities: readonly AgentActivity[]
   deliveryLocations: readonly UserLocation[]
   prompts: readonly string[]
-  reply: string | null
-  query: string
-  loading: boolean
-  error: string | null
   preferences: readonly Preference[]
-  merchants: readonly MerchantProfile[]
-  selectedMerchant: MerchantProfile | null
-  merchantCounts: ReadonlyMap<string, number>
-  totalProductCount: number
-  merchantsLoading: boolean
   savedProducts: readonly Product[]
   cart: readonly CartItem[]
   cartProducts: readonly Product[]
@@ -925,9 +669,7 @@ export function ChatDiscoverView({
   newsletter: boolean
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
-  onSubmit: (query: string) => void
-  onClear: () => void
-  onMerchant: (merchant: MerchantProfile | null) => void
+  onSubmit: (input: DiscoverProductSearchTurnInput) => Promise<DiscoverProductSearchTurnResult>
   onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
   onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
@@ -962,24 +704,41 @@ export function ChatDiscoverView({
     threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? fallbackThread
   const activeThreadIdSafe = activeThread.id
   const messages = activeThread.messages
-  const [activeSearchTarget, setActiveSearchTarget] = useState<{
-    threadId: string
-    messageId: string
-  } | null>(null)
+  const searchContext = discoverThreadSearchContext(activeThread)
+  const query = searchContext.query
+  const [searchTargetsByThread, setSearchTargetsByThread] = useState<Record<string, string>>({})
+  const [searchActivitiesByThread, setSearchActivitiesByThread] = useState<
+    Record<string, readonly AgentActivity[]>
+  >({})
+  const loading = Boolean(searchTargetsByThread[activeThreadIdSafe])
+  const agentActivities = searchActivitiesByThread[activeThreadIdSafe] ?? []
+  const [conversationDeleteError, setConversationDeleteError] = useState<string | null>(null)
+  const [deletingThreadIds, setDeletingThreadIds] = useState<ReadonlySet<string>>(() => new Set())
   const [arrivalMessageId, setArrivalMessageId] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [composerReply, setComposerReply] = useState<AskReplyDraft | null>(null)
-  const [pinnedIds, setPinnedIds] = useStoredState<ProductId[]>('meant.chatPinned', [])
+  const [pinnedIds, setPinnedIds] = useSessionStoredState<ProductId[]>(
+    accountSessionStorageKey('meant.chatPinned', storageScope),
+    [],
+  )
   const [trayClearing, setTrayClearing] = useState(false)
   const [newsletterPending, setNewsletterPending] = useState(false)
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
   const previousMessageCountRef = useRef(messages.length)
   const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
+  const activeThreadIdRef = useRef(activeThreadIdSafe)
+  activeThreadIdRef.current = activeThreadIdSafe
   const didInitialScrollRef = useRef(false)
   const handledDiscoverFindRequestRef = useRef<string | null>(null)
   const scheduledChatTimersRef = useRef<number[]>([])
-  const deletedDiscoverThreadIdsRef = useRef(new Set<string>())
+  const conversationPersistenceRef = useRef(createConversationPersistenceCoordinator())
+  const persistenceScopeRef = useRef(storageScope)
+  persistenceScopeRef.current = storageScope
+  const conversationRevisionsRef = useRef<Record<string, number>>({})
   const lastSavedTimestampsRef = useRef<Record<string, number>>({})
+  const conflictedThreadIdsRef = useRef(new Set<string>())
+  const conversationStateRef = useRef({ threads, archivedThreads })
+  conversationStateRef.current = { threads, archivedThreads }
   const handledHomeRequestRef = useRef(0)
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
   const watchedSet = useMemo(() => new Set<ProductId>(), [])
@@ -1023,23 +782,21 @@ export function ChatDiscoverView({
     const homeThread = createDiscoverChatThread()
     setThreads((current) => [homeThread, ...current.filter(hasDiscoverThreadHistory)])
     setActiveThreadId(homeThread.id)
-    setActiveSearchTarget(null)
-    onClear()
     window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [homeRequestId, onClear])
+  }, [homeRequestId])
 
   const displayProducts = useMemo(() => {
+    if (query) {
+      return searchContext.products
+    }
     if (products.length > 0) {
       return products
-    }
-    if (query) {
-      return []
     }
     if (savedProducts.length > 0) {
       return savedProducts
     }
     return PRODUCTS.slice(0, 4)
-  }, [products, query, savedProducts])
+  }, [products, query, savedProducts, searchContext.products])
   const knownProductsById = useMemo(() => {
     const next = new Map<ProductId, Product>()
     for (const product of [...PRODUCTS, ...savedProducts, ...cartProducts, ...displayProducts]) {
@@ -1061,9 +818,74 @@ export function ChatDiscoverView({
     return Array.from(byId.values())
   }, [archivedThreads, threads])
 
+  const recordPersistedRevision = useCallback((threadId: string, revision: number) => {
+    conversationRevisionsRef.current[threadId] = revision
+    const attachRevision = (current: DiscoverChatThread[]) =>
+      current.map((thread) =>
+        thread.id === threadId ? { ...thread, persistedRevision: revision } : thread,
+      )
+    setThreads(attachRevision)
+    setArchivedThreads(attachRevision)
+  }, [])
+
+  const restoreRemoteConversation = useCallback(
+    async (
+      threadId: string,
+      persistenceScope: string | undefined,
+      expectedLocalUpdatedAt: number | undefined,
+    ) => {
+      const profile = await getDiscoverConversation(threadId, {
+        expectedUserId: persistenceScope,
+      })
+      if (persistenceScopeRef.current !== persistenceScope) return false
+      const remoteThread = discoverThreadFromProfile(profile)
+      if (!remoteThread) return false
+
+      const state = conversationStateRef.current
+      const currentThread = [...state.threads, ...state.archivedThreads].find(
+        (thread) => thread.id === threadId,
+      )
+      if (!canRestoreDiscoverThreadAfterConflict(currentThread, expectedLocalUpdatedAt)) {
+        conflictedThreadIdsRef.current.add(threadId)
+        return false
+      }
+
+      conversationRevisionsRef.current[threadId] = profile.revision
+      lastSavedTimestampsRef.current[threadId] = remoteThread.updatedAt ?? Date.now()
+      conflictedThreadIdsRef.current.delete(threadId)
+      if (remoteThread.archived) {
+        const nextThreads = state.threads.filter((thread) => thread.id !== threadId)
+        const nextArchivedThreads = [
+          remoteThread,
+          ...state.archivedThreads.filter((thread) => thread.id !== threadId),
+        ]
+        conversationStateRef.current = {
+          threads: nextThreads,
+          archivedThreads: nextArchivedThreads,
+        }
+        setThreads(nextThreads)
+        setArchivedThreads(nextArchivedThreads)
+      } else {
+        const nextArchivedThreads = state.archivedThreads.filter((thread) => thread.id !== threadId)
+        const nextThreads = [
+          remoteThread,
+          ...state.threads.filter((thread) => thread.id !== threadId),
+        ]
+        conversationStateRef.current = {
+          threads: nextThreads,
+          archivedThreads: nextArchivedThreads,
+        }
+        setArchivedThreads(nextArchivedThreads)
+        setThreads(nextThreads)
+      }
+      return true
+    },
+    [],
+  )
+
   useEffect(() => {
     const controller = new AbortController()
-    getDiscoverConversations({ signal: controller.signal })
+    getDiscoverConversations({ expectedUserId: storageScope, signal: controller.signal })
       .then((profiles) => {
         if (controller.signal.aborted) {
           return
@@ -1071,12 +893,20 @@ export function ChatDiscoverView({
         const remoteThreads = profiles
           .map(discoverThreadFromProfile)
           .filter((thread): thread is DiscoverChatThread => Boolean(thread))
+        conversationRevisionsRef.current = Object.fromEntries(
+          profiles.map((profile) => [profile.conversationId, profile.revision]),
+        )
+        conflictedThreadIdsRef.current.clear()
+        lastSavedTimestampsRef.current = {}
         remoteThreads.forEach((thread) => {
+          // The backend returns an allowlisted snapshot, so its revision/timestamp is the durable
+          // baseline. A local snapshot is saved only when mergeDiscoverThreadSources proves it was
+          // based on this same revision and has a newer client timestamp.
           lastSavedTimestampsRef.current[thread.id] = thread.updatedAt ?? Date.now()
         })
         const restoredThreads = mergeDiscoverThreadSources(
           remoteThreads,
-          initialDiscoverChatThreads(),
+          initialDiscoverChatThreads(storageScope),
         )
         const homeThread = createDiscoverChatThread()
         if (restoredThreads.length === 0) {
@@ -1099,7 +929,7 @@ export function ChatDiscoverView({
           return
         }
         lastSavedTimestampsRef.current = {}
-        const localThreads = initialDiscoverChatThreads()
+        const localThreads = initialDiscoverChatThreads(storageScope)
         const restoredThreads = localThreads.filter(hasDiscoverThreadHistory)
         const { threads: nextThreads, archivedThreads: nextArchivedThreads } =
           activeAndArchivedDiscoverThreads(restoredThreads)
@@ -1110,25 +940,28 @@ export function ChatDiscoverView({
         setDiscoverHistoryLoaded(true)
       })
     return () => controller.abort()
-  }, [])
+  }, [storageScope])
 
   useEffect(() => {
     if (!discoverHistoryLoaded) {
       return
     }
-    saveStoredDiscoverChatThreads([...threads, ...archivedThreads])
-  }, [archivedThreads, discoverHistoryLoaded, threads])
+    saveStoredDiscoverChatThreads([...threads, ...archivedThreads], storageScope)
+  }, [archivedThreads, discoverHistoryLoaded, storageScope, threads])
 
   useEffect(() => {
     if (!discoverHistoryLoaded) {
       return undefined
     }
-    const controller = new AbortController()
     const snapshots = [
       ...threads.map((thread) => ({ thread, archived: false })),
       ...archivedThreads.map((thread) => ({ thread, archived: true })),
     ].filter(({ thread }) => {
-      if (!hasDiscoverThreadHistory(thread)) {
+      if (
+        !hasDiscoverThreadHistory(thread) ||
+        deletingThreadIds.has(thread.id) ||
+        conflictedThreadIdsRef.current.has(thread.id)
+      ) {
         return false
       }
       const lastSaved = lastSavedTimestampsRef.current[thread.id] ?? 0
@@ -1137,38 +970,63 @@ export function ChatDiscoverView({
     if (snapshots.length === 0) {
       return undefined
     }
+    const persistenceScope = storageScope
     const timer = window.setTimeout(() => {
       snapshots.forEach(({ thread, archived }) => {
-        if (deletedDiscoverThreadIdsRef.current.has(thread.id)) {
-          return
-        }
-        void saveDiscoverConversation({
-          conversationId: thread.id,
-          title: discoverThreadTitle(thread),
-          threadJson: discoverThreadJson(thread, archived),
-          signal: controller.signal,
-        })
-          .then(() => {
-            lastSavedTimestampsRef.current[thread.id] = thread.updatedAt ?? Date.now()
+        const save = conversationPersistenceRef.current.enqueue(thread.id, async () => {
+          if (persistenceScopeRef.current !== persistenceScope) {
+            throw new Error('The signed-in account changed before this chat could be saved.')
+          }
+          const saved = await saveDiscoverConversation({
+            conversationId: thread.id,
+            title: discoverThreadTitle(thread),
+            threadJson: discoverThreadJson(thread, archived),
+            expectedRevision: conversationRevisionsRef.current[thread.id],
+            expectedUserId: persistenceScope,
           })
-          .catch(() => undefined)
+          conversationRevisionsRef.current[thread.id] = saved.revision
+          return saved
+        })
+        if (!save) return
+        void save
+          .then((saved) => {
+            if (persistenceScopeRef.current !== persistenceScope) return
+            lastSavedTimestampsRef.current[thread.id] = thread.updatedAt ?? Date.now()
+            recordPersistedRevision(thread.id, saved.revision)
+          })
+          .catch((error: unknown) => {
+            if (
+              persistenceScopeRef.current === persistenceScope &&
+              error instanceof ApiError &&
+              error.status === 409
+            ) {
+              void restoreRemoteConversation(thread.id, persistenceScope, thread.updatedAt)
+                .then((restored) => {
+                  if (!restored) conflictedThreadIdsRef.current.add(thread.id)
+                })
+                .catch(() => conflictedThreadIdsRef.current.add(thread.id))
+            }
+          })
       })
     }, DISCOVER_HISTORY_SYNC_DELAY)
 
     return () => {
       window.clearTimeout(timer)
-      controller.abort()
     }
-  }, [archivedThreads, discoverHistoryLoaded, threads])
+  }, [
+    archivedThreads,
+    deletingThreadIds,
+    discoverHistoryLoaded,
+    recordPersistedRevision,
+    restoreRemoteConversation,
+    storageScope,
+    threads,
+  ])
 
   const pinnedProducts = pinnedIds
     .map((id) => displayProducts.find((product) => product.id === id))
     .filter((product): product is Product => Boolean(product))
   const currentCartLines = cartLines(cart, cartProducts)
-  const activeSearchProducts = useMemo(
-    () => (query ? products.filter(isRenderableSearchProduct) : []),
-    [products, query],
-  )
 
   useEffect(() => {
     if (!discoverFindRequest || handledDiscoverFindRequestRef.current === discoverFindRequest.id) {
@@ -1339,7 +1197,14 @@ export function ChatDiscoverView({
             ...thread,
             title: shouldTitle ? deriveDiscoverChatTitle(options.titleSeed ?? '') : thread.title,
             focusProductId: options.focusProductId ?? thread.focusProductId,
-            messages: [...thread.messages, ...nextMessages],
+            messages: [
+              ...thread.messages,
+              ...nextMessages.map((message) =>
+                options.focusProductId && message.role === 'ai'
+                  ? { ...message, sessionOnly: true }
+                  : message,
+              ),
+            ],
             updatedAt: now,
           }
         }),
@@ -1347,46 +1212,6 @@ export function ChatDiscoverView({
     },
     [activeThreadIdSafe, setThreads],
   )
-
-  useEffect(() => {
-    if (!activeSearchTarget) {
-      return
-    }
-    updateThreadMessages(activeSearchTarget.threadId, (current) =>
-      current.map((message) => {
-        if (message.id !== activeSearchTarget.messageId) {
-          return message
-        }
-        const statusText = error
-          ? 'Live product search is unavailable, so I mocked a starter shortlist from the demo catalog.'
-          : (reply ??
-            (activeSearchProducts.length > 0
-              ? `I found ${activeSearchProducts.length} match${activeSearchProducts.length === 1 ? '' : 'es'} so far.`
-              : 'Searching across supported merchants...'))
-        return {
-          ...message,
-          pending: loading,
-          blocks: [
-            { type: 'text', text: statusText },
-            { type: 'products', products: activeSearchProducts, query },
-          ],
-        }
-      }),
-    )
-    scrollChatToBottom()
-    if (!loading && (reply || error)) {
-      setActiveSearchTarget(null)
-    }
-  }, [
-    activeSearchTarget,
-    activeSearchProducts,
-    error,
-    loading,
-    query,
-    reply,
-    scrollChatToBottom,
-    updateThreadMessages,
-  ])
 
   const appendMessagePair = (text: string, blocks: readonly DiscoverChatBlock[]) => {
     appendMessagesToActiveThread(
@@ -1481,7 +1306,12 @@ export function ChatDiscoverView({
         }
       }
 
-      const resolved = await resolveCartableOffer({ product, offer, location })
+      const resolved = await resolveCartableOffer({
+        product,
+        offer,
+        location,
+        expectedUserId: storageScope === 'anonymous' ? undefined : storageScope,
+      })
       if (!resolved.ok) {
         return {
           ok: false,
@@ -1496,7 +1326,7 @@ export function ChatDiscoverView({
         productVariantId: resolved.productVariantId,
       }
     },
-    [discountOfferForProduct],
+    [discountOfferForProduct, storageScope],
   )
 
   const updateDiscountCodeMessage = useCallback(
@@ -1558,6 +1388,7 @@ export function ChatDiscoverView({
         }
 
         const result = await searchDiscountCodes({
+          expectedUserId: storageScope === 'anonymous' ? undefined : storageScope,
           merchantId: context.offer.merchantId,
           merchantDomain: context.offer.merchantDomain,
           items: [{ productVariantId: context.productVariantId, quantity: 1 }],
@@ -1618,6 +1449,7 @@ export function ChatDiscoverView({
       deliveryLocations,
       discountOfferForProduct,
       resolveDiscountSearchContext,
+      storageScope,
       updateDiscountCodeMessage,
     ],
   )
@@ -1672,8 +1504,17 @@ export function ChatDiscoverView({
 
   const deleteMessage = (messageId: string) => {
     setMessages((current) => current.filter((message) => message.id !== messageId))
-    if (activeSearchTarget?.messageId === messageId) {
-      setActiveSearchTarget(null)
+    if (searchTargetsByThread[activeThreadIdSafe] === messageId) {
+      setSearchTargetsByThread((current) => {
+        const next = { ...current }
+        delete next[activeThreadIdSafe]
+        return next
+      })
+      setSearchActivitiesByThread((current) => {
+        const next = { ...current }
+        delete next[activeThreadIdSafe]
+        return next
+      })
     }
   }
 
@@ -1778,27 +1619,220 @@ export function ChatDiscoverView({
   }
 
   const runSearchInChat = (text: string) => {
-    const aiId = nextDiscoverChatMessageId()
-    appendMessagesToActiveThread(
-      [
-        { id: nextDiscoverChatMessageId(), role: 'you', text },
+    const threadId = activeThreadIdSafe
+    if (conflictedThreadIdsRef.current.has(threadId)) {
+      updateThreadMessages(threadId, (current) => [
+        ...current,
         {
-          id: aiId,
+          id: nextDiscoverChatMessageId(),
           role: 'ai',
-          query: text,
-          pending: true,
-          blocks: [{ type: 'text', text: 'Searching across supported merchants...' }],
+          blocks: [
+            {
+              type: 'system',
+              text: 'This chat changed in another tab. Reload it before sending another request.',
+            },
+          ],
         },
-      ],
-      { titleSeed: text },
+      ])
+      return
+    }
+    if (conversationPersistenceRef.current.isBlocked(threadId)) {
+      return
+    }
+    const persistenceScope = storageScope
+    const qualificationId = activeThread.qualificationId
+    const aiId = nextDiscoverChatMessageId()
+    const userMessage: DiscoverChatMessage = {
+      id: nextDiscoverChatMessageId(),
+      role: 'you',
+      text,
+    }
+    const assistantMessage: DiscoverChatMessage = {
+      id: aiId,
+      role: 'ai',
+      query: text,
+      pending: true,
+      pendingText: 'Meant is understanding which details matter for this search.',
+      blocks: [],
+    }
+    const now = Date.now()
+    const submittedThread: DiscoverChatThread = {
+      ...activeThread,
+      title:
+        activeThread.messages.length === 0 && !activeThread.named
+          ? deriveDiscoverChatTitle(text)
+          : activeThread.title,
+      messages: [...activeThread.messages, userMessage, assistantMessage],
+      updatedAt: now,
+    }
+    setThreads((current) =>
+      current.map((thread) => (thread.id === threadId ? submittedThread : thread)),
     )
-    setActiveSearchTarget({ threadId: activeThreadIdSafe, messageId: aiId })
-    onSubmit(text)
+    setSearchTargetsByThread((current) => ({ ...current, [threadId]: aiId }))
+    const conversationSave = conversationPersistenceRef.current.enqueue(threadId, async () => {
+      if (persistenceScopeRef.current !== persistenceScope) {
+        throw new Error('The signed-in account changed before this chat could be saved.')
+      }
+      const saved = await saveDiscoverConversation({
+        conversationId: threadId,
+        title: discoverThreadTitle(submittedThread),
+        threadJson: discoverThreadJson(submittedThread, false),
+        expectedRevision: conversationRevisionsRef.current[threadId],
+        expectedUserId: persistenceScope,
+      })
+      conversationRevisionsRef.current[threadId] = saved.revision
+      return saved
+    })
+    if (!conversationSave) {
+      return
+    }
+    void conversationSave
+      .then((saved) => {
+        if (persistenceScopeRef.current !== persistenceScope) {
+          throw new Error('The signed-in account changed before this search could start.')
+        }
+        if (conversationPersistenceRef.current.isBlocked(threadId)) {
+          throw new Error('This chat is being deleted.')
+        }
+        lastSavedTimestampsRef.current[threadId] = now
+        recordPersistedRevision(threadId, saved.revision)
+        return onSubmit({
+          conversationId: threadId,
+          qualificationId,
+          message: text,
+          onActivities: (activities) =>
+            setSearchActivitiesByThread((current) => ({ ...current, [threadId]: activities })),
+        })
+      })
+      .then((result) => {
+        if (persistenceScopeRef.current !== persistenceScope) return
+        const blocks: DiscoverChatBlock[] = [
+          {
+            type: 'text',
+            text:
+              result.assistantMessage.trim() ||
+              (result.status === 'NEEDS_INPUT'
+                ? 'What else should I know before I search?'
+                : `I found ${result.products.length} match${result.products.length === 1 ? '' : 'es'}.`),
+          },
+        ]
+        if (result.status === 'READY') {
+          blocks.push({
+            type: 'products',
+            products: result.products,
+            query: result.effectiveQuery,
+          })
+        }
+        const now = Date.now()
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === threadId
+              ? {
+                  ...thread,
+                  qualificationId:
+                    result.status === 'NEEDS_INPUT' ? result.qualificationId : undefined,
+                  messages: thread.messages.map((message) =>
+                    message.id === aiId
+                      ? {
+                          ...message,
+                          pending: false,
+                          pendingText: undefined,
+                          query: result.effectiveQuery,
+                          suggestedReplies:
+                            result.status === 'NEEDS_INPUT' ? result.suggestedReplies : undefined,
+                          blocks,
+                        }
+                      : message,
+                  ),
+                  updatedAt: now,
+                }
+              : thread,
+          ),
+        )
+        setSearchTargetsByThread((current) => {
+          if (current[threadId] !== aiId) {
+            return current
+          }
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        setSearchActivitiesByThread((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        if (activeThreadIdRef.current === threadId) {
+          scrollChatToBottom()
+        }
+      })
+      .catch(async (error: unknown) => {
+        if (persistenceScopeRef.current !== persistenceScope) return
+        const conflict = error instanceof ApiError && error.status === 409
+        let conflictRestored = false
+        if (conflict) {
+          conflictRestored = await restoreRemoteConversation(threadId, persistenceScope, now).catch(
+            () => false,
+          )
+          if (!conflictRestored) {
+            conflictedThreadIdsRef.current.add(threadId)
+          }
+        }
+        const errorMessage = conflict
+          ? conflictRestored
+            ? 'This chat changed in another tab. I restored the latest version; send your request again.'
+            : 'This chat changed in another tab while you were editing it. Reload before sending again.'
+          : error instanceof Error && error.message.trim()
+            ? error.message
+            : 'Product search failed. Please try again.'
+        updateThreadMessages(threadId, (current) =>
+          conflict
+            ? [
+                ...current,
+                {
+                  id: nextDiscoverChatMessageId(),
+                  role: 'ai',
+                  blocks: [{ type: 'system', text: errorMessage }],
+                },
+              ]
+            : current.map((message) =>
+                message.id === aiId
+                  ? {
+                      ...message,
+                      pending: false,
+                      pendingText: undefined,
+                      suggestedReplies: undefined,
+                      blocks: [{ type: 'text', text: errorMessage }],
+                    }
+                  : message,
+              ),
+        )
+        setSearchTargetsByThread((current) => {
+          if (current[threadId] !== aiId) {
+            return current
+          }
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        setSearchActivitiesByThread((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        if (activeThreadIdRef.current === threadId) {
+          scrollChatToBottom()
+        }
+      })
   }
 
   const submit = (text: string) => {
     const normalized = text.trim()
     if (!normalized) {
+      return
+    }
+    if (activeThread.qualificationId) {
+      runSearchInChat(normalized)
       return
     }
     const lower = normalized.toLowerCase()
@@ -2179,8 +2213,6 @@ export function ChatDiscoverView({
     const nextThread = createDiscoverChatThread()
     setThreads((current) => [...current, nextThread])
     setActiveThreadId(nextThread.id)
-    setActiveSearchTarget(null)
-    onClear()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -2199,40 +2231,59 @@ export function ChatDiscoverView({
     ])
     setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
     setActiveThreadId(threadId)
-    setActiveSearchTarget(null)
   }
 
   const deleteHistoryThread = (threadId: string) => {
-    deletedDiscoverThreadIdsRef.current.add(threadId)
-    delete lastSavedTimestampsRef.current[threadId]
-    deleteStoredDiscoverChatThread(threadId)
-    const deletingIndex = threads.findIndex((thread) => thread.id === threadId)
-    setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
-    void deleteDiscoverConversation(threadId).catch(() => undefined)
-    if (deletingIndex < 0) {
+    const persistenceScope = storageScope
+    const deletion = conversationPersistenceRef.current.delete(threadId, async () => {
+      if (persistenceScopeRef.current !== persistenceScope) {
+        throw new Error('The signed-in account changed before this chat could be deleted.')
+      }
+      return deleteDiscoverConversation(threadId, { expectedUserId: persistenceScope })
+    })
+    if (!deletion) {
       return
     }
+    setDeletingThreadIds((current) => new Set(current).add(threadId))
+    setConversationDeleteError(null)
 
-    const nextThreads = threads.filter((thread) => thread.id !== threadId)
-    if (nextThreads.length === 0) {
-      const nextThread = createDiscoverChatThread()
-      setThreads([nextThread])
-      setActiveThreadId(nextThread.id)
-      setActiveSearchTarget(null)
-      onClear()
-      return
-    }
-
-    setThreads(nextThreads)
-    if (threadId === activeThreadIdSafe) {
-      const nextActive = nextThreads[Math.max(0, deletingIndex - 1)] ?? nextThreads[0]
-      setActiveThreadId(nextActive.id)
-      setActiveSearchTarget(null)
-    } else {
-      setActiveSearchTarget((currentTarget) =>
-        currentTarget?.threadId === threadId ? null : currentTarget,
-      )
-    }
+    void deletion
+      .then(() => {
+        if (persistenceScopeRef.current !== persistenceScope) return
+        delete lastSavedTimestampsRef.current[threadId]
+        delete conversationRevisionsRef.current[threadId]
+        conflictedThreadIdsRef.current.delete(threadId)
+        deleteStoredDiscoverChatThread(threadId, storageScope)
+        setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId))
+        setThreads((current) => {
+          const next = current.filter((thread) => thread.id !== threadId)
+          return next.length > 0 ? next : [createDiscoverChatThread()]
+        })
+        setActiveThreadId((current) => (current === threadId ? null : current))
+        setSearchTargetsByThread((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+        setSearchActivitiesByThread((current) => {
+          const next = { ...current }
+          delete next[threadId]
+          return next
+        })
+      })
+      .catch(() => {
+        if (persistenceScopeRef.current !== persistenceScope) return
+        setConversationDeleteError(
+          "Couldn't delete that chat. It is still available; please try again.",
+        )
+      })
+      .finally(() => {
+        setDeletingThreadIds((current) => {
+          const next = new Set(current)
+          next.delete(threadId)
+          return next
+        })
+      })
   }
 
   const renameThread = (threadId: string, title: string) => {
@@ -2371,8 +2422,8 @@ export function ChatDiscoverView({
     onDragProduct: dragProduct,
   }
 
-  const empty = messages.length === 0 && !query
-  const activeThreadSearchPending = activeSearchTarget?.threadId === activeThreadIdSafe
+  const empty = messages.length === 0
+  const suggestedReplies = discoverSuggestedReplies(messages)
   const threadHasCheckoutBlock = messages.some((message) =>
     message.blocks?.some((block) => block.type === 'checkout'),
   )
@@ -2385,6 +2436,7 @@ export function ChatDiscoverView({
     return (
       <>
         <Workbench
+          storageScope={storageScope}
           product={workbenchProduct}
           query={query}
           preferences={preferences}
@@ -2397,21 +2449,22 @@ export function ChatDiscoverView({
             greeting={greeting}
             prompts={prompts}
             onSubmit={submit}
-            loading={loading}
-            merchants={merchants}
-            selectedMerchant={selectedMerchant}
-            merchantCounts={merchantCounts}
-            totalProductCount={totalProductCount}
-            merchantsLoading={merchantsLoading}
-            merchantsError={null}
+            loading={loading || !discoverHistoryLoaded}
             historyThreads={historyThreads}
             activeThreadId={activeThreadIdSafe}
-            onMerchant={onMerchant}
             onHistorySelect={selectHistoryThread}
             onHistoryDelete={deleteHistoryThread}
             replyDraft={composerReply}
             onClearReply={() => setComposerReply(null)}
           />
+          {conversationDeleteError ? (
+            <div className="mt-ct-history-error" role="alert">
+              <span>{conversationDeleteError}</span>
+              <button type="button" onClick={() => setConversationDeleteError(null)}>
+                Dismiss
+              </button>
+            </div>
+          ) : null}
         </main>
       </>
     )
@@ -2420,6 +2473,7 @@ export function ChatDiscoverView({
   return (
     <>
       <Workbench
+        storageScope={storageScope}
         product={workbenchProduct}
         query={query}
         preferences={preferences}
@@ -2439,6 +2493,14 @@ export function ChatDiscoverView({
           onDeleteHistory={deleteHistoryThread}
           historyThreads={historyThreads}
         />
+        {conversationDeleteError ? (
+          <div className="mt-ct-history-error" role="alert">
+            <span>{conversationDeleteError}</span>
+            <button type="button" onClick={() => setConversationDeleteError(null)}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
         <div className="mt-ct-thread">
           <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
             <span className="mt-ct-av">
@@ -2506,16 +2568,10 @@ export function ChatDiscoverView({
               </div>
             </div>
           ) : null}
-          {error && !activeThreadSearchPending ? (
-            <div className="mt-ct-system">
-              Grouped product search is unavailable. No merchant offers were substituted; try the
-              search again.
-            </div>
-          ) : null}
           {agentActivities.length > 0 && loading ? (
             <AgentActivityPanel activities={agentActivities} />
           ) : null}
-          {deliveryLocations.length > 0 && hiddenByShip > 0 ? (
+          {!query && deliveryLocations.length > 0 && hiddenByShip > 0 ? (
             <div className="mt-ship-strip">
               <span>
                 Shipping to <strong>{deliveryLocationSummary(deliveryLocations)}</strong>
@@ -2603,10 +2659,10 @@ export function ChatDiscoverView({
           <div className="mt-ct-dock-inner">
             <AskComposer
               placeholder="Ask, compare, show cart, or paste a product idea..."
-              suggestions={[]}
-              showChips={false}
+              suggestions={suggestedReplies}
+              showChips={suggestedReplies.length > 0}
               onAsk={submit}
-              disabled={loading}
+              disabled={loading || !discoverHistoryLoaded}
               replyDraft={composerReply}
               onClearReply={() => setComposerReply(null)}
             />

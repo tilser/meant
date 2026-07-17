@@ -157,10 +157,12 @@ function exactSelection(selection: ProductVariantSelectionProfile): boolean {
 export function GroupedOfferSelector({
   product,
   researchQuery,
+  userId,
   onSelectionChange,
 }: Readonly<{
   product: Product
   researchQuery?: string | null
+  userId?: string
   onSelectionChange?: (selection: ProductPurchaseSelection) => void
 }>) {
   const canonicalKey = product.canonicalProduct?.key ?? null
@@ -232,6 +234,7 @@ export function GroupedOfferSelector({
           })),
           preferredOptionName,
           signal: controller.signal,
+          expectedUserId: userId,
         })
         if (controller.signal.aborted || selectionRequestRef.current !== requestId) return
         const nextDetails = merchantDetails(response)
@@ -275,7 +278,7 @@ export function GroupedOfferSelector({
         }
       }
     },
-    [product.id],
+    [product.id, userId],
   )
 
   useEffect(() => {
@@ -308,6 +311,7 @@ export function GroupedOfferSelector({
       historicalQuery: researchQuery,
       selectedOfferKey: product.canonicalProduct?.recommendedOfferKey,
       signal: controller.signal,
+      expectedUserId: userId,
     })
       .then((nextDetail) => {
         if (controller.signal.aborted || detailRequestRef.current !== requestId) return
@@ -340,6 +344,7 @@ export function GroupedOfferSelector({
     resolveSelection,
     savedBaselineCartable,
     savedBaselineOfferKey,
+    userId,
   ])
 
   useEffect(

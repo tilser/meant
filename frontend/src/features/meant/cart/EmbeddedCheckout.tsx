@@ -72,12 +72,16 @@ export function EmbeddedCheckout({
     async (current: EmbeddedCheckoutBootstrapProfile | null) => {
       if (!current?.sessionId || terminalRef.current === 'completed') return
       try {
-        await cancelEmbeddedCheckout({ cartId: session.cartId, sessionId: current.sessionId })
+        await cancelEmbeddedCheckout({
+          cartId: session.cartId,
+          sessionId: current.sessionId,
+          expectedUserId: session.ownerId,
+        })
       } catch {
         // The server session is short-lived and fail-closed; cancellation is best-effort during teardown.
       }
     },
-    [session.cartId],
+    [session.cartId, session.ownerId],
   )
 
   const markFallback = useCallback(
@@ -107,6 +111,7 @@ export function EmbeddedCheckout({
         const checkout = await completeEmbeddedCheckout({
           cartId: session.cartId,
           sessionId: current.sessionId,
+          expectedUserId: session.ownerId,
         })
         if (generation !== generationRef.current) return
         terminalRef.current = 'completed'
@@ -133,7 +138,7 @@ export function EmbeddedCheckout({
         })
       }
     },
-    [clearStartTimer, destroyHandle, session.cartId, surface],
+    [clearStartTimer, destroyHandle, session.cartId, session.ownerId, surface],
   )
 
   const cancelActive = useCallback(
@@ -176,7 +181,9 @@ export function EmbeddedCheckout({
 
     let current: EmbeddedCheckoutBootstrapProfile
     try {
-      current = await bootstrapEmbeddedCheckout(session.cartId)
+      current = await bootstrapEmbeddedCheckout(session.cartId, {
+        expectedUserId: session.ownerId,
+      })
     } catch {
       if (generation !== generationRef.current) return
       setPhase('error')
@@ -306,6 +313,7 @@ export function EmbeddedCheckout({
     destroyHandle,
     markFallback,
     session.cartId,
+    session.ownerId,
     surface,
     verifyCompletion,
   ])

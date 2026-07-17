@@ -1,6 +1,8 @@
 package com.meant.api.provider.shopify.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import com.meant.api.module.catalog.service.ExactProductGroupingService;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -15,20 +17,21 @@ import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
-import com.meant.api.module.catalog.service.ExactProductGroupingService;
+import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionCapability;
+import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionProperties;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
+import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.provider.shopify.auth.ShopifyUcpClient;
+import com.meant.api.provider.shopify.auth.ShopifyUcpRequestOptions;
+import com.meant.api.provider.shopify.auth.ShopifyUcpTransportException;
+import com.meant.api.provider.shopify.auth.ShopifyUcpTransportFailure;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogContext;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogGetProductRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogLookupRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequest;
-import com.meant.api.plugin.spi.NegotiatedCapabilities;
-import com.meant.api.plugin.spi.UcpToolResponse;
-import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionCapability;
-import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionProperties;
-import com.meant.api.provider.shopify.auth.ShopifyUcpClient;
-import com.meant.api.provider.shopify.auth.ShopifyUcpTransportException;
-import com.meant.api.provider.shopify.auth.ShopifyUcpTransportFailure;
-import com.meant.api.provider.shopify.auth.ShopifyUcpRequestOptions;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -118,6 +121,104 @@ class ShopifyGlobalCatalogProviderTest {
         assertThat(grouped.identityEvidence()).singleElement()
                 .satisfies(evidence -> assertThat(evidence.identifiers().getFirst().value())
                         .isEqualTo("gid://shopify/p/upid-1"));
+    }
+
+    @Test
+    void acceptsScalarInferredMetadataValuesReturnedByShopify() throws Exception {
+        String scalarMetadataResponse = globalResponse()
+                .replace("\"tech_specs\": [\"250g\"]", "\"tech_specs\": \"250g\"")
+                .replace(
+                        "\"top_features\": [\"grippy sole\"]",
+                        "\"top_features\": \"grippy sole\",\n"
+                                + "      \"unique_selling_points\": \"Designed for technical trails\""
+                );
+
+        var result = provider(new CapturingClient(response(scalarMetadataResponse)), properties(3))
+                .searchCatalog(new ShopifyGlobalCatalogSearchRequest("trail running shoes", null, null));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.candidates()).hasSize(2).allSatisfy(candidate ->
+                assertThat(candidate.attributes()).extracting(attribute -> attribute.name(), attribute -> attribute.value())
+                        .contains(
+                                org.assertj.core.groups.Tuple.tuple("technical specification", "250g"),
+                                org.assertj.core.groups.Tuple.tuple("top feature", "grippy sole"),
+                                org.assertj.core.groups.Tuple.tuple(
+                                        "unique selling point",
+                                        "Designed for technical trails"
+                                )
+                        ));
+    }
+
+    @Test
+    void failsClosedWhenShopifyIgnoresARequestedHardFilter() throws Exception {
+        String ignoredFilterResponse = globalResponse().replace(
+                "\"pagination\":",
+                "\"messages\":[{\"type\":\"info\",\"code\":\"unsupported\","
+                        + "\"content\":\"Attribute Brand is not supported and was ignored.\"}],"
+                        + "\"pagination\":"
+        );
+        ShopifyGlobalCatalogProvider provider = provider(
+                new CapturingClient(response(ignoredFilterResponse)),
+                properties(3)
+        );
+
+        var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                "trail running shoes",
+                new ShopifyCatalogContext("US", null, null, "en", "USD", null),
+                null
+        ));
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.failure().kind()).isEqualTo(CatalogSourceFailureKind.INVALID_REQUEST);
+        assertThat(result.candidates()).isEmpty();
+    }
+
+    @Test
+    void serializesEveryGlobalCatalogExtensionFilterWithTheDocumentedWireShape() throws Exception {
+        CapturingClient client = new CapturingClient(response(globalResponse()));
+        ShopifyGlobalCatalogProvider provider = provider(client, properties(3));
+        ShopifyCatalogFilters filters = new ShopifyCatalogFilters(
+                true,
+                List.of("new"),
+                new ShopifyCatalogFilters.Location("US", "CA", "90210"),
+                List.of(new ShopifyCatalogFilters.Location("US", null, null)),
+                new ShopifyCatalogFilters.Price(5_000L, 15_000L),
+                List.of("gid://shopify/Shop/1"),
+                List.of("gid://shopify/TaxonomyCategory/aa-8-1"),
+                List.of(
+                        new ShopifyCatalogFilters.Attribute("Color", List.of("Black")),
+                        new ShopifyCatalogFilters.Attribute("Size", List.of("10", "10.5")),
+                        new ShopifyCatalogFilters.Attribute("Target gender", List.of("Male"))
+                ),
+                new ShopifyCatalogFilters.Rating(
+                        new ShopifyCatalogFilters.VariantRating(new BigDecimal("4.5"), 10L)
+                ),
+                List.of("low", "medium")
+        );
+
+        var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                "trail running shoes",
+                new ShopifyCatalogContext("US", "CA", "90210", "en", "USD", null),
+                filters
+        ));
+
+        assertThat(result.successful()).isTrue();
+        ShopifyGlobalCatalogArguments arguments = (ShopifyGlobalCatalogArguments) client.calls.getFirst().arguments();
+        String json = objectMapper.writeValueAsString(arguments);
+        assertThat(json)
+                .contains("\"available\":true")
+                .contains("\"condition\":[\"new\"]")
+                .contains("\"ships_to\":{\"country\":\"US\",\"region\":\"CA\",\"postal_code\":\"90210\"}")
+                .contains("\"ships_from\":[{\"country\":\"US\"}]")
+                .contains("\"price\":{\"min\":5000,\"max\":15000}")
+                .contains("\"shops\":[\"gid://shopify/Shop/1\"]")
+                .contains("\"categories\":[\"gid://shopify/TaxonomyCategory/aa-8-1\"]")
+                .contains("\"attributes\":[{\"name\":\"Color\",\"values\":[\"Black\"]}")
+                .contains("{\"name\":\"Size\",\"values\":[\"10\",\"10.5\"]}")
+                .contains("{\"name\":\"Target gender\",\"values\":[\"Male\"]}")
+                .contains("\"rating\":{\"variant\":{\"min\":4.5,\"min_count\":10}}")
+                .contains("\"price_tier\":[\"low\",\"medium\"]")
+                .doesNotContain("\"taxonomy\"");
     }
 
     @Test
