@@ -6,7 +6,6 @@ import {
   updateCart as updateRemoteCart,
   type CartProfile,
 } from '../../../lib/apiClient'
-import { DEFAULT_CART } from '../data'
 import { accountSessionStorageKey } from '../shared/accountStorage'
 import { useSessionStoredState } from '../shared/storage'
 import type { CartItem, Offer, Product, ProductId } from '../types'
@@ -50,7 +49,7 @@ function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
 export function useCartController(products: readonly Product[], ownerId: string | undefined) {
   const [cart, setStoredCart] = useSessionStoredState<CartItem[]>(
     accountSessionStorageKey('meant.cart', ownerId),
-    [...DEFAULT_CART],
+    [],
   )
   const [cartSnapshots, setStoredCartSnapshots] = useSessionStoredState<
     Record<string, MerchantCartSnapshot>

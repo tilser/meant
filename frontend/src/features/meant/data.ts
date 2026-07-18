@@ -1,5 +1,4 @@
 import type {
-  CartItem,
   CorePreferenceId,
   LocationOption,
   MerchantCoverage,
@@ -1322,13 +1321,6 @@ export const DEFAULT_SAVED: readonly Product[] = PRODUCTS.filter((product) =>
 export const DEFAULT_SAVED_IDS: readonly Product['id'][] = ['cereal', 'tee', 'brewer']
 
 export const DEFAULT_COMPARE: readonly Product['id'][] = ['sweater', 'runners']
-
-export const DEFAULT_CART: readonly CartItem[] = [
-  { id: 'laptop', merchant: 'Lumen Store', qty: 1 },
-  { id: 'monitor', merchant: 'Amazon', qty: 1 },
-  { id: 'drive', merchant: 'Amazon', qty: 1 },
-  { id: 'cereal', merchant: 'Whole Foods', qty: 1 },
-]
 
 export const DEFAULT_ORDERS: readonly Order[] = [
   {
