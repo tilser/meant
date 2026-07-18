@@ -124,14 +124,16 @@ public class ShopifyCatalogProductRehydrationProvider
         try {
             ShopifyGlobalCatalogProductResult productResult = provider.getProductWithDetails(
                     new ShopifyGlobalCatalogGetProductRequest(
-                    detailIdentifier(reference),
-                    selectedOptions(reference, selection).stream()
-                            .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
-                            .toList(),
-                    selection == null ? null : selection.preferences(),
-                    shopifyDetailContext(context),
-                    detailFilters(reference)
-            ));
+                            selection == null
+                                    ? detailIdentifier(reference)
+                                    : reference.externalProductReference().value(),
+                            selectedOptions(reference, selection).stream()
+                                    .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
+                                    .toList(),
+                            selection == null ? null : selection.preferences(),
+                            shopifyDetailContext(context),
+                            detailFilters(reference)
+                    ));
             CatalogSourceResult sourceResult = productResult.catalogResult();
             if (!sourceResult.successful()) {
                 return CatalogProductDetailResult.failed(

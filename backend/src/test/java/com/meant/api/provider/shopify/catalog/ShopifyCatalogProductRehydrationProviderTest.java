@@ -412,11 +412,59 @@ class ShopifyCatalogProductRehydrationProviderTest {
         ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
                 ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
         verify(global).getProductWithDetails(request.capture());
+        assertThat(request.getValue().id()).isEqualTo("product-1");
         assertThat(request.getValue().selected()).containsExactly(
                 new com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogSelectedOption("Color", "Blue"));
         assertThat(request.getValue().preferences()).containsExactly("Prefer cotton");
         assertThat(request.getValue().filters().available()).isFalse();
         assertThat(request.getValue().filters().shops()).containsExactly("seller-a");
+    }
+
+    @Test
+    void completeSelectionUsesProductIdentityAndResolvesTheExactSiblingVariant() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        String productId = "gid://shopify/p/upid-1";
+        String mediumVariantId = "gid://shopify/ProductVariant/100";
+        String largeVariantId = "gid://shopify/ProductVariant/200";
+        ShopifyGlobalCatalogResponse.Product selectionProduct = withSelected(
+                rawProduct(productId, mediumVariantId, largeVariantId),
+                List.of(new ShopifyGlobalCatalogResponse.SelectedOption("Size", "L"))
+        );
+        ShopifyGlobalCatalogProductResult detailResult = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()), selectionProduct, List.of());
+        when(global.getProductWithDetails(any())).thenReturn(detailResult);
+        CatalogProductReference anchor = new CatalogProductReference(
+                "saved-product",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product(productId),
+                variant(mediumVariantId),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                anchor,
+                new CatalogProductDetailSelection(
+                        List.of(new ProductAttribute("variant-option", "Size", "L")),
+                        List.of("Size")),
+                new CatalogRehydrationContext("CZ", "cs"));
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().resolvedReference().externalVariantReference())
+                .isEqualTo(variant(largeVariantId));
+        assertThat(result.details().selected()).containsExactly(
+                new com.meant.api.module.catalog.service.dto.RehydratedProductDetails.SelectedOption("Size", "L"));
+        assertThat(result.details().selectedVariant().variantId()).isEqualTo(largeVariantId);
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global).getProductWithDetails(request.capture());
+        assertThat(request.getValue().id()).isEqualTo(productId);
+        assertThat(request.getValue().selected()).containsExactly(
+                new com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogSelectedOption("Size", "L"));
+        assertThat(request.getValue().preferences()).containsExactly("Size");
     }
 
     @Test
@@ -581,12 +629,20 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     private ShopifyGlobalCatalogResponse.Product rawProduct() {
+        return rawProduct("product-1", "variant-m", "variant-l");
+    }
+
+    private ShopifyGlobalCatalogResponse.Product rawProduct(
+            String productId,
+            String mediumVariantId,
+            String largeVariantId
+    ) {
         ShopifyGlobalCatalogResponse.Seller sellerA = new ShopifyGlobalCatalogResponse.Seller(
                 "Seller A", "seller-a", "seller.example", "https://seller.example", List.of());
         ShopifyGlobalCatalogResponse.Seller sellerB = new ShopifyGlobalCatalogResponse.Seller(
                 "Seller B", "seller-b", "other.example", "https://other.example", List.of());
         return new ShopifyGlobalCatalogResponse.Product(
-                "product-1",
+                productId,
                 "perfect-shirt",
                 "Perfect shirt",
                 new ShopifyGlobalCatalogResponse.Description(
@@ -609,9 +665,9 @@ class ShopifyCatalogProductRehydrationProviderTest {
                         ))),
                 List.of(new ShopifyGlobalCatalogResponse.SelectedOption("Size", "M")),
                 List.of(
-                        rawVariant("variant-m", "medium", "M", "sku-medium", 1299L, sellerA),
-                        rawVariant("variant-l", "large", "L", "sku-large", 1399L, sellerA),
-                        rawVariant("variant-m", "medium", "M", "other-sku", 999L, sellerB)
+                        rawVariant(productId, mediumVariantId, "medium", "M", "sku-medium", 1299L, sellerA),
+                        rawVariant(productId, largeVariantId, "large", "L", "sku-large", 1399L, sellerA),
+                        rawVariant(productId, mediumVariantId, "medium", "M", "other-sku", 999L, sellerB)
                 ),
                 new ShopifyGlobalCatalogResponse.Rating(new BigDecimal("4.7"), new BigDecimal("5"), 84L),
                 List.of("organic", "summer"),
@@ -766,6 +822,29 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 product.options(),
                 product.selected(),
                 variants,
+                product.rating(),
+                product.tags(),
+                product.metadata()
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Product withSelected(
+            ShopifyGlobalCatalogResponse.Product product,
+            List<ShopifyGlobalCatalogResponse.SelectedOption> selected
+    ) {
+        return new ShopifyGlobalCatalogResponse.Product(
+                product.id(),
+                product.handle(),
+                product.title(),
+                product.description(),
+                product.url(),
+                product.categories(),
+                product.priceRange(),
+                product.listPriceRange(),
+                product.media(),
+                product.options(),
+                selected,
+                product.variants(),
                 product.rating(),
                 product.tags(),
                 product.metadata()
