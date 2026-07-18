@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import type { CartItem, Product } from '../types'
+import type { DiscoverChatBlock } from './types'
 import {
   cartItemsWithFallback,
   canRestoreDiscoverThreadAfterConflict,
@@ -216,6 +217,20 @@ describe('discover chat history storage', () => {
     expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual(
       thread.messages[0]?.blocks,
     )
+  })
+
+  test('keeps malformed legacy product history loadable when products are missing', () => {
+    const thread = createDiscoverChatThread([
+      {
+        id: 'legacy-result',
+        role: 'ai',
+        blocks: [{ type: 'products', query: 'legacy query' } as unknown as DiscoverChatBlock],
+      },
+    ])
+
+    expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual([
+      { type: 'products', query: 'legacy query', products: [] },
+    ])
   })
 
   test('preserves session-only transcript text while removing caller-controlled nested fields', () => {

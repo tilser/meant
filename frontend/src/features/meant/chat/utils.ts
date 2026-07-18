@@ -155,7 +155,10 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
     case 'products': {
       const productResultSetId = normalizedProductResultSetId(block.productResultSetId)
       if (!productResultSetId) {
-        return { ...block, products: [...block.products] }
+        return {
+          ...block,
+          products: Array.isArray(block.products) ? [...block.products] : [],
+        }
       }
       return {
         type: 'products',
