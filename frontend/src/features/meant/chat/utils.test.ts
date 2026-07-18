@@ -233,6 +233,27 @@ describe('discover chat history storage', () => {
     ])
   })
 
+  test('replaces malformed legacy attachments without a type instead of crashing history', () => {
+    const thread = createDiscoverChatThread([
+      {
+        id: 'legacy-answer',
+        role: 'ai',
+        blocks: [null, { legacy: true }] as unknown as DiscoverChatBlock[],
+      },
+    ])
+
+    expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual([
+      {
+        type: 'system',
+        text: 'This attachment is unavailable in conversation history.',
+      },
+      {
+        type: 'system',
+        text: 'This attachment is unavailable in conversation history.',
+      },
+    ])
+  })
+
   test('preserves session-only transcript text while removing caller-controlled nested fields', () => {
     const thread = {
       ...createDiscoverChatThread(),

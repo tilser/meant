@@ -135,6 +135,20 @@ export function normalizeDiscoverChatThreads(
 }
 
 function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
+  const untrustedBlock: unknown = block
+  if (
+    !untrustedBlock ||
+    typeof untrustedBlock !== 'object' ||
+    Array.isArray(untrustedBlock) ||
+    !('type' in untrustedBlock) ||
+    typeof untrustedBlock.type !== 'string'
+  ) {
+    return {
+      type: 'system',
+      text: 'This attachment is unavailable in conversation history.',
+    }
+  }
+
   switch (block.type) {
     case 'text':
       return { type: 'text', text: block.text }
@@ -169,8 +183,24 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
     }
     case 'system':
       return { type: 'system', text: block.text }
-    default:
+    case 'reviews':
+    case 'code':
+    case 'similar':
+    case 'decision':
+    case 'watch':
+    case 'friendvote':
+    case 'added':
+    case 'saved':
+    case 'orders':
+    case 'cart':
+    case 'checkout':
+    case 'minicompare':
       return { ...block }
+    default:
+      return {
+        type: 'system',
+        text: 'This attachment is unavailable in conversation history.',
+      }
   }
 }
 
