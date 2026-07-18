@@ -2013,3 +2013,376 @@ export async function getOrders(options?: AccountBoundRequestOptions): Promise<O
   })
   return parseJsonResponse<OrderProfile[]>(response, 'Failed to load orders')
 }
+
+// Agent API profiles intentionally live outside the generated OpenAPI types while the
+// feature-flagged protocol is being rolled out. Keep wire-format changes isolated here and in
+// features/meant/agent/protocol.ts rather than leaking partially generated types into the UI.
+export type AgentConversationStatusProfile = 'ACTIVE' | 'ARCHIVED'
+export type AgentMessageRoleProfile =
+  'USER' | 'USER_ACTION' | 'ASSISTANT' | 'TOOL' | 'SYSTEM_SUMMARY'
+export type AgentContentKindProfile =
+  'TEXT' | 'ACTION' | 'TOOL_CALL' | 'TOOL_RESULT' | 'ARTIFACT' | 'SUMMARY'
+export type AgentRunStatusProfile =
+  'QUEUED' | 'RUNNING' | 'WAITING_FOR_USER' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+export type AgentArtifactTypeProfile =
+  | 'PRODUCT'
+  | 'OFFER'
+  | 'INVENTORY_ITEM'
+  | 'ORDER'
+  | 'SAVED_PRODUCT'
+  | 'PRODUCT_STATE'
+  | 'COMPARISON'
+  | 'REVIEWS'
+  | 'DISCOUNT_CODES'
+  | 'MISSION'
+  | 'CART'
+  | 'CART_LINE'
+  | 'CHECKOUT'
+
+export interface AgentMessageProfile {
+  messageId: string
+  runId: string | null
+  sequenceNumber: number
+  role: AgentMessageRoleProfile
+  contentKind: AgentContentKindProfile
+  textContent: string | null
+  contentJson: string | null
+  correlationId: string | null
+  createdAt: string
+}
+
+export interface AgentArtifactProfile {
+  artifactId: string
+  messageId: string
+  runId: string | null
+  type: AgentArtifactTypeProfile
+  ordinal: number
+  stableKey: string
+  label: string | null
+  canonicalProductKey: string | null
+  offerKey: string | null
+  inventoryItemId: string | null
+  cartId: string | null
+  cartLineId: string | null
+  checkoutAttemptId: string | null
+  payloadJson: string
+  createdAt: string
+}
+
+export interface AgentConversationSummaryProfile {
+  conversationId: string
+  title: string
+  status: AgentConversationStatusProfile
+  activeMissionId: string | null
+  latestSequence: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentConversationDetailProfile extends AgentConversationSummaryProfile {
+  rollingSummary: string | null
+  summaryVersion: number
+  latestCursor: number
+  messages: AgentMessageProfile[]
+  artifacts: AgentArtifactProfile[]
+}
+
+export interface AgentTurnProfile {
+  runId: string
+  firstEventCursor: number
+  userMessage: AgentMessageProfile
+}
+
+export interface AgentRunSnapshotProfile {
+  runId: string
+  conversationId: string
+  status: AgentRunStatusProfile
+  model: string
+  promptVersion: string
+  iterationCount: number
+  toolInvocationCount: number
+  inputTokens: number | null
+  outputTokens: number | null
+  failureCode: string | null
+  safeMessage: string | null
+  cancellationRequested: boolean
+  latestCursor: number
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface AgentRunEventEnvelopeProfile {
+  schemaVersion: number
+  cursor: number
+  conversationId: string
+  runId: string
+  type: string
+  occurredAt: string
+  payloadJson: string
+}
+
+export interface AgentDirectActionProfile {
+  message: AgentMessageProfile
+  resultJson: string
+  artifacts: AgentArtifactProfile[]
+}
+
+export interface AgentRunEventStreamInput extends AccountBoundRequestOptions {
+  runId: string
+  afterCursor?: number
+}
+
+const agentConversationUrl = (conversationId: string): string =>
+  `${API_URL}/api/v1/users/me/agent/conversations/${encodeURIComponent(conversationId)}`
+
+export async function createAgentConversation(input?: {
+  title?: string
+  expectedUserId?: string
+  signal?: AbortSignal
+}): Promise<AgentConversationSummaryProfile> {
+  const response = await fetch(`${API_URL}/api/v1/users/me/agent/conversations`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders(input?.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input?.title === undefined ? {} : { title: input.title }),
+    signal: input?.signal,
+  })
+  return parseJsonResponse<AgentConversationSummaryProfile>(
+    response,
+    'Failed to create agent conversation',
+  )
+}
+
+export async function getAgentConversations(
+  options?: AccountBoundRequestOptions & { archived?: boolean; limit?: number },
+): Promise<AgentConversationSummaryProfile[]> {
+  const search = new URLSearchParams()
+  if (options?.archived !== undefined) {
+    search.set('archived', String(options.archived))
+  }
+  if (options?.limit !== undefined) {
+    search.set('limit', String(options.limit))
+  }
+  const query = search.toString()
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/agent/conversations${query ? `?${query}` : ''}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<AgentConversationSummaryProfile[]>(
+    response,
+    'Failed to load agent conversations',
+  )
+}
+
+export async function getAgentConversation(
+  conversationId: string,
+  options?: AccountBoundRequestOptions & { afterSequence?: number; limit?: number },
+): Promise<AgentConversationDetailProfile> {
+  const search = new URLSearchParams()
+  if (options?.afterSequence !== undefined) {
+    search.set('afterSequence', String(options.afterSequence))
+  }
+  if (options?.limit !== undefined) {
+    search.set('limit', String(options.limit))
+  }
+  const query = search.toString()
+  const response = await fetch(
+    `${agentConversationUrl(conversationId)}${query ? `?${query}` : ''}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<AgentConversationDetailProfile>(
+    response,
+    'Failed to load agent conversation',
+  )
+}
+
+/** Loads the paged immutable transcript while deduplicating each page's latest-state artifact projection. */
+export async function getCompleteAgentConversation(
+  conversationId: string,
+  options?: AccountBoundRequestOptions & { pageSize?: number },
+): Promise<AgentConversationDetailProfile> {
+  const pageSize = Math.max(1, Math.min(500, options?.pageSize ?? 200))
+  let cursor = 0
+  let snapshot: AgentConversationDetailProfile | null = null
+  const messages = new Map<string, AgentMessageProfile>()
+  const artifacts = new Map<string, AgentArtifactProfile>()
+
+  for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+    const page = await getAgentConversation(conversationId, {
+      expectedUserId: options?.expectedUserId,
+      signal: options?.signal,
+      afterSequence: cursor,
+      limit: pageSize,
+    })
+    snapshot = page
+    page.messages.forEach((message) => messages.set(message.messageId, message))
+    page.artifacts.forEach((artifact) => artifacts.set(artifact.artifactId, artifact))
+    const nextCursor = page.messages.at(-1)?.sequenceNumber ?? cursor
+    if (nextCursor <= cursor || nextCursor >= page.latestSequence) break
+    cursor = nextCursor
+  }
+  if (!snapshot) {
+    throw new Error('Agent conversation pagination returned no snapshot.')
+  }
+  return {
+    ...snapshot,
+    messages: [...messages.values()].sort(
+      (left, right) => left.sequenceNumber - right.sequenceNumber,
+    ),
+    artifacts: [...artifacts.values()].sort(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) || left.ordinal - right.ordinal,
+    ),
+  }
+}
+
+export async function updateAgentConversation(input: {
+  conversationId: string
+  title?: string
+  archived?: boolean
+  expectedUserId?: string
+  signal?: AbortSignal
+}): Promise<AgentConversationSummaryProfile> {
+  const body: { title?: string; archived?: boolean } = {}
+  if (input.title !== undefined) {
+    body.title = input.title
+  }
+  if (input.archived !== undefined) {
+    body.archived = input.archived
+  }
+  const response = await fetch(agentConversationUrl(input.conversationId), {
+    method: 'PATCH',
+    headers: {
+      ...(await authHeaders(input.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: input.signal,
+  })
+  return parseJsonResponse<AgentConversationSummaryProfile>(
+    response,
+    'Failed to update agent conversation',
+  )
+}
+
+export async function submitAgentTurn(input: {
+  conversationId: string
+  message: string
+  clientTurnId?: string
+  expectedUserId?: string
+  signal?: AbortSignal
+}): Promise<AgentTurnProfile> {
+  const response = await fetch(`${agentConversationUrl(input.conversationId)}/turns`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders(input.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: input.message,
+      ...(input.clientTurnId === undefined ? {} : { clientTurnId: input.clientTurnId }),
+    }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<AgentTurnProfile>(response, 'Failed to submit agent turn')
+}
+
+export async function getAgentRun(
+  runId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<AgentRunSnapshotProfile> {
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/agent/runs/${encodeURIComponent(runId)}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<AgentRunSnapshotProfile>(response, 'Failed to recover agent run')
+}
+
+/** Opens an authenticated fetch stream. EventSource cannot attach the Supabase bearer token. */
+export async function openAgentRunEventStream(input: AgentRunEventStreamInput): Promise<Response> {
+  const search = new URLSearchParams()
+  if (input.afterCursor !== undefined) {
+    search.set('afterCursor', String(input.afterCursor))
+  }
+  const query = search.toString()
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/agent/runs/${encodeURIComponent(input.runId)}/events${query ? `?${query}` : ''}`,
+    {
+      cache: 'no-store',
+      headers: {
+        ...(await authHeaders(input.expectedUserId)),
+        Accept: 'text/event-stream',
+      },
+      signal: input.signal,
+    },
+  )
+  if (!response.ok) {
+    throw await parseErrorResponse(response, 'Failed to stream agent run')
+  }
+  if (!response.body) {
+    throw new Error('Agent event stream returned no response body')
+  }
+  return response
+}
+
+export async function cancelAgentRun(
+  runId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<AgentRunSnapshotProfile | null> {
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/agent/runs/${encodeURIComponent(runId)}/cancel`,
+    {
+      method: 'POST',
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  if (!response.ok) {
+    throw await parseErrorResponse(response, 'Failed to cancel agent run')
+  }
+  if (response.status === 204) {
+    return null
+  }
+  return (await response.json()) as AgentRunSnapshotProfile
+}
+
+export async function recordAgentDirectAction(input: {
+  conversationId: string
+  toolName: string
+  argumentsJson: string
+  idempotencyKey: string
+  summary: string
+  expectedUserId?: string
+  signal?: AbortSignal
+}): Promise<AgentDirectActionProfile> {
+  const response = await fetch(`${agentConversationUrl(input.conversationId)}/actions`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders(input.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      toolName: input.toolName,
+      argumentsJson: input.argumentsJson,
+      idempotencyKey: input.idempotencyKey,
+      summary: input.summary,
+    }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<AgentDirectActionProfile>(response, 'Failed to record agent action')
+}

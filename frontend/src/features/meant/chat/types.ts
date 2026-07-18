@@ -1,4 +1,5 @@
 import type { CartItem, Order, Preference, Product, ProductId } from '../types'
+import type { ProductReviewsProfile } from '../../../lib/apiClient'
 
 export interface MiniCompareRow {
   label: string
@@ -16,6 +17,15 @@ export interface FoundDiscountCode {
   validUntil?: string | null
   expiresAt?: string | null
   validationMessage?: string | null
+}
+
+export interface ShoppingMissionRequirement {
+  id: string
+  label: string
+  state: 'MISSING' | 'PARTIAL' | 'COVERED' | 'OPTIONAL'
+  requiredQuantity: number
+  coveredQuantity: number
+  optional: boolean
 }
 
 export type SimilarReferenceStatus = 'idle' | 'loading' | 'error'
@@ -39,7 +49,7 @@ export type DiscoverChatBlock =
       unavailableCount?: number
       historyHydration?: 'loading' | 'loaded' | 'failed'
     }
-  | { type: 'reviews'; product: Product }
+  | { type: 'reviews'; product: Product; snapshot?: ProductReviewsProfile }
   | {
       type: 'code'
       product: Product
@@ -84,8 +94,21 @@ export type DiscoverChatBlock =
   | { type: 'saved'; products: readonly Product[] }
   | { type: 'orders'; orders: readonly Order[] }
   | { type: 'prefs'; preferences: readonly Preference[] }
+  | {
+      type: 'mission'
+      goal: string
+      status: string
+      assumptions: readonly string[]
+      requirements: readonly ShoppingMissionRequirement[]
+    }
   | { type: 'cart'; lines: readonly CartItem[]; products?: readonly Product[] }
-  | { type: 'checkout'; merchantCount: number }
+  | {
+      type: 'checkout'
+      merchantCount: number
+      /** Immutable server-owned snapshot used by historical agent messages. */
+      lines?: readonly CartItem[]
+      products?: readonly Product[]
+    }
   | {
       type: 'minicompare'
       products: readonly Product[]

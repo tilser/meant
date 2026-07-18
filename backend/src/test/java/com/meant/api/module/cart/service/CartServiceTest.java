@@ -245,6 +245,70 @@ class CartServiceTest {
     }
 
     @Test
+    void partitionSelectedOffersGroupsExactSelectionsByImmutableRoutingScope() {
+        var defaultTarget = routing.resolve(resolvedOffer("bootstrap"));
+        when(routing.resolve(any())).thenAnswer(invocation -> {
+            ResolvedSelectedOffer offer = invocation.getArgument(0);
+            String scope = offer.offerKey().startsWith("merchant-a") ? "scope:a" : "scope:b";
+            return new com.meant.api.module.cart.service.dto.CartRoutingTarget(
+                    scope,
+                    defaultTarget.provider(),
+                    defaultTarget.merchantIntegrationId(),
+                    defaultTarget.externalMerchantId(),
+                    defaultTarget.merchantProvider()
+            );
+        });
+
+        var partitions = cartService.partitionSelectedOffers(
+                new com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery(
+                        USER_ID,
+                        List.of(
+                                new com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery.Item(
+                                        "merchant-a-blanket", 1),
+                                new com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery.Item(
+                                        "merchant-b-cups", 2),
+                                new com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery.Item(
+                                        "merchant-a-blanket", 3)
+                        )
+                ));
+
+        assertThat(partitions).extracting("routingScopeKey").containsExactly("scope:a", "scope:b");
+        assertThat(partitions.getFirst().items()).singleElement().satisfies(item -> {
+            assertThat(item.offerKey()).isEqualTo("merchant-a-blanket");
+            assertThat(item.quantity()).isEqualTo(4);
+        });
+        assertThat(partitions.get(1).items()).singleElement().satisfies(item -> {
+            assertThat(item.offerKey()).isEqualTo("merchant-b-cups");
+            assertThat(item.quantity()).isEqualTo(2);
+        });
+        assertThat(cartDispatchService.createCount).isZero();
+    }
+
+    @Test
+    void getCheckoutDoesNotCreateACheckoutWhenTheCartHasNoPreparedSession() {
+        CartResult cart = cartService.create(new CreateCartCommand(
+                USER_ID,
+                merchant.getId(),
+                null,
+                List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null
+        ));
+
+        assertThatThrownBy(() -> cartService.getCheckout(new GetCheckoutQuery(cart.cartId(), USER_ID, false)))
+                .isInstanceOf(CartException.class)
+                .satisfies(exception -> assertThat(((CartException) exception).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
+        assertThat(checkoutDispatchService.createCount).isZero();
+        assertThat(checkoutDispatchService.getCount).isZero();
+    }
+
+    @Test
     void createUsesRehydratedShopifyWireIdentityAndPropagatesBuyerIp() {
         String variantId = "gid://shopify/ProductVariant/42";
         doReturn(List.of(resolvedShopifyOfferWithCanonicalProductAnchor(variantId)))
@@ -1761,6 +1825,9 @@ class CartServiceTest {
                             saveCount++;
                             yield cart;
                         }
+                        case "findForRemoteIdentityReconciliation" -> carts.values().stream()
+                                .filter(cart -> cart.getRemoteCartIdHash().equals(args[0]))
+                                .findFirst();
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
             );

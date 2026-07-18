@@ -26,12 +26,29 @@
         <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
         <java-json-canonicalization.version>1.1</java-json-canonicalization.version>
         <http-message-signatures.version>1.8</http-message-signatures.version>
+        <spring-ai.version>2.0.0</spring-ai.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

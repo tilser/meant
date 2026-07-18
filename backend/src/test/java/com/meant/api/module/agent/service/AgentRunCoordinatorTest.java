@@ -1,0 +1,342 @@
+package com.meant.api.module.agent.service;
+
+import static com.meant.api.module.agent.support.ScriptedAgentModelGateway.failure;
+import static com.meant.api.module.agent.support.ScriptedAgentModelGateway.response;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.after;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.meant.api.module.agent.constant.AgentRunStatus;
+import com.meant.api.module.agent.constant.AgentToolRisk;
+import com.meant.api.module.agent.entity.AgentRun;
+import com.meant.api.module.agent.properties.AgentProperties;
+import com.meant.api.module.agent.repository.AgentRunRepository;
+import com.meant.api.module.agent.service.dto.AgentExecutedToolCall;
+import com.meant.api.module.agent.service.dto.AgentModelContext;
+import com.meant.api.module.agent.service.dto.AgentModelMessage;
+import com.meant.api.module.agent.service.dto.AgentModelResponse;
+import com.meant.api.module.agent.service.dto.AgentModelToolCall;
+import com.meant.api.module.agent.service.dto.AgentModelToolResult;
+import com.meant.api.module.agent.service.dto.AgentModelUsage;
+import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
+import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.support.ScriptedAgentModelGateway;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+class AgentRunCoordinatorTest {
+
+    private AgentRunCoordinator coordinator;
+
+    @AfterEach
+    void shutDownExecutors() {
+        if (coordinator != null) {
+            coordinator.shutdown();
+        }
+    }
+
+    @Test
+    void executesSequentialToolRoundsAndPersistsTheGroundedFinalMessage() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall search = new AgentModelToolCall("call-1", "search_catalog", "{\"query\":\"shoes\"}");
+        AgentModelToolCall detail = new AgentModelToolCall("call-2", "get_product", "{\"canonicalProductKey\":\"p1\"}");
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(search))),
+                response(model("", List.of(detail))),
+                response(model("Here are two grounded choices.", List.of()), "Here are ", "two grounded choices.")
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.toolExecutor().execute(any(AgentToolExecutionContext.class), any()))
+                .thenAnswer(invocation -> {
+                    AgentModelToolCall call = invocation.getArgument(1);
+                    return new AgentExecutedToolCall(
+                            new AgentModelToolResult(call.id(), call.name(), "{\"ok\":true}"),
+                            true
+                    );
+                });
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Here are two grounded choices.",
+                false
+        );
+        verify(fixture.toolExecutor(), timeout(3000).times(2)).execute(any(), any());
+        assertThat(model.requests()).hasSize(3);
+        assertThat(model.requests().get(1).messages().getLast().toolResults())
+                .singleElement()
+                .extracting(AgentModelToolResult::toolCallId)
+                .isEqualTo("call-1");
+    }
+
+    @Test
+    void fallsBackOnlyBeforeAnyPrimaryModelOutput() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                failure(new IllegalStateException("unsupported model")),
+                response(model("Recovered with the fallback.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Recovered with the fallback.",
+                false
+        );
+        assertThat(model.requests()).extracting(request -> request.model())
+                .containsExactly("primary-model", "fallback-model");
+    }
+
+    @Test
+    void repeatedIdenticalToolCallsTerminateBeforeASecondMutationStarts() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall mutation = new AgentModelToolCall(
+                "call-1",
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-1\"}]}"
+        );
+        AgentModelToolCall repeated = new AgentModelToolCall(
+                "call-2",
+                "prepare_carts",
+                mutation.argumentsJson()
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(mutation))),
+                response(model("", List.of(repeated)))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenReturn(new AgentExecutedToolCall(
+                        new AgentModelToolResult("call-1", "prepare_carts", "{\"carts\":[]}"),
+                        true
+                ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.runService(), timeout(3000)).failOwnedExecution(
+                runId,
+                fixture.executionOwner(),
+                "repeated_tool_call",
+                "I stopped a repeated action loop before changing anything else."
+        );
+        verify(fixture.toolExecutor(), timeout(3000)).execute(any(), any());
+        verify(fixture.toolExecutor(), never()).execute(any(),
+                org.mockito.ArgumentMatchers.argThat(call -> "call-2".equals(call.id())));
+    }
+
+    @Test
+    void cancellationStopsBeforeAnyModelOrToolStarts() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("This must not run.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, true);
+
+        coordinator.schedule(runId);
+
+        verify(fixture.runService(), timeout(3000)).cancelOwnedExecution(runId, fixture.executionOwner());
+        assertThat(model.requests()).isEmpty();
+        verify(fixture.toolExecutor(), never()).execute(any(), any());
+    }
+
+    @Test
+    void cancellationFromThePrimaryModelNeverStartsTheFallbackModel() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                failure(new CancellationException("stopped")),
+                response(model("This fallback must not run.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+
+        coordinator.schedule(runId);
+
+        verify(fixture.runService(), timeout(3000)).cancelOwnedExecution(runId, fixture.executionOwner());
+        assertThat(model.requests()).extracting(request -> request.model())
+                .containsExactly("primary-model");
+        verify(fixture.toolExecutor(), never()).execute(any(), any());
+    }
+
+    @Test
+    void cancellationAfterTheLastModelChunkWinsBeforeTerminalCompletion() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("A final answer that must not be committed.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.runService().cancellationRequested(runId, fixture.executionOwner()))
+                .thenReturn(false, false, true, true);
+
+        coordinator.schedule(runId);
+
+        verify(fixture.runService(), timeout(3000)).cancelOwnedExecution(runId, fixture.executionOwner());
+        verify(fixture.messageLedger(), never()).appendTerminalAssistant(any(), any(), anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    void claimContentionDoesNotHotRescheduleTheSameQueuedRun() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("This must not execute.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.runService().claim(runId)).thenReturn(Optional.empty());
+
+        coordinator.schedule(runId);
+
+        verify(fixture.runService(), after(300).times(1)).claim(runId);
+        assertThat(model.requests()).isEmpty();
+        verify(fixture.toolExecutor(), never()).execute(any(), any());
+    }
+
+    private Fixture fixture(
+            UUID runId,
+            UUID conversationId,
+            ScriptedAgentModelGateway model,
+            boolean cancelled
+    ) {
+        AgentRunRepository runs = mock(AgentRunRepository.class);
+        UUID executionOwner = UUID.randomUUID();
+        AgentRunService runService = mock(AgentRunService.class);
+        AgentContextAssembler contextAssembler = mock(AgentContextAssembler.class);
+        AgentToolRegistry registry = mock(AgentToolRegistry.class);
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        AgentToolCallExecutor toolExecutor = mock(AgentToolCallExecutor.class);
+        AgentMessageLedgerService messageLedger = mock(AgentMessageLedgerService.class);
+        AgentJsonSupport jsonSupport = mock(AgentJsonSupport.class);
+        AgentTool tool = mock(AgentTool.class);
+        AgentToolDescriptor descriptor = new AgentToolDescriptor(
+                "search_catalog",
+                "Search",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.READ
+        );
+        AgentToolDescriptor mutationDescriptor = new AgentToolDescriptor(
+                "prepare_carts",
+                "Prepare carts",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        AgentRun run = AgentRun.builder()
+                .id(runId)
+                .conversationId(conversationId)
+                .userId(UUID.randomUUID())
+                .triggeringMessageId(UUID.randomUUID())
+                .status(AgentRunStatus.RUNNING)
+                .model("primary-model")
+                .promptVersion("test-v1")
+                .createdAt(Instant.now())
+                .build();
+        when(runs.findById(runId)).thenReturn(Optional.of(run));
+        when(runs.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(any(), any()))
+                .thenReturn(Optional.empty());
+        when(runService.claim(runId)).thenReturn(Optional.of(executionOwner));
+        when(runService.cancellationRequested(runId, executionOwner)).thenReturn(cancelled);
+        when(contextAssembler.assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user("Find shoes")),
+                "Find shoes"
+        ));
+        when(registry.descriptors()).thenReturn(List.of(descriptor, mutationDescriptor));
+        when(authorizationPolicy.available(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(jsonSupport.canonicalizeOrOriginal(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tool.descriptor()).thenReturn(descriptor);
+        when(registry.required(anyString())).thenAnswer(invocation -> {
+            String name = invocation.getArgument(0);
+            AgentTool selected = mock(AgentTool.class);
+            when(selected.descriptor()).thenReturn(
+                    "prepare_carts".equals(name) ? mutationDescriptor : descriptor
+            );
+            return selected;
+        });
+        coordinator = new AgentRunCoordinator(
+                runs,
+                runService,
+                contextAssembler,
+                registry,
+                authorizationPolicy,
+                toolExecutor,
+                messageLedger,
+                model,
+                mock(AgentMetrics.class),
+                jsonSupport,
+                properties()
+        );
+        return new Fixture(runService, toolExecutor, messageLedger, executionOwner);
+    }
+
+    private AgentModelResponse model(String text, List<AgentModelToolCall> calls) {
+        return new AgentModelResponse(
+                text,
+                calls,
+                new AgentModelUsage(10L, 5L),
+                calls.isEmpty() ? "stop" : "tool_calls",
+                "test-model"
+        );
+    }
+
+    private AgentProperties properties() {
+        return new AgentProperties(
+                true,
+                "primary-model",
+                "fallback-model",
+                "https://example.test/v1",
+                "test-key",
+                "Meant Test",
+                "https://example.test",
+                "test-v1",
+                "test-v1",
+                0,
+                1024,
+                8,
+                20,
+                6,
+                4,
+                40,
+                64000,
+                24000,
+                2,
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(2),
+                Duration.ofSeconds(2),
+                Duration.ofSeconds(2),
+                Duration.ofMillis(10),
+                128,
+                Duration.ofDays(1),
+                Duration.ofMinutes(5)
+        );
+    }
+
+    private record Fixture(
+            AgentRunService runService,
+            AgentToolCallExecutor toolExecutor,
+            AgentMessageLedgerService messageLedger,
+            UUID executionOwner
+    ) {
+    }
+}

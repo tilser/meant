@@ -29,6 +29,8 @@ import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot } from './cart/types'
 import { useCartController } from './cart/useCartController'
 import { ChatDiscoverView } from './chat/ChatDiscoverView'
+import { AgentDiscoverView } from './agent/AgentDiscoverView'
+import { isAgenticDiscoverEnabled } from './agent/featureFlag'
 import { CompareView } from './compare/CompareView'
 import { InventoryView } from './inventory/InventoryView'
 import { PreferencesView } from './preferences/PreferencesView'
@@ -2623,7 +2625,56 @@ export function MeantApp() {
         )
       case 'discover':
       default:
-        return (
+        return isAgenticDiscoverEnabled() ? (
+          <AgentDiscoverView
+            key={userId ?? 'anonymous'}
+            expectedUserId={userId ?? ''}
+            profile={liveProfile}
+            greeting={greeting}
+            prompts={currentSearchSuggestions}
+            deliveryLocations={deliveryLocations}
+            preferences={allPreferences}
+            cart={cart}
+            cartProducts={allKnownProducts}
+            savedSet={savedSet}
+            savePendingSet={savePendingSet}
+            shelf={shelf}
+            shelfFlashMessageId={shelfFlashMessageId}
+            productDetailChatRequest={currentProductDetailChatRequest}
+            discoverFindRequest={currentDiscoverFindRequest}
+            homeRequestId={discoverHomeRequestId}
+            newsletter={user.newsletter}
+            onOpen={(product, products, researchQuery) =>
+              openProduct(product, products ?? feedProducts, researchQuery)
+            }
+            onToggleSave={toggleSave}
+            onCompareProducts={compareChatProducts}
+            onCheckout={checkoutInChat}
+            activeCheckout={activeCheckout?.source === 'chat' ? activeCheckout : null}
+            checkoutBusy={checkoutFlowBusy}
+            checkoutError={checkoutFlowError}
+            onCheckoutAssistant={assistActiveCheckout}
+            onRefreshCheckout={refreshActiveCheckout}
+            onOpenSaved={() => nav('saved')}
+            onOpenOrders={() => nav('orders')}
+            onOpenPrefs={() => nav('preferences')}
+            onOpenCart={() => nav('cart')}
+            onOpenShelf={() => setShelfOpen(true)}
+            onNewsletterChange={updateNewsletter}
+            onShelfAddMessage={addMessageToShelf}
+            onShelfAddProduct={addProductToShelf}
+            onAgentCartSnapshot={(lines, cartIds) =>
+              setCart((current) => [
+                ...current.filter((item) => !item.cartId || !cartIds.has(item.cartId)),
+                ...lines,
+              ])
+            }
+            onProductDetailChatRequestHandled={(requestId) => {
+              setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
+            }}
+            onFlashMessage={flashShelfMessage}
+          />
+        ) : (
           <ChatDiscoverView
             key={userId ?? 'anonymous'}
             profile={liveProfile}

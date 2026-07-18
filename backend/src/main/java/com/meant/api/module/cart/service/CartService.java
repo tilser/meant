@@ -16,6 +16,7 @@ import com.meant.api.module.cart.service.command.CreateCheckoutConsentCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CartOfferPartitionResult;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
@@ -27,6 +28,8 @@ import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.cart.service.query.ListActiveCartsQuery;
+import com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
@@ -93,6 +96,7 @@ import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.validation.annotation.Validated;
 
 @Service
@@ -122,6 +126,10 @@ public class CartService {
     private final CheckoutCancellationPolicy checkoutCancellationPolicy;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
+        return create(command, null);
+    }
+
+    public CartResult create(@NotNull @Valid CreateCartCommand command, UUID idempotencyKey) {
         UserCommerceContextResult commerceContext = userCommerceContextService.find(command.userId());
         ResolvedItems resolved = resolveCreate(command.userId(), command.addItems(), commerceContext);
         validateExactVariantSelections(resolved.offers());
@@ -130,16 +138,30 @@ public class CartService {
         CreateCartRequest request = createCartRequest(command, resolved, commerceContext);
         UcpSession session = UcpSession.start();
         UcpCartToolResult result = merchantCartPluginDispatchService.createCart(
-                target, request, session, CartToolCallContext.forBuyer(command.buyerIp()));
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(
-                (Cart) null,
-                command.userId(),
                 target,
-                result,
-                request.giftCardCodes(),
-                resolved.offers(),
-                CartSnapshotPurpose.CART_MUTATION
-        ), result.response());
+                request,
+                session,
+                new CartToolCallContext(idempotencyKey, command.buyerIp())
+        );
+        Cart persistedCart;
+        try {
+            persistedCart = cartPersistenceService.saveCreatedSnapshot(
+                    command.userId(),
+                    target,
+                    result,
+                    request.giftCardCodes(),
+                    resolved.offers(),
+                    CartSnapshotPurpose.CART_MUTATION,
+                    idempotencyKey
+            );
+        } catch (DataIntegrityViolationException exception) {
+            if (idempotencyKey == null) {
+                throw exception;
+            }
+            persistedCart = cartPersistenceService.findCreatedSnapshot(command.userId(), target, result)
+                    .orElseThrow(() -> exception);
+        }
+        return cartResultMapper.from(persistedCart, result.response());
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
@@ -157,7 +179,55 @@ public class CartService {
                 result.response());
     }
 
+    public List<CartResult> listActive(@NotNull @Valid ListActiveCartsQuery query) {
+        return cartPersistenceService.findActiveCarts(query.userId(), query.limit()).stream()
+                .map(cartResultMapper::from)
+                .toList();
+    }
+
+    /**
+     * Resolves server-issued offer keys and groups them by the immutable remote-cart scope.
+     * Resolution and routing can perform remote I/O; this method intentionally has no transaction.
+     */
+    public List<CartOfferPartitionResult> partitionSelectedOffers(
+            @NotNull @Valid PartitionSelectedOffersQuery query
+    ) {
+        UserCommerceContextResult commerceContext = userCommerceContextService.find(query.userId());
+        ResolvedItems resolved = resolve(
+                query.userId(),
+                query.items().stream()
+                        .map(item -> new SelectedOfferQuantity(item.offerKey(), item.quantity()))
+                        .toList(),
+                commerceContext
+        );
+        validateExactVariantSelections(resolved.offers());
+        Map<String, MutableOfferPartition> partitions = new LinkedHashMap<>();
+        resolved.items().forEach((offerKey, quantity) -> {
+            CartRoutingTarget target = selectedOfferCartRoutingService.resolve(resolved.byKey().get(offerKey));
+            MutableOfferPartition partition = partitions.computeIfAbsent(
+                    target.scopeKey(),
+                    ignored -> new MutableOfferPartition(target)
+            );
+            partition.items().add(new CartOfferPartitionResult.Item(offerKey, quantity));
+        });
+        return partitions.values().stream()
+                .map(partition -> new CartOfferPartitionResult(
+                        partition.target().scopeKey(),
+                        partition.target().provider().name(),
+                        partition.target().merchantIntegrationId(),
+                        partition.target().externalMerchantId(),
+                        partition.target().merchantProvider().merchantId(),
+                        partition.target().merchantProvider().domain(),
+                        partition.items()
+                ))
+                .toList();
+    }
+
     public CartResult update(@NotNull @Valid UpdateCartCommand command) {
+        return update(command, null);
+    }
+
+    public CartResult update(@NotNull @Valid UpdateCartCommand command, UUID idempotencyKey) {
         Cart cart = findCart(command.cartId(), command.userId());
         cartReplacementService.validateIdentifiers(cart, command);
         UserCommerceContextResult commerceContext = userCommerceContextService.find(command.userId());
@@ -174,7 +244,7 @@ public class CartService {
         }
         validateUnambiguousConfigurations(cart.getLines(), resolved.offers());
         UcpSession session = session(cart);
-        CartToolCallContext callContext = CartToolCallContext.forBuyer(command.buyerIp());
+        CartToolCallContext callContext = new CartToolCallContext(idempotencyKey, command.buyerIp());
         UcpCartResponse currentRemote = providerBound(cart)
                 ? merchantCartPluginDispatchService.getCart(
                         target, new GetCartRequest(cart.getRemoteCartId()), session, callContext).response()
@@ -214,6 +284,10 @@ public class CartService {
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query) {
+        return checkout(query, null);
+    }
+
+    public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query, UUID idempotencyKey) {
         Cart cart = findCart(query.cartId(), query.userId());
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
@@ -221,7 +295,11 @@ public class CartService {
             return checkoutResultMapper.from(cart, provider.executionPolicy());
         }
         UcpSession session = session(cart);
-        CheckoutToolCallContext callContext = CheckoutToolCallContext.forBuyer(query.buyerIp());
+        CheckoutToolCallContext callContext = new CheckoutToolCallContext(
+                idempotencyKey,
+                true,
+                query.buyerIp()
+        );
         Cart checkoutCart = hasText(cart.getCheckoutId())
                 ? cart
                 : refreshEmptyCartBeforeCheckout(cart, query.userId(), target, session, query.buyerIp());
@@ -250,6 +328,27 @@ public class CartService {
         return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
     }
 
+    public CheckoutResult getCheckout(@NotNull @Valid GetCheckoutQuery query) {
+        Cart cart = findCart(query.cartId(), query.userId());
+        if (!hasText(cart.getCheckoutId())) {
+            throw CartException.notFound("Checkout not found for cart: " + query.cartId());
+        }
+        CartRoutingTarget target = checkoutRoutingTarget(cart);
+        MerchantCartProvider provider = target.merchantProvider();
+        if (!query.refresh()) {
+            return checkoutResultMapper.from(cart, provider.executionPolicy());
+        }
+        UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.getCheckout(
+                target,
+                new GetCheckoutRequest(cart.getCheckoutId()),
+                session(cart),
+                CheckoutToolCallContext.forBuyer(query.buyerIp())
+        );
+        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
+                cart.getId(), query.userId(), cart.getCheckoutGeneration(), result);
+        return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
+    }
+
     private Cart refreshEmptyCartBeforeCheckout(
             Cart cart,
             UUID userId,
@@ -271,6 +370,13 @@ public class CartService {
     }
 
     public CheckoutResult updateCheckout(@NotNull @Valid UpdateCheckoutCommand command) {
+        return updateCheckout(command, null);
+    }
+
+    public CheckoutResult updateCheckout(
+            @NotNull @Valid UpdateCheckoutCommand command,
+            UUID idempotencyKey
+    ) {
         Cart cart = findCart(command.cartId(), command.userId());
         if (!hasText(cart.getCheckoutId())) {
             throw new CartException("Checkout session is required before updating checkout");
@@ -278,7 +384,11 @@ public class CartService {
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         UcpSession session = session(cart);
-        CheckoutToolCallContext callContext = CheckoutToolCallContext.forBuyer(command.buyerIp());
+        CheckoutToolCallContext callContext = new CheckoutToolCallContext(
+                idempotencyKey,
+                true,
+                command.buyerIp()
+        );
         UcpCheckoutToolResult currentCheckout = merchantCheckoutPluginDispatchService.getCheckout(
                 target,
                 new GetCheckoutRequest(cart.getCheckoutId()),
@@ -1082,6 +1192,15 @@ public class CartService {
     ) {
         private List<ResolvedSelectedOffer> offers() {
             return List.copyOf(byKey.values());
+        }
+    }
+
+    private record MutableOfferPartition(
+            CartRoutingTarget target,
+            List<CartOfferPartitionResult.Item> items
+    ) {
+        private MutableOfferPartition(CartRoutingTarget target) {
+            this(target, new ArrayList<>());
         }
     }
 

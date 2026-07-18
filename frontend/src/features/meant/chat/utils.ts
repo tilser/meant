@@ -731,6 +731,17 @@ export function cartItemsWithFallback(
   ]
 }
 
+export function cartItemsForChatBlock(
+  liveCart: readonly CartItem[],
+  artifactCart: readonly CartItem[] | undefined,
+  immutable: boolean,
+): readonly CartItem[] {
+  if (immutable && artifactCart !== undefined) {
+    return artifactCart
+  }
+  return cartItemsWithFallback(liveCart, artifactCart ?? [])
+}
+
 export function cartLineForAddedBlock(
   cart: readonly CartItem[],
   block: Extract<DiscoverChatBlock, { type: 'added' }>,
@@ -924,6 +935,16 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
   }
   if (block.type === 'checkout') {
     return `Checkout across ${block.merchantCount} ${block.merchantCount === 1 ? 'merchant' : 'merchants'}`
+  }
+  if (block.type === 'mission') {
+    return [
+      `${block.goal} (${block.status})`,
+      ...block.requirements.map(
+        (requirement) =>
+          `${requirement.label}: ${requirement.coveredQuantity}/${requirement.requiredQuantity} ${requirement.state.toLowerCase()}`,
+      ),
+      ...block.assumptions.map((assumption) => `Assumption: ${assumption}`),
+    ].join('\n')
   }
   const pick = block.products[block.pickIndex]
   return [

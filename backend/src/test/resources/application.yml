@@ -63,6 +63,10 @@ app:
           path: /api/carts/{cartId}/checkout
         - method: POST
           path: /api/discounts/search
+        - method: POST
+          path: /api/v1/users/me/agent/conversations/{conversationId}/turns
+        - method: POST
+          path: /api/v1/users/me/agent/conversations/{conversationId}/actions
 
 ucp:
   agent:
@@ -79,6 +83,34 @@ ucp:
     order-webhooks-authorized: false
 
 commerce:
+  agent:
+    enabled: false
+    model: test-agent-model
+    fallback-model: test-agent-fallback
+    base-url: https://openrouter.example/api/v1
+    api-key: ""
+    app-title: Meant Test
+    site-url: https://test.meant.example
+    prompt-version: test-v1
+    tool-version: test-v1
+    temperature: 0.0
+    maximum-output-tokens: 1024
+    maximum-model-iterations: 8
+    maximum-total-tool-invocations: 24
+    maximum-per-tool-invocations: 6
+    maximum-parallel-read-tools: 4
+    context-message-budget: 40
+    context-character-budget: 64000
+    maximum-result-characters: 24000
+    repeated-identical-tool-call-threshold: 2
+    run-deadline: 90s
+    model-timeout: 45s
+    tool-deadline: 20s
+    event-stream-timeout: 2m
+    event-poll-interval: 20ms
+    event-stream-queue-size: 128
+    event-retention: 7d
+    stale-run-age: 3m
   checkout:
     embedded:
       session-ttl: 5m

@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="048-create-agent-conversations" author="codex">
+        <createTable tableName="agent_conversation">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="user_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="title" type="text"><constraints nullable="false"/></column>
+            <column name="status" type="text"><constraints nullable="false"/></column>
+            <column name="rolling_summary" type="text"/>
+            <column name="summary_version" type="integer"><constraints nullable="false"/></column>
+            <column name="active_mission_id" type="uuid"/>
+            <column name="last_sequence_number" type="bigint"><constraints nullable="false"/></column>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="updated_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="version" type="bigint"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_conversation" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id" onDelete="CASCADE"
+                                 constraintName="fk_agent_conversation_user"/>
+        <createIndex tableName="agent_conversation" indexName="idx_agent_conversation_user_updated">
+            <column name="user_id"/><column name="status"/><column name="updated_at" descending="true"/>
+        </createIndex>
+        <sql>ALTER TABLE agent_conversation ADD CONSTRAINT ck_agent_conversation_status
+            CHECK (status IN ('ACTIVE', 'ARCHIVED'))</sql>
+    </changeSet>
+
+    <changeSet id="048-create-agent-messages-and-runs" author="codex">
+        <createTable tableName="agent_message">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="conversation_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="run_id" type="uuid"/>
+            <column name="role" type="text"><constraints nullable="false"/></column>
+            <column name="content_kind" type="text"><constraints nullable="false"/></column>
+            <column name="sequence_number" type="bigint"><constraints nullable="false"/></column>
+            <column name="text_content" type="text"/>
+            <column name="content_json" type="text"/>
+            <column name="correlation_id" type="text"/>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_message" baseColumnNames="conversation_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_message_conversation"/>
+        <addUniqueConstraint tableName="agent_message" columnNames="conversation_id, sequence_number"
+                             constraintName="uk_agent_message_sequence"/>
+        <sql>CREATE UNIQUE INDEX uk_agent_message_client_turn ON agent_message
+            (conversation_id, correlation_id) WHERE correlation_id IS NOT NULL AND role = 'USER'</sql>
+
+        <createTable tableName="agent_run">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="conversation_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="user_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="triggering_message_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="status" type="text"><constraints nullable="false"/></column>
+            <column name="model" type="text"><constraints nullable="false"/></column>
+            <column name="prompt_version" type="text"><constraints nullable="false"/></column>
+            <column name="iteration_count" type="integer"><constraints nullable="false"/></column>
+            <column name="tool_invocation_count" type="integer"><constraints nullable="false"/></column>
+            <column name="input_tokens" type="bigint"/>
+            <column name="output_tokens" type="bigint"/>
+            <column name="failure_code" type="text"/>
+            <column name="safe_message" type="text"/>
+            <column name="cancellation_requested" type="boolean"><constraints nullable="false"/></column>
+            <column name="last_event_cursor" type="bigint"><constraints nullable="false"/></column>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="started_at" type="timestamp with time zone"/>
+            <column name="completed_at" type="timestamp with time zone"/>
+            <column name="version" type="bigint"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_run" baseColumnNames="conversation_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_run_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_run" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_run_user"/>
+        <addForeignKeyConstraint baseTableName="agent_run" baseColumnNames="triggering_message_id"
+                                 referencedTableName="agent_message" referencedColumnNames="id"
+                                 constraintName="fk_agent_run_triggering_message"/>
+        <addForeignKeyConstraint baseTableName="agent_message" baseColumnNames="run_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id"
+                                 onDelete="SET NULL" constraintName="fk_agent_message_run"/>
+        <createIndex tableName="agent_run" indexName="idx_agent_run_conversation_created">
+            <column name="conversation_id"/><column name="created_at"/>
+        </createIndex>
+        <sql>CREATE UNIQUE INDEX uk_agent_run_active_conversation ON agent_run (conversation_id)
+            WHERE status IN ('RUNNING')</sql>
+        <sql>CREATE UNIQUE INDEX uk_agent_run_queued_conversation ON agent_run (conversation_id)
+            WHERE status IN ('QUEUED')</sql>
+        <sql>ALTER TABLE agent_run ADD CONSTRAINT ck_agent_run_status CHECK
+            (status IN ('QUEUED','RUNNING','WAITING_FOR_USER','COMPLETED','FAILED','CANCELLED'))</sql>
+    </changeSet>
+
+    <changeSet id="048-create-agent-tools-events" author="codex">
+        <createTable tableName="agent_tool_invocation">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="run_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="model_tool_call_id" type="text"><constraints nullable="false"/></column>
+            <column name="tool_name" type="text"><constraints nullable="false"/></column>
+            <column name="tool_version" type="text"><constraints nullable="false"/></column>
+            <column name="risk_class" type="text"><constraints nullable="false"/></column>
+            <column name="status" type="text"><constraints nullable="false"/></column>
+            <column name="arguments_json" type="text"><constraints nullable="false"/></column>
+            <column name="result_json" type="text"/>
+            <column name="idempotency_key" type="text"/>
+            <column name="latency_milliseconds" type="bigint"/>
+            <column name="failure_classification" type="text"/>
+            <column name="safe_message" type="text"/>
+            <column name="canonical_product_key" type="text"/>
+            <column name="offer_key" type="text"/>
+            <column name="inventory_item_id" type="uuid"/>
+            <column name="cart_id" type="uuid"/>
+            <column name="cart_line_id" type="uuid"/>
+            <column name="checkout_attempt_id" type="uuid"/>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="started_at" type="timestamp with time zone"/>
+            <column name="completed_at" type="timestamp with time zone"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_tool_invocation" baseColumnNames="run_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_tool_invocation_run"/>
+        <addUniqueConstraint tableName="agent_tool_invocation" columnNames="run_id, model_tool_call_id"
+                             constraintName="uk_agent_tool_invocation_model_call"/>
+        <addUniqueConstraint tableName="agent_tool_invocation" columnNames="idempotency_key"
+                             constraintName="uk_agent_tool_invocation_idempotency"/>
+
+        <createTable tableName="agent_run_event">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="run_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="conversation_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="cursor" type="bigint"><constraints nullable="false"/></column>
+            <column name="event_type" type="text"><constraints nullable="false"/></column>
+            <column name="schema_version" type="integer"><constraints nullable="false"/></column>
+            <column name="payload_json" type="text"><constraints nullable="false"/></column>
+            <column name="occurred_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_run_event" baseColumnNames="run_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_run_event_run"/>
+        <addForeignKeyConstraint baseTableName="agent_run_event" baseColumnNames="conversation_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_run_event_conversation"/>
+        <addUniqueConstraint tableName="agent_run_event" columnNames="run_id, cursor"
+                             constraintName="uk_agent_run_event_cursor"/>
+        <createIndex tableName="agent_run_event" indexName="idx_agent_run_event_retention">
+            <column name="occurred_at"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="048-create-shopping-missions-and-artifacts" author="codex">
+        <createTable tableName="shopping_mission">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="conversation_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="user_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="goal" type="text"><constraints nullable="false"/></column>
+            <column name="status" type="text"><constraints nullable="false"/></column>
+            <column name="assumptions_json" type="text"><constraints nullable="false"/></column>
+            <column name="requirements_json" type="text"><constraints nullable="false"/></column>
+            <column name="constraints_json" type="text"><constraints nullable="false"/></column>
+            <column name="alternatives_json" type="text"><constraints nullable="false"/></column>
+            <column name="coverage_json" type="text"><constraints nullable="false"/></column>
+            <column name="cart_references_json" type="text"><constraints nullable="false"/></column>
+            <column name="checkout_references_json" type="text"><constraints nullable="false"/></column>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="updated_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="version" type="bigint"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="shopping_mission" baseColumnNames="conversation_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_shopping_mission_conversation"/>
+        <addForeignKeyConstraint baseTableName="shopping_mission" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_shopping_mission_user"/>
+        <addForeignKeyConstraint baseTableName="agent_conversation" baseColumnNames="active_mission_id"
+                                 referencedTableName="shopping_mission" referencedColumnNames="id"
+                                 onDelete="SET NULL" constraintName="fk_agent_conversation_active_mission"/>
+
+        <createTable tableName="agent_artifact_reference">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="conversation_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="message_id" type="uuid"/>
+            <column name="run_id" type="uuid"/>
+            <column name="tool_invocation_id" type="uuid"/>
+            <column name="artifact_type" type="text"><constraints nullable="false"/></column>
+            <column name="ordinal" type="integer"><constraints nullable="false"/></column>
+            <column name="stable_key" type="text"><constraints nullable="false"/></column>
+            <column name="label" type="text"/>
+            <column name="canonical_product_key" type="text"/>
+            <column name="offer_key" type="text"/>
+            <column name="inventory_item_id" type="uuid"/>
+            <column name="cart_id" type="uuid"/>
+            <column name="cart_line_id" type="uuid"/>
+            <column name="checkout_attempt_id" type="uuid"/>
+            <column name="payload_json" type="text"><constraints nullable="false"/></column>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference" baseColumnNames="conversation_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id"
+                                 onDelete="CASCADE" constraintName="fk_agent_artifact_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference" baseColumnNames="message_id"
+                                 referencedTableName="agent_message" referencedColumnNames="id"
+                                 onDelete="SET NULL" constraintName="fk_agent_artifact_message"/>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference" baseColumnNames="run_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id"
+                                 onDelete="SET NULL" constraintName="fk_agent_artifact_run"/>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference" baseColumnNames="tool_invocation_id"
+                                 referencedTableName="agent_tool_invocation" referencedColumnNames="id"
+                                 onDelete="SET NULL" constraintName="fk_agent_artifact_tool"/>
+        <createIndex tableName="agent_artifact_reference" indexName="idx_agent_artifact_stable_key">
+            <column name="conversation_id"/><column name="stable_key"/><column name="created_at"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="048-create-agent-user-actions" author="codex">
+        <createTable tableName="agent_user_action">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="user_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="conversation_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="tool_name" type="text"><constraints nullable="false"/></column>
+            <column name="tool_version" type="text"><constraints nullable="false"/></column>
+            <column name="arguments_json" type="text"><constraints nullable="false"/></column>
+            <column name="idempotency_key" type="text"><constraints nullable="false"/></column>
+            <column name="status" type="text"><constraints nullable="false"/></column>
+            <column name="message_id" type="uuid"/>
+            <column name="result_json" type="text"/>
+            <column name="safe_message" type="text"/>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="started_at" type="timestamp with time zone"/>
+            <column name="completed_at" type="timestamp with time zone"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_user_action" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id" onDelete="CASCADE"
+                                 constraintName="fk_agent_user_action_user"/>
+        <addForeignKeyConstraint baseTableName="agent_user_action" baseColumnNames="conversation_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id" onDelete="CASCADE"
+                                 constraintName="fk_agent_user_action_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_user_action" baseColumnNames="message_id"
+                                 referencedTableName="agent_message" referencedColumnNames="id" onDelete="SET NULL"
+                                 constraintName="fk_agent_user_action_message"/>
+        <addUniqueConstraint tableName="agent_user_action" columnNames="user_id, conversation_id, idempotency_key"
+                             constraintName="uk_agent_user_action_idempotency"/>
+    </changeSet>
+
+    <changeSet id="048-create-agent-product-interactions" author="codex">
+        <createTable tableName="agent_product_interaction">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="user_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="canonical_product_key" type="text"><constraints nullable="false"/></column>
+            <column name="pinned" type="boolean"><constraints nullable="false"/></column>
+            <column name="pinned_offer_key" type="text"/>
+            <column name="pinned_at" type="timestamp with time zone"/>
+            <column name="watched" type="boolean"><constraints nullable="false"/></column>
+            <column name="watched_offer_key" type="text"/>
+            <column name="watched_at" type="timestamp with time zone"/>
+            <column name="created_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="updated_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+            <column name="version" type="bigint"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="agent_product_interaction" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id" onDelete="CASCADE"
+                                 constraintName="fk_agent_product_interaction_user"/>
+        <addUniqueConstraint tableName="agent_product_interaction"
+                             columnNames="user_id, canonical_product_key"
+                             constraintName="uk_agent_product_interaction_identity"/>
+        <createIndex tableName="agent_product_interaction" indexName="idx_agent_product_interaction_user_updated">
+            <column name="user_id"/><column name="updated_at" descending="true"/>
+        </createIndex>
+        <sql>ALTER TABLE agent_product_interaction ADD CONSTRAINT ck_agent_product_interaction_pin
+            CHECK ((pinned AND pinned_at IS NOT NULL) OR (NOT pinned AND pinned_at IS NULL AND pinned_offer_key IS NULL))</sql>
+        <sql>ALTER TABLE agent_product_interaction ADD CONSTRAINT ck_agent_product_interaction_watch
+            CHECK ((watched AND watched_at IS NOT NULL) OR (NOT watched AND watched_at IS NULL AND watched_offer_key IS NULL))</sql>
+    </changeSet>
+</databaseChangeLog>

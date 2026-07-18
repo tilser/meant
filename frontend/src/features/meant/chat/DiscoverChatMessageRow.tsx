@@ -38,6 +38,7 @@ function DustWrap({
   onShelfDragStart,
   onCopy,
   saved,
+  deletable = true,
 }: Readonly<{
   children: ReactNode
   side: 'you' | 'meant'
@@ -46,6 +47,7 @@ function DustWrap({
   onShelfDragStart?: (event: ReactDragEvent<HTMLElement>) => void
   onCopy?: () => void
   saved: boolean
+  deletable?: boolean
 }>) {
   const [dusting, setDusting] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -150,15 +152,17 @@ function DustWrap({
               <CopyIcon size={12} />
             </button>
           ) : null}
-          <button
-            className="mt-msg-tool mt-tool-del"
-            type="button"
-            onClick={() => setDusting(true)}
-            aria-label="Delete message"
-            title="Delete message"
-          >
-            <CloseIcon size={12} />
-          </button>
+          {deletable ? (
+            <button
+              className="mt-msg-tool mt-tool-del"
+              type="button"
+              onClick={() => setDusting(true)}
+              aria-label="Delete message"
+              title="Delete message"
+            >
+              <CloseIcon size={12} />
+            </button>
+          ) : null}
         </div>
       ) : null}
       {dusting ? (
@@ -258,6 +262,7 @@ export function DiscoverChatMessageRow({
   onDragMessage,
   onDragProduct,
   onRetryProductResultSet,
+  immutable = false,
 }: Readonly<{
   threadId: string
   message: DiscoverChatMessage
@@ -326,6 +331,7 @@ export function DiscoverChatMessageRow({
   onDragMessage: (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
+  immutable?: boolean
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
@@ -348,6 +354,7 @@ export function DiscoverChatMessageRow({
           onShelfDragStart={(event) => onDragMessage(event, message)}
           onCopy={copyMessage}
           saved={onShelf}
+          deletable={!immutable}
         >
           <div className="mt-ct-you-bubble">
             {message.productContext ? (
@@ -377,6 +384,7 @@ export function DiscoverChatMessageRow({
         onShelfDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
         onCopy={copyMessage}
         saved={onShelf}
+        deletable={!immutable}
       >
         <div className="mt-ct-meant-inner">
           <span className="mt-ct-av">
@@ -432,6 +440,7 @@ export function DiscoverChatMessageRow({
                 onShelfAddProduct={onShelfAddProduct}
                 onDragProduct={onDragProduct}
                 onRetryProductResultSet={onRetryProductResultSet}
+                immutable={immutable}
               />
             ))}
             {message.pending ? (

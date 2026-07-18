@@ -19,6 +19,9 @@ class PackageOwnershipArchitectureTest {
     private static final Pattern MODULE_PROVIDER_IMPORT = Pattern.compile(
             "^import com\\.meant\\.api\\.provider\\..*"
     );
+    private static final Pattern AGENT_FRAMEWORK_IMPORT = Pattern.compile(
+            "^import org\\.springframework\\.ai\\..*"
+    );
     private static final Pattern PROVIDER_INTERNAL_MODULE_IMPORT = Pattern.compile(
             "^import com\\.meant\\.api\\.module\\..*\\.(repository|entity)\\..*"
     );
@@ -43,6 +46,10 @@ class PackageOwnershipArchitectureTest {
             if (relative.startsWith("com/meant/api/module/")) {
                 addMatchingImports(violations, relative, lines, MODULE_PROVIDER_IMPORT,
                         "module must not import provider");
+            }
+            if (relative.startsWith("com/meant/api/module/agent/")) {
+                addMatchingImports(violations, relative, lines, AGENT_FRAMEWORK_IMPORT,
+                        "agent module must depend only on its model gateway contract");
             }
             if (isProviderNeutralCommerceModule(relative)) {
                 for (int index = 0; index < lines.size(); index++) {

@@ -30,10 +30,12 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -55,6 +57,21 @@ public class CartPersistenceService {
             throw CartException.notFound("Cart expired: " + cartId);
         }
         return cart;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Cart> findActiveCarts(UUID userId, int limit) {
+        Instant now = Instant.now();
+        List<Cart> carts = cartRepository.findActiveForUser(
+                userId,
+                now,
+                PageRequest.of(0, limit)
+        );
+        carts.forEach(cart -> {
+            Hibernate.initialize(cart.getLines());
+            Hibernate.initialize(cart.getAppliedCodes());
+        });
+        return List.copyOf(carts);
     }
 
     @Transactional
@@ -114,6 +131,54 @@ public class CartPersistenceService {
     ) {
         return saveSnapshot(
                 cart, userId, target.merchantProvider(), result, submittedGiftCardCodes, target, addedOffers, purpose);
+    }
+
+    /**
+     * Persists a provider create result, or returns the already persisted cart when an explicitly
+     * idempotent provider retry resolves to the same immutable remote-cart identity.
+     */
+    @Transactional
+    public Cart saveCreatedSnapshot(
+            UUID userId,
+            CartRoutingTarget target,
+            UcpCartToolResult result,
+            List<String> submittedGiftCardCodes,
+            List<ResolvedSelectedOffer> addedOffers,
+            CartSnapshotPurpose purpose,
+            UUID idempotencyKey
+    ) {
+        if (idempotencyKey != null) {
+            var existing = findCreatedSnapshot(userId, target, result);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+        }
+        return saveSnapshot(
+                null,
+                userId,
+                target.merchantProvider(),
+                result,
+                submittedGiftCardCodes,
+                target,
+                addedOffers,
+                purpose
+        );
+    }
+
+    @Transactional
+    public Optional<Cart> findCreatedSnapshot(
+            UUID userId,
+            CartRoutingTarget target,
+            UcpCartToolResult result
+    ) {
+        String remoteCartId = required(result.response().cart().id(), "Remote cart id is required");
+        String remoteCartIdHash = scopedHash(target.scopeKey(), remoteCartId);
+        return cartRepository.findForRemoteIdentityReconciliation(remoteCartIdHash)
+                .map(existing -> {
+                    validateReconciledCreate(existing, userId, target, remoteCartId);
+                    Hibernate.initialize(existing.getAppliedCodes());
+                    return existing;
+                });
     }
 
     private Cart saveSnapshot(
@@ -397,6 +462,27 @@ public class CartPersistenceService {
         }
         if (cart.getExpiresAt() != null && !cart.getExpiresAt().isAfter(Instant.now())) {
             throw CartException.notFound("Cart expired: " + cart.getId());
+        }
+    }
+
+    private void validateReconciledCreate(
+            Cart cart,
+            UUID userId,
+            CartRoutingTarget target,
+            String remoteCartId
+    ) {
+        validateWritableCart(cart, userId);
+        if (!Objects.equals(cart.getRemoteCartId(), remoteCartId)
+                || !Objects.equals(cart.getRoutingScopeKey(), target.scopeKey())
+                || !Objects.equals(cart.getProvider(), target.provider().name())
+                || !Objects.equals(cart.getMerchantIntegrationId(), target.merchantIntegrationId())
+                || !Objects.equals(cart.getExternalMerchantId(), target.externalMerchantId())
+                || !Objects.equals(cart.getMerchantId(), target.merchantProvider().merchantId())
+                || !Objects.equals(cart.getMerchantDomain(), target.merchantProvider().domain())) {
+            throw CartException.binding(
+                    CartException.BindingFailure.CROSS_SCOPE_REPLAY,
+                    "Idempotent cart retry resolved to a different merchant/provider scope"
+            );
         }
     }
 

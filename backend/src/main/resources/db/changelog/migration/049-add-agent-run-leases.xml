@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="049-add-agent-run-execution-leases" author="codex">
+        <addColumn tableName="agent_run">
+            <column name="execution_owner" type="uuid"/>
+            <column name="lease_expires_at" type="timestamp with time zone"/>
+            <column name="heartbeat_at" type="timestamp with time zone"/>
+        </addColumn>
+        <createIndex tableName="agent_run" indexName="idx_agent_run_status_lease">
+            <column name="status"/>
+            <column name="lease_expires_at"/>
+        </createIndex>
+        <createIndex tableName="agent_run" indexName="idx_agent_run_status_id">
+            <column name="status"/>
+            <column name="id"/>
+        </createIndex>
+        <sql>UPDATE agent_run SET execution_owner = gen_random_uuid(),
+            lease_expires_at = CURRENT_TIMESTAMP, heartbeat_at = CURRENT_TIMESTAMP
+            WHERE status = 'RUNNING' AND lease_expires_at IS NULL</sql>
+        <sql>ALTER TABLE agent_run ADD CONSTRAINT ck_agent_run_execution_lease CHECK
+            ((status = 'RUNNING' AND execution_owner IS NOT NULL AND lease_expires_at IS NOT NULL
+              AND heartbeat_at IS NOT NULL)
+             OR (status &lt;&gt; 'RUNNING' AND execution_owner IS NULL AND lease_expires_at IS NULL
+              AND heartbeat_at IS NULL))</sql>
+    </changeSet>
+</databaseChangeLog>

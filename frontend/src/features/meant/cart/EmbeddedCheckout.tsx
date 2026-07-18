@@ -37,10 +37,12 @@ export function EmbeddedCheckout({
   session,
   surface,
   onReconciled,
+  onSessionReleased,
 }: Readonly<{
   session: ActiveCheckoutSession
   surface: 'cart' | 'chat'
   onReconciled: (checkout?: CheckoutProfile) => Promise<void> | void
+  onSessionReleased?: (outcome: 'completed' | 'cancelled' | 'handoff') => void
 }>) {
   const [phase, setPhase] = useState<EmbeddedCheckoutPhase>('preparing')
   const [descriptor, setDescriptor] = useState<EmbeddedCheckoutBootstrapProfile | null>(null)
@@ -53,10 +55,15 @@ export function EmbeddedCheckout({
   const terminalRef = useRef<'verifying' | 'completed' | 'cancelled' | null>(null)
   const actionButtonRef = useRef<HTMLButtonElement | null>(null)
   const onReconciledRef = useRef(onReconciled)
+  const onSessionReleasedRef = useRef(onSessionReleased)
 
   useEffect(() => {
     onReconciledRef.current = onReconciled
   }, [onReconciled])
+
+  useEffect(() => {
+    onSessionReleasedRef.current = onSessionReleased
+  }, [onSessionReleased])
 
   const clearStartTimer = useCallback(() => {
     if (startTimerRef.current) clearTimeout(startTimerRef.current)
@@ -125,6 +132,7 @@ export function EmbeddedCheckout({
           reason: 'NONE',
         })
         await onReconciledRef.current(checkout)
+        onSessionReleasedRef.current?.('completed')
       } catch {
         if (generation !== generationRef.current) return
         terminalRef.current = null
@@ -157,6 +165,7 @@ export function EmbeddedCheckout({
         result: 'succeeded',
         reason,
       })
+      onSessionReleasedRef.current?.('cancelled')
       actionButtonRef.current?.focus()
     },
     [cancelSession, destroyHandle, surface],
@@ -213,6 +222,7 @@ export function EmbeddedCheckout({
       setPhase('completed')
       setMessage('This checkout is already complete.')
       await onReconciledRef.current()
+      onSessionReleasedRef.current?.('completed')
       return
     }
     if (decision.mode === 'FALLBACK') {
@@ -427,6 +437,7 @@ export function EmbeddedCheckout({
           reason: descriptor ? fallbackReason(descriptor) : 'BOOTSTRAP_FAILED',
         })
         void cancelSession(descriptor)
+        onSessionReleasedRef.current?.('handoff')
       }}
     />
   )

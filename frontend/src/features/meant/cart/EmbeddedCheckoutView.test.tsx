@@ -27,6 +27,7 @@ describe('EmbeddedCheckoutView', () => {
 
     expect(markup).toContain('aria-live="polite"')
     expect(markup).toContain('Open secure checkout')
+    expect(markup).toContain('Close checkout')
     expect(markup).not.toContain('Continue with merchant')
   })
 

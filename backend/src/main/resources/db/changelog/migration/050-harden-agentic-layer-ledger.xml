@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="050-agent-ledger-ownership" author="codex">
+        <addUniqueConstraint tableName="agent_conversation" columnNames="id, user_id"
+                             constraintName="uk_agent_conversation_owner"/>
+        <addUniqueConstraint tableName="agent_message" columnNames="id, conversation_id"
+                             constraintName="uk_agent_message_conversation"/>
+        <addUniqueConstraint tableName="agent_run" columnNames="id, conversation_id"
+                             constraintName="uk_agent_run_conversation"/>
+        <addUniqueConstraint tableName="agent_tool_invocation" columnNames="id, run_id"
+                             constraintName="uk_agent_tool_invocation_run"/>
+        <addUniqueConstraint tableName="shopping_mission" columnNames="id, conversation_id, user_id"
+                             constraintName="uk_shopping_mission_owner"/>
+
+        <addForeignKeyConstraint baseTableName="agent_run" baseColumnNames="conversation_id, user_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id, user_id"
+                                 constraintName="fk_agent_run_conversation_owner"/>
+        <addForeignKeyConstraint baseTableName="agent_run"
+                                 baseColumnNames="triggering_message_id, conversation_id"
+                                 referencedTableName="agent_message" referencedColumnNames="id, conversation_id"
+                                 constraintName="fk_agent_run_triggering_message_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_message" baseColumnNames="run_id, conversation_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id, conversation_id"
+                                 constraintName="fk_agent_message_run_conversation"/>
+        <addForeignKeyConstraint baseTableName="shopping_mission" baseColumnNames="conversation_id, user_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id, user_id"
+                                 onDelete="CASCADE" constraintName="fk_shopping_mission_conversation_owner"/>
+        <addForeignKeyConstraint baseTableName="agent_conversation"
+                                 baseColumnNames="active_mission_id, id, user_id"
+                                 referencedTableName="shopping_mission"
+                                 referencedColumnNames="id, conversation_id, user_id"
+                                 constraintName="fk_agent_conversation_active_owned_mission"/>
+        <addForeignKeyConstraint baseTableName="agent_run_event" baseColumnNames="run_id, conversation_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id, conversation_id"
+                                 onDelete="CASCADE" constraintName="fk_agent_event_run_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference"
+                                 baseColumnNames="message_id, conversation_id"
+                                 referencedTableName="agent_message" referencedColumnNames="id, conversation_id"
+                                 constraintName="fk_agent_artifact_message_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference"
+                                 baseColumnNames="run_id, conversation_id"
+                                 referencedTableName="agent_run" referencedColumnNames="id, conversation_id"
+                                 constraintName="fk_agent_artifact_run_conversation"/>
+        <addForeignKeyConstraint baseTableName="agent_artifact_reference"
+                                 baseColumnNames="tool_invocation_id, run_id"
+                                 referencedTableName="agent_tool_invocation" referencedColumnNames="id, run_id"
+                                 constraintName="fk_agent_artifact_tool_run"/>
+        <addForeignKeyConstraint baseTableName="agent_user_action" baseColumnNames="conversation_id, user_id"
+                                 referencedTableName="agent_conversation" referencedColumnNames="id, user_id"
+                                 onDelete="CASCADE" constraintName="fk_agent_user_action_conversation_owner"/>
+        <addForeignKeyConstraint baseTableName="agent_user_action" baseColumnNames="message_id, conversation_id"
+                                 referencedTableName="agent_message" referencedColumnNames="id, conversation_id"
+                                 constraintName="fk_agent_user_action_message_conversation"/>
+    </changeSet>
+
+    <changeSet id="050-agent-ledger-checks" author="codex">
+        <sql>ALTER TABLE agent_message ADD CONSTRAINT ck_agent_message_role
+            CHECK (role IN ('USER','USER_ACTION','ASSISTANT','TOOL','SYSTEM_SUMMARY'))</sql>
+        <sql>ALTER TABLE agent_message ADD CONSTRAINT ck_agent_message_content_kind
+            CHECK (content_kind IN ('TEXT','ACTION','TOOL_CALL','TOOL_RESULT','ARTIFACT','SUMMARY'))</sql>
+        <sql>ALTER TABLE agent_message ADD CONSTRAINT ck_agent_message_sequence
+            CHECK (sequence_number &gt; 0)</sql>
+        <sql>ALTER TABLE agent_run ADD CONSTRAINT ck_agent_run_counts
+            CHECK (iteration_count &gt;= 0 AND tool_invocation_count &gt;= 0
+              AND last_event_cursor &gt;= 0 AND (input_tokens IS NULL OR input_tokens &gt;= 0)
+              AND (output_tokens IS NULL OR output_tokens &gt;= 0))</sql>
+        <sql>ALTER TABLE agent_run ADD CONSTRAINT ck_agent_run_timestamps
+            CHECK ((status = 'QUEUED' AND completed_at IS NULL)
+              OR (status = 'RUNNING' AND started_at IS NOT NULL AND completed_at IS NULL)
+              OR (status IN ('WAITING_FOR_USER','COMPLETED','FAILED','CANCELLED')
+                AND completed_at IS NOT NULL))</sql>
+        <sql>ALTER TABLE agent_tool_invocation ADD CONSTRAINT ck_agent_tool_risk
+            CHECK (risk_class IN ('READ','REVERSIBLE_MUTATION','CHECKOUT_PREPARATION'))</sql>
+        <sql>ALTER TABLE agent_tool_invocation ADD CONSTRAINT ck_agent_tool_status
+            CHECK (status IN ('PROPOSED','RUNNING','COMPLETED','FAILED','UNCERTAIN','REJECTED','CANCELLED'))</sql>
+        <sql>ALTER TABLE agent_tool_invocation ADD CONSTRAINT ck_agent_tool_timestamps
+            CHECK ((status = 'PROPOSED' AND started_at IS NULL AND completed_at IS NULL)
+              OR (status = 'RUNNING' AND started_at IS NOT NULL AND completed_at IS NULL)
+              OR (status IN ('COMPLETED','FAILED','UNCERTAIN','REJECTED','CANCELLED')
+                AND completed_at IS NOT NULL))</sql>
+        <sql>ALTER TABLE agent_tool_invocation ADD CONSTRAINT ck_agent_tool_completed_result
+            CHECK (status &lt;&gt; 'COMPLETED' OR result_json IS NOT NULL)</sql>
+        <sql>ALTER TABLE agent_run_event ADD CONSTRAINT ck_agent_event_type CHECK
+            (event_type IN ('RUN_STARTED','ASSISTANT_DELTA','ASSISTANT_COMPLETED','TOOL_PROPOSED',
+              'TOOL_STARTED','TOOL_COMPLETED','TOOL_FAILED','ARTIFACT_UPSERTED','CART_CHANGED',
+              'CHECKOUT_READY','RUN_WAITING_FOR_USER','RUN_COMPLETED','RUN_FAILED','RUN_CANCELLED'))</sql>
+        <sql>ALTER TABLE agent_run_event ADD CONSTRAINT ck_agent_event_version_cursor
+            CHECK (schema_version &gt; 0 AND cursor &gt; 0)</sql>
+        <sql>ALTER TABLE shopping_mission ADD CONSTRAINT ck_shopping_mission_status
+            CHECK (status IN ('ACTIVE','READY','CHECKOUT_PREPARED','COMPLETED','CANCELLED'))</sql>
+        <sql>ALTER TABLE agent_artifact_reference ADD CONSTRAINT ck_agent_artifact_type CHECK
+            (artifact_type IN ('PRODUCT','OFFER','INVENTORY_ITEM','ORDER','SAVED_PRODUCT','PRODUCT_STATE',
+              'COMPARISON','REVIEWS','DISCOUNT_CODES','MISSION','CART','CART_LINE','CHECKOUT'))</sql>
+        <sql>ALTER TABLE agent_artifact_reference ADD CONSTRAINT ck_agent_artifact_ordinal
+            CHECK (ordinal &gt; 0)</sql>
+        <sql>ALTER TABLE agent_artifact_reference ADD CONSTRAINT ck_agent_artifact_tool_run
+            CHECK (tool_invocation_id IS NULL OR run_id IS NOT NULL)</sql>
+        <sql>ALTER TABLE agent_user_action ADD CONSTRAINT ck_agent_user_action_status
+            CHECK (status IN ('RESERVED','RUNNING','COMPLETED','FAILED','UNCERTAIN'))</sql>
+        <sql>ALTER TABLE agent_user_action ADD CONSTRAINT ck_agent_user_action_timestamps
+            CHECK ((status = 'RESERVED' AND started_at IS NULL AND completed_at IS NULL)
+              OR (status = 'RUNNING' AND started_at IS NOT NULL AND completed_at IS NULL)
+              OR (status IN ('COMPLETED','FAILED','UNCERTAIN') AND completed_at IS NOT NULL))</sql>
+        <sql>ALTER TABLE agent_user_action ADD CONSTRAINT ck_agent_user_action_completed_result
+            CHECK (status &lt;&gt; 'COMPLETED' OR (message_id IS NOT NULL AND result_json IS NOT NULL))</sql>
+    </changeSet>
+
+    <changeSet id="050-agent-ledger-indexes" author="codex">
+        <createIndex tableName="agent_tool_invocation" indexName="idx_agent_tool_status_started">
+            <column name="status"/><column name="started_at"/>
+        </createIndex>
+        <createIndex tableName="agent_user_action" indexName="idx_agent_action_status_started">
+            <column name="status"/><column name="started_at"/>
+        </createIndex>
+        <createIndex tableName="shopping_mission" indexName="idx_shopping_mission_conversation_user">
+            <column name="conversation_id"/><column name="user_id"/><column name="updated_at" descending="true"/>
+        </createIndex>
+        <createIndex tableName="agent_artifact_reference" indexName="idx_agent_artifact_message">
+            <column name="message_id"/><column name="ordinal"/>
+        </createIndex>
+        <createIndex tableName="agent_artifact_reference" indexName="idx_agent_artifact_run">
+            <column name="run_id"/><column name="created_at"/><column name="ordinal"/>
+        </createIndex>
+        <createIndex tableName="agent_artifact_reference" indexName="idx_agent_artifact_tool">
+            <column name="tool_invocation_id"/><column name="ordinal"/>
+        </createIndex>
+        <createIndex tableName="agent_artifact_reference" indexName="idx_agent_artifact_offer">
+            <column name="conversation_id"/><column name="offer_key"/><column name="created_at" descending="true"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

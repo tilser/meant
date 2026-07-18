@@ -20,7 +20,7 @@ import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
 import type { DiscoverChatBlock } from './types'
 import {
-  cartItemsWithFallback,
+  cartItemsForChatBlock,
   cartLineForAddedBlock,
   copyTextToClipboard,
   productOpenWithResearchQuery,
@@ -85,6 +85,7 @@ export function DiscoverChatBlockView({
   onShelfAddProduct,
   onDragProduct,
   onRetryProductResultSet,
+  immutable,
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -144,6 +145,7 @@ export function DiscoverChatBlockView({
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
+  immutable: boolean
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
@@ -261,7 +263,9 @@ export function DiscoverChatBlockView({
     )
   }
   if (block.type === 'reviews') {
-    return <ProductReviewsPanel product={block.product} mode="chat" />
+    return (
+      <ProductReviewsPanel product={block.product} mode="chat" initialResponse={block.snapshot} />
+    )
   }
   if (block.type === 'code') {
     const offer = bestOffer(block.product, deliveryLocations)
@@ -436,7 +440,7 @@ export function DiscoverChatBlockView({
           <SparkMark size={14} />
         </span>
         <div className="mt-ct-watchalert-body">
-          <div className="mt-mono mt-ct-watchalert-key">Mock price watch</div>
+          <div className="mt-mono mt-ct-watchalert-key">Price watch</div>
           <div className="mt-ct-watchalert-text">
             The <b>{block.product.name}</b> dropped to {money(block.price)} at {block.merchant}.
           </div>
@@ -630,10 +634,54 @@ export function DiscoverChatBlockView({
       </div>
     )
   }
+  if (block.type === 'mission') {
+    const covered = block.requirements.filter(
+      (requirement) => requirement.state === 'COVERED' || requirement.state === 'OPTIONAL',
+    ).length
+    return (
+      <div className="mt-ct-block mt-ct-mission">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Shopping mission</div>
+          <span className="mt-ct-code-save mt-mono">
+            {covered}/{block.requirements.length} covered · {block.status.replaceAll('_', ' ')}
+          </span>
+        </div>
+        <p className="mt-ct-mission-goal">{block.goal}</p>
+        {block.requirements.length > 0 ? (
+          <ul className="mt-ct-mission-list">
+            {block.requirements.map((requirement) => (
+              <li
+                className={`mt-ct-mission-item ${requirement.state.toLowerCase()}`}
+                key={requirement.id}
+              >
+                <span className="mt-ct-mission-check" aria-hidden="true">
+                  {requirement.state === 'COVERED'
+                    ? '✓'
+                    : requirement.state === 'PARTIAL'
+                      ? '◐'
+                      : '○'}
+                </span>
+                <span>{requirement.label}</span>
+                <span className="mt-mono mt-ct-mission-count">
+                  {requirement.coveredQuantity}/{requirement.requiredQuantity}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {block.assumptions.length > 0 ? (
+          <div className="mt-ct-mission-assumptions">
+            <span className="mt-mono">Assumptions</span>
+            <span>{block.assumptions.join(' · ')}</span>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
   if (block.type === 'cart') {
     return (
       <InlineCartBlock
-        cart={cartItemsWithFallback(cart, block.lines)}
+        cart={cartItemsForChatBlock(cart, block.lines, immutable)}
         products={productsWithFallback(block.products, cartProducts)}
         onQty={onCartQty}
         onRemove={onCartRemove}
@@ -647,8 +695,8 @@ export function DiscoverChatBlockView({
     return (
       <InlineCheckoutBlock
         threadId={threadId}
-        cart={cart}
-        products={cartProducts}
+        cart={block.lines ?? cart}
+        products={productsWithFallback(block.products, cartProducts)}
         onCheckout={onCheckout}
         activeCheckout={activeCheckout}
         checkoutBusy={checkoutBusy}

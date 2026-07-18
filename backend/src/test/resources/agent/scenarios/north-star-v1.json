@@ -1,0 +1,107 @@
+[
+  {
+    "id": "broad-clothing",
+    "userMessage": "I wanna buy new clothes.",
+    "steps": [
+      {
+        "toolCalls": [
+          {"id": "a-pref", "name": "get_user_preferences", "argumentsJson": "{}"},
+          {"id": "a-inventory", "name": "search_inventory", "argumentsJson": "{\"query\":\"clothing\",\"limit\":20}"},
+          {"id": "a-search", "name": "search_catalog", "argumentsJson": "{\"query\":\"versatile new clothing\",\"limit\":8}"}
+        ]
+      },
+      {"text": "Here is a useful starting set; I assumed versatile everyday clothing."}
+    ],
+    "requiredTools": ["get_user_preferences", "search_inventory", "search_catalog"],
+    "forbiddenTools": ["prepare_checkout", "complete_checkout"],
+    "maximumClarifications": 1
+  },
+  {
+    "id": "similar-owned-shoes",
+    "userMessage": "Find shoes similar to the ones I already have.",
+    "steps": [
+      {
+        "toolCalls": [
+          {"id": "b-inventory", "name": "search_inventory", "argumentsJson": "{\"query\":\"shoes\",\"limit\":10}"}
+        ]
+      },
+      {
+        "toolCalls": [
+          {"id": "b-similar", "name": "find_similar_products", "argumentsJson": "{\"inventoryItemId\":\"00000000-0000-0000-0000-000000000501\",\"query\":\"similar shoes in the same size\"}"}
+        ]
+      },
+      {"text": "These choices are grounded in your owned pair and preserve its selected size."}
+    ],
+    "requiredTools": ["search_inventory", "find_similar_products"],
+    "forbiddenTools": ["search_catalog", "complete_checkout"],
+    "maximumClarifications": 1
+  },
+  {
+    "id": "summer-picnic",
+    "userMessage": "Prepare everything I need for a summer picnic in San Francisco.",
+    "steps": [
+      {
+        "toolCalls": [
+          {"id": "c-mission", "name": "create_shopping_mission", "argumentsJson": "{\"goal\":\"Summer picnic in San Francisco\",\"assumptions\":[{\"key\":\"party-size\",\"value\":\"Four people\"}],\"requirements\":[{\"id\":\"blanket\",\"label\":\"Picnic blanket\",\"requiredQuantity\":1,\"optional\":false},{\"id\":\"drinks\",\"label\":\"Cold drinks\",\"requiredQuantity\":4,\"optional\":false}],\"alternatives\":[]}"},
+          {"id": "c-inventory", "name": "search_inventory", "argumentsJson": "{\"query\":\"picnic blanket cooler drinkware\",\"limit\":50}"}
+        ]
+      },
+      {
+        "toolCalls": [
+          {"id": "c-blanket", "name": "search_catalog", "argumentsJson": "{\"query\":\"outdoor picnic blanket\",\"limit\":6}"},
+          {"id": "c-drinks", "name": "search_catalog", "argumentsJson": "{\"query\":\"picnic cold drinks\",\"limit\":6}"}
+        ]
+      },
+      {
+        "toolCalls": [
+          {"id": "c-coverage", "name": "evaluate_mission_coverage", "argumentsJson": "{\"missionId\":\"00000000-0000-0000-0000-000000000701\",\"selections\":[{\"requirementId\":\"blanket\",\"canonicalProductKey\":\"product:blanket\",\"offerKey\":\"offer:blanket\",\"quantity\":1},{\"requirementId\":\"drinks\",\"canonicalProductKey\":\"product:drinks\",\"offerKey\":\"offer:drinks\",\"quantity\":4}]}"},
+          {"id": "c-carts", "name": "prepare_carts", "argumentsJson": "{\"offers\":[{\"offerKey\":\"offer:blanket\",\"quantity\":1},{\"offerKey\":\"offer:drinks\",\"quantity\":4}]}"}
+        ]
+      },
+      {
+        "toolCalls": [
+          {"id": "c-checkout", "name": "prepare_checkout", "argumentsJson": "{\"cartIds\":[\"00000000-0000-0000-0000-000000000601\",\"00000000-0000-0000-0000-000000000602\"]}"}
+        ]
+      },
+      {"text": "Your checklist is covered across two merchant carts. Open each checkout action when you are ready."}
+    ],
+    "requiredTools": ["create_shopping_mission", "search_inventory", "search_catalog", "evaluate_mission_coverage", "prepare_carts", "prepare_checkout"],
+    "forbiddenTools": ["complete_checkout"],
+    "maximumClarifications": 1
+  },
+  {
+    "id": "typed-product-actions",
+    "userMessage": "Compare the first two and show reviews for the first one.",
+    "steps": [
+      {
+        "toolCalls": [
+          {"id": "e-compare", "name": "compare_products", "argumentsJson": "{\"canonicalProductKeys\":[\"product:1\",\"product:2\"]}"},
+          {"id": "e-reviews", "name": "get_product_reviews", "argumentsJson": "{\"canonicalProductKey\":\"product:1\",\"selectedOfferKey\":\"offer:1\"}"}
+        ]
+      },
+      {"text": "The typed comparison and merchant reviews are ready."}
+    ],
+    "requiredTools": ["compare_products", "get_product_reviews"],
+    "forbiddenTools": ["complete_checkout"],
+    "maximumClarifications": 0
+  },
+  {
+    "id": "inventory-attribution",
+    "userMessage": "Open the prepared Shopify checkout and attribute inventory only after confirmed ECP start.",
+    "steps": [
+      {
+        "text": "Inventory attribution is enforced at the confirmed ECP-start boundary and is idempotent per checkout attempt."
+      }
+    ],
+    "requiredTools": [],
+    "forbiddenTools": ["complete_checkout"],
+    "maximumClarifications": 0,
+    "integrationInvariants": [
+      "com.meant.api.module.cart.controller.CartControllerIT#confirmedStartStillAttributesOnceWhenImmediateCloseWinsTheSessionRace",
+      "com.meant.api.module.cart.service.EmbeddedCheckoutBootstrapServiceTest#waitingBootstrapDoesNotAttributeOrCreateAnEmbeddedSession",
+      "com.meant.api.module.cart.service.EmbeddedCheckoutBootstrapServiceTest#repeatedOpenedAcknowledgementsUseTheSameAttemptAndRemainIdempotentAtTheAttributionBoundary",
+      "com.meant.api.module.checkout.service.CheckoutPurchaseAttributionServiceIT#concurrentDuplicateCallbacksCommitOneLedgerAndOneInventoryProjection",
+      "com.meant.api.module.checkout.service.CheckoutPurchaseAttributionServiceTest#duplicateStartAndCompletionFallbackForSameAttemptAreSuccessfulNoOps"
+    ]
+  }
+]

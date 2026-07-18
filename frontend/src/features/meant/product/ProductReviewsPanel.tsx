@@ -122,14 +122,16 @@ export function ProductReviewsPanel({
   product,
   userId,
   mode = 'modal',
+  initialResponse = null,
 }: Readonly<{
   product: Product
   userId?: string
   mode?: ProductReviewsPanelMode
+  initialResponse?: ProductReviewsProfile | null
 }>) {
-  const [response, setResponse] = useState<ProductReviewsProfile | null>(null)
-  const [reviews, setReviews] = useState<ProductReviewProfile[]>([])
-  const [loadState, setLoadState] = useState<ReviewLoadState>('idle')
+  const [response, setResponse] = useState<ProductReviewsProfile | null>(initialResponse)
+  const [reviews, setReviews] = useState<ProductReviewProfile[]>(initialResponse?.reviews ?? [])
+  const [loadState, setLoadState] = useState<ReviewLoadState>(initialResponse ? 'loaded' : 'idle')
   const [loadMorePending, setLoadMorePending] = useState(false)
   const [nextOffset, setNextOffset] = useState(0)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -138,10 +140,15 @@ export function ProductReviewsPanel({
   const canFetchReviews = Boolean(product.remote && merchantId && productId)
 
   useEffect(() => {
-    setResponse(null)
-    setReviews([])
-    setNextOffset(0)
+    setResponse(initialResponse)
+    setReviews(initialResponse?.reviews ?? [])
+    setNextOffset(initialResponse?.reviews.length ?? 0)
     setPageError(null)
+
+    if (initialResponse) {
+      setLoadState('loaded')
+      return
+    }
 
     if (!canFetchReviews || !merchantId || !productId) {
       setLoadState('idle')
@@ -175,7 +182,7 @@ export function ProductReviewsPanel({
       })
 
     return () => controller.abort()
-  }, [canFetchReviews, merchantId, product.id, productId, userId])
+  }, [canFetchReviews, initialResponse, merchantId, product.id, productId, userId])
 
   const loadMoreReviews = async () => {
     if (!merchantId || !productId || loadMorePending) {

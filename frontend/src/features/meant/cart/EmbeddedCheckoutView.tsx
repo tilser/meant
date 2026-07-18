@@ -42,13 +42,20 @@ export function EmbeddedCheckoutView({
       </div>
       <div className="mt-embedded-checkout-actions">
         {phase === 'ready' || phase === 'cancelled' ? (
-          <button
-            ref={actionButtonRef}
-            type="button"
-            onClick={phase === 'ready' ? onOpen : onPrepare}
-          >
-            {phase === 'ready' ? 'Open secure checkout' : 'Prepare again'}
-          </button>
+          <>
+            <button
+              ref={actionButtonRef}
+              type="button"
+              onClick={phase === 'ready' ? onOpen : onPrepare}
+            >
+              {phase === 'ready' ? 'Open secure checkout' : 'Prepare again'}
+            </button>
+            {phase === 'ready' ? (
+              <button type="button" className="secondary" onClick={onCancel}>
+                Close checkout
+              </button>
+            ) : null}
+          </>
         ) : null}
         {phase === 'active' || phase === 'opening' ? (
           <>
@@ -71,9 +78,14 @@ export function EmbeddedCheckoutView({
           </a>
         ) : null}
         {phase === 'fallback' || phase === 'error' ? (
-          <button type="button" className="secondary" onClick={onPrepare}>
-            Try embedded checkout again
-          </button>
+          <>
+            <button type="button" className="secondary" onClick={onPrepare}>
+              Try embedded checkout again
+            </button>
+            <button type="button" className="secondary" onClick={onCancel}>
+              Close checkout
+            </button>
+          </>
         ) : null}
       </div>
     </div>

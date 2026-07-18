@@ -11,6 +11,9 @@ public enum ApiErrorCode {
     AUTHENTICATION_REQUIRED("authentication_required"),
     FORBIDDEN("forbidden"),
     NOT_FOUND("not_found"),
+    AGENT_DISABLED("agent_disabled"),
+    AGENT_CONFLICT("agent_conflict"),
+    AGENT_CURSOR_EXPIRED("agent_cursor_expired"),
     UPSTREAM_SERVICE_ERROR("upstream_service_error"),
     INTERNAL_ERROR("internal_error");
 

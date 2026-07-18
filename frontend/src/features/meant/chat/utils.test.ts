@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { CartItem, Product } from '../types'
 import type { DiscoverChatBlock } from './types'
 import {
+  cartItemsForChatBlock,
   cartItemsWithFallback,
   canRestoreDiscoverThreadAfterConflict,
   cartLineForAddedBlock,
@@ -889,6 +890,26 @@ describe('historical product context', () => {
 })
 
 describe('chat cart snapshots', () => {
+  test('keeps an immutable agent cart message pinned to its artifact lines', () => {
+    const historical = {
+      id: 'product-old',
+      merchant: 'Historical Merchant',
+      qty: 1,
+      offerKey: 'offer-old',
+      cartLineId: 'line-old',
+    } satisfies CartItem
+    const live = {
+      id: 'product-new',
+      merchant: 'Current Merchant',
+      qty: 2,
+      offerKey: 'offer-new',
+      cartLineId: 'line-new',
+    } satisfies CartItem
+
+    expect(cartItemsForChatBlock([live], [historical], true)).toEqual([historical])
+    expect(cartItemsForChatBlock([live], undefined, true)).toEqual([live])
+  })
+
   test('deduplicates a stale fallback by exact offer while retaining sibling variants', () => {
     const live = {
       id: 'product-1',

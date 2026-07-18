@@ -2,6 +2,7 @@ package com.meant.api.common.exception;
 
 import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.discount.exception.DiscountCodeException;
 import com.meant.api.module.checkout.exception.EmbeddedCheckoutException;
 import com.meant.api.module.checkout.exception.CheckoutAttributionException;
@@ -153,6 +154,7 @@ public class GlobalApiExceptionHandler {
     }
 
     @ExceptionHandler({
+            AgentException.class,
             CartException.class,
             CheckoutAttributionException.class,
             EmbeddedCheckoutException.class,

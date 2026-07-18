@@ -994,6 +994,57 @@
   color: var(--danger, #d4543a);
 }
 
+.mt-ct-mission-goal {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.mt-ct-mission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mt-ct-mission-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.mt-ct-mission-item.covered,
+.mt-ct-mission-item.optional {
+  color: var(--ink);
+}
+
+.mt-ct-mission-check {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mt-ct-mission-count,
+.mt-ct-mission-assumptions {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.mt-ct-mission-assumptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  line-height: 1.45;
+}
+
 .mt-ct-decision {
   display: flex;
   flex-direction: column;

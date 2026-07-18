@@ -225,6 +225,53 @@ class CartPersistenceOfferBindingTest {
     }
 
     @Test
+    void idempotentCreateRetryReconcilesTheExistingRemoteCartWithoutReplacingItsLocalState() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        java.util.UUID userId = java.util.UUID.randomUUID();
+        Cart existing = service.saveSnapshot(
+                null, userId, target(), cartResult("line-1"), List.of(), List.of(selectedOffer()),
+                CartSnapshotPurpose.CART_MUTATION);
+        existing.replaceCheckoutSession(
+                "checkout-1", "incomplete", null, null, null,
+                "2026-04-08", "INCOMPLETE", Instant.now());
+        long checkoutGeneration = existing.getCheckoutGeneration();
+
+        Cart reconciled = service.saveCreatedSnapshot(
+                userId,
+                target(),
+                cartResult("line-1"),
+                List.of(),
+                List.of(selectedOffer()),
+                CartSnapshotPurpose.CART_MUTATION,
+                java.util.UUID.randomUUID()
+        );
+
+        assertThat(reconciled).isSameAs(existing);
+        assertThat(reconciled.getCheckoutGeneration()).isEqualTo(checkoutGeneration);
+        assertThat(reconciled.getCheckoutId()).isEqualTo("checkout-1");
+        assertThat(reconciled.getLines()).singleElement()
+                .satisfies(line -> assertThat(line.getOfferKey()).isEqualTo(selectedOffer().offerKey()));
+    }
+
+    @Test
+    void idempotentCreateRetryNeverReconcilesAnotherUsersRemoteCart() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        service.saveSnapshot(
+                null, java.util.UUID.randomUUID(), target(), cartResult("line-1"), List.of(),
+                List.of(selectedOffer()), CartSnapshotPurpose.CART_MUTATION);
+
+        assertThatThrownBy(() -> service.saveCreatedSnapshot(
+                java.util.UUID.randomUUID(),
+                target(),
+                cartResult("line-1"),
+                List.of(),
+                List.of(selectedOffer()),
+                CartSnapshotPurpose.CART_MUTATION,
+                java.util.UUID.randomUUID()
+        )).isInstanceOf(CartException.class);
+    }
+
+    @Test
     void preservesImmutableOfferBindingWhenProviderRotatesRemoteLineId() {
         CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
         ResolvedSelectedOffer selected = selectedOffer();
@@ -310,6 +357,11 @@ class CartPersistenceOfferBindingTest {
                         Cart cart = stored.get();
                         return cart != null && cart.getId().equals(arguments[0])
                                 && cart.getUserId().equals(arguments[1])
+                                ? java.util.Optional.of(cart) : java.util.Optional.empty();
+                    }
+                    if (method.getName().equals("findForRemoteIdentityReconciliation")) {
+                        Cart cart = stored.get();
+                        return cart != null && cart.getRemoteCartIdHash().equals(arguments[0])
                                 ? java.util.Optional.of(cart) : java.util.Optional.empty();
                     }
                     throw new UnsupportedOperationException(method.getName());
