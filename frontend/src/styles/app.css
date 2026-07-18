@@ -11660,7 +11660,7 @@ body.mt-shelf-resizing .mt-shelf {
   transition: none;
 }
 
-/* Discover Workbench - mocked insights and research agents */
+/* Discover Workbench */
 .mt-ins-tab {
   position: fixed;
   top: 50%;
@@ -11757,6 +11757,127 @@ body.mt-ins-resizing {
 
 body.mt-ins-resizing .mt-ins {
   transition: none;
+}
+
+.mt-ins-coming {
+  justify-content: center;
+  padding: 28px 18px;
+}
+
+.mt-ins-coming-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 25px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 0%, var(--accent-tint), transparent 48%), var(--bg);
+  text-align: center;
+}
+
+.mt-ins-coming-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mt-ins-coming-icon {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  place-items: center;
+  margin: 22px 0 15px;
+  border: 1px solid var(--accent-line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 16px 34px -24px rgba(20, 24, 28, 0.45);
+  color: var(--accent);
+}
+
+.mt-ins-coming-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.mt-ins-coming-copy {
+  margin: 11px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.mt-ins-coming-features {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 20px;
+  text-align: left;
+}
+
+.mt-ins-coming-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.mt-ins-coming-feature-icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.mt-ins-coming-feature strong,
+.mt-ins-coming-feature small {
+  display: block;
+}
+
+.mt-ins-coming-feature strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mt-ins-coming-feature small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mt-ins-coming-note {
+  width: 100%;
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.55;
+  letter-spacing: 0.03em;
 }
 
 .mt-ins-clear-region {

@@ -2808,26 +2808,6 @@ export function ChatDiscoverView({
     }, 4200)
   }
 
-  const openWorkbenchAgentReport = useCallback(
-    (task: string, result: string) => {
-      appendMessagesToActiveThread(
-        [
-          {
-            id: nextDiscoverChatMessageId(),
-            role: 'ai',
-            blocks: [
-              { type: 'system', text: `Mock research agent · ${task}` },
-              { type: 'text', text: result },
-            ],
-          },
-        ],
-        { titleSeed: task },
-      )
-      scrollChatToBottom()
-    },
-    [appendMessagesToActiveThread, scrollChatToBottom],
-  )
-
   const visibleActiveCheckout =
     activeCheckout && (!activeCheckout.threadId || activeCheckout.threadId === activeThreadIdSafe)
       ? activeCheckout
@@ -2889,18 +2869,10 @@ export function ChatDiscoverView({
     [...messages]
       .reverse()
       .find((message) => message.blocks?.some((block) => block.type === 'checkout'))?.id ?? null
-  const workbenchProduct = discoverThreadFocusProduct(activeThread, knownProductsById)
   if (empty && !visibleActiveCheckout) {
     return (
       <>
-        <Workbench
-          storageScope={storageScope}
-          product={workbenchProduct}
-          query={query}
-          preferences={preferences}
-          onReply={setComposerReply}
-          onAgentReport={openWorkbenchAgentReport}
-        />
+        <Workbench />
         <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
           <ChatHero
             profile={profile}
@@ -2930,14 +2902,7 @@ export function ChatDiscoverView({
 
   return (
     <>
-      <Workbench
-        storageScope={storageScope}
-        product={workbenchProduct}
-        query={query}
-        preferences={preferences}
-        onReply={setComposerReply}
-        onAgentReport={openWorkbenchAgentReport}
-      />
+      <Workbench />
       <main className="mt-feed mt-ct-feed">
         <DiscoverThreadTabs
           threads={threads}
