@@ -106,6 +106,24 @@ class CartFulfillmentReplacementServiceTest {
         assertThat(merged.methods().getFirst().selectedDestinationId()).isNull();
     }
 
+    @Test
+    void partialOptionUpdatePreservesAProviderGroupWithMissingIdentityWithoutCrashing() {
+        CartToolArguments.FulfillmentGroup unidentified = new CartToolArguments.FulfillmentGroup(
+                null, List.of(), List.of(), null);
+        CartToolArguments.FulfillmentGroup identified = new CartToolArguments.FulfillmentGroup(
+                "group-a", List.of(), List.of(), "express");
+        CartToolArguments.FulfillmentMethod method = new CartToolArguments.FulfillmentMethod(
+                "method-a", "shipping", List.of(), List.of(), null, List.of(unidentified, identified));
+
+        CartToolArguments.Fulfillment merged = service.merge(
+                fulfillment(method), null, null, List.of(option(null, "group-a", "standard")));
+
+        List<CartToolArguments.FulfillmentGroup> groups = merged.methods().getFirst().groups();
+        assertThat(groups.getFirst().id()).isNull();
+        assertThat(groups.get(1).id()).isEqualTo("group-a");
+        assertThat(groups.get(1).selectedOptionId()).isEqualTo("standard");
+    }
+
     private CartToolArguments.Fulfillment fulfillment(CartToolArguments.FulfillmentMethod... methods) {
         return new CartToolArguments.Fulfillment(List.of(methods));
     }

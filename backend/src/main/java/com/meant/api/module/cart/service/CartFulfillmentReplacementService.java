@@ -273,7 +273,9 @@ public class CartFulfillmentReplacementService {
                         group.extensions()));
             }
         }
-        return merged.stream().sorted(Comparator.comparing(CartToolArguments.FulfillmentGroup::id)).toList();
+        return merged.stream()
+                .sorted(Comparator.comparing(group -> Objects.toString(group.id(), "")))
+                .toList();
     }
 
     private int addressIndex(List<CartDeliveryAddress> values, String id) {
