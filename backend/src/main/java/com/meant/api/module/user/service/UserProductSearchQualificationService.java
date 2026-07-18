@@ -49,6 +49,10 @@ public class UserProductSearchQualificationService {
 
         UserProductSearchQualificationSnapshot previous = previous(command);
         if (previous != null && previous.status() == UserProductSearchQualificationStatus.READY) {
+            if (!previous.plan().currentSchema()) {
+                throw UserException.notFound(
+                        "Product-search qualification uses an outdated plan; start a new qualification");
+            }
             return result(persistenceService.refreshReady(new GetUserProductSearchQualificationQuery(
                     command.userId(), previous.qualificationId())));
         }
@@ -65,7 +69,10 @@ public class UserProductSearchQualificationService {
                         durablePreferences
                 )
         );
-        UserProductSearchQualificationStatus status = generated.plan().missingFilters().isEmpty()
+        boolean ready = generated.plan().currentSchema()
+                && generated.plan().missingFilters().isEmpty()
+                && generated.plan().missingTargets().isEmpty();
+        UserProductSearchQualificationStatus status = ready
                 ? UserProductSearchQualificationStatus.READY
                 : UserProductSearchQualificationStatus.NEEDS_INPUT;
         UUID qualificationId = previous == null ? UUID.randomUUID() : previous.qualificationId();

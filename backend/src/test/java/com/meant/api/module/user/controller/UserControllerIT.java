@@ -248,38 +248,88 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                                 """;
                     }
                     if ("product_search_qualification".equals(schemaName)) {
-                        boolean sizeAnswered = userPrompt.contains("Latest user turn:\n10");
+                        boolean preferencesAnswered = userPrompt.contains(
+                                "Latest user turn:\nnew condition; deliver to US");
+                        if (!preferencesAnswered) {
+                            return """
+                                    {
+                                      "effectiveQuery": "running shoes",
+                                      "assistantMessage": "What condition, delivery destination, shipping origin, maximum price, color, size, target gender, minimum rating, and price tier do you prefer?",
+                                      "suggestedReplies": [],
+                                      "questionTargets": [
+                                        "CONDITION", "SHIPS_TO", "SHIPS_FROM", "PRICE", "COLOR", "SIZE",
+                                        "TARGET_GENDER", "RATING", "PRICE_TIER"
+                                      ],
+                                      "condition": {"relevant": true, "explicitAny": false,
+                                        "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                                      "shipsTo": {"relevant": true, "explicitAny": false,
+                                        "provenance": {"source": "NONE", "evidence": ""},
+                                        "country": null, "region": null, "postalCode": null},
+                                      "shipsFrom": {"relevant": true, "explicitAny": false,
+                                        "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                                      "price": {"relevant": true, "explicitAny": false,
+                                        "provenance": {"source": "NONE", "evidence": ""},
+                                        "minUsd": null, "maxUsd": null},
+                                      "attributes": [
+                                        {"name": "COLOR", "relevant": true, "explicitAny": false,
+                                          "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                                        {"name": "SIZE", "relevant": true, "explicitAny": false,
+                                          "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                                        {"name": "TARGET_GENDER", "relevant": true, "explicitAny": false,
+                                          "provenance": {"source": "NONE", "evidence": ""}, "values": []}
+                                      ],
+                                      "rating": {"relevant": true, "explicitAny": false,
+                                        "provenance": {"source": "NONE", "evidence": ""},
+                                        "min": null, "minCount": null},
+                                      "priceTier": {"relevant": true, "explicitAny": false,
+                                        "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                                      "durableAttributes": []
+                                    }
+                                    """;
+                        }
                         return """
                                 {
                                   "effectiveQuery": "running shoes",
-                                  "assistantMessage": "%s",
-                                  "suggestedReplies": %s,
-                                  "available": {"state": "VALUE", "value": true},
-                                  "condition": {"state": "NOT_APPLICABLE", "values": []},
-                                  "shipsTo": {
-                                    "state": "NOT_APPLICABLE",
-                                    "country": null,
-                                    "region": null,
-                                    "postalCode": null
-                                  },
-                                  "shipsFrom": {"state": "NOT_APPLICABLE", "values": []},
-                                  "price": {"state": "ANY", "minUsd": null, "maxUsd": null},
-                                  "shops": {"state": "NOT_APPLICABLE", "values": []},
-                                  "categories": {"state": "NOT_APPLICABLE", "values": []},
-                                  "attributes": {"state": "%s", "values": %s},
-                                  "rating": {"state": "NOT_APPLICABLE", "min": null, "minCount": null},
-                                  "priceTier": {"state": "NOT_APPLICABLE", "values": []},
-                                  "durableAttributes": %s
+                                  "assistantMessage": "Ready to search.",
+                                  "suggestedReplies": [],
+                                  "questionTargets": [],
+                                  "condition": {"relevant": true, "explicitAny": false,
+                                    "provenance": {"source": "CURRENT_USER_TURN", "evidence": "new condition"},
+                                    "values": ["NEW"]},
+                                  "shipsTo": {"relevant": true, "explicitAny": false,
+                                    "provenance": {"source": "CURRENT_USER_TURN", "evidence": "deliver to US"},
+                                    "country": "US", "region": null, "postalCode": null},
+                                  "shipsFrom": {"relevant": true, "explicitAny": false,
+                                    "provenance": {"source": "CURRENT_USER_TURN", "evidence": "ship from US or CA"},
+                                    "values": [
+                                      {"country": "US", "region": null, "postalCode": null},
+                                      {"country": "CA", "region": null, "postalCode": null}
+                                    ]},
+                                  "price": {"relevant": true, "explicitAny": false,
+                                    "provenance": {"source": "CURRENT_USER_TURN", "evidence": "maximum price $150"},
+                                    "minUsd": null, "maxUsd": 150},
+                                  "attributes": [
+                                    {"name": "COLOR", "relevant": true, "explicitAny": false,
+                                      "provenance": {"source": "CURRENT_USER_TURN", "evidence": "color Black"},
+                                      "values": ["Black"]},
+                                    {"name": "SIZE", "relevant": true, "explicitAny": false,
+                                      "provenance": {"source": "CURRENT_USER_TURN", "evidence": "size 10"},
+                                      "values": ["10"]},
+                                    {"name": "TARGET_GENDER", "relevant": true, "explicitAny": false,
+                                      "provenance": {"source": "CURRENT_USER_TURN", "evidence": "target gender Unisex"},
+                                      "values": ["Unisex"]}
+                                  ],
+                                  "rating": {"relevant": true, "explicitAny": false,
+                                    "provenance": {"source": "CURRENT_USER_TURN", "evidence": "minimum rating 4.5 with at least 10 reviews"},
+                                    "min": 4.5, "minCount": 10},
+                                  "priceTier": {"relevant": true, "explicitAny": false,
+                                    "provenance": {"source": "CURRENT_USER_TURN", "evidence": "low or medium price tier"},
+                                    "values": ["LOW", "MEDIUM"]},
+                                  "durableAttributes": [
+                                    {"scope": "running-shoes", "name": "SIZE", "values": ["10"]}
+                                  ]
                                 }
-                                """.formatted(
-                                sizeAnswered ? "Ready to search." : "What shoe size should I use?",
-                                sizeAnswered ? "[]" : "[\"10\", \"10.5\", \"Any size\"]",
-                                sizeAnswered ? "VALUE" : "MISSING",
-                                sizeAnswered ? "[{\"name\":\"SIZE\",\"values\":[\"10\"]}]" : "[]",
-                                sizeAnswered
-                                        ? "[{\"scope\":\"footwear\",\"name\":\"SIZE\",\"values\":[\"10\"]}]"
-                                        : "[]"
-                        );
+                                """;
                     }
                     return """
                             {
@@ -689,7 +739,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void qualificationAsksGenericallyThenPersistsConfirmedScopedSize() {
+    void qualificationAsksForAllMissingFiltersThenPersistsConfirmedScopedSize() {
         UUID id = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         String email = id + "@example.com";
@@ -721,7 +771,9 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(question).isNotNull();
         assertThat(question.status().name()).isEqualTo("NEEDS_INPUT");
-        assertThat(question.assistantMessage()).contains("shoe size");
+        assertThat(question.assistantMessage()).contains(
+                "condition", "delivery destination", "shipping origin", "maximum price",
+                "color", "size", "target gender", "minimum rating", "price tier");
 
         UserProductSearchQualificationResponse ready = client.post()
                 .uri("/api/v1/users/me/product-search-qualifications")
@@ -730,7 +782,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                     headers.setContentType(MediaType.APPLICATION_JSON);
                 })
                 .body("""
-                        {"conversationId":"%s","qualificationId":"%s","message":"10"}
+                        {"conversationId":"%s","qualificationId":"%s","message":"new condition; deliver to US; ship from US or CA; maximum price $150; color Black; size 10; target gender Unisex; minimum rating 4.5 with at least 10 reviews; low or medium price tier"}
                         """.formatted(conversationId, question.qualificationId()))
                 .exchange()
                 .expectStatus().isOk()
@@ -752,7 +804,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(settings).isNotNull();
         assertThat(settings.productSearchPreferences()).singleElement().satisfies(preference -> {
-            assertThat(preference.scope()).isEqualTo("footwear");
+            assertThat(preference.scope()).isEqualTo("running-shoes");
             assertThat(preference.values()).containsExactly("10");
         });
     }

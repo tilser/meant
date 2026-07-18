@@ -7,6 +7,7 @@ import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchFilterKind;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
+import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
@@ -119,6 +120,47 @@ class UserProductSearchQualificationServiceTest {
         assertThat(modelService.calls).isZero();
         assertThat(persistenceService.persistCalls).isZero();
         assertThat(persistenceService.refreshReadyCalls).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsAnOutdatedReadyPlanBeforeRefreshingOrCallingTheModel() {
+        FakeUserSettingsService settingsService = new FakeUserSettingsService(settings());
+        FakePreferenceService preferenceService = new FakePreferenceService(List.of());
+        FakeModelService modelService = new FakeModelService(null);
+        FakePersistenceService persistenceService = new FakePersistenceService();
+        UserProductSearchQualificationService service = new UserProductSearchQualificationService(
+                settingsService,
+                preferenceService,
+                modelService,
+                persistenceService,
+                catalogInputBuilder(),
+                conversationService()
+        );
+        EnsureUserProfileCommand profile = profile();
+        UUID conversationId = UUID.randomUUID();
+        UUID qualificationId = UUID.randomUUID();
+        UserProductSearchQualificationSnapshot ready = new UserProductSearchQualificationSnapshot(
+                qualificationId,
+                profile.id(),
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                withSchemaVersion(plan(UserProductSearchFilterState.ANY), 1),
+                "qualification-model",
+                "qualification-v1",
+                Instant.parse("2026-07-17T10:00:00Z"),
+                Instant.parse("2026-07-17T10:00:00Z")
+        );
+        persistenceService.found = Optional.of(ready);
+
+        assertThatThrownBy(() -> service.qualify(profile, new QualifyUserProductSearchCommand(
+                profile.id(), conversationId, qualificationId, "retry", null)))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("outdated plan");
+        assertThat(modelService.calls).isZero();
+        assertThat(persistenceService.refreshReadyCalls).isZero();
+        assertThat(persistenceService.persistCalls).isZero();
     }
 
     @Test
@@ -237,11 +279,15 @@ class UserProductSearchQualificationServiceTest {
             List<UserProductSearchQualificationPlan.DurableAttribute> durableAttributes
     ) {
         return new UserProductSearchQualificationPlan(
+                UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
                 "running shoes",
                 priceState == UserProductSearchFilterState.MISSING
                         ? "What is your USD budget?"
                         : "Ready to search.",
                 priceState == UserProductSearchFilterState.MISSING ? List.of("Under $100", "Any budget") : List.of(),
+                priceState == UserProductSearchFilterState.MISSING
+                        ? List.of(com.meant.api.module.user.constant.UserProductSearchQuestionTarget.PRICE)
+                        : List.of(),
                 new UserProductSearchQualificationPlan.AvailableFilter(
                         UserProductSearchFilterState.VALUE, true),
                 new UserProductSearchQualificationPlan.ConditionFilter(
@@ -268,6 +314,30 @@ class UserProductSearchQualificationServiceTest {
                 new UserProductSearchQualificationPlan.PriceTierFilter(
                         UserProductSearchFilterState.NOT_APPLICABLE, List.of()),
                 durableAttributes
+        );
+    }
+
+    private UserProductSearchQualificationPlan withSchemaVersion(
+            UserProductSearchQualificationPlan plan,
+            int schemaVersion
+    ) {
+        return new UserProductSearchQualificationPlan(
+                schemaVersion,
+                plan.effectiveQuery(),
+                plan.assistantMessage(),
+                plan.suggestedReplies(),
+                plan.questionTargets(),
+                plan.available(),
+                plan.condition(),
+                plan.shipsTo(),
+                plan.shipsFrom(),
+                plan.price(),
+                plan.shops(),
+                plan.categories(),
+                plan.attributes(),
+                plan.rating(),
+                plan.priceTier(),
+                plan.durableAttributes()
         );
     }
 
@@ -315,7 +385,7 @@ class UserProductSearchQualificationServiceTest {
         private GenerateUserProductSearchQualificationQuery lastQuery;
 
         private FakeModelService(UserProductSearchQualificationModelResult result) {
-            super(null, null, null, null);
+            super(null, null, null, null, new UserProductSearchQualificationPlanResolver());
             this.result = result;
         }
 

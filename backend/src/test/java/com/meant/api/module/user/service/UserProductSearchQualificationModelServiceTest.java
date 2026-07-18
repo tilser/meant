@@ -1,25 +1,24 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
-import com.meant.api.module.user.constant.UserProductCondition;
-import com.meant.api.module.user.constant.UserProductPriceTier;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
+import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterKind;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
-import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
+import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -28,240 +27,196 @@ import tools.jackson.databind.ObjectMapper;
 class UserProductSearchQualificationModelServiceTest {
 
     @Test
-    void usesConfiguredChatModelWithGeminiCompatibleSchemaAndBuildsEveryTypedFilterDecision() throws Exception {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse());
-        UserProductSearchQualificationModelService service = service(client);
+    void buildsOneCombinedQuestionForEveryMissingDecisionAndKeepsAttributeStatesIndependent() throws Exception {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(combinedQuestionResponse());
 
-        var result = service.generate(new GenerateUserProductSearchQualificationQuery(
-                "trail running shoes",
-                "trail running shoes",
-                null,
-                settings(),
-                List.of(new UserProductSearchPreferenceResult(
-                        "footwear", UserProductSearchAttributeName.SIZE, List.of("10")))
-        ));
+        var result = service(client).generate(query("blue jeans", "blue jeans", null));
 
         assertThat(client.calls).isEqualTo(1);
         assertThat(client.model).isEqualTo("chat-model");
         assertThat(client.schema.properties()).containsOnlyKeys(
-                "effectiveQuery", "assistantMessage", "suggestedReplies", "available", "condition",
-                "shipsTo", "shipsFrom", "price", "shops", "categories", "attributes", "rating",
-                "priceTier", "durableAttributes");
-        assertThat(new ObjectMapper().writeValueAsString(client.schema))
-                .doesNotContain("minItems", "maxItems");
-        assertThat(client.schema.properties().get("shops").properties().get("state").enumValues())
-                .containsExactly(UserProductSearchFilterState.ANY.name(),
-                        UserProductSearchFilterState.NOT_APPLICABLE.name());
-        assertThat(client.schema.properties().get("categories").properties().get("state").enumValues())
-                .containsExactly(UserProductSearchFilterState.ANY.name(),
-                        UserProductSearchFilterState.NOT_APPLICABLE.name());
-        assertThat(client.schema.properties().get("price").properties().get("minUsd").type().jsonValue().toString())
-                .isEqualTo("[\"number\",\"null\"]");
-        assertThat(client.schema.properties().get("available").properties().get("value").type()
-                .jsonValue().toString()).isEqualTo("[\"boolean\",\"null\"]");
-        assertThat(client.userPrompt).contains("trail running shoes", "United States", "men", "footwear", "10");
-        assertThat(client.userPrompt).doesNotContain("budget", "999");
+                "effectiveQuery", "assistantMessage", "suggestedReplies", "questionTargets", "condition",
+                "shipsTo", "shipsFrom", "price", "attributes", "rating", "priceTier", "durableAttributes");
+        assertThat(client.schema.properties()).doesNotContainKeys("available", "shops", "categories");
+        assertThat(client.schema.properties().get("questionTargets").items().enumValues())
+                .containsExactlyElementsOf(java.util.Arrays.stream(UserProductSearchQuestionTarget.values())
+                        .map(Enum::name)
+                        .toList());
+        assertThat(new ObjectMapper().writeValueAsString(client.schema)).doesNotContain("minItems", "maxItems");
+        assertThat(client.userPrompts.getFirst())
+                .contains("blue jeans", "United States", "men")
+                .doesNotContain("budget", "999");
 
         var plan = result.plan();
-        assertThat(plan.effectiveQuery()).isEqualTo("trail running shoes");
+        assertThat(plan.currentSchema()).isTrue();
+        assertThat(plan.available().state()).isEqualTo(UserProductSearchFilterState.VALUE);
         assertThat(plan.available().value()).isTrue();
-        assertThat(plan.condition().values()).containsExactly(UserProductCondition.NEW);
-        assertThat(plan.shipsTo().value().country()).isEqualTo("US");
-        assertThat(plan.price().minUsdMinor()).isEqualTo(5_000L);
-        assertThat(plan.price().maxUsdMinor()).isEqualTo(15_000L);
-        assertThat(plan.attributes().values())
-                .filteredOn(attribute -> attribute.name() == UserProductSearchAttributeName.COLOR)
-                .singleElement().satisfies(attribute -> {
-                    assertThat(attribute.name()).isEqualTo(UserProductSearchAttributeName.COLOR);
-                    assertThat(attribute.values()).containsExactly("Black", "Blue");
-                });
-        assertThat(plan.attributes().values())
-                .filteredOn(attribute -> attribute.name() == UserProductSearchAttributeName.SIZE)
-                .singleElement().satisfies(attribute -> assertThat(attribute.values()).containsExactly("10"));
-        assertThat(plan.durableAttributes()).singleElement().satisfies(attribute -> {
-            assertThat(attribute.scope()).isEqualTo("footwear");
-            assertThat(attribute.name()).isEqualTo(UserProductSearchAttributeName.SIZE);
-            assertThat(attribute.values()).containsExactly("10");
+        assertThat(plan.available().provenance().source())
+                .isEqualTo(UserProductSearchDecisionSource.SYSTEM_POLICY);
+        assertThat(plan.shops().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.categories().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.questionTargets()).containsExactly(
+                UserProductSearchQuestionTarget.CONDITION,
+                UserProductSearchQuestionTarget.SHIPS_FROM,
+                UserProductSearchQuestionTarget.PRICE,
+                UserProductSearchQuestionTarget.SIZE,
+                UserProductSearchQuestionTarget.RATING,
+                UserProductSearchQuestionTarget.PRICE_TIER
+        );
+        assertThat(plan.missingTargets()).containsExactlyElementsOf(plan.questionTargets());
+        assertThat(plan.missingFilters()).containsExactly(
+                UserProductSearchFilterKind.CONDITION,
+                UserProductSearchFilterKind.SHIPS_FROM,
+                UserProductSearchFilterKind.PRICE,
+                UserProductSearchFilterKind.ATTRIBUTES,
+                UserProductSearchFilterKind.RATING,
+                UserProductSearchFilterKind.PRICE_TIER
+        );
+        assertThat(attribute(plan, UserProductSearchAttributeName.COLOR)).satisfies(attribute -> {
+            assertThat(attribute.state()).isEqualTo(UserProductSearchFilterState.VALUE);
+            assertThat(attribute.values()).containsExactly("Blue");
+            assertThat(attribute.provenance().source()).isEqualTo(UserProductSearchDecisionSource.ORIGINAL_QUERY);
         });
-        assertThat(plan.rating().min()).isEqualByComparingTo("4.5");
-        assertThat(plan.rating().minCount()).isEqualTo(10L);
-        assertThat(plan.priceTier().values()).containsExactly(UserProductPriceTier.LOW, UserProductPriceTier.MEDIUM);
-        assertThat(plan.missingFilters()).containsExactly(UserProductSearchFilterKind.SHIPS_FROM);
+        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE)).satisfies(attribute -> {
+            assertThat(attribute.state()).isEqualTo(UserProductSearchFilterState.MISSING);
+            assertThat(attribute.values()).isEmpty();
+        });
+        assertThat(attribute(plan, UserProductSearchAttributeName.TARGET_GENDER)).satisfies(attribute -> {
+            assertThat(attribute.state()).isEqualTo(UserProductSearchFilterState.VALUE);
+            assertThat(attribute.values()).containsExactly("Male");
+            assertThat(attribute.provenance().source()).isEqualTo(UserProductSearchDecisionSource.PROFILE);
+        });
         assertThat(result.model()).isEqualTo("chat-model");
         assertThat(result.promptVersion()).isEqualTo("qualification-v1");
     }
 
     @Test
-    void safelyDiscardsModelGeneratedTaxonomyReferencesWithoutTrustedResolver() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse()
-                .replace("\"effectiveQuery\": \"trail running shoes\"", "\"effectiveQuery\": \"blue shirt\"")
-                .replace(
-                        "\"shops\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
-                        "\"shops\": {\"state\": \"VALUE\", "
-                                + "\"values\": [\"gid://shopify/Shop/untrusted\"]}"
-                )
-                .replace(
-                        "\"categories\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
-                        "\"categories\": {\"state\": \"VALUE\", "
-                                + "\"values\": [\"gid://shopify/TaxonomyCategory/aa-8\"]}"
-                ));
+    void repairsAnyThatHasNoExplicitUserEvidenceInsteadOfAuthorizingReady() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
+                unsupportedRatingAnyResponse(),
+                missingRatingRepairResponse()
+        );
 
-        var plan = service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "blue shirt",
-                "blue shirt",
-                null,
-                settings()
-        )).plan();
+        String request = "new desk lamp under $100 shipped to US from CA, low price tier";
+        var plan = service(client).generate(query(request, request, null)).plan();
 
-        assertThat(plan.effectiveQuery()).isEqualTo("blue shirt");
-        assertThat(plan.shops().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
-        assertThat(plan.shops().values()).isEmpty();
-        assertThat(plan.categories().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
-        assertThat(plan.categories().values()).isEmpty();
-        assertThat(plan.missingFilters())
-                .doesNotContain(UserProductSearchFilterKind.SHOPS, UserProductSearchFilterKind.CATEGORIES);
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(client.userPrompts.get(1))
+                .contains(
+                        "Server validation rejected the previous assessment",
+                        "RATING ANY has no user-context provenance",
+                        "questionTargets must exactly cover unresolved targets"
+                );
+        assertThat(plan.rating().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(plan.questionTargets()).containsExactly(UserProductSearchQuestionTarget.RATING);
+        assertThat(plan.missingTargets()).containsExactly(UserProductSearchQuestionTarget.RATING);
+        assertThat(plan.assistantMessage()).isEqualTo("What minimum rating do you want?");
     }
 
     @Test
-    void rejectsValueDecisionWithoutItsRequiredTypedValue() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse().replace(
-                "\"condition\": {\"state\": \"VALUE\", \"values\": [\"NEW\"]}",
-                "\"condition\": {\"state\": \"VALUE\", \"values\": []}"
-        ));
+    void neverAuthorizesReadyWhenTheModelSuppressesACoreFilterAsIrrelevant() {
+        String invalid = combinedQuestionResponse().replaceFirst(
+                "(?s)\"condition\"\\s*:\\s*\\{\\s*\"relevant\"\\s*:\\s*true",
+                "\"condition\": {\"relevant\": false"
+        );
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(invalid, invalid);
 
-        assertThatThrownBy(() -> service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "running shoes",
-                "running shoes",
-                null,
-                settings()
-        )))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("condition VALUE requires at least one value");
+        var plan = service(client).generate(query("blue jeans", "blue jeans", null)).plan();
+
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(plan.condition().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(plan.missingTargets()).contains(UserProductSearchQuestionTarget.CONDITION);
+        assertThat(plan.missingFilters()).isNotEmpty();
     }
 
     @Test
-    void unresolvedReferenceFiltersCannotKeepQualificationPending() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse()
-                .replace(
-                        "\"shops\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
-                        "\"shops\": {\"state\": \"MISSING\", \"values\": []}")
-                .replace(
-                        "\"categories\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
-                        "\"categories\": {\"state\": \"MISSING\", \"values\": []}"));
+    void repairsAnAttributeDecisionWhenTheRequiredRelevanceFlagIsMissing() {
+        String missingSizeRelevance = combinedQuestionResponse().replace(
+                "\"name\": \"SIZE\", \"relevant\": true, \"explicitAny\": false",
+                "\"name\": \"SIZE\", \"explicitAny\": false"
+        );
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
+                missingSizeRelevance,
+                combinedQuestionResponse()
+        );
 
-        var plan = service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "Nike running shoes",
-                "Nike running shoes",
-                null,
-                settings()
-        )).plan();
+        var plan = service(client).generate(query("blue jeans", "blue jeans", null)).plan();
 
-        assertThat(plan.shops().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
-        assertThat(plan.categories().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
-        assertThat(plan.missingFilters())
-                .doesNotContain(UserProductSearchFilterKind.SHOPS, UserProductSearchFilterKind.CATEGORIES);
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(client.userPrompts.get(1)).contains(
+                "Server validation rejected the previous assessment",
+                "attributes.SIZE.relevant is required"
+        );
+        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).state())
+                .isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(plan.questionTargets()).contains(UserProductSearchQuestionTarget.SIZE);
     }
 
-    @Test
-    void preservesKnownAttributesWhileTheAttributeGroupStillNeedsInput() {
-        String response = validResponse()
-                .replace(
-                        "\"attributes\": {\n    \"state\": \"VALUE\"",
-                        "\"attributes\": {\n    \"state\": \"MISSING\"")
-                .replace(
-                        "\"values\": [\n"
-                                + "      {\"name\": \"COLOR\", \"values\": [\"Black\", \"Blue\"]},\n"
-                                + "      {\"name\": \"SIZE\", \"values\": [\"10\"]}\n"
-                                + "    ]",
-                        "\"values\": [{\"name\": \"COLOR\", \"values\": [\"Black\"]}]")
-                .replace(
-                        "\"durableAttributes\": [{\"scope\": \"Footwear\", \"name\": \"SIZE\", "
-                                + "\"values\": [\"10\"]}]",
-                        "\"durableAttributes\": []");
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(response);
-
-        var plan = service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "running shoes",
-                "Black, but ask me for anything else you need",
-                null,
-                settings()
-        )).plan();
-
-        assertThat(plan.attributes().state()).isEqualTo(UserProductSearchFilterState.MISSING);
-        assertThat(plan.attributes().values()).singleElement().satisfies(attribute -> {
-            assertThat(attribute.name()).isEqualTo(UserProductSearchAttributeName.COLOR);
-            assertThat(attribute.values()).containsExactly("Black");
-        });
-        assertThat(plan.missingFilters()).contains(UserProductSearchFilterKind.ATTRIBUTES);
-    }
-
-    @Test
-    void rejectsDurableSizeThatIsNotInTheEffectiveSizeFilter() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse().replace(
-                "\"durableAttributes\": [{\"scope\": \"Footwear\", \"name\": \"SIZE\", \"values\": [\"10\"]}]",
-                "\"durableAttributes\": [{\"scope\": \"Footwear\", \"name\": \"SIZE\", \"values\": [\"11\"]}]"
-        ));
-
-        assertThatThrownBy(() -> service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "running shoes",
-                "11",
-                null,
-                settings()
-        )))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("must match the effective SIZE attribute filter");
-    }
-
-    @Test
-    void rejectsNonSizeDurableAttributeEvenWhenTheModelBypassesItsSchema() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse().replace(
-                "\"durableAttributes\": [{\"scope\": \"Footwear\", \"name\": \"SIZE\", \"values\": [\"10\"]}]",
-                "\"durableAttributes\": [{\"scope\": \"Footwear\", \"name\": \"COLOR\", "
-                        + "\"values\": [\"Black\"]}]"
-        ));
-
-        assertThatThrownBy(() -> service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "running shoes",
-                "black",
-                null,
-                settings()
-        )))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("only SIZE may be a durable");
+    private UserProductSearchQualificationPlan.Attribute attribute(
+            UserProductSearchQualificationPlan plan,
+            UserProductSearchAttributeName name
+    ) {
+        return plan.attributes().values().stream()
+                .filter(attribute -> attribute.name() == name)
+                .findFirst()
+                .orElseThrow();
     }
 
     private UserProductSearchQualificationModelService service(FakeOpenRouterChatClient client) {
         return new UserProductSearchQualificationModelService(
                 client,
-                new OpenRouterProperties(
-                        "https://openrouter.test/api/v1",
-                        "test-key",
-                        "Meant",
-                        new OpenRouterProperties.Models(
-                                "preference-model",
-                                "qualification-model",
-                                "explanation-model",
-                                "chat-model"
-                        )
-                ),
-                new UserProductSearchProperties(
-                        "search-v1",
-                        "qualification-v1",
-                        "explanation-v1",
-                        Duration.ofMinutes(1),
-                        Duration.ofMinutes(1),
-                        100,
-                        Duration.ofSeconds(30),
-                        10,
-                        5,
-                        5,
-                        Duration.ofDays(1),
-                        Duration.ofDays(7),
-                        10,
-                        2,
-                        80
-                ),
-                new ObjectMapper()
+                properties(),
+                searchProperties(),
+                new ObjectMapper(),
+                new UserProductSearchQualificationPlanResolver()
+        );
+    }
+
+    private GenerateUserProductSearchQualificationQuery query(
+            String originalQuery,
+            String message,
+            UserProductSearchQualificationPlan previous
+    ) {
+        return new GenerateUserProductSearchQualificationQuery(
+                originalQuery,
+                message,
+                previous,
+                settings(),
+                List.of()
+        );
+    }
+
+    private OpenRouterProperties properties() {
+        return new OpenRouterProperties(
+                "https://openrouter.test/api/v1",
+                "test-key",
+                "Meant",
+                new OpenRouterProperties.Models(
+                        "preference-model",
+                        "qualification-model",
+                        "explanation-model",
+                        "chat-model"
+                )
+        );
+    }
+
+    private UserProductSearchProperties searchProperties() {
+        return new UserProductSearchProperties(
+                "search-v1",
+                "qualification-v1",
+                "explanation-v1",
+                Duration.ofMinutes(1),
+                Duration.ofMinutes(1),
+                100,
+                Duration.ofSeconds(30),
+                10,
+                5,
+                5,
+                Duration.ofDays(1),
+                Duration.ofDays(7),
+                10,
+                2,
+                80
         );
     }
 
@@ -288,49 +243,118 @@ class UserProductSearchQualificationModelServiceTest {
         );
     }
 
-    private String validResponse() {
+    private String combinedQuestionResponse() {
         return """
                 {
-                  "effectiveQuery": "trail running shoes",
-                  "assistantMessage": "Which size do you need?",
-                  "suggestedReplies": ["10", "10.5", "Any size"],
-                  "available": {"state": "VALUE", "value": true},
-                  "condition": {"state": "VALUE", "values": ["NEW"]},
-                  "shipsTo": {"state": "VALUE", "country": "US", "region": "", "postalCode": ""},
-                  "shipsFrom": {"state": "MISSING", "values": []},
-                  "price": {"state": "VALUE", "minUsd": 50, "maxUsd": 150},
-                  "shops": {"state": "NOT_APPLICABLE", "values": []},
-                  "categories": {"state": "NOT_APPLICABLE", "values": []},
-                  "attributes": {
-                    "state": "VALUE",
-                    "values": [
-                      {"name": "COLOR", "values": ["Black", "Blue"]},
-                      {"name": "SIZE", "values": ["10"]}
-                    ]
+                  "effectiveQuery": "blue jeans",
+                  "assistantMessage": "Please provide condition shipping origin budget size rating price tier preferences.",
+                  "suggestedReplies": [],
+                  "questionTargets": ["CONDITION", "SHIPS_FROM", "PRICE", "SIZE", "RATING", "PRICE_TIER"],
+                  "condition": {
+                    "relevant": true, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "values": []
                   },
-                  "rating": {"state": "VALUE", "min": 4.5, "minCount": 10},
-                  "priceTier": {"state": "VALUE", "values": ["LOW", "MEDIUM"]},
-                  "durableAttributes": [{"scope": "Footwear", "name": "SIZE", "values": ["10"]}]
+                  "shipsTo": {
+                    "relevant": true, "explicitAny": false,
+                    "provenance": {"source": "PROFILE", "evidence": "US"},
+                    "country": "US", "region": null, "postalCode": null
+                  },
+                  "shipsFrom": {
+                    "relevant": true, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "values": []
+                  },
+                  "price": {
+                    "relevant": true, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "minUsd": null, "maxUsd": null
+                  },
+                  "attributes": [
+                    {
+                      "name": "COLOR", "relevant": true, "explicitAny": false,
+                      "provenance": {"source": "ORIGINAL_QUERY", "evidence": "blue"}, "values": ["Blue"]
+                    },
+                    {
+                      "name": "SIZE", "relevant": true, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []
+                    },
+                    {
+                      "name": "TARGET_GENDER", "relevant": true, "explicitAny": false,
+                      "provenance": {"source": "PROFILE", "evidence": "men"}, "values": ["Male"]
+                    }
+                  ],
+                  "rating": {
+                    "relevant": true, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "min": null, "minCount": null
+                  },
+                  "priceTier": {
+                    "relevant": true, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "values": []
+                  },
+                  "durableAttributes": []
                 }
                 """;
     }
 
+    private String unsupportedRatingAnyResponse() {
+        return """
+                {
+                  "effectiveQuery": "desk lamp",
+                  "assistantMessage": "Ready to search.",
+                  "suggestedReplies": [],
+                  "questionTargets": [],
+                  "condition": {"relevant": true, "explicitAny": false,
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "new"}, "values": ["NEW"]},
+                  "shipsTo": {"relevant": true, "explicitAny": false,
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "shipped to US"},
+                    "country": "US", "region": null, "postalCode": null},
+                  "shipsFrom": {"relevant": true, "explicitAny": false,
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "from CA"},
+                    "values": [{"country": "CA", "region": null, "postalCode": null}]},
+                  "price": {"relevant": true, "explicitAny": false,
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "under $100"},
+                    "minUsd": null, "maxUsd": 100},
+                  "attributes": [
+                    {"name": "COLOR", "relevant": false, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                    {"name": "SIZE", "relevant": false, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                    {"name": "TARGET_GENDER", "relevant": false, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []}
+                  ],
+                  "rating": {"relevant": true, "explicitAny": true,
+                    "provenance": {"source": "NONE", "evidence": ""}, "min": null, "minCount": null},
+                  "priceTier": {"relevant": true, "explicitAny": false,
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "low price tier"},
+                    "values": ["LOW"]},
+                  "durableAttributes": []
+                }
+                """;
+    }
+
+    private String missingRatingRepairResponse() {
+        return unsupportedRatingAnyResponse()
+                .replace("\"assistantMessage\": \"Ready to search.\"",
+                        "\"assistantMessage\": \"What minimum rating do you want?\"")
+                .replace("\"questionTargets\": []", "\"questionTargets\": [\"RATING\"]")
+                .replace("\"rating\": {\"relevant\": true, \"explicitAny\": true",
+                        "\"rating\": {\"relevant\": true, \"explicitAny\": false");
+    }
+
     private static final class FakeOpenRouterChatClient extends OpenRouterChatClient {
 
-        private final String response;
+        private final List<String> responses;
+        private final List<String> userPrompts = new ArrayList<>();
         private int calls;
         private String model;
-        private String userPrompt;
         private OpenRouterJsonSchemaDefinition schema;
 
-        private FakeOpenRouterChatClient(String response) {
+        private FakeOpenRouterChatClient(String... responses) {
             super(RestClient.builder(), new OpenRouterProperties(
                     "https://openrouter.test/api/v1",
                     "test-key",
                     "Meant",
                     new OpenRouterProperties.Models("test", "test", "test", "test")
             ));
-            this.response = response;
+            this.responses = List.of(responses);
         }
 
         @Override
@@ -341,11 +365,10 @@ class UserProductSearchQualificationModelServiceTest {
                 String schemaName,
                 OpenRouterJsonSchemaDefinition schema
         ) {
-            calls++;
             this.model = model;
-            this.userPrompt = userPrompt;
+            this.userPrompts.add(userPrompt);
             this.schema = schema;
-            return response;
+            return responses.get(calls++);
         }
     }
 }

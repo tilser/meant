@@ -18,7 +18,10 @@ import org.springframework.stereotype.Component;
 public class UserProductSearchQualificationPlanMapper {
 
     public CatalogDiscoveryFilters map(UserProductSearchQualificationPlan plan) {
-        if (plan == null || !plan.missingFilters().isEmpty()) {
+        if (plan == null
+                || !plan.currentSchema()
+                || !plan.missingFilters().isEmpty()
+                || !plan.missingTargets().isEmpty()) {
             throw new IllegalArgumentException("A complete product-search qualification plan is required");
         }
         return new CatalogDiscoveryFilters(
@@ -79,10 +82,11 @@ public class UserProductSearchQualificationPlanMapper {
     private List<CatalogDiscoveryAttributeFilter> attributes(
             UserProductSearchQualificationPlan.AttributesFilter filter
     ) {
-        return values(filter.state(), filter.values()).stream()
+        return filter.values().stream()
+                .filter(attribute -> hasValue(attribute.state()))
                 .map(attribute -> new CatalogDiscoveryAttributeFilter(
                         CatalogDiscoveryAttributeName.valueOf(attribute.name().name()),
-                        attribute.values()))
+                        values(attribute.state(), attribute.values())))
                 .toList();
     }
 

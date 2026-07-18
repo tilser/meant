@@ -9,7 +9,9 @@ import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.constant.UserProductCondition;
 import com.meant.api.module.user.constant.UserProductPriceTier;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
+import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationModelResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
@@ -36,8 +38,9 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class UserProductSearchQualificationModelService {
 
-    private static final int MAX_ASSISTANT_MESSAGE_LENGTH = 1_000;
+    private static final int MAX_ASSISTANT_MESSAGE_LENGTH = 1_500;
     private static final int MAX_EFFECTIVE_QUERY_LENGTH = 500;
+    private static final int MAX_EVIDENCE_LENGTH = 300;
     private static final int MAX_SUGGESTED_REPLIES = 5;
     private static final int MAX_SUGGESTED_REPLY_LENGTH = 120;
     private static final int MAX_FILTER_VALUES = 20;
@@ -45,97 +48,166 @@ public class UserProductSearchQualificationModelService {
     private static final int MAX_DURABLE_SCOPE_LENGTH = 80;
     private static final int MAX_DURABLE_VALUES = 10;
     private static final String SYSTEM_PROMPT = """
-            You qualify a product search before any catalog request is made.
-            Use the shopping request, the latest user turn, prior qualification plan, and durable user context.
-            Return one complete decision for every supported filter. Never omit a filter decision.
+            You assess a product search before any catalog request is made. The server, not you, authorizes READY.
+            Use the shopping request, latest user turn, prior verified plan, profile facts, and durable preferences.
 
-            Each filter state means:
-            - VALUE: a concrete enforceable value is known from the current conversation or durable context.
-            - ANY: the user explicitly has no preference, so omit that filter.
-            - MISSING: the filter materially affects relevance for this request and the user must be asked.
-            - NOT_APPLICABLE: the filter does not materially apply to this request.
+            For every user-answerable filter, return:
+            - relevant: true when the filter materially helps this request; false only when it clearly does not apply.
+              A value being absent never makes a filter irrelevant. When uncertain, use relevant=true.
+            - explicitAny: true only when the user explicitly says that this exact filter does not matter.
+            - provenance: the source and an exact short evidence snippet copied from that source.
+            - typed values, when known. Do not invent values.
 
-            Choose relevance dynamically from the request. There are no footwear-, apparel-, or other
-            category-specific workflows. For example, Size may matter for shoes and shirts but not for a vase.
-            Ask a concise natural follow-up only for materially relevant MISSING filters. Suggested replies must
-            be short answers to that follow-up. If there are no MISSING filters, state that the search is ready.
+            Provenance source must be ORIGINAL_QUERY, CURRENT_USER_TURN, PROFILE, DURABLE_PREFERENCE, or NONE.
+            Use NONE with empty evidence when no value or explicit indifference is available. PROFILE and durable
+            evidence must quote the supplied context. Explicit indifference may only use ORIGINAL_QUERY or
+            CURRENT_USER_TURN. A generic yes is valid only when the prior question targeted exactly one filter.
+            PROFILE may resolve only SHIPS_TO from saved locations and TARGET_GENDER from clothing fit. A stored
+            DURABLE_PREFERENCE may resolve only SIZE and only when its scope clearly matches the current product noun.
 
-            AVAILABLE should normally be VALUE true. CONDITION supports NEW and SECONDHAND. SHIPS_TO and
-            SHIPS_FROM use ISO 3166-1 alpha-2 country codes. PRICE is USD only and may only come from the current
-            request or a current qualification answer; never infer a budget. ATTRIBUTES supports only COLOR, SIZE,
-            and TARGET_GENDER; use Shopify taxonomy labels for target gender, such as Male, Female, or Unisex.
-            RATING uses a 0-5 minimum and a non-negative review count. PRICE_TIER supports LOW, MEDIUM, and HIGH.
+            The server always searches sale-ready products, so AVAILABLE is fixed to true and is not your decision.
+            SHOPS and CATEGORIES require trusted IDs and have no resolver in this version. Never ask the user for
+            IDs and never output these filters. Preserve natural-language shop, brand, and category constraints in
+            effectiveQuery instead.
 
-            SHOPS and CATEGORIES require trusted server-resolved Shopify GIDs. No resolver is available in this
-            qualification version. Return NOT_APPLICABLE for SHOPS and CATEGORIES; never return VALUE or MISSING
-            for them and never invent an ID. Preserve a requested brand, shop, or product category as ordinary
-            words in effectiveQuery instead.
+            Decide CONDITION, SHIPS_TO, SHIPS_FROM, PRICE, RATING, and PRICE_TIER independently. PRICE is USD only;
+            one valid bound is sufficient. RATING may contain min, minCount, or both. A missing optional bound does
+            not make an otherwise valid filter unresolved. CONDITION supports NEW and SECONDHAND. Location countries
+            use ISO 3166-1 alpha-2. PRICE_TIER supports LOW, MEDIUM, and HIGH.
+            These six filters are always relevant for a catalog purchase search. Set relevant=true for each one.
+            A missing value must remain unresolved even when another pricing filter is present; never mark a core
+            filter irrelevant to avoid asking the user.
 
-            durableAttributes is a persistence write-set, separate from the hard-filter decisions. Emit a durable
-            SIZE only when the user newly supplies or corrects their size for the current product family in this
-            conversation. Treat that answer as stable without a separate save-confirmation question unless they
-            frame it as one-off, a gift, or somebody else's size. Do not re-emit an existing durable preference
-            merely because it was reused; it is already stored. Never infer or guess a durable fact merely because
-            a size filter is useful. Only SIZE may be durable; never persist color, gender, budget, condition,
-            rating, or another preference. Choose a concise lowercase ASCII scope broad enough for products
-            sharing that sizing convention (for example, footwear or t-shirts), rather than a narrow search
-            phrase. Every emitted durable SIZE value must also be present in this plan's ATTRIBUTES SIZE hard
-            filter. Return an empty array when there is no new or corrected stable size fact.
+            Return exactly one decision for each supported attribute: COLOR, SIZE, and TARGET_GENDER. Relevance is
+            per attribute. For example, blue jeans can have COLOR from the query, TARGET_GENDER from the profile,
+            and SIZE unresolved. Use Shopify target-gender labels such as Male, Female, or Unisex.
 
-            effectiveQuery must remain a concise catalog query containing the product noun and non-filter keyword
-            constraints. Include relevant durable preferences that cannot be represented by the supported hard
-            filters, and exclude durable context that is irrelevant to this request. Do not put conversational
-            wrapper text into effectiveQuery.
+            If any relevant decision lacks both a value and explicit indifference, ask for every such decision in
+            one concise natural-language assistantMessage. questionTargets must list every unresolved decision and
+            no resolved decision. Suggested replies may be empty when one chip cannot answer the combined question.
+            If nothing is unresolved, questionTargets must be empty and assistantMessage may say search is ready.
+
+            durableAttributes is a persistence write-set, separate from hard-filter decisions. Emit a durable SIZE
+            only when the user newly supplies or corrects their own stable size for the current product family.
+            Do not re-emit stored preferences. Never infer a size, and never persist any attribute except SIZE.
+            Use a concise lowercase ASCII scope derived from a product phrase literally present in the original
+            request (for example running-shoes for running shoes). Every emitted durable SIZE must equal the
+            effective SIZE value.
+
+            effectiveQuery must be a concise catalog query containing the product noun and non-filter keyword
+            constraints. Do not include conversational wrapper text.
             """;
 
     private final OpenRouterChatClient openRouterChatClient;
     private final OpenRouterProperties openRouterProperties;
     private final UserProductSearchProperties searchProperties;
     private final ObjectMapper objectMapper;
+    private final UserProductSearchQualificationPlanResolver planResolver;
 
     public UserProductSearchQualificationModelResult generate(
             @NotNull @Valid GenerateUserProductSearchQualificationQuery query
     ) {
         String model = openRouterProperties.models().chatModel();
+        UserProductSearchQualificationPlanResolver.Resolution firstResolution = null;
+        String repairFeedback;
+        try {
+            UserProductSearchQualificationPlan candidate = completeCandidate(model, query, null);
+            firstResolution = planResolver.resolve(candidate, query);
+            if (firstResolution.valid()) {
+                return result(firstResolution.plan(), model);
+            }
+            repairFeedback = String.join("; ", firstResolution.violations());
+        } catch (RuntimeException exception) {
+            repairFeedback = "The assessment was structurally invalid: " + safeErrorMessage(exception);
+        }
+
+        try {
+            UserProductSearchQualificationPlan repaired = completeCandidate(model, query, repairFeedback);
+            UserProductSearchQualificationPlanResolver.Resolution repairedResolution =
+                    planResolver.resolve(repaired, query);
+            return result(
+                    repairedResolution.valid()
+                            ? repairedResolution.plan()
+                            : planResolver.safeFallback(repairedResolution.plan()),
+                    model
+            );
+        } catch (RuntimeException exception) {
+            UserProductSearchQualificationPlan fallback = firstResolution == null
+                    ? planResolver.safeFallback(query)
+                    : planResolver.safeFallback(firstResolution.plan());
+            return result(fallback, model);
+        }
+    }
+
+    private UserProductSearchQualificationModelResult result(
+            UserProductSearchQualificationPlan plan,
+            String model
+    ) {
+        return new UserProductSearchQualificationModelResult(
+                plan, model, searchProperties.queryParserPromptVersion());
+    }
+
+    private String safeErrorMessage(RuntimeException exception) {
+        String message = blankToNull(exception.getMessage());
+        if (message == null) {
+            return exception.getClass().getSimpleName();
+        }
+        return message.length() <= 500 ? message : message.substring(0, 500);
+    }
+
+    private UserProductSearchQualificationPlan completeCandidate(
+            String model,
+            GenerateUserProductSearchQualificationQuery query,
+            String repairFeedback
+    ) {
         String response = openRouterChatClient.completeJson(
                 model,
                 SYSTEM_PROMPT,
-                userPrompt(query),
+                userPrompt(query, repairFeedback),
                 "product_search_qualification",
                 responseSchema()
         );
-        return new UserProductSearchQualificationModelResult(
-                sanitize(parse(response)),
-                model,
-                searchProperties.queryParserPromptVersion()
-        );
+        return sanitize(parse(response));
     }
 
-    private String userPrompt(GenerateUserProductSearchQualificationQuery query) {
+    private String userPrompt(GenerateUserProductSearchQualificationQuery query, String repairFeedback) {
         try {
-            return """
+            String prompt = """
                     Original shopping request:
                     %s
 
                     Latest user turn:
                     %s
 
-                    Previous qualification plan (null means first turn):
+                    Previous verified qualification plan (null means first turn or legacy plan):
                     %s
 
-                    Durable user context (only explicit fit, locations, and shopping preferences; unconfirmed
-                    defaults are excluded):
+                    Profile facts:
                     %s
 
-                    Existing durable scoped product-search preferences (reuse only when the product scope applies):
+                    Existing durable scoped product-search preferences:
                     %s
                     """.formatted(
                     query.originalQuery().trim(),
                     query.message().trim(),
-                    query.previousPlan() == null ? "null" : objectMapper.writeValueAsString(query.previousPlan()),
+                    query.previousPlan() == null || !query.previousPlan().currentSchema()
+                            ? "null"
+                            : objectMapper.writeValueAsString(query.previousPlan()),
                     objectMapper.writeValueAsString(settingsPrompt(query.settings())),
                     objectMapper.writeValueAsString(query.durablePreferences())
             );
+            if (repairFeedback == null || repairFeedback.isBlank()) {
+                return prompt;
+            }
+            return prompt + """
+
+                    Server validation rejected the previous assessment:
+                    %s
+
+                    Return one corrected complete assessment. Do not suppress a missing decision by changing its
+                    relevance or claiming explicit indifference without evidence. Ensure questionTargets exactly
+                    match all unresolved relevant decisions.
+                    """.formatted(repairFeedback);
         } catch (JacksonException exception) {
             throw new IllegalStateException("Could not serialize product-search qualification prompt", exception);
         }
@@ -156,22 +228,21 @@ public class UserProductSearchQualificationModelService {
     private OpenRouterJsonSchemaDefinition responseSchema() {
         return OpenRouterJsonSchemaDefinition.object(
                 List.of(
-                        "effectiveQuery", "assistantMessage", "suggestedReplies", "available", "condition",
-                        "shipsTo", "shipsFrom", "price", "shops", "categories", "attributes", "rating",
-                        "priceTier", "durableAttributes"
+                        "effectiveQuery", "assistantMessage", "suggestedReplies", "questionTargets", "condition",
+                        "shipsTo", "shipsFrom", "price", "attributes", "rating", "priceTier", "durableAttributes"
                 ),
                 Map.ofEntries(
                         Map.entry("effectiveQuery", OpenRouterJsonSchemaDefinition.string()),
                         Map.entry("assistantMessage", OpenRouterJsonSchemaDefinition.string()),
                         Map.entry("suggestedReplies", OpenRouterJsonSchemaDefinition.array(
                                 OpenRouterJsonSchemaDefinition.string())),
-                        Map.entry("available", availableSchema()),
+                        Map.entry("questionTargets", OpenRouterJsonSchemaDefinition.array(
+                                OpenRouterJsonSchemaDefinition.stringEnum(enumNames(
+                                        UserProductSearchQuestionTarget.values())))),
                         Map.entry("condition", enumValuesSchema(UserProductCondition.values())),
                         Map.entry("shipsTo", locationFilterSchema()),
                         Map.entry("shipsFrom", locationsFilterSchema()),
                         Map.entry("price", priceSchema()),
-                        Map.entry("shops", unresolvedReferenceSchema()),
-                        Map.entry("categories", unresolvedReferenceSchema()),
                         Map.entry("attributes", attributesSchema()),
                         Map.entry("rating", ratingSchema()),
                         Map.entry("priceTier", enumValuesSchema(UserProductPriceTier.values())),
@@ -180,21 +251,13 @@ public class UserProductSearchQualificationModelService {
         );
     }
 
-    private OpenRouterJsonSchemaDefinition availableSchema() {
-        return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "value"),
-                Map.of(
-                        "state", stateSchema(),
-                        "value", OpenRouterJsonSchemaDefinition.nullableBool()
-                )
-        );
-    }
-
     private OpenRouterJsonSchemaDefinition locationFilterSchema() {
         return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "country", "region", "postalCode"),
+                List.of("relevant", "explicitAny", "provenance", "country", "region", "postalCode"),
                 Map.of(
-                        "state", stateSchema(),
+                        "relevant", OpenRouterJsonSchemaDefinition.bool(),
+                        "explicitAny", OpenRouterJsonSchemaDefinition.bool(),
+                        "provenance", provenanceSchema(),
                         "country", OpenRouterJsonSchemaDefinition.nullableString(),
                         "region", OpenRouterJsonSchemaDefinition.nullableString(),
                         "postalCode", OpenRouterJsonSchemaDefinition.nullableString()
@@ -204,9 +267,11 @@ public class UserProductSearchQualificationModelService {
 
     private OpenRouterJsonSchemaDefinition locationsFilterSchema() {
         return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "values"),
+                List.of("relevant", "explicitAny", "provenance", "values"),
                 Map.of(
-                        "state", stateSchema(),
+                        "relevant", OpenRouterJsonSchemaDefinition.bool(),
+                        "explicitAny", OpenRouterJsonSchemaDefinition.bool(),
+                        "provenance", provenanceSchema(),
                         "values", OpenRouterJsonSchemaDefinition.array(locationValueSchema())
                 )
         );
@@ -225,55 +290,58 @@ public class UserProductSearchQualificationModelService {
 
     private OpenRouterJsonSchemaDefinition priceSchema() {
         return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "minUsd", "maxUsd"),
+                List.of("relevant", "explicitAny", "provenance", "minUsd", "maxUsd"),
                 Map.of(
-                        "state", stateSchema(),
+                        "relevant", OpenRouterJsonSchemaDefinition.bool(),
+                        "explicitAny", OpenRouterJsonSchemaDefinition.bool(),
+                        "provenance", provenanceSchema(),
                         "minUsd", OpenRouterJsonSchemaDefinition.nullableNumber(),
                         "maxUsd", OpenRouterJsonSchemaDefinition.nullableNumber()
                 )
         );
     }
 
-    private OpenRouterJsonSchemaDefinition unresolvedReferenceSchema() {
-        return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "values"),
-                Map.of(
-                        "state", OpenRouterJsonSchemaDefinition.stringEnum(List.of(
-                                UserProductSearchFilterState.ANY.name(),
-                                UserProductSearchFilterState.NOT_APPLICABLE.name()
-                        )),
-                        "values", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.string())
-                )
-        );
-    }
-
     private OpenRouterJsonSchemaDefinition attributesSchema() {
         OpenRouterJsonSchemaDefinition attribute = OpenRouterJsonSchemaDefinition.object(
-                List.of("name", "values"),
+                List.of("name", "relevant", "explicitAny", "provenance", "values"),
                 Map.of(
                         "name", OpenRouterJsonSchemaDefinition.stringEnum(enumNames(
                                 UserProductSearchAttributeName.values())),
+                        "relevant", OpenRouterJsonSchemaDefinition.bool(),
+                        "explicitAny", OpenRouterJsonSchemaDefinition.bool(),
+                        "provenance", provenanceSchema(),
                         "values", OpenRouterJsonSchemaDefinition.array(
                                 OpenRouterJsonSchemaDefinition.string())
                 )
         );
-        return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "values"),
-                Map.of(
-                        "state", stateSchema(),
-                        "values", OpenRouterJsonSchemaDefinition.array(attribute)
-                )
-        );
+        return OpenRouterJsonSchemaDefinition.array(attribute);
     }
 
     private OpenRouterJsonSchemaDefinition ratingSchema() {
         return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "min", "minCount"),
+                List.of("relevant", "explicitAny", "provenance", "min", "minCount"),
                 Map.of(
-                        "state", stateSchema(),
+                        "relevant", OpenRouterJsonSchemaDefinition.bool(),
+                        "explicitAny", OpenRouterJsonSchemaDefinition.bool(),
+                        "provenance", provenanceSchema(),
                         "min", OpenRouterJsonSchemaDefinition.nullableNumber(),
                         "minCount", OpenRouterJsonSchemaDefinition.nullableNumber()
+                )
+        );
+    }
+
+    private OpenRouterJsonSchemaDefinition provenanceSchema() {
+        return OpenRouterJsonSchemaDefinition.object(
+                List.of("source", "evidence"),
+                Map.of(
+                        "source", OpenRouterJsonSchemaDefinition.stringEnum(List.of(
+                                UserProductSearchDecisionSource.ORIGINAL_QUERY.name(),
+                                UserProductSearchDecisionSource.CURRENT_USER_TURN.name(),
+                                UserProductSearchDecisionSource.PROFILE.name(),
+                                UserProductSearchDecisionSource.DURABLE_PREFERENCE.name(),
+                                UserProductSearchDecisionSource.NONE.name()
+                        )),
+                        "evidence", OpenRouterJsonSchemaDefinition.string()
                 )
         );
     }
@@ -294,17 +362,15 @@ public class UserProductSearchQualificationModelService {
 
     private <T extends Enum<T>> OpenRouterJsonSchemaDefinition enumValuesSchema(T[] values) {
         return OpenRouterJsonSchemaDefinition.object(
-                List.of("state", "values"),
+                List.of("relevant", "explicitAny", "provenance", "values"),
                 Map.of(
-                        "state", stateSchema(),
+                        "relevant", OpenRouterJsonSchemaDefinition.bool(),
+                        "explicitAny", OpenRouterJsonSchemaDefinition.bool(),
+                        "provenance", provenanceSchema(),
                         "values", OpenRouterJsonSchemaDefinition.array(
                                 OpenRouterJsonSchemaDefinition.stringEnum(enumNames(values)))
                 )
         );
-    }
-
-    private OpenRouterJsonSchemaDefinition stateSchema() {
-        return OpenRouterJsonSchemaDefinition.stringEnum(enumNames(UserProductSearchFilterState.values()));
     }
 
     private <T extends Enum<T>> List<String> enumNames(T[] values) {
@@ -328,41 +394,44 @@ public class UserProductSearchQualificationModelService {
                 response.assistantMessage(), MAX_ASSISTANT_MESSAGE_LENGTH, "assistantMessage");
         List<String> suggestedReplies = cleanText(response.suggestedReplies(), MAX_SUGGESTED_REPLIES,
                 MAX_SUGGESTED_REPLY_LENGTH);
-        RawAvailable available = required(response.available(), "available");
+        List<UserProductSearchQuestionTarget> questionTargets = distinctRequired(
+                response.questionTargets(), "questionTargets");
         RawEnumValues condition = required(response.condition(), "condition");
         RawLocationFilter shipsTo = required(response.shipsTo(), "shipsTo");
         RawLocationsFilter shipsFrom = required(response.shipsFrom(), "shipsFrom");
         RawPrice price = required(response.price(), "price");
-        RawReference shops = required(response.shops(), "shops");
-        RawReference categories = required(response.categories(), "categories");
-        RawAttributes attributes = required(response.attributes(), "attributes");
+        List<RawAttribute> attributes = required(response.attributes(), "attributes");
         RawRating rating = required(response.rating(), "rating");
         RawEnumValues priceTier = required(response.priceTier(), "priceTier");
         List<RawDurableAttribute> durableAttributes = required(
                 response.durableAttributes(), "durableAttributes");
 
-        UserProductSearchFilterState availableState = state(available.state(), "available");
-        if (availableState == UserProductSearchFilterState.VALUE && available.value() == null) {
-            throw invalid("available VALUE requires a boolean value");
-        }
         UserProductSearchQualificationPlan.AttributesFilter effectiveAttributes = attributes(attributes);
-
         return new UserProductSearchQualificationPlan(
+                UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
                 effectiveQuery,
                 assistantMessage,
                 suggestedReplies,
+                questionTargets,
                 new UserProductSearchQualificationPlan.AvailableFilter(
-                        availableState,
-                        availableState == UserProductSearchFilterState.VALUE
-                                ? available.value()
-                                : null
+                        UserProductSearchFilterState.VALUE,
+                        true,
+                        UserProductSearchQualificationPlan.Provenance.system("sale-ready products only")
                 ),
                 condition(condition),
                 shipsTo(shipsTo),
                 shipsFrom(shipsFrom),
                 price(price),
-                unresolvedReference("shops", shops),
-                unresolvedReference("categories", categories),
+                new UserProductSearchQualificationPlan.ReferenceFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE,
+                        List.of(),
+                        UserProductSearchQualificationPlan.Provenance.system("trusted shop resolver unavailable")
+                ),
+                new UserProductSearchQualificationPlan.ReferenceFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE,
+                        List.of(),
+                        UserProductSearchQualificationPlan.Provenance.system("trusted taxonomy resolver unavailable")
+                ),
                 effectiveAttributes,
                 rating(rating),
                 priceTier(priceTier),
@@ -371,24 +440,31 @@ public class UserProductSearchQualificationModelService {
     }
 
     private UserProductSearchQualificationPlan.ConditionFilter condition(RawEnumValues raw) {
-        UserProductSearchFilterState state = state(raw.state(), "condition");
+        UserProductSearchFilterState state = coreState(
+                raw.relevant(), raw.explicitAny(), !safe(raw.values()).isEmpty(), "condition");
         List<UserProductCondition> values = state == UserProductSearchFilterState.VALUE
                 ? enumValues(raw.values(), UserProductCondition.class, "condition")
                 : List.of();
         requireValuesForValueState(state, values, "condition");
-        return new UserProductSearchQualificationPlan.ConditionFilter(state, values);
+        return new UserProductSearchQualificationPlan.ConditionFilter(
+                state, values, provenance(raw.provenance(), "condition"));
     }
 
     private UserProductSearchQualificationPlan.LocationFilter shipsTo(RawLocationFilter raw) {
-        UserProductSearchFilterState state = state(raw.state(), "shipsTo");
+        boolean hasValue = blankToNull(raw.country()) != null;
+        UserProductSearchFilterState state = coreState(
+                raw.relevant(), raw.explicitAny(), hasValue, "shipsTo");
         UserProductSearchQualificationPlan.Location value = state == UserProductSearchFilterState.VALUE
                 ? location(raw.country(), raw.region(), raw.postalCode(), "shipsTo")
                 : null;
-        return new UserProductSearchQualificationPlan.LocationFilter(state, value);
+        return new UserProductSearchQualificationPlan.LocationFilter(
+                state, value, provenance(raw.provenance(), "shipsTo"));
     }
 
     private UserProductSearchQualificationPlan.LocationsFilter shipsFrom(RawLocationsFilter raw) {
-        UserProductSearchFilterState state = state(raw.state(), "shipsFrom");
+        boolean hasValue = !safe(raw.values()).isEmpty();
+        UserProductSearchFilterState state = coreState(
+                raw.relevant(), raw.explicitAny(), hasValue, "shipsFrom");
         List<UserProductSearchQualificationPlan.Location> values = state == UserProductSearchFilterState.VALUE
                 ? safe(raw.values()).stream()
                         .map(value -> location(value.country(), value.region(), value.postalCode(), "shipsFrom"))
@@ -397,7 +473,8 @@ public class UserProductSearchQualificationModelService {
                         .toList()
                 : List.of();
         requireValuesForValueState(state, values, "shipsFrom");
-        return new UserProductSearchQualificationPlan.LocationsFilter(state, values);
+        return new UserProductSearchQualificationPlan.LocationsFilter(
+                state, values, provenance(raw.provenance(), "shipsFrom"));
     }
 
     private UserProductSearchQualificationPlan.Location location(
@@ -418,7 +495,9 @@ public class UserProductSearchQualificationModelService {
     }
 
     private UserProductSearchQualificationPlan.PriceFilter price(RawPrice raw) {
-        UserProductSearchFilterState state = state(raw.state(), "price");
+        boolean hasValue = raw.minUsd() != null || raw.maxUsd() != null;
+        UserProductSearchFilterState state = coreState(
+                raw.relevant(), raw.explicitAny(), hasValue, "price");
         Long min = state == UserProductSearchFilterState.VALUE ? usdMinor(raw.minUsd(), "price.minUsd") : null;
         Long max = state == UserProductSearchFilterState.VALUE ? usdMinor(raw.maxUsd(), "price.maxUsd") : null;
         if (state == UserProductSearchFilterState.VALUE && min == null && max == null) {
@@ -427,38 +506,52 @@ public class UserProductSearchQualificationModelService {
         if (min != null && max != null && min > max) {
             throw invalid("price minimum exceeds maximum");
         }
-        return new UserProductSearchQualificationPlan.PriceFilter(state, min, max);
+        return new UserProductSearchQualificationPlan.PriceFilter(
+                state, min, max, provenance(raw.provenance(), "price"));
     }
 
-    private UserProductSearchQualificationPlan.AttributesFilter attributes(RawAttributes raw) {
-        UserProductSearchFilterState state = state(raw.state(), "attributes");
-        if (state != UserProductSearchFilterState.VALUE && state != UserProductSearchFilterState.MISSING) {
-            return new UserProductSearchQualificationPlan.AttributesFilter(state, List.of());
-        }
-        EnumMap<UserProductSearchAttributeName, LinkedHashSet<String>> values = new EnumMap<>(
-                UserProductSearchAttributeName.class);
-        for (RawAttribute attribute : safe(raw.values())) {
-            if (attribute == null || attribute.name() == null) {
+    private UserProductSearchQualificationPlan.AttributesFilter attributes(List<RawAttribute> rawAttributes) {
+        EnumMap<UserProductSearchAttributeName, UserProductSearchQualificationPlan.Attribute> byName =
+                new EnumMap<>(UserProductSearchAttributeName.class);
+        for (RawAttribute raw : rawAttributes) {
+            if (raw == null || raw.name() == null) {
                 throw invalid("attribute name is required");
             }
-            List<String> cleaned = cleanText(attribute.values(), MAX_FILTER_VALUES, 120);
-            if (cleaned.isEmpty()) {
-                throw invalid("attribute VALUE requires at least one value");
+            if (byName.containsKey(raw.name())) {
+                throw invalid("attribute decision was duplicated: " + raw.name());
             }
-            values.computeIfAbsent(attribute.name(), ignored -> new LinkedHashSet<>()).addAll(cleaned);
+            List<String> cleaned = cleanText(raw.values(), MAX_FILTER_VALUES, 120);
+            UserProductSearchFilterState state = state(
+                    raw.relevant(), raw.explicitAny(), !cleaned.isEmpty(), "attributes." + raw.name());
+            List<String> values = state == UserProductSearchFilterState.VALUE ? cleaned : List.of();
+            requireValuesForValueState(state, values, "attributes." + raw.name());
+            byName.put(raw.name(), new UserProductSearchQualificationPlan.Attribute(
+                    raw.name(), state, values, provenance(raw.provenance(), "attributes." + raw.name())));
         }
-        List<UserProductSearchQualificationPlan.Attribute> attributes = values.entrySet().stream()
-                .map(entry -> new UserProductSearchQualificationPlan.Attribute(
-                        entry.getKey(), entry.getValue().stream().limit(MAX_FILTER_VALUES).toList()))
-                .toList();
-        requireValuesForValueState(state, attributes, "attributes");
-        return new UserProductSearchQualificationPlan.AttributesFilter(state, attributes);
+        for (UserProductSearchAttributeName name : UserProductSearchAttributeName.values()) {
+            if (!byName.containsKey(name)) {
+                throw invalid("attribute decision is required: " + name);
+            }
+        }
+        List<UserProductSearchQualificationPlan.Attribute> values = List.copyOf(byName.values());
+        UserProductSearchFilterState groupState = values.stream()
+                .anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.MISSING)
+                ? UserProductSearchFilterState.MISSING
+                : values.stream().anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.VALUE)
+                ? UserProductSearchFilterState.VALUE
+                : values.stream().anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.ANY)
+                ? UserProductSearchFilterState.ANY
+                : UserProductSearchFilterState.NOT_APPLICABLE;
+        return new UserProductSearchQualificationPlan.AttributesFilter(groupState, values);
     }
 
     private UserProductSearchQualificationPlan.RatingFilter rating(RawRating raw) {
-        UserProductSearchFilterState state = state(raw.state(), "rating");
+        boolean hasValue = raw.min() != null || raw.minCount() != null;
+        UserProductSearchFilterState state = coreState(
+                raw.relevant(), raw.explicitAny(), hasValue, "rating");
         if (state != UserProductSearchFilterState.VALUE) {
-            return new UserProductSearchQualificationPlan.RatingFilter(state, null, null);
+            return new UserProductSearchQualificationPlan.RatingFilter(
+                    state, null, null, provenance(raw.provenance(), "rating"));
         }
         BigDecimal min = nonNegativeOrNull(raw.min());
         Long minCount = nonNegativeOrNull(raw.minCount());
@@ -468,7 +561,70 @@ public class UserProductSearchQualificationModelService {
         if (min != null && min.compareTo(BigDecimal.valueOf(5)) > 0) {
             throw invalid("rating minimum must not exceed 5");
         }
-        return new UserProductSearchQualificationPlan.RatingFilter(state, min, minCount);
+        return new UserProductSearchQualificationPlan.RatingFilter(
+                state, min, minCount, provenance(raw.provenance(), "rating"));
+    }
+
+    private UserProductSearchQualificationPlan.PriceTierFilter priceTier(RawEnumValues raw) {
+        UserProductSearchFilterState state = coreState(
+                raw.relevant(), raw.explicitAny(), !safe(raw.values()).isEmpty(), "priceTier");
+        List<UserProductPriceTier> values = state == UserProductSearchFilterState.VALUE
+                ? enumValues(raw.values(), UserProductPriceTier.class, "priceTier")
+                : List.of();
+        requireValuesForValueState(state, values, "priceTier");
+        return new UserProductSearchQualificationPlan.PriceTierFilter(
+                state, values, provenance(raw.provenance(), "priceTier"));
+    }
+
+    private UserProductSearchFilterState state(
+            Boolean relevant,
+            Boolean explicitAny,
+            boolean hasValue,
+            String field
+    ) {
+        boolean requiredRelevant = requiredFlag(relevant, field + ".relevant");
+        boolean requiredExplicitAny = requiredFlag(explicitAny, field + ".explicitAny");
+        if (!requiredRelevant && (requiredExplicitAny || hasValue)) {
+            throw invalid("an irrelevant decision cannot contain values or explicit indifference");
+        }
+        if (requiredExplicitAny && hasValue) {
+            throw invalid("explicit indifference cannot be combined with filter values");
+        }
+        if (!requiredRelevant) {
+            return UserProductSearchFilterState.NOT_APPLICABLE;
+        }
+        if (requiredExplicitAny) {
+            return UserProductSearchFilterState.ANY;
+        }
+        return hasValue ? UserProductSearchFilterState.VALUE : UserProductSearchFilterState.MISSING;
+    }
+
+    private UserProductSearchFilterState coreState(
+            Boolean relevant,
+            Boolean explicitAny,
+            boolean hasValue,
+            String field
+    ) {
+        if (!requiredFlag(relevant, field + ".relevant")) {
+            throw invalid(field + " is a core catalog filter and must remain relevant");
+        }
+        return state(true, explicitAny, hasValue, field);
+    }
+
+    private boolean requiredFlag(Boolean value, String field) {
+        if (value == null) {
+            throw invalid(field + " is required");
+        }
+        return value;
+    }
+
+    private UserProductSearchQualificationPlan.Provenance provenance(RawProvenance raw, String field) {
+        RawProvenance required = required(raw, field + ".provenance");
+        if (required.source() == null) {
+            throw invalid(field + " provenance source is required");
+        }
+        return new UserProductSearchQualificationPlan.Provenance(
+                required.source(), optionalText(required.evidence(), MAX_EVIDENCE_LENGTH));
     }
 
     private List<UserProductSearchQualificationPlan.DurableAttribute> durableAttributes(
@@ -481,6 +637,7 @@ public class UserProductSearchQualificationModelService {
         Map<String, String> effectiveSizes = new LinkedHashMap<>();
         effectiveAttributes.values().stream()
                 .filter(attribute -> attribute.name() == UserProductSearchAttributeName.SIZE)
+                .filter(attribute -> attribute.state() == UserProductSearchFilterState.VALUE)
                 .flatMap(attribute -> attribute.values().stream())
                 .forEach(value -> effectiveSizes.putIfAbsent(value.toLowerCase(Locale.ROOT), value));
 
@@ -514,33 +671,6 @@ public class UserProductSearchQualificationModelService {
                         entry.getValue().stream().limit(MAX_DURABLE_VALUES).toList()
                 ))
                 .toList();
-    }
-
-    private UserProductSearchQualificationPlan.PriceTierFilter priceTier(RawEnumValues raw) {
-        UserProductSearchFilterState state = state(raw.state(), "priceTier");
-        List<UserProductPriceTier> values = state == UserProductSearchFilterState.VALUE
-                ? enumValues(raw.values(), UserProductPriceTier.class, "priceTier")
-                : List.of();
-        requireValuesForValueState(state, values, "priceTier");
-        return new UserProductSearchQualificationPlan.PriceTierFilter(state, values);
-    }
-
-    private UserProductSearchQualificationPlan.ReferenceFilter unresolvedReference(
-            String field,
-            RawReference raw
-    ) {
-        UserProductSearchFilterState resolvedState = state(raw.state(), field);
-        if (resolvedState != UserProductSearchFilterState.ANY) {
-            resolvedState = UserProductSearchFilterState.NOT_APPLICABLE;
-        }
-        return new UserProductSearchQualificationPlan.ReferenceFilter(resolvedState, List.of());
-    }
-
-    private UserProductSearchFilterState state(UserProductSearchFilterState value, String field) {
-        if (value == null) {
-            throw invalid(field + " state is required");
-        }
-        return value;
     }
 
     private Long usdMinor(BigDecimal value, String field) {
@@ -593,12 +723,27 @@ public class UserProductSearchQualificationModelService {
         return List.copyOf(cleaned);
     }
 
+    private <T> List<T> distinctRequired(List<T> values, String field) {
+        if (values == null) {
+            throw invalid(field + " is required");
+        }
+        return values.stream().filter(java.util.Objects::nonNull).distinct().toList();
+    }
+
     private String requiredText(String value, int maxLength, String field) {
         String cleaned = blankToNull(value);
         if (cleaned == null || cleaned.length() > maxLength) {
             throw invalid(field + " was missing or too long");
         }
         return cleaned;
+    }
+
+    private String optionalText(String value, int maxLength) {
+        String cleaned = blankToNull(value);
+        if (cleaned == null) {
+            return null;
+        }
+        return cleaned.length() <= maxLength ? cleaned : cleaned.substring(0, maxLength).trim();
     }
 
     private String blankToNull(String value) {
@@ -657,28 +802,33 @@ public class UserProductSearchQualificationModelService {
             String effectiveQuery,
             String assistantMessage,
             List<String> suggestedReplies,
-            RawAvailable available,
+            List<UserProductSearchQuestionTarget> questionTargets,
             RawEnumValues condition,
             RawLocationFilter shipsTo,
             RawLocationsFilter shipsFrom,
             RawPrice price,
-            RawReference shops,
-            RawReference categories,
-            RawAttributes attributes,
+            List<RawAttribute> attributes,
             RawRating rating,
             RawEnumValues priceTier,
             List<RawDurableAttribute> durableAttributes
     ) {
     }
 
-    private record RawAvailable(UserProductSearchFilterState state, Boolean value) {
+    private record RawProvenance(UserProductSearchDecisionSource source, String evidence) {
     }
 
-    private record RawEnumValues(UserProductSearchFilterState state, List<String> values) {
+    private record RawEnumValues(
+            Boolean relevant,
+            Boolean explicitAny,
+            RawProvenance provenance,
+            List<String> values
+    ) {
     }
 
     private record RawLocationFilter(
-            UserProductSearchFilterState state,
+            Boolean relevant,
+            Boolean explicitAny,
+            RawProvenance provenance,
             String country,
             String region,
             String postalCode
@@ -688,19 +838,30 @@ public class UserProductSearchQualificationModelService {
     private record RawLocation(String country, String region, String postalCode) {
     }
 
-    private record RawLocationsFilter(UserProductSearchFilterState state, List<RawLocation> values) {
+    private record RawLocationsFilter(
+            Boolean relevant,
+            Boolean explicitAny,
+            RawProvenance provenance,
+            List<RawLocation> values
+    ) {
     }
 
-    private record RawPrice(UserProductSearchFilterState state, BigDecimal minUsd, BigDecimal maxUsd) {
+    private record RawPrice(
+            Boolean relevant,
+            Boolean explicitAny,
+            RawProvenance provenance,
+            BigDecimal minUsd,
+            BigDecimal maxUsd
+    ) {
     }
 
-    private record RawReference(UserProductSearchFilterState state, List<String> values) {
-    }
-
-    private record RawAttributes(UserProductSearchFilterState state, List<RawAttribute> values) {
-    }
-
-    private record RawAttribute(UserProductSearchAttributeName name, List<String> values) {
+    private record RawAttribute(
+            UserProductSearchAttributeName name,
+            Boolean relevant,
+            Boolean explicitAny,
+            RawProvenance provenance,
+            List<String> values
+    ) {
     }
 
     private record RawDurableAttribute(
@@ -710,6 +871,12 @@ public class UserProductSearchQualificationModelService {
     ) {
     }
 
-    private record RawRating(UserProductSearchFilterState state, BigDecimal min, Long minCount) {
+    private record RawRating(
+            Boolean relevant,
+            Boolean explicitAny,
+            RawProvenance provenance,
+            BigDecimal min,
+            Long minCount
+    ) {
     }
 }

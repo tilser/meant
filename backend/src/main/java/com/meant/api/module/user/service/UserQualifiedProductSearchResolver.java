@@ -27,6 +27,10 @@ public class UserQualifiedProductSearchResolver {
     ) {
         var snapshot = persistenceService.getReady(
                 new GetUserProductSearchQualificationQuery(userId, qualificationId));
+        if (!snapshot.plan().currentSchema()) {
+            throw UserException.notFound(
+                    "Product-search qualification uses an outdated plan; start a new qualification");
+        }
         if (snapshot.updatedAt().plus(searchProperties.cacheTtl()).isBefore(Instant.now())) {
             throw UserException.notFound("Product-search qualification expired");
         }

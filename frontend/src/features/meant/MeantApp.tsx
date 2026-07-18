@@ -2129,7 +2129,7 @@ export function MeantApp() {
         turn.onActivities?.([
           {
             agent: 'qualification',
-            label: 'Waiting for one more search preference',
+            label: 'Waiting for your search preferences',
             state: 'done',
             updatedAt: Date.now(),
           },

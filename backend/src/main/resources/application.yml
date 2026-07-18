@@ -248,7 +248,7 @@ user:
       quota: ${USER_COLLECTIONS_INVENTORY_QUOTA:500}
   product-search:
     search-version: v4
-    query-parser-prompt-version: v2
+    query-parser-prompt-version: v3
     explanation-prompt-version: v3
     cache-ttl: 24h
     product-detail-session-ttl: ${USER_PRODUCT_DETAIL_SESSION_TTL:30m}
