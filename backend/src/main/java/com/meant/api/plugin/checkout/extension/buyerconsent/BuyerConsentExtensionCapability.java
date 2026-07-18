@@ -30,7 +30,7 @@ public class BuyerConsentExtensionCapability implements UcpCapability<Void, Void
     }
 
     @Override
-    public Object buildArguments(Void request, NegotiatedCapabilities activeCapabilities) {
+    public Void buildArguments(Void request, NegotiatedCapabilities activeCapabilities) {
         return null;
     }
 

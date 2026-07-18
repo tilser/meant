@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service.dto;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 public record MerchantSemanticProductResult(
@@ -43,7 +44,7 @@ public record MerchantSemanticProductResult(
         String detailPriceCurrency,
         Integer totalVariants,
         Boolean requiresSellingPlan,
-        List<Object> sellingPlanGroups,
+        List<ProductSellingPlanGroup> sellingPlanGroups,
         String selectedVariantId,
         String selectedVariantTitle,
         List<ProductDetailsResponse.SelectedOption> selectedOptions,
@@ -56,4 +57,10 @@ public record MerchantSemanticProductResult(
         double productRerankScore,
         int rank
 ) {
+
+    public MerchantSemanticProductResult {
+        sellingPlanGroups = sellingPlanGroups == null
+                ? List.of()
+                : sellingPlanGroups.stream().filter(Objects::nonNull).toList();
+    }
 }

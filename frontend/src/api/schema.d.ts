@@ -2696,20 +2696,59 @@ export interface components {
             /** Format: int32 */
             quantity?: number;
         };
+        /** @description Optional buyer identity used for merchant cart estimates. */
+        CartBuyerIdentityRequest: {
+            /** @example buyer@example.com */
+            email?: string;
+            /** @example +14155552671 */
+            phoneNumber?: string;
+            /** @example Ada */
+            firstName?: string;
+            /** @example Lovelace */
+            lastName?: string;
+            /** @example US */
+            countryCode?: string;
+        };
+        /** @description Postal address used for physical cart fulfillment. */
+        CartDeliveryAddressRequest: {
+            firstName?: string;
+            lastName?: string;
+            phoneNumber?: string;
+            streetAddress?: string;
+            extendedAddress?: string;
+            addressLocality?: string;
+            addressRegion?: string;
+            postalCode?: string;
+            addressCountry?: string;
+        };
+        /** @description Delivery destination update for a cart fulfillment method. */
+        CartDeliveryAddressSelectionRequest: {
+            methodId?: string;
+            id?: string;
+            selected?: boolean;
+            deliveryAddress?: components["schemas"]["CartDeliveryAddressRequest"];
+            firstName?: string;
+            lastName?: string;
+            phoneNumber?: string;
+            streetAddress?: string;
+            extendedAddress?: string;
+            addressLocality?: string;
+            addressRegion?: string;
+            postalCode?: string;
+            addressCountry?: string;
+        };
+        /** @description Selected delivery option for a merchant fulfillment group. */
+        CartDeliveryOptionSelectionRequest: {
+            methodId?: string;
+            groupId?: string;
+            selectedOptionId?: string;
+        };
         CartCreateRequest: {
             addItems: components["schemas"]["CartAddItemRequest"][];
-            buyerIdentity?: {
-                [key: string]: unknown;
-            };
-            deliveryAddressesToAdd?: {
-                [key: string]: unknown;
-            }[];
-            deliveryAddressesToReplace?: {
-                [key: string]: unknown;
-            }[];
-            selectedDeliveryOptions?: {
-                [key: string]: unknown;
-            }[];
+            buyerIdentity?: components["schemas"]["CartBuyerIdentityRequest"];
+            deliveryAddressesToAdd?: components["schemas"]["CartDeliveryAddressSelectionRequest"][];
+            deliveryAddressesToReplace?: components["schemas"]["CartDeliveryAddressSelectionRequest"][];
+            selectedDeliveryOptions?: components["schemas"]["CartDeliveryOptionSelectionRequest"][];
             discountCodes: string[];
             giftCardCodes: string[];
             note?: string;
@@ -3141,18 +3180,10 @@ export interface components {
             updateItems?: components["schemas"]["CartUpdateItemRequest"][];
             removeCartLineIds?: string[];
             removeRemoteCartLineIds?: string[];
-            buyerIdentity?: {
-                [key: string]: unknown;
-            };
-            deliveryAddressesToAdd?: {
-                [key: string]: unknown;
-            }[];
-            deliveryAddressesToReplace?: {
-                [key: string]: unknown;
-            }[];
-            selectedDeliveryOptions?: {
-                [key: string]: unknown;
-            }[];
+            buyerIdentity?: components["schemas"]["CartBuyerIdentityRequest"];
+            deliveryAddressesToAdd?: components["schemas"]["CartDeliveryAddressSelectionRequest"][];
+            deliveryAddressesToReplace?: components["schemas"]["CartDeliveryAddressSelectionRequest"][];
+            selectedDeliveryOptions?: components["schemas"]["CartDeliveryOptionSelectionRequest"][];
             discountCodes?: string[];
             giftCardCodes?: string[];
             note?: string;

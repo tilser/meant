@@ -41,7 +41,7 @@ public record SigningKey(
     }
 
     public PublicSigningKey toPublicSigningKey() {
-        return new PublicSigningKey(kid, purpose, status, publicJwk.toJSONObject(), advertiseUntil);
+        return new PublicSigningKey(kid, purpose, status, JsonWebKey.from(publicJwk), advertiseUntil);
     }
 
     private static String requireText(String value, String fieldName) {

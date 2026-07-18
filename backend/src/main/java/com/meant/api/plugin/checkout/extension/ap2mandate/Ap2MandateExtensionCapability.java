@@ -7,8 +7,9 @@ import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import java.util.List;
-import java.util.Map;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 @Component
 public class Ap2MandateExtensionCapability implements UcpCapability<Void, Void> {
@@ -27,7 +28,7 @@ public class Ap2MandateExtensionCapability implements UcpCapability<Void, Void> 
                 "ap2-mandates",
                 "ap2_mandate.json",
                 List.of(CheckoutCapabilityMetadata.CHECKOUT),
-                Map.of("vp_formats_supported", Map.of("dc+sd-jwt", Map.of()))
+                config()
         ));
     }
 
@@ -39,5 +40,13 @@ public class Ap2MandateExtensionCapability implements UcpCapability<Void, Void> 
     @Override
     public Void parseResponse(UcpToolResponse response) {
         return null;
+    }
+
+    private JsonNode config() {
+        var formats = JsonNodeFactory.instance.objectNode();
+        formats.set("dc+sd-jwt", JsonNodeFactory.instance.objectNode());
+        var config = JsonNodeFactory.instance.objectNode();
+        config.set("vp_formats_supported", formats);
+        return config;
     }
 }

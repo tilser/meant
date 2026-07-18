@@ -4,20 +4,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.checkout.exception.CheckoutSafetyException;
-import com.meant.api.plugin.signing.Jcs;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 class CheckoutTotalsReconcilerTest {
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private CheckoutTotalsReconciler reconciler;
 
     @BeforeEach
     void setUp() {
-        reconciler = new CheckoutTotalsReconciler(new ObjectMapper(), new Jcs());
+        reconciler = new CheckoutTotalsReconciler();
     }
 
     @Test
@@ -30,7 +33,7 @@ class CheckoutTotalsReconcilerTest {
 
     @Test
     void totalsMismatchRejectsCheckout() {
-        Map<String, Object> checkout = checkoutWith("total_amount", money(2099L, "USD"));
+        UcpCheckoutResponse checkout = checkoutWith("total_amount", money(2099L, "USD"));
 
         assertThatThrownBy(() -> reconciler.rejectIfMismatch(expected(), checkout))
                 .isInstanceOf(CheckoutSafetyException.class)
@@ -39,7 +42,7 @@ class CheckoutTotalsReconcilerTest {
 
     @Test
     void currencyMismatchRejectsCheckout() {
-        Map<String, Object> checkout = checkoutWith("total_amount", money(1999L, "EUR"));
+        UcpCheckoutResponse checkout = checkoutWith("total_amount", money(1999L, "EUR"));
 
         CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
 
@@ -48,8 +51,31 @@ class CheckoutTotalsReconcilerTest {
     }
 
     @Test
+    void merchantMismatchRejectsCheckout() {
+        UcpCheckoutResponse checkout = checkoutWith("merchant_id", "merchant-2");
+
+        CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
+
+        assertThat(result.match()).isFalse();
+        assertThat(result.violations()).contains("merchant identity mismatch");
+    }
+
+    @Test
+    void subscriptionTermsMismatchRejectsCheckout() {
+        UcpCheckoutResponse checkout = checkoutWith(
+                "subscription",
+                Map.of("interval", "year", "trial_days", 0)
+        );
+
+        CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
+
+        assertThat(result.match()).isFalse();
+        assertThat(result.violations()).contains("subscription terms mismatch");
+    }
+
+    @Test
     void lineItemMismatchRejectsCheckout() {
-        Map<String, Object> checkout = checkoutWith(
+        UcpCheckoutResponse checkout = checkoutWith(
                 "line_items",
                 List.of(line("line-1", "variant-2", 1, 1499L))
         );
@@ -62,7 +88,7 @@ class CheckoutTotalsReconcilerTest {
 
     @Test
     void shippingMismatchRejectsCheckout() {
-        Map<String, Object> checkout = checkoutWith(
+        UcpCheckoutResponse checkout = checkoutWith(
                 "shipping_address",
                 Map.of("country", "US", "postal_code", "10002")
         );
@@ -84,7 +110,7 @@ class CheckoutTotalsReconcilerTest {
                 200L,
                 500L,
                 0L,
-                shippingAddress(),
+                expectedShippingAddress(),
                 "standard",
                 subscriptionTerms(),
                 1998L
@@ -98,7 +124,7 @@ class CheckoutTotalsReconcilerTest {
 
     @Test
     void idLessLineItemsReturnMismatchInsteadOfThrowing() {
-        Map<String, Object> checkout = checkoutWith(
+        UcpCheckoutResponse checkout = checkoutWith(
                 "line_items",
                 List.of(lineWithNullableIds(null, null, 1, 1499L))
         );
@@ -111,7 +137,7 @@ class CheckoutTotalsReconcilerTest {
 
     @Test
     void nullCurrencyReturnsMismatchInsteadOfThrowing() {
-        Map<String, Object> checkout = checkoutWith("total_amount", Map.of("amount_minor", 1999L));
+        UcpCheckoutResponse checkout = checkoutWith("total_amount", Map.of("amount_minor", 1999L));
 
         CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
 
@@ -120,10 +146,10 @@ class CheckoutTotalsReconcilerTest {
     }
 
     @Test
-    void oversizedQuantityReturnsMismatchInsteadOfThrowing() {
-        Map<String, Object> checkout = checkoutWith(
+    void missingQuantityReturnsMismatchInsteadOfThrowing() {
+        UcpCheckoutResponse checkout = checkoutWith(
                 "line_items",
-                List.of(lineWithNullableIds("line-1", "variant-1", "123456789012345", 1499L))
+                List.of(lineWithNullableIds("line-1", "variant-1", null, 1499L))
         );
 
         CheckoutTotalsReconciler.ReconciliationResult result = reconciler.reconcile(expected(), checkout);
@@ -142,7 +168,7 @@ class CheckoutTotalsReconcilerTest {
                 200L,
                 500L,
                 0L,
-                shippingAddress(),
+                expectedShippingAddress(),
                 "standard",
                 subscriptionTerms(),
                 1999L
@@ -159,14 +185,18 @@ class CheckoutTotalsReconcilerTest {
         );
     }
 
-    private Map<String, Object> checkout() {
-        return Map.of("checkout", baseCheckout());
+    private UcpCheckoutResponse checkout() {
+        return checkoutResponse(baseCheckout());
     }
 
-    private Map<String, Object> checkoutWith(String key, Object value) {
+    private UcpCheckoutResponse checkoutWith(String key, Object value) {
         Map<String, Object> checkout = new java.util.LinkedHashMap<>(baseCheckout());
         checkout.put(key, value);
-        return Map.of("checkout", checkout);
+        return checkoutResponse(checkout);
+    }
+
+    private UcpCheckoutResponse checkoutResponse(Map<String, Object> checkout) {
+        return objectMapper.convertValue(Map.of("checkout", checkout), UcpCheckoutResponse.class);
     }
 
     private Map<String, Object> baseCheckout() {
@@ -175,13 +205,19 @@ class CheckoutTotalsReconcilerTest {
                 "merchant_id", "merchant-1",
                 "total_amount", money(1999L, "USD"),
                 "tax_amount", money(200L, "USD"),
-                "discount_amount", money(500L, "USD"),
-                "tip_amount", money(0L, "USD"),
+                "totals", List.of(
+                        total("discount", 500L),
+                        total("tip", 0L)
+                ),
                 "line_items", List.of(line("line-1", "variant-1", 1, 1499L)),
-                "shipping_address", shippingAddress(),
+                "shipping_address", shippingAddressPayload(),
                 "shipping_method", Map.of("handle", "standard"),
                 "subscription", subscriptionTerms()
         );
+    }
+
+    private Map<String, Object> total(String type, Long amount) {
+        return Map.of("type", type, "amount", money(amount, "USD"));
     }
 
     private Map<String, Object> line(String id, String variantId, Integer quantity, Long totalAmount) {
@@ -211,11 +247,15 @@ class CheckoutTotalsReconcilerTest {
         return Map.of("amount_minor", amount, "currency", currency);
     }
 
-    private Map<String, Object> shippingAddress() {
+    private Map<String, Object> shippingAddressPayload() {
         return Map.of("country", "US", "postal_code", "10001");
     }
 
-    private Map<String, Object> subscriptionTerms() {
-        return Map.of("interval", "month", "trial_days", 0);
+    private BuyerConsentShippingAddress expectedShippingAddress() {
+        return new BuyerConsentShippingAddress(null, null, null, "10001", "US");
+    }
+
+    private JsonNode subscriptionTerms() {
+        return objectMapper.valueToTree(Map.of("interval", "month", "trial_days", 0));
     }
 }

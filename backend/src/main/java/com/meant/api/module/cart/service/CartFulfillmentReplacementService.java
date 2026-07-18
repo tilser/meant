@@ -3,6 +3,9 @@ package com.meant.api.module.cart.service;
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -10,23 +13,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TreeMap;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 
-/** Merges partial delivery changes into the complete ordered UCP fulfillment method state. */
+/** Merges partial delivery changes into complete ordered UCP fulfillment state. */
 @Service
 public class CartFulfillmentReplacementService {
 
     public CartToolArguments.Fulfillment merge(
             CartToolArguments.Fulfillment current,
-            List<Map<String, Object>> addressesToAdd,
-            List<Map<String, Object>> addressesToReplace,
-            List<Map<String, Object>> selectedOptions
+            List<CartDeliveryAddressSelection> addressesToAdd,
+            List<CartDeliveryAddressSelection> addressesToReplace,
+            List<CartDeliveryOptionSelection> selectedOptions
     ) {
         if (addressesToAdd == null && addressesToReplace == null && selectedOptions == null) {
             return current;
         }
-        List<Map<String, Object>> methods = current == null ? List.of() : safeList(current.methods());
+        List<CartToolArguments.FulfillmentMethod> methods = current == null
+                ? List.of() : safeList(current.methods());
         if (methods.isEmpty()) {
             return CartToolArguments.fulfillment(addressesToAdd, addressesToReplace, selectedOptions);
         }
@@ -34,208 +38,283 @@ public class CartFulfillmentReplacementService {
             throw CartException.rejected("Existing fulfillment methods cannot contain null entries");
         }
 
-        List<Map<String, Object>> merged = new ArrayList<>(methods);
+        List<CartToolArguments.FulfillmentMethod> merged = new ArrayList<>(methods);
         if (addressesToReplace != null) {
-            apply(merged, addressesToReplace, "destinations", UpdateKind.REPLACE_DESTINATIONS);
+            applyAddresses(merged, addressesToReplace, true);
         }
         if (addressesToAdd != null && !addressesToAdd.isEmpty()) {
-            apply(merged, addressesToAdd, "destinations", UpdateKind.ADD_DESTINATIONS);
+            applyAddresses(merged, addressesToAdd, false);
         }
         if (selectedOptions != null) {
-            apply(merged, selectedOptions, "groups", UpdateKind.MERGE_GROUPS);
+            applyOptions(merged, selectedOptions);
         }
-        return new CartToolArguments.Fulfillment(List.copyOf(merged));
+        return new CartToolArguments.Fulfillment(List.copyOf(merged), current.extensions());
     }
 
-    private void apply(
-            List<Map<String, Object>> methods,
-            List<Map<String, Object>> requests,
-            String collectionKey,
-            UpdateKind kind
+    private void applyAddresses(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            List<CartDeliveryAddressSelection> requests,
+            boolean replace
     ) {
-        Map<Integer, List<Map<String, Object>>> byMethod = targets(methods, requests, collectionKey);
-        for (Map.Entry<Integer, List<Map<String, Object>>> entry : byMethod.entrySet()) {
-            int index = entry.getKey();
-            Map<String, Object> method = new LinkedHashMap<>(methods.get(index));
-            List<Map<String, Object>> requested = mapped(entry.getValue(), kind);
-            boolean clear = entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(this::clearMarker);
-            boolean malformed = entry.getValue().stream()
-                    .anyMatch(request -> !clearMarker(request) && map(request, collectionKey).isEmpty());
-            if (malformed || (kind == UpdateKind.MERGE_GROUPS && requested.stream()
-                    .anyMatch(group -> text(group.get("id")).isEmpty()))) {
-                throw CartException.rejected("Fulfillment update identity is incomplete");
-            }
+        Map<Integer, List<CartDeliveryAddressSelection>> targets = addressTargets(methods, requests);
+        for (Map.Entry<Integer, List<CartDeliveryAddressSelection>> entry : targets.entrySet()) {
+            CartToolArguments.FulfillmentMethod method = methods.get(entry.getKey());
+            boolean clear = entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(this::addressClear);
+            List<CartDeliveryAddress> requested = entry.getValue().stream()
+                    .filter(request -> !addressClear(request))
+                    .map(CartDeliveryAddressSelection::address)
+                    .toList();
             if (clear && !requested.isEmpty()) {
                 throw CartException.rejected("A fulfillment update cannot clear and replace the same method state");
             }
-            List<Map<String, Object>> existing = maps(method.get(collectionKey));
-            List<Map<String, Object>> replacement = switch (kind) {
-                case REPLACE_DESTINATIONS -> clear ? List.of() : sorted(requested);
-                case ADD_DESTINATIONS -> mergeByIdentity(existing, requested, false);
-                case MERGE_GROUPS -> clear ? List.of() : mergeByIdentity(existing, requested, true);
-            };
-            method.put(collectionKey, replacement);
-            methods.set(index, method);
+            List<CartDeliveryAddress> destinations = clear ? List.of()
+                    : replace ? replacementAddresses(method.destinations(), requested)
+                    : mergeAddresses(method.destinations(), requested);
+            String requestedSelection = entry.getValue().stream()
+                    .filter(request -> Boolean.TRUE.equals(request.selected()))
+                    .map(CartDeliveryAddressSelection::address)
+                    .filter(Objects::nonNull)
+                    .map(CartDeliveryAddress::id)
+                    .filter(this::hasText)
+                    .findFirst()
+                    .orElse(null);
+            String selectedDestinationId = requestedSelection != null
+                    ? requestedSelection
+                    : retainedSelection(method.selectedDestinationId(), destinations);
+            methods.set(entry.getKey(), new CartToolArguments.FulfillmentMethod(
+                    method.id(), method.type(), method.lineItemIds(), destinations,
+                    selectedDestinationId, method.groups(), method.extensions()));
         }
     }
 
-    private Map<Integer, List<Map<String, Object>>> targets(
-            List<Map<String, Object>> methods,
-            List<Map<String, Object>> requests,
-            String collectionKey
+    private void applyOptions(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            List<CartDeliveryOptionSelection> requests
+    ) {
+        Map<Integer, List<CartDeliveryOptionSelection>> targets = optionTargets(methods, requests);
+        for (Map.Entry<Integer, List<CartDeliveryOptionSelection>> entry : targets.entrySet()) {
+            CartToolArguments.FulfillmentMethod method = methods.get(entry.getKey());
+            boolean clear = entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(this::optionClear);
+            if (clear && entry.getValue().stream().anyMatch(request -> !optionClear(request))) {
+                throw CartException.rejected("A fulfillment update cannot clear and replace the same method state");
+            }
+            List<CartToolArguments.FulfillmentGroup> groups = clear
+                    ? List.of() : mergeGroups(method.groups(), entry.getValue());
+            methods.set(entry.getKey(), new CartToolArguments.FulfillmentMethod(
+                    method.id(), method.type(), method.lineItemIds(), method.destinations(),
+                    method.selectedDestinationId(), groups, method.extensions()));
+        }
+    }
+
+    private Map<Integer, List<CartDeliveryAddressSelection>> addressTargets(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            List<CartDeliveryAddressSelection> requests
     ) {
         if (requests.isEmpty()) {
-            if (methods.size() != 1) {
-                throw ambiguous();
-            }
-            return Map.of(0, List.of());
+            return Map.of(singleMethod(methods), List.of());
         }
-        Map<Integer, List<Map<String, Object>>> targets = new LinkedHashMap<>();
-        for (Map<String, Object> request : requests) {
+        Map<Integer, List<CartDeliveryAddressSelection>> targets = new LinkedHashMap<>();
+        for (CartDeliveryAddressSelection request : requests) {
             if (request == null) {
                 throw CartException.rejected("Fulfillment update entries cannot be null");
             }
-            int index = resolveMethod(methods, request, collectionKey);
-            targets.computeIfAbsent(index, ignored -> new ArrayList<>()).add(request);
+            int target = resolveAddressMethod(methods, request);
+            targets.computeIfAbsent(target, ignored -> new ArrayList<>()).add(request);
         }
         return targets;
     }
 
-    private int resolveMethod(
-            List<Map<String, Object>> methods,
-            Map<String, Object> request,
-            String collectionKey
+    private Map<Integer, List<CartDeliveryOptionSelection>> optionTargets(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            List<CartDeliveryOptionSelection> requests
+    ) {
+        if (requests.isEmpty()) {
+            return Map.of(singleMethod(methods), List.of());
+        }
+        Map<Integer, List<CartDeliveryOptionSelection>> targets = new LinkedHashMap<>();
+        for (CartDeliveryOptionSelection request : requests) {
+            if (request == null) {
+                throw CartException.rejected("Fulfillment update entries cannot be null");
+            }
+            int target = resolveOptionMethod(methods, request);
+            targets.computeIfAbsent(target, ignored -> new ArrayList<>()).add(request);
+        }
+        return targets;
+    }
+
+    private int resolveAddressMethod(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            CartDeliveryAddressSelection request
     ) {
         if (methods.size() == 1) {
             return 0;
         }
-        String explicitMethodId = text(first(request, "method_id", "fulfillment_method_id", "methodId"));
+        List<Integer> matches = indexes(methods, request.methodId(),
+                request.address() == null ? null : request.address().id(), true);
+        return exactlyOne(matches);
+    }
+
+    private int resolveOptionMethod(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            CartDeliveryOptionSelection request
+    ) {
+        if (methods.size() == 1) {
+            return 0;
+        }
+        List<Integer> matches = indexes(methods, request.methodId(), request.groupId(), false);
+        return exactlyOne(matches);
+    }
+
+    private List<Integer> indexes(
+            List<CartToolArguments.FulfillmentMethod> methods,
+            String explicitMethodId,
+            String memberId,
+            boolean destinations
+    ) {
         List<Integer> matches = new ArrayList<>();
         for (int index = 0; index < methods.size(); index++) {
-            Map<String, Object> method = methods.get(index);
-            if (!explicitMethodId.isEmpty()) {
-                if (explicitMethodId.equals(text(first(method, "id", "method_id", "methodId")))) {
+            CartToolArguments.FulfillmentMethod method = methods.get(index);
+            if (hasText(explicitMethodId)) {
+                if (explicitMethodId.trim().equals(method.id())) {
                     matches.add(index);
                 }
-                continue;
-            }
-            Map<String, Object> mapped = map(request, collectionKey);
-            String itemId = text(mapped.get("id"));
-            if (!itemId.isEmpty() && maps(method.get(collectionKey)).stream()
-                    .anyMatch(item -> itemId.equals(text(item.get("id"))))) {
+            } else if (hasText(memberId) && (destinations
+                    ? method.destinations().stream().anyMatch(value -> memberId.trim().equals(value.id()))
+                    : method.groups().stream().anyMatch(value -> memberId.trim().equals(value.id())))) {
                 matches.add(index);
             }
         }
+        return matches;
+    }
+
+    private int exactlyOne(List<Integer> matches) {
         if (matches.size() != 1) {
             throw ambiguous();
         }
         return matches.getFirst();
     }
 
-    private List<Map<String, Object>> mapped(List<Map<String, Object>> requests, UpdateKind kind) {
-        String collectionKey = kind == UpdateKind.MERGE_GROUPS ? "groups" : "destinations";
-        return requests.stream().map(request -> map(request, collectionKey))
-                .filter(value -> !value.isEmpty()).toList();
+    private int singleMethod(List<CartToolArguments.FulfillmentMethod> methods) {
+        if (methods.size() != 1) {
+            throw ambiguous();
+        }
+        return 0;
     }
 
-    private Map<String, Object> map(Map<String, Object> request, String collectionKey) {
-        return "groups".equals(collectionKey)
-                ? CartToolArguments.fulfillmentGroup(request)
-                : CartToolArguments.destination(request);
-    }
-
-    private List<Map<String, Object>> mergeByIdentity(
-            List<Map<String, Object>> existing,
-            List<Map<String, Object>> requested,
-            boolean mergeFields
+    private List<CartDeliveryAddress> mergeAddresses(
+            List<CartDeliveryAddress> existing,
+            List<CartDeliveryAddress> requested
     ) {
-        List<Map<String, Object>> merged = new ArrayList<>(existing);
-        List<Map<String, Object>> additions = new ArrayList<>();
-        for (Map<String, Object> item : requested) {
-            String id = text(item.get("id"));
-            int index = indexOf(merged, id);
+        List<CartDeliveryAddress> merged = new ArrayList<>(safeList(existing));
+        List<CartDeliveryAddress> additions = new ArrayList<>();
+        for (CartDeliveryAddress address : requested) {
+            int index = addressIndex(merged, address.id());
             if (index < 0) {
-                additions.add(item);
-            } else if (mergeFields) {
-                Map<String, Object> value = new LinkedHashMap<>(merged.get(index));
-                value.putAll(item);
-                merged.set(index, value);
+                additions.add(address);
             } else {
-                merged.set(index, item);
+                merged.set(index, preserveAddressExtensions(merged.get(index), address));
             }
         }
-        merged.addAll(sorted(additions));
+        merged.addAll(sortedAddresses(additions));
         return List.copyOf(merged);
     }
 
-    private int indexOf(List<Map<String, Object>> values, String id) {
-        if (id.isEmpty()) {
+    private List<CartDeliveryAddress> replacementAddresses(
+            List<CartDeliveryAddress> existing,
+            List<CartDeliveryAddress> requested
+    ) {
+        return sortedAddresses(requested.stream()
+                .map(address -> {
+                    int index = addressIndex(safeList(existing), address.id());
+                    return index < 0 ? address : preserveAddressExtensions(existing.get(index), address);
+                })
+                .toList());
+    }
+
+    private CartDeliveryAddress preserveAddressExtensions(
+            CartDeliveryAddress existing,
+            CartDeliveryAddress requested
+    ) {
+        Map<String, JsonNode> extensions = new LinkedHashMap<>(existing.extensions());
+        extensions.putAll(requested.extensions());
+        return new CartDeliveryAddress(
+                requested.id(), requested.firstName(), requested.lastName(), requested.phoneNumber(),
+                requested.streetAddress(), requested.extendedAddress(), requested.addressLocality(),
+                requested.addressRegion(), requested.postalCode(), requested.addressCountry(), extensions);
+    }
+
+    private String retainedSelection(String selectedDestinationId, List<CartDeliveryAddress> destinations) {
+        if (!hasText(selectedDestinationId)) {
+            return null;
+        }
+        String normalizedId = selectedDestinationId.trim();
+        return destinations.stream().anyMatch(address -> normalizedId.equals(address.id()))
+                ? selectedDestinationId
+                : null;
+    }
+
+    private List<CartToolArguments.FulfillmentGroup> mergeGroups(
+            List<CartToolArguments.FulfillmentGroup> existing,
+            List<CartDeliveryOptionSelection> requested
+    ) {
+        List<CartToolArguments.FulfillmentGroup> merged = new ArrayList<>(safeList(existing));
+        for (CartDeliveryOptionSelection selection : requested) {
+            if (!hasText(selection.groupId()) || !hasText(selection.selectedOptionId())) {
+                throw CartException.rejected("Fulfillment update identity is incomplete");
+            }
+            int index = groupIndex(merged, selection.groupId());
+            if (index < 0) {
+                merged.add(new CartToolArguments.FulfillmentGroup(
+                        selection.groupId().trim(), List.of(), List.of(), selection.selectedOptionId().trim()));
+            } else {
+                CartToolArguments.FulfillmentGroup group = merged.get(index);
+                merged.set(index, new CartToolArguments.FulfillmentGroup(
+                        group.id(), group.lineItemIds(), group.options(), selection.selectedOptionId().trim(),
+                        group.extensions()));
+            }
+        }
+        return merged.stream().sorted(Comparator.comparing(CartToolArguments.FulfillmentGroup::id)).toList();
+    }
+
+    private int addressIndex(List<CartDeliveryAddress> values, String id) {
+        if (!hasText(id)) {
             return -1;
         }
         for (int index = 0; index < values.size(); index++) {
-            if (id.equals(text(values.get(index).get("id")))) {
+            if (id.trim().equals(values.get(index).id())) {
                 return index;
             }
         }
         return -1;
     }
 
-    private List<Map<String, Object>> sorted(List<Map<String, Object>> values) {
-        return values.stream().sorted(Comparator.comparing(this::stableKey)).toList();
-    }
-
-    private String stableKey(Map<String, Object> value) {
-        return text(value.get("id")) + '\u0000' + new TreeMap<>(value);
-    }
-
-    private boolean clearMarker(Map<String, Object> request) {
-        if (request == null || request.isEmpty()) {
-            return true;
-        }
-        return request.keySet().stream().allMatch(key ->
-                key.equals("method_id") || key.equals("fulfillment_method_id") || key.equals("methodId"));
-    }
-
-    private List<Map<String, Object>> maps(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return List.of();
-        }
-        List<Map<String, Object>> values = new ArrayList<>();
-        for (Object item : list) {
-            if (!(item instanceof Map<?, ?> map)) {
-                throw CartException.rejected("Existing fulfillment state is malformed");
-            }
-            Map<String, Object> copy = new LinkedHashMap<>();
-            map.forEach((key, entry) -> copy.put(String.valueOf(key), entry));
-            values.add(copy);
-        }
-        return List.copyOf(values);
-    }
-
-    private Object first(Map<String, Object> values, String... keys) {
-        if (values == null) {
-            return null;
-        }
-        for (String key : keys) {
-            if (values.get(key) != null) {
-                return values.get(key);
+    private int groupIndex(List<CartToolArguments.FulfillmentGroup> values, String id) {
+        for (int index = 0; index < values.size(); index++) {
+            if (id.trim().equals(values.get(index).id())) {
+                return index;
             }
         }
-        return null;
+        return -1;
     }
 
-    private String text(Object value) {
-        return value == null ? "" : String.valueOf(value).trim();
+    private List<CartDeliveryAddress> sortedAddresses(List<CartDeliveryAddress> values) {
+        return values.stream().sorted(Comparator.comparing(value -> Objects.toString(value.id(), ""))).toList();
+    }
+
+    private boolean addressClear(CartDeliveryAddressSelection request) {
+        return request.address() == null || request.address().empty();
+    }
+
+    private boolean optionClear(CartDeliveryOptionSelection request) {
+        return !hasText(request.groupId()) && !hasText(request.selectedOptionId());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private CartException ambiguous() {
         return CartException.binding(CartException.BindingFailure.IDENTITY_MISMATCH,
                 "Fulfillment update does not identify exactly one existing method");
-    }
-
-    private enum UpdateKind {
-        REPLACE_DESTINATIONS,
-        ADD_DESTINATIONS,
-        MERGE_GROUPS
     }
 }

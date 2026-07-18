@@ -7,8 +7,15 @@ import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
+import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressSelectionInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartBuyer;
+import com.meant.api.plugin.cart.common.dto.CartContext;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartSignals;
 import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.update.dto.CartReplacementState;
@@ -47,36 +54,78 @@ class CartReplacementServiceTest {
                 List.of(new UpdateCartCommand.UpdateItem(first.getId(), "remote-a", 4)),
                 null, null, null, null, null, null);
 
-        var request = service.build(cart, command, List.of(), Map.of("postal_code", "10001"), remoteCart());
+        var request = service.build(
+                cart,
+                command,
+                List.of(),
+                new CartContext(null, null, "10001", null, null, null, List.of()),
+                remoteCart());
         CartReplacementState state = request.replacementState();
 
         assertThat(state.lineItems()).extracting(CartAddItem::quantity).containsExactly(4, 2);
         assertThat(state.lineItems().getFirst().productId()).isEqualTo("product-a");
         assertThat(state.lineItems().getFirst().selectedOptions())
                 .containsExactly(new CartAddItem.SelectedOption("variant", "Color", "Black"));
-        assertThat(state.buyer()).containsEntry("email", "buyer@example.test");
-        assertThat(state.context()).containsEntry("address_country", "US").containsEntry("postal_code", "10001");
-        assertThat(state.signals()).containsEntry("com.meant.observed", "trusted");
+        assertThat(state.buyer().email()).isEqualTo("buyer@example.test");
+        assertThat(state.buyer().extensions()).containsKey("com.shopify.buyer-token");
+        assertThat(state.context().addressCountry()).isEqualTo("US");
+        assertThat(state.context().postalCode()).isEqualTo("10001");
+        assertThat(state.signals().extensions()).containsKey("com.meant.observed");
+        assertThat(state.signals().extensions().get("com.meant.observed").asText()).isEqualTo("trusted");
         assertThat(state.discounts().codes()).containsExactly("SAVE10");
         assertThat(state.giftCardCodes()).containsExactly("GIFT1");
-        assertThat(state.fulfillment().methods().getFirst().get("groups")).isEqualTo(
-                List.of(Map.of("id", "delivery-a", "selected_option_id", "express")));
+        assertThat(state.fulfillment().methods().getFirst().groups().getFirst().id()).isEqualTo("delivery-a");
+        assertThat(state.fulfillment().methods().getFirst().groups().getFirst().selectedOptionId())
+                .isEqualTo("express");
+        assertThat(state.fulfillment().extensions()).containsKey("com.shopify.fulfillment-token");
+        assertThat(state.fulfillment().methods().getFirst().extensions()).containsKey("com.shopify.method-token");
+        assertThat(state.fulfillment().methods().getFirst().destinations().getFirst().extensions())
+                .containsKey("com.shopify.delivery-preference");
         assertThat(state.note()).isEqualTo("leave at reception");
     }
 
     @Test
     void selectedDeliveryMutationPreservesRemoteDestinationAndOtherState() {
         UpdateCartCommand command = command(List.of(), null, null, null,
-                List.of(Map.of("group_id", "delivery-a", "selected_option_id", "standard")), null, null);
+                List.of(new CartDeliveryOptionSelectionInput(null, "delivery-a", "standard")), null, null);
 
-        CartReplacementState state = service.build(cart, command, List.of(), Map.of(), remoteCart())
+        CartReplacementState state = service.build(cart, command, List.of(), null, remoteCart())
                 .replacementState();
 
-        assertThat(state.fulfillment().methods().getFirst().get("destinations"))
-                .isEqualTo(List.of(Map.of("id", "home", "postal_code", "10001")));
-        assertThat(state.buyer()).containsEntry("email", "buyer@example.test");
+        assertThat(state.fulfillment().methods().getFirst().destinations().getFirst().id()).isEqualTo("home");
+        assertThat(state.fulfillment().methods().getFirst().destinations().getFirst().postalCode())
+                .isEqualTo("10001");
+        assertThat(state.buyer().email()).isEqualTo("buyer@example.test");
         assertThat(state.discounts().codes()).containsExactly("SAVE10");
         assertThat(state.note()).isEqualTo("leave at reception");
+    }
+
+    @Test
+    void explicitEmptyDiscountCodesClearRemoteDiscountsInReplacementState() throws Exception {
+        CartReplacementState state = service.build(
+                cart, command(List.of(), null, null, null, null, List.of(), null),
+                List.of(), null, remoteCart()).replacementState();
+
+        assertThat(state.discounts()).isNotNull();
+        assertThat(state.discounts().codes()).isEmpty();
+        assertThat(objectMapper.writeValueAsString(state.arguments()))
+                .contains("\"discounts\":{\"codes\":[]}");
+    }
+
+    @Test
+    void buyerCountryOverridesDerivedCountryInTypedCartContext() {
+        UpdateCartCommand command = command(
+                List.of(),
+                new CartBuyerIdentityInput("new@example.test", null, null, null, "ca"),
+                null, null, null, null, null);
+
+        var request = service.build(cart, command, List.of(), new CartContext("US"), remoteCart());
+
+        assertThat(request.buyerIdentity().email()).isEqualTo("new@example.test");
+        assertThat(request.context().addressCountry()).isEqualTo("CA");
+        assertThat(request.replacementState().context().addressCountry()).isEqualTo("CA");
+        assertThat(request.replacementState().buyer().firstName()).isEqualTo("Existing");
+        assertThat(request.replacementState().buyer().extensions()).containsKey("com.shopify.buyer-token");
     }
 
     @Test
@@ -144,7 +193,7 @@ class CartReplacementServiceTest {
                 remoteLine("rotated-b", "product-b", "variant-b", "Large", 2),
                 remoteLine("rotated-a", "product-a", "variant-a", "Black", 1)));
 
-        CartReplacementState state = service.build(cart, command, List.of(), Map.of(), rotated)
+        CartReplacementState state = service.build(cart, command, List.of(), null, rotated)
                 .replacementState();
 
         assertThat(state.lineItems()).extracting(CartAddItem::productVariantId)
@@ -161,7 +210,7 @@ class CartReplacementServiceTest {
                 remoteLineWithoutOptions("rotated-a", "product-a", "variant-a", 1),
                 remoteLineWithoutOptions("rotated-b", "product-b", "variant-b", 2)));
 
-        CartReplacementState state = service.build(cart, command, List.of(), Map.of(), rotated)
+        CartReplacementState state = service.build(cart, command, List.of(), null, rotated)
                 .replacementState();
 
         assertThat(state.lineItems()).extracting(CartAddItem::productVariantId)
@@ -170,10 +219,10 @@ class CartReplacementServiceTest {
 
     private UpdateCartCommand command(
             List<UpdateCartCommand.UpdateItem> updates,
-            Map<String, Object> buyer,
-            List<Map<String, Object>> addAddresses,
-            List<Map<String, Object>> replaceAddresses,
-            List<Map<String, Object>> delivery,
+            CartBuyerIdentityInput buyer,
+            List<CartDeliveryAddressSelectionInput> addAddresses,
+            List<CartDeliveryAddressSelectionInput> replaceAddresses,
+            List<CartDeliveryOptionSelectionInput> delivery,
             List<String> discounts,
             List<String> gifts
     ) {
@@ -182,14 +231,21 @@ class CartReplacementServiceTest {
     }
 
     private CartReplacementState state(CartAddItem... items) {
-        return new CartReplacementState(List.of(items), Map.of(), Map.of(), Map.of(), null, null, List.of(), null);
+        return new CartReplacementState(List.of(items), null, null, null, null, null, List.of(), null);
     }
 
     private UcpCartResponse remoteCart() {
-        CartToolArguments.Fulfillment fulfillment = new CartToolArguments.Fulfillment(List.of(Map.of(
-                "type", "shipping",
-                "destinations", List.of(Map.of("id", "home", "postal_code", "10001")),
-                "groups", List.of(Map.of("id", "delivery-a", "selected_option_id", "express")))));
+        CartDeliveryAddress destination = new CartDeliveryAddress(
+                "home", null, null, null, null, null, null, null, "10001", "US",
+                Map.of("com.shopify.delivery-preference", objectMapper.valueToTree("front-door")));
+        CartToolArguments.FulfillmentGroup group = new CartToolArguments.FulfillmentGroup(
+                "delivery-a", List.of(), List.of(), "express",
+                Map.of("com.shopify.group-token", objectMapper.valueToTree("group-token")));
+        CartToolArguments.FulfillmentMethod method = new CartToolArguments.FulfillmentMethod(
+                "shipping-1", "shipping", List.of(), List.of(destination), "home", List.of(group),
+                Map.of("com.shopify.method-token", objectMapper.valueToTree("method-token")));
+        CartToolArguments.Fulfillment fulfillment = new CartToolArguments.Fulfillment(
+                List.of(method), Map.of("com.shopify.fulfillment-token", objectMapper.valueToTree("fulfillment-token")));
         UcpCartResponse.Cart remote = new UcpCartResponse.Cart(
                 "cart-1", null, null, null,
                 List.of(remoteLine("remote-a", "product-a", "variant-a", "Black", 1),
@@ -197,8 +253,11 @@ class CartReplacementServiceTest {
                 null, 3, null, null,
                 List.of(new UcpCartResponse.AppliedCode("SAVE10", null, true, null)), List.of(), List.of(),
                 List.of(new UcpCartResponse.AppliedCode("GIFT1", null, true, null)), List.of(), List.of(), List.of(),
-                Map.of("email", "buyer@example.test"), Map.of("address_country", "US"),
-                Map.of("com.meant.observed", "trusted"), fulfillment,
+                new CartBuyer("Existing", null, "buyer@example.test", null,
+                        Map.of("com.shopify.buyer-token", objectMapper.valueToTree("buyer-token"))),
+                new CartContext("US"),
+                new CartSignals(null, null,
+                        Map.of("com.meant.observed", objectMapper.valueToTree("trusted"))), fulfillment,
                 new CartToolArguments.Discounts(List.of("SAVE10")), "leave at reception");
         return new UcpCartResponse(null, remote, List.of(), List.of());
     }

@@ -45,8 +45,6 @@ public class Ap2MandateService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
-    private static final TypeReference<List<Object>> LIST_TYPE = new TypeReference<>() {
-    };
     private static final JOSEObjectType SD_JWT_TYPE = new JOSEObjectType("vc+sd-jwt");
     private static final JOSEObjectType KB_JWT_TYPE = new JOSEObjectType("kb+jwt");
     private static final String SHA_256 = "SHA-256";
@@ -186,7 +184,7 @@ public class Ap2MandateService {
             requireEquals(command.audience(), firstAudience(kbClaims), "AP2 mandate key binding audience");
             requireEquals(command.nonce(), stringClaim(kbClaims, "nonce"), "AP2 mandate key binding nonce");
 
-            Map<String, Object> disclosedClaims = validateDisclosures(sdClaims, disclosures);
+            Map<String, JsonNode> disclosedClaims = validateDisclosures(sdClaims, disclosures);
             String holderThumbprint = thumbprint(command.holderPublicKey());
             requireEquals(holderThumbprint, confirmationThumbprint(sdClaims), "AP2 mandate holder confirmation");
             requireEquals(holderThumbprint, confirmationThumbprint(kbClaims), "AP2 mandate key binding confirmation");
@@ -196,15 +194,20 @@ public class Ap2MandateService {
                     "AP2 mandate key binding sd_hash"
             );
 
-            Object spendScopeClaim = disclosedClaims.get("spend_scope");
-            Map<String, Object> spendScope = spendScopeClaim instanceof Map<?, ?> map
-                    ? stringKeyMap(map)
-                    : Map.of();
-            requireEquals(command.checkoutId(), scalarString(spendScope.get("checkout_id")), "AP2 mandate checkout id");
-            requireEquals(command.merchantId(), scalarString(spendScope.get("merchant_id")), "AP2 mandate merchant id");
+            JsonNode spendScope = disclosedClaims.get("spend_scope");
+            requireEquals(
+                    command.checkoutId(),
+                    jsonScalarString(spendScope == null ? null : spendScope.get("checkout_id")),
+                    "AP2 mandate checkout id"
+            );
+            requireEquals(
+                    command.merchantId(),
+                    jsonScalarString(spendScope == null ? null : spendScope.get("merchant_id")),
+                    "AP2 mandate merchant id"
+            );
             requireEquals(
                     command.currency(),
-                    scalarString(spendScope.get("currency")),
+                    jsonScalarString(spendScope == null ? null : spendScope.get("currency")),
                     "AP2 mandate spend-scope currency"
             );
 
@@ -331,7 +334,7 @@ public class Ap2MandateService {
         }
     }
 
-    private Map<String, Object> validateDisclosures(JWTClaimsSet claims, List<String> encodedDisclosures) {
+    private Map<String, JsonNode> validateDisclosures(JWTClaimsSet claims, List<String> encodedDisclosures) {
         Object sdClaim = claims.getClaim("_sd");
         List<String> expectedDigests = sdClaim instanceof Collection<?> collection
                 ? collection.stream().map(Object::toString).toList()
@@ -340,31 +343,39 @@ public class Ap2MandateService {
             throw new Ap2MandateException("AP2 mandate does not contain disclosure digests");
         }
 
-        Map<String, Object> disclosedClaims = new LinkedHashMap<>();
+        Map<String, JsonNode> disclosedClaims = new LinkedHashMap<>();
         for (String encodedDisclosure : encodedDisclosures) {
             String digest = disclosureDigest(encodedDisclosure);
             if (!expectedDigests.contains(digest)) {
                 throw new Ap2MandateException("AP2 mandate disclosure digest did not match issuer claims");
             }
-            List<Object> disclosure = disclosureValues(encodedDisclosure);
-            if (disclosure.size() != 3) {
+            JsonNode disclosure = disclosureValues(encodedDisclosure);
+            if (!disclosure.isArray() || disclosure.size() != 3) {
                 throw new Ap2MandateException("AP2 mandate disclosure must have salt, claim name, and value");
             }
-            String claimName = scalarString(disclosure.get(1));
+            String claimName = jsonScalarString(disclosure.get(1));
             if (claimName == null) {
                 throw new Ap2MandateException("AP2 mandate disclosure claim name is required");
             }
-            disclosedClaims.put(claimName, disclosure.get(2));
+            disclosedClaims.put(claimName, disclosure.get(2).deepCopy());
         }
         return disclosedClaims;
     }
 
-    private List<Object> disclosureValues(String encodedDisclosure) {
+    private JsonNode disclosureValues(String encodedDisclosure) {
         try {
-            return objectMapper.readValue(Base64URL.from(encodedDisclosure).decode(), LIST_TYPE);
+            return objectMapper.readTree(Base64URL.from(encodedDisclosure).decode());
         } catch (JacksonException exception) {
             throw new Ap2MandateException("AP2 mandate disclosure could not be decoded", exception);
         }
+    }
+
+    private String jsonScalarString(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode() || value.isObject() || value.isArray()) {
+            return null;
+        }
+        String scalar = value.asString();
+        return scalar == null || scalar.isBlank() ? null : scalar.trim();
     }
 
     private Disclosure disclosure(String claimName, Object claimValue) {
@@ -604,10 +615,16 @@ public class Ap2MandateService {
             String subject,
             String audience,
             String jwtId,
-            Map<String, Object> disclosedClaims,
+            Map<String, JsonNode> disclosedClaims,
             String keyBindingJwtId,
             Instant verifiedAt
     ) {
+
+        public VerifiedMandate {
+            disclosedClaims = disclosedClaims == null
+                    ? Map.of()
+                    : Map.copyOf(new LinkedHashMap<>(disclosedClaims));
+        }
     }
 
     private record Disclosure(String claimName, String encoded, String digest) {

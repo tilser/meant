@@ -3,14 +3,12 @@ package com.meant.api.plugin.catalog.common.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.plugin.support.UcpDecimal;
-import com.meant.api.plugin.support.UcpMoney;
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CatalogProductResponse(
@@ -33,7 +31,7 @@ public record CatalogProductResponse(
         List<Media> media,
         List<Category> categories,
         List<String> tags,
-        Object metadata,
+        JsonNode metadata,
         @JsonProperty("gift_card")
         @JsonAlias("giftCard")
         Boolean giftCard,
@@ -54,7 +52,7 @@ public record CatalogProductResponse(
             List<Media> media,
             List<Category> categories,
             List<String> tags,
-            Object metadata,
+            JsonNode metadata,
             Boolean giftCard,
             List<Collection> collections,
             List<SelectedOption> selected
@@ -106,7 +104,7 @@ public record CatalogProductResponse(
                 totalVariants,
                 priceRange == null ? null : priceRange.toDetailsPriceRange(),
                 listPriceRange == null ? null : listPriceRange.toDetailsPriceRange(),
-                moneyOrRange(listPriceRange),
+                detailsMoney(moneyOrRange(listPriceRange)),
                 null,
                 null,
                 selectedVariant == null || selectedVariant.requires() == null
@@ -173,7 +171,7 @@ public record CatalogProductResponse(
                 .toList();
     }
 
-    private static Object moneyOrRange(PriceRange priceRange) {
+    private static Money moneyOrRange(PriceRange priceRange) {
         if (priceRange == null) {
             return null;
         }
@@ -204,47 +202,11 @@ public record CatalogProductResponse(
         if (money == null || money.amount() == null) {
             return null;
         }
-        Object amount = money.amount();
-        Long minorAmount = explicitMinorAmount(amount);
-        if (minorAmount == null && (amount instanceof Number || amount instanceof CharSequence)) {
-            minorAmount = UcpMoney.minorAmount(amount.toString(), money.currency());
-        }
-        return UcpDecimal.minorAmountToDecimalText(minorAmount, money.currency());
+        return UcpDecimal.minorAmountToDecimalText(money.amount(), money.currency());
     }
 
-    private static Long explicitMinorAmount(Object amount) {
-        Long wholeNumber = wholeNumber(amount);
-        if (wholeNumber != null) {
-            return wholeNumber;
-        }
-        if (amount instanceof CharSequence value && value.toString().trim().matches("-?\\d+")) {
-            return UcpMoney.wholeNumberAmount(amount);
-        }
-        return null;
-    }
-
-    private static Long wholeNumber(Object amount) {
-        if (amount instanceof Long value) {
-            return value;
-        }
-        if (amount instanceof Integer value) {
-            return value.longValue();
-        }
-        if (amount instanceof Number value) {
-            return wholeNumber(value);
-        }
-        return null;
-    }
-
-    private static Long wholeNumber(Number value) {
-        try {
-            if (value instanceof BigInteger bigInteger) {
-                return bigInteger.longValueExact();
-            }
-            return new BigDecimal(value.toString()).longValueExact();
-        } catch (ArithmeticException | NumberFormatException exception) {
-            return null;
-        }
+    private static ProductDetailsResponse.Money detailsMoney(Money money) {
+        return money == null ? null : new ProductDetailsResponse.Money(money.amount(), money.currency());
     }
 
     private static String currency(Money first, Money second) {
@@ -276,8 +238,9 @@ public record CatalogProductResponse(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonDeserialize(using = CatalogProductMoneyDeserializer.class)
     public record Money(
-            Object amount,
+            Long amount,
             @JsonAlias({"currency_code", "currencyCode"})
             String currency
     ) {
@@ -308,7 +271,7 @@ public record CatalogProductResponse(
             Requires requires,
             List<Category> categories,
             List<String> tags,
-            Object metadata,
+            JsonNode metadata,
             @JsonProperty("checkout_url")
             @JsonAlias("checkoutUrl")
             String checkoutUrl
@@ -322,7 +285,7 @@ public record CatalogProductResponse(
                     amount(price),
                     price == null ? null : price.currency(),
                     sku,
-                    listPrice,
+                    detailsMoney(listPrice),
                     firstMediaUrl(safeMedia, List.of()),
                     safeMedia.stream()
                             .filter(Objects::nonNull)
@@ -351,7 +314,7 @@ public record CatalogProductResponse(
                     amount(price),
                     price == null ? null : price.currency(),
                     sku,
-                    listPrice,
+                    detailsMoney(listPrice),
                     imageUrl,
                     safeMedia.stream()
                             .filter(Objects::nonNull)

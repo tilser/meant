@@ -2,7 +2,6 @@ package com.meant.api.plugin.cart.common.support;
 
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.support.UcpDecimal;
-import com.meant.api.plugin.support.UcpMoney;
 import java.math.BigDecimal;
 
 public final class UcpCartMoney {
@@ -15,12 +14,8 @@ public final class UcpCartMoney {
             return null;
         }
         String currency = money.currency();
-        Long minorAmount = minorAmount(money.amount(), currency);
-        if (minorAmount == null) {
-            return null;
-        }
         int exponent = UcpDecimal.currencyExponent(currency);
-        return BigDecimal.valueOf(minorAmount, exponent)
+        return BigDecimal.valueOf(money.amount(), exponent)
                 .setScale(exponent)
                 .toPlainString();
     }
@@ -41,13 +36,5 @@ public final class UcpCartMoney {
             return second.currency();
         }
         return fallback;
-    }
-
-    private static Long minorAmount(Object amount, String currency) {
-        Long wholeNumberAmount = UcpMoney.wholeNumberAmount(amount);
-        if (wholeNumberAmount != null) {
-            return wholeNumberAmount;
-        }
-        return UcpMoney.minorAmount(amount.toString(), currency);
     }
 }

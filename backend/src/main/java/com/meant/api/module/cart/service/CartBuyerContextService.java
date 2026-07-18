@@ -2,8 +2,7 @@ package com.meant.api.module.cart.service;
 
 import com.meant.api.module.user.service.UserCommerceContextService;
 import com.meant.api.module.user.service.dto.UserCommerceContextResult;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import com.meant.api.plugin.cart.common.dto.CartContext;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,15 +19,11 @@ public class CartBuyerContextService {
 
     private final UserCommerceContextService userCommerceContextService;
 
-    public Map<String, Object> buyerContext(UUID userId) {
+    public CartContext buyerContext(UUID userId) {
         return buyerContext(userCommerceContextService.find(userId));
     }
 
-    public Map<String, Object> buyerContext(UserCommerceContextResult commerceContext) {
-        Map<String, Object> context = new LinkedHashMap<>();
-        if (commerceContext != null && commerceContext.countryCode() != null) {
-            context.put("address_country", commerceContext.countryCode());
-        }
-        return context;
+    public CartContext buyerContext(UserCommerceContextResult commerceContext) {
+        return new CartContext(commerceContext == null ? null : commerceContext.countryCode());
     }
 }

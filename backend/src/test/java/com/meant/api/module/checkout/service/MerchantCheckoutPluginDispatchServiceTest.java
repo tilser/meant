@@ -249,13 +249,13 @@ class MerchantCheckoutPluginDispatchServiceTest {
                         "gid://shopify/ProductVariant/1",
                         1
                 )),
-                java.util.Map.of(),
                 null,
                 null,
                 null,
-                java.util.Map.of(),
+                null,
+                null,
                 List.of(),
-                java.util.Map.of()
+                null
         );
 
         assertThatThrownBy(() -> service.updateCheckout(target, request, UcpSession.start()))

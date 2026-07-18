@@ -3,9 +3,6 @@ package com.meant.api.plugin.signing;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -17,7 +14,7 @@ public record PublicSigningKey(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         SigningKeyStatus status,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        Map<String, Object> jwk,
+        JsonWebKey jwk,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         Instant advertiseUntil
 ) {
@@ -26,14 +23,7 @@ public record PublicSigningKey(
         kid = requireText(kid, "kid");
         Objects.requireNonNull(purpose, "purpose must not be null");
         Objects.requireNonNull(status, "status must not be null");
-        jwk = immutableLinkedMap(jwk);
-    }
-
-    private static Map<String, Object> immutableLinkedMap(Map<String, Object> values) {
-        if (values == null || values.isEmpty()) {
-            return Map.of();
-        }
-        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
+        Objects.requireNonNull(jwk, "jwk must not be null");
     }
 
     private static String requireText(String value, String fieldName) {

@@ -2,8 +2,10 @@ package com.meant.api.plugin.checkout;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.CheckoutCapabilityMetadata;
+import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
 import com.meant.api.plugin.checkout.create.CreateCheckoutCapability;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutArguments;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
@@ -12,6 +14,10 @@ import com.meant.api.plugin.checkout.extension.buyerconsent.BuyerConsentExtensio
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentState;
 import com.meant.api.plugin.checkout.extension.discount.DiscountExtensionCapability;
 import com.meant.api.plugin.checkout.extension.fulfillment.FulfillmentExtensionCapability;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentMethod;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.RetailLocation;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.plugin.checkout.get.GetCheckoutCapability;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutArguments;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
@@ -43,11 +49,12 @@ class CheckoutCapabilityTest {
                                 "gid://shopify/ProductVariant/1",
                                 2
                         )),
-                        Map.of("email", "ada@example.com"),
+                        new CheckoutBuyer(null, null, "ada@example.com", null),
                         new BuyerConsentState(true, null, false, null),
                         "USD",
                         List.of("SAVE10"),
-                        Map.of("methods", List.of(Map.of("id", "method_1", "type", "shipping")))
+                        new CheckoutFulfillment(List.of(new FulfillmentMethod(
+                                "method_1", "shipping", List.of(), List.of(), null, List.of())))
                 ),
                 NegotiatedCapabilities.none()
         );
@@ -63,11 +70,11 @@ class CheckoutCapabilityTest {
             assertThat(lineItem.quantity()).isEqualTo(2);
         });
         assertThat(serializedArguments).doesNotContain("gid://shopify/CartLine/1");
-        assertThat(arguments.checkout().buyer()).containsKey("consent");
+        assertThat(arguments.checkout().buyer().consent()).isEqualTo(new BuyerConsentState(true, null, false, null));
         assertThat(arguments.checkout().currency()).isEqualTo("USD");
         assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
         assertThat(arguments.checkout().fulfillment().methods().getFirst())
-                .satisfies(method -> assertThat(method).containsEntry("id", "method_1"));
+                .satisfies(method -> assertThat(method.id()).isEqualTo("method_1"));
         assertThat(response.resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
         assertThat(response.resolvedCheckout().cartId()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.resolvedCheckout().continueUrl()).isEqualTo("https://merchant.example/continue");
@@ -86,13 +93,13 @@ class CheckoutCapabilityTest {
                 NegotiatedCapabilities.none()
         );
         UcpCheckoutResponse response = capability.parseResponse(new UcpToolResponse(null,
-                Map.of(
+                objectMapper.valueToTree(Map.of(
                         "checkout", Map.of(
                                 "id", "gid://shopify/Checkout/1",
                                 "continue_url", "https://merchant.example/continue"
                         ),
                         "errors", List.of()
-                ),
+                )),
                 NegotiatedCapabilities.none()));
         String serializedArguments = objectMapper.writeValueAsString(arguments);
 
@@ -111,26 +118,22 @@ class CheckoutCapabilityTest {
                 new UpdateCheckoutRequest(
                         "gid://shopify/Checkout/1",
                         List.of(),
-                        Map.of("id", "buyer-1"),
+                        new CheckoutBuyer("Ada", null, null, null),
                         null,
                         "ada@example.com",
                         "USD",
-                        Map.of("address_country", "US"),
+                        new CheckoutContext("US", null, null, null, null, null, List.of()),
                         List.of("SAVE10"),
-                        Map.of(
-                                "methods", List.of(Map.of(
-                                        "id", "method_1",
-                                        "type", "shipping",
-                                        "line_item_ids", List.of("li_1"),
-                                        "destinations", List.of(Map.of(
-                                                "id", "destination_1",
-                                                "street_address", "1 Main St",
-                                                "address_locality", "New York",
-                                                "address_country", "US"
-                                        )),
-                                        "selected_destination_id", "destination_1"
-                                ))
-                        )
+                        new CheckoutFulfillment(List.of(new FulfillmentMethod(
+                                "method_1",
+                                "shipping",
+                                List.of("li_1"),
+                                List.of(new ShippingDestination(
+                                        "destination_1", null, "1 Main St", "New York", null,
+                                        "US", null, null, null, null)),
+                                "destination_1",
+                                List.of()
+                        )))
                 ),
                 NegotiatedCapabilities.none()
         );
@@ -145,14 +148,64 @@ class CheckoutCapabilityTest {
         assertThat(serializedArguments).contains("\"id\":\"gid://shopify/Checkout/1\"");
         assertThat(serializedArguments).contains("\"checkout\"");
         assertThat(serializedArguments).doesNotContain("checkout_id");
-        assertThat(arguments.checkout().buyer()).containsEntry("id", "buyer-1");
-        assertThat(arguments.checkout().buyer()).containsEntry("email", "ada@example.com");
-        assertThat(arguments.checkout().context()).containsEntry("address_country", "US");
+        assertThat(arguments.checkout().buyer().firstName()).isEqualTo("Ada");
+        assertThat(arguments.checkout().buyer().email()).isEqualTo("ada@example.com");
+        assertThat(arguments.checkout().context().addressCountry()).isEqualTo("US");
         assertThat(arguments.checkout().fulfillment().methods().getFirst())
-                .satisfies(method -> assertThat(method).containsEntry("id", "method_1"));
+                .satisfies(method -> assertThat(method.id()).isEqualTo("method_1"));
         assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
         assertThat(serializedArguments).doesNotContain("shipping_address", "available_methods");
         assertThat(response.resolvedCheckout().status()).isEqualTo("open");
+    }
+
+    @Test
+    void updateDistinguishesUnchangedDiscountsFromExplicitClear() throws Exception {
+        UpdateCheckoutCapability capability = new UpdateCheckoutCapability(objectMapper);
+
+        UpdateCheckoutArguments unchanged = capability.buildArguments(
+                updateRequest(null), NegotiatedCapabilities.none());
+        UpdateCheckoutArguments cleared = capability.buildArguments(
+                updateRequest(List.of()), NegotiatedCapabilities.none());
+
+        assertThat(objectMapper.writeValueAsString(unchanged)).doesNotContain("\"discounts\"");
+        assertThat(objectMapper.writeValueAsString(cleared))
+                .contains("\"discounts\":{\"codes\":[]}");
+    }
+
+    @Test
+    void fulfillmentDestinationUnionParsesShippingAndRetailWireShapes() throws Exception {
+        CheckoutFulfillment fulfillment = objectMapper.readValue("""
+                {
+                  "methods": [{
+                    "id": "mixed",
+                    "type": "shipping",
+                    "line_item_ids": ["line-1"],
+                    "destinations": [
+                      {
+                        "id": "home",
+                        "street_address": "1 Main St",
+                        "address_country": "US"
+                      },
+                      {
+                        "id": "store-1",
+                        "name": "Downtown Store",
+                        "address": {"street_address": "2 Market St", "address_country": "US"}
+                      }
+                    ]
+                  }]
+                }
+                """, CheckoutFulfillment.class);
+
+        assertThat(fulfillment.methods().getFirst().destinations())
+                .containsExactly(
+                        new ShippingDestination(
+                                "home", null, "1 Main St", null, null, "US", null, null, null, null),
+                        new RetailLocation(
+                                "store-1", "Downtown Store",
+                                new CheckoutFulfillment.PostalAddress(
+                                        null, "2 Market St", null, null, "US", null, null, null, null))
+                );
+        assertThat(objectMapper.writeValueAsString(fulfillment)).doesNotContain("@type", "ShippingDestination");
     }
 
     @Test
@@ -165,6 +218,7 @@ class CheckoutCapabilityTest {
                           "id": "checkout_456",
                           "status": "ready_for_complete",
                           "currency": "USD",
+                          "context": {"address_country": "US", "language": "en-US"},
                           "buyer": {
                             "email": "jane.doe@example.com",
                             "consent": {
@@ -184,10 +238,17 @@ class CheckoutCapabilityTest {
         ));
 
         assertThat(response.resolvedCheckout().id()).isEqualTo("checkout_456");
+        assertThat(response.resolvedCheckout().context().addressCountry()).isEqualTo("US");
+        assertThat(response.resolvedCheckout().context().language()).isEqualTo("en-US");
         assertThat(response.resolvedCheckout().buyer().email()).isEqualTo("jane.doe@example.com");
         assertThat(response.resolvedCheckout().discounts().codes()).containsExactly("SAVE10");
         assertThat(response.resolvedCheckout().fulfillment().methods()).isEmpty();
         assertThat(response.resolvedCheckout().ap2().merchantAuthorization()).isEqualTo("merchant-signature");
+    }
+
+    private UpdateCheckoutRequest updateRequest(List<String> discountCodes) {
+        return new UpdateCheckoutRequest(
+                "checkout-1", List.of(), null, null, null, "USD", null, discountCodes, null);
     }
 
     @Test
@@ -199,7 +260,7 @@ class CheckoutCapabilityTest {
 
         assertThat(ap2.tools()).isEmpty();
         assertThat(ap2.extendsCapabilities()).containsExactly(CheckoutCapabilityMetadata.CHECKOUT);
-        assertThat(ap2.config()).containsKey("vp_formats_supported");
+        assertThat(ap2.config().has("vp_formats_supported")).isTrue();
         assertThat(buyerConsent.extendsCapabilities()).containsExactly(CheckoutCapabilityMetadata.CHECKOUT);
         assertThat(discount.extendsCapabilities())
                 .containsExactly(CheckoutCapabilityMetadata.CHECKOUT, CheckoutCapabilityMetadata.CART);

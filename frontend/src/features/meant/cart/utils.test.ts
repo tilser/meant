@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { CartProfile } from '../../../lib/apiClient'
-import type { MerchantCartSnapshot } from './types'
+import type { CartDeliveryGroup, CartDeliveryOption, CartItem } from '../types'
+import type { DeliveryAddressDraft, MerchantCartSnapshot } from './types'
 import {
   cartSnapshotFromProfile,
   cartSnapshotHasReliableTotal,
@@ -9,6 +10,8 @@ import {
   cartSnapshotSubtotal,
   cartSnapshotTotal,
   cartSummaryDelivery,
+  deliveryAddressArguments,
+  selectedDeliveryOptionsForCart,
 } from './utils'
 
 function merchantSnapshot(overrides: Partial<MerchantCartSnapshot>): MerchantCartSnapshot {
@@ -28,6 +31,51 @@ function merchantSnapshot(overrides: Partial<MerchantCartSnapshot>): MerchantCar
 }
 
 describe('cart feature utilities', () => {
+  test('builds a typed camelCase delivery address payload', () => {
+    const address: DeliveryAddressDraft = {
+      countryCode: ' us ',
+      city: ' New York ',
+      postalCode: ' 10001 ',
+      provinceCode: ' NY ',
+    }
+
+    expect(deliveryAddressArguments(address)).toEqual({
+      addressCountry: 'US',
+      addressLocality: 'New York',
+      postalCode: '10001',
+      addressRegion: 'NY',
+    })
+  })
+
+  test('builds typed camelCase selections for every delivery group', () => {
+    const standard: CartDeliveryOption = { handle: 'standard', selected: true }
+    const express: CartDeliveryOption = { handle: 'express' }
+    const firstGroup: CartDeliveryGroup = {
+      id: 'group-1',
+      deliveryOptions: [standard, express],
+      selectedDeliveryOption: standard,
+    }
+    const secondGroup: CartDeliveryGroup = {
+      handle: 'group-2',
+      deliveryOptions: [standard],
+      selectedDeliveryOption: standard,
+    }
+    const cart: CartItem[] = [
+      {
+        id: 'product-1',
+        merchant: 'Merchant',
+        merchantId: 'merchant-1',
+        qty: 1,
+        deliveryGroups: [firstGroup, secondGroup],
+      },
+    ]
+
+    expect(selectedDeliveryOptionsForCart(cart, 'merchant-1', firstGroup, express)).toEqual([
+      { groupId: 'group-1', selectedOptionId: 'express' },
+      { groupId: 'group-2', selectedOptionId: 'standard' },
+    ])
+  })
+
   test('preserves numeric zero cart amounts from cart profiles', () => {
     const profile = {
       cartId: 'cart-1',

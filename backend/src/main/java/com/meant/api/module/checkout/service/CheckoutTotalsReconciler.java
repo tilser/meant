@@ -1,72 +1,59 @@
 package com.meant.api.module.checkout.service;
 
 import com.meant.api.module.checkout.exception.CheckoutSafetyException;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentShippingAddress;
-import com.meant.api.plugin.signing.Jcs;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 @Service
 @Validated
 public class CheckoutTotalsReconciler {
 
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
-
-    private final ObjectMapper objectMapper;
-    private final Jcs jcs;
-
-    @Autowired
-    public CheckoutTotalsReconciler(ObjectMapper objectMapper, Jcs jcs) {
-        this.objectMapper = objectMapper;
-        this.jcs = jcs;
-    }
-
-    public ReconciliationResult reconcile(@NotNull @Valid ExpectedCheckout expected, @NotNull Object checkout) {
-        ObservedCheckout observed = observedCheckout(checkout);
+    public ReconciliationResult reconcile(
+            @NotNull @Valid ExpectedCheckout expected,
+            @NotNull UcpCheckoutResponse checkoutResponse
+    ) {
+        ObservedCheckout observed = observedCheckout(checkoutResponse);
         List<String> violations = new ArrayList<>();
 
         requireEqual("checkout id", expected.checkoutId(), observed.checkoutId(), violations);
         requireEqual("merchant identity", expected.merchantId(), observed.merchantId(), violations);
-        String expectedCurrency = normalizedCurrency(expected.currency());
-        String actualCurrency = normalizedCurrency(observed.currency());
-        requireEqual("currency", expectedCurrency, actualCurrency, violations);
+        requireEqual(
+                "currency",
+                normalizedCurrency(expected.currency()),
+                normalizedCurrency(observed.currency()),
+                violations
+        );
         requireEqual("total amount", expected.totalAmountMinor(), observed.totalAmountMinor(), violations);
         requireOptionalEqual("tax amount", expected.taxAmountMinor(), observed.taxAmountMinor(), violations);
         requireOptionalEqual("discount amount", expected.discountAmountMinor(), observed.discountAmountMinor(), violations);
         requireOptionalEqual("tip amount", expected.tipAmountMinor(), observed.tipAmountMinor(), violations);
         requireOptionalEqual("shipping method", expected.shippingMethod(), observed.shippingMethod(), violations);
-        requireOptionalCanonicalEqual(
-                "shipping address",
-                normalizedShippingAddress(expected.shippingAddress()),
-                observed.shippingAddress(),
-                violations
-        );
-        requireOptionalCanonicalEqual("subscription terms", expected.subscriptionTerms(), observed.subscriptionTerms(), violations);
+        requireOptionalEqual("shipping address", expected.shippingAddress(), observed.shippingAddress(), violations);
+        requireOptionalEqual("subscription terms", expected.subscriptionTerms(), observed.subscriptionTerms(), violations);
         reconcileLineItems(expected.lineItems(), observed.lineItems(), violations);
         reconcileSpendCeiling(expected, observed, violations);
 
         return new ReconciliationResult(violations.isEmpty(), List.copyOf(violations), observed);
     }
 
-    public void rejectIfMismatch(@NotNull @Valid ExpectedCheckout expected, @NotNull Object checkout) {
-        ReconciliationResult result = reconcile(expected, checkout);
+    public void rejectIfMismatch(
+            @NotNull @Valid ExpectedCheckout expected,
+            @NotNull UcpCheckoutResponse checkoutResponse
+    ) {
+        ReconciliationResult result = reconcile(expected, checkoutResponse);
         if (!result.match()) {
             throw new CheckoutSafetyException("Checkout totals reconciliation failed: "
                     + String.join("; ", result.violations()));
@@ -107,7 +94,12 @@ public class CheckoutTotalsReconciler {
             String lineContext = "line item " + lineKey(expectedLine);
             requireEqual(lineContext + " key", lineKey(expectedLine), lineKey(observedLine), violations);
             requireEqual(lineContext + " quantity", expectedLine.quantity(), observedLine.quantity(), violations);
-            requireEqual(lineContext + " total amount", expectedLine.totalAmountMinor(), observedLine.totalAmountMinor(), violations);
+            requireEqual(
+                    lineContext + " total amount",
+                    expectedLine.totalAmountMinor(),
+                    observedLine.totalAmountMinor(),
+                    violations
+            );
             requireEqual(
                     lineContext + " currency",
                     normalizedCurrency(expectedLine.currency()),
@@ -117,254 +109,117 @@ public class CheckoutTotalsReconciler {
         }
     }
 
-    private ObservedCheckout observedCheckout(Object checkout) {
-        Map<String, Object> root = objectMap(checkout);
-        Map<String, Object> checkoutMap = mapValue(root, "checkout");
-        if (checkoutMap == null) {
-            checkoutMap = root;
+    private ObservedCheckout observedCheckout(UcpCheckoutResponse response) {
+        UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
+        if (checkout == null) {
+            return new ObservedCheckout(
+                    null, null, null, null, null, null, null, null, null, null, List.of());
         }
 
-        String currency = firstScalar(checkoutMap, "currency", "currencyCode");
-        UcpMoney total = money(checkoutMap, currency, "total_amount", "totalAmount", "total", "amount", "grand_total");
-        if (total != null && total.currency() != null) {
-            currency = total.currency();
-        }
-
+        UcpMoney total = checkout.resolvedTotal();
+        String currency = checkout.resolvedCurrency(total == null ? null : total.currency());
         return new ObservedCheckout(
-                firstScalar(checkoutMap, "id", "checkout_id", "checkoutId"),
-                observedMerchantId(root, checkoutMap),
+                checkout.id(),
+                response.resolvedMerchantId(),
                 total == null ? null : total.amount(),
                 currency,
-                moneyAmount(checkoutMap, currency, "tax_amount", "taxAmount", "totalTaxAmount", "tax"),
-                moneyAmount(checkoutMap, currency, "discount_amount", "discountAmount", "totalDiscountAmount", "discount"),
-                moneyAmount(checkoutMap, currency, "tip_amount", "tipAmount", "tip"),
-                shippingAddress(checkoutMap),
-                shippingMethod(checkoutMap),
-                subscriptionTerms(checkoutMap),
-                observedLineItems(checkoutMap, currency)
+                firstPresent(
+                        checkout.resolvedTaxAmountMinor(),
+                        totalAmount(checkout.totals(), currency, "tax", "tax_amount", "total_tax_amount")
+                ),
+                totalAmount(
+                        checkout.totals(),
+                        currency,
+                        "discount", "discount_amount", "total_discount_amount", "discounts"
+                ),
+                totalAmount(checkout.totals(), currency, "tip", "tip_amount", "gratuity"),
+                shippingAddress(checkout.resolvedShippingAddress()),
+                checkout.resolvedShippingMethod(),
+                response.resolvedSubscriptionTerms(),
+                observedLineItems(checkout.lineItems(), currency)
         );
     }
 
-    private String observedMerchantId(Map<String, Object> root, Map<String, Object> checkout) {
-        String merchantId = firstScalar(checkout, "merchant_id", "merchantId");
-        if (merchantId != null) {
-            return merchantId;
-        }
-        Map<String, Object> merchant = mapValue(checkout, "merchant");
-        if (merchant == null) {
-            merchant = mapValue(root, "merchant");
-        }
-        return merchant == null ? null : firstScalar(merchant, "id", "merchant_id", "merchantId", "domain");
+    private List<ObservedLineItem> observedLineItems(
+            List<UcpCheckoutResponse.CheckoutLineItem> lineItems,
+            String fallbackCurrency
+    ) {
+        return safeList(lineItems).stream()
+                .filter(Objects::nonNull)
+                .map(line -> observedLineItem(line, fallbackCurrency))
+                .toList();
     }
 
-    private List<ObservedLineItem> observedLineItems(Map<String, Object> checkout, String fallbackCurrency) {
-        List<?> lines = listValue(checkout, "line_items", "lineItems", "lines", "items");
-        if (lines == null) {
-            return List.of();
-        }
-        List<ObservedLineItem> observed = new ArrayList<>();
-        for (Object line : lines) {
-            Map<String, Object> lineMap = objectMap(line);
-            String currency = firstScalar(lineMap, "currency", "currencyCode");
-            if (currency == null) {
-                currency = fallbackCurrency;
+    private ObservedLineItem observedLineItem(
+            UcpCheckoutResponse.CheckoutLineItem line,
+            String fallbackCurrency
+    ) {
+        UcpMoney total = line.resolvedTotal(fallbackCurrency);
+        return new ObservedLineItem(
+                line.resolvedId(),
+                line.resolvedVariantId(),
+                line.quantity(),
+                total == null ? null : total.amount(),
+                total == null ? fallbackCurrency : firstPresent(total.currency(), fallbackCurrency)
+        );
+    }
+
+    private Long totalAmount(
+            List<UcpCheckoutResponse.CheckoutTotal> totals,
+            String fallbackCurrency,
+            String... expectedTypes
+    ) {
+        for (UcpCheckoutResponse.CheckoutTotal total : safeList(totals)) {
+            if (total == null || !matchesTotalType(total, expectedTypes)) {
+                continue;
             }
-            UcpMoney total = money(lineMap, currency, "total_amount", "totalAmount", "total", "amount");
-            Map<String, Object> merchandise = mapValue(lineMap, "merchandise");
-            observed.add(new ObservedLineItem(
-                    firstScalar(lineMap, "id", "line_id", "lineId"),
-                    firstPresent(
-                            firstScalar(lineMap, "product_variant_id", "productVariantId", "variant_id", "variantId"),
-                            merchandise == null ? null : firstScalar(merchandise, "id", "product_variant_id", "variant_id")
-                    ),
-                    integerValue(firstValue(lineMap, "quantity", "qty")),
-                    total == null ? null : total.amount(),
-                    total == null ? currency : firstPresent(total.currency(), currency)
-            ));
+            UcpMoney money = total.resolvedMoney(fallbackCurrency);
+            if (money != null) {
+                return money.amount();
+            }
         }
-        return observed;
+        return null;
     }
 
-    private Object shippingAddress(Map<String, Object> checkout) {
-        Object address = firstValue(checkout, "shipping_address", "shippingAddress", "deliveryAddress");
-        if (address != null) {
-            return normalizedShippingAddress(address);
+    private boolean matchesTotalType(
+            UcpCheckoutResponse.CheckoutTotal total,
+            String... expectedTypes
+    ) {
+        String type = normalizedType(firstPresent(total.type(), total.code(), total.name()));
+        if (type == null) {
+            return false;
         }
-        Map<String, Object> fulfillment = mapValue(checkout, "fulfillment");
-        return fulfillment == null
-                ? null
-                : normalizedShippingAddress(firstValue(fulfillment, "shipping_address", "shippingAddress", "address"));
+        for (String expectedType : expectedTypes) {
+            if (type.equals(normalizedType(expectedType))) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private BuyerConsentShippingAddress normalizedShippingAddress(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof BuyerConsentShippingAddress address) {
-            return address.isEmpty() ? null : address;
-        }
-        Map<String, Object> address = objectMap(value);
-        if (address == null || address.isEmpty()) {
+    private BuyerConsentShippingAddress shippingAddress(UcpCheckoutResponse.CheckoutAddress address) {
+        if (address == null) {
             return null;
         }
         BuyerConsentShippingAddress normalized = new BuyerConsentShippingAddress(
-                firstScalar(address, "street_address", "streetAddress", "address1"),
-                firstScalar(address, "address_locality", "addressLocality", "city"),
-                firstScalar(address, "address_region", "addressRegion", "province", "provinceCode"),
-                firstScalar(address, "postal_code", "postalCode", "zip"),
-                firstScalar(address, "address_country", "addressCountry", "country", "countryCode")
+                address.streetAddress(),
+                address.addressLocality(),
+                address.addressRegion(),
+                address.postalCode(),
+                address.addressCountry()
         );
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private String shippingMethod(Map<String, Object> checkout) {
-        Object method = firstValue(checkout, "shipping_method", "shippingMethod", "selectedShippingMethod", "deliveryMethod");
-        if (method == null) {
-            Map<String, Object> fulfillment = mapValue(checkout, "fulfillment");
-            method = fulfillment == null ? null : firstValue(fulfillment, "shipping_method", "shippingMethod", "method");
-        }
-        if (method instanceof Map<?, ?> map) {
-            Map<String, Object> methodMap = stringKeyMap(map);
-            return firstScalar(methodMap, "id", "handle", "name", "title");
-        }
-        return scalarString(method);
-    }
-
-    private Object subscriptionTerms(Map<String, Object> checkout) {
-        return firstValue(checkout, "subscription", "recurring", "recurring_terms", "recurringTerms", "trial_terms", "trialTerms");
-    }
-
-    private UcpMoney money(Map<String, Object> source, String fallbackCurrency, String... keys) {
-        Object value = firstValue(source, keys);
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> moneyMap = stringKeyMap(map);
-            Object nested = firstValue(moneyMap, "total_amount", "totalAmount", "amount", "value", "price");
-            if (nested != null && !moneyMap.containsKey("amount") && !moneyMap.containsKey("value")) {
-                value = nested;
-            }
-        }
-        return UcpMoney.value(value, fallbackCurrency);
-    }
-
-    private Long moneyAmount(Map<String, Object> source, String fallbackCurrency, String... keys) {
-        UcpMoney money = money(source, fallbackCurrency, keys);
-        return money == null ? null : money.amount();
-    }
-
-    private Map<String, Object> objectMap(Object value) {
-        if (value == null) {
-            return Map.of();
-        }
-        if (value instanceof Map<?, ?> map) {
-            return stringKeyMap(map);
-        }
-        try {
-            if (value instanceof String string) {
-                Map<String, Object> parsed = objectMapper.readValue(string, MAP_TYPE);
-                return parsed == null ? Map.of() : parsed;
-            }
-            Map<String, Object> converted = objectMapper.convertValue(value, MAP_TYPE);
-            return converted == null ? Map.of() : converted;
-        } catch (IllegalArgumentException | JacksonException exception) {
-            throw new CheckoutSafetyException("Checkout payload could not be read for reconciliation", exception);
-        }
-    }
-
-    private Map<String, Object> mapValue(Map<String, Object> source, String key) {
-        Object value = firstValue(source, key);
-        return value instanceof Map<?, ?> map ? stringKeyMap(map) : null;
-    }
-
-    private List<?> listValue(Map<String, Object> source, String... keys) {
-        Object value = firstValue(source, keys);
-        return value instanceof List<?> list ? list : null;
-    }
-
-    private Object firstValue(Map<String, Object> source, String... keys) {
-        for (String key : keys) {
-            for (Map.Entry<String, Object> entry : source.entrySet()) {
-                if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(key)) {
-                    return entry.getValue();
-                }
-            }
-        }
-        return null;
-    }
-
-    private String firstScalar(Map<String, Object> source, String... keys) {
-        return scalarString(firstValue(source, keys));
-    }
-
-    private String scalarString(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String string) {
-            return string.isBlank() ? null : string.trim();
-        }
-        if (value instanceof Number || value instanceof Boolean || value instanceof Character) {
-            return value.toString();
-        }
-        return null;
-    }
-
-    private Integer integerValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        String scalar = scalarString(value);
-        if (scalar == null || !scalar.matches("-?\\d+")) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(scalar);
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
-    private Map<String, Object> stringKeyMap(Map<?, ?> source) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        source.forEach((key, value) -> {
-            if (key != null) {
-                values.put(key.toString(), value);
-            }
-        });
-        return values;
-    }
-
-    private void requireEqual(String field, Object expected, Object actual, List<String> violations) {
+    private <T> void requireEqual(String field, T expected, T actual, List<String> violations) {
         if (!Objects.equals(expected, actual)) {
             violations.add(field + " mismatch");
         }
     }
 
-    private void requireOptionalEqual(String field, Object expected, Object actual, List<String> violations) {
+    private <T> void requireOptionalEqual(String field, T expected, T actual, List<String> violations) {
         if (expected != null && !Objects.equals(expected, actual)) {
             violations.add(field + " mismatch");
-        }
-    }
-
-    private void requireOptionalCanonicalEqual(String field, Object expected, Object actual, List<String> violations) {
-        if (expected == null) {
-            return;
-        }
-        if (!Objects.equals(canonical(expected), canonical(actual))) {
-            violations.add(field + " mismatch");
-        }
-    }
-
-    private String canonical(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return new String(jcs.canonicalizeToUtf8Bytes(objectMapper.writeValueAsBytes(value)), StandardCharsets.UTF_8);
-        } catch (JacksonException exception) {
-            throw new CheckoutSafetyException("Checkout value could not be canonicalized", exception);
         }
     }
 
@@ -373,8 +228,24 @@ public class CheckoutTotalsReconciler {
         return normalized == null ? "" : normalized;
     }
 
-    private String firstPresent(String first, String second) {
-        return first == null || first.isBlank() ? second : first;
+    private String normalizedType(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+    }
+
+    private <T> T firstPresent(T first, T second) {
+        return first == null ? second : first;
+    }
+
+    private String firstPresent(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private String lineKey(ExpectedLineItem line) {
@@ -398,9 +269,9 @@ public class CheckoutTotalsReconciler {
             Long taxAmountMinor,
             Long discountAmountMinor,
             Long tipAmountMinor,
-            Object shippingAddress,
+            @Valid BuyerConsentShippingAddress shippingAddress,
             String shippingMethod,
-            Object subscriptionTerms,
+            JsonNode subscriptionTerms,
             Long maxAuthorizedAmountMinor
     ) {
     }
@@ -422,9 +293,9 @@ public class CheckoutTotalsReconciler {
             Long taxAmountMinor,
             Long discountAmountMinor,
             Long tipAmountMinor,
-            Object shippingAddress,
+            BuyerConsentShippingAddress shippingAddress,
             String shippingMethod,
-            Object subscriptionTerms,
+            JsonNode subscriptionTerms,
             List<ObservedLineItem> lineItems
     ) {
     }

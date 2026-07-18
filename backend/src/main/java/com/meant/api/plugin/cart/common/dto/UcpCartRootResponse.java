@@ -3,11 +3,8 @@ package com.meant.api.plugin.cart.common.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.meant.api.plugin.cart.common.dto.CartAddItem;
-import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
@@ -38,9 +35,9 @@ public record UcpCartRootResponse(
         Discounts discounts,
         List<UcpCartResponse.CartMessage> messages,
         List<UcpCartResponse.CartError> errors,
-        Map<String, Object> buyer,
-        Map<String, Object> context,
-        Map<String, Object> signals,
+        CartBuyer buyer,
+        CartContext context,
+        CartSignals signals,
         CartToolArguments.Fulfillment fulfillment,
         String note,
         @JsonProperty("gift_card_codes")
@@ -184,7 +181,7 @@ public record UcpCartRootResponse(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Total(
             String type,
-            Object amount,
+            Long amount,
             @JsonAlias({"currency_code", "currencyCode"})
             String currency
     ) {

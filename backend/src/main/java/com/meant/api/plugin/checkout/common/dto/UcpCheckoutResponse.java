@@ -9,6 +9,7 @@ import com.meant.api.plugin.support.UcpMoney;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -66,14 +67,57 @@ public record UcpCheckoutResponse(
         @JsonAlias({"shippingMethod", "selectedShippingMethod", "deliveryMethod"})
         CheckoutShippingMethod shippingMethod,
         List<CheckoutMessage> messages,
-        List<CheckoutError> errors
+        List<CheckoutError> errors,
+        CheckoutContext context,
+        @JsonProperty("merchant_id")
+        @JsonAlias("merchantId")
+        String merchantId,
+        CheckoutMerchant merchant,
+        @JsonProperty("subscription")
+        @JsonAlias({"recurring", "recurring_terms", "recurringTerms", "trial_terms", "trialTerms"})
+        JsonNode subscriptionTerms
 ) {
+
+    public UcpCheckoutResponse(
+            UcpMetadata ucp,
+            String instructions,
+            Checkout checkout,
+            String checkoutId,
+            String cartId,
+            String status,
+            String checkoutUrl,
+            String continueUrl,
+            String orderId,
+            CheckoutOrder order,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant expiresAt,
+            String currency,
+            List<CheckoutLineItem> lineItems,
+            List<CheckoutTotal> totals,
+            CheckoutBuyer buyer,
+            CheckoutDiscounts discounts,
+            CheckoutFulfillment fulfillment,
+            Ap2CheckoutData ap2,
+            CheckoutMoney totalAmount,
+            CheckoutMoney taxAmount,
+            CheckoutAddress shippingAddress,
+            CheckoutShippingMethod shippingMethod,
+            List<CheckoutMessage> messages,
+            List<CheckoutError> errors
+    ) {
+        this(ucp, instructions, checkout, checkoutId, cartId, status, checkoutUrl, continueUrl, orderId, order,
+                createdAt, updatedAt, expiresAt, currency, lineItems, totals, buyer, discounts, fulfillment, ap2,
+                totalAmount, taxAmount, shippingAddress, shippingMethod, messages, errors, CheckoutContext.none(),
+                null, null, null);
+    }
 
     public UcpCheckoutResponse {
         lineItems = safeList(lineItems);
         totals = safeList(totals);
         messages = safeList(messages);
         errors = safeList(errors);
+        context = context == null ? CheckoutContext.none() : context;
     }
 
     public Checkout resolvedCheckout() {
@@ -105,8 +149,29 @@ public record UcpCheckoutResponse(
                 taxAmount,
                 shippingAddress,
                 shippingMethod,
-                List.of()
+                List.of(),
+                context,
+                merchantId,
+                merchant,
+                subscriptionTerms
         );
+    }
+
+    public String resolvedMerchantId() {
+        Checkout resolved = resolvedCheckout();
+        return firstPresent(
+                resolved == null ? null : resolved.merchantId(),
+                resolved == null || resolved.merchant() == null ? null : resolved.merchant().resolvedId(),
+                merchantId,
+                merchant == null ? null : merchant.resolvedId()
+        );
+    }
+
+    public JsonNode resolvedSubscriptionTerms() {
+        Checkout resolved = resolvedCheckout();
+        return resolved != null && resolved.subscriptionTerms() != null
+                ? resolved.subscriptionTerms()
+                : subscriptionTerms;
     }
 
     public String version() {
@@ -199,7 +264,14 @@ public record UcpCheckoutResponse(
             @JsonAlias({"shippingMethod", "selectedShippingMethod", "deliveryMethod"})
             CheckoutShippingMethod shippingMethod,
             List<CheckoutMessage> messages,
-            Map<String, Object> context
+            CheckoutContext context,
+            @JsonProperty("merchant_id")
+            @JsonAlias("merchantId")
+            String merchantId,
+            CheckoutMerchant merchant,
+            @JsonProperty("subscription")
+            @JsonAlias({"recurring", "recurring_terms", "recurringTerms", "trial_terms", "trialTerms"})
+            JsonNode subscriptionTerms
     ) {
 
         public Checkout(
@@ -213,14 +285,14 @@ public record UcpCheckoutResponse(
         ) {
             this(id, cartId, status, checkoutUrl, continueUrl, orderId, order, createdAt, updatedAt, expiresAt,
                     currency, lineItems, totals, buyer, discounts, fulfillment, ap2, totalAmount, taxAmount,
-                    shippingAddress, shippingMethod, messages, Map.of());
+                    shippingAddress, shippingMethod, messages, CheckoutContext.none(), null, null, null);
         }
 
         public Checkout {
             lineItems = safeList(lineItems);
             totals = safeList(totals);
             messages = safeList(messages);
-            context = context == null ? Map.of() : Map.copyOf(context);
+            context = context == null ? CheckoutContext.none() : context;
         }
 
         public UcpMoney resolvedTotal() {
@@ -257,6 +329,19 @@ public record UcpCheckoutResponse(
                 return shippingMethod.resolvedName();
             }
             return fulfillment == null ? null : fulfillment.resolvedShippingMethod();
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CheckoutMerchant(
+            String id,
+            @JsonProperty("merchant_id")
+            @JsonAlias("merchantId")
+            String merchantId,
+            String domain
+    ) {
+        public String resolvedId() {
+            return firstPresent(id, merchantId, domain);
         }
     }
 

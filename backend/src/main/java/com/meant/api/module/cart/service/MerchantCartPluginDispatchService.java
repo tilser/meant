@@ -2,6 +2,8 @@ package com.meant.api.module.cart.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
@@ -16,6 +18,9 @@ import com.meant.api.plugin.cart.cancel.CancelCartCapability;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartBuyer;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
@@ -30,10 +35,10 @@ import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -267,7 +272,7 @@ public class MerchantCartPluginDispatchService {
             CreateCartCapability capability,
             CartToolCallContext callContext
     ) {
-        Object exactArguments = capability.buildArguments(request, session.activeCapabilities());
+        var exactArguments = capability.buildArguments(request, session.activeCapabilities());
         if (!isLegacy(target)) {
             return callTool(target, provider, CreateCartCapability.TOOL_NAME, exactArguments, callContext);
         }
@@ -311,7 +316,7 @@ public class MerchantCartPluginDispatchService {
             UpdateCartCapability capability,
             CartToolCallContext callContext
     ) {
-        Object exactArguments = capability.buildArguments(request, session.activeCapabilities());
+        var exactArguments = capability.buildArguments(request, session.activeCapabilities());
         if (!isLegacy(target)) {
             return callTool(target, provider, UpdateCartCapability.TOOL_NAME, exactArguments, callContext);
         }
@@ -360,8 +365,9 @@ public class MerchantCartPluginDispatchService {
         try {
             return callTool(target, provider, toolName, primaryArguments, callContext);
         } catch (MerchantMcpToolException exception) {
-            Map<String, Object> legacyArguments = new LinkedHashMap<>();
-            put(legacyArguments, legacyIdKey, cartId);
+            LegacyCartIdArguments legacyArguments = new LegacyCartIdArguments(
+                    "id".equals(legacyIdKey) ? cartId : null,
+                    "cart_id".equals(legacyIdKey) ? cartId : null);
             return callLegacyAfterFailure(target, provider, toolName, legacyArguments, exception, callContext);
         }
     }
@@ -441,20 +447,15 @@ public class MerchantCartPluginDispatchService {
         return CartException.bindingUpstream(message, cause);
     }
 
-    private Map<String, Object> legacyCreateCartArguments(CreateCartRequest request) {
-        Map<String, Object> arguments = new LinkedHashMap<>();
-        put(arguments, "add_items", request.addItems());
-        put(arguments, "buyer_identity", request.buyerIdentity());
-        put(arguments, "delivery_addresses_to_add", legacyDeliveryAddresses(request.deliveryAddressesToAdd()));
-        put(arguments, "delivery_addresses_to_replace", legacyDeliveryAddresses(request.deliveryAddressesToReplace()));
-        put(arguments, "selected_delivery_options", legacySelectedDeliveryOptions(request.selectedDeliveryOptions()));
-        put(arguments, "discount_codes", request.discountCodes());
-        put(arguments, "gift_card_codes", request.giftCardCodes());
-        put(arguments, "note", request.note());
-        return arguments;
+    private LegacyCreateCartArguments legacyCreateCartArguments(CreateCartRequest request) {
+        return new LegacyCreateCartArguments(
+                request.addItems(), request.buyerIdentity(), legacyDeliveryAddresses(request.deliveryAddressesToAdd()),
+                legacyDeliveryAddresses(request.deliveryAddressesToReplace()),
+                legacySelectedDeliveryOptions(request.selectedDeliveryOptions()), request.discountCodes(),
+                request.giftCardCodes(), request.note());
     }
 
-    private Map<String, Object> legacyCreateWithUpdateCartArguments(CreateCartRequest request) {
+    private LegacyUpdateCartArguments legacyCreateWithUpdateCartArguments(CreateCartRequest request) {
         return legacyUpdateCartArguments(
                 null,
                 request.addItems(),
@@ -470,7 +471,7 @@ public class MerchantCartPluginDispatchService {
         );
     }
 
-    private Map<String, Object> legacyUpdateCartArguments(UpdateCartRequest request) {
+    private LegacyUpdateCartArguments legacyUpdateCartArguments(UpdateCartRequest request) {
         return legacyUpdateCartArguments(
                 request.cartId(),
                 request.addItems(),
@@ -486,121 +487,58 @@ public class MerchantCartPluginDispatchService {
         );
     }
 
-    private Map<String, Object> legacyUpdateCartArguments(
+    private LegacyUpdateCartArguments legacyUpdateCartArguments(
             String cartId,
             List<CartAddItem> addItems,
             List<CartUpdateItem> updateItems,
             List<String> removeLineIds,
-            Map<String, Object> buyerIdentity,
-            List<Map<String, Object>> deliveryAddressesToAdd,
-            List<Map<String, Object>> deliveryAddressesToReplace,
-            List<Map<String, Object>> selectedDeliveryOptions,
+            CartBuyer buyerIdentity,
+            List<CartDeliveryAddressSelection> deliveryAddressesToAdd,
+            List<CartDeliveryAddressSelection> deliveryAddressesToReplace,
+            List<CartDeliveryOptionSelection> selectedDeliveryOptions,
             List<String> discountCodes,
             List<String> giftCardCodes,
             String note
     ) {
-        Map<String, Object> arguments = new LinkedHashMap<>();
-        put(arguments, "cart_id", cartId);
-        put(arguments, "add_items", addItems);
-        put(arguments, "update_items", updateItems);
-        put(arguments, "remove_line_ids", removeLineIds);
-        put(arguments, "buyer_identity", buyerIdentity);
-        put(arguments, "delivery_addresses_to_add", legacyDeliveryAddresses(deliveryAddressesToAdd));
-        put(arguments, "delivery_addresses_to_replace", legacyDeliveryAddresses(deliveryAddressesToReplace));
-        put(arguments, "selected_delivery_options", legacySelectedDeliveryOptions(selectedDeliveryOptions));
-        put(arguments, "discount_codes", discountCodes);
-        put(arguments, "gift_card_codes", giftCardCodes);
-        put(arguments, "note", note);
-        return arguments;
+        return new LegacyUpdateCartArguments(
+                cartId, addItems, updateItems, removeLineIds, buyerIdentity,
+                legacyDeliveryAddresses(deliveryAddressesToAdd), legacyDeliveryAddresses(deliveryAddressesToReplace),
+                legacySelectedDeliveryOptions(selectedDeliveryOptions), discountCodes, giftCardCodes, note);
     }
 
-    private List<Map<String, Object>> legacyDeliveryAddresses(List<Map<String, Object>> deliveryAddresses) {
+    private List<LegacyDeliveryAddressSelection> legacyDeliveryAddresses(
+            List<CartDeliveryAddressSelection> deliveryAddresses) {
         return safeNonNullList(deliveryAddresses).stream()
                 .map(this::legacyDeliveryAddress)
-                .filter(map -> !map.isEmpty())
+                .filter(Objects::nonNull)
                 .toList();
     }
 
-    private Map<String, Object> legacyDeliveryAddress(Map<String, Object> source) {
-        if (source == null || source.isEmpty()) {
-            return Map.of();
+    private LegacyDeliveryAddressSelection legacyDeliveryAddress(
+            CartDeliveryAddressSelection source) {
+        if (source == null || source.address() == null || source.address().empty()) {
+            return null;
         }
-        Map<String, Object> existingAddress = mapValue(source.get("delivery_address"));
-        if (!existingAddress.isEmpty()) {
-            return source;
-        }
-
-        Map<String, Object> address = new LinkedHashMap<>();
-        put(address, "first_name", firstValue(source, "first_name", "firstName"));
-        put(address, "last_name", firstValue(source, "last_name", "lastName"));
-        put(address, "phone", firstValue(source, "phone", "phone_number"));
-        put(address, "address1", firstValue(source, "address1", "street_address"));
-        put(address, "address2", firstValue(source, "address2", "extended_address"));
-        put(address, "city", firstValue(source, "city", "address_locality"));
-        put(address, "province_code", firstValue(source, "province_code", "province", "address_region"));
-        put(address, "zip", firstValue(source, "zip", "postal_code"));
-        put(address, "country_code", firstValue(source, "country_code", "country", "address_country"));
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        put(result, "selected", firstValue(source, "selected"));
-        put(result, "delivery_address", address);
-        return result;
+        var address = source.address();
+        return new LegacyDeliveryAddressSelection(source.methodId(), address.id(), source.selected(),
+                new LegacyDeliveryAddress(
+                address.firstName(), address.lastName(), address.phoneNumber(), address.streetAddress(),
+                address.extendedAddress(), address.addressLocality(), address.addressRegion(),
+                address.postalCode(), address.addressCountry()));
     }
 
-    private List<Map<String, Object>> legacySelectedDeliveryOptions(List<Map<String, Object>> selectedDeliveryOptions) {
+    private List<LegacyDeliveryOptionSelection> legacySelectedDeliveryOptions(
+            List<CartDeliveryOptionSelection> selectedDeliveryOptions) {
         return safeNonNullList(selectedDeliveryOptions).stream()
                 .map(this::legacySelectedDeliveryOption)
-                .filter(map -> !map.isEmpty())
+                .filter(Objects::nonNull)
                 .toList();
     }
 
-    private Map<String, Object> legacySelectedDeliveryOption(Map<String, Object> source) {
-        if (source == null || source.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        put(result, "group_id", firstValue(source, "group_id", "delivery_group_id", "id"));
-        put(result, "option_handle", firstValue(source, "option_handle", "delivery_option_handle", "selected_option_id"));
-        return result;
-    }
-
-    private Object firstValue(Map<String, Object> source, String... keys) {
-        for (String key : keys) {
-            Object value = source.get(key);
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private Map<String, Object> mapValue(Object value) {
-        if (!(value instanceof Map<?, ?> source)) {
-            return Map.of();
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        source.forEach((key, mapValue) -> {
-            if (key != null) {
-                result.put(key.toString(), mapValue);
-            }
-        });
-        return result;
-    }
-
-    private void put(Map<String, Object> destination, String key, Object value) {
-        if (value == null) {
-            return;
-        }
-        if (value instanceof String text && text.isBlank()) {
-            return;
-        }
-        if (value instanceof Collection<?> values && values.isEmpty()) {
-            return;
-        }
-        if (value instanceof Map<?, ?> values && values.isEmpty()) {
-            return;
-        }
-        destination.put(key, value);
+    private LegacyDeliveryOptionSelection legacySelectedDeliveryOption(
+            CartDeliveryOptionSelection source) {
+        return source == null || source.groupId() == null || source.selectedOptionId() == null
+                ? null : new LegacyDeliveryOptionSelection(source.groupId(), source.selectedOptionId());
     }
 
     private UcpCartResponse parseCartResponse(
@@ -786,5 +724,71 @@ public class MerchantCartPluginDispatchService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private record LegacyCartIdArguments(
+            String id,
+            @JsonProperty("cart_id") String cartId
+    ) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private record LegacyCreateCartArguments(
+            @JsonProperty("add_items") List<CartAddItem> addItems,
+            @JsonProperty("buyer_identity") CartBuyer buyerIdentity,
+            @JsonProperty("delivery_addresses_to_add") List<LegacyDeliveryAddressSelection> deliveryAddressesToAdd,
+            @JsonProperty("delivery_addresses_to_replace") List<LegacyDeliveryAddressSelection> deliveryAddressesToReplace,
+            @JsonProperty("selected_delivery_options") List<LegacyDeliveryOptionSelection> selectedDeliveryOptions,
+            @JsonProperty("discount_codes") List<String> discountCodes,
+            @JsonProperty("gift_card_codes") List<String> giftCardCodes,
+            String note
+    ) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private record LegacyUpdateCartArguments(
+            @JsonProperty("cart_id") String cartId,
+            @JsonProperty("add_items") List<CartAddItem> addItems,
+            @JsonProperty("update_items") List<CartUpdateItem> updateItems,
+            @JsonProperty("remove_line_ids") List<String> removeLineIds,
+            @JsonProperty("buyer_identity") CartBuyer buyerIdentity,
+            @JsonProperty("delivery_addresses_to_add") List<LegacyDeliveryAddressSelection> deliveryAddressesToAdd,
+            @JsonProperty("delivery_addresses_to_replace") List<LegacyDeliveryAddressSelection> deliveryAddressesToReplace,
+            @JsonProperty("selected_delivery_options") List<LegacyDeliveryOptionSelection> selectedDeliveryOptions,
+            @JsonProperty("discount_codes") List<String> discountCodes,
+            @JsonProperty("gift_card_codes") List<String> giftCardCodes,
+            String note
+    ) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private record LegacyDeliveryAddressSelection(
+            @JsonProperty("method_id") String methodId,
+            String id,
+            Boolean selected,
+            @JsonProperty("delivery_address") LegacyDeliveryAddress deliveryAddress
+    ) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private record LegacyDeliveryAddress(
+            @JsonProperty("first_name") String firstName,
+            @JsonProperty("last_name") String lastName,
+            String phone,
+            String address1,
+            String address2,
+            String city,
+            @JsonProperty("province_code") String provinceCode,
+            String zip,
+            @JsonProperty("country_code") String countryCode
+    ) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private record LegacyDeliveryOptionSelection(
+            @JsonProperty("group_id") String groupId,
+            @JsonProperty("option_handle") String optionHandle
+    ) {
     }
 }

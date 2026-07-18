@@ -220,9 +220,9 @@ class AllbirdsUcpLiveIT {
 
     private Object replacementArguments(String cartId, List<CartAddItem> items) {
         return updateCartCapability.buildArguments(new UpdateCartRequest(
-                cartId, List.of(), List.of(), List.of(), List.of(), null, Map.of(),
+                cartId, List.of(), List.of(), List.of(), List.of(), null, null,
                 List.of(), List.of(), List.of(), List.of(), List.of(), null,
-                new CartReplacementState(items, Map.of(), Map.of(), Map.of(),
+                new CartReplacementState(items, null, null, null,
                         null, null, List.of(), null)),
                 NegotiatedCapabilities.none());
     }

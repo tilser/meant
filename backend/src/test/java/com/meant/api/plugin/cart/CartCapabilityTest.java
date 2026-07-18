@@ -7,6 +7,9 @@ import com.meant.api.plugin.cart.cancel.dto.CancelCartArguments;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartBuyer;
+import com.meant.api.plugin.cart.common.dto.CartContext;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
@@ -39,7 +42,7 @@ class CartCapabilityTest {
         CreateCartArguments arguments = capability.buildArguments(
                 new CreateCartRequest(
                         List.of(new CartAddItem("gid://shopify/ProductVariant/1", 1)),
-                        Map.of("email", "ada@example.com"),
+                        new CartBuyer(null, null, "ada@example.com", null),
                         List.of(),
                         List.of(),
                         List.of(),
@@ -98,7 +101,8 @@ class CartCapabilityTest {
                 NegotiatedCapabilities.none()
         );
         UcpCartResponse response = capability.parseResponse(new UcpToolResponse(null,
-                Map.of("cart", Map.of("id", "gid://shopify/Cart/1"), "errors", List.of()),
+                objectMapper.valueToTree(
+                        Map.of("cart", Map.of("id", "gid://shopify/Cart/1"), "errors", List.of())),
                 NegotiatedCapabilities.none()));
 
         assertThat(arguments.id()).isEqualTo("gid://shopify/Cart/1");
@@ -127,7 +131,7 @@ class CartCapabilityTest {
                         null,
                         List.of(),
                         List.of(),
-                        List.of(Map.of("delivery_option_handle", "express")),
+                        List.of(new CartDeliveryOptionSelection(null, "delivery-group", "express")),
                         null,
                         null,
                         null
@@ -149,6 +153,18 @@ class CartCapabilityTest {
     }
 
     @Test
+    void updateDistinguishesUnchangedDiscountsFromExplicitClear() throws Exception {
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+
+        UpdateCartArguments unchanged = capability.buildArguments(updateRequest(null), NegotiatedCapabilities.none());
+        UpdateCartArguments cleared = capability.buildArguments(updateRequest(List.of()), NegotiatedCapabilities.none());
+
+        assertThat(objectMapper.writeValueAsString(unchanged)).doesNotContain("\"discounts\"");
+        assertThat(objectMapper.writeValueAsString(cleared))
+                .contains("\"discounts\":{\"codes\":[]}");
+    }
+
+    @Test
     void providerUpdateSerializesTheCompleteIntendedCartState() {
         UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
         CartAddItem first = new CartAddItem("product-1", "variant-1",
@@ -158,10 +174,10 @@ class CartCapabilityTest {
                 List.of(), List.of(), null, 1);
 
         UpdateCartArguments arguments = capability.buildArguments(new UpdateCartRequest(
-                "cart-1", List.of(), List.of(), List.of(), List.of(), null, Map.of("address_country", "US"),
+                "cart-1", List.of(), List.of(), List.of(), List.of(), null, new CartContext("US"),
                 List.of(), List.of(), List.of(), List.of(), List.of(), null,
-                new CartReplacementState(List.of(first, second), Map.of(), Map.of("address_country", "US"),
-                        Map.of(), null, null, List.of(), null)),
+                new CartReplacementState(List.of(first, second), null, new CartContext("US"),
+                        null, null, null, List.of(), null)),
                 NegotiatedCapabilities.none());
 
         assertThat(arguments.cart().lineItems()).hasSize(2);
@@ -171,22 +187,116 @@ class CartCapabilityTest {
                 .containsExactly(3, 1);
         assertThat(arguments.cart().lineItems().getFirst().item().selectedOptions())
                 .containsExactlyElementsOf(first.selectedOptions());
-        assertThat(arguments.cart().context()).containsEntry("address_country", "US");
+        assertThat(arguments.cart().context().addressCountry()).isEqualTo("US");
+    }
+
+    private UpdateCartRequest updateRequest(List<String> discountCodes) {
+        return new UpdateCartRequest(
+                "cart-1", List.of(), List.of(), List.of(), List.of(), null, null,
+                null, null, null, discountCodes, null, null);
     }
 
     @Test
     void providerUpdateSerializesRequiredEmptyLineItemsWhenRemovingTheLastItem() throws Exception {
         UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
         UpdateCartArguments arguments = capability.buildArguments(new UpdateCartRequest(
-                "cart-1", List.of(), List.of(), List.of(), List.of(), null, Map.of(),
+                "cart-1", List.of(), List.of(), List.of(), List.of(), null, null,
                 List.of(), List.of(), List.of(), List.of(), List.of(), null,
-                new CartReplacementState(List.of(), Map.of(), Map.of(), Map.of(),
+                new CartReplacementState(List.of(), null, null, null,
                         null, null, List.of(), null)),
                 NegotiatedCapabilities.none());
 
         assertThat(arguments.cart().lineItems()).isEmpty();
         assertThat(objectMapper.writeValueAsString(arguments))
                 .contains("\"cart\":{\"line_items\":[]");
+    }
+
+    @Test
+    void providerUpdatePreservesUnknownRemoteExtensionFields() throws Exception {
+        UcpCartResponse remote = new GetCartCapability(objectMapper).parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "cart": {
+                            "id": "cart-1",
+                            "lines": [],
+                            "buyer": {
+                              "email": "buyer@example.test",
+                              "com.shopify.buyer_token": "buyer-token"
+                            },
+                            "context": {
+                              "address_country": "US",
+                              "com.shopify.context_token": "context-token"
+                            },
+                            "signals": {
+                              "dev.ucp.buyer_ip": "192.0.2.10",
+                              "com.shopify.signal_token": "signal-token"
+                            },
+                            "fulfillment": {
+                              "com.shopify.fulfillment_token": "fulfillment-token",
+                              "methods": [
+                                {
+                                  "id": "shipping-1",
+                                  "type": "shipping",
+                                  "com.shopify.method_token": "method-token",
+                                  "destinations": [
+                                    {
+                                      "id": "home",
+                                      "postal_code": "10001",
+                                      "com.shopify.destination_token": "destination-token"
+                                    }
+                                  ],
+                                  "groups": [
+                                    {
+                                      "id": "delivery-1",
+                                      "selected_option_id": "express",
+                                      "com.shopify.group_token": "group-token",
+                                      "options": [
+                                        {
+                                          "id": "express",
+                                          "title": "Express",
+                                          "com.shopify.option_token": "option-token"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          }
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()));
+        CartReplacementState replacement = new CartReplacementState(
+                List.of(),
+                remote.cart().buyer(),
+                remote.cart().context(),
+                remote.cart().signals(),
+                remote.cart().fulfillment(),
+                remote.cart().discounts(),
+                List.of(),
+                remote.cart().note());
+
+        UpdateCartArguments arguments = new UpdateCartCapability(objectMapper).buildArguments(
+                new UpdateCartRequest(
+                        "cart-1", List.of(), List.of(), List.of(), List.of(), null, null,
+                        List.of(), List.of(), List.of(), List.of(), List.of(), null, replacement),
+                NegotiatedCapabilities.none());
+        String serialized = objectMapper.writeValueAsString(arguments);
+
+        assertThat(remote.cart().buyer().extensions()).containsKey("com.shopify.buyer_token");
+        assertThat(remote.cart().context().extensions()).containsKey("com.shopify.context_token");
+        assertThat(remote.cart().signals().extensions()).containsKey("com.shopify.signal_token");
+        assertThat(remote.cart().fulfillment().extensions()).containsKey("com.shopify.fulfillment_token");
+        assertThat(serialized)
+                .contains("\"com.shopify.buyer_token\":\"buyer-token\"")
+                .contains("\"com.shopify.context_token\":\"context-token\"")
+                .contains("\"com.shopify.signal_token\":\"signal-token\"")
+                .contains("\"com.shopify.fulfillment_token\":\"fulfillment-token\"")
+                .contains("\"com.shopify.method_token\":\"method-token\"")
+                .contains("\"com.shopify.destination_token\":\"destination-token\"")
+                .contains("\"com.shopify.group_token\":\"group-token\"")
+                .contains("\"com.shopify.option_token\":\"option-token\"");
     }
 
     @Test

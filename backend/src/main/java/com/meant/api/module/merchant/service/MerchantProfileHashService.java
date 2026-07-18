@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 
 @Service
 public class MerchantProfileHashService {
@@ -138,18 +139,38 @@ public class MerchantProfileHashService {
         return value == null ? "" : value.toString();
     }
 
-    private String stableConfig(Map<String, Object> config) {
-        if (config == null || config.isEmpty()) {
+    private String stableConfig(JsonNode config) {
+        if (config == null || config.isNull() || config.isMissingNode() || config.isEmpty()) {
             return "";
         }
         StringBuilder builder = new StringBuilder();
-        config.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> {
-                    builder.append(entry.getKey()).append('=');
-                    builder.append(stableText(entry.getValue())).append(';');
-                });
+        appendJson(builder, config);
         return builder.toString();
+    }
+
+    private void appendJson(StringBuilder builder, JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
+            builder.append("null");
+            return;
+        }
+        if (value.isObject()) {
+            builder.append('{');
+            value.properties().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> {
+                        append(builder, entry.getKey());
+                        appendJson(builder, entry.getValue());
+                    });
+            builder.append('}');
+            return;
+        }
+        if (value.isArray()) {
+            builder.append('[');
+            value.values().forEach(item -> appendJson(builder, item));
+            builder.append(']');
+            return;
+        }
+        append(builder, value.toString());
     }
 
     private void append(StringBuilder builder, Object value) {

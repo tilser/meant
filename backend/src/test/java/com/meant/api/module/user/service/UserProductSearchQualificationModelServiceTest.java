@@ -28,7 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 class UserProductSearchQualificationModelServiceTest {
 
     @Test
-    void alwaysUsesConfiguredLlmAndBuildsEveryTypedFilterDecision() {
+    void usesConfiguredChatModelWithGeminiCompatibleSchemaAndBuildsEveryTypedFilterDecision() throws Exception {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse());
         UserProductSearchQualificationModelService service = service(client);
 
@@ -42,15 +42,23 @@ class UserProductSearchQualificationModelServiceTest {
         ));
 
         assertThat(client.calls).isEqualTo(1);
-        assertThat(client.model).isEqualTo("qualification-model");
+        assertThat(client.model).isEqualTo("chat-model");
         assertThat(client.schema.properties()).containsOnlyKeys(
                 "effectiveQuery", "assistantMessage", "suggestedReplies", "available", "condition",
                 "shipsTo", "shipsFrom", "price", "shops", "categories", "attributes", "rating",
                 "priceTier", "durableAttributes");
-        assertThat(client.schema.properties().get("price").properties().get("minUsd").type())
-                .isEqualTo(List.of("number", "null"));
-        assertThat(client.schema.properties().get("available").properties().get("value").type())
-                .isEqualTo(List.of("boolean", "null"));
+        assertThat(new ObjectMapper().writeValueAsString(client.schema))
+                .doesNotContain("minItems", "maxItems");
+        assertThat(client.schema.properties().get("shops").properties().get("state").enumValues())
+                .containsExactly(UserProductSearchFilterState.ANY.name(),
+                        UserProductSearchFilterState.NOT_APPLICABLE.name());
+        assertThat(client.schema.properties().get("categories").properties().get("state").enumValues())
+                .containsExactly(UserProductSearchFilterState.ANY.name(),
+                        UserProductSearchFilterState.NOT_APPLICABLE.name());
+        assertThat(client.schema.properties().get("price").properties().get("minUsd").type().jsonValue().toString())
+                .isEqualTo("[\"number\",\"null\"]");
+        assertThat(client.schema.properties().get("available").properties().get("value").type()
+                .jsonValue().toString()).isEqualTo("[\"boolean\",\"null\"]");
         assertThat(client.userPrompt).contains("trail running shoes", "United States", "men", "footwear", "10");
         assertThat(client.userPrompt).doesNotContain("budget", "999");
 
@@ -79,25 +87,39 @@ class UserProductSearchQualificationModelServiceTest {
         assertThat(plan.rating().minCount()).isEqualTo(10L);
         assertThat(plan.priceTier().values()).containsExactly(UserProductPriceTier.LOW, UserProductPriceTier.MEDIUM);
         assertThat(plan.missingFilters()).containsExactly(UserProductSearchFilterKind.SHIPS_FROM);
+        assertThat(result.model()).isEqualTo("chat-model");
         assertThat(result.promptVersion()).isEqualTo("qualification-v1");
     }
 
     @Test
-    void rejectsModelGeneratedTaxonomyReferencesWithoutTrustedResolver() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse().replace(
-                "\"categories\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
-                "\"categories\": {\"state\": \"VALUE\", "
-                        + "\"values\": [\"gid://shopify/TaxonomyCategory/aa-8\"]}"
-        ));
+    void safelyDiscardsModelGeneratedTaxonomyReferencesWithoutTrustedResolver() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(validResponse()
+                .replace("\"effectiveQuery\": \"trail running shoes\"", "\"effectiveQuery\": \"blue shirt\"")
+                .replace(
+                        "\"shops\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
+                        "\"shops\": {\"state\": \"VALUE\", "
+                                + "\"values\": [\"gid://shopify/Shop/untrusted\"]}"
+                )
+                .replace(
+                        "\"categories\": {\"state\": \"NOT_APPLICABLE\", \"values\": []}",
+                        "\"categories\": {\"state\": \"VALUE\", "
+                                + "\"values\": [\"gid://shopify/TaxonomyCategory/aa-8\"]}"
+                ));
 
-        assertThatThrownBy(() -> service(client).generate(new GenerateUserProductSearchQualificationQuery(
-                "running shoes",
-                "running shoes",
+        var plan = service(client).generate(new GenerateUserProductSearchQualificationQuery(
+                "blue shirt",
+                "blue shirt",
                 null,
                 settings()
-        )))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("trusted server resolver");
+        )).plan();
+
+        assertThat(plan.effectiveQuery()).isEqualTo("blue shirt");
+        assertThat(plan.shops().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.shops().values()).isEmpty();
+        assertThat(plan.categories().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.categories().values()).isEmpty();
+        assertThat(plan.missingFilters())
+                .doesNotContain(UserProductSearchFilterKind.SHOPS, UserProductSearchFilterKind.CATEGORIES);
     }
 
     @Test

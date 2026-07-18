@@ -68,13 +68,47 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
 test('cart creation accepts only server-issued offer identity for line selection', () => {
   type CartCreate = components['schemas']['CartCreateRequest']
   type CartAddItem = components['schemas']['CartAddItemRequest']
-  const createFields: Array<keyof CartCreate> = ['addItems', 'discountCodes', 'giftCardCodes']
+  type CartBuyer = components['schemas']['CartBuyerIdentityRequest']
+  type CartAddress = components['schemas']['CartDeliveryAddressSelectionRequest']
+  type CartDeliveryOption = components['schemas']['CartDeliveryOptionSelectionRequest']
+  type HasStringIndex<T> = string extends keyof T ? true : false
+  const createFields: Array<keyof CartCreate> = [
+    'addItems',
+    'buyerIdentity',
+    'deliveryAddressesToAdd',
+    'selectedDeliveryOptions',
+    'discountCodes',
+    'giftCardCodes',
+  ]
   const addFields: Array<keyof CartAddItem> = ['offerKey', 'quantity']
+  const buyerFields: Array<keyof CartBuyer> = ['email', 'phoneNumber', 'firstName', 'lastName']
+  const addressFields: Array<keyof CartAddress> = [
+    'methodId',
+    'streetAddress',
+    'addressLocality',
+    'addressRegion',
+    'postalCode',
+    'addressCountry',
+  ]
+  const deliveryOptionFields: Array<keyof CartDeliveryOption> = [
+    'methodId',
+    'groupId',
+    'selectedOptionId',
+  ]
+  const buyerHasNoStringIndex: HasStringIndex<CartBuyer> = false
+  const addressHasNoStringIndex: HasStringIndex<CartAddress> = false
+  const optionHasNoStringIndex: HasStringIndex<CartDeliveryOption> = false
 
   expect(createFields as string[]).not.toContain('merchantId')
   expect(createFields as string[]).not.toContain('merchantDomain')
   expect(addFields as string[]).not.toContain('productVariantId')
   expect(addFields).toContain('offerKey')
+  expect(buyerFields).toContain('email')
+  expect(addressFields).toContain('addressCountry')
+  expect(deliveryOptionFields).toContain('selectedOptionId')
+  expect(buyerHasNoStringIndex).toBeFalse()
+  expect(addressHasNoStringIndex).toBeFalse()
+  expect(optionHasNoStringIndex).toBeFalse()
 })
 
 test('settings expose editable scoped product size preferences', () => {

@@ -46,11 +46,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.ObjectMapper;
 
 class GenericUcpCatalogProductRehydrationProviderTest {
     private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
     private static final UUID MERCHANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000011");
     private static final UUID INTEGRATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000012");
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private MerchantProductDetailsService detailsService;
     private MerchantIntegrationLookupService integrations;
@@ -159,7 +161,7 @@ class GenericUcpCatalogProductRehydrationProviderTest {
                 "12.99",
                 "USD",
                 "sku-large",
-                "15.99",
+                new ProductDetailsResponse.Money(1599L, "USD"),
                 "https://merchant.test/large.jpg",
                 "Large shirt",
                 List.of(new ProductDetailsResponse.Media(
@@ -176,7 +178,7 @@ class GenericUcpCatalogProductRehydrationProviderTest {
                 "12.99",
                 "USD",
                 "sku-large",
-                "15.99",
+                new ProductDetailsResponse.Money(1599L, "USD"),
                 "https://merchant.test/large.jpg",
                 "Large shirt",
                 List.of(new ProductDetailsResponse.Media(
@@ -185,7 +187,7 @@ class GenericUcpCatalogProductRehydrationProviderTest {
                 List.of(new ProductDetailsResponse.SelectedOption("Size", "M")),
                 List.of(new ProductDetailsResponse.Category("Shirts", "apparel")),
                 List.of("organic", "summer"),
-                Map.of("Weight", "180 gsm")
+                JSON.valueToTree(Map.of("Weight", "180 gsm"))
         );
         ProductDetailsResponse.Product product = new ProductDetailsResponse.Product(
                 "product-1",
@@ -207,17 +209,17 @@ class GenericUcpCatalogProductRehydrationProviderTest {
                 new ProductDetailsResponse.PriceRange("9.99", "12.99", "USD"),
                 new ProductDetailsResponse.PriceRange("14.99", "15.99", "USD"),
                 null,
-                Map.of("ratingValue", 4.6d),
-                Map.of("reviewCount", 321),
+                new com.meant.api.plugin.catalog.common.dto.CatalogRating(4.6d, 5.0d, 321),
+                321,
                 false,
                 List.of(),
                 List.of("sku-small", "sku-large"),
                 List.of("GOTS"),
                 List.of("Organic cotton"),
                 List.of("Essentials"),
-                Map.of("Fit", "Regular"),
-                Map.of("Care", "Cold wash"),
-                Map.of("Weight", "180 gsm"),
+                JSON.valueToTree(Map.of("Fit", "Regular")),
+                JSON.valueToTree(Map.of("Care", "Cold wash")),
+                List.of("180 gsm"),
                 selected
         );
         ProductDetailsResponse.Message message = new ProductDetailsResponse.Message(

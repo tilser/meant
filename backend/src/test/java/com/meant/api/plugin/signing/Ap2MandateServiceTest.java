@@ -161,11 +161,13 @@ class Ap2MandateServiceTest {
         assertThat(verified.issuer()).isEqualTo("https://agent.example");
         assertThat(verified.subject()).isEqualTo("user-1");
         assertThat(verified.disclosedClaims()).containsKey("checkout");
-        assertThat(verified.disclosedClaims()).containsEntry("merchant_authorization", merchantAuthorization);
+        assertThat(verified.disclosedClaims().get("merchant_authorization").stringValue())
+                .isEqualTo(merchantAuthorization);
         assertThat(verified.disclosedClaims().get("checkout").toString()).contains("merchant_authorization");
-        assertThat(verified.disclosedClaims().get("spend_scope").toString())
-                .contains("max_amount_minor=1999")
-                .contains("comparison=<=");
+        assertThat(verified.disclosedClaims().get("spend_scope").path("max_amount_minor").longValue())
+                .isEqualTo(1999L);
+        assertThat(verified.disclosedClaims().get("spend_scope").path("comparison").stringValue())
+                .isEqualTo("<=");
     }
 
     @Test

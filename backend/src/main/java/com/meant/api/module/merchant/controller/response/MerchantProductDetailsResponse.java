@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.controller.response;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
+import static com.meant.api.module.merchant.controller.mapper.ProductDetailsJsonValueMapper.toJsonNode;
 
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
@@ -8,12 +9,12 @@ import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import tools.jackson.databind.JsonNode;
 
 public record MerchantProductDetailsResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -203,11 +204,15 @@ public record MerchantProductDetailsResponse(
                                 .filter(Objects::nonNull)
                                 .map(ProductSelectedOptionResponse::from)
                                 .toList(),
-                stringValues(product.skus()),
-                stringValues(product.certifications()),
-                stringValues(product.materials()),
-                stringValues(product.collections()),
-                attributes(product.metadata(), product.metafields(), product.techSpecs()),
+                stringValues(toJsonNode(product.skus())),
+                stringValues(toJsonNode(product.certifications())),
+                stringValues(toJsonNode(product.materials())),
+                stringValues(toJsonNode(product.collections())),
+                attributes(
+                        toJsonNode(product.metadata()),
+                        toJsonNode(product.metafields()),
+                        toJsonNode(product.techSpecs())
+                ),
                 messageResponses(result.messages())
         );
     }
@@ -346,7 +351,7 @@ public record MerchantProductDetailsResponse(
                             .map(ProductCategoryResponse::from)
                             .toList(),
                     distinctStrings(variant.tags()),
-                    MerchantProductDetailsResponse.attributes(variant.metadata())
+                    MerchantProductDetailsResponse.attributes(toJsonNode(variant.metadata()))
             );
         }
     }
@@ -417,8 +422,8 @@ public record MerchantProductDetailsResponse(
                 .toList();
     }
 
-    private static List<String> stringValues(Object value) {
-        if (value == null) {
+    private static List<String> stringValues(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return List.of();
         }
         List<String> values = new ArrayList<>();
@@ -429,20 +434,21 @@ public record MerchantProductDetailsResponse(
             if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
                 continue;
             }
-            if (node.value() instanceof Collection<?> collection) {
-                List<?> items = new ArrayList<>(collection);
+            if (node.value().isArray()) {
+                List<JsonNode> items = new ArrayList<>(node.value().values());
                 for (int index = items.size() - 1; index >= 0; index--) {
                     stack.add(new ValueNode(items.get(index), node.depth() + 1));
                 }
                 continue;
             }
-            if (node.value() instanceof Map<?, ?> map) {
-                Object namedValue = firstMapValue(map, "values", "value", "name", "label", "title", "text");
+            if (node.value().isObject()) {
+                JsonNode namedValue = firstField(
+                        node.value(), "values", "value", "name", "label", "title", "text");
                 if (namedValue != null) {
                     stack.add(new ValueNode(namedValue, node.depth() + 1));
                     continue;
                 }
-                List<?> mapValues = new ArrayList<>(map.values());
+                List<JsonNode> mapValues = new ArrayList<>(node.value().values());
                 for (int index = mapValues.size() - 1; index >= 0; index--) {
                     stack.add(new ValueNode(mapValues.get(index), node.depth() + 1));
                 }
@@ -456,9 +462,9 @@ public record MerchantProductDetailsResponse(
         return distinctStrings(values);
     }
 
-    private static List<ProductAttributeResponse> attributes(Object... values) {
+    private static List<ProductAttributeResponse> attributes(JsonNode... values) {
         Map<String, ProductAttributeResponse> attributes = new LinkedHashMap<>();
-        for (Object value : values) {
+        for (JsonNode value : values) {
             collectAttributes(attributes, "metadata", value, 0);
         }
         return List.copyOf(attributes.values());
@@ -467,35 +473,35 @@ public record MerchantProductDetailsResponse(
     private static void collectAttributes(
             Map<String, ProductAttributeResponse> attributes,
             String name,
-            Object value,
+            JsonNode value,
             int depth
     ) {
-        if (depth > MAX_METADATA_DEPTH || value == null) {
+        if (depth > MAX_METADATA_DEPTH || value == null || value.isNull() || value.isMissingNode()) {
             return;
         }
-        if (value instanceof Map<?, ?> map) {
-            Object namedValue = firstMapValue(map, "value", "values", "text", "description");
-            Object keyField = firstMapValue(map, "name", "key", "label", "title");
+        if (value.isObject()) {
+            JsonNode namedValue = firstField(value, "value", "values", "text", "description");
+            JsonNode keyField = firstField(value, "name", "key", "label", "title");
             if (namedValue != null && keyField != null) {
                 String namedKey = firstPresent(scalarString(keyField), name);
                 addAttribute(attributes, namedKey, String.join(", ", stringValues(namedValue)));
                 return;
             }
-            map.forEach((key, nestedValue) -> {
-                String nestedName = scalarString(key);
+            value.properties().forEach(entry -> {
+                String nestedName = blankToNull(entry.getKey());
                 if (nestedName != null) {
                     collectAttributes(
                             attributes,
                             "metadata".equals(name) ? nestedName : name + " " + nestedName,
-                            nestedValue,
+                            entry.getValue(),
                             depth + 1
                     );
                 }
             });
             return;
         }
-        if (value instanceof Collection<?> collection) {
-            addAttribute(attributes, name, String.join(", ", stringValues(collection)));
+        if (value.isArray()) {
+            addAttribute(attributes, name, String.join(", ", stringValues(value)));
             return;
         }
         addAttribute(attributes, name, scalarString(value));
@@ -517,10 +523,10 @@ public record MerchantProductDetailsResponse(
         );
     }
 
-    private static Object firstMapValue(Map<?, ?> map, String... keys) {
+    private static JsonNode firstField(JsonNode object, String... keys) {
         for (String key : keys) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (entry.getKey() != null && key.equalsIgnoreCase(entry.getKey().toString())) {
+            for (Map.Entry<String, JsonNode> entry : object.properties()) {
+                if (key.equalsIgnoreCase(entry.getKey())) {
                     return entry.getValue();
                 }
             }
@@ -528,15 +534,15 @@ public record MerchantProductDetailsResponse(
         return null;
     }
 
-    private static String scalarString(Object value) {
-        if (value == null) {
+    private static String scalarString(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return null;
         }
-        if (value instanceof String string) {
-            return blankToNull(string);
+        if (value.isString()) {
+            return blankToNull(value.stringValue());
         }
-        if (value instanceof Number || value instanceof Boolean || value instanceof Character) {
-            return blankToNull(value.toString());
+        if (value.isNumber() || value.isBoolean()) {
+            return blankToNull(value.asString());
         }
         return null;
     }
@@ -549,6 +555,6 @@ public record MerchantProductDetailsResponse(
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private record ValueNode(Object value, int depth) {
+    private record ValueNode(JsonNode value, int depth) {
     }
 }

@@ -7,7 +7,16 @@ import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
+import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressSelectionInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartBuyer;
+import com.meant.api.plugin.cart.common.dto.CartContext;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
@@ -19,6 +28,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -57,7 +67,7 @@ public class CartReplacementService {
             Cart cart,
             UpdateCartCommand command,
             List<CartAddItem> addedItems,
-            Map<String, Object> derivedContext,
+            CartContext derivedContext,
             UcpCartResponse currentRemote
     ) {
         Map<UUID, CartLine> local = localLines(cart);
@@ -66,15 +76,16 @@ public class CartReplacementService {
         List<CartUpdateItem> updates = safeList(command.updateItems()).stream()
                 .map(item -> updateItem(item, local, remote))
                 .toList();
+        CartContext requestContext = context(derivedContext, command.buyerIdentity());
         CartReplacementState replacement = providerBound(cart)
-                ? replacementState(cart, command, addedItems, derivedContext, currentRemote)
+                ? replacementState(cart, command, addedItems, requestContext, currentRemote)
                 : null;
         return new UpdateCartRequest(
                 cart.getRemoteCartId(), addedItems, updates,
                 removals.stream().map(CartUpdateItem::id).toList(), removals,
-                command.buyerIdentity(), derivedContext,
-                command.deliveryAddressesToAdd(), command.deliveryAddressesToReplace(),
-                command.selectedDeliveryOptions(), normalizeCodes(command.discountCodes()),
+                buyer(command.buyerIdentity()), requestContext,
+                addresses(command.deliveryAddressesToAdd()), addresses(command.deliveryAddressesToReplace()),
+                options(command.selectedDeliveryOptions()), normalizeCodes(command.discountCodes()),
                 normalizeCodes(command.giftCardCodes()), command.note(), replacement);
     }
 
@@ -101,7 +112,7 @@ public class CartReplacementService {
             Cart cart,
             UpdateCartCommand command,
             List<CartAddItem> addedItems,
-            Map<String, Object> derivedContext,
+            CartContext derivedContext,
             UcpCartResponse response
     ) {
         UcpCartResponse.Cart remote = response == null ? null : response.cart();
@@ -110,25 +121,72 @@ public class CartReplacementService {
                     "A fresh remote cart snapshot is required before replacement");
         }
         List<CartAddItem> lines = replacementLines(cart, command, addedItems, remote);
-        Map<String, Object> context = new LinkedHashMap<>(remote.context());
-        if (derivedContext != null) {
-            context.putAll(derivedContext);
-        }
+        CartContext context = remote.context() == null
+                ? derivedContext
+                : remote.context().merge(derivedContext);
         List<String> discounts = command.discountCodes() == null
                 ? remoteDiscountCodes(remote) : normalizeCodes(command.discountCodes());
         List<String> giftCards = command.giftCardCodes() == null
                 ? remoteGiftCardCodes(remote) : normalizeCodes(command.giftCardCodes());
         return new CartReplacementState(
                 lines,
-                command.buyerIdentity() == null ? remote.buyer() : command.buyerIdentity(),
+                replacementBuyer(remote.buyer(), command.buyerIdentity()),
                 context,
                 remote.signals(),
                 fulfillmentReplacementService.merge(
-                        remote.fulfillment(), command.deliveryAddressesToAdd(),
-                        command.deliveryAddressesToReplace(), command.selectedDeliveryOptions()),
-                discounts == null || discounts.isEmpty() ? null : new CartToolArguments.Discounts(discounts),
+                        remote.fulfillment(), addresses(command.deliveryAddressesToAdd()),
+                        addresses(command.deliveryAddressesToReplace()), options(command.selectedDeliveryOptions())),
+                new CartToolArguments.Discounts(discounts),
                 giftCards,
                 command.note() == null ? remote.note() : command.note());
+    }
+
+    private CartBuyer buyer(CartBuyerIdentityInput input) {
+        return input == null ? null : new CartBuyer(
+                text(input.firstName()), text(input.lastName()), text(input.email()), text(input.phoneNumber()));
+    }
+
+    private CartBuyer replacementBuyer(CartBuyer remote, CartBuyerIdentityInput input) {
+        if (input == null) {
+            return remote;
+        }
+        CartBuyer requested = buyer(input);
+        return remote == null ? requested : remote.merge(requested);
+    }
+
+    private CartContext context(CartContext derived, CartBuyerIdentityInput buyer) {
+        String country = buyer == null ? null : text(buyer.countryCode());
+        if (country == null) {
+            return derived;
+        }
+        CartContext buyerContext = new CartContext(country.toUpperCase(Locale.ROOT));
+        return derived == null ? buyerContext : derived.merge(buyerContext);
+    }
+
+    private List<CartDeliveryAddressSelection> addresses(List<CartDeliveryAddressSelectionInput> inputs) {
+        return inputs == null ? null : safeNonNullList(inputs).stream().map(input -> new CartDeliveryAddressSelection(
+                text(input.methodId()), input.selected(), address(input))).toList();
+    }
+
+    private CartDeliveryAddress address(CartDeliveryAddressSelectionInput input) {
+        CartDeliveryAddressInput value = input.address();
+        return new CartDeliveryAddress(
+                text(input.id()), value == null ? null : text(value.firstName()),
+                value == null ? null : text(value.lastName()), value == null ? null : text(value.phoneNumber()),
+                value == null ? null : text(value.streetAddress()),
+                value == null ? null : text(value.extendedAddress()),
+                value == null ? null : text(value.addressLocality()),
+                value == null ? null : text(value.addressRegion()), value == null ? null : text(value.postalCode()),
+                value == null ? null : text(value.addressCountry()));
+    }
+
+    private List<CartDeliveryOptionSelection> options(List<CartDeliveryOptionSelectionInput> inputs) {
+        return inputs == null ? null : safeNonNullList(inputs).stream().map(input -> new CartDeliveryOptionSelection(
+                text(input.methodId()), text(input.groupId()), text(input.selectedOptionId()))).toList();
+    }
+
+    private String text(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private List<CartAddItem> replacementLines(

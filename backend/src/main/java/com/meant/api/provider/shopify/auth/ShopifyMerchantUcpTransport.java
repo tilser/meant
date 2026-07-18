@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 
 /** Authenticated, exact-authority transport for merchant-scoped Shopify UCP tools. */
 @Component
@@ -55,12 +56,13 @@ public class ShopifyMerchantUcpTransport {
                     unauthorizedRefreshAllowed
             ), toolName, arguments, headers);
             metrics.record(target, toolName, "success", System.nanoTime() - started);
-            String status = checkoutStatus(response.structuredContent());
+            JsonNode structuredContent = response.structuredContent();
+            String status = checkoutStatus(structuredContent);
             if (status != null) {
                 metrics.recordStateObservation(target, toolName, status);
             }
             return new MerchantMcpToolCallResult(endpoint.toString(), response.textContent(),
-                    response.structuredContent(), response.negotiatedCapabilities());
+                    structuredContent, response.negotiatedCapabilities());
         } catch (ShopifyUcpTransportException exception) {
             metrics.record(target, toolName, ShopifyCommerceFailureMapper.map(exception).kind().name(),
                     System.nanoTime() - started);
@@ -68,15 +70,16 @@ public class ShopifyMerchantUcpTransport {
         }
     }
 
-    private String checkoutStatus(Object structuredContent) {
-        if (!(structuredContent instanceof Map<?, ?> root)) {
+    private String checkoutStatus(JsonNode structuredContent) {
+        if (structuredContent == null || !structuredContent.isObject()) {
             return null;
         }
-        Object checkout = root.get("checkout");
-        if (checkout instanceof Map<?, ?> checkoutMap && checkoutMap.get("status") instanceof String status) {
-            return status;
+        JsonNode checkout = structuredContent.get("checkout");
+        if (checkout != null && checkout.isObject() && checkout.path("status").isString()) {
+            return checkout.path("status").stringValue();
         }
-        return root.get("status") instanceof String status ? status : null;
+        JsonNode status = structuredContent.get("status");
+        return status != null && status.isString() ? status.stringValue() : null;
     }
 
     private MerchantCartProvider validatedProvider(CartRoutingTarget target, CommerceOperation operation) {

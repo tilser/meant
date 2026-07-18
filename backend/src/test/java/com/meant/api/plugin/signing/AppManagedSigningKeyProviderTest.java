@@ -50,9 +50,8 @@ class AppManagedSigningKeyProviderTest {
         assertThat(provider.publicKeys())
                 .extracting(PublicSigningKey::kid)
                 .containsExactly("transport-active", "transport-old");
-        assertThat(provider.publicKeys().getFirst().jwk())
-                .containsEntry("alg", "ES256")
-                .doesNotContainKey("d");
+        assertThat(provider.publicKeys().getFirst().jwk().alg()).isEqualTo("ES256");
+        assertThat(provider.publicKeys().getFirst().jwk().kty()).isEqualTo("EC");
     }
 
     @Test

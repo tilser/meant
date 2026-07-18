@@ -48,6 +48,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class ShopifyOfferCartRoutingTest {
 
@@ -469,7 +470,8 @@ class ShopifyOfferCartRoutingTest {
 
     private UcpProfileFetchResult profile(String endpoint) {
         return profile(endpoint, Map.of("dev.ucp.shopping.cart", List.of(new UcpCapabilityDefinition(
-                "dev.ucp.shopping.cart", "2026-04-08", null, null, List.of(), null, Map.of()))));
+                "dev.ucp.shopping.cart", "2026-04-08", null, null, List.of(), null,
+                new ObjectMapper().createObjectNode()))));
     }
 
     private UcpProfileFetchResult profile(Map<String, List<UcpCapabilityDefinition>> capabilities) {
@@ -489,7 +491,8 @@ class ShopifyOfferCartRoutingTest {
     }
 
     private UcpCapabilityDefinition capability(String id) {
-        return new UcpCapabilityDefinition(id, "2026-04-08", null, null, List.of(), null, Map.of());
+        return new UcpCapabilityDefinition(
+                id, "2026-04-08", null, null, List.of(), null, new ObjectMapper().createObjectNode());
     }
 
     private ShopifyCartProperties properties() {

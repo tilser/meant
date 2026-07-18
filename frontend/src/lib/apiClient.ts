@@ -671,53 +671,27 @@ export interface SelectedOfferCartAddItemInput {
   quantity: number
 }
 
-export type CartToolMapInput = Record<string, unknown>
+export type CartBuyerIdentityInput = components['schemas']['CartBuyerIdentityRequest']
+export type CartDeliveryAddressInput = components['schemas']['CartDeliveryAddressSelectionRequest']
+export type CartDeliveryOptionSelectionInput =
+  components['schemas']['CartDeliveryOptionSelectionRequest']
+
+type SearchDiscountCodesBuyerIdentityInput =
+  components['schemas']['SearchDiscountCodesBuyerIdentityRequest']
+type SearchDiscountCodesDeliveryAddressInput =
+  components['schemas']['SearchDiscountCodesDeliveryAddressSelectionRequest']
+type SearchDiscountCodesDeliveryOptionInput =
+  components['schemas']['SearchDiscountCodesDeliveryOptionSelectionRequest']
+type SearchDiscountCodesItemInput = components['schemas']['SearchDiscountCodesItemRequest']
 
 export interface SearchDiscountCodesInput {
   merchantId?: string | null
   merchantDomain?: string | null
-  items: readonly CartAddItemInput[]
-  buyerIdentity?: {
-    email?: string | null
-    phoneNumber?: string | null
-    firstName?: string | null
-    lastName?: string | null
-    countryCode?: string | null
-  } | null
-  deliveryAddressesToAdd?: readonly {
-    id?: string | null
-    selected?: boolean | null
-    firstName?: string | null
-    lastName?: string | null
-    phoneNumber?: string | null
-    streetAddress?: string | null
-    extendedAddress?: string | null
-    city?: string | null
-    provinceCode?: string | null
-    postalCode?: string | null
-    countryCode?: string | null
-  }[]
-  deliveryAddressesToReplace?: readonly {
-    id?: string | null
-    selected?: boolean | null
-    firstName?: string | null
-    lastName?: string | null
-    phoneNumber?: string | null
-    streetAddress?: string | null
-    extendedAddress?: string | null
-    city?: string | null
-    provinceCode?: string | null
-    postalCode?: string | null
-    countryCode?: string | null
-  }[]
-  selectedDeliveryOptions?: readonly {
-    id?: string | null
-    groupId?: string | null
-    deliveryGroupId?: string | null
-    optionHandle?: string | null
-    deliveryOptionHandle?: string | null
-    selectedOptionId?: string | null
-  }[]
+  items: readonly SearchDiscountCodesItemInput[]
+  buyerIdentity?: SearchDiscountCodesBuyerIdentityInput | null
+  deliveryAddressesToAdd?: readonly SearchDiscountCodesDeliveryAddressInput[]
+  deliveryAddressesToReplace?: readonly SearchDiscountCodesDeliveryAddressInput[]
+  selectedDeliveryOptions?: readonly SearchDiscountCodesDeliveryOptionInput[]
   expectedUserId?: string
 }
 
@@ -1605,11 +1579,13 @@ export async function rejectUserTasteSuggestion(
 
 export async function createCart(input: {
   addItems: readonly SelectedOfferCartAddItemInput[]
+  buyerIdentity?: CartBuyerIdentityInput | null
   discountCodes?: readonly string[]
   giftCardCodes?: readonly string[]
-  deliveryAddressesToAdd?: readonly CartToolMapInput[]
-  deliveryAddressesToReplace?: readonly CartToolMapInput[]
-  selectedDeliveryOptions?: readonly CartToolMapInput[]
+  deliveryAddressesToAdd?: readonly CartDeliveryAddressInput[]
+  deliveryAddressesToReplace?: readonly CartDeliveryAddressInput[]
+  selectedDeliveryOptions?: readonly CartDeliveryOptionSelectionInput[]
+  note?: string | null
   expectedUserId?: string
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts`, {
@@ -1620,11 +1596,13 @@ export async function createCart(input: {
     },
     body: JSON.stringify({
       addItems: input.addItems,
+      buyerIdentity: input.buyerIdentity,
       discountCodes: input.discountCodes,
       giftCardCodes: input.giftCardCodes,
       deliveryAddressesToAdd: input.deliveryAddressesToAdd,
       deliveryAddressesToReplace: input.deliveryAddressesToReplace,
       selectedDeliveryOptions: input.selectedDeliveryOptions,
+      note: input.note,
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to create cart')
@@ -1640,11 +1618,13 @@ export async function updateCart(input: {
   }[]
   removeCartLineIds?: readonly string[]
   removeRemoteCartLineIds?: readonly string[]
+  buyerIdentity?: CartBuyerIdentityInput | null
   discountCodes?: readonly string[]
   giftCardCodes?: readonly string[]
-  deliveryAddressesToAdd?: readonly CartToolMapInput[]
-  deliveryAddressesToReplace?: readonly CartToolMapInput[]
-  selectedDeliveryOptions?: readonly CartToolMapInput[]
+  deliveryAddressesToAdd?: readonly CartDeliveryAddressInput[]
+  deliveryAddressesToReplace?: readonly CartDeliveryAddressInput[]
+  selectedDeliveryOptions?: readonly CartDeliveryOptionSelectionInput[]
+  note?: string | null
   expectedUserId?: string
 }): Promise<CartProfile> {
   const response = await fetch(`${API_URL}/api/carts/${encodeURIComponent(input.cartId)}`, {
@@ -1658,11 +1638,13 @@ export async function updateCart(input: {
       updateItems: input.updateItems,
       removeCartLineIds: input.removeCartLineIds,
       removeRemoteCartLineIds: input.removeRemoteCartLineIds,
+      buyerIdentity: input.buyerIdentity,
       discountCodes: input.discountCodes,
       giftCardCodes: input.giftCardCodes,
       deliveryAddressesToAdd: input.deliveryAddressesToAdd,
       deliveryAddressesToReplace: input.deliveryAddressesToReplace,
       selectedDeliveryOptions: input.selectedDeliveryOptions,
+      note: input.note,
     }),
   })
   return parseJsonResponse<CartProfile>(response, 'Failed to update cart')

@@ -4,12 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.CartToolArguments;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class CartFulfillmentReplacementServiceTest {
+    private static final ObjectMapper JSON = new ObjectMapper();
     private final CartFulfillmentReplacementService service = new CartFulfillmentReplacementService();
 
     @Test
@@ -17,27 +22,27 @@ class CartFulfillmentReplacementServiceTest {
         CartToolArguments.Fulfillment current = fulfillment(methodA(), methodB());
 
         CartToolArguments.Fulfillment merged = service.merge(
-                current, null, null,
-                List.of(Map.of("group_id", "group-a", "selected_option_id", "standard")));
+                current, null, null, List.of(option(null, "group-a", "standard")));
 
         assertThat(merged.methods()).hasSize(2);
-        assertThat(groups(merged, 0)).containsExactly(
-                Map.of("id", "group-a", "selected_option_id", "standard", "merchant_extension", "keep-a"));
-        assertThat(destinations(merged, 0)).isEqualTo(destinations(current, 0));
+        assertThat(merged.methods().getFirst().groups().getFirst().selectedOptionId()).isEqualTo("standard");
+        assertThat(merged.methods().getFirst().groups().getFirst().extensions())
+                .containsKey("merchant_extension");
+        assertThat(merged.methods().getFirst().destinations()).isEqualTo(current.methods().getFirst().destinations());
         assertThat(merged.methods().get(1)).isEqualTo(current.methods().get(1));
     }
 
     @Test
     void requestPermutationProducesTheSameDeterministicMethodState() {
         CartToolArguments.Fulfillment current = fulfillment(methodA(), methodB());
-        Map<String, Object> updateA = Map.of("group_id", "group-a", "selected_option_id", "standard");
-        Map<String, Object> updateB = Map.of("group_id", "group-b", "selected_option_id", "pickup-later");
+        CartDeliveryOptionSelection updateA = option(null, "group-a", "standard");
+        CartDeliveryOptionSelection updateB = option(null, "group-b", "pickup-later");
 
         CartToolArguments.Fulfillment first = service.merge(current, null, null, List.of(updateB, updateA));
         CartToolArguments.Fulfillment second = service.merge(current, null, null, List.of(updateA, updateB));
 
         assertThat(first).isEqualTo(second);
-        assertThat(first.methods()).extracting(method -> method.get("id"))
+        assertThat(first.methods()).extracting(CartToolArguments.FulfillmentMethod::id)
                 .containsExactly("method-a", "method-b");
     }
 
@@ -46,7 +51,7 @@ class CartFulfillmentReplacementServiceTest {
         CartToolArguments.Fulfillment current = fulfillment(methodA(), methodB());
 
         assertThatThrownBy(() -> service.merge(
-                current, List.of(Map.of("id", "new-destination", "postal_code", "10002")), null, null))
+                current, List.of(address(null, "new-destination", "10002")), null, null))
                 .isInstanceOf(CartException.class)
                 .hasMessageContaining("exactly one existing method");
         assertThatThrownBy(() -> service.merge(current, null, List.of(), null))
@@ -59,63 +64,81 @@ class CartFulfillmentReplacementServiceTest {
         CartToolArguments.Fulfillment current = fulfillment(methodA(), methodB());
 
         CartToolArguments.Fulfillment merged = service.merge(
-                current, null, List.of(Map.of("method_id", "method-a")), null);
+                current, null, List.of(new CartDeliveryAddressSelection("method-a", null, null)), null);
 
-        assertThat(destinations(merged, 0)).isEmpty();
-        assertThat(groups(merged, 0)).isEqualTo(groups(current, 0));
+        assertThat(merged.methods().getFirst().destinations()).isEmpty();
+        assertThat(merged.methods().getFirst().selectedDestinationId()).isNull();
+        assertThat(merged.methods().getFirst().groups()).isEqualTo(current.methods().getFirst().groups());
         assertThat(merged.methods().get(1)).isEqualTo(current.methods().get(1));
     }
 
     @Test
-    void singleMethodPartialUpdateRetainsExistingBehaviorAndCompleteState() {
+    void singleMethodPartialUpdateRetainsKnownAndExtensionState() {
         CartToolArguments.Fulfillment current = fulfillment(methodA());
 
         CartToolArguments.Fulfillment merged = service.merge(
                 current,
                 null,
-                List.of(Map.of("id", "home-a", "postal_code", "10003")),
-                List.of(Map.of("group_id", "group-a", "selected_option_id", "standard")));
+                List.of(address(null, "home-a", "10003")),
+                List.of(option(null, "group-a", "standard")));
 
-        assertThat(merged.methods()).singleElement().satisfies(method -> {
-            assertThat(method).containsEntry("id", "method-a").containsEntry("type", "shipping");
-            assertThat(method).containsEntry("merchant_extension", "method-a-extension");
+        CartToolArguments.FulfillmentMethod method = merged.methods().getFirst();
+        assertThat(method.id()).isEqualTo("method-a");
+        assertThat(method.type()).isEqualTo("shipping");
+        assertThat(method.extensions()).containsKey("merchant_extension");
+        assertThat(method.destinations()).singleElement().satisfies(destination -> {
+            assertThat(destination.id()).isEqualTo("home-a");
+            assertThat(destination.postalCode()).isEqualTo("10003");
+            assertThat(destination.extensions()).containsKey("destination_extension");
         });
-        assertThat(destinations(merged, 0)).containsExactly(Map.of("id", "home-a", "postal_code", "10003"));
-        assertThat(groups(merged, 0)).containsExactly(
-                Map.of("id", "group-a", "selected_option_id", "standard", "merchant_extension", "keep-a"));
+        assertThat(method.groups().getFirst().selectedOptionId()).isEqualTo("standard");
+        assertThat(method.groups().getFirst().extensions()).containsKey("merchant_extension");
     }
 
-    private CartToolArguments.Fulfillment fulfillment(Map<String, Object>... methods) {
+    @Test
+    void replacingDestinationsCannotRetainASelectionThatNoLongerExists() {
+        CartToolArguments.Fulfillment merged = service.merge(
+                fulfillment(methodA()), null, List.of(address(null, "new-home", "10004")), null);
+
+        assertThat(merged.methods().getFirst().destinations())
+                .extracting(CartDeliveryAddress::id)
+                .containsExactly("new-home");
+        assertThat(merged.methods().getFirst().selectedDestinationId()).isNull();
+    }
+
+    private CartToolArguments.Fulfillment fulfillment(CartToolArguments.FulfillmentMethod... methods) {
         return new CartToolArguments.Fulfillment(List.of(methods));
     }
 
-    private Map<String, Object> methodA() {
-        return Map.of(
-                "id", "method-a",
-                "type", "shipping",
-                "merchant_extension", "method-a-extension",
-                "destinations", List.of(Map.of("id", "home-a", "postal_code", "10001")),
-                "groups", List.of(Map.of(
-                        "id", "group-a", "selected_option_id", "express", "merchant_extension", "keep-a")));
+    private CartToolArguments.FulfillmentMethod methodA() {
+        return method("method-a", "shipping", "home-a", "10001", "group-a", "express", "keep-a");
     }
 
-    private Map<String, Object> methodB() {
-        return Map.of(
-                "id", "method-b",
-                "type", "pickup",
-                "merchant_extension", "method-b-extension",
-                "destinations", List.of(Map.of("id", "store-b", "postal_code", "20001")),
-                "groups", List.of(Map.of(
-                        "id", "group-b", "selected_option_id", "pickup-now", "merchant_extension", "keep-b")));
+    private CartToolArguments.FulfillmentMethod methodB() {
+        return method("method-b", "pickup", "store-b", "20001", "group-b", "pickup-now", "keep-b");
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> destinations(CartToolArguments.Fulfillment fulfillment, int method) {
-        return (List<Map<String, Object>>) fulfillment.methods().get(method).get("destinations");
+    private CartToolArguments.FulfillmentMethod method(
+            String id, String type, String destinationId, String postalCode,
+            String groupId, String selectedOptionId, String groupExtension
+    ) {
+        CartDeliveryAddress destination = new CartDeliveryAddress(
+                destinationId, null, null, null, null, null, null, null, postalCode, null,
+                Map.of("destination_extension", JSON.valueToTree("keep-destination")));
+        CartToolArguments.FulfillmentGroup group = new CartToolArguments.FulfillmentGroup(
+                groupId, List.of(), List.of(), selectedOptionId,
+                Map.of("merchant_extension", JSON.valueToTree(groupExtension)));
+        return new CartToolArguments.FulfillmentMethod(
+                id, type, List.of(), List.of(destination), destinationId, List.of(group),
+                Map.of("merchant_extension", JSON.valueToTree(id + "-extension")));
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> groups(CartToolArguments.Fulfillment fulfillment, int method) {
-        return (List<Map<String, Object>>) fulfillment.methods().get(method).get("groups");
+    private CartDeliveryAddressSelection address(String methodId, String id, String postalCode) {
+        return new CartDeliveryAddressSelection(methodId, null,
+                new CartDeliveryAddress(id, null, null, null, null, null, null, null, postalCode, null));
+    }
+
+    private CartDeliveryOptionSelection option(String methodId, String groupId, String selectedOptionId) {
+        return new CartDeliveryOptionSelection(methodId, groupId, selectedOptionId);
     }
 }

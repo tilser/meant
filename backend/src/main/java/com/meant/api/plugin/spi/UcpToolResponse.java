@@ -1,8 +1,10 @@
 package com.meant.api.plugin.spi;
 
+import tools.jackson.databind.JsonNode;
+
 public record UcpToolResponse(
         String textContent,
-        Object structuredContent,
+        JsonNode structuredContent,
         NegotiatedCapabilities negotiatedCapabilities
 ) {
 

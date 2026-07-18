@@ -4,4 +4,7 @@ public record CancelCheckoutRequest(
         String checkoutId,
         String reason
 ) {
+    public CancelCheckoutRequest(String checkoutId) {
+        this(checkoutId, null);
+    }
 }

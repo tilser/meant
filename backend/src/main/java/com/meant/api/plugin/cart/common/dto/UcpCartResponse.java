@@ -5,7 +5,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -59,9 +58,9 @@ public record UcpCartResponse(
             @JsonAlias("deliveryGroups")
             List<DeliveryGroup> deliveryGroups,
             List<CartMessage> messages,
-            Map<String, Object> buyer,
-            Map<String, Object> context,
-            Map<String, Object> signals,
+            CartBuyer buyer,
+            CartContext context,
+            CartSignals signals,
             CartToolArguments.Fulfillment fulfillment,
             CartToolArguments.Discounts discounts,
             String note
@@ -76,13 +75,7 @@ public record UcpCartResponse(
         ) {
             this(id, createdAt, updatedAt, expiresAt, lines, cost, totalQuantity, checkoutUrl, continueUrl,
                     discountCodes, appliedDiscounts, discountAllocations, giftCardCodes, appliedGiftCards,
-                    deliveryGroups, messages, Map.of(), Map.of(), Map.of(), null, null, null);
-        }
-
-        public Cart {
-            buyer = buyer == null ? Map.of() : Map.copyOf(buyer);
-            context = context == null ? Map.of() : Map.copyOf(context);
-            signals = signals == null ? Map.of() : Map.copyOf(signals);
+                    deliveryGroups, messages, null, null, null, null, null, null);
         }
     }
 
@@ -109,11 +102,15 @@ public record UcpCartResponse(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonDeserialize(using = CartMoneyDeserializer.class)
     public record Money(
-            Object amount,
+            Long amount,
             @JsonAlias({"currency_code", "currencyCode"})
             String currency
     ) {
+        public Money(String decimalAmount, String currency) {
+            this(CartMoneyDeserializer.decimalToMinor(decimalAmount, currency), currency);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

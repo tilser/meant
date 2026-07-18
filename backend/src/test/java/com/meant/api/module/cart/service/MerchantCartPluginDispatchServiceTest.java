@@ -2,14 +2,15 @@ package com.meant.api.module.cart.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -26,8 +27,9 @@ import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.plugin.cart.cancel.CancelCartCapability;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
-import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
 import com.meant.api.plugin.cart.create.CreateCartCapability;
 import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.cart.get.GetCartCapability;
@@ -46,6 +48,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 class MerchantCartPluginDispatchServiceTest {
@@ -213,6 +216,51 @@ class MerchantCartPluginDispatchServiceTest {
         assertThat(result.response().cart().id()).isEqualTo("legacy-cart");
         verify(client, times(2)).callTool(any(MerchantCartProvider.class), eq("create_cart"), any(), any());
         verify(client, never()).callToolExactEndpoint(any(), any(), any(), any());
+    }
+
+    @Test
+    void legacyUpdateFallbackRetainsFulfillmentMethodAndDestinationIdentity() {
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callTool(any(MerchantCartProvider.class), eq("update_cart"), any(), any()))
+                .thenThrow(new MerchantMcpToolException("primary contract unsupported"))
+                .thenReturn(new MerchantMcpToolCallResult(
+                        "https://merchant.example/api/mcp", cartResponse("legacy-cart"), null,
+                        NegotiatedCapabilities.none()));
+        MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
+                client, registry(), objectMapper, List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        MerchantCartProvider provider = provider();
+        CartRoutingTarget target = new CartRoutingTarget(
+                "LEGACY:merchant:" + provider.merchantId(), MerchantIntegrationProvider.GENERIC_UCP,
+                null, null, provider);
+        CartDeliveryAddressSelection replacement = new CartDeliveryAddressSelection(
+                "shipping-method", true,
+                new CartDeliveryAddress(
+                        "home", null, null, null, "1 Main St", null, "New York", "NY", "10001", "US"));
+
+        UcpCartToolResult result = service.updateCart(target, new UpdateCartRequest(
+                "cart-1", List.of(), List.of(), List.of(), null,
+                List.of(), List.of(replacement), List.of(), null, null, null), UcpSession.start());
+
+        assertThat(result.response().cart().id()).isEqualTo("legacy-cart");
+        verify(client).callTool(
+                eq(provider),
+                eq("update_cart"),
+                argThat(this::hasLegacyFulfillmentIdentity),
+                any()
+        );
+    }
+
+    private boolean hasLegacyFulfillmentIdentity(Object arguments) {
+        try {
+            JsonNode payload = objectMapper.valueToTree(arguments);
+            JsonNode replacement = payload.path("delivery_addresses_to_replace").path(0);
+            return replacement.path("method_id").asText().equals("shipping-method")
+                    && replacement.path("id").asText().equals("home")
+                    && replacement.path("delivery_address").path("zip").asText().equals("10001");
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     private MerchantMcpToolClient merchantMcpToolClient(RestClient restClient) {

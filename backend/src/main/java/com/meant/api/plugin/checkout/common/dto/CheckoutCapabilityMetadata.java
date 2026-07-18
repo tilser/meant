@@ -4,7 +4,8 @@ import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import java.net.URI;
 import java.util.List;
-import java.util.Map;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 public final class CheckoutCapabilityMetadata {
 
@@ -33,7 +34,7 @@ public final class CheckoutCapabilityMetadata {
             String schemaName,
             List<CapabilityId> extendsCapabilities
     ) {
-        return optionalExtension(id, specPath, schemaName, extendsCapabilities, Map.of());
+        return optionalExtension(id, specPath, schemaName, extendsCapabilities, JsonNodeFactory.instance.objectNode());
     }
 
     public static CapabilityAdvertisement optionalExtension(
@@ -41,7 +42,7 @@ public final class CheckoutCapabilityMetadata {
             String specPath,
             String schemaName,
             List<CapabilityId> extendsCapabilities,
-            Map<String, Object> config
+            JsonNode config
     ) {
         return new CapabilityAdvertisement(
                 id,

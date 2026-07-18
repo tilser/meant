@@ -134,6 +134,9 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         JsonNode schemas = openApi.path("components").path("schemas");
         JsonNode createProperties = schemas.path("CartCreateRequest").path("properties");
         JsonNode addProperties = schemas.path("CartAddItemRequest").path("properties");
+        JsonNode buyerProperties = schemas.path("CartBuyerIdentityRequest").path("properties");
+        JsonNode addressProperties = schemas.path("CartDeliveryAddressSelectionRequest").path("properties");
+        JsonNode deliveryOptionProperties = schemas.path("CartDeliveryOptionSelectionRequest").path("properties");
         JsonNode savedOfferProperties = schemas.path("UserSavedProductOffer").path("properties");
         JsonNode savedDetailProperties = schemas.path("UserSavedProductDetails").path("properties");
         JsonNode cartRequired = schemas.path("CartResponse").path("required");
@@ -143,6 +146,19 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         assertThat(createProperties.has("merchantId")).isFalse();
         assertThat(createProperties.has("merchantDomain")).isFalse();
         assertThat(addProperties.has("offerKey")).isTrue();
+        assertThat(createProperties.path("buyerIdentity").path("$ref").asText())
+                .endsWith("/CartBuyerIdentityRequest");
+        assertThat(createProperties.path("deliveryAddressesToAdd").path("items").path("$ref").asText())
+                .endsWith("/CartDeliveryAddressSelectionRequest");
+        assertThat(createProperties.path("selectedDeliveryOptions").path("items").path("$ref").asText())
+                .endsWith("/CartDeliveryOptionSelectionRequest");
+        assertThat(buyerProperties.has("email") && buyerProperties.has("phoneNumber")
+                && buyerProperties.has("firstName") && buyerProperties.has("lastName")).isTrue();
+        assertThat(addressProperties.has("methodId") && addressProperties.has("streetAddress")
+                && addressProperties.has("addressLocality") && addressProperties.has("addressRegion")
+                && addressProperties.has("postalCode") && addressProperties.has("addressCountry")).isTrue();
+        assertThat(deliveryOptionProperties.has("methodId") && deliveryOptionProperties.has("groupId")
+                && deliveryOptionProperties.has("selectedOptionId")).isTrue();
         assertThat(addProperties.path("offerKey").path("description").asText())
                 .contains("live product session", "durable saved-product selection");
         assertThat(openApi.path("paths").path("/api/carts").path("post").path("description").asText())

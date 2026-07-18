@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record UcpOrderResponse(
@@ -55,10 +56,10 @@ public record UcpOrderResponse(
             Cost cost,
             @JsonProperty("total_price")
             @JsonAlias({"totalPrice", "total_amount", "totalAmount"})
-            Object totalPrice,
+            Money totalPrice,
             @JsonProperty("subtotal_price")
             @JsonAlias({"subtotalPrice", "subtotal_amount", "subtotalAmount"})
-            Object subtotalPrice,
+            Money subtotalPrice,
             @JsonProperty("currency")
             @JsonAlias({"currency_code", "currencyCode"})
             String currency
@@ -95,10 +96,10 @@ public record UcpOrderResponse(
             @JsonProperty("product_url")
             @JsonAlias({"productUrl", "url"})
             String productUrl,
-            Object price,
+            Money price,
             @JsonProperty("total_price")
             @JsonAlias({"totalPrice", "total_amount", "totalAmount"})
-            Object totalPrice,
+            Money totalPrice,
             @JsonProperty("currency")
             @JsonAlias({"currency_code", "currencyCode"})
             String currency,
@@ -141,8 +142,9 @@ public record UcpOrderResponse(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonDeserialize(using = OrderMoneyDeserializer.class)
     public record Money(
-            Object amount,
+            Long amount,
             @JsonAlias({"currency_code", "currencyCode"})
             String currency
     ) {

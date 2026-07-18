@@ -76,6 +76,63 @@ class CatalogCapabilityTest {
     }
 
     @Test
+    void searchParsesLegacyCatalogShapesIntoConcreteTypesAndRoundTripsCanonicalJson() throws Exception {
+        CatalogSearchCapability capability = new CatalogSearchCapability(objectMapper, extensionRegistry());
+
+        CatalogSearchResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "products": [
+                            {
+                              "id": "product-1",
+                              "title": "Trail Runner",
+                              "list_price": {"amount": "149.95", "currency_code": "USD"},
+                              "aggregate_rating": {
+                                "rating_value": "4.8",
+                                "scale_max": 5,
+                                "rating_count": "214"
+                              },
+                              "review_count": {"count": "214"},
+                              "skus": {"sku": "RUN-BLK-10"},
+                              "certifications": "B Corp",
+                              "materials": [{"name": "Recycled polyester"}],
+                              "collections": ["Trail"],
+                              "metadata": {"fit": "true to size"},
+                              "metafields": {"custom": {"terrain": "trail"}},
+                              "tech_specs": {"value": "8 mm drop"}
+                            }
+                          ]
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        CatalogSearchResponse.Product product = response.products().getFirst();
+        assertThat(product.listPrice().amount()).isEqualTo(14995L);
+        assertThat(product.listPrice().currency()).isEqualTo("USD");
+        assertThat(product.rating().value()).isEqualTo(4.8d);
+        assertThat(product.rating().scaleMax()).isEqualTo(5.0d);
+        assertThat(product.rating().count()).isEqualTo(214);
+        assertThat(product.reviewCount()).isEqualTo(214);
+        assertThat(product.skus()).containsExactly("RUN-BLK-10");
+        assertThat(product.certifications()).containsExactly("B Corp");
+        assertThat(product.materials()).containsExactly("Recycled polyester");
+        assertThat(product.collections()).containsExactly("Trail");
+        assertThat(product.techSpecs()).containsExactly("8 mm drop");
+        assertThat(product.metadata().get("fit").asString()).isEqualTo("true to size");
+        assertThat(product.metafields().get("custom").get("terrain").asString()).isEqualTo("trail");
+
+        CatalogSearchResponse roundTripped = objectMapper.readValue(
+                objectMapper.writeValueAsString(response), CatalogSearchResponse.class);
+        CatalogSearchResponse.Product canonical = roundTripped.products().getFirst();
+        assertThat(canonical.listPrice().amount()).isEqualTo(14995L);
+        assertThat(canonical.rating()).isEqualTo(product.rating());
+        assertThat(canonical.reviewCount()).isEqualTo(214);
+        assertThat(canonical.metadata()).isEqualTo(product.metadata());
+    }
+
+    @Test
     void lookupBuildsTypedArgumentsParsesResponseAndGatesShopifyExtension() throws Exception {
         CatalogLookupCapability capability = new CatalogLookupCapability(objectMapper, extensionRegistry());
         CatalogLookupRequest request = new CatalogLookupRequest(
@@ -401,6 +458,61 @@ class CatalogCapabilityTest {
         assertThat(product.priceRange().min()).isEqualTo("65.00");
         assertThat(product.priceRange().max()).isEqualTo("65.00");
         assertThat(product.selectedOrFirstAvailableVariant().price()).isEqualTo("65.00");
+    }
+
+    @Test
+    void productDetailsParsesTypedRatingSellingPlansAndMetadata() throws Exception {
+        ProductDetailsResponse response = objectMapper.readValue(
+                """
+                        {
+                          "product": {
+                            "id": "product-1",
+                            "title": "Coffee subscription",
+                            "list_price": {"amount": 2499, "currency": "USD"},
+                            "rating": {"value": 4.7, "scale_max": 5, "count": 93},
+                            "review_count": "93",
+                            "selling_plan_groups": [
+                              {
+                                "id": "subscriptions",
+                                "name": "Subscribe and save",
+                                "app_name": "Subscriptions",
+                                "options": [{"name": "Delivery", "values": ["Monthly"]}],
+                                "selling_plans": [
+                                  {
+                                    "id": "monthly",
+                                    "name": "Monthly",
+                                    "description": "Delivered monthly",
+                                    "options": [{"name": "Delivery", "value": "Monthly"}]
+                                  }
+                                ]
+                              }
+                            ],
+                            "skus": "COFFEE-MONTHLY",
+                            "materials": [{"value": "Arabica"}],
+                            "metadata": {"roast": "medium"},
+                            "metafields": {"custom": {"origin": "Colombia"}},
+                            "tech_specs": ["1 kg"]
+                          }
+                        }
+                        """,
+                ProductDetailsResponse.class
+        );
+
+        ProductDetailsResponse.Product product = response.product();
+        assertThat(product.listPrice()).isEqualTo(new ProductDetailsResponse.Money(2499L, "USD"));
+        assertThat(product.rating().value()).isEqualTo(4.7d);
+        assertThat(product.rating().count()).isEqualTo(93);
+        assertThat(product.reviewCount()).isEqualTo(93);
+        assertThat(product.skus()).containsExactly("COFFEE-MONTHLY");
+        assertThat(product.materials()).containsExactly("Arabica");
+        assertThat(product.metadata().get("roast").asString()).isEqualTo("medium");
+        assertThat(product.metafields().get("custom").get("origin").asString()).isEqualTo("Colombia");
+        assertThat(product.sellingPlanGroups()).singleElement().satisfies(group -> {
+            assertThat(group.id()).isEqualTo("subscriptions");
+            assertThat(group.appName()).isEqualTo("Subscriptions");
+            assertThat(group.options().getFirst().values()).containsExactly("Monthly");
+            assertThat(group.sellingPlans().getFirst().options().getFirst().value()).isEqualTo("Monthly");
+        });
     }
 
     @Test

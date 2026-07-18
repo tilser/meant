@@ -1,12 +1,14 @@
 package com.meant.api.module.cart.service.command;
 
+import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressSelectionInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record CreateCartCommand(
@@ -16,10 +18,10 @@ public record CreateCartCommand(
         String merchantDomain,
         @NotEmpty
         List<@NotNull @Valid AddItem> addItems,
-        Map<String, Object> buyerIdentity,
-        List<Map<String, Object>> deliveryAddressesToAdd,
-        List<Map<String, Object>> deliveryAddressesToReplace,
-        List<Map<String, Object>> selectedDeliveryOptions,
+        @Valid CartBuyerIdentityInput buyerIdentity,
+        List<@NotNull @Valid CartDeliveryAddressSelectionInput> deliveryAddressesToAdd,
+        List<@NotNull @Valid CartDeliveryAddressSelectionInput> deliveryAddressesToReplace,
+        List<@NotNull @Valid CartDeliveryOptionSelectionInput> selectedDeliveryOptions,
         List<@NotBlank String> discountCodes,
         List<@NotBlank String> giftCardCodes,
         String note,
@@ -31,10 +33,10 @@ public record CreateCartCommand(
             UUID merchantId,
             String merchantDomain,
             List<AddItem> addItems,
-            Map<String, Object> buyerIdentity,
-            List<Map<String, Object>> deliveryAddressesToAdd,
-            List<Map<String, Object>> deliveryAddressesToReplace,
-            List<Map<String, Object>> selectedDeliveryOptions,
+            CartBuyerIdentityInput buyerIdentity,
+            List<CartDeliveryAddressSelectionInput> deliveryAddressesToAdd,
+            List<CartDeliveryAddressSelectionInput> deliveryAddressesToReplace,
+            List<CartDeliveryOptionSelectionInput> selectedDeliveryOptions,
             List<String> discountCodes,
             List<String> giftCardCodes,
             String note

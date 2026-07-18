@@ -12,7 +12,6 @@ import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import java.util.List;
-import java.util.Map;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -51,7 +50,7 @@ public class UpdateCartCapability implements UcpCapability<UpdateCartRequest, Uc
                         request.removeItems(),
                         request.buyerIdentity(),
                         request.context(),
-                        Map.of(),
+                        null,
                         request.deliveryAddressesToAdd(),
                         request.deliveryAddressesToReplace(),
                         request.selectedDeliveryOptions(),

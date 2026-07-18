@@ -85,7 +85,7 @@ class NativeCheckoutCompletionServiceTest {
         completionStateStore = new FakeCompletionStateStore();
         idempotencyKeyStore = new FakeIdempotencyKeyStore();
         checkoutCanaryService = new FakeCanaryService();
-        service = completionService(new CheckoutTotalsReconciler(objectMapper, jcs), jcs);
+        service = completionService(new CheckoutTotalsReconciler(), jcs);
     }
 
     private NativeCheckoutCompletionService completionService(CheckoutTotalsReconciler totalsReconciler, Jcs jcs) {
@@ -153,7 +153,7 @@ class NativeCheckoutCompletionServiceTest {
     @Test
     void nullRawCheckoutPayloadFailsCleanlyWhenBuildingAp2Mandate() {
         Jcs jcs = new Jcs();
-        service = completionService(new NoopCheckoutTotalsReconciler(objectMapper, jcs), jcs);
+        service = completionService(new NoopCheckoutTotalsReconciler(), jcs);
         dispatchService.getResults.add(toolResult("null", openCheckoutJson()));
 
         assertThatThrownBy(() -> service.complete(
@@ -766,12 +766,8 @@ class NativeCheckoutCompletionServiceTest {
 
     private static final class NoopCheckoutTotalsReconciler extends CheckoutTotalsReconciler {
 
-        private NoopCheckoutTotalsReconciler(ObjectMapper objectMapper, Jcs jcs) {
-            super(objectMapper, jcs);
-        }
-
         @Override
-        public void rejectIfMismatch(ExpectedCheckout expected, Object checkout) {
+        public void rejectIfMismatch(ExpectedCheckout expected, UcpCheckoutResponse checkout) {
         }
     }
 

@@ -21,7 +21,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 @Service
 @RequiredArgsConstructor
@@ -48,11 +50,11 @@ public class UserInventoryPhotoRecognitionService {
         VisionChatRequest request = new VisionChatRequest(
                 openRouterProperties.models().productRecommendationExplainer(),
                 List.of(
-                        new VisionChatMessage("system", SYSTEM_PROMPT),
-                        new VisionChatMessage("user", List.of(
+                        new VisionChatMessage("system", JsonNodeFactory.instance.textNode(SYSTEM_PROMPT)),
+                        new VisionChatMessage("user", objectMapper.valueToTree(List.of(
                                 VisionContent.text(userPrompt(command)),
                                 VisionContent.image(command.photoUrl())
-                        ))
+                        )))
                 ),
                 0.0,
                 new OpenRouterResponseFormat(
@@ -168,7 +170,7 @@ public class UserInventoryPhotoRecognitionService {
 
     private record VisionChatMessage(
             String role,
-            Object content
+            JsonNode content
     ) {
     }
 

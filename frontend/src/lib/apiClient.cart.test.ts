@@ -19,6 +19,7 @@ const {
   bootstrapEmbeddedCheckout,
   cancelEmbeddedCheckout,
   completeEmbeddedCheckout,
+  createCart,
   createUserInventoryItem,
   deleteDiscoverConversation,
   deleteUserProductSearchPreference,
@@ -27,10 +28,12 @@ const {
   getSavedProduct,
   qualifyProductSearch,
   saveDiscoverConversation,
+  searchDiscountCodes,
   searchGroupedProducts,
   selectProductVariant,
   updateUserSettings,
   updateUserTasteSignal,
+  updateCart,
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
 let requests: Request[] = []
@@ -102,6 +105,159 @@ describe('bindSelectedOfferToCart', () => {
     expect(requests[0]?.url).toEndWith('/api/carts/cart-1')
     expect(await requests[0]?.json()).toEqual({
       addItems: [{ offerKey: 'offer-exact', quantity: 1 }],
+    })
+  })
+})
+
+describe('cart request API', () => {
+  test('creates a cart with typed buyer, fulfillment, code, and note fields', async () => {
+    await createCart({
+      addItems: [{ offerKey: 'offer-exact', quantity: 2 }],
+      buyerIdentity: {
+        email: 'ada@example.com',
+        phoneNumber: '+14155552671',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        countryCode: 'US',
+      },
+      deliveryAddressesToAdd: [
+        {
+          methodId: 'shipping',
+          id: 'home',
+          selected: true,
+          addressLocality: 'New York',
+          addressRegion: 'NY',
+          postalCode: '10001',
+          addressCountry: 'US',
+        },
+      ],
+      selectedDeliveryOptions: [
+        {
+          methodId: 'shipping',
+          groupId: 'delivery-group-1',
+          selectedOptionId: 'express',
+        },
+      ],
+      discountCodes: ['SAVE5'],
+      giftCardCodes: ['GIFT10'],
+      note: 'Leave at reception',
+    })
+
+    expect(await requests[0]?.json()).toEqual({
+      addItems: [{ offerKey: 'offer-exact', quantity: 2 }],
+      buyerIdentity: {
+        email: 'ada@example.com',
+        phoneNumber: '+14155552671',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        countryCode: 'US',
+      },
+      deliveryAddressesToAdd: [
+        {
+          methodId: 'shipping',
+          id: 'home',
+          selected: true,
+          addressLocality: 'New York',
+          addressRegion: 'NY',
+          postalCode: '10001',
+          addressCountry: 'US',
+        },
+      ],
+      selectedDeliveryOptions: [
+        {
+          methodId: 'shipping',
+          groupId: 'delivery-group-1',
+          selectedOptionId: 'express',
+        },
+      ],
+      discountCodes: ['SAVE5'],
+      giftCardCodes: ['GIFT10'],
+      note: 'Leave at reception',
+    })
+  })
+
+  test('updates a cart with typed replacement fulfillment and buyer note fields', async () => {
+    await updateCart({
+      cartId: 'cart-1',
+      buyerIdentity: { email: 'grace@example.com' },
+      deliveryAddressesToReplace: [
+        {
+          methodId: 'shipping',
+          id: 'office',
+          streetAddress: '1 Market St',
+          addressLocality: 'San Francisco',
+          postalCode: '94105',
+          addressCountry: 'US',
+        },
+      ],
+      selectedDeliveryOptions: [{ groupId: 'delivery-group-1', selectedOptionId: 'standard' }],
+      note: 'Ring the bell',
+    })
+
+    expect(requests[0]?.method).toBe('PATCH')
+    expect(await requests[0]?.json()).toEqual({
+      buyerIdentity: { email: 'grace@example.com' },
+      deliveryAddressesToReplace: [
+        {
+          methodId: 'shipping',
+          id: 'office',
+          streetAddress: '1 Market St',
+          addressLocality: 'San Francisco',
+          postalCode: '94105',
+          addressCountry: 'US',
+        },
+      ],
+      selectedDeliveryOptions: [{ groupId: 'delivery-group-1', selectedOptionId: 'standard' }],
+      note: 'Ring the bell',
+    })
+  })
+})
+
+describe('discount search request API', () => {
+  test('uses the endpoint-specific generated buyer and fulfillment field names', async () => {
+    await searchDiscountCodes({
+      merchantDomain: 'merchant.example',
+      items: [{ productVariantId: 'variant-1', quantity: 1 }],
+      buyerIdentity: { countryCode: 'US' },
+      deliveryAddressesToAdd: [
+        {
+          id: 'home',
+          selected: true,
+          city: 'New York',
+          provinceCode: 'NY',
+          postalCode: '10001',
+          countryCode: 'US',
+        },
+      ],
+      selectedDeliveryOptions: [
+        {
+          groupId: 'delivery-group-1',
+          selectedOptionId: 'express',
+        },
+      ],
+    })
+
+    expect(requests[0]?.url).toEndWith('/api/discounts/search')
+    expect(await requests[0]?.json()).toEqual({
+      merchantDomain: 'merchant.example',
+      items: [{ productVariantId: 'variant-1', quantity: 1 }],
+      buyerIdentity: { countryCode: 'US' },
+      deliveryAddressesToAdd: [
+        {
+          id: 'home',
+          selected: true,
+          city: 'New York',
+          provinceCode: 'NY',
+          postalCode: '10001',
+          countryCode: 'US',
+        },
+      ],
+      selectedDeliveryOptions: [
+        {
+          groupId: 'delivery-group-1',
+          selectedOptionId: 'express',
+        },
+      ],
     })
   })
 })

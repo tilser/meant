@@ -4,10 +4,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.net.URI;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CapabilityAdvertisement(
@@ -32,7 +32,7 @@ public record CapabilityAdvertisement(
         @JsonProperty("extends")
         List<CapabilityId> extendsCapabilities,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        Map<String, Object> config
+        JsonNode config
 ) {
 
     public CapabilityAdvertisement {
@@ -44,7 +44,7 @@ public record CapabilityAdvertisement(
         Objects.requireNonNull(spec, "spec must not be null");
         Objects.requireNonNull(schema, "schema must not be null");
         extendsCapabilities = extendsCapabilities == null ? List.of() : List.copyOf(extendsCapabilities);
-        config = config == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(config));
+        config = config == null ? emptyConfig() : requireObjectConfig(config).deepCopy();
     }
 
     public CapabilityAdvertisement(
@@ -57,7 +57,7 @@ public record CapabilityAdvertisement(
             URI spec,
             URI schema
     ) {
-        this(id, version, tools, required, protocolVersions, requires, spec, schema, List.of(), Map.of());
+        this(id, version, tools, required, protocolVersions, requires, spec, schema, List.of(), emptyConfig());
     }
 
     public static CapabilityAdvertisement required(
@@ -78,7 +78,7 @@ public record CapabilityAdvertisement(
                 spec,
                 schema,
                 List.of(),
-                Map.of()
+                emptyConfig()
         );
     }
 
@@ -100,7 +100,7 @@ public record CapabilityAdvertisement(
                 spec,
                 schema,
                 List.of(),
-                Map.of()
+                emptyConfig()
         );
     }
 
@@ -149,6 +149,17 @@ public record CapabilityAdvertisement(
                         .filter(tool -> !tool.isBlank())
                         .distinct()
                         .toList());
+    }
+
+    private static JsonNode requireObjectConfig(JsonNode config) {
+        if (!config.isObject()) {
+            throw new IllegalArgumentException("config must be a JSON object");
+        }
+        return config;
+    }
+
+    private static JsonNode emptyConfig() {
+        return JsonNodeFactory.instance.objectNode();
     }
 
     private static String requireText(String value, String fieldName) {

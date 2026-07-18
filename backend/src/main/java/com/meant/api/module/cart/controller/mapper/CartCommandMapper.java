@@ -4,6 +4,10 @@ import static com.meant.api.common.util.CollectionUtils.safeList;
 
 import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CartCreateRequest;
+import com.meant.api.module.cart.controller.request.CartBuyerIdentityRequest;
+import com.meant.api.module.cart.controller.request.CartDeliveryAddressRequest;
+import com.meant.api.module.cart.controller.request.CartDeliveryAddressSelectionRequest;
+import com.meant.api.module.cart.controller.request.CartDeliveryOptionSelectionRequest;
 import com.meant.api.module.cart.controller.request.CartUpdateRequest;
 import com.meant.api.module.cart.controller.request.CheckoutUpdateRequest;
 import com.meant.api.module.cart.controller.request.CompleteCheckoutRequest;
@@ -14,11 +18,16 @@ import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.CreateCheckoutConsentCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
+import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressSelectionInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.plugin.payment.common.dto.PaymentCredential;
 import com.meant.api.plugin.payment.common.dto.PaymentInstrument;
 import com.meant.api.plugin.payment.common.dto.PaymentScaLiability;
 import com.meant.api.plugin.payment.common.dto.TokenPaymentCredentialDetails;
 import com.meant.api.plugin.signing.JsonWebKey;
+import java.util.List;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -41,10 +50,10 @@ public final class CartCommandMapper {
                                 item.quantity()
                         ))
                         .toList(),
-                request.buyerIdentity(),
-                safeList(request.deliveryAddressesToAdd()),
-                safeList(request.deliveryAddressesToReplace()),
-                safeList(request.selectedDeliveryOptions()),
+                buyerIdentity(request.buyerIdentity()),
+                deliveryAddresses(request.deliveryAddressesToAdd()),
+                deliveryAddresses(request.deliveryAddressesToReplace()),
+                deliveryOptions(request.selectedDeliveryOptions()),
                 request.discountCodes(),
                 request.giftCardCodes(),
                 request.note(),
@@ -80,15 +89,66 @@ public final class CartCommandMapper {
                         .toList(),
                 safeList(request.removeCartLineIds()),
                 safeList(request.removeRemoteCartLineIds()),
-                request.buyerIdentity(),
-                request.deliveryAddressesToAdd(),
-                request.deliveryAddressesToReplace(),
-                request.selectedDeliveryOptions(),
+                buyerIdentity(request.buyerIdentity()),
+                deliveryAddresses(request.deliveryAddressesToAdd()),
+                deliveryAddresses(request.deliveryAddressesToReplace()),
+                deliveryOptions(request.selectedDeliveryOptions()),
                 request.discountCodes(),
                 request.giftCardCodes(),
                 request.note(),
                 buyerIp
         );
+    }
+
+    private static CartBuyerIdentityInput buyerIdentity(CartBuyerIdentityRequest request) {
+        return request == null ? null : new CartBuyerIdentityInput(
+                request.email(), request.phoneNumber(), request.firstName(), request.lastName(), request.countryCode());
+    }
+
+    private static List<CartDeliveryAddressSelectionInput> deliveryAddresses(
+            List<CartDeliveryAddressSelectionRequest> requests
+    ) {
+        return requests == null ? null : safeList(requests).stream()
+                .map(CartCommandMapper::deliveryAddress)
+                .toList();
+    }
+
+    private static CartDeliveryAddressSelectionInput deliveryAddress(
+            CartDeliveryAddressSelectionRequest request
+    ) {
+        if (request == null) {
+            return null;
+        }
+        CartDeliveryAddressRequest nested = request.deliveryAddress();
+        return new CartDeliveryAddressSelectionInput(
+                request.methodId(),
+                request.id(),
+                request.selected(),
+                new CartDeliveryAddressInput(
+                        first(nested == null ? null : nested.firstName(), request.firstName()),
+                        first(nested == null ? null : nested.lastName(), request.lastName()),
+                        first(nested == null ? null : nested.phoneNumber(), request.phoneNumber()),
+                        first(nested == null ? null : nested.streetAddress(), request.streetAddress()),
+                        first(nested == null ? null : nested.extendedAddress(), request.extendedAddress()),
+                        first(nested == null ? null : nested.addressLocality(), request.addressLocality()),
+                        first(nested == null ? null : nested.addressRegion(), request.addressRegion()),
+                        first(nested == null ? null : nested.postalCode(), request.postalCode()),
+                        first(nested == null ? null : nested.addressCountry(), request.addressCountry())
+                )
+        );
+    }
+
+    private static List<CartDeliveryOptionSelectionInput> deliveryOptions(
+            List<CartDeliveryOptionSelectionRequest> requests
+    ) {
+        return requests == null ? null : safeList(requests).stream()
+                .map(request -> request == null ? null : new CartDeliveryOptionSelectionInput(
+                        request.methodId(), request.groupId(), request.selectedOptionId()))
+                .toList();
+    }
+
+    private static String first(String preferred, String fallback) {
+        return preferred == null || preferred.isBlank() ? fallback : preferred;
     }
 
     public static CompleteCheckoutCommand toCommand(UUID cartId, UUID userId, CompleteCheckoutRequest request) {

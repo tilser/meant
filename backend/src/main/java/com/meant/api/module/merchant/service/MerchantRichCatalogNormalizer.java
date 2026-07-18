@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
+import com.meant.api.plugin.catalog.common.dto.CatalogRating;
 import com.meant.api.module.merchant.service.dto.MerchantCatalogProductCandidate;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
@@ -49,14 +50,14 @@ public class MerchantRichCatalogNormalizer {
                 listPrice == null ? null : listPrice.amount(),
                 listPrice == null ? null : firstPresent(listPrice.currency(), currency),
                 firstPresent(
-                        UcpDecimal.ratingValue(detailProduct == null ? null : detailProduct.rating()),
-                        UcpDecimal.ratingValue(catalogProduct.rating())
+                        ratingValue(detailProduct == null ? null : detailProduct.rating()),
+                        ratingValue(catalogProduct.rating())
                 ),
                 firstPresent(
-                        UcpDecimal.reviewCountValue(detailProduct == null ? null : detailProduct.reviewCount()),
-                        UcpDecimal.reviewCountValue(detailProduct == null ? null : detailProduct.rating()),
-                        UcpDecimal.reviewCountValue(catalogProduct.reviewCount()),
-                        UcpDecimal.reviewCountValue(catalogProduct.rating())
+                        detailProduct == null ? null : detailProduct.reviewCount(),
+                        ratingCount(detailProduct == null ? null : detailProduct.rating()),
+                        catalogProduct.reviewCount(),
+                        ratingCount(catalogProduct.rating())
                 ),
                 richMedia(catalogProduct, detailProduct, selectedVariant),
                 richCategories(catalogProduct),
@@ -199,15 +200,20 @@ public class MerchantRichCatalogNormalizer {
             ProductDetailsResponse.Product detailProduct
     ) {
         Map<String, ProductCatalogAttribute> attributes = new LinkedHashMap<>();
-        Stream.of(
-                        catalogProduct.metadata(),
-                        catalogProduct.metafields(),
-                        catalogProduct.techSpecs(),
-                        detailProduct == null ? null : detailProduct.metadata(),
-                        detailProduct == null ? null : detailProduct.metafields(),
-                        detailProduct == null ? null : detailProduct.techSpecs()
+        Stream.concat(
+                        Stream.of(
+                                        catalogProduct.metadata(),
+                                        catalogProduct.metafields(),
+                                        detailProduct == null ? null : detailProduct.metadata(),
+                                        detailProduct == null ? null : detailProduct.metafields()
+                                )
+                                .flatMap(value -> metadataNormalizer.attributes(value).stream()),
+                        Stream.of(
+                                        catalogProduct.techSpecs(),
+                                        detailProduct == null ? null : detailProduct.techSpecs()
+                                )
+                                .flatMap(value -> metadataNormalizer.attributes(value).stream())
                 )
-                .flatMap(value -> metadataNormalizer.attributes(value).stream())
                 .forEach(attribute -> {
                     String name = metadataNormalizer.blankToNull(attribute.name());
                     String value = metadataNormalizer.blankToNull(attribute.value());
@@ -220,16 +226,25 @@ public class MerchantRichCatalogNormalizer {
     }
 
     private List<String> richMetadataValues(
-            List<Object> explicitValues,
+            List<List<String>> explicitValues,
             List<ProductCatalogAttribute> attributes,
             List<String> attributeKeyFragments
     ) {
         Stream<String> explicit = explicitValues.stream()
-                .flatMap(value -> metadataNormalizer.stringValues(value).stream());
+                .filter(Objects::nonNull)
+                .flatMap(List::stream);
         Stream<String> inferred = attributes.stream()
                 .filter(attribute -> metadataNormalizer.containsAny(attribute.name(), attributeKeyFragments))
                 .flatMap(attribute -> metadataNormalizer.stringValues(attribute.value()).stream());
         return metadataNormalizer.distinctStrings(Stream.concat(explicit, inferred));
+    }
+
+    private Double ratingValue(CatalogRating rating) {
+        return rating == null ? null : UcpDecimal.ratingValue(rating.value());
+    }
+
+    private Integer ratingCount(CatalogRating rating) {
+        return rating == null ? null : rating.count();
     }
 
     private String firstPresent(String first, String second, String third) {

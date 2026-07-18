@@ -328,7 +328,8 @@ class MerchantMcpToolClientTest {
 
         assertThat(result.endpoint()).isEqualTo("https://merchant.example/exact-mcp");
         assertThat(result.contentText()).contains("checkout-1");
-        assertThat(result.structuredContent()).isNotNull();
+        assertThat(result.structuredContent().path("checkout").path("id").stringValue())
+                .isEqualTo("checkout-1");
         server.verify();
     }
 

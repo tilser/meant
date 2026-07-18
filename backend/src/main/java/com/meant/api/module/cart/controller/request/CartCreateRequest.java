@@ -6,20 +6,21 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
-import java.util.Map;
 
+@Schema(description = "Creates a merchant cart from exact selected offers and optional buyer and fulfillment data.")
 public record CartCreateRequest(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty
         List<@NotNull @Valid CartAddItemRequest> addItems,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        Map<String, Object> buyerIdentity,
+        @Valid
+        CartBuyerIdentityRequest buyerIdentity,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        List<Map<String, Object>> deliveryAddressesToAdd,
+        List<@NotNull @Valid CartDeliveryAddressSelectionRequest> deliveryAddressesToAdd,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        List<Map<String, Object>> deliveryAddressesToReplace,
+        List<@NotNull @Valid CartDeliveryAddressSelectionRequest> deliveryAddressesToReplace,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        List<Map<String, Object>> selectedDeliveryOptions,
+        List<@NotNull @Valid CartDeliveryOptionSelectionRequest> selectedDeliveryOptions,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<@NotBlank String> discountCodes,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

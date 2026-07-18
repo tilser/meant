@@ -4,6 +4,7 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
+import com.meant.api.module.merchant.service.dto.ProductSellingPlanGroup;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -85,7 +86,7 @@ public record MerchantSemanticProductResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Boolean requiresSellingPlan,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        List<Object> sellingPlanGroups,
+        List<SellingPlanGroupResponse> sellingPlanGroups,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String selectedVariantId,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -149,7 +150,7 @@ public record MerchantSemanticProductResponse(
                 result.detailPriceCurrency(),
                 result.totalVariants(),
                 result.requiresSellingPlan(),
-                result.sellingPlanGroups(),
+                result.sellingPlanGroups().stream().map(SellingPlanGroupResponse::from).toList(),
                 result.selectedVariantId(),
                 result.selectedVariantTitle(),
                 result.selectedOptions().stream().map(ProductSelectedOptionResponse::from).toList(),
@@ -235,6 +236,75 @@ public record MerchantSemanticProductResponse(
 
         static ProductSelectedOptionResponse from(ProductDetailsResponse.SelectedOption selectedOption) {
             return new ProductSelectedOptionResponse(selectedOption.name(), selectedOption.value());
+        }
+    }
+
+    public record SellingPlanGroupResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String id,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String appName,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<SellingPlanGroupOptionResponse> options,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<SellingPlanResponse> sellingPlans
+    ) {
+
+        static SellingPlanGroupResponse from(ProductSellingPlanGroup group) {
+            return new SellingPlanGroupResponse(
+                    group.id(),
+                    group.name(),
+                    group.appName(),
+                    group.options().stream().map(SellingPlanGroupOptionResponse::from).toList(),
+                    group.sellingPlans().stream().map(SellingPlanResponse::from).toList()
+            );
+        }
+    }
+
+    public record SellingPlanGroupOptionResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<String> values
+    ) {
+
+        static SellingPlanGroupOptionResponse from(ProductSellingPlanGroup.GroupOption option) {
+            return new SellingPlanGroupOptionResponse(option.name(), option.values());
+        }
+    }
+
+    public record SellingPlanResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String id,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String description,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<SellingPlanOptionResponse> options
+    ) {
+
+        static SellingPlanResponse from(ProductSellingPlanGroup.SellingPlan plan) {
+            return new SellingPlanResponse(
+                    plan.id(),
+                    plan.name(),
+                    plan.description(),
+                    plan.options().stream().map(SellingPlanOptionResponse::from).toList()
+            );
+        }
+    }
+
+    public record SellingPlanOptionResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String value
+    ) {
+
+        static SellingPlanOptionResponse from(ProductSellingPlanGroup.Option option) {
+            return new SellingPlanOptionResponse(option.name(), option.value());
         }
     }
 }

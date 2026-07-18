@@ -1,19 +1,20 @@
 package com.meant.api.plugin.checkout.create.dto;
 
+import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
+import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentState;
-import java.util.LinkedHashMap;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
 import java.util.List;
-import java.util.Map;
 
 public record CreateCheckoutRequest(
         String cartId,
         List<LineItem> lineItems,
-        Map<String, Object> buyer,
+        CheckoutBuyer buyer,
         BuyerConsentState buyerConsent,
         String currency,
-        Map<String, Object> context,
+        CheckoutContext context,
         List<String> discountCodes,
-        Map<String, Object> fulfillment
+        CheckoutFulfillment fulfillment
 ) {
 
     public CreateCheckoutRequest(String cartId) {
@@ -21,15 +22,15 @@ public record CreateCheckoutRequest(
     }
 
     public CreateCheckoutRequest(String cartId, List<LineItem> lineItems) {
-        this(cartId, lineItems, Map.of(), null, null, null, List.of(), Map.of());
+        this(cartId, lineItems, null, null, null, null, List.of(), null);
     }
 
     public CreateCheckoutRequest(
             String cartId,
             List<LineItem> lineItems,
-            Map<String, Object> buyer,
+            CheckoutBuyer buyer,
             List<String> discountCodes,
-            Map<String, Object> fulfillment
+            CheckoutFulfillment fulfillment
     ) {
         this(cartId, lineItems, buyer, null, null, null, discountCodes, fulfillment);
     }
@@ -37,21 +38,21 @@ public record CreateCheckoutRequest(
     public CreateCheckoutRequest(
             String cartId,
             List<LineItem> lineItems,
-            Map<String, Object> buyer,
+            CheckoutBuyer buyer,
             BuyerConsentState buyerConsent,
             String currency,
             List<String> discountCodes,
-            Map<String, Object> fulfillment
+            CheckoutFulfillment fulfillment
     ) {
         this(cartId, lineItems, buyer, buyerConsent, currency, null, discountCodes, fulfillment);
     }
 
     public CreateCheckoutRequest {
         lineItems = lineItems == null ? List.of() : List.copyOf(lineItems);
-        buyer = buyer == null ? Map.of() : new LinkedHashMap<>(buyer);
-        context = context == null ? Map.of() : new LinkedHashMap<>(context);
+        buyer = buyer == null || buyer.empty() ? null : buyer;
+        context = context == null || context.empty() ? null : context;
         discountCodes = discountCodes == null ? List.of() : List.copyOf(discountCodes);
-        fulfillment = fulfillment == null ? Map.of() : new LinkedHashMap<>(fulfillment);
+        fulfillment = fulfillment == null || fulfillment.empty() ? null : fulfillment;
     }
 
     public record LineItem(

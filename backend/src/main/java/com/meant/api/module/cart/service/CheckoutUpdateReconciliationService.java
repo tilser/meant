@@ -1,19 +1,25 @@
 package com.meant.api.module.cart.service;
 
+import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
+import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentDestination;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentGroup;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentMethod;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.RetailLocation;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /** Proves only fields that Checkout MCP returned; absent evidence never becomes success. */
 @Service
 public class CheckoutUpdateReconciliationService {
+
     public boolean proves(UpdateCheckoutRequest intended, UcpCheckoutResponse response) {
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         return checkout != null
@@ -21,7 +27,7 @@ public class CheckoutUpdateReconciliationService {
                 && buyer(intended.buyer(), checkout.buyer())
                 && value(intended.email(), checkout.buyer() == null ? null : checkout.buyer().email())
                 && value(intended.currency(), checkout.currency())
-                && mapSubset(intended.context(), checkout.context())
+                && context(intended.context(), checkout.context())
                 && discounts(intended.discountCodes(), checkout.discounts())
                 && fulfillment(intended.fulfillment(), checkout.fulfillment());
     }
@@ -30,11 +36,12 @@ public class CheckoutUpdateReconciliationService {
             List<UpdateCheckoutRequest.LineItem> expected,
             List<UcpCheckoutResponse.CheckoutLineItem> actual
     ) {
-        List<ObservableLine> remaining = new ArrayList<>(actual.stream().filter(Objects::nonNull)
+        List<ObservableLine> remaining = new ArrayList<>(safe(actual).stream()
+                .filter(Objects::nonNull)
                 .map(line -> new ObservableLine(
                         text(line.resolvedId()), text(line.resolvedVariantId()), line.quantity()))
                 .toList());
-        if (expected.size() != remaining.size()) {
+        if (safe(expected).size() != remaining.size()) {
             return false;
         }
         for (UpdateCheckoutRequest.LineItem line : expected) {
@@ -62,121 +69,131 @@ public class CheckoutUpdateReconciliationService {
                 && Objects.equals(expected.quantity(), actual.quantity());
     }
 
-    private boolean buyer(Map<String, Object> expected, UcpCheckoutResponse.CheckoutBuyer actual) {
-        if (expected.isEmpty()) {
+    private boolean buyer(CheckoutBuyer expected, UcpCheckoutResponse.CheckoutBuyer actual) {
+        if (expected == null || expected.empty()) {
             return true;
         }
-        if (actual == null) {
-            return false;
-        }
-        Map<String, Object> observed = new HashMap<>();
-        observed.put("first_name", actual.firstName());
-        observed.put("last_name", actual.lastName());
-        observed.put("email", actual.email());
-        observed.put("phone_number", actual.phoneNumber());
-        return aliases(expected, observed);
+        return actual != null
+                && value(expected.firstName(), actual.firstName())
+                && value(expected.lastName(), actual.lastName())
+                && value(expected.email(), actual.email())
+                && value(expected.phoneNumber(), actual.phoneNumber());
     }
 
-    private boolean aliases(Map<String, Object> expected, Map<String, Object> observed) {
-        for (Map.Entry<String, Object> entry : expected.entrySet()) {
-            String key = switch (entry.getKey()) {
-                case "firstName" -> "first_name";
-                case "lastName" -> "last_name";
-                case "phone", "phoneNumber" -> "phone_number";
-                default -> entry.getKey();
-            };
-            if (!Objects.equals(entry.getValue(), observed.get(key))) {
-                return false;
-            }
+    private boolean context(CheckoutContext expected, CheckoutContext actual) {
+        if (expected == null || expected.empty()) {
+            return true;
         }
-        return true;
+        if (actual == null
+                || !value(expected.addressCountry(), actual.addressCountry())
+                || !value(expected.addressRegion(), actual.addressRegion())
+                || !value(expected.postalCode(), actual.postalCode())
+                || !value(expected.intent(), actual.intent())
+                || !value(expected.language(), actual.language())
+                || !value(expected.currency(), actual.currency())) {
+            return false;
+        }
+        if (!expected.eligibility().isEmpty() && !expected.eligibility().equals(actual.eligibility())) {
+            return false;
+        }
+        return expected.extensionValues().entrySet().stream()
+                .allMatch(entry -> Objects.equals(entry.getValue(), actual.extensionValues().get(entry.getKey())));
     }
 
     private boolean value(String expected, String actual) {
         return expected == null || expected.isBlank() || expected.equals(actual);
     }
 
-    private boolean mapSubset(Map<String, Object> expected, Map<String, Object> actual) {
-        if (expected.isEmpty()) {
-            return true;
-        }
-        return actual != null && expected.entrySet().stream()
-                .allMatch(entry -> Objects.equals(entry.getValue(), actual.get(entry.getKey())));
-    }
-
     private boolean discounts(List<String> expected, UcpCheckoutResponse.CheckoutDiscounts actual) {
-        if (expected.isEmpty()) {
+        if (expected == null) {
             return true;
         }
-        return actual != null && Set.copyOf(actual.codes()).equals(Set.copyOf(expected));
+        List<String> actualCodes = actual == null ? List.of() : safe(actual.codes());
+        return Set.copyOf(actualCodes).equals(Set.copyOf(expected));
     }
 
-    private boolean fulfillment(Map<String, Object> expected, UcpCheckoutResponse.CheckoutFulfillment actual) {
-        if (expected.isEmpty()) {
+    private boolean fulfillment(CheckoutFulfillment expected, UcpCheckoutResponse.CheckoutFulfillment actual) {
+        if (expected == null || expected.empty()) {
             return true;
         }
         if (actual == null) {
             return false;
         }
-        List<Map<String, Object>> methods = maps(expected.get("methods"));
-        if (methods.isEmpty()) {
-            return false;
-        }
-        Map<String, Object> method = methods.getFirst();
-        List<Map<String, Object>> destinations = maps(method.get("destinations"));
-        if (!destinations.isEmpty() && !address(destinations.getFirst(), actual.resolvedShippingAddress())) {
-            return false;
-        }
-        Set<String> selected = maps(method.get("groups")).stream()
-                .map(group -> text(group.get("selected_option_id"))).filter(value -> !value.isEmpty())
-                .collect(Collectors.toSet());
-        if (!selected.isEmpty()) {
-            Set<String> observed = actual.methods().stream().filter(Objects::nonNull)
-                    .flatMap(value -> value.groups().stream()).filter(Objects::nonNull)
-                    .map(UcpCheckoutResponse.CheckoutFulfillmentGroup::selectedOption)
-                    .filter(Objects::nonNull).collect(Collectors.toSet());
-            return observed.containsAll(selected);
-        }
-        return true;
+        return expected.methods().stream().allMatch(expectedMethod -> actual.methods().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(actualMethod -> fulfillmentMethod(expectedMethod, actualMethod)));
     }
 
-    private boolean address(Map<String, Object> expected, UcpCheckoutResponse.CheckoutAddress actual) {
-        if (actual == null) {
+    private boolean fulfillmentMethod(
+            FulfillmentMethod expected,
+            UcpCheckoutResponse.CheckoutFulfillmentMethod actual
+    ) {
+        if (expected == null
+                || !value(expected.id(), actual.id())
+                || !value(expected.type(), actual.type())) {
+            return expected == null;
+        }
+        if (!expected.lineItemIds().isEmpty()
+                && !Set.copyOf(expected.lineItemIds()).equals(Set.copyOf(actual.lineItemIds()))) {
             return false;
         }
-        Map<String, Object> observed = Map.of(
-                "id", text(actual.id()),
-                "street_address", text(actual.streetAddress()),
-                "address_locality", text(actual.addressLocality()),
-                "address_region", text(actual.addressRegion()),
-                "postal_code", text(actual.postalCode()),
-                "address_country", text(actual.addressCountry()),
-                "first_name", text(actual.firstName()),
-                "last_name", text(actual.lastName()),
-                "phone_number", text(actual.phoneNumber()));
-        return expected.entrySet().stream()
-                .allMatch(entry -> observed.containsKey(entry.getKey())
-                        && Objects.equals(text(entry.getValue()), observed.get(entry.getKey())));
+        if (!value(expected.selectedDestinationId(), actual.selectedDestinationId())) {
+            return false;
+        }
+        if (!expected.destinations().stream().allMatch(destination -> destination(destination, actual.destinations()))) {
+            return false;
+        }
+        return expected.groups().stream().allMatch(expectedGroup -> group(expectedGroup, actual.groups()));
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> maps(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return List.of();
+    private boolean destination(
+            FulfillmentDestination expected,
+            List<UcpCheckoutResponse.CheckoutAddress> actual
+    ) {
+        if (expected instanceof ShippingDestination shipping) {
+            return safe(actual).stream()
+                    .filter(Objects::nonNull)
+                    .anyMatch(address -> shippingAddress(shipping, address));
         }
-        List<Map<String, Object>> values = new ArrayList<>();
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> map) {
-                Map<String, Object> copy = new HashMap<>();
-                map.forEach((key, entry) -> copy.put(String.valueOf(key), entry));
-                values.add(copy);
-            }
+        if (expected instanceof RetailLocation retailLocation) {
+            return safe(actual).stream()
+                    .filter(Objects::nonNull)
+                    .anyMatch(address -> value(retailLocation.id(), address.id()));
         }
-        return values;
+        return false;
     }
 
-    private String text(Object value) {
-        return value == null ? "" : String.valueOf(value);
+    private boolean shippingAddress(
+            ShippingDestination expected,
+            UcpCheckoutResponse.CheckoutAddress actual
+    ) {
+        return value(expected.id(), actual.id())
+                && value(expected.streetAddress(), actual.streetAddress())
+                && value(expected.addressLocality(), actual.addressLocality())
+                && value(expected.addressRegion(), actual.addressRegion())
+                && value(expected.postalCode(), actual.postalCode())
+                && value(expected.addressCountry(), actual.addressCountry())
+                && value(expected.firstName(), actual.firstName())
+                && value(expected.lastName(), actual.lastName())
+                && value(expected.phoneNumber(), actual.phoneNumber());
+    }
+
+    private boolean group(
+            FulfillmentGroup expected,
+            List<UcpCheckoutResponse.CheckoutFulfillmentGroup> actual
+    ) {
+        return safe(actual).stream()
+                .filter(Objects::nonNull)
+                .filter(candidate -> value(expected.id(), candidate.id()))
+                .anyMatch(candidate -> value(expected.selectedOptionId(), candidate.selectedOption()));
+    }
+
+    private <T> List<T> safe(List<T> values) {
+        return values == null ? List.of() : values;
+    }
+
+    private String text(String value) {
+        return value == null ? "" : value;
     }
 
     private record ObservableLine(String id, String variant, Integer quantity) {

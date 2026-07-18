@@ -34,6 +34,7 @@ public class MerchantProductDetailsEnricher {
 
     private final MerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService;
     private final MerchantRichCatalogNormalizer richCatalogNormalizer;
+    private final ProductSellingPlanGroupMapper sellingPlanGroupMapper;
 
     void emitCatalogCandidates(
             List<MerchantCatalogProductCandidate> filteredProductCandidates,
@@ -234,7 +235,7 @@ public class MerchantProductDetailsEnricher {
                 detailPriceRange == null ? null : detailPriceRange.currency(),
                 detailProduct == null ? null : detailProduct.totalVariants(),
                 detailProduct == null ? null : detailProduct.requiresSellingPlan(),
-                detailProduct == null ? List.of() : safeNonNullList(detailProduct.sellingPlanGroups()),
+                detailProduct == null ? List.of() : sellingPlanGroupMapper.map(detailProduct.sellingPlanGroups()),
                 selectedVariant == null ? null : selectedVariant.variantId(),
                 selectedVariant == null ? null : selectedVariant.title(),
                 selectedVariant == null ? List.of() : safeNonNullList(selectedVariant.selectedOptions()),
@@ -276,7 +277,7 @@ public class MerchantProductDetailsEnricher {
                 catalogAmount(variant.price()),
                 variant.price() == null ? null : variant.price().currency(),
                 variant.sku(),
-                variant.listPrice(),
+                detailsMoney(variant.listPrice()),
                 imageMedia ? media.url() : null,
                 imageMedia ? media.altText() : null,
                 media == null ? List.of() : List.of(new ProductDetailsResponse.Media(
@@ -292,6 +293,10 @@ public class MerchantProductDetailsEnricher {
 
     private String catalogAmount(CatalogSearchResponse.Money money) {
         return money == null ? null : UcpDecimal.minorAmountToDecimalText(money.amount(), money.currency());
+    }
+
+    private ProductDetailsResponse.Money detailsMoney(CatalogSearchResponse.Money money) {
+        return money == null ? null : new ProductDetailsResponse.Money(money.amount(), money.currency());
     }
 
     private String valueOrDefault(String value, String defaultValue) {

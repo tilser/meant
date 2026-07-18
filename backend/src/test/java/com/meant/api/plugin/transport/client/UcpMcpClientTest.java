@@ -145,7 +145,8 @@ class UcpMcpClientTest {
 
         CapabilityId catalogSearch = CapabilityId.of("dev.ucp.shopping.catalog.search");
         assertThat(response.textContent()).isEqualTo("{\"ok\":true}");
-        assertThat(response.structuredContent()).isInstanceOf(Map.class);
+        assertThat(response.structuredContent().isObject()).isTrue();
+        assertThat(response.structuredContent().path("catalog").path("count").asInt()).isEqualTo(1);
         assertThat(response.negotiatedCapabilities().supports(catalogSearch)).isTrue();
         assertThat(response.negotiatedCapabilities().version(catalogSearch)).contains("2026-04-08");
         server.verify();
@@ -185,7 +186,8 @@ class UcpMcpClientTest {
         );
 
         assertThat(response.textContent()).isNull();
-        assertThat(response.structuredContent()).isInstanceOf(Map.class);
+        assertThat(response.structuredContent().isObject()).isTrue();
+        assertThat(response.structuredContent().path("products").isArray()).isTrue();
         assertThat(response.negotiatedCapabilities().version(
                 CapabilityId.of("dev.ucp.shopping.catalog.search")
         )).contains("2026-04-08");
@@ -462,7 +464,8 @@ class UcpMcpClientTest {
         );
 
         assertThat(response.textContent()).isNull();
-        assertThat(response.structuredContent()).isInstanceOf(Map.class);
+        assertThat(response.structuredContent().isObject()).isTrue();
+        assertThat(response.structuredContent().path("id").asString()).isEqualTo("checkout_1");
         server.verify();
     }
 

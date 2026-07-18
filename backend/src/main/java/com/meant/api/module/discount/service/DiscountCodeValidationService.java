@@ -12,6 +12,11 @@ import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartBuyer;
+import com.meant.api.plugin.cart.common.dto.CartContext;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
@@ -20,10 +25,8 @@ import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -106,83 +109,68 @@ public class DiscountCodeValidationService {
      * Market hint for inventory allocation — without an address_country the merchant treats
      * validation carts as an unknown market and drops the line items as sold out.
      */
-    private Map<String, Object> buyerContext(SearchDiscountCodesCommand.BuyerIdentity source) {
+    private CartContext buyerContext(SearchDiscountCodesCommand.BuyerIdentity source) {
         String countryCode = source == null ? null : source.countryCode();
-        Map<String, Object> context = new LinkedHashMap<>();
-        context.put(
-                "address_country",
-                countryCode == null || countryCode.isBlank() ? "US" : countryCode.trim().toUpperCase(Locale.ROOT)
-        );
-        return context;
+        return new CartContext(
+                countryCode == null || countryCode.isBlank() ? "US" : countryCode.trim().toUpperCase(Locale.ROOT));
     }
 
-    private Map<String, Object> buyerIdentity(SearchDiscountCodesCommand.BuyerIdentity source) {
+    private CartBuyer buyerIdentity(SearchDiscountCodesCommand.BuyerIdentity source) {
         if (source == null) {
             return null;
         }
-        Map<String, Object> values = new LinkedHashMap<>();
-        put(values, "email", source.email());
-        put(values, "phone_number", source.phoneNumber());
-        put(values, "first_name", source.firstName());
-        put(values, "last_name", source.lastName());
-        put(values, "country_code", source.countryCode());
-        return emptyToNull(values);
+        return new CartBuyer(
+                blankToNull(source.firstName()), blankToNull(source.lastName()),
+                blankToNull(source.email()), blankToNull(source.phoneNumber()));
     }
 
-    private List<Map<String, Object>> deliveryAddresses(
+    private List<CartDeliveryAddressSelection> deliveryAddresses(
             List<SearchDiscountCodesCommand.DeliveryAddressSelection> sources
     ) {
         return safeNonNullList(sources).stream()
                 .map(this::deliveryAddress)
-                .filter(values -> !values.isEmpty())
+                .filter(values -> values.address() != null && !values.address().empty())
                 .toList();
     }
 
-    private Map<String, Object> deliveryAddress(SearchDiscountCodesCommand.DeliveryAddressSelection source) {
+    private CartDeliveryAddressSelection deliveryAddress(SearchDiscountCodesCommand.DeliveryAddressSelection source) {
         if (source == null) {
-            return Map.of();
+            return new CartDeliveryAddressSelection(null, null, null);
         }
         SearchDiscountCodesCommand.DeliveryAddress address = source.deliveryAddress();
-        Map<String, Object> values = new LinkedHashMap<>();
-        put(values, "id", source.id());
-        put(values, "selected", source.selected());
-        put(values, "first_name", firstText(source.firstName(), address == null ? null : address.firstName()));
-        put(values, "last_name", firstText(source.lastName(), address == null ? null : address.lastName()));
-        put(values, "phone_number", firstText(source.phoneNumber(), address == null ? null : address.phoneNumber()));
-        put(values, "street_address", firstText(source.streetAddress(), address == null ? null : address.streetAddress()));
-        put(values, "extended_address", firstText(source.extendedAddress(), address == null ? null : address.extendedAddress()));
-        put(values, "address_locality", firstText(source.city(), address == null ? null : address.city()));
-        put(values, "address_region", firstText(source.provinceCode(), address == null ? null : address.provinceCode()));
-        put(values, "postal_code", firstText(source.postalCode(), address == null ? null : address.postalCode()));
-        put(values, "address_country", firstText(source.countryCode(), address == null ? null : address.countryCode()));
-        return values;
+        return new CartDeliveryAddressSelection(null, source.selected(), new CartDeliveryAddress(
+                blankToNull(source.id()),
+                blankToNull(firstText(source.firstName(), address == null ? null : address.firstName())),
+                blankToNull(firstText(source.lastName(), address == null ? null : address.lastName())),
+                blankToNull(firstText(source.phoneNumber(), address == null ? null : address.phoneNumber())),
+                blankToNull(firstText(source.streetAddress(), address == null ? null : address.streetAddress())),
+                blankToNull(firstText(source.extendedAddress(), address == null ? null : address.extendedAddress())),
+                blankToNull(firstText(source.city(), address == null ? null : address.city())),
+                blankToNull(firstText(source.provinceCode(), address == null ? null : address.provinceCode())),
+                blankToNull(firstText(source.postalCode(), address == null ? null : address.postalCode())),
+                blankToNull(firstText(source.countryCode(), address == null ? null : address.countryCode()))));
     }
 
-    private List<Map<String, Object>> deliveryOptions(
+    private List<CartDeliveryOptionSelection> deliveryOptions(
             List<SearchDiscountCodesCommand.DeliveryOptionSelection> sources
     ) {
         return safeNonNullList(sources).stream()
                 .map(this::deliveryOption)
-                .filter(values -> !values.isEmpty())
+                .filter(values -> values.groupId() != null && values.selectedOptionId() != null)
                 .toList();
     }
 
-    private Map<String, Object> deliveryOption(SearchDiscountCodesCommand.DeliveryOptionSelection source) {
+    private CartDeliveryOptionSelection deliveryOption(SearchDiscountCodesCommand.DeliveryOptionSelection source) {
         if (source == null) {
-            return Map.of();
+            return new CartDeliveryOptionSelection(null, null, null);
         }
-        Map<String, Object> values = new LinkedHashMap<>();
-        put(values, "group_id", firstText(source.groupId(), source.deliveryGroupId(), source.id()));
-        put(values, "option_handle", firstText(
-                source.optionHandle(),
-                source.deliveryOptionHandle(),
-                source.selectedOptionId()
-        ));
-        return values;
+        return new CartDeliveryOptionSelection(null,
+                blankToNull(firstText(source.groupId(), source.deliveryGroupId(), source.id())),
+                blankToNull(firstText(source.optionHandle(), source.deliveryOptionHandle(), source.selectedOptionId())));
     }
 
-    private Map<String, Object> emptyToNull(Map<String, Object> values) {
-        return values.isEmpty() ? null : values;
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String firstText(String... values) {
@@ -192,19 +180,6 @@ public class DiscountCodeValidationService {
             }
         }
         return null;
-    }
-
-    private void put(Map<String, Object> destination, String key, String value) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        destination.put(key, value);
-    }
-
-    private void put(Map<String, Object> destination, String key, Boolean value) {
-        if (value != null) {
-            destination.put(key, value);
-        }
     }
 
     private DiscountCodeCandidateEvaluation evaluation(

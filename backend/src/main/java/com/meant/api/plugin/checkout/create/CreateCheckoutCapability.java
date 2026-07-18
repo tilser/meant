@@ -56,7 +56,7 @@ public class CreateCheckoutCapability implements UcpCapability<CreateCheckoutReq
                 BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent()),
                 request.currency(),
                 request.context(),
-                DiscountExtensionSupport.discountCodes(request.discountCodes()),
+                DiscountExtensionSupport.nonEmptyDiscountCodes(request.discountCodes()),
                 FulfillmentExtensionSupport.fulfillment(request.fulfillment())
         ));
     }

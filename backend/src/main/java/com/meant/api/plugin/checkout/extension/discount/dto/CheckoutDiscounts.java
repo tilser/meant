@@ -5,6 +5,7 @@ import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CheckoutDiscounts(
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         List<String> codes,
         List<AppliedDiscount> applied
 ) {

@@ -96,7 +96,7 @@ public class UserProductSearchQualificationModelService {
     public UserProductSearchQualificationModelResult generate(
             @NotNull @Valid GenerateUserProductSearchQualificationQuery query
     ) {
-        String model = openRouterProperties.models().productSearchQueryParser();
+        String model = openRouterProperties.models().chatModel();
         String response = openRouterChatClient.completeJson(
                 model,
                 SYSTEM_PROMPT,
@@ -164,14 +164,14 @@ public class UserProductSearchQualificationModelService {
                         Map.entry("effectiveQuery", OpenRouterJsonSchemaDefinition.string()),
                         Map.entry("assistantMessage", OpenRouterJsonSchemaDefinition.string()),
                         Map.entry("suggestedReplies", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.string(), 0, MAX_SUGGESTED_REPLIES)),
+                                OpenRouterJsonSchemaDefinition.string())),
                         Map.entry("available", availableSchema()),
                         Map.entry("condition", enumValuesSchema(UserProductCondition.values())),
                         Map.entry("shipsTo", locationFilterSchema()),
                         Map.entry("shipsFrom", locationsFilterSchema()),
                         Map.entry("price", priceSchema()),
-                        Map.entry("shops", referenceSchema()),
-                        Map.entry("categories", referenceSchema()),
+                        Map.entry("shops", unresolvedReferenceSchema()),
+                        Map.entry("categories", unresolvedReferenceSchema()),
                         Map.entry("attributes", attributesSchema()),
                         Map.entry("rating", ratingSchema()),
                         Map.entry("priceTier", enumValuesSchema(UserProductPriceTier.values())),
@@ -207,7 +207,7 @@ public class UserProductSearchQualificationModelService {
                 List.of("state", "values"),
                 Map.of(
                         "state", stateSchema(),
-                        "values", OpenRouterJsonSchemaDefinition.array(locationValueSchema(), 0, MAX_FILTER_VALUES)
+                        "values", OpenRouterJsonSchemaDefinition.array(locationValueSchema())
                 )
         );
     }
@@ -234,13 +234,16 @@ public class UserProductSearchQualificationModelService {
         );
     }
 
-    private OpenRouterJsonSchemaDefinition referenceSchema() {
+    private OpenRouterJsonSchemaDefinition unresolvedReferenceSchema() {
         return OpenRouterJsonSchemaDefinition.object(
                 List.of("state", "values"),
                 Map.of(
-                        "state", stateSchema(),
+                        "state", OpenRouterJsonSchemaDefinition.stringEnum(List.of(
+                                UserProductSearchFilterState.ANY.name(),
+                                UserProductSearchFilterState.NOT_APPLICABLE.name()
+                        )),
                         "values", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.string(), 0, MAX_FILTER_VALUES)
+                                OpenRouterJsonSchemaDefinition.string())
                 )
         );
     }
@@ -252,14 +255,14 @@ public class UserProductSearchQualificationModelService {
                         "name", OpenRouterJsonSchemaDefinition.stringEnum(enumNames(
                                 UserProductSearchAttributeName.values())),
                         "values", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.string(), 1, MAX_FILTER_VALUES)
+                                OpenRouterJsonSchemaDefinition.string())
                 )
         );
         return OpenRouterJsonSchemaDefinition.object(
                 List.of("state", "values"),
                 Map.of(
                         "state", stateSchema(),
-                        "values", OpenRouterJsonSchemaDefinition.array(attribute, 0, 3)
+                        "values", OpenRouterJsonSchemaDefinition.array(attribute)
                 )
         );
     }
@@ -283,10 +286,10 @@ public class UserProductSearchQualificationModelService {
                         "name", OpenRouterJsonSchemaDefinition.stringEnum(List.of(
                                 UserProductSearchAttributeName.SIZE.name())),
                         "values", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.string(), 1, MAX_DURABLE_VALUES)
+                                OpenRouterJsonSchemaDefinition.string())
                 )
         );
-        return OpenRouterJsonSchemaDefinition.array(durableAttribute, 0, MAX_DURABLE_ATTRIBUTES);
+        return OpenRouterJsonSchemaDefinition.array(durableAttribute);
     }
 
     private <T extends Enum<T>> OpenRouterJsonSchemaDefinition enumValuesSchema(T[] values) {
@@ -295,7 +298,7 @@ public class UserProductSearchQualificationModelService {
                 Map.of(
                         "state", stateSchema(),
                         "values", OpenRouterJsonSchemaDefinition.array(
-                                OpenRouterJsonSchemaDefinition.stringEnum(enumNames(values)), 0, MAX_FILTER_VALUES)
+                                OpenRouterJsonSchemaDefinition.stringEnum(enumNames(values)))
                 )
         );
     }
@@ -337,9 +340,6 @@ public class UserProductSearchQualificationModelService {
         RawEnumValues priceTier = required(response.priceTier(), "priceTier");
         List<RawDurableAttribute> durableAttributes = required(
                 response.durableAttributes(), "durableAttributes");
-
-        rejectUnresolvedReference("SHOPS", shops);
-        rejectUnresolvedReference("CATEGORIES", categories);
 
         UserProductSearchFilterState availableState = state(available.state(), "available");
         if (availableState == UserProductSearchFilterState.VALUE && available.value() == null) {
@@ -523,13 +523,6 @@ public class UserProductSearchQualificationModelService {
                 : List.of();
         requireValuesForValueState(state, values, "priceTier");
         return new UserProductSearchQualificationPlan.PriceTierFilter(state, values);
-    }
-
-    private void rejectUnresolvedReference(String field, RawReference raw) {
-        UserProductSearchFilterState state = state(raw.state(), field.toLowerCase());
-        if (state == UserProductSearchFilterState.VALUE) {
-            throw invalid(field + " VALUE requires a trusted server resolver");
-        }
     }
 
     private UserProductSearchQualificationPlan.ReferenceFilter unresolvedReference(

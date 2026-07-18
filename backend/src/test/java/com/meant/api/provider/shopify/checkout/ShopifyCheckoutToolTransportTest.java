@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class ShopifyCheckoutToolTransportTest {
     private final ShopifyMerchantUcpTransport merchant = mock(ShopifyMerchantUcpTransport.class);
@@ -72,7 +73,8 @@ class ShopifyCheckoutToolTransportTest {
         UUID key = UUID.randomUUID();
         when(merchant.call(any(), any(), any(), any(), any(), any(Boolean.class)))
                 .thenReturn(new MerchantMcpToolCallResult(
-                        "https://shop.test/api/ucp/mcp", "{}", Map.of(), NegotiatedCapabilities.none()));
+                        "https://shop.test/api/ucp/mcp", "{}", new ObjectMapper().createObjectNode(),
+                        NegotiatedCapabilities.none()));
 
         transport.call(target, "cancel_checkout", Map.of(),
                 new CheckoutToolCallContext(key, true, "203.0.113.42"));
@@ -112,7 +114,8 @@ class ShopifyCheckoutToolTransportTest {
                         List.of(), policy, Instant.now(), Set.of("dev.ucp.shopping.checkout")));
         when(merchant.call(any(), any(), any(), any(), any(), any(Boolean.class)))
                 .thenReturn(new MerchantMcpToolCallResult(
-                        "https://shop.test/api/ucp/mcp", "{}", Map.of(), NegotiatedCapabilities.none()));
+                        "https://shop.test/api/ucp/mcp", "{}", new ObjectMapper().createObjectNode(),
+                        NegotiatedCapabilities.none()));
 
         transport.call(target, "get_checkout", Map.of(), CheckoutToolCallContext.standard());
 

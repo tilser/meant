@@ -1,28 +1,29 @@
 package com.meant.api.plugin.checkout.update.dto;
 
+import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
+import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerConsentState;
-import java.util.LinkedHashMap;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
 import java.util.List;
-import java.util.Map;
 
 public record UpdateCheckoutRequest(
         String checkoutId,
         List<LineItem> lineItems,
-        Map<String, Object> buyer,
+        CheckoutBuyer buyer,
         BuyerConsentState buyerConsent,
         String email,
         String currency,
-        Map<String, Object> context,
+        CheckoutContext context,
         List<String> discountCodes,
-        Map<String, Object> fulfillment
+        CheckoutFulfillment fulfillment
 ) {
 
     public UpdateCheckoutRequest {
         lineItems = lineItems == null ? List.of() : List.copyOf(lineItems);
-        buyer = buyer == null ? Map.of() : new LinkedHashMap<>(buyer);
-        context = context == null ? Map.of() : new LinkedHashMap<>(context);
-        discountCodes = discountCodes == null ? List.of() : List.copyOf(discountCodes);
-        fulfillment = fulfillment == null ? Map.of() : new LinkedHashMap<>(fulfillment);
+        buyer = buyer == null || buyer.empty() ? null : buyer;
+        context = context == null || context.empty() ? null : context;
+        discountCodes = discountCodes == null ? null : List.copyOf(discountCodes);
+        fulfillment = fulfillment == null || fulfillment.empty() ? null : fulfillment;
     }
 
     public record LineItem(

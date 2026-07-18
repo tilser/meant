@@ -88,7 +88,8 @@ class UserPreferenceFilterParsingServiceTest {
 
         assertThat(result.filterIds()).containsExactly("organic", "cotton", "gluten-free", "crypto", "ai");
         assertThat(result.unmappedPreferences()).containsExactly("tech-savvy");
-        assertThat(openRouterChatClient.schema.properties().get("filterIds").items().type()).isEqualTo("string");
+        assertThat(openRouterChatClient.schema.properties().get("filterIds").items().type().jsonValue().asText())
+                .isEqualTo("string");
         assertThat(openRouterChatClient.schema.properties().get("filterIds").items().enumValues()).isNull();
     }
 

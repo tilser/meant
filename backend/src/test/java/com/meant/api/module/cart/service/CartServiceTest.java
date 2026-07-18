@@ -30,6 +30,7 @@ import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
+import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -44,12 +45,14 @@ import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
 import com.meant.api.plugin.cart.create.dto.CreateCartRequest;
 import com.meant.api.plugin.cart.get.dto.GetCartRequest;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
@@ -600,20 +603,14 @@ class CartServiceTest {
                 null,
                 List.of(),
                 List.of(),
-                List.of(Map.of(
-                        "delivery_group_id", "delivery-group-1",
-                        "delivery_option_handle", "express"
-                )),
+                List.of(new CartDeliveryOptionSelectionInput(null, "delivery-group-1", "express")),
                 List.of(),
                 List.of(),
                 null
         ));
 
         assertThat(cartDispatchService.lastUpdateRequest.selectedDeliveryOptions())
-                .containsExactly(Map.of(
-                        "delivery_group_id", "delivery-group-1",
-                        "delivery_option_handle", "express"
-                ));
+                .containsExactly(new CartDeliveryOptionSelection(null, "delivery-group-1", "express"));
     }
 
     @Test
@@ -822,36 +819,32 @@ class CartServiceTest {
             assertThat(item.productVariantId()).isEqualTo("gid://shopify/ProductVariant/1");
             assertThat(item.quantity()).isEqualTo(1);
         });
-        assertThat(request.buyer())
-                .containsEntry("email", "ada@example.com")
-                .containsEntry("first_name", "Ada")
-                .containsEntry("last_name", "Lovelace")
-                .containsEntry("phone_number", "+15551234567");
+        assertThat(request.buyer().email()).isEqualTo("ada@example.com");
+        assertThat(request.buyer().firstName()).isEqualTo("Ada");
+        assertThat(request.buyer().lastName()).isEqualTo("Lovelace");
+        assertThat(request.buyer().phoneNumber()).isEqualTo("+15551234567");
         assertThat(request.currency()).isNull();
-        assertThat(request.context()).isEmpty();
-        List<?> methods = (List<?>) request.fulfillment().get("methods");
-        assertThat(methods).hasSize(1);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> method = (Map<String, Object>) methods.getFirst();
-        assertThat(method)
-                .containsEntry("id", "shipping")
-                .containsEntry("type", "shipping")
-                .containsEntry("selected_destination_id", "shipping");
-        assertThat(method.get("line_item_ids")).isEqualTo(List.of("gid://shopify/CheckoutLine/1"));
-        List<?> destinations = (List<?>) method.get("destinations");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> destination = (Map<String, Object>) destinations.getFirst();
-        assertThat(destination)
-                .containsEntry("id", "shipping")
-                .containsEntry("street_address", "123 Main St")
-                .containsEntry("extended_address", "Apt 4")
-                .containsEntry("address_locality", "Springfield")
-                .containsEntry("address_region", "IL")
-                .containsEntry("postal_code", "62701")
-                .containsEntry("address_country", "US")
-                .containsEntry("first_name", "Ada")
-                .containsEntry("last_name", "Lovelace")
-                .containsEntry("phone_number", "+15551234567");
+        assertThat(request.context()).isNull();
+        assertThat(request.fulfillment().methods()).singleElement().satisfies(method -> {
+            assertThat(method.id()).isEqualTo("shipping");
+            assertThat(method.type()).isEqualTo("shipping");
+            assertThat(method.selectedDestinationId()).isEqualTo("shipping");
+            assertThat(method.lineItemIds()).containsExactly("gid://shopify/CheckoutLine/1");
+            assertThat(method.destinations()).singleElement().isInstanceOfSatisfying(
+                    ShippingDestination.class,
+                    destination -> {
+                        assertThat(destination.id()).isEqualTo("shipping");
+                        assertThat(destination.streetAddress()).isEqualTo("123 Main St");
+                        assertThat(destination.extendedAddress()).isEqualTo("Apt 4");
+                        assertThat(destination.addressLocality()).isEqualTo("Springfield");
+                        assertThat(destination.addressRegion()).isEqualTo("IL");
+                        assertThat(destination.postalCode()).isEqualTo("62701");
+                        assertThat(destination.addressCountry()).isEqualTo("US");
+                        assertThat(destination.firstName()).isEqualTo("Ada");
+                        assertThat(destination.lastName()).isEqualTo("Lovelace");
+                        assertThat(destination.phoneNumber()).isEqualTo("+15551234567");
+                    });
+        });
         assertThat(checkoutDispatchService.getCount).isEqualTo(2);
         assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(checkoutDispatchService.calls).startsWith("get", "update");

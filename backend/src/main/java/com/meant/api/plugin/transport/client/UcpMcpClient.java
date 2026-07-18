@@ -23,8 +23,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @Component
 @Slf4j
@@ -35,8 +36,6 @@ public class UcpMcpClient {
     private static final String UCP_AGENT_PROFILE_KEY = "profile";
     private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
     private static final String IDEMPOTENCY_KEY_META_KEY = "idempotency-key";
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
 
     private final AgentIdentity agentIdentity;
     private final ObjectMapper objectMapper;
@@ -271,18 +270,18 @@ public class UcpMcpClient {
         );
     }
 
-    private Map<String, Object> argumentsWithAgentMeta(Object arguments, Map<String, String> headers) {
-        Map<String, Object> values = objectMap(arguments);
-        Map<String, Object> meta = mapValue(values.get("meta"));
-        Map<String, Object> ucpAgent = mapValue(meta.get(UCP_AGENT_META_KEY));
+    private ObjectNode argumentsWithAgentMeta(Object arguments, Map<String, String> headers) {
+        ObjectNode values = objectNode(arguments, "MCP tool arguments");
+        ObjectNode meta = childObject(values.get("meta"));
+        ObjectNode ucpAgent = childObject(meta.get(UCP_AGENT_META_KEY));
 
         ucpAgent.put(UCP_AGENT_PROFILE_KEY, agentIdentity.profileUrl().toString());
-        meta.put(UCP_AGENT_META_KEY, ucpAgent);
+        meta.set(UCP_AGENT_META_KEY, ucpAgent);
         String idempotencyKey = firstHeader(headers, IDEMPOTENCY_KEY_HEADER);
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             meta.put(IDEMPOTENCY_KEY_META_KEY, idempotencyKey.trim());
         }
-        values.put("meta", meta);
+        values.set("meta", meta);
 
         return values;
     }
@@ -299,65 +298,63 @@ public class UcpMcpClient {
         return null;
     }
 
-    private Map<String, Object> objectMap(Object value) {
-        if (value == null) {
-            return new LinkedHashMap<>();
-        }
-        if (value instanceof Map<?, ?> map) {
-            return stringKeyMap(map);
-        }
+    private ObjectNode objectNode(Object value, String context) {
+        JsonNode node;
         try {
-            Map<String, Object> converted = objectMapper.readValue(objectMapper.writeValueAsString(value), MAP_TYPE);
-            return converted == null ? new LinkedHashMap<>() : new LinkedHashMap<>(converted);
-        } catch (IllegalArgumentException | JacksonException exception) {
-            throw new UcpMcpException("MCP tool arguments could not be serialized", exception);
+            node = value == null
+                    ? objectMapper.createObjectNode()
+                    : value instanceof JsonNode jsonNode ? jsonNode : objectMapper.valueToTree(value);
+        } catch (IllegalArgumentException exception) {
+            throw new UcpMcpException(context + " could not be serialized", exception);
         }
+        if (!node.isObject()) {
+            throw new UcpMcpException(context + " must be a JSON object");
+        }
+        return node.deepCopy().asObject();
     }
 
-    private Map<String, Object> mapValue(Object value) {
-        return value instanceof Map<?, ?> map ? stringKeyMap(map) : new LinkedHashMap<>();
+    private ObjectNode childObject(JsonNode value) {
+        return value != null && value.isObject()
+                ? value.deepCopy().asObject()
+                : objectMapper.createObjectNode();
     }
 
-    private Map<String, Object> stringKeyMap(Map<?, ?> source) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        source.forEach((key, mapValue) -> {
-            if (key != null) {
-                values.put(key.toString(), mapValue);
-            }
-        });
-        return values;
-    }
-
-    private NegotiatedCapabilities negotiatedCapabilities(Object structuredContent) {
-        Object capabilities = mapValue(mapValue(structuredContent, "ucp"), "capabilities");
-        if (capabilities == null) {
+    private NegotiatedCapabilities negotiatedCapabilities(JsonNode structuredContent) {
+        JsonNode capabilities = structuredContent == null
+                ? null
+                : structuredContent.path("ucp").get("capabilities");
+        if (capabilities == null || capabilities.isNull() || capabilities.isMissingNode()) {
             return NegotiatedCapabilities.none();
         }
 
         Map<CapabilityId, String> versions = new LinkedHashMap<>();
-        if (capabilities instanceof Map<?, ?> capabilityMap) {
-            capabilityMap.forEach((id, value) -> addCapability(versions, id, capabilityVersion(value)));
-        } else if (capabilities instanceof Iterable<?> capabilityList) {
-            for (Object capability : capabilityList) {
-                if (capability instanceof Map<?, ?> capabilityFields) {
+        if (capabilities.isObject()) {
+            capabilities.properties().forEach(entry ->
+                    addCapability(versions, entry.getKey(), capabilityVersion(entry.getValue())));
+        } else if (capabilities.isArray()) {
+            for (JsonNode capability : capabilities.values()) {
+                if (capability.isObject()) {
                     addCapability(
                             versions,
-                            firstMapValue(capabilityFields, "id", "capability", "name"),
-                            text(firstMapValue(capabilityFields, "version", "ucp_version"))
+                            firstFieldText(capability, "id", "capability", "name"),
+                            firstFieldText(capability, "version", "ucp_version")
                     );
                 } else {
-                    addCapability(versions, capability, "");
+                    addCapability(versions, scalarText(capability), "");
                 }
             }
         } else {
-            addCapability(versions, capabilities, "");
+            addCapability(versions, scalarText(capabilities), "");
         }
         return NegotiatedCapabilities.of(versions);
     }
 
-    private String capabilityVersion(Object value) {
-        if (value instanceof Iterable<?> versions) {
-            for (Object version : versions) {
+    private String capabilityVersion(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
+            return "";
+        }
+        if (value.isArray()) {
+            for (JsonNode version : value.values()) {
                 String resolved = capabilityVersion(version);
                 if (!resolved.isBlank()) {
                     return resolved;
@@ -365,32 +362,29 @@ public class UcpMcpClient {
             }
             return "";
         }
-        if (value instanceof Map<?, ?> fields) {
-            return text(firstMapValue(fields, "version", "ucp_version"));
+        if (value.isObject()) {
+            return firstFieldText(value, "version", "ucp_version");
         }
-        return text(value);
+        return scalarText(value);
     }
 
-    private void addCapability(Map<CapabilityId, String> versions, Object id, String version) {
-        String capabilityId = text(id);
+    private void addCapability(Map<CapabilityId, String> versions, String id, String version) {
+        String capabilityId = id == null ? "" : id.trim();
         if (capabilityId.isBlank()) {
             return;
         }
         versions.put(CapabilityId.of(capabilityId), version == null ? "" : version);
     }
 
-    private Object firstMapValue(Map<?, ?> values, String... keys) {
+    private String firstFieldText(JsonNode value, String... keys) {
         for (String key : keys) {
-            Object value = values.get(key);
-            if (value != null) {
-                return value;
+            JsonNode field = value.get(key);
+            String text = scalarText(field);
+            if (!text.isBlank()) {
+                return text;
             }
         }
-        return null;
-    }
-
-    private Object mapValue(Object value, String key) {
-        return value instanceof Map<?, ?> map ? map.get(key) : null;
+        return "";
     }
 
     private String firstContentText(List<McpContent> content) {
@@ -413,17 +407,23 @@ public class UcpMcpClient {
         return trimmed.startsWith("{") || trimmed.startsWith("[");
     }
 
-    private boolean hasResultStructuredContent(Object structuredContent) {
-        if (structuredContent instanceof Map<?, ?> map) {
-            return map.keySet().stream()
-                    .map(Object::toString)
+    private boolean hasResultStructuredContent(JsonNode structuredContent) {
+        if (structuredContent == null || structuredContent.isNull() || structuredContent.isMissingNode()) {
+            return false;
+        }
+        if (structuredContent.isObject()) {
+            return structuredContent.properties().stream()
+                    .map(Map.Entry::getKey)
                     .anyMatch(key -> !"ucp".equals(key));
         }
-        return structuredContent != null;
+        return true;
     }
 
-    private String text(Object value) {
-        return value == null ? "" : value.toString().trim();
+    private String scalarText(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode() || value.isObject() || value.isArray()) {
+            return "";
+        }
+        return value.asString().trim();
     }
 
 }

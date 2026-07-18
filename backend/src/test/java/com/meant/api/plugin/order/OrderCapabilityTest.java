@@ -38,7 +38,53 @@ class OrderCapabilityTest {
         assertThat(response.order().processedAt()).isEqualTo(Instant.parse("2026-06-17T10:05:00Z"));
         assertThat(response.order().lineItems()).extracting("variantId")
                 .containsExactly("gid://shopify/ProductVariant/1");
+        assertThat(response.order().lineItems().getFirst().price().amount()).isEqualTo(1495L);
+        assertThat(response.order().lineItems().getFirst().totalPrice().amount()).isEqualTo(2990L);
+        assertThat(response.order().cost().totalAmount().amount()).isEqualTo(2990L);
         assertThat(response.messages()).extracting("code").containsExactly("order_loaded");
+    }
+
+    @Test
+    void getParsesCanonicalMinorUnitsAndLegacyDecimalMoneyAndRoundTripsCanonicalJson() throws Exception {
+        GetOrderCapability capability = new GetOrderCapability(objectMapper);
+
+        UcpOrderResponse response = capability.parseResponse(new UcpToolResponse(
+                """
+                        {
+                          "order": {
+                            "id": "gid://shopify/Order/3",
+                            "total_price": {"amount": 2990, "currency_code": "USD"},
+                            "subtotal_price": "29.90",
+                            "currency": "USD",
+                            "line_items": [
+                              {
+                                "id": "line-1",
+                                "quantity": 2,
+                                "price": {"amount": 1495, "currency": "USD"},
+                                "total_price": "29.90",
+                                "currency": "USD"
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                null,
+                NegotiatedCapabilities.none()
+        ));
+
+        assertThat(response.order().totalPrice()).isEqualTo(new UcpOrderResponse.Money(2990L, "USD"));
+        assertThat(response.order().subtotalPrice()).isEqualTo(new UcpOrderResponse.Money(2990L, null));
+        assertThat(response.order().lineItems().getFirst().price())
+                .isEqualTo(new UcpOrderResponse.Money(1495L, "USD"));
+        assertThat(response.order().lineItems().getFirst().totalPrice())
+                .isEqualTo(new UcpOrderResponse.Money(2990L, null));
+
+        String canonicalJson = objectMapper.writeValueAsString(response);
+        assertThat(canonicalJson).contains("\"amount\":2990");
+        UcpOrderResponse roundTripped = objectMapper.readValue(canonicalJson, UcpOrderResponse.class);
+        assertThat(roundTripped.order().totalPrice()).isEqualTo(response.order().totalPrice());
+        assertThat(roundTripped.order().lineItems().getFirst().price())
+                .isEqualTo(response.order().lineItems().getFirst().price());
     }
 
     @Test
@@ -46,14 +92,14 @@ class OrderCapabilityTest {
         GetOrderCapability capability = new GetOrderCapability(objectMapper);
 
         UcpOrderResponse response = capability.parseResponse(new UcpToolResponse(null,
-                Map.of(
+                objectMapper.valueToTree(Map.of(
                         "order", Map.of(
                                 "id", "gid://shopify/Order/2",
                                 "name", "#1002",
                                 "line_items", List.of()
                         ),
                         "errors", List.of()
-                ),
+                )),
                 NegotiatedCapabilities.none()));
 
         assertThat(response.order().id()).isEqualTo("gid://shopify/Order/2");

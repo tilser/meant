@@ -83,7 +83,7 @@ public class NativeCheckoutCompletionService {
             completeLocalStateIfPossible(stateCommand, terminalStatus.result());
             return terminalStatus.result();
         }
-        totalsReconciler.rejectIfMismatch(expectedCheckout(consent), refreshedCheckout.rawResponse());
+        totalsReconciler.rejectIfMismatch(expectedCheckout(consent), refreshedCheckout.response());
 
         if (!completionStateStore.tryStartCompletion(stateCommand)) {
             return statusFirstWithoutRepost(

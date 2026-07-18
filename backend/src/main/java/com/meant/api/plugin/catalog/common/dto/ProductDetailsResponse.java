@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Objects;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ProductDetailsResponse(
@@ -43,26 +46,32 @@ public record ProductDetailsResponse(
             PriceRange listPriceRange,
             @JsonProperty("list_price")
             @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
-            Object listPrice,
+            Money listPrice,
             @JsonProperty("rating")
             @JsonAlias({"aggregate_rating", "aggregateRating", "ratings"})
-            Object rating,
+            CatalogRating rating,
             @JsonProperty("review_count")
             @JsonAlias({"reviews_count", "reviewCount", "reviewsCount", "rating_count", "ratingCount"})
-            Object reviewCount,
+            @JsonDeserialize(using = CatalogReviewCountDeserializer.class)
+            Integer reviewCount,
             @JsonProperty("requires_selling_plan")
             Boolean requiresSellingPlan,
             @JsonProperty("selling_plan_groups")
-            List<Object> sellingPlanGroups,
-            Object skus,
-            Object certifications,
-            Object materials,
-            Object collections,
-            Object metadata,
-            Object metafields,
+            List<SellingPlanGroup> sellingPlanGroups,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> skus,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> certifications,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> materials,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> collections,
+            JsonNode metadata,
+            JsonNode metafields,
             @JsonProperty("tech_specs")
             @JsonAlias({"techSpecs", "specifications"})
-            Object techSpecs,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> techSpecs,
             @JsonProperty("selectedOrFirstAvailableVariant")
             @JsonAlias({"selected_or_first_available_variant", "selected_variant", "selectedVariant"})
             SelectedVariant selectedOrFirstAvailableVariant
@@ -83,18 +92,18 @@ public record ProductDetailsResponse(
                 Integer totalVariants,
                 PriceRange priceRange,
                 PriceRange listPriceRange,
-                Object listPrice,
-                Object rating,
-                Object reviewCount,
+                Money listPrice,
+                CatalogRating rating,
+                Integer reviewCount,
                 Boolean requiresSellingPlan,
-                List<Object> sellingPlanGroups,
-                Object skus,
-                Object certifications,
-                Object materials,
-                Object collections,
-                Object metadata,
-                Object metafields,
-                Object techSpecs,
+                List<SellingPlanGroup> sellingPlanGroups,
+                List<String> skus,
+                List<String> certifications,
+                List<String> materials,
+                List<String> collections,
+                JsonNode metadata,
+                JsonNode metafields,
+                List<String> techSpecs,
                 SelectedVariant selectedOrFirstAvailableVariant
         ) {
             this(
@@ -143,7 +152,7 @@ public record ProductDetailsResponse(
                 Integer totalVariants,
                 PriceRange priceRange,
                 Boolean requiresSellingPlan,
-                List<Object> sellingPlanGroups,
+                List<SellingPlanGroup> sellingPlanGroups,
                 SelectedVariant selectedOrFirstAvailableVariant
         ) {
             this(
@@ -246,6 +255,50 @@ public record ProductDetailsResponse(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonDeserialize(using = ProductDetailsMoneyDeserializer.class)
+    public record Money(
+            Long amount,
+            @JsonAlias({"currency_code", "currencyCode"}) String currency
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record SellingPlanGroup(
+            String id,
+            String name,
+            @JsonProperty("app_name")
+            @JsonAlias("appName")
+            String appName,
+            List<GroupOption> options,
+            @JsonProperty("selling_plans")
+            @JsonAlias("sellingPlans")
+            List<SellingPlan> sellingPlans
+    ) {
+        public SellingPlanGroup {
+            options = immutable(options);
+            sellingPlans = immutable(sellingPlans);
+        }
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public record GroupOption(String name, List<String> values) {
+            public GroupOption {
+                values = immutable(values);
+            }
+        }
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public record SellingPlan(String id, String name, String description, List<SellingPlanOption> options) {
+            public SellingPlan {
+                options = immutable(options);
+            }
+        }
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public record SellingPlanOption(String name, String value) {
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record SelectedVariant(
             @JsonProperty("variant_id")
             @JsonAlias({"variantId", "id"})
@@ -256,7 +309,7 @@ public record ProductDetailsResponse(
             String sku,
             @JsonProperty("list_price")
             @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
-            Object listPrice,
+            Money listPrice,
             @JsonProperty("image_url")
             String imageUrl,
             @JsonProperty("image_alt_text")
@@ -314,7 +367,7 @@ public record ProductDetailsResponse(
             String sku,
             @JsonProperty("list_price")
             @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
-            Object listPrice,
+            Money listPrice,
             @JsonProperty("image_url")
             String imageUrl,
             @JsonProperty("image_alt_text")
@@ -325,7 +378,7 @@ public record ProductDetailsResponse(
             List<SelectedOption> selectedOptions,
             List<Category> categories,
             List<String> tags,
-            Object metadata
+            JsonNode metadata
     ) {
     }
 
@@ -345,5 +398,11 @@ public record ProductDetailsResponse(
             String imageUrl,
             String url
     ) {
+    }
+
+    private static <T> List<T> immutable(List<T> values) {
+        return values == null
+                ? List.of()
+                : values.stream().filter(Objects::nonNull).toList();
     }
 }

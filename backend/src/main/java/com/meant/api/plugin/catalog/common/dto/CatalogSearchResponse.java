@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CatalogSearchResponse(
@@ -21,26 +23,32 @@ public record CatalogSearchResponse(
             PriceRange priceRange,
             @JsonProperty("list_price")
             @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
-            Object listPrice,
+            Money listPrice,
             @JsonProperty("rating")
             @JsonAlias({"aggregate_rating", "aggregateRating", "ratings"})
-            Object rating,
+            CatalogRating rating,
             @JsonProperty("review_count")
             @JsonAlias({"reviews_count", "reviewCount", "reviewsCount", "rating_count", "ratingCount"})
-            Object reviewCount,
+            @JsonDeserialize(using = CatalogReviewCountDeserializer.class)
+            Integer reviewCount,
             List<Variant> variants,
             List<Media> media,
             List<Category> categories,
             List<String> tags,
-            Object skus,
-            Object certifications,
-            Object materials,
-            Object collections,
-            Object metadata,
-            Object metafields,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> skus,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> certifications,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> materials,
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> collections,
+            JsonNode metadata,
+            JsonNode metafields,
             @JsonProperty("tech_specs")
             @JsonAlias({"techSpecs", "specifications"})
-            Object techSpecs
+            @JsonDeserialize(using = CatalogStringListDeserializer.class)
+            List<String> techSpecs
     ) {
         public Product(
                 String id,
@@ -91,9 +99,10 @@ public record CatalogSearchResponse(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonDeserialize(using = CatalogSearchMoneyDeserializer.class)
     public record Money(
             Long amount,
-            String currency
+            @JsonAlias({"currency_code", "currencyCode"}) String currency
     ) {
     }
 
@@ -106,7 +115,7 @@ public record CatalogSearchResponse(
             String sku,
             @JsonProperty("list_price")
             @JsonAlias({"compare_at_price", "compareAtPrice", "original_price", "regular_price", "was_price"})
-            Object listPrice,
+            Money listPrice,
             Availability availability,
             List<Media> media
     ) {

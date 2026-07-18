@@ -1,20 +1,25 @@
 package com.meant.api.plugin.cart.common.dto;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import tools.jackson.databind.JsonNode;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CartToolArguments(
         @JsonInclude(JsonInclude.Include.ALWAYS)
         @JsonProperty("line_items")
         List<LineItem> lineItems,
-        Map<String, Object> buyer,
-        Map<String, Object> context,
-        Map<String, Object> signals,
+        CartBuyer buyer,
+        CartContext context,
+        CartSignals signals,
         Fulfillment fulfillment,
         Discounts discounts,
         @JsonProperty("gift_card_codes")
@@ -24,12 +29,12 @@ public record CartToolArguments(
 
     public static CartToolArguments create(
             List<CartAddItem> addItems,
-            Map<String, Object> buyerIdentity,
-            Map<String, Object> context,
-            Map<String, Object> signals,
-            List<Map<String, Object>> deliveryAddressesToAdd,
-            List<Map<String, Object>> deliveryAddressesToReplace,
-            List<Map<String, Object>> selectedDeliveryOptions,
+            CartBuyer buyerIdentity,
+            CartContext context,
+            CartSignals signals,
+            List<CartDeliveryAddressSelection> deliveryAddressesToAdd,
+            List<CartDeliveryAddressSelection> deliveryAddressesToReplace,
+            List<CartDeliveryOptionSelection> selectedDeliveryOptions,
             List<String> discountCodes,
             List<String> giftCardCodes,
             String note
@@ -40,7 +45,7 @@ public record CartToolArguments(
                 emptyToNull(context),
                 emptyToNull(signals),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
-                discounts(discountCodes),
+                nonEmptyDiscounts(discountCodes),
                 codes(giftCardCodes),
                 note
         );
@@ -50,12 +55,12 @@ public record CartToolArguments(
             List<CartAddItem> addItems,
             List<CartUpdateItem> updateItems,
             List<CartUpdateItem> removeItems,
-            Map<String, Object> buyerIdentity,
-            Map<String, Object> context,
-            Map<String, Object> signals,
-            List<Map<String, Object>> deliveryAddressesToAdd,
-            List<Map<String, Object>> deliveryAddressesToReplace,
-            List<Map<String, Object>> selectedDeliveryOptions,
+            CartBuyer buyerIdentity,
+            CartContext context,
+            CartSignals signals,
+            List<CartDeliveryAddressSelection> deliveryAddressesToAdd,
+            List<CartDeliveryAddressSelection> deliveryAddressesToReplace,
+            List<CartDeliveryOptionSelection> selectedDeliveryOptions,
             List<String> discountCodes,
             List<String> giftCardCodes,
             String note
@@ -84,7 +89,7 @@ public record CartToolArguments(
                 emptyToNull(context),
                 emptyToNull(signals),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
-                discounts(discountCodes),
+                replacementDiscounts(discountCodes),
                 codes(giftCardCodes),
                 note
         );
@@ -92,9 +97,9 @@ public record CartToolArguments(
 
     public static CartToolArguments replacement(
             List<CartAddItem> lineItems,
-            Map<String, Object> buyer,
-            Map<String, Object> context,
-            Map<String, Object> signals,
+            CartBuyer buyer,
+            CartContext context,
+            CartSignals signals,
             Fulfillment fulfillment,
             Discounts discounts,
             List<String> giftCardCodes,
@@ -125,9 +130,13 @@ public record CartToolArguments(
         return item;
     }
 
-    private static Discounts discounts(List<String> discountCodes) {
+    private static Discounts nonEmptyDiscounts(List<String> discountCodes) {
         List<String> codes = codes(discountCodes);
         return codes.isEmpty() ? null : new Discounts(codes);
+    }
+
+    private static Discounts replacementDiscounts(List<String> discountCodes) {
+        return discountCodes == null ? null : new Discounts(codes(discountCodes));
     }
 
     private static List<String> codes(List<String> values) {
@@ -139,111 +148,91 @@ public record CartToolArguments(
     }
 
     public static Fulfillment fulfillment(
-            List<Map<String, Object>> deliveryAddressesToAdd,
-            List<Map<String, Object>> deliveryAddressesToReplace,
-            List<Map<String, Object>> selectedDeliveryOptions
+            List<CartDeliveryAddressSelection> deliveryAddressesToAdd,
+            List<CartDeliveryAddressSelection> deliveryAddressesToReplace,
+            List<CartDeliveryOptionSelection> selectedDeliveryOptions
     ) {
-        List<Map<String, Object>> destinations = safeList(deliveryAddressesToReplace).isEmpty()
+        List<CartDeliveryAddressSelection> destinations = safeList(deliveryAddressesToReplace).isEmpty()
                 ? safeList(deliveryAddressesToAdd)
                 : safeList(deliveryAddressesToReplace);
-        List<Map<String, Object>> groups = safeList(selectedDeliveryOptions);
+        List<CartDeliveryOptionSelection> groups = safeList(selectedDeliveryOptions);
         if (destinations.isEmpty() && groups.isEmpty()) {
             return null;
         }
 
-        Map<String, Object> method = new LinkedHashMap<>();
-        method.put("type", "shipping");
-        List<Map<String, Object>> mappedDestinations = destinations.stream()
-                .map(CartToolArguments::destination)
-                .filter(map -> !map.isEmpty())
-                .toList();
-        if (!mappedDestinations.isEmpty()) {
-            method.put("destinations", mappedDestinations);
+        List<String> methodIds = new ArrayList<>();
+        destinations.stream().filter(Objects::nonNull).map(CartDeliveryAddressSelection::methodId)
+                .filter(CartToolArguments::hasText).map(String::trim).forEach(methodIds::add);
+        groups.stream().filter(Objects::nonNull).map(CartDeliveryOptionSelection::methodId)
+                .filter(CartToolArguments::hasText).map(String::trim).forEach(methodIds::add);
+        List<String> distinctMethodIds = methodIds.stream().distinct().toList();
+        if (distinctMethodIds.isEmpty()) {
+            distinctMethodIds = List.of("");
         }
-        List<Map<String, Object>> mappedGroups = groups.stream()
-                .map(CartToolArguments::fulfillmentGroup)
-                .filter(map -> !map.isEmpty())
+        List<FulfillmentMethod> methods = distinctMethodIds.stream()
+                .map(methodId -> fulfillmentMethod(methodId, destinations, groups))
+                .filter(Objects::nonNull)
                 .toList();
-        if (!mappedGroups.isEmpty()) {
-            method.put("groups", mappedGroups);
-        }
-        if (!method.containsKey("destinations") && !method.containsKey("groups")) {
+        if (methods.isEmpty()) {
             return null;
         }
-        return new Fulfillment(List.of(method));
+        return new Fulfillment(methods);
     }
 
-    public static Map<String, Object> destination(Map<String, Object> source) {
-        if (source == null || source.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> address = mapValue(source.get("delivery_address"));
-        if (address.isEmpty()) {
-            address = source;
-        }
-
-        Map<String, Object> destination = new LinkedHashMap<>();
-        put(destination, "id", firstValue(source, "id", "destination_id"));
-        put(destination, "first_name", firstValue(address, "first_name", "firstName"));
-        put(destination, "last_name", firstValue(address, "last_name", "lastName"));
-        put(destination, "phone_number", firstValue(address, "phone_number", "phone"));
-        put(destination, "street_address", firstValue(address, "street_address", "address1"));
-        put(destination, "extended_address", firstValue(address, "extended_address", "address2"));
-        put(destination, "address_locality", firstValue(address, "address_locality", "city"));
-        put(destination, "address_region", firstValue(address, "address_region", "province_code", "province"));
-        put(destination, "postal_code", firstValue(address, "postal_code", "zip"));
-        put(destination, "address_country", firstValue(address, "address_country", "country_code", "country"));
-        return destination;
-    }
-
-    public static Map<String, Object> fulfillmentGroup(Map<String, Object> source) {
-        if (source == null || source.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> group = new LinkedHashMap<>();
-        put(group, "id", firstValue(source, "id", "group_id", "delivery_group_id"));
-        put(group, "selected_option_id", firstValue(source, "selected_option_id", "option_handle", "delivery_option_handle"));
-        return group;
-    }
-
-    private static Object firstValue(Map<String, Object> source, String... keys) {
-        if (source == null) {
+    private static FulfillmentMethod fulfillmentMethod(
+            String methodId,
+            List<CartDeliveryAddressSelection> addresses,
+            List<CartDeliveryOptionSelection> selections
+    ) {
+        List<CartDeliveryAddressSelection> methodAddresses = addresses.stream()
+                .filter(Objects::nonNull)
+                .filter(value -> appliesToMethod(value.methodId(), methodId))
+                .filter(value -> value.address() != null && !value.address().empty())
+                .toList();
+        List<CartDeliveryAddress> mappedDestinations = methodAddresses.stream()
+                .map(CartDeliveryAddressSelection::address)
+                .toList();
+        List<FulfillmentGroup> mappedGroups = selections.stream()
+                .filter(Objects::nonNull)
+                .filter(value -> appliesToMethod(value.methodId(), methodId))
+                .filter(value -> hasText(value.groupId()) && hasText(value.selectedOptionId()))
+                .map(value -> new FulfillmentGroup(
+                        value.groupId().trim(), List.of(), List.of(), value.selectedOptionId().trim()))
+                .toList();
+        if (mappedDestinations.isEmpty() && mappedGroups.isEmpty()) {
             return null;
         }
-        for (String key : keys) {
-            Object value = source.get(key);
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
+        String selectedDestinationId = methodAddresses.stream()
+                .filter(value -> Boolean.TRUE.equals(value.selected()))
+                .map(CartDeliveryAddressSelection::address)
+                .map(CartDeliveryAddress::id)
+                .filter(CartToolArguments::hasText)
+                .findFirst()
+                .orElse(null);
+        return new FulfillmentMethod(
+                hasText(methodId) ? methodId : null,
+                "shipping",
+                List.of(),
+                mappedDestinations,
+                selectedDestinationId,
+                mappedGroups
+        );
     }
 
-    private static void put(Map<String, Object> destination, String key, Object value) {
-        if (value == null) {
-            return;
-        }
-        if (value instanceof String text && text.isBlank()) {
-            return;
-        }
-        destination.put(key, value);
+    private static boolean appliesToMethod(String candidate, String methodId) {
+        return !hasText(candidate) || !hasText(methodId) || candidate.trim().equals(methodId);
     }
 
-    private static Map<String, Object> emptyToNull(Map<String, Object> values) {
-        return values == null || values.isEmpty() ? null : values;
+    private static CartContext emptyToNull(CartContext value) {
+        return value == null || value.empty() ? null : value;
     }
 
-    private static Map<String, Object> mapValue(Object value) {
-        if (!(value instanceof Map<?, ?> source)) {
-            return Map.of();
-        }
-        Map<String, Object> values = new LinkedHashMap<>();
-        source.forEach((key, mapValue) -> {
-            if (key != null) {
-                values.put(key.toString(), mapValue);
-            }
-        });
-        return values;
+    private static CartBuyer emptyToNull(CartBuyer value) {
+        return value == null || value.empty() ? null : value;
+    }
+
+    private static CartSignals emptyToNull(CartSignals value) {
+        return value == null || value.empty() ? null : value;
     }
 
     private static <T> List<T> safeList(List<T> values) {
@@ -276,12 +265,143 @@ public record CartToolArguments(
     }
 
     public record Discounts(
+            @JsonInclude(JsonInclude.Include.ALWAYS)
             List<String> codes
     ) {
+        public Discounts {
+            codes = codes == null ? List.of() : List.copyOf(codes);
+        }
     }
 
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Fulfillment(
-            List<Map<String, Object>> methods
+            List<FulfillmentMethod> methods,
+            @JsonIgnore Map<String, JsonNode> extensions
+    ) {
+        public Fulfillment(List<FulfillmentMethod> methods) {
+            this(methods, null);
+        }
+
+        public Fulfillment {
+            methods = methods == null ? List.of() : List.copyOf(methods);
+            extensions = extensions == null ? new LinkedHashMap<>() : new LinkedHashMap<>(extensions);
+        }
+
+        @JsonAnySetter
+        public void putExtension(String name, JsonNode value) {
+            extensions.put(name, value);
+        }
+
+        @JsonAnyGetter
+        public Map<String, JsonNode> extensionValues() {
+            return extensions;
+        }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record FulfillmentMethod(
+            String id,
+            String type,
+            @JsonProperty("line_item_ids") List<String> lineItemIds,
+            List<CartDeliveryAddress> destinations,
+            @JsonProperty("selected_destination_id") String selectedDestinationId,
+            List<FulfillmentGroup> groups,
+            @JsonIgnore Map<String, JsonNode> extensions
+    ) {
+        public FulfillmentMethod(
+                String id, String type, List<String> lineItemIds, List<CartDeliveryAddress> destinations,
+                String selectedDestinationId, List<FulfillmentGroup> groups
+        ) {
+            this(id, type, lineItemIds, destinations, selectedDestinationId, groups, null);
+        }
+
+        public FulfillmentMethod {
+            lineItemIds = lineItemIds == null ? List.of() : List.copyOf(lineItemIds);
+            destinations = destinations == null ? List.of() : List.copyOf(destinations);
+            groups = groups == null ? List.of() : List.copyOf(groups);
+            extensions = extensions == null ? new LinkedHashMap<>() : new LinkedHashMap<>(extensions);
+        }
+
+        @JsonAnySetter
+        public void putExtension(String name, JsonNode value) {
+            extensions.put(name, value);
+        }
+
+        @JsonAnyGetter
+        public Map<String, JsonNode> extensionValues() {
+            return extensions;
+        }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record FulfillmentGroup(
+            String id,
+            @JsonProperty("line_item_ids") List<String> lineItemIds,
+            List<FulfillmentOption> options,
+            @JsonProperty("selected_option_id") String selectedOptionId,
+            @JsonIgnore Map<String, JsonNode> extensions
+    ) {
+        public FulfillmentGroup(
+                String id, List<String> lineItemIds, List<FulfillmentOption> options, String selectedOptionId
+        ) {
+            this(id, lineItemIds, options, selectedOptionId, null);
+        }
+
+        public FulfillmentGroup {
+            lineItemIds = lineItemIds == null ? List.of() : List.copyOf(lineItemIds);
+            options = options == null ? List.of() : List.copyOf(options);
+            extensions = extensions == null ? new LinkedHashMap<>() : new LinkedHashMap<>(extensions);
+        }
+
+        @JsonAnySetter
+        public void putExtension(String name, JsonNode value) {
+            extensions.put(name, value);
+        }
+
+        @JsonAnyGetter
+        public Map<String, JsonNode> extensionValues() {
+            return extensions;
+        }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record FulfillmentOption(
+            String id,
+            String title,
+            String description,
+            String carrier,
+            @JsonProperty("earliest_fulfillment_time") String earliestFulfillmentTime,
+            @JsonProperty("latest_fulfillment_time") String latestFulfillmentTime,
+            List<FulfillmentTotal> totals,
+            @JsonIgnore Map<String, JsonNode> extensions
+    ) {
+        public FulfillmentOption(
+                String id, String title, String description, String carrier, String earliestFulfillmentTime,
+                String latestFulfillmentTime, List<FulfillmentTotal> totals
+        ) {
+            this(id, title, description, carrier, earliestFulfillmentTime, latestFulfillmentTime, totals, null);
+        }
+
+        public FulfillmentOption {
+            totals = totals == null ? List.of() : List.copyOf(totals);
+            extensions = extensions == null ? new LinkedHashMap<>() : new LinkedHashMap<>(extensions);
+        }
+
+        @JsonAnySetter
+        public void putExtension(String name, JsonNode value) {
+            extensions.put(name, value);
+        }
+
+        @JsonAnyGetter
+        public Map<String, JsonNode> extensionValues() {
+            return extensions;
+        }
+    }
+
+    public record FulfillmentTotal(
+            String type,
+            @JsonProperty("display_text") String displayText,
+            Long amount
     ) {
     }
 }

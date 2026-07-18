@@ -8,6 +8,7 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.signing.JsonWebKey;
 import com.meant.api.plugin.signing.PublicSigningKey;
 import com.meant.api.plugin.signing.SigningKeyProvider;
 import com.meant.api.plugin.signing.SigningKeyPurpose;
@@ -96,13 +97,17 @@ class AgentProfileProviderTest {
                 "agent-key-1",
                 SigningKeyPurpose.TRANSPORT,
                 SigningKeyStatus.ACTIVE,
-                Map.of(
-                        "kty", "EC",
-                        "crv", "P-256",
-                        "kid", "agent-key-1",
-                        "alg", "ES256",
-                        "x", "qIVYZVLCrPZHGHjP17CTW0_-D9Lfw0EkjqF7xB4FivA",
-                        "y", "Mc4nN9LTDOBhfoUeg8Ye9WedFRhnZXZJA12Qp0zZ6F0"
+                new JsonWebKey(
+                        "EC",
+                        "agent-key-1",
+                        "P-256",
+                        "qIVYZVLCrPZHGHjP17CTW0_-D9Lfw0EkjqF7xB4FivA",
+                        "Mc4nN9LTDOBhfoUeg8Ye9WedFRhnZXZJA12Qp0zZ6F0",
+                        null,
+                        null,
+                        "ES256",
+                        null,
+                        List.of()
                 ),
                 null
         );

@@ -1,4 +1,8 @@
-import type { CartProfile } from '../../../lib/apiClient'
+import type {
+  CartDeliveryAddressInput,
+  CartDeliveryOptionSelectionInput,
+  CartProfile,
+} from '../../../lib/apiClient'
 import type {
   CartDeliveryGroup,
   CartDeliveryOption,
@@ -29,27 +33,27 @@ export function emptyDeliveryAddressDraft(
   }
 }
 
-export function deliveryAddressArguments(input: DeliveryAddressDraft): Record<string, unknown> {
+export function deliveryAddressArguments(input: DeliveryAddressDraft): CartDeliveryAddressInput {
   return {
-    country_code: input.countryCode.trim().toUpperCase(),
-    city: input.city.trim(),
-    postal_code: input.postalCode.trim(),
-    province_code: input.provinceCode.trim() || undefined,
+    addressCountry: input.countryCode.trim().toUpperCase(),
+    addressLocality: input.city.trim(),
+    postalCode: input.postalCode.trim(),
+    addressRegion: input.provinceCode.trim() || undefined,
   }
 }
 
 function selectedDeliveryOptionArguments(
   group: CartDeliveryGroup,
   option: CartDeliveryOption | null | undefined,
-): Record<string, unknown> | null {
+): CartDeliveryOptionSelectionInput | null {
   const deliveryGroupId = group.id || group.handle
   const deliveryOptionHandle = option?.handle
   if (!deliveryGroupId || !deliveryOptionHandle) {
     return null
   }
   return {
-    delivery_group_id: deliveryGroupId,
-    delivery_option_handle: deliveryOptionHandle,
+    groupId: deliveryGroupId,
+    selectedOptionId: deliveryOptionHandle,
   }
 }
 
@@ -68,7 +72,7 @@ export function selectedDeliveryOptionsForCart(
   merchantKey: string,
   selectedGroup: CartDeliveryGroup,
   selectedOption: CartDeliveryOption,
-): Record<string, unknown>[] {
+): CartDeliveryOptionSelectionInput[] {
   const groups = (
     cart.find((item) => cartMerchantKey(item) === merchantKey)?.deliveryGroups ?? []
   ).filter((group): group is CartDeliveryGroup => Boolean(group))
@@ -82,7 +86,7 @@ export function selectedDeliveryOptionsForCart(
           : selectedCartDeliveryOption(group),
       ),
     )
-    .filter((selection): selection is Record<string, unknown> => Boolean(selection))
+    .filter((selection): selection is CartDeliveryOptionSelectionInput => Boolean(selection))
 }
 
 function formatCartAmount(amount: number, currency?: string | null): string {

@@ -10,6 +10,7 @@ import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
+import com.meant.api.plugin.catalog.common.dto.CatalogRating;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchResponse;
 import com.meant.api.module.merchant.service.dto.CatalogSearchResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
@@ -18,6 +19,7 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchRe
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
+import com.meant.api.module.merchant.service.dto.ProductSellingPlanGroup;
 import com.meant.api.module.merchant.service.dto.VoyageRerankResult;
 import com.meant.api.module.merchant.service.query.SemanticMerchantSearchQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
@@ -37,9 +39,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 @ExtendWith(OutputCaptureExtension.class)
 class MerchantSemanticProductSearchServiceTest {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private FakeMerchantSemanticSearchService merchantSemanticSearchService;
     private FakeMerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService;
@@ -62,7 +68,8 @@ class MerchantSemanticProductSearchServiceTest {
                 new MerchantCatalogSearchExecutor(merchantCatalogPluginDispatchService),
                 new MerchantProductDetailsEnricher(
                         merchantCatalogPluginDispatchService,
-                        new MerchantRichCatalogNormalizer(metadataNormalizer)
+                        new MerchantRichCatalogNormalizer(metadataNormalizer),
+                        new ProductSellingPlanGroupMapper()
                 ),
                 new MerchantProductFilterMatcher(metadataNormalizer)
         );
@@ -232,7 +239,7 @@ class MerchantSemanticProductSearchServiceTest {
             assertThat(product.materials()).containsExactly("Organic cotton", "100% organic cotton");
             assertThat(product.skus()).containsExactly("SKU-RICH", "SKU-RICH-VARIANT");
             assertThat(product.collections()).containsExactly("Basics");
-            assertThat(product.attributes()).extracting("name").contains("fabric", "fit");
+            assertThat(product.attributes()).extracting("name").contains("fabric", "technical specification");
         });
     }
 
@@ -242,10 +249,10 @@ class MerchantSemanticProductSearchServiceTest {
         merchantSemanticSearchService.results = List.of(merchant);
         merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
-                Map.of("value", "4,75", "reviewCount", "1,234,567"),
-                "1,234,567",
-                Map.of("fabric", "100% organic cotton"),
-                Map.of("fit", "relaxed")
+                new CatalogRating(4.75d, 5.0d, 1234567),
+                1234567,
+                JSON.valueToTree(Map.of("fabric", "100% organic cotton")),
+                List.of("relaxed")
         ))));
         merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
@@ -265,10 +272,10 @@ class MerchantSemanticProductSearchServiceTest {
         merchantSemanticSearchService.results = List.of(merchant);
         merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
-                Map.of("value", "4.500"),
-                "214",
-                Map.of("fabric", "100% organic cotton"),
-                Map.of("fit", "relaxed")
+                new CatalogRating(4.5d, 5.0d, null),
+                214,
+                JSON.valueToTree(Map.of("fabric", "100% organic cotton")),
+                List.of("relaxed")
         ))));
         merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
@@ -320,12 +327,25 @@ class MerchantSemanticProductSearchServiceTest {
             assertThat(product.detailImages()).extracting("url")
                     .containsExactly("https://example.com/detail-tee-detail.jpg");
             assertThat(product.detailOptions()).extracting("name").containsExactly("Size");
-            assertThat(product.sellingPlanGroups()).containsExactly(Map.of("name", "Subscribe"));
+            assertThat(product.sellingPlanGroups())
+                    .extracting(ProductSellingPlanGroup::name)
+                    .containsExactly("Subscribe");
             assertThat(product.selectedOptions()).extracting("name").containsExactly("Size");
             MerchantSemanticProductResponse response = MerchantSemanticProductResponse.from(product);
             assertThat(response.detailImages()).hasSize(1);
             assertThat(response.detailOptions()).hasSize(1);
             assertThat(response.selectedOptions()).hasSize(1);
+            assertThat(response.sellingPlanGroups()).singleElement().satisfies(group -> {
+                assertThat(group.id()).isEqualTo("subscription-group");
+                assertThat(group.appName()).isEqualTo("Subscriptions");
+                assertThat(group.options()).singleElement()
+                        .satisfies(option -> assertThat(option.values()).containsExactly("Monthly"));
+                assertThat(group.sellingPlans()).singleElement().satisfies(plan -> {
+                    assertThat(plan.id()).isEqualTo("monthly-plan");
+                    assertThat(plan.options()).singleElement()
+                            .satisfies(option -> assertThat(option.value()).isEqualTo("Monthly"));
+                });
+            });
         });
     }
 
@@ -335,7 +355,7 @@ class MerchantSemanticProductSearchServiceTest {
         merchantSemanticSearchService.results = List.of(merchant);
         merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(
                 new CatalogSearchResponse.Money(5200L, "USD"),
-                Map.of("value", 4.8d, "reviewCount", 214),
+                new CatalogRating(4.8d, 5.0d, 214),
                 214,
                 deeplyNestedValue(10_000),
                 null
@@ -351,10 +371,12 @@ class MerchantSemanticProductSearchServiceTest {
     }
 
     @Test
-    void treatsRawNumericListPricesAsMajorUnits() {
+    void treatsTypedIntegerListPricesAsMinorUnits() {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
-        merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(richProduct(1200))));
+        merchantCatalogPluginDispatchService.results.put(
+                merchant.domain(), catalogSearchResult(merchant, List.of(
+                        richProduct(new CatalogSearchResponse.Money(1200L, "USD")))));
         merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
         MerchantSemanticProductSearchResult result = merchantSemanticProductSearchService.search(
@@ -362,7 +384,7 @@ class MerchantSemanticProductSearchServiceTest {
         );
 
         assertThat(result.products()).singleElement().satisfies(product -> {
-            assertThat(product.listPriceAmount()).isEqualTo(120000L);
+            assertThat(product.listPriceAmount()).isEqualTo(1200L);
             assertThat(product.listPriceCurrency()).isEqualTo("USD");
         });
     }
@@ -372,7 +394,7 @@ class MerchantSemanticProductSearchServiceTest {
         MerchantSemanticSearchResult merchant = merchant("apparel.example", "Apparel Store", 1);
         merchantSemanticSearchService.results = List.of(merchant);
         merchantCatalogPluginDispatchService.results.put(merchant.domain(), catalogSearchResult(merchant, List.of(
-                richProduct(Map.of("amount_cents", 5200, "currency", "USD"))
+                richProduct(new CatalogSearchResponse.Money(5200L, "USD"))
         )));
         merchantCatalogPluginDispatchService.failures.put("rich-tee", "details unavailable");
 
@@ -720,22 +742,22 @@ class MerchantSemanticProductSearchServiceTest {
         return richProduct(new CatalogSearchResponse.Money(5200L, "USD"));
     }
 
-    private CatalogSearchResponse.Product richProduct(Object listPrice) {
+    private CatalogSearchResponse.Product richProduct(CatalogSearchResponse.Money listPrice) {
         return richProduct(
                 listPrice,
-                Map.of("value", 4.8d, "reviewCount", 214),
+                new CatalogRating(4.8d, 5.0d, 214),
                 214,
-                Map.of("fabric", "100% organic cotton"),
-                Map.of("fit", "relaxed")
+                JSON.valueToTree(Map.of("fabric", "100% organic cotton")),
+                List.of("relaxed")
         );
     }
 
     private CatalogSearchResponse.Product richProduct(
-            Object listPrice,
-            Object rating,
-            Object reviewCount,
-            Object metadata,
-            Object techSpecs
+            CatalogSearchResponse.Money listPrice,
+            CatalogRating rating,
+            Integer reviewCount,
+            JsonNode metadata,
+            List<String> techSpecs
     ) {
         return new CatalogSearchResponse.Product(
                 "rich-tee",
@@ -792,9 +814,20 @@ class MerchantSemanticProductSearchServiceTest {
         List<ProductDetailsResponse.Option> options = new ArrayList<>();
         options.add(null);
         options.add(new ProductDetailsResponse.Option("Size", List.of("Default")));
-        List<Object> sellingPlanGroups = new ArrayList<>();
+        List<ProductDetailsResponse.SellingPlanGroup> sellingPlanGroups = new ArrayList<>();
         sellingPlanGroups.add(null);
-        sellingPlanGroups.add(Map.of("name", "Subscribe"));
+        sellingPlanGroups.add(new ProductDetailsResponse.SellingPlanGroup(
+                "subscription-group",
+                "Subscribe",
+                "Subscriptions",
+                List.of(new ProductDetailsResponse.SellingPlanGroup.GroupOption(
+                        "Delivery", List.of("Monthly"))),
+                List.of(new ProductDetailsResponse.SellingPlanGroup.SellingPlan(
+                        "monthly-plan",
+                        "Monthly subscription",
+                        "Delivered monthly",
+                        List.of(new ProductDetailsResponse.SellingPlanGroup.SellingPlanOption(
+                                "Delivery", "Monthly"))))));
         List<ProductDetailsResponse.SelectedOption> selectedOptions = new ArrayList<>();
         selectedOptions.add(null);
         selectedOptions.add(new ProductDetailsResponse.SelectedOption("Size", "Default"));
@@ -865,7 +898,7 @@ class MerchantSemanticProductSearchServiceTest {
                         new CatalogSearchResponse.Money(3800L, "USD")
                 ),
                 null,
-                Map.of("value", 4.8d, "reviewCount", 214),
+                new CatalogRating(4.8d, 5.0d, 214),
                 214,
                 variants,
                 media,
@@ -875,9 +908,9 @@ class MerchantSemanticProductSearchServiceTest {
                 List.of("GOTS"),
                 List.of("Organic cotton"),
                 List.of("Basics"),
-                Map.of("fabric", "100% organic cotton"),
+                JSON.valueToTree(Map.of("fabric", "100% organic cotton")),
                 null,
-                Map.of("fit", "relaxed")
+                List.of("relaxed")
         );
     }
 
@@ -910,10 +943,10 @@ class MerchantSemanticProductSearchServiceTest {
         );
     }
 
-    private Object deeplyNestedValue(int depth) {
-        Object value = "GOTS";
+    private JsonNode deeplyNestedValue(int depth) {
+        JsonNode value = JSON.valueToTree("GOTS");
         for (int index = 0; index < depth; index++) {
-            value = List.of(value);
+            value = JSON.createArrayNode().add(value);
         }
         return value;
     }

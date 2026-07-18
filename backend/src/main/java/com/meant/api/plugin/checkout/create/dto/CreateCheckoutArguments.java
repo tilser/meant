@@ -2,10 +2,11 @@ package com.meant.api.plugin.checkout.create.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerWithConsent;
 import com.meant.api.plugin.checkout.extension.discount.dto.CheckoutDiscounts;
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
 import java.util.List;
-import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record CreateCheckoutArguments(
@@ -18,9 +19,9 @@ public record CreateCheckoutArguments(
             String cartId,
             @JsonProperty("line_items")
             List<LineItem> lineItems,
-            Map<String, Object> buyer,
+            BuyerWithConsent buyer,
             String currency,
-            Map<String, Object> context,
+            CheckoutContext context,
             CheckoutDiscounts discounts,
             CheckoutFulfillment fulfillment
     ) {

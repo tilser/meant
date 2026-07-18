@@ -1,9 +1,11 @@
 package com.meant.api.plugin.checkout.update;
 
+import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
 import com.meant.api.plugin.checkout.common.dto.CheckoutCapabilityMetadata;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.support.CheckoutPluginJson;
 import com.meant.api.plugin.checkout.extension.buyerconsent.BuyerConsentExtensionSupport;
+import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerWithConsent;
 import com.meant.api.plugin.checkout.extension.discount.DiscountExtensionSupport;
 import com.meant.api.plugin.checkout.extension.fulfillment.FulfillmentExtensionSupport;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutArguments;
@@ -13,9 +15,7 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -46,13 +46,14 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
             UpdateCheckoutRequest request,
             NegotiatedCapabilities activeCapabilities
     ) {
-        Map<String, Object> buyer = BuyerConsentExtensionSupport.buyer(request.buyer(), request.buyerConsent());
-        if (buyer == null) {
-            buyer = new LinkedHashMap<>();
-        }
-        if (hasText(request.email()) && !buyer.containsKey("email")) {
-            buyer.put("email", request.email().trim());
-        }
+        CheckoutBuyer buyerInput = request.buyer() == null
+                ? new CheckoutBuyer(null, null, null, null)
+                : request.buyer();
+        buyerInput = buyerInput.withEmailIfMissing(request.email());
+        BuyerWithConsent buyer = BuyerConsentExtensionSupport.buyer(
+                buyerInput.empty() ? null : buyerInput,
+                request.buyerConsent()
+        );
         return new UpdateCheckoutArguments(
                 request.checkoutId(),
                 new UpdateCheckoutArguments.Checkout(
@@ -67,7 +68,7 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
                         request.currency(),
                         request.context(),
                         FulfillmentExtensionSupport.fulfillment(request.fulfillment()),
-                        DiscountExtensionSupport.discountCodes(request.discountCodes())
+                        DiscountExtensionSupport.replacementDiscountCodes(request.discountCodes())
                 )
         );
     }
@@ -75,9 +76,5 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
     @Override
     public UcpCheckoutResponse parseResponse(UcpToolResponse response) {
         return CheckoutPluginJson.parse(objectMapper, response, UcpCheckoutResponse.class);
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 }

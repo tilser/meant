@@ -9,6 +9,7 @@ import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import java.net.URI;
 import java.util.List;
+import tools.jackson.databind.node.JsonNodeFactory;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -44,7 +45,7 @@ public class ShopifyGlobalCatalogExtensionCapability implements UcpCapability<Vo
                         CatalogSearchCapability.ID,
                         CatalogLookupCapability.ID
                 ),
-                java.util.Map.of()
+                JsonNodeFactory.instance.objectNode()
         ));
     }
 

@@ -2,7 +2,6 @@ package com.meant.api.module.merchant.service;
 
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -11,14 +10,15 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 
 @Service
 public class ProductCatalogMetadataNormalizer {
 
     private static final int MAX_METADATA_DEPTH = 64;
 
-    List<ProductCatalogAttribute> attributes(Object value) {
-        if (value == null) {
+    List<ProductCatalogAttribute> attributes(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return List.of();
         }
         List<ProductCatalogAttribute> attributes = new ArrayList<>();
@@ -26,24 +26,35 @@ public class ProductCatalogMetadataNormalizer {
         stack.add(new AttributeNode("metadata", value, 0));
         while (!stack.isEmpty()) {
             AttributeNode node = stack.removeLast();
-            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
+            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null
+                    || node.value().isNull() || node.value().isMissingNode()) {
                 continue;
             }
-            addAttributeValue(attributes, stack, node.name(), node.value(), node.depth());
+            addJsonAttributeValue(attributes, stack, node.name(), node.value(), node.depth());
         }
         return attributes;
     }
 
-    private void addAttributeValue(
+    List<ProductCatalogAttribute> attributes(List<String> values) {
+        List<String> normalized = stringValues(values);
+        return normalized.isEmpty()
+                ? List.of()
+                : List.of(new ProductCatalogAttribute("technical specification", String.join(", ", normalized)));
+    }
+
+    private void addJsonAttributeValue(
             List<ProductCatalogAttribute> attributes,
             List<AttributeNode> stack,
             String key,
-            Object value,
+            JsonNode value,
             int depth
     ) {
-        if (value instanceof Map<?, ?> map) {
-            Object namedValue = firstMapValue(map, "value", "values", "text", "description");
-            String namedKey = firstPresent(firstStringValue(map, "name", "key", "label", "title"), key);
+        if (value.isNull() || value.isMissingNode()) {
+            return;
+        }
+        if (value.isObject()) {
+            JsonNode namedValue = firstJsonValue(value, "value", "values", "text", "description");
+            String namedKey = firstPresent(firstJsonString(value, "name", "key", "label", "title"), key);
             if (namedValue != null) {
                 String stringValue = String.join(", ", stringValues(namedValue));
                 if (!stringValue.isBlank()) {
@@ -51,19 +62,16 @@ public class ProductCatalogMetadataNormalizer {
                 }
                 return;
             }
-            List<Map.Entry<?, ?>> entries = new ArrayList<>(map.entrySet());
+            List<Map.Entry<String, JsonNode>> entries = new ArrayList<>(value.properties());
             for (int index = entries.size() - 1; index >= 0; index--) {
-                Map.Entry<?, ?> entry = entries.get(index);
-                String nestedName = scalarString(entry.getKey());
-                if (nestedName != null) {
-                    String attributeName = "metadata".equals(key) ? nestedName : key + " " + nestedName;
-                    stack.add(new AttributeNode(attributeName, entry.getValue(), depth + 1));
-                }
+                Map.Entry<String, JsonNode> entry = entries.get(index);
+                String attributeName = "metadata".equals(key) ? entry.getKey() : key + " " + entry.getKey();
+                stack.add(new AttributeNode(attributeName, entry.getValue(), depth + 1));
             }
             return;
         }
-        if (value instanceof Collection<?> collection) {
-            List<String> values = stringValues(collection);
+        if (value.isArray()) {
+            List<String> values = stringValues(value);
             if (!values.isEmpty()) {
                 attributes.add(new ProductCatalogAttribute(key, String.join(", ", values)));
             }
@@ -75,8 +83,8 @@ public class ProductCatalogMetadataNormalizer {
         }
     }
 
-    List<String> stringValues(Object value) {
-        if (value == null) {
+    List<String> stringValues(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return List.of();
         }
         List<String> values = new ArrayList<>();
@@ -84,43 +92,59 @@ public class ProductCatalogMetadataNormalizer {
         stack.add(new ValueNode(value, 0));
         while (!stack.isEmpty()) {
             ValueNode node = stack.removeLast();
-            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
+            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null
+                    || node.value().isNull() || node.value().isMissingNode()) {
                 continue;
             }
-            if (node.value() instanceof Collection<?> collection) {
-                List<?> items = new ArrayList<>(collection);
+            JsonNode json = node.value();
+            if (json.isArray()) {
+                List<JsonNode> items = new ArrayList<>(json.values());
                 for (int index = items.size() - 1; index >= 0; index--) {
                     stack.add(new ValueNode(items.get(index), node.depth() + 1));
                 }
                 continue;
             }
-            if (node.value() instanceof Map<?, ?> map) {
-                Object namedValues = firstMapValue(map, "values", "value", "name", "label", "title", "text");
+            if (json.isObject()) {
+                JsonNode namedValues = firstJsonValue(
+                        json, "values", "value", "name", "label", "title", "text");
                 if (namedValues != null) {
                     stack.add(new ValueNode(namedValues, node.depth() + 1));
                     continue;
                 }
-                List<?> mapValues = new ArrayList<>(map.values());
+                List<JsonNode> mapValues = new ArrayList<>(json.values());
                 for (int index = mapValues.size() - 1; index >= 0; index--) {
                     stack.add(new ValueNode(mapValues.get(index), node.depth() + 1));
                 }
                 continue;
             }
-            String scalar = scalarString(node.value());
+            String scalar = scalarString(json);
             if (scalar != null) {
-                Stream.of(scalar.split("\\s*[,;/|]\\s*"))
-                        .map(this::blankToNull)
-                        .filter(Objects::nonNull)
-                        .forEach(values::add);
+                values.add(scalar);
             }
         }
         return values;
     }
 
-    private Object firstMapValue(Map<?, ?> map, String... keys) {
+    List<String> stringValues(List<String> source) {
+        if (source == null) {
+            return List.of();
+        }
+        return distinctStrings(source.stream().flatMap(this::splitString));
+    }
+
+    List<String> stringValues(String source) {
+        return source == null ? List.of() : distinctStrings(splitString(source));
+    }
+
+    private Stream<String> splitString(String value) {
+        return value == null ? Stream.empty() : Stream.of(value.split("\\s*[,;/|]\\s*"));
+    }
+
+    private JsonNode firstJsonValue(JsonNode value, String... keys) {
         for (String key : keys) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (entry.getKey() != null && key.equalsIgnoreCase(entry.getKey().toString())) {
+            for (Map.Entry<String, JsonNode> entry : value.properties()) {
+                if (key.equalsIgnoreCase(entry.getKey()) && entry.getValue() != null
+                        && !entry.getValue().isNull()) {
                     return entry.getValue();
                 }
             }
@@ -128,9 +152,8 @@ public class ProductCatalogMetadataNormalizer {
         return null;
     }
 
-    private String firstStringValue(Map<?, ?> map, String... keys) {
-        Object value = firstMapValue(map, keys);
-        return scalarString(value);
+    private String firstJsonString(JsonNode value, String... keys) {
+        return scalarString(firstJsonValue(value, keys));
     }
 
     List<String> distinctStrings(Stream<String> values) {
@@ -147,17 +170,11 @@ public class ProductCatalogMetadataNormalizer {
         return fragments.stream().anyMatch(normalized::contains);
     }
 
-    private String scalarString(Object value) {
-        if (value == null) {
+    private String scalarString(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
             return null;
         }
-        if (value instanceof String string) {
-            return blankToNull(string);
-        }
-        if (value instanceof Number || value instanceof Boolean || value instanceof Character) {
-            return blankToNull(value.toString());
-        }
-        return null;
+        return value.isValueNode() ? blankToNull(value.asText()) : null;
     }
 
     String blankToDefault(String value, String defaultValue) {
@@ -183,9 +200,9 @@ public class ProductCatalogMetadataNormalizer {
         return second;
     }
 
-    private record AttributeNode(String name, Object value, int depth) {
+    private record AttributeNode(String name, JsonNode value, int depth) {
     }
 
-    private record ValueNode(Object value, int depth) {
+    private record ValueNode(JsonNode value, int depth) {
     }
 }

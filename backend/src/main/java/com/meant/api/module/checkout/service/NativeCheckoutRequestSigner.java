@@ -1,9 +1,11 @@
 package com.meant.api.module.checkout.service;
 
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutArguments;
 import com.meant.api.plugin.checkout.cancel.dto.CancelCheckoutRequest;
 import com.meant.api.module.checkout.exception.CheckoutSafetyException;
 import com.meant.api.plugin.checkout.complete.CompleteCheckoutCapability;
+import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutArguments;
 import com.meant.api.plugin.checkout.complete.dto.CompleteCheckoutRequest;
 import com.meant.api.plugin.signing.Jcs;
 import com.meant.api.plugin.signing.Rfc9421Signer;
@@ -32,15 +34,17 @@ public class NativeCheckoutRequestSigner {
     private final ObjectMapper objectMapper;
 
     public byte[] canonicalCompleteBody(CompleteCheckoutRequest request, UcpSession session) throws JacksonException {
-        Object arguments = completeCheckoutCapability.buildArguments(request, session.activeCapabilities());
+        CompleteCheckoutArguments arguments = completeCheckoutCapability.buildArguments(
+                request,
+                session.activeCapabilities()
+        );
         return jcs.canonicalizeToUtf8Bytes(objectMapper.writeValueAsBytes(arguments));
     }
 
     public byte[] canonicalCancelBody(CancelCheckoutRequest request) {
         try {
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("id", request.checkoutId());
-            return jcs.canonicalizeToUtf8Bytes(objectMapper.writeValueAsBytes(body));
+            CancelCheckoutArguments arguments = new CancelCheckoutArguments(request.checkoutId());
+            return jcs.canonicalizeToUtf8Bytes(objectMapper.writeValueAsBytes(arguments));
         } catch (JacksonException exception) {
             throw new CheckoutSafetyException("Cancel checkout payload could not be canonicalized", exception);
         }

@@ -76,8 +76,9 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<UcpC
 
     private UcpCartResponse.Money moneyValue(JsonParser parser) throws JacksonException {
         if (parser.currentToken() == JsonToken.START_OBJECT) {
-            Object amount = null;
+            String amount = null;
             String currency = null;
+            boolean explicitMinor = false;
             JsonToken token;
             while ((token = parser.nextToken()) != null && token != JsonToken.END_OBJECT) {
                 if (token != JsonToken.PROPERTY_NAME) {
@@ -90,15 +91,25 @@ public class CartAppliedCodeListDeserializer extends ValueDeserializer<List<UcpC
                     break;
                 }
                 switch (fieldName) {
-                    case "amount", "value", "minor_amount", "amount_minor", "amount_cents" -> amount = scalarValue(parser);
+                    case "amount", "value" -> {
+                        explicitMinor = valueToken == JsonToken.VALUE_NUMBER_INT;
+                        amount = scalarValue(parser);
+                    }
+                    case "minor_amount", "amount_minor", "amount_cents" -> {
+                        explicitMinor = true;
+                        amount = scalarValue(parser);
+                    }
                     case "currency", "currency_code", "currencyCode" -> currency = scalarValue(parser);
                     default -> parser.skipChildren();
                 }
             }
-            return amount == null && currency == null ? null : new UcpCartResponse.Money(amount, currency);
+            return amount == null && currency == null ? null : new UcpCartResponse.Money(
+                    CartMoneyDeserializer.scalarToMinor(amount, currency, explicitMinor), currency);
         }
         String amount = scalarValue(parser);
-        return amount == null ? null : new UcpCartResponse.Money(amount, null);
+        return amount == null ? null : new UcpCartResponse.Money(
+                CartMoneyDeserializer.scalarToMinor(amount, null, parser.currentToken() == JsonToken.VALUE_NUMBER_INT),
+                null);
     }
 
     private String scalarValue(JsonParser parser) throws JacksonException {

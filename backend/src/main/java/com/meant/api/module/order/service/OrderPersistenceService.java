@@ -9,6 +9,7 @@ import com.meant.api.module.order.entity.MerchantOrderLine;
 import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.order.repository.MerchantOrderRepository;
 import com.meant.api.plugin.order.common.dto.UcpOrderResponse;
+import com.meant.api.plugin.support.UcpDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -73,8 +74,10 @@ public class OrderPersistenceService {
                         .state(OrderState.UNKNOWN)
                         .createdAt(now)
                         .build());
-        UcpOrderResponse.Money total = remoteOrder.cost() == null ? null : remoteOrder.cost().totalAmount();
-        UcpOrderResponse.Money subtotal = remoteOrder.cost() == null ? null : remoteOrder.cost().subtotalAmount();
+        UcpOrderResponse.Money total = firstMoney(
+                remoteOrder.cost() == null ? null : remoteOrder.cost().totalAmount(), remoteOrder.totalPrice());
+        UcpOrderResponse.Money subtotal = firstMoney(
+                remoteOrder.cost() == null ? null : remoteOrder.cost().subtotalAmount(), remoteOrder.subtotalPrice());
         String currency = currency(total, subtotal, remoteOrder.currency());
         OrderState state = OrderState.fromRemote(
                 remoteOrder.status(),
@@ -99,8 +102,8 @@ public class OrderPersistenceService {
                 customerEmail(remoteOrder),
                 blankToNull(remoteOrder.orderStatusUrl()),
                 required(rawOrderResponse, "Raw order response is required"),
-                amount(firstValue(total == null ? null : total.amount(), remoteOrder.totalPrice())),
-                amount(firstValue(subtotal == null ? null : subtotal.amount(), remoteOrder.subtotalPrice())),
+                amount(total, currency),
+                amount(subtotal, currency),
                 currency,
                 totalQuantity(remoteOrder.lineItems()),
                 firstInstant(remoteOrder.processedAt(), remoteOrder.createdAt()),
@@ -144,7 +147,12 @@ public class OrderPersistenceService {
                 variant == null ? null : variant.title(),
                 "Order item"
         ), "Order line product title is required");
-        String currency = firstText(line.currency(), orderCurrency);
+        String currency = firstText(
+                line.currency(),
+                line.price() == null ? null : line.price().currency(),
+                line.totalPrice() == null ? null : line.totalPrice().currency(),
+                orderCurrency
+        );
         return MerchantOrderLine.builder()
                 .remoteOrderLineId(required(firstText(line.id(), variantId, productId, String.valueOf(index)),
                         "Remote order line id is required"))
@@ -158,8 +166,8 @@ public class OrderPersistenceService {
                 .imageUrl(blankToNull(firstText(line.imageUrl(), product == null ? null : product.imageUrl())))
                 .productUrl(blankToNull(firstText(line.productUrl(), product == null ? null : product.productUrl())))
                 .quantity(line.quantity() == null ? 0 : line.quantity())
-                .unitAmount(amount(line.price()))
-                .totalAmount(amount(line.totalPrice()))
+                .unitAmount(amount(line.price(), currency))
+                .totalAmount(amount(line.totalPrice(), currency))
                 .currency(blankToNull(currency))
                 .rawLineResponse(toJson(line))
                 .createdAt(now)
@@ -182,12 +190,17 @@ public class OrderPersistenceService {
                 .sum();
     }
 
-    private String amount(Object value) {
-        return value == null ? null : value.toString();
+    private String amount(UcpOrderResponse.Money value, String fallbackCurrency) {
+        return value == null
+                ? null
+                : UcpDecimal.minorAmountToDecimalText(value.amount(), firstText(value.currency(), fallbackCurrency));
     }
 
-    private Object firstValue(Object first, Object second) {
-        return first == null ? second : first;
+    private UcpOrderResponse.Money firstMoney(UcpOrderResponse.Money first, UcpOrderResponse.Money second) {
+        if (first != null && first.amount() != null) {
+            return first;
+        }
+        return second == null ? first : second;
     }
 
     private String currency(UcpOrderResponse.Money first, UcpOrderResponse.Money second, String fallback) {

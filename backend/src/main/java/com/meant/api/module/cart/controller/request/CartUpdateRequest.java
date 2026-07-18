@@ -5,9 +5,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
+@Schema(description = "Partially updates a cart while preserving the merchant's complete remote cart state.")
 public record CartUpdateRequest(
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<@NotNull @Valid CartAddItemRequest> addItems,
@@ -18,13 +18,14 @@ public record CartUpdateRequest(
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<String> removeRemoteCartLineIds,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        Map<String, Object> buyerIdentity,
+        @Valid
+        CartBuyerIdentityRequest buyerIdentity,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        List<Map<String, Object>> deliveryAddressesToAdd,
+        List<@NotNull @Valid CartDeliveryAddressSelectionRequest> deliveryAddressesToAdd,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        List<Map<String, Object>> deliveryAddressesToReplace,
+        List<@NotNull @Valid CartDeliveryAddressSelectionRequest> deliveryAddressesToReplace,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        List<Map<String, Object>> selectedDeliveryOptions,
+        List<@NotNull @Valid CartDeliveryOptionSelectionRequest> selectedDeliveryOptions,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         List<@NotBlank String> discountCodes,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)

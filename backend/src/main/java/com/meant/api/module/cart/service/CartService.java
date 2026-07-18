@@ -18,6 +18,10 @@ import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
+import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryAddressSelectionInput;
+import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.cart.service.dto.CheckoutConsentResult;
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
@@ -35,6 +39,11 @@ import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
+import com.meant.api.plugin.cart.common.dto.CartBuyer;
+import com.meant.api.plugin.cart.common.dto.CartContext;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
+import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
 import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
@@ -45,6 +54,12 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
+import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
+import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentGroup;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentMethod;
+import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.module.checkout.service.NativeCheckoutCompletionService;
 import com.meant.api.module.checkout.service.command.NativeCheckoutCompletionCommand;
@@ -271,9 +286,9 @@ public class CartService {
                 cart,
                 currentCheckout.response()
         );
-        Map<String, Object> buyer = buyer(command.buyer());
-        Map<String, Object> shippingAddress = postalAddress(command.buyer(), command.shippingAddress());
-        Map<String, Object> context = cartBuyerContextService.buyerContext(command.userId());
+        CheckoutBuyer buyer = checkoutBuyer(command.buyer());
+        ShippingDestination shippingAddress = shippingDestination(command.buyer(), command.shippingAddress());
+        CheckoutContext context = checkoutContext(cartBuyerContextService.buyerContext(command.userId()));
         List<String> discountCodes = normalizeCodes(command.discountCodes());
         UpdateCheckoutRequest updateRequest = new UpdateCheckoutRequest(
                         cart.getCheckoutId(),
@@ -311,9 +326,9 @@ public class CartService {
                         callContext
                 );
             }
-            Map<String, Object> defaultFulfillmentSelection =
+            CheckoutFulfillment defaultFulfillmentSelection =
                     defaultFulfillmentSelection(result.response(), shippingAddress);
-            if (!defaultFulfillmentSelection.isEmpty()) {
+            if (defaultFulfillmentSelection != null) {
                 result = merchantCheckoutPluginDispatchService.updateCheckout(
                         target,
                         new UpdateCheckoutRequest(
@@ -419,12 +434,12 @@ public class CartService {
         return new CreateCheckoutRequest(
                 cart.getRemoteCartId(),
                 lineItems,
-                Map.of(),
+                null,
                 null,
                 cart.getCurrency(),
-                cartBuyerContextService.buyerContext(cart.getUserId()),
+                checkoutContext(cartBuyerContextService.buyerContext(cart.getUserId())),
                 List.of(),
-                Map.of()
+                null
         );
     }
 
@@ -531,14 +546,86 @@ public class CartService {
                 resolved.items().entrySet().stream()
                         .map(entry -> cartAddItem(resolved.byKey().get(entry.getKey()), entry.getValue()))
                         .toList(),
-                command.buyerIdentity(),
-                cartBuyerContextService.buyerContext(commerceContext),
-                safeList(command.deliveryAddressesToAdd()),
-                safeList(command.deliveryAddressesToReplace()),
-                safeList(command.selectedDeliveryOptions()),
+                cartBuyer(command.buyerIdentity()),
+                cartContext(commerceContext, command.buyerIdentity()),
+                cartDeliveryAddresses(command.deliveryAddressesToAdd()),
+                cartDeliveryAddresses(command.deliveryAddressesToReplace()),
+                cartDeliveryOptions(command.selectedDeliveryOptions()),
                 normalizeCodes(command.discountCodes()),
                 normalizeCodes(command.giftCardCodes()),
                 command.note()
+        );
+    }
+
+    private CartBuyer cartBuyer(CartBuyerIdentityInput buyer) {
+        return buyer == null ? null : new CartBuyer(
+                trimToNull(buyer.firstName()),
+                trimToNull(buyer.lastName()),
+                trimToNull(buyer.email()),
+                trimToNull(buyer.phoneNumber())
+        );
+    }
+
+    private CartContext cartContext(
+            UserCommerceContextResult commerceContext,
+            CartBuyerIdentityInput buyer
+    ) {
+        CartContext context = cartBuyerContextService.buyerContext(commerceContext);
+        String buyerCountry = buyer == null ? null : trimToNull(buyer.countryCode());
+        return buyerCountry == null ? context : context.merge(new CartContext(buyerCountry.toUpperCase(Locale.ROOT)));
+    }
+
+    private List<CartDeliveryAddressSelection> cartDeliveryAddresses(
+            List<CartDeliveryAddressSelectionInput> inputs
+    ) {
+        return safeNonNullList(inputs).stream()
+                .map(input -> new CartDeliveryAddressSelection(
+                        trimToNull(input.methodId()), input.selected(), cartDeliveryAddress(input)))
+                .toList();
+    }
+
+    private CartDeliveryAddress cartDeliveryAddress(CartDeliveryAddressSelectionInput input) {
+        CartDeliveryAddressInput address = input.address();
+        return new CartDeliveryAddress(
+                trimToNull(input.id()),
+                address == null ? null : trimToNull(address.firstName()),
+                address == null ? null : trimToNull(address.lastName()),
+                address == null ? null : trimToNull(address.phoneNumber()),
+                address == null ? null : trimToNull(address.streetAddress()),
+                address == null ? null : trimToNull(address.extendedAddress()),
+                address == null ? null : trimToNull(address.addressLocality()),
+                address == null ? null : trimToNull(address.addressRegion()),
+                address == null ? null : trimToNull(address.postalCode()),
+                address == null ? null : trimToNull(address.addressCountry())
+        );
+    }
+
+    private List<CartDeliveryOptionSelection> cartDeliveryOptions(
+            List<CartDeliveryOptionSelectionInput> inputs
+    ) {
+        return safeNonNullList(inputs).stream()
+                .map(input -> new CartDeliveryOptionSelection(
+                        trimToNull(input.methodId()), trimToNull(input.groupId()), trimToNull(input.selectedOptionId())))
+                .toList();
+    }
+
+    private String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private CheckoutContext checkoutContext(CartContext context) {
+        if (context == null || context.empty()) {
+            return null;
+        }
+        return new CheckoutContext(
+                trimToNull(context.addressCountry()),
+                trimToNull(context.addressRegion()),
+                trimToNull(context.postalCode()),
+                trimToNull(context.intent()),
+                trimToNull(context.language()),
+                trimToNull(context.currency()),
+                context.eligibility(),
+                context.extensions()
         );
     }
 
@@ -563,73 +650,73 @@ public class CartService {
         return cartPersistenceService.saveCheckoutHandoff(cart.getId(), userId, result);
     }
 
-    private Map<String, Object> buyer(UpdateCheckoutCommand.Buyer buyer) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        putIfHasText(values, "email", buyer.email());
-        putIfHasText(values, "first_name", buyer.firstName());
-        putIfHasText(values, "last_name", buyer.lastName());
-        putIfHasText(values, "phone_number", buyer.phoneNumber());
-        return values;
+    private CheckoutBuyer checkoutBuyer(UpdateCheckoutCommand.Buyer buyer) {
+        return new CheckoutBuyer(
+                trimToNull(buyer.firstName()),
+                trimToNull(buyer.lastName()),
+                trimToNull(buyer.email()),
+                trimToNull(buyer.phoneNumber())
+        );
     }
 
-    private Map<String, Object> fulfillment(
+    private CheckoutFulfillment fulfillment(
             UpdateCheckoutCommand.Buyer buyer,
             UpdateCheckoutCommand.PostalAddress address,
             List<UpdateCheckoutRequest.LineItem> lineItems
     ) {
-        Map<String, Object> destination = postalAddress(buyer, address);
+        ShippingDestination destination = shippingDestination(buyer, address);
         List<String> lineItemIds = lineItemIds(lineItems);
-        Map<String, Object> method = new LinkedHashMap<>();
-        method.put("id", "shipping");
-        method.put("type", "shipping");
-        putIfNotEmpty(method, "line_item_ids", lineItemIds);
-        method.put("selected_destination_id", "shipping");
-        method.put("destinations", List.of(destination));
-        return Map.of("methods", List.of(method));
+        FulfillmentMethod method = new FulfillmentMethod(
+                "shipping",
+                "shipping",
+                lineItemIds,
+                List.of(destination),
+                "shipping",
+                List.of()
+        );
+        return new CheckoutFulfillment(List.of(method));
     }
 
-    private Map<String, Object> defaultFulfillmentSelection(
+    private CheckoutFulfillment defaultFulfillmentSelection(
             UcpCheckoutResponse response,
-            Map<String, Object> destination
+            ShippingDestination destination
     ) {
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         UcpCheckoutResponse.CheckoutFulfillment fulfillment = checkout == null ? null : checkout.fulfillment();
         if (fulfillment == null || fulfillment.methods().isEmpty()) {
-            return Map.of();
+            return null;
         }
-        List<Map<String, Object>> methods = fulfillment.methods().stream()
+        List<FulfillmentMethod> methods = fulfillment.methods().stream()
                 .map(method -> defaultFulfillmentMethodSelection(method, destination))
-                .filter(selection -> !selection.isEmpty())
+                .filter(Objects::nonNull)
                 .toList();
-        return methods.isEmpty() ? Map.of() : Map.of("methods", methods);
+        return methods.isEmpty() ? null : new CheckoutFulfillment(methods);
     }
 
-    private Map<String, Object> defaultFulfillmentMethodSelection(
+    private FulfillmentMethod defaultFulfillmentMethodSelection(
             UcpCheckoutResponse.CheckoutFulfillmentMethod method,
-            Map<String, Object> destination
+            ShippingDestination destination
     ) {
         if (method == null || method.groups().isEmpty()) {
-            return Map.of();
+            return null;
         }
-        List<Map<String, Object>> groups = method.groups().stream()
+        List<FulfillmentGroup> groups = method.groups().stream()
                 .map(this::defaultFulfillmentGroupSelection)
-                .filter(selection -> !selection.isEmpty())
+                .filter(Objects::nonNull)
                 .toList();
         if (groups.isEmpty()) {
-            return Map.of();
+            return null;
         }
-        Map<String, Object> values = new LinkedHashMap<>();
-        putIfHasText(values, "id", firstText(method.id(), method.type()));
-        putIfHasText(values, "type", method.type());
-        putIfNotEmpty(values, "line_item_ids", method.lineItemIds());
-        putIfHasText(values, "selected_destination_id", selectedDestinationId(method));
         // Update checkout uses replacement semantics, so the selection must carry the
         // destination again or the merchant may drop the shipping address.
-        if (destination != null && !destination.isEmpty()) {
-            values.put("destinations", List.of(destination));
-        }
-        values.put("groups", groups);
-        return values;
+        return new FulfillmentMethod(
+                firstText(method.id(), method.type()),
+                trimToNull(method.type()),
+                normalizedStrings(method.lineItemIds()),
+                destination == null ? List.of() : List.of(destination),
+                selectedDestinationId(method),
+                groups
+        );
     }
 
     private boolean hasFieldValidationMessages(UcpCheckoutResponse response) {
@@ -657,19 +744,20 @@ public class CartService {
         return target.startsWith("$.buyer");
     }
 
-    private Map<String, Object> defaultFulfillmentGroupSelection(UcpCheckoutResponse.CheckoutFulfillmentGroup group) {
+    private FulfillmentGroup defaultFulfillmentGroupSelection(UcpCheckoutResponse.CheckoutFulfillmentGroup group) {
         if (group == null || hasText(group.selectedOptionId())) {
-            return Map.of();
+            return null;
         }
         String selectedOptionId = defaultOptionId(group);
         if (!hasText(group.id()) || !hasText(selectedOptionId)) {
-            return Map.of();
+            return null;
         }
-        Map<String, Object> values = new LinkedHashMap<>();
-        values.put("id", group.id());
-        putIfNotEmpty(values, "line_item_ids", group.lineItemIds());
-        values.put("selected_option_id", selectedOptionId);
-        return values;
+        return new FulfillmentGroup(
+                group.id().trim(),
+                normalizedStrings(group.lineItemIds()),
+                List.of(),
+                selectedOptionId.trim()
+        );
     }
 
     private String selectedDestinationId(UcpCheckoutResponse.CheckoutFulfillmentMethod method) {
@@ -703,22 +791,22 @@ public class CartService {
                 .toList();
     }
 
-    private Map<String, Object> postalAddress(
+    private ShippingDestination shippingDestination(
             UpdateCheckoutCommand.Buyer buyer,
             UpdateCheckoutCommand.PostalAddress address
     ) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        values.put("id", "shipping");
-        putIfHasText(values, "street_address", address.streetAddress());
-        putIfHasText(values, "extended_address", address.extendedAddress());
-        putIfHasText(values, "address_locality", address.addressLocality());
-        putIfHasText(values, "address_region", address.addressRegion());
-        putIfHasText(values, "postal_code", address.postalCode());
-        putIfHasText(values, "address_country", address.addressCountry());
-        putIfHasText(values, "first_name", buyer.firstName());
-        putIfHasText(values, "last_name", buyer.lastName());
-        putIfHasText(values, "phone_number", buyer.phoneNumber());
-        return values;
+        return new ShippingDestination(
+                "shipping",
+                trimToNull(address.extendedAddress()),
+                trimToNull(address.streetAddress()),
+                trimToNull(address.addressLocality()),
+                trimToNull(address.addressRegion()),
+                trimToNull(address.addressCountry()),
+                trimToNull(address.postalCode()),
+                trimToNull(buyer.firstName()),
+                trimToNull(buyer.lastName()),
+                trimToNull(buyer.phoneNumber())
+        );
     }
 
     private boolean fulfillmentOptionsMissing(UcpCheckoutResponse response) {
@@ -734,20 +822,11 @@ public class CartService {
                 .allMatch(method -> method == null || method.groups().isEmpty());
     }
 
-    private void putIfHasText(Map<String, Object> values, String key, String value) {
-        if (hasText(value)) {
-            values.put(key, value.trim());
-        }
-    }
-
-    private void putIfNotEmpty(Map<String, Object> values, String key, List<String> list) {
-        List<String> normalized = safeList(list).stream()
+    private List<String> normalizedStrings(List<String> values) {
+        return safeList(values).stream()
                 .filter(this::hasText)
                 .map(String::trim)
                 .toList();
-        if (!normalized.isEmpty()) {
-            values.put(key, normalized);
-        }
     }
 
     private String firstText(String... values) {

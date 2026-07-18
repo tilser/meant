@@ -16,15 +16,24 @@ public final class DiscountExtensionSupport {
         return activeCapabilities != null && activeCapabilities.supports(ID);
     }
 
-    public static CheckoutDiscounts discountCodes(List<String> discountCodes) {
-        List<String> codes = discountCodes == null
+    public static CheckoutDiscounts nonEmptyDiscountCodes(List<String> discountCodes) {
+        List<String> codes = normalizedCodes(discountCodes);
+        CheckoutDiscounts discounts = CheckoutDiscounts.codes(codes);
+        return discounts.empty() ? null : discounts;
+    }
+
+    public static CheckoutDiscounts replacementDiscountCodes(List<String> discountCodes) {
+        return discountCodes == null ? null : CheckoutDiscounts.codes(normalizedCodes(discountCodes));
+    }
+
+    private static List<String> normalizedCodes(List<String> discountCodes) {
+        return discountCodes == null
                 ? List.of()
                 : discountCodes.stream()
                         .filter(DiscountExtensionSupport::hasText)
                         .map(String::trim)
+                        .distinct()
                         .toList();
-        CheckoutDiscounts discounts = CheckoutDiscounts.codes(codes);
-        return discounts.empty() ? null : discounts;
     }
 
     private static boolean hasText(String value) {

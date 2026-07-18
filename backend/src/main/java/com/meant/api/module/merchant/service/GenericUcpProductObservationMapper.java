@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 
 /** Selects the exact requested UCP variant/options and maps its current typed facts. */
 @Component
@@ -205,24 +206,25 @@ public class GenericUcpProductObservationMapper {
                         : detailPriceRange(listPriceRange),
                 product.requiresSellingPlan(),
                 selectedVariant,
-                stringValues(product.skus()),
-                stringValues(product.certifications()),
-                stringValues(product.materials()),
-                stringValues(product.collections()),
+                distinctStrings(product.skus()),
+                distinctStrings(product.certifications()),
+                distinctStrings(product.materials()),
+                distinctStrings(product.collections()),
                 attributes(product.metadata(), product.metafields(), product.techSpecs()),
                 safe(details.messages()).stream()
                         .filter(Objects::nonNull)
                         .map(this::detailMessage)
                         .toList(),
-                UcpDecimal.ratingValue(product.rating()),
-                UcpDecimal.ratingValue(product.rating()) == null ? null : 5.0d,
-                reviewCount(product.reviewCount()),
+                product.rating() == null ? null : UcpDecimal.ratingValue(product.rating().value()),
+                product.rating() == null ? null
+                        : product.rating().scaleMax() == null ? 5.0d : product.rating().scaleMax(),
+                reviewCount(product.reviewCount(), product.rating() == null ? null : product.rating().count()),
                 merchantName
         );
     }
 
-    private Long reviewCount(Object value) {
-        Integer count = UcpDecimal.reviewCountValue(value);
+    private Long reviewCount(Integer explicit, Integer ratingCount) {
+        Integer count = explicit == null ? ratingCount : explicit;
         return count == null ? null : count.longValue();
     }
 
@@ -422,83 +424,52 @@ public class GenericUcpProductObservationMapper {
         return List.copyOf(seen.values());
     }
 
-    private List<String> stringValues(Object value) {
-        if (value == null) {
-            return List.of();
-        }
-        List<String> values = new ArrayList<>();
-        List<ValueNode> stack = new ArrayList<>();
-        stack.add(new ValueNode(value, 0));
-        while (!stack.isEmpty()) {
-            ValueNode node = stack.removeLast();
-            if (node.depth() > MAX_METADATA_DEPTH || node.value() == null) {
-                continue;
-            }
-            if (node.value() instanceof Collection<?> collection) {
-                List<?> items = new ArrayList<>(collection);
-                for (int index = items.size() - 1; index >= 0; index--) {
-                    stack.add(new ValueNode(items.get(index), node.depth() + 1));
-                }
-                continue;
-            }
-            if (node.value() instanceof Map<?, ?> map) {
-                Object named = firstMapValue(map, "values", "value", "name", "label", "title", "text");
-                if (named != null) {
-                    stack.add(new ValueNode(named, node.depth() + 1));
-                    continue;
-                }
-                List<?> items = new ArrayList<>(map.values());
-                for (int index = items.size() - 1; index >= 0; index--) {
-                    stack.add(new ValueNode(items.get(index), node.depth() + 1));
-                }
-                continue;
-            }
-            String scalar = scalarString(node.value());
-            if (scalar != null) {
-                values.add(scalar);
-            }
-        }
-        return distinctStrings(values);
-    }
-
-    private List<RehydratedProductDetails.Attribute> attributes(Object... values) {
+    private List<RehydratedProductDetails.Attribute> attributes(JsonNode... values) {
         Map<String, RehydratedProductDetails.Attribute> attributes = new LinkedHashMap<>();
-        for (Object value : values) {
+        for (JsonNode value : values) {
             collectAttributes(attributes, "metadata", value, 0);
         }
+        return List.copyOf(attributes.values());
+    }
+
+    private List<RehydratedProductDetails.Attribute> attributes(
+            JsonNode metadata,
+            JsonNode metafields,
+            List<String> techSpecs
+    ) {
+        Map<String, RehydratedProductDetails.Attribute> attributes = new LinkedHashMap<>();
+        collectAttributes(attributes, "metadata", metadata, 0);
+        collectAttributes(attributes, "metadata", metafields, 0);
+        addAttribute(attributes, "technical specification", String.join(", ", distinctStrings(techSpecs)));
         return List.copyOf(attributes.values());
     }
 
     private void collectAttributes(
             Map<String, RehydratedProductDetails.Attribute> attributes,
             String name,
-            Object value,
+            JsonNode value,
             int depth
     ) {
-        if (depth > MAX_METADATA_DEPTH || value == null) {
+        if (depth > MAX_METADATA_DEPTH || value == null || value.isNull() || value.isMissingNode()) {
             return;
         }
-        if (value instanceof Map<?, ?> map) {
-            Object namedValue = firstMapValue(map, "value", "values", "text", "description");
-            Object keyField = firstMapValue(map, "name", "key", "label", "title");
+        if (value.isObject()) {
+            JsonNode namedValue = firstJsonValue(value, "value", "values", "text", "description");
+            JsonNode keyField = firstJsonValue(value, "name", "key", "label", "title");
             if (namedValue != null && keyField != null) {
                 addAttribute(attributes, firstPresent(scalarString(keyField), name),
                         String.join(", ", stringValues(namedValue)));
                 return;
             }
-            map.forEach((key, nested) -> {
-                String nestedName = scalarString(key);
-                if (nestedName != null) {
-                    collectAttributes(attributes,
-                            "metadata".equals(name) ? nestedName : name + " " + nestedName,
-                            nested,
-                            depth + 1);
-                }
-            });
+            value.forEachEntry((key, nested) -> collectAttributes(
+                    attributes,
+                    "metadata".equals(name) ? key : name + " " + key,
+                    nested,
+                    depth + 1));
             return;
         }
-        if (value instanceof Collection<?> collection) {
-            addAttribute(attributes, name, String.join(", ", stringValues(collection)));
+        if (value.isArray()) {
+            addAttribute(attributes, name, String.join(", ", stringValues(value)));
             return;
         }
         addAttribute(attributes, name, scalarString(value));
@@ -518,10 +489,11 @@ public class GenericUcpProductObservationMapper {
         }
     }
 
-    private Object firstMapValue(Map<?, ?> map, String... keys) {
+    private JsonNode firstJsonValue(JsonNode value, String... keys) {
         for (String key : keys) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (entry.getKey() != null && key.equalsIgnoreCase(entry.getKey().toString())) {
+            for (Map.Entry<String, JsonNode> entry : value.properties()) {
+                if (key.equalsIgnoreCase(entry.getKey()) && entry.getValue() != null
+                        && !entry.getValue().isNull()) {
                     return entry.getValue();
                 }
             }
@@ -529,12 +501,51 @@ public class GenericUcpProductObservationMapper {
         return null;
     }
 
-    private String scalarString(Object value) {
-        if (value instanceof String string) {
-            return blankToNull(string);
+    private List<String> stringValues(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
+            return List.of();
         }
-        return value instanceof Number || value instanceof Boolean || value instanceof Character
-                ? blankToNull(value.toString())
+        List<String> values = new ArrayList<>();
+        List<JsonValueNode> stack = new ArrayList<>();
+        stack.add(new JsonValueNode(value, 0));
+        while (!stack.isEmpty()) {
+            JsonValueNode current = stack.removeLast();
+            JsonNode node = current.value();
+            if (current.depth() > MAX_METADATA_DEPTH || node == null
+                    || node.isNull() || node.isMissingNode()) {
+                continue;
+            }
+            if (node.isArray()) {
+                List<JsonNode> items = new ArrayList<>(node.values());
+                for (int index = items.size() - 1; index >= 0; index--) {
+                    stack.add(new JsonValueNode(items.get(index), current.depth() + 1));
+                }
+                continue;
+            }
+            if (node.isObject()) {
+                JsonNode named = firstJsonValue(
+                        node, "values", "value", "name", "label", "title", "text");
+                if (named != null) {
+                    stack.add(new JsonValueNode(named, current.depth() + 1));
+                    continue;
+                }
+                List<JsonNode> items = new ArrayList<>(node.values());
+                for (int index = items.size() - 1; index >= 0; index--) {
+                    stack.add(new JsonValueNode(items.get(index), current.depth() + 1));
+                }
+                continue;
+            }
+            String scalar = scalarString(node);
+            if (scalar != null) {
+                values.add(scalar);
+            }
+        }
+        return distinctStrings(values);
+    }
+
+    private String scalarString(JsonNode value) {
+        return value != null && value.isValueNode() && !value.isNull()
+                ? blankToNull(value.asText())
                 : null;
     }
 
@@ -550,7 +561,7 @@ public class GenericUcpProductObservationMapper {
         return values == null ? List.of() : values;
     }
 
-    private record ValueNode(Object value, int depth) {
+    private record JsonValueNode(JsonNode value, int depth) {
     }
 
     private ExternalIdentifier identifier(String provider, ExternalIdentifierType type, String value) {
