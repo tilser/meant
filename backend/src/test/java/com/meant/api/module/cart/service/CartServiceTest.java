@@ -56,6 +56,7 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.module.checkout.service.NativeCheckoutCompletionService;
+import com.meant.api.module.checkout.exception.CheckoutAttributionException;
 import com.meant.api.module.checkout.service.command.RecordCheckoutOpenedCommand;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
@@ -830,6 +831,47 @@ class CartServiceTest {
             assertThat(command.trigger().name()).isEqualTo("VERIFIED_COMPLETION");
             assertThat(command.embeddedSessionId()).isNull();
         });
+    }
+
+    @Test
+    void attributionFailureDoesNotMaskVerifiedNativeCompletion() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                null,
+                "{}",
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        cartRepository.save(cart);
+        when(nativeCheckoutCompletionService.complete(any(), any(), any())).thenReturn(new NativeCheckoutResult(
+                NativeCheckoutStatus.COMPLETED,
+                "gid://shopify/Checkout/stored",
+                "order-1",
+                null,
+                List.of(),
+                true
+        ));
+        when(checkoutPurchaseAttributionService.record(any()))
+                .thenThrow(CheckoutAttributionException.conflict("Checkout attempt became stale"));
+
+        var result = cartService.completeCheckout(new CompleteCheckoutCommand(
+                cartId,
+                USER_ID,
+                UUID.randomUUID(),
+                "gid://shopify/Checkout/stored",
+                List.of(mock(com.meant.api.plugin.payment.common.dto.PaymentInstrument.class)),
+                "native-completion-key",
+                false,
+                null,
+                null
+        ));
+
+        assertThat(result.status()).isEqualTo(NativeCheckoutStatus.COMPLETED);
+        assertThat(result.orderRef()).isEqualTo("order-1");
+        verify(checkoutPurchaseAttributionService).record(any());
     }
 
     @Test

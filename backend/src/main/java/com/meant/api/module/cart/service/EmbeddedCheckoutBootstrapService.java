@@ -92,14 +92,27 @@ public class EmbeddedCheckoutBootstrapService {
                 || !"completed".equals(normalized(refreshed.status()))) {
             throw EmbeddedCheckoutException.conflict("Embedded checkout completion is not verified by the provider");
         }
-        attributionService.record(new RecordCheckoutOpenedCommand(
-                userId,
-                cartId,
-                refreshed.checkoutAttemptId(),
-                CheckoutAttributionRail.EMBEDDED_CHECKOUT,
-                CheckoutAttributionTrigger.VERIFIED_COMPLETION,
-                sessionId
-        ));
+        // Provider completion is authoritative; inventory projection must not keep the session in a false failure state.
+        try {
+            attributionService.record(new RecordCheckoutOpenedCommand(
+                    userId,
+                    cartId,
+                    refreshed.checkoutAttemptId(),
+                    CheckoutAttributionRail.EMBEDDED_CHECKOUT,
+                    CheckoutAttributionTrigger.VERIFIED_COMPLETION,
+                    sessionId
+            ));
+        } catch (RuntimeException exception) {
+            log.error(
+                    "Inventory attribution failed after provider-verified embedded checkout completion "
+                            + "cartId={} sessionId={} userId={} checkoutAttemptId={}",
+                    cartId,
+                    sessionId,
+                    userId,
+                    refreshed.checkoutAttemptId(),
+                    exception
+            );
+        }
         sessionStore.complete(command);
         return refreshed;
     }

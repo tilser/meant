@@ -16,6 +16,7 @@ import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.dto.EmbeddedCheckoutConfiguration;
 import com.meant.api.module.checkout.constant.CheckoutAttributionRail;
 import com.meant.api.module.checkout.constant.CheckoutAttributionTrigger;
+import com.meant.api.module.checkout.exception.CheckoutAttributionException;
 import com.meant.api.module.checkout.exception.EmbeddedCheckoutException;
 import com.meant.api.module.checkout.properties.EmbeddedCheckoutProperties;
 import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
@@ -180,6 +181,26 @@ class EmbeddedCheckoutBootstrapServiceTest {
     }
 
     @Test
+    void attributionFailureDoesNotMaskProviderVerifiedEmbeddedCompletion() {
+        UUID userId = UUID.randomUUID();
+        Cart cart = cart(userId);
+        UUID sessionId = UUID.randomUUID();
+        when(persistenceService.findCart(cart.getId(), userId)).thenReturn(cart);
+        when(sessionStore.requireActive(any())).thenReturn(new EmbeddedCheckoutSessionBinding(
+                sessionId, cart.getId(), "checkout-1", cart.getCheckoutAttemptId(),
+                "https://meant.com", "2026-04-08", Instant.MAX));
+        when(cartService.checkout(any())).thenReturn(checkout(cart, CheckoutNextAction.DONE, null));
+        when(attributionService.record(any()))
+                .thenThrow(CheckoutAttributionException.conflict("Checkout attempt became stale"));
+
+        CheckoutResult result = service.complete(cart.getId(), sessionId, userId, "https://meant.com");
+
+        assertThat(result.status()).isEqualTo("completed");
+        verify(attributionService).record(any());
+        verify(sessionStore).complete(any());
+    }
+
+    @Test
     void repeatedOpenedAcknowledgementsUseTheSameAttemptAndRemainIdempotentAtTheAttributionBoundary() {
         UUID userId = UUID.randomUUID();
         Cart cart = cart(userId);
@@ -242,7 +263,7 @@ class EmbeddedCheckoutBootstrapServiceTest {
             String checkoutUrl
     ) {
         return new CheckoutResult(cart.getId(), "cart-1", "checkout-1", cart.getCheckoutAttemptId(),
-                "requires_escalation",
+                action == CheckoutNextAction.DONE ? "completed" : "requires_escalation",
                 checkoutUrl,
                 continueUrl, "2026-04-08", 1000L, "USD", List.of(), action,
                 action == CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT

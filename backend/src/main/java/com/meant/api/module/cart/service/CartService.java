@@ -91,12 +91,14 @@ import java.util.stream.Stream;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
 @Validated
 @RequiredArgsConstructor(onConstructor_ = @org.springframework.beans.factory.annotation.Autowired)
+@Slf4j
 public class CartService {
 
     private final MerchantCartProviderLookupService merchantCartProviderLookupService;
@@ -460,14 +462,26 @@ public class CartService {
                 session(checkoutCart)
         );
         if (result.status() == NativeCheckoutStatus.COMPLETED) {
-            checkoutPurchaseAttributionService.record(new RecordCheckoutOpenedCommand(
-                    command.userId(),
-                    checkoutCart.getId(),
-                    checkoutCart.getCheckoutAttemptId(),
-                    CheckoutAttributionRail.NATIVE_CHECKOUT,
-                    CheckoutAttributionTrigger.VERIFIED_COMPLETION,
-                    null
-            ));
+            // Provider completion is authoritative; inventory projection must not turn it into a payment failure.
+            try {
+                checkoutPurchaseAttributionService.record(new RecordCheckoutOpenedCommand(
+                        command.userId(),
+                        checkoutCart.getId(),
+                        checkoutCart.getCheckoutAttemptId(),
+                        CheckoutAttributionRail.NATIVE_CHECKOUT,
+                        CheckoutAttributionTrigger.VERIFIED_COMPLETION,
+                        null
+                ));
+            } catch (RuntimeException exception) {
+                log.error(
+                        "Inventory attribution failed after verified native checkout completion "
+                                + "cartId={} userId={} checkoutAttemptId={}",
+                        checkoutCart.getId(),
+                        command.userId(),
+                        checkoutCart.getCheckoutAttemptId(),
+                        exception
+                );
+            }
         }
         return completionResult(checkoutCart, result);
     }
