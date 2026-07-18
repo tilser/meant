@@ -39,6 +39,7 @@ class UserDiscoverConversationSnapshotSanitizerTest {
                 .contains(
                         "I found current matches.",
                         "\"type\":\"products\"",
+                        "\"products\":[]",
                         "10000000-0000-0000-0000-000000000001",
                         "\"query\":\"shoes\"")
                 .doesNotContain(

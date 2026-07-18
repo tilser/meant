@@ -131,6 +131,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
         if ("products".equals(type) && hasProductResultReference(block)) {
             ObjectNode durable = objectMapper.createObjectNode();
             durable.put("type", type);
+            durable.set("products", objectMapper.createArrayNode());
             copyText(block, durable, "productResultSetId");
             copyText(block, durable, "query");
             return durable;
