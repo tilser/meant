@@ -87,6 +87,30 @@ public class UserInventoryItem {
 
     private Instant purchasedAt;
 
+    private String provider;
+
+    private UUID merchantIntegrationId;
+
+    private String externalMerchantId;
+
+    private String externalMerchantDomain;
+
+    private String canonicalProductKey;
+
+    private String offerKey;
+
+    private String sourceType;
+
+    private String sourceIdentity;
+
+    private String externalProductId;
+
+    private String externalVariantId;
+
+    private String selectedOptionsJson;
+
+    private UUID sourceCheckoutAttemptId;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -123,6 +147,18 @@ public class UserInventoryItem {
         this.restockEnabled = snapshot.restockEnabled();
         this.restockThreshold = snapshot.restockThreshold();
         this.purchasedAt = snapshot.purchasedAt();
+        this.provider = snapshot.provider();
+        this.merchantIntegrationId = snapshot.merchantIntegrationId();
+        this.externalMerchantId = snapshot.externalMerchantId();
+        this.externalMerchantDomain = snapshot.externalMerchantDomain();
+        this.canonicalProductKey = snapshot.canonicalProductKey();
+        this.offerKey = snapshot.offerKey();
+        this.sourceType = snapshot.sourceType();
+        this.sourceIdentity = snapshot.sourceIdentity();
+        this.externalProductId = snapshot.externalProductId();
+        this.externalVariantId = snapshot.externalVariantId();
+        this.selectedOptionsJson = snapshot.selectedOptionsJson();
+        this.sourceCheckoutAttemptId = snapshot.sourceCheckoutAttemptId();
         this.updatedAt = now;
         return this;
     }
@@ -146,7 +182,19 @@ public class UserInventoryItem {
             boolean consumable,
             boolean restockEnabled,
             Integer restockThreshold,
-            Instant purchasedAt
+            Instant purchasedAt,
+            String provider,
+            UUID merchantIntegrationId,
+            String externalMerchantId,
+            String externalMerchantDomain,
+            String canonicalProductKey,
+            String offerKey,
+            String sourceType,
+            String sourceIdentity,
+            String externalProductId,
+            String externalVariantId,
+            String selectedOptionsJson,
+            UUID sourceCheckoutAttemptId
     ) {
     }
 }

@@ -18,6 +18,7 @@ export type CheckoutLifecycleReason =
   | 'SDK_LOAD_FAILED'
   | 'SDK_ERROR'
   | 'START_TIMEOUT'
+  | 'START_ACK_FAILED'
   | 'VERIFICATION_FAILED'
   | 'POPUP_BLOCKED'
   | 'MERCHANT_HANDOFF'

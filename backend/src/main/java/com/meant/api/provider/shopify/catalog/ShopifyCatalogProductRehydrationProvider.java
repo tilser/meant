@@ -15,6 +15,7 @@ import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
+import com.meant.api.module.catalog.service.dto.ProductAttribution;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductMedia;
 import com.meant.api.module.catalog.service.dto.ProductMediaType;
@@ -397,6 +398,12 @@ public class ShopifyCatalogProductRehydrationProvider
         return CatalogProductRehydrationResult.fresh(requested, match.reference(), new RehydratedCommercialFacts(
                 candidate.title(),
                 candidate.offer().merchantName(),
+                candidate.attribution().stream()
+                        .filter(attribution -> "Product".equalsIgnoreCase(attribution.label()))
+                        .map(ProductAttribution::url)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null),
                 candidate.offer().price(),
                 candidate.offer().availability(),
                 candidate.offer().identity().externalVariantIdentity(),

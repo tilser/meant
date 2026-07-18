@@ -279,6 +279,7 @@ test('variant selection uses the generated exact-offer contract', () => {
 test('embedded checkout bootstrap exposes only short-lived browser instructions', () => {
   const expectedPaths: Array<keyof paths> = [
     '/api/carts/{cartId}/checkout/embedded',
+    '/api/carts/{cartId}/checkout/embedded/{sessionId}/opened',
     '/api/carts/{cartId}/checkout/embedded/{sessionId}/complete',
     '/api/carts/{cartId}/checkout/embedded/{sessionId}/cancel',
   ]
@@ -287,6 +288,7 @@ test('embedded checkout bootstrap exposes only short-lived browser instructions'
     'action',
     'sessionId',
     'cartId',
+    'checkoutAttemptId',
     'checkoutId',
     'checkoutUrl',
     'fallbackContinueUrl',
@@ -299,7 +301,46 @@ test('embedded checkout bootstrap exposes only short-lived browser instructions'
     'reason',
   ]
 
-  expect(expectedPaths).toHaveLength(3)
+  expect(expectedPaths).toHaveLength(4)
+  expect(fields).toContain('checkoutAttemptId')
   expect(fields as string[]).not.toContain('clientSecret')
   expect(fields as string[]).not.toContain('accessToken')
+})
+
+test('inventory exposes typed purchase identity without accepting it from browser forms', () => {
+  type Inventory = components['schemas']['UserInventoryItemResponse']
+  type CommerceReference = components['schemas']['UserInventoryCommerceReferenceResponse']
+  type SelectedOption = components['schemas']['UserInventorySelectedOptionResponse']
+  type AddInventory = components['schemas']['AddUserInventoryItemRequest']
+  type UpdateInventory = components['schemas']['UpdateUserInventoryItemRequest']
+  type HasCommerceReference<T> = 'commerceReference' extends keyof T ? true : false
+  type HasCheckoutAttempt<T> = 'sourceCheckoutAttemptId' extends keyof T ? true : false
+
+  const inventoryFields: Array<keyof Inventory> = ['sourceCheckoutAttemptId', 'commerceReference']
+  const commerceReferenceFields: Array<keyof CommerceReference> = [
+    'provider',
+    'merchantIntegrationId',
+    'externalMerchantId',
+    'externalMerchantDomain',
+    'canonicalProductKey',
+    'offerKey',
+    'sourceType',
+    'sourceIdentity',
+    'externalProductId',
+    'externalVariantId',
+    'selectedOptions',
+  ]
+  const selectedOptionFields: Array<keyof SelectedOption> = ['group', 'name', 'value']
+  const addHasNoCommerceReference: HasCommerceReference<AddInventory> = false
+  const addHasNoCheckoutAttempt: HasCheckoutAttempt<AddInventory> = false
+  const updateHasNoCommerceReference: HasCommerceReference<UpdateInventory> = false
+  const updateHasNoCheckoutAttempt: HasCheckoutAttempt<UpdateInventory> = false
+
+  expect(inventoryFields).toContain('commerceReference')
+  expect(commerceReferenceFields).toContain('selectedOptions')
+  expect(selectedOptionFields).toEqual(['group', 'name', 'value'])
+  expect(addHasNoCommerceReference).toBeFalse()
+  expect(addHasNoCheckoutAttempt).toBeFalse()
+  expect(updateHasNoCommerceReference).toBeFalse()
+  expect(updateHasNoCheckoutAttempt).toBeFalse()
 })

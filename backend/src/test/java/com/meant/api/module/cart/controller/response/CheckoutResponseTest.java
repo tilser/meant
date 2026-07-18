@@ -17,10 +17,12 @@ class CheckoutResponseTest {
     @Test
     void mapsExplicitExecutionContractAndDeprecatedCompatibilityView() {
         MerchantExecutionPolicy policy = MerchantExecutionPolicy.unavailable();
+        UUID checkoutAttemptId = UUID.randomUUID();
         CheckoutResult result = new CheckoutResult(
                 UUID.randomUUID(),
                 "remote-cart",
                 "checkout-1",
+                checkoutAttemptId,
                 "ready_for_complete",
                 null,
                 "https://merchant.example/checkout",
@@ -34,11 +36,13 @@ class CheckoutResponseTest {
                         CapabilityIneligibilityReason.AUTHORIZATION_REQUIRED,
                         CapabilityIneligibilityReason.FALLBACK_SELECTED
                 ),
-                policy
+                policy,
+                null
         );
 
         CheckoutResponse response = CheckoutResponse.from(result);
 
+        assertThat(response.checkoutAttemptId()).isEqualTo(checkoutAttemptId);
         assertThat(response.nextAction()).isEqualTo(CheckoutNextAction.HANDOFF);
         assertThat(response.selectedRail()).isEqualTo(CommerceExecutionRail.MERCHANT_HANDOFF);
         assertThat(response.ineligibilityReasons())

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="047-add-checkout-attempt-identity" author="codex">
+        <addColumn tableName="cart">
+            <column name="checkout_attempt_id" type="uuid"/>
+            <column name="checkout_attempt_created_at" type="timestamp with time zone"/>
+            <column name="checkout_generation" type="bigint" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <sql>
+            UPDATE cart
+            SET checkout_attempt_id = gen_random_uuid(),
+                checkout_attempt_created_at = coalesce(
+                    checkout_synchronized_at,
+                    updated_at,
+                    refreshed_at,
+                    created_at,
+                    CURRENT_TIMESTAMP
+                )
+            WHERE checkout_id IS NOT NULL
+        </sql>
+        <addUniqueConstraint tableName="cart"
+                             columnNames="checkout_attempt_id"
+                             constraintName="uk_cart_checkout_attempt_id"/>
+        <sql>
+            ALTER TABLE cart ADD CONSTRAINT ck_cart_checkout_attempt_identity
+            CHECK ((checkout_id IS NULL AND checkout_attempt_id IS NULL AND checkout_attempt_created_at IS NULL) OR
+                   (checkout_id IS NOT NULL AND checkout_attempt_id IS NOT NULL AND
+                    checkout_attempt_created_at IS NOT NULL))
+        </sql>
+
+        <addColumn tableName="embedded_checkout_session">
+            <column name="checkout_attempt_id" type="uuid"/>
+            <column name="opened_at" type="timestamp with time zone"/>
+        </addColumn>
+        <sql>
+            UPDATE embedded_checkout_session session
+            SET checkout_attempt_id = cart.checkout_attempt_id
+            FROM cart
+            WHERE session.cart_id = cart.id
+              AND session.checkout_id = cart.checkout_id
+              AND cart.checkout_attempt_id IS NOT NULL
+        </sql>
+        <sql>
+            UPDATE embedded_checkout_session
+            SET checkout_attempt_id = gen_random_uuid()
+            WHERE checkout_attempt_id IS NULL
+        </sql>
+        <addNotNullConstraint tableName="embedded_checkout_session"
+                              columnName="checkout_attempt_id"
+                              columnDataType="uuid"/>
+    </changeSet>
+
+    <changeSet id="047-add-checkout-purchase-attribution" author="codex">
+        <createTable tableName="checkout_purchase_attribution">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cart_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="checkout_attempt_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="attribution_rail" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="attribution_trigger" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="embedded_session_id" type="uuid"/>
+            <column name="purchased_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="checkout_purchase_attribution"
+                             columnNames="user_id, checkout_attempt_id"
+                             constraintName="uk_checkout_purchase_attribution_attempt"/>
+        <addForeignKeyConstraint constraintName="fk_checkout_purchase_attribution_user"
+                                 baseTableName="checkout_purchase_attribution" baseColumnNames="user_id"
+                                 referencedTableName="users" referencedColumnNames="id"/>
+        <addForeignKeyConstraint constraintName="fk_checkout_purchase_attribution_cart"
+                                 baseTableName="checkout_purchase_attribution" baseColumnNames="cart_id"
+                                 referencedTableName="cart" referencedColumnNames="id"/>
+        <addForeignKeyConstraint constraintName="fk_checkout_purchase_attribution_embedded_session"
+                                 baseTableName="checkout_purchase_attribution" baseColumnNames="embedded_session_id"
+                                 referencedTableName="embedded_checkout_session" referencedColumnNames="id"/>
+        <createIndex tableName="checkout_purchase_attribution"
+                     indexName="idx_checkout_purchase_attribution_cart">
+            <column name="cart_id"/>
+            <column name="created_at"/>
+        </createIndex>
+        <sql>
+            ALTER TABLE checkout_purchase_attribution ADD CONSTRAINT ck_checkout_purchase_attribution_rail
+            CHECK (attribution_rail IN ('EMBEDDED_CHECKOUT', 'NATIVE_CHECKOUT'))
+        </sql>
+        <sql>
+            ALTER TABLE checkout_purchase_attribution ADD CONSTRAINT ck_checkout_purchase_attribution_trigger
+            CHECK (attribution_trigger IN ('CONFIRMED_ECP_START', 'VERIFIED_COMPLETION'))
+        </sql>
+    </changeSet>
+
+    <changeSet id="047-preserve-purchased-product-identity" author="codex">
+        <addColumn tableName="cart_line">
+            <column name="product_brand" type="text"/>
+            <column name="image_url" type="text"/>
+            <column name="product_url" type="text"/>
+            <column name="canonical_product_key" type="text"/>
+        </addColumn>
+        <addColumn tableName="user_inventory_items">
+            <column name="provider" type="text"/>
+            <column name="merchant_integration_id" type="uuid"/>
+            <column name="external_merchant_id" type="text"/>
+            <column name="external_merchant_domain" type="text"/>
+            <column name="canonical_product_key" type="text"/>
+            <column name="offer_key" type="text"/>
+            <column name="source_type" type="text"/>
+            <column name="source_identity" type="text"/>
+            <column name="external_product_id" type="text"/>
+            <column name="external_variant_id" type="text"/>
+            <column name="selected_options_json" type="text"/>
+            <column name="source_checkout_attempt_id" type="uuid"/>
+        </addColumn>
+        <createIndex tableName="user_inventory_items" indexName="idx_user_inventory_items_checkout_attempt">
+            <column name="user_id"/>
+            <column name="source_checkout_attempt_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

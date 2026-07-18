@@ -10,14 +10,17 @@ import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.OfferIdentity;
 import com.meant.api.module.catalog.service.dto.OfferMerchantScope;
+import com.meant.api.module.catalog.service.dto.OfferAvailability;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
+import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
@@ -32,6 +35,7 @@ import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import java.lang.reflect.Proxy;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -168,6 +172,42 @@ class CartPersistenceOfferBindingTest {
     }
 
     @Test
+    void persistsVerifiedProductPageUrlInsteadOfCatalogSourceEndpoint() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        ResolvedSelectedOffer base = selectedOffer();
+        ResultFreshness freshness = new ResultFreshness(Instant.now(), Instant.now().plusSeconds(300));
+        RehydratedCommercialFacts facts = new RehydratedCommercialFacts(
+                "Trail Shoe",
+                "Seller",
+                URI.create("https://seller.test/products/trail-shoe"),
+                null,
+                OfferAvailability.unknown(),
+                base.identity().externalVariantIdentity(),
+                base.identity().selectedOptions(),
+                List.of(),
+                List.of(),
+                freshness,
+                CommercialFactsFreshness.fromSingleObservation(freshness)
+        );
+        ResolvedSelectedOffer selected = new ResolvedSelectedOffer(
+                base.canonicalProductKey(), base.offerKey(), base.identity(), base.provenance(),
+                base.rehydratedReference(), facts);
+
+        Cart cart = service.saveSnapshot(
+                null,
+                java.util.UUID.randomUUID(),
+                target(),
+                cartResult("line-1"),
+                List.of(),
+                List.of(selected),
+                CartSnapshotPurpose.CART_MUTATION
+        );
+
+        assertThat(cart.getLines()).singleElement().satisfies(line ->
+                assertThat(line.getProductUrl()).isEqualTo("https://seller.test/products/trail-shoe"));
+    }
+
+    @Test
     void boundRemoteCartHashIncludesImmutableRoutingScope() {
         CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
         Cart first = service.saveSnapshot(null, java.util.UUID.randomUUID(), target(), cartResult("line-1"),
@@ -242,7 +282,8 @@ class CartPersistenceOfferBindingTest {
                 """;
         UcpCheckoutResponse response = objectMapper.readValue(raw, UcpCheckoutResponse.class);
 
-        Cart saved = service.saveCheckoutHandoff(cart.getId(), cart.getUserId(), new UcpCheckoutToolResult(
+        Cart saved = service.saveCheckoutHandoff(
+                cart.getId(), cart.getUserId(), cart.getCheckoutGeneration(), new UcpCheckoutToolResult(
                 "https://seller.test/api/ucp/mcp", raw, response));
 
         assertThat(saved.getCheckoutId()).isEqualTo("checkout-1");

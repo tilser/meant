@@ -7,6 +7,7 @@ const descriptor: EmbeddedCheckoutBootstrapProfile = {
   action: 'EMBEDDED',
   sessionId: 'session-1',
   cartId: 'cart-1',
+  checkoutAttemptId: 'attempt-1',
   checkoutId: 'checkout-1',
   checkoutUrl: 'https://shop.example/checkouts/cn/test',
   fallbackContinueUrl: 'https://shop.example/checkouts/cn/test',

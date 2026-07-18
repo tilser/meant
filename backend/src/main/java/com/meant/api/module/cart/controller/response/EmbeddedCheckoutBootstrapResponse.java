@@ -17,6 +17,11 @@ public record EmbeddedCheckoutBootstrapResponse(
         UUID cartId,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String checkoutId,
+        @Schema(
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                description = "Stable identity of the logical checkout attempt bound to this bootstrap."
+        )
+        UUID checkoutAttemptId,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String checkoutUrl,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -38,8 +43,9 @@ public record EmbeddedCheckoutBootstrapResponse(
 ) {
     public static EmbeddedCheckoutBootstrapResponse from(EmbeddedCheckoutBootstrapResult result) {
         return new EmbeddedCheckoutBootstrapResponse(
-                result.action(), result.sessionId(), result.cartId(), result.checkoutId(), result.checkoutUrl(),
-                result.fallbackContinueUrl(), result.protocolVersion(), result.ecAuth(), result.allowedDelegations(),
-                result.expiresAt(), result.merchantProvider(), result.merchantDomain(), result.reason());
+                result.action(), result.sessionId(), result.cartId(), result.checkoutId(), result.checkoutAttemptId(),
+                result.checkoutUrl(), result.fallbackContinueUrl(), result.protocolVersion(), result.ecAuth(),
+                result.allowedDelegations(), result.expiresAt(), result.merchantProvider(), result.merchantDomain(),
+                result.reason());
     }
 }

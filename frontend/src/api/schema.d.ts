@@ -471,6 +471,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge a confirmed embedded checkout start */
+        post: operations["acknowledgeEmbeddedCheckoutOpened"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/carts/{cartId}/checkout/embedded/{sessionId}/complete": {
         parameters: {
             query?: never;
@@ -2361,6 +2378,9 @@ export interface components {
             source: "MANUAL" | "PHOTO" | "MEANT_PURCHASE";
             sourceProductKey: string;
             productHash: string;
+            /** Format: uuid */
+            sourceCheckoutAttemptId?: string;
+            commerceReference?: components["schemas"]["UserInventoryCommerceReferenceResponse"];
             name: string;
             brand: string;
             /** @enum {string} */
@@ -2385,6 +2405,26 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        UserInventoryCommerceReferenceResponse: {
+            provider: string;
+            /** Format: uuid */
+            merchantIntegrationId?: string;
+            externalMerchantId?: string;
+            externalMerchantDomain?: string;
+            canonicalProductKey?: string;
+            offerKey?: string;
+            /** @enum {string} */
+            sourceType: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
+            sourceIdentity: string;
+            externalProductId: string;
+            externalVariantId?: string;
+            selectedOptions: components["schemas"]["UserInventorySelectedOptionResponse"][];
+        };
+        UserInventorySelectedOptionResponse: {
+            group?: string;
+            name: string;
+            value: string;
         };
         AddUserInventoryPhotoRequest: {
             photoUrl: string;
@@ -3017,6 +3057,8 @@ export interface components {
             sessionId?: string;
             /** Format: uuid */
             cartId: string;
+            /** Format: uuid */
+            checkoutAttemptId?: string;
             checkoutId?: string;
             checkoutUrl?: string;
             fallbackContinueUrl?: string;
@@ -3074,6 +3116,8 @@ export interface components {
             cartId: string;
             /** @description Merchant/provider cart identifier. */
             remoteCartId: string;
+            /** Format: uuid */
+            checkoutAttemptId?: string;
             /** @description Merchant/provider checkout identifier. */
             checkoutId?: string;
             /** @description Current provider checkout status. */
@@ -4336,6 +4380,29 @@ export interface operations {
                 content: {
                     "*/*": components["schemas"]["EmbeddedCheckoutBootstrapResponse"];
                 };
+            };
+        };
+    };
+    acknowledgeEmbeddedCheckoutOpened: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+            };
+            path: {
+                cartId: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embedded checkout start acknowledged idempotently */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

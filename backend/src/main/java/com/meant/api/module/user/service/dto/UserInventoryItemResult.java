@@ -27,6 +27,8 @@ public record UserInventoryItemResult(
         boolean restockEnabled,
         Integer restockThreshold,
         Instant purchasedAt,
+        UserInventoryCommerceReference commerceReference,
+        UUID sourceCheckoutAttemptId,
         Instant createdAt,
         Instant updatedAt
 ) {

@@ -130,7 +130,7 @@ public class UserSelectedOfferResolutionService {
         metrics.recordSuccess();
         return new ResolvedSelectedOffer(
                 selection.entry().canonicalProductKey(), selection.offer().key(), selection.offer().identity(),
-                selected.reference().provenance(), selected.result().resolvedReference());
+                selected.reference().provenance(), selected.result().resolvedReference(), selected.result().facts());
     }
 
     private CatalogProductReference reference(Offer offer, ResultProvenance provenance) {

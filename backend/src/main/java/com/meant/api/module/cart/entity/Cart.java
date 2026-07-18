@@ -70,6 +70,14 @@ public class Cart {
 
     private String checkoutId;
 
+    private UUID checkoutAttemptId;
+
+    private Instant checkoutAttemptCreatedAt;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private long checkoutGeneration = 0L;
+
     private String checkoutStatus;
 
     private String checkoutProtocolVersion;
@@ -171,9 +179,12 @@ public class Cart {
         this.remoteCartId = remoteCartId;
         this.remoteCartIdHash = remoteCartIdHash;
         if (purpose.invalidatesCheckout()) {
+            this.checkoutGeneration++;
             this.checkoutUrl = checkoutUrl;
             this.continueUrl = continueUrl;
             this.checkoutId = null;
+            this.checkoutAttemptId = null;
+            this.checkoutAttemptCreatedAt = null;
             this.checkoutStatus = null;
             this.checkoutProtocolVersion = null;
             this.checkoutLifecycleState = null;
@@ -231,7 +242,15 @@ public class Cart {
             String checkoutLifecycleState,
             Instant refreshedAt
     ) {
-        this.checkoutId = checkoutId;
+        String effectiveCheckoutId = checkoutId;
+        if ((effectiveCheckoutId == null || effectiveCheckoutId.isBlank()) && this.checkoutAttemptId != null) {
+            effectiveCheckoutId = this.checkoutId;
+        }
+        if (this.checkoutAttemptId == null && effectiveCheckoutId != null && !effectiveCheckoutId.isBlank()) {
+            this.checkoutAttemptId = UUID.randomUUID();
+            this.checkoutAttemptCreatedAt = refreshedAt;
+        }
+        this.checkoutId = effectiveCheckoutId;
         this.checkoutStatus = checkoutStatus;
         this.checkoutUrl = checkoutUrl;
         this.continueUrl = continueUrl;

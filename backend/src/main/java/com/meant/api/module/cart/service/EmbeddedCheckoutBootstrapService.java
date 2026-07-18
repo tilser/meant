@@ -7,14 +7,19 @@ import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.dto.EmbeddedCheckoutBootstrapResult;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.checkout.exception.EmbeddedCheckoutException;
+import com.meant.api.module.checkout.constant.CheckoutAttributionRail;
+import com.meant.api.module.checkout.constant.CheckoutAttributionTrigger;
 import com.meant.api.module.checkout.properties.EmbeddedCheckoutProperties;
+import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
 import com.meant.api.module.checkout.service.EmbeddedCheckoutSessionStore;
 import com.meant.api.module.checkout.service.command.CreateEmbeddedCheckoutSessionCommand;
+import com.meant.api.module.checkout.service.command.RecordCheckoutOpenedCommand;
 import com.meant.api.module.checkout.service.command.UseEmbeddedCheckoutSessionCommand;
 import com.meant.api.module.checkout.service.dto.EmbeddedCheckoutSessionBinding;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +34,7 @@ public class EmbeddedCheckoutBootstrapService {
     private final CartService cartService;
     private final CartPersistenceService cartPersistenceService;
     private final EmbeddedCheckoutSessionStore sessionStore;
+    private final CheckoutPurchaseAttributionService attributionService;
     private final EmbeddedCheckoutOriginPolicy originPolicy;
     private final EmbeddedCheckoutProperties properties;
 
@@ -81,12 +87,41 @@ public class EmbeddedCheckoutBootstrapService {
         sessionStore.requireActive(command);
         CheckoutResult refreshed = cartService.checkout(new GetCheckoutQuery(cartId, userId, true, buyerIp));
         if (!same(refreshed.checkoutId(), before.getCheckoutId())
+                || !Objects.equals(refreshed.checkoutAttemptId(), before.getCheckoutAttemptId())
                 || refreshed.nextAction() != CheckoutNextAction.DONE
                 || !"completed".equals(normalized(refreshed.status()))) {
             throw EmbeddedCheckoutException.conflict("Embedded checkout completion is not verified by the provider");
         }
+        attributionService.record(new RecordCheckoutOpenedCommand(
+                userId,
+                cartId,
+                refreshed.checkoutAttemptId(),
+                CheckoutAttributionRail.EMBEDDED_CHECKOUT,
+                CheckoutAttributionTrigger.VERIFIED_COMPLETION,
+                sessionId
+        ));
         sessionStore.complete(command);
         return refreshed;
+    }
+
+    public void opened(
+            @NotNull UUID cartId,
+            @NotNull UUID sessionId,
+            @NotNull UUID userId,
+            @NotNull String origin
+    ) {
+        String allowedOrigin = originPolicy.requireAllowed(origin);
+        Cart cart = cartPersistenceService.findCart(cartId, userId);
+        EmbeddedCheckoutSessionBinding session = sessionStore.acknowledgeOpened(
+                useCommand(sessionId, userId, cart, allowedOrigin));
+        attributionService.record(new RecordCheckoutOpenedCommand(
+                userId,
+                cartId,
+                session.checkoutAttemptId(),
+                CheckoutAttributionRail.EMBEDDED_CHECKOUT,
+                CheckoutAttributionTrigger.CONFIRMED_ECP_START,
+                sessionId
+        ));
     }
 
     public void cancel(
@@ -98,7 +133,8 @@ public class EmbeddedCheckoutBootstrapService {
 
     private EmbeddedCheckoutBootstrapResult embedded(Cart cart, CheckoutResult checkout, String allowedOrigin) {
         String checkoutUrl = embeddedUrl(checkout);
-        if (checkout.checkoutId() == null || checkoutUrl == null || checkoutUrl.isBlank()
+        if (checkout.checkoutId() == null || cart.getCheckoutAttemptId() == null
+                || checkoutUrl == null || checkoutUrl.isBlank()
                 || cart.getRoutingScopeKey() == null) {
             return handoff(cart, checkout, "Merchant did not confirm embedded checkout for this session");
         }
@@ -115,11 +151,12 @@ public class EmbeddedCheckoutBootstrapService {
         }
         String fallbackContinueUrl = checkout.continueUrl();
         EmbeddedCheckoutSessionBinding session = sessionStore.create(new CreateEmbeddedCheckoutSessionCommand(
-                cart.getUserId(), cart.getId(), checkout.checkoutId(), cart.getMerchantIntegrationId(),
-                cart.getRoutingScopeKey(), allowedOrigin, version));
+                cart.getUserId(), cart.getId(), checkout.checkoutId(), cart.getCheckoutAttemptId(),
+                cart.getMerchantIntegrationId(), cart.getRoutingScopeKey(), allowedOrigin, version));
         return new EmbeddedCheckoutBootstrapResult(
                 EmbeddedCheckoutBootstrapAction.EMBEDDED, session.sessionId(), cart.getId(), checkout.checkoutId(),
-                checkoutUrl, fallbackContinueUrl, version, null, List.of(), session.expiresAt(),
+                session.checkoutAttemptId(), checkoutUrl, fallbackContinueUrl, version, null, List.of(),
+                session.expiresAt(),
                 cart.getProvider(), cart.getMerchantDomain(), null);
     }
 
@@ -151,25 +188,26 @@ public class EmbeddedCheckoutBootstrapService {
         }
         return new EmbeddedCheckoutBootstrapResult(
                 EmbeddedCheckoutBootstrapAction.EXTERNAL_HANDOFF, null, cart.getId(), checkout.checkoutId(),
-                null, checkout.continueUrl(), null, null, List.of(), null,
+                cart.getCheckoutAttemptId(), null, checkout.continueUrl(), null, null, List.of(), null,
                 cart.getProvider(), cart.getMerchantDomain(), reason);
     }
 
     private EmbeddedCheckoutBootstrapResult result(
             EmbeddedCheckoutBootstrapAction action, Cart cart, CheckoutResult checkout, String reason) {
-        return new EmbeddedCheckoutBootstrapResult(action, null, cart.getId(), checkout.checkoutId(), null,
-                null, null, null, List.of(), null,
+        return new EmbeddedCheckoutBootstrapResult(action, null, cart.getId(), checkout.checkoutId(),
+                cart.getCheckoutAttemptId(), null, null, null, null, List.of(), null,
                 cart.getProvider(), cart.getMerchantDomain(), reason);
     }
 
     private UseEmbeddedCheckoutSessionCommand useCommand(
             UUID sessionId, UUID userId, Cart cart, String allowedOrigin) {
-        if (cart.getCheckoutId() == null || cart.getCheckoutId().isBlank()) {
+        if (cart.getCheckoutId() == null || cart.getCheckoutId().isBlank()
+                || cart.getCheckoutAttemptId() == null) {
             throw EmbeddedCheckoutException.conflict("Cart has no active checkout session");
         }
         return new UseEmbeddedCheckoutSessionCommand(
-                sessionId, userId, cart.getId(), cart.getCheckoutId(), cart.getMerchantIntegrationId(),
-                cart.getRoutingScopeKey(), allowedOrigin);
+                sessionId, userId, cart.getId(), cart.getCheckoutId(), cart.getCheckoutAttemptId(),
+                cart.getMerchantIntegrationId(), cart.getRoutingScopeKey(), allowedOrigin);
     }
 
     private boolean same(String first, String second) {

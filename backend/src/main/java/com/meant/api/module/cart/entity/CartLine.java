@@ -45,6 +45,12 @@ public class CartLine {
 
     private String productTitle;
 
+    private String productBrand;
+
+    private String imageUrl;
+
+    private String productUrl;
+
     @Column(nullable = false)
     private String productVariantId;
 
@@ -75,6 +81,8 @@ public class CartLine {
 
     private String offerKey;
 
+    private String canonicalProductKey;
+
     private String sourceType;
 
     private String sourceIdentity;
@@ -102,7 +110,9 @@ public class CartLine {
 
     void updateFrom(CartLine other) {
         this.productId = other.productId;
-        this.productTitle = other.productTitle;
+        if (this.offerKey == null) {
+            this.productTitle = other.productTitle;
+        }
         this.productVariantId = other.productVariantId;
         this.variantTitle = other.variantTitle;
         this.quantity = other.quantity;
@@ -120,12 +130,17 @@ public class CartLine {
             this.offerProductId = other.offerProductId;
             this.offerVariantId = other.offerVariantId;
             this.offerKey = other.offerKey;
+            this.canonicalProductKey = other.canonicalProductKey;
             this.sourceType = other.sourceType;
             this.sourceIdentity = other.sourceIdentity;
             this.selectedOptionsJson = other.selectedOptionsJson;
             this.componentsJson = other.componentsJson;
             this.sellingPlanJson = other.sellingPlanJson;
             this.selectedAt = other.selectedAt;
+            this.productTitle = other.productTitle;
+            this.productBrand = other.productBrand;
+            this.imageUrl = other.imageUrl;
+            this.productUrl = other.productUrl;
         }
     }
 
@@ -141,11 +156,16 @@ public class CartLine {
         this.offerProductId = other.offerProductId;
         this.offerVariantId = other.offerVariantId;
         this.offerKey = other.offerKey;
+        this.canonicalProductKey = other.canonicalProductKey;
         this.sourceType = other.sourceType;
         this.sourceIdentity = other.sourceIdentity;
         this.selectedOptionsJson = other.selectedOptionsJson;
         this.componentsJson = other.componentsJson;
         this.sellingPlanJson = other.sellingPlanJson;
         this.selectedAt = other.selectedAt;
+        this.productTitle = other.productTitle;
+        this.productBrand = other.productBrand;
+        this.imageUrl = other.imageUrl;
+        this.productUrl = other.productUrl;
     }
 }

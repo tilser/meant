@@ -20,8 +20,10 @@ import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCo
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
+import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryPhotoRecognitionResult;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
+import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
@@ -43,6 +45,8 @@ import tools.jackson.databind.ObjectMapper;
 class UserInventoryServiceTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000015");
+    private static final UUID ATTEMPT_1 = UUID.fromString("00000000-0000-0000-0000-000000000101");
+    private static final UUID ATTEMPT_2 = UUID.fromString("00000000-0000-0000-0000-000000000102");
     private static final Instant NOW = Instant.parse("2026-06-18T10:00:00Z");
 
     private FakeUserInventoryItemRepository repository;
@@ -92,6 +96,8 @@ class UserInventoryServiceTest {
         assertThat(item.source()).isEqualTo(UserInventorySource.MANUAL);
         assertThat(item.category()).isEqualTo(UserInventoryCategory.APPAREL);
         assertThat(item.quantity()).isEqualTo(2);
+        assertThat(item.commerceReference()).isNull();
+        assertThat(item.sourceCheckoutAttemptId()).isNull();
 
         List<UserInventoryItemResult> listed = service.list(
                 profileCommand(),
@@ -147,6 +153,8 @@ class UserInventoryServiceTest {
         assertThat(item.category()).isEqualTo(UserInventoryCategory.APPAREL);
         assertThat(item.imageUrl()).isEqualTo("data:image/jpeg;base64,abc");
         assertThat(item.attributes()).containsExactly("summer", "linen", "blue");
+        assertThat(item.commerceReference()).isNull();
+        assertThat(item.sourceCheckoutAttemptId()).isNull();
     }
 
     @Test
@@ -223,30 +231,17 @@ class UserInventoryServiceTest {
     }
 
     @Test
-    void importPurchasedItemsDoesNotDuplicateSamePurchaseSnapshot() {
-        ImportPurchasedInventoryItemsCommand.PurchasedItem item =
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-1",
-                        "hash-1",
-                        "Cold-Pressed Extra Virgin Olive Oil",
-                        "Casa Verde",
-                        null,
-                        null,
-                        1,
-                        NOW
-                );
-
-        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(item)));
-        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                "merchant.example:variant-1",
-                "hash-1",
-                "Cold-Pressed Extra Virgin Olive Oil",
-                "Casa Verde",
-                null,
-                null,
-                2,
-                NOW
-        ))));
+    void importPurchasedItemsDoesNotDuplicateSameLatestCheckoutAttempt() {
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_1,
+                NOW,
+                purchasedItem("variant-1", "Cold-Pressed Extra Virgin Olive Oil", "Casa Verde", 1, null)
+        ));
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_1,
+                NOW.plusSeconds(60),
+                purchasedItem("variant-1", "Cold-Pressed Extra Virgin Olive Oil", "Casa Verde", 2, null)
+        ));
 
         List<UserInventoryItemResult> items = service.list(
                 profileCommand(),
@@ -260,45 +255,23 @@ class UserInventoryServiceTest {
                     assertThat(result.category()).isEqualTo(UserInventoryCategory.PANTRY);
                     assertThat(result.quantity()).isEqualTo(1);
                     assertThat(result.purchasedAt()).isEqualTo(NOW);
+                    assertThat(result.sourceCheckoutAttemptId()).isEqualTo(ATTEMPT_1);
                 });
     }
 
     @Test
-    void importPurchasedItemsAccumulatesWhenPurchaseTimestampChanges() {
-        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-1",
-                        "hash-1",
-                        "Cold-Pressed Extra Virgin Olive Oil",
-                        "Casa Verde",
-                        null,
-                        null,
-                        1,
-                        NOW
-                ),
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-2",
-                        "hash-2",
-                        "Merino Crew Sweater",
-                        "Northbound",
-                        null,
-                        null,
-                        1,
-                        NOW
-                )
-        )));
-        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-1",
-                        "hash-1",
-                        "Cold-Pressed Extra Virgin Olive Oil",
-                        "Casa Verde",
-                        null,
-                        null,
-                        2,
-                        NOW.plusSeconds(60)
-                )
-        )));
+    void importPurchasedItemsAccumulatesForDistinctCheckoutAttempt() {
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_1,
+                NOW,
+                purchasedItem("variant-1", "Cold-Pressed Extra Virgin Olive Oil", "Casa Verde", 1, null),
+                purchasedItem("variant-2", "Merino Crew Sweater", "Northbound", 1, null)
+        ));
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_2,
+                NOW.plusSeconds(60),
+                purchasedItem("variant-1", "Cold-Pressed Extra Virgin Olive Oil", "Casa Verde", 2, null)
+        ));
 
         List<UserInventoryItemResult> items = service.list(
                 profileCommand(),
@@ -309,6 +282,7 @@ class UserInventoryServiceTest {
             assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-1");
             assertThat(result.quantity()).isEqualTo(3);
             assertThat(result.purchasedAt()).isEqualTo(NOW.plusSeconds(60));
+            assertThat(result.sourceCheckoutAttemptId()).isEqualTo(ATTEMPT_2);
         });
         assertThat(items).anySatisfy(result -> {
             assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-2");
@@ -318,42 +292,19 @@ class UserInventoryServiceTest {
 
     @Test
     void importPurchasedItemsBatchLoadsExistingKeysAndSavesChangedItemsTogether() {
-        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-1",
-                        "hash-1",
-                        "Cold-Pressed Extra Virgin Olive Oil",
-                        "Casa Verde",
-                        null,
-                        null,
-                        1,
-                        NOW
-                )
-        )));
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_1,
+                NOW,
+                purchasedItem("variant-1", "Cold-Pressed Extra Virgin Olive Oil", "Casa Verde", 1, null)
+        ));
         repository.resetCounters();
 
-        service.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(USER_ID, List.of(
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-1",
-                        "hash-1",
-                        "Cold-Pressed Extra Virgin Olive Oil",
-                        "Casa Verde",
-                        null,
-                        null,
-                        2,
-                        NOW.plusSeconds(60)
-                ),
-                new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        "merchant.example:variant-2",
-                        "hash-2",
-                        "Merino Crew Sweater",
-                        "Northbound",
-                        null,
-                        null,
-                        1,
-                        NOW
-                )
-        )));
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_2,
+                NOW.plusSeconds(60),
+                purchasedItem("variant-1", "Cold-Pressed Extra Virgin Olive Oil", "Casa Verde", 2, null),
+                purchasedItem("variant-2", "Merino Crew Sweater", "Northbound", 1, null)
+        ));
 
         assertThat(repository.batchSourceProductLookupCount).isEqualTo(1);
         assertThat(repository.singleSourceProductLookupCount).isZero();
@@ -369,6 +320,61 @@ class UserInventoryServiceTest {
                     assertThat(result.sourceProductKey()).isEqualTo("merchant.example:variant-2");
                     assertThat(result.quantity()).isEqualTo(1);
                 });
+    }
+
+    @Test
+    void importPurchasedItemsRetainsTypedCommerceIdentityAndSelectedOptions() {
+        UUID integrationId = UUID.randomUUID();
+        UserInventoryCommerceReference reference = new UserInventoryCommerceReference(
+                "shopify",
+                integrationId,
+                "merchant-1",
+                "Shop.Example.",
+                "canonical-shoe",
+                "offer-shoe-42",
+                "PROVIDER_CATALOG",
+                "shopify-global",
+                "product-1",
+                "variant-size-42",
+                List.of(new UserInventorySelectedOption("variant-option", "Size", "42"))
+        );
+
+        service.importPurchasedItems(purchaseCommand(
+                ATTEMPT_1,
+                NOW,
+                purchasedItem("variant-size-42", "Trail Shoe", "Northbound", 1, reference)
+        ));
+
+        UserInventoryItemResult imported = service.list(profileCommand(), listQuery(null, false)).getFirst();
+        UserInventoryItemResult updated = service.update(profileCommand(), new UpdateUserInventoryItemCommand(
+                USER_ID,
+                imported.id(),
+                "Trail Shoe (worn)",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
+
+        assertThat(updated.sourceCheckoutAttemptId()).isEqualTo(ATTEMPT_1);
+        assertThat(updated.commerceReference()).isNotNull();
+        assertThat(updated.commerceReference().provider()).isEqualTo("SHOPIFY");
+        assertThat(updated.commerceReference().merchantIntegrationId()).isEqualTo(integrationId);
+        assertThat(updated.commerceReference().externalMerchantDomain()).isEqualTo("shop.example");
+        assertThat(updated.commerceReference().canonicalProductKey()).isEqualTo("canonical-shoe");
+        assertThat(updated.commerceReference().externalVariantId()).isEqualTo("variant-size-42");
+        assertThat(updated.commerceReference().selectedOptions())
+                .containsExactly(new UserInventorySelectedOption("variant-option", "Size", "42"));
     }
 
     @Test
@@ -451,6 +457,34 @@ class UserInventoryServiceTest {
                 .isEqualTo(UserInventoryRecommendationRelationship.COMPLEMENT);
         assertThat(signals.get("merchant.example:hub").relationship())
                 .isEqualTo(UserInventoryRecommendationRelationship.NONE);
+    }
+
+    private ImportPurchasedInventoryItemsCommand purchaseCommand(
+            UUID checkoutAttemptId,
+            Instant purchasedAt,
+            ImportPurchasedInventoryItemsCommand.PurchasedItem... items
+    ) {
+        return new ImportPurchasedInventoryItemsCommand(
+                USER_ID, checkoutAttemptId, purchasedAt, List.of(items));
+    }
+
+    private ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem(
+            String variantId,
+            String name,
+            String brand,
+            int quantity,
+            UserInventoryCommerceReference commerceReference
+    ) {
+        return new ImportPurchasedInventoryItemsCommand.PurchasedItem(
+                "merchant.example:" + variantId,
+                "hash-" + variantId,
+                name,
+                brand,
+                "https://merchant.example/images/" + variantId + ".jpg",
+                "https://merchant.example/products/" + variantId,
+                quantity,
+                commerceReference
+        );
     }
 
     private CreateUserInventoryItemCommand manualItem(

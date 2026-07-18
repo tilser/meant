@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +26,7 @@ import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.MerchantExecutionPolicyService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.cart.service.command.CancelCartCommand;
+import com.meant.api.module.cart.service.command.CompleteCheckoutCommand;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
@@ -34,13 +36,12 @@ import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
-import com.meant.api.module.user.service.UserInventoryService;
+import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
 import com.meant.api.module.user.service.UserCommerceContextService;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.catalog.service.dto.*;
-import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartRequest;
 import com.meant.api.plugin.cart.cancel.dto.CancelCartResponse;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
@@ -54,6 +55,10 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
+import com.meant.api.module.checkout.service.NativeCheckoutCompletionService;
+import com.meant.api.module.checkout.service.command.RecordCheckoutOpenedCommand;
+import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
+import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
@@ -74,6 +79,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -89,7 +95,8 @@ class CartServiceTest {
     private FakeCartRepository cartRepository;
     private FakeCartDispatchService cartDispatchService;
     private FakeCheckoutDispatchService checkoutDispatchService;
-    private FakeUserInventoryService userInventoryService;
+    private NativeCheckoutCompletionService nativeCheckoutCompletionService;
+    private CheckoutPurchaseAttributionService checkoutPurchaseAttributionService;
     private CartPersistenceService cartPersistenceService;
     private CartService cartService;
     private UserSelectedOfferResolutionService offerResolution;
@@ -102,7 +109,8 @@ class CartServiceTest {
         cartRepository = new FakeCartRepository();
         cartDispatchService = new FakeCartDispatchService();
         checkoutDispatchService = new FakeCheckoutDispatchService();
-        userInventoryService = new FakeUserInventoryService();
+        nativeCheckoutCompletionService = mock(NativeCheckoutCompletionService.class);
+        checkoutPurchaseAttributionService = mock(CheckoutPurchaseAttributionService.class);
         cartPersistenceService = new CartPersistenceService(
                 cartRepository.proxy(),
                 new ObjectMapper()
@@ -133,8 +141,8 @@ class CartServiceTest {
                 cartPersistenceService,
                 cartDispatchService,
                 checkoutDispatchService,
-                null,
-                userInventoryService,
+                nativeCheckoutCompletionService,
+                checkoutPurchaseAttributionService,
                 new CartResultMapper(new ObjectMapper()),
                 new CheckoutResultMapper(new ObjectMapper(), new CheckoutExecutionPlanner()),
                 null,
@@ -429,7 +437,7 @@ class CartServiceTest {
         assertThat(cartDispatchService.getCount).isEqualTo(1);
         assertThat(cartDispatchService.lastRemoteCartId).isEqualTo("gid://shopify/Cart/1");
         assertThat(cartRepository.saveCount).isEqualTo(1);
-        assertThat(cartRepository.findWithLinesCount).isEqualTo(1);
+        assertThat(cartRepository.findWithLinesCount).isEqualTo(2);
     }
 
     @Test
@@ -485,7 +493,7 @@ class CartServiceTest {
         assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().productVariantId())
                 .isEqualTo("gid://shopify/ProductVariant/1");
         assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().quantity()).isZero();
-        assertThat(cartRepository.findWithLinesCount).isEqualTo(1);
+        assertThat(cartRepository.findWithLinesCount).isEqualTo(2);
     }
 
     @Test
@@ -680,7 +688,7 @@ class CartServiceTest {
         assertThat(checkoutDispatchService.lastCallContext.buyerIp()).isEqualTo("203.0.113.42");
         assertThat(cartDispatchService.getCount).isZero();
         assertThat(cartRepository.findWithLinesCount).isEqualTo(2);
-        assertImportedCandle();
+        assertNoInventoryAttribution();
     }
 
     @Test
@@ -747,7 +755,7 @@ class CartServiceTest {
         assertThat(result.continueUrl()).isEqualTo("https://merchant.example/stored-continue");
         assertThat(cartDispatchService.getCount).isZero();
         assertThat(checkoutDispatchService.createCount).isZero();
-        assertImportedCandle();
+        assertNoInventoryAttribution();
     }
 
     @Test
@@ -773,7 +781,55 @@ class CartServiceTest {
         assertThat(checkoutDispatchService.getCount).isEqualTo(1);
         assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(cartDispatchService.getCount).isZero();
-        assertImportedCandle();
+        assertNoInventoryAttribution();
+    }
+
+    @Test
+    void verifiedNativeCompletionUsesSharedAttemptAttributionFallback() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                null,
+                "{}",
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        UUID attemptId = cart.getCheckoutAttemptId();
+        cartRepository.save(cart);
+        when(nativeCheckoutCompletionService.complete(any(), any(), any())).thenReturn(new NativeCheckoutResult(
+                NativeCheckoutStatus.COMPLETED,
+                "gid://shopify/Checkout/stored",
+                "order-1",
+                null,
+                List.of(),
+                true
+        ));
+
+        cartService.completeCheckout(new CompleteCheckoutCommand(
+                cartId,
+                USER_ID,
+                UUID.randomUUID(),
+                "gid://shopify/Checkout/stored",
+                List.of(mock(com.meant.api.plugin.payment.common.dto.PaymentInstrument.class)),
+                "native-completion-key",
+                false,
+                null,
+                null
+        ));
+
+        ArgumentCaptor<RecordCheckoutOpenedCommand> captor =
+                ArgumentCaptor.forClass(RecordCheckoutOpenedCommand.class);
+        verify(checkoutPurchaseAttributionService).record(captor.capture());
+        assertThat(captor.getValue()).satisfies(command -> {
+            assertThat(command.userId()).isEqualTo(USER_ID);
+            assertThat(command.cartId()).isEqualTo(cartId);
+            assertThat(command.checkoutAttemptId()).isEqualTo(attemptId);
+            assertThat(command.rail().name()).isEqualTo("NATIVE_CHECKOUT");
+            assertThat(command.trigger().name()).isEqualTo("VERIFIED_COMPLETION");
+            assertThat(command.embeddedSessionId()).isNull();
+        });
     }
 
     @Test
@@ -848,7 +904,7 @@ class CartServiceTest {
         assertThat(checkoutDispatchService.getCount).isEqualTo(2);
         assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(checkoutDispatchService.calls).startsWith("get", "update");
-        assertImportedCandle();
+        assertNoInventoryAttribution();
     }
 
     @Test
@@ -959,6 +1015,7 @@ class CartServiceTest {
         assertThatThrownBy(() -> cartPersistenceService.saveCheckoutHandoff(
                 UUID.randomUUID(),
                 USER_ID,
+                0,
                 checkoutDispatchService.checkoutToolResult
         ))
                 .isInstanceOf(CartException.class)
@@ -1099,34 +1156,12 @@ class CartServiceTest {
                 """;
     }
 
-    private void assertImportedCandle() {
-        assertThat(userInventoryService.lastCommand).isNotNull();
-        assertThat(userInventoryService.lastCommand.userId()).isEqualTo(USER_ID);
-        assertThat(userInventoryService.lastCommand.items()).singleElement().satisfies(item -> {
-            assertThat(item.productKey()).isEqualTo("merchant.example:gid://shopify/ProductVariant/1");
-            assertThat(item.name()).isEqualTo("Candle");
-            assertThat(item.brand()).isEqualTo("merchant.example");
-            assertThat(item.quantity()).isEqualTo(1);
-            assertThat(item.purchasedAt()).isEqualTo(CART_REMOTE_UPDATED_AT);
-        });
+    private void assertNoInventoryAttribution() {
+        verifyNoInteractions(checkoutPurchaseAttributionService);
     }
 
     private UcpCartToolResult cartToolResult() {
         return cartToolResult(List.of(cartLine()), 1, List.of());
-    }
-
-    static class FakeUserInventoryService extends UserInventoryService {
-
-        private ImportPurchasedInventoryItemsCommand lastCommand;
-
-        FakeUserInventoryService() {
-            super(null, null, null, null, null);
-        }
-
-        @Override
-        public void importPurchasedItems(ImportPurchasedInventoryItemsCommand command) {
-            lastCommand = command;
-        }
     }
 
     private UcpCartToolResult cartToolResult(List<UcpCartResponse.Line> lines, Integer totalQuantity) {

@@ -196,6 +196,20 @@ public class CartController {
                                 cartId, authenticatedUser.id(), origin, httpRequest.getRemoteAddr())));
     }
 
+    @PostMapping("/{cartId}/checkout/embedded/{sessionId}/opened")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    @Operation(summary = "Acknowledge a confirmed embedded checkout start")
+    @ApiResponse(responseCode = "204", description = "Embedded checkout start acknowledged idempotently")
+    public void acknowledgeEmbeddedCheckoutOpened(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID cartId,
+            @PathVariable UUID sessionId,
+            @RequestHeader("Origin") String origin
+    ) {
+        AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
+        embeddedCheckoutBootstrapService.opened(cartId, sessionId, authenticatedUser.id(), origin);
+    }
+
     @PostMapping("/{cartId}/checkout/embedded/{sessionId}/complete")
     @Operation(summary = "Verify an embedded checkout completion")
     @ApiResponse(responseCode = "200", description = "Provider-verified completed checkout",

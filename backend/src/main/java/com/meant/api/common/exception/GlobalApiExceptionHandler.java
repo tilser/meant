@@ -4,6 +4,7 @@ import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.discount.exception.DiscountCodeException;
 import com.meant.api.module.checkout.exception.EmbeddedCheckoutException;
+import com.meant.api.module.checkout.exception.CheckoutAttributionException;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.exception.MerchantEmbeddingException;
 import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
@@ -40,6 +41,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.validation.method.ParameterErrors;
 import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -112,6 +114,7 @@ public class GlobalApiExceptionHandler {
 
     @ExceptionHandler({
             MissingServletRequestParameterException.class,
+            MissingRequestHeaderException.class,
             MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class,
             IllegalArgumentException.class
@@ -151,6 +154,7 @@ public class GlobalApiExceptionHandler {
 
     @ExceptionHandler({
             CartException.class,
+            CheckoutAttributionException.class,
             EmbeddedCheckoutException.class,
             DiscountCodeException.class,
             MerchantIdentityLinkException.class,

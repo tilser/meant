@@ -589,11 +589,40 @@ export type UserInventorySource = 'MANUAL' | 'PHOTO' | 'MEANT_PURCHASE'
 export type UserInventoryRecommendationRelationship =
   'NONE' | 'DUPLICATE' | 'COMPLEMENT' | 'RESTOCK'
 
+export interface UserInventorySelectedOptionProfile {
+  group?: string | null
+  name: string
+  value: string
+}
+
+export type UserInventoryCommerceSourceType =
+  | 'MERCHANT_STOREFRONT'
+  | 'PROVIDER_CATALOG'
+  | 'DATASET_IMPORT'
+  | 'CACHED_OBSERVATION'
+  | 'MANUAL_ASSERTION'
+
+export interface UserInventoryCommerceReferenceProfile {
+  provider: string
+  merchantIntegrationId?: string | null
+  externalMerchantId?: string | null
+  externalMerchantDomain?: string | null
+  canonicalProductKey?: string | null
+  offerKey?: string | null
+  sourceType: UserInventoryCommerceSourceType
+  sourceIdentity: string
+  externalProductId: string
+  externalVariantId?: string | null
+  selectedOptions: UserInventorySelectedOptionProfile[]
+}
+
 export interface UserInventoryItemProfile {
   id: string
   source: UserInventorySource
   sourceProductKey: string | null
   productHash: string | null
+  sourceCheckoutAttemptId?: string | null
+  commerceReference?: UserInventoryCommerceReferenceProfile | null
   name: string
   brand: string | null
   category: UserInventoryCategory
@@ -1777,6 +1806,24 @@ export async function bootstrapEmbeddedCheckout(
     response,
     'Failed to prepare embedded checkout',
   )
+}
+
+export async function acknowledgeEmbeddedCheckoutOpened(input: {
+  cartId: string
+  sessionId: string
+  expectedUserId?: string
+}): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(input.cartId)}/checkout/embedded/${encodeURIComponent(input.sessionId)}/opened`,
+    {
+      method: 'POST',
+      headers: await authHeaders(input.expectedUserId),
+      keepalive: true,
+    },
+  )
+  if (!response.ok) {
+    throw await parseErrorResponse(response, 'Failed to record embedded checkout start')
+  }
 }
 
 export async function completeEmbeddedCheckout(input: {

@@ -1,8 +1,10 @@
 package com.meant.api.module.cart.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.PostgresIntegrationTestSupport;
+import com.meant.api.module.cart.constant.CartSnapshotPurpose;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.CartPersistenceService;
@@ -74,14 +76,53 @@ class CheckoutPersistenceConcurrencyIT extends PostgresIntegrationTestSupport {
         }
     }
 
+    @Test
+    void checkoutResponseStartedBeforeCartMutationCannotRebindTheMutatedCart() throws Exception {
+        UUID userId = UUID.randomUUID();
+        Instant now = Instant.now();
+        userRepository.saveAndFlush(User.builder()
+                .id(userId).email("checkout-stale-" + userId + "@example.test")
+                .createdAt(now).updatedAt(now).build());
+        Cart cart = repository.saveAndFlush(Cart.builder()
+                .id(UUID.randomUUID()).userId(userId).provider("SHOPIFY")
+                .merchantDomain("shop.test").externalMerchantId("shop-1")
+                .routingScopeKey("SHOPIFY:merchant:shop-1:domain:shop.test")
+                .endpoint("https://shop.test/api/ucp/mcp").remoteCartId("remote-cart-" + UUID.randomUUID())
+                .remoteCartIdHash(UUID.randomUUID().toString()).rawCartResponse("{}")
+                .totalQuantity(1).active(true).createdAt(now).updatedAt(now).refreshedAt(now).build());
+        long checkoutRequestGeneration = cart.getCheckoutGeneration();
+        Instant mutatedAt = now.plusSeconds(1);
+        cart.replaceSnapshot(
+                cart.getEndpoint(), cart.getRemoteCartId(), cart.getRemoteCartIdHash(), null, null, null,
+                "{}", 2, null, null, null, null, null, null, mutatedAt, CartSnapshotPurpose.CART_MUTATION);
+        repository.saveAndFlush(cart);
+
+        String json = "{\"ucp\":{\"version\":\"2026-04-08\"},\"checkout\":{\"id\":\"checkout-stale\","
+                + "\"cart_id\":\"" + cart.getRemoteCartId() + "\",\"status\":\"incomplete\"}}";
+        UcpCheckoutResponse response = objectMapper.readValue(json, UcpCheckoutResponse.class);
+
+        assertThatThrownBy(() -> persistence.saveCheckoutHandoff(
+                cart.getId(), userId, checkoutRequestGeneration,
+                new UcpCheckoutToolResult("https://shop.test/api/ucp/mcp", json, response)))
+                .isInstanceOf(CartException.class)
+                .hasMessageContaining("Cart changed while the remote checkout operation was in flight");
+
+        Cart persisted = repository.findById(cart.getId()).orElseThrow();
+        assertThat(persisted.getCheckoutGeneration()).isEqualTo(checkoutRequestGeneration + 1);
+        assertThat(persisted.getCheckoutId()).isNull();
+        assertThat(persisted.getCheckoutAttemptId()).isNull();
+    }
+
     private Object save(CountDownLatch start, UUID cartId, UUID userId, String checkoutId) {
         try {
             start.await(5, TimeUnit.SECONDS);
+            Cart cart = repository.findById(cartId).orElseThrow();
             String json = "{\"ucp\":{\"version\":\"2026-04-08\"},\"checkout\":{\"id\":\""
-                    + checkoutId + "\",\"cart_id\":\"" + repository.findById(cartId).orElseThrow().getRemoteCartId()
+                    + checkoutId + "\",\"cart_id\":\"" + cart.getRemoteCartId()
                     + "\",\"status\":\"incomplete\"}}";
             UcpCheckoutResponse response = objectMapper.readValue(json, UcpCheckoutResponse.class);
-            return persistence.saveCheckoutHandoff(cartId, userId, new UcpCheckoutToolResult(
+            return persistence.saveCheckoutHandoff(
+                    cartId, userId, cart.getCheckoutGeneration(), new UcpCheckoutToolResult(
                     "https://shop.test/api/ucp/mcp", json, response));
         } catch (Exception exception) {
             return exception;

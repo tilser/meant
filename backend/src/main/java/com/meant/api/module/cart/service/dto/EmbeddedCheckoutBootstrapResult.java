@@ -10,6 +10,7 @@ public record EmbeddedCheckoutBootstrapResult(
         UUID sessionId,
         UUID cartId,
         String checkoutId,
+        UUID checkoutAttemptId,
         String checkoutUrl,
         String fallbackContinueUrl,
         String protocolVersion,

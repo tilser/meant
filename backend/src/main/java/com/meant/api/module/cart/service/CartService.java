@@ -30,14 +30,12 @@ import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
-import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import com.meant.api.module.user.service.UserCommerceContextService;
 import com.meant.api.module.user.service.dto.UserCommerceContextResult;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
-import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
 import com.meant.api.plugin.cart.common.dto.CartBuyer;
 import com.meant.api.plugin.cart.common.dto.CartContext;
@@ -62,7 +60,11 @@ import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillme
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.module.checkout.service.NativeCheckoutCompletionService;
+import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
+import com.meant.api.module.checkout.constant.CheckoutAttributionRail;
+import com.meant.api.module.checkout.constant.CheckoutAttributionTrigger;
 import com.meant.api.module.checkout.service.command.NativeCheckoutCompletionCommand;
+import com.meant.api.module.checkout.service.command.RecordCheckoutOpenedCommand;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
@@ -103,7 +105,7 @@ public class CartService {
     private final MerchantCartPluginDispatchService merchantCartPluginDispatchService;
     private final MerchantCheckoutPluginDispatchService merchantCheckoutPluginDispatchService;
     private final NativeCheckoutCompletionService nativeCheckoutCompletionService;
-    private final UserInventoryService userInventoryService;
+    private final CheckoutPurchaseAttributionService checkoutPurchaseAttributionService;
     private final CartResultMapper cartResultMapper;
     private final CheckoutResultMapper checkoutResultMapper;
     private final CartCheckoutConsentService cartCheckoutConsentService;
@@ -214,7 +216,6 @@ public class CartService {
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         if (!query.refresh() && hasText(cart.getCheckoutId())) {
-            importCartInventory(cart);
             return checkoutResultMapper.from(cart, provider.executionPolicy());
         }
         UcpSession session = session(cart);
@@ -242,8 +243,8 @@ public class CartService {
                         target, request, session, callContext.reconciliation());
             }
         }
-        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(checkoutCart.getId(), query.userId(), result);
-        importCartInventory(refreshedCart);
+        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
+                checkoutCart.getId(), query.userId(), checkoutCart.getCheckoutGeneration(), result);
         return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
     }
 
@@ -347,8 +348,8 @@ public class CartService {
                 );
             }
         }
-        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(cart.getId(), command.userId(), result);
-        importCartInventory(refreshedCart);
+        Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
+                cart.getId(), command.userId(), cart.getCheckoutGeneration(), result);
         return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
     }
 
@@ -459,7 +460,14 @@ public class CartService {
                 session(checkoutCart)
         );
         if (result.status() == NativeCheckoutStatus.COMPLETED) {
-            importCartInventory(checkoutCart);
+            checkoutPurchaseAttributionService.record(new RecordCheckoutOpenedCommand(
+                    command.userId(),
+                    checkoutCart.getId(),
+                    checkoutCart.getCheckoutAttemptId(),
+                    CheckoutAttributionRail.NATIVE_CHECKOUT,
+                    CheckoutAttributionTrigger.VERIFIED_COMPLETION,
+                    null
+            ));
         }
         return completionResult(checkoutCart, result);
     }
@@ -494,7 +502,8 @@ public class CartService {
                     target, new GetCheckoutRequest(command.checkoutId()), session, callContext.reconciliation());
         }
         checkoutCancellationPolicy.requireCancelled(result.response());
-        Cart refreshed = cartPersistenceService.saveCheckoutHandoff(cart.getId(), command.userId(), result);
+        Cart refreshed = cartPersistenceService.saveCheckoutHandoff(
+                cart.getId(), command.userId(), cart.getCheckoutGeneration(), result);
         return new CheckoutCompletionResult(
                 refreshed.getId(), refreshed.getRemoteCartId(), NativeCheckoutStatus.CANCELED,
                 refreshed.getCheckoutId(), null, refreshed.getContinueUrl(), checkoutMessages(result.response()), false);
@@ -647,7 +656,8 @@ public class CartService {
                 session(cart),
                 CheckoutToolCallContext.forBuyer(buyerIp)
         );
-        return cartPersistenceService.saveCheckoutHandoff(cart.getId(), userId, result);
+        return cartPersistenceService.saveCheckoutHandoff(
+                cart.getId(), userId, cart.getCheckoutGeneration(), result);
     }
 
     private CheckoutBuyer checkoutBuyer(UpdateCheckoutCommand.Buyer buyer) {
@@ -1112,46 +1122,6 @@ public class CartService {
                 .map(String::trim)
                 .distinct()
                 .toList();
-    }
-
-    private void importCartInventory(Cart cart) {
-        Instant purchasedAt = inventoryPurchasedAt(cart);
-        List<ImportPurchasedInventoryItemsCommand.PurchasedItem> items = cart.getLines().stream()
-                .filter(line -> line.getProductVariantId() != null && !line.getProductVariantId().isBlank())
-                .map(line -> new ImportPurchasedInventoryItemsCommand.PurchasedItem(
-                        cart.getMerchantDomain() + ":" + line.getProductVariantId(),
-                        null,
-                        productName(line.getProductTitle(), line.getVariantTitle(), line.getProductVariantId()),
-                        cart.getMerchantDomain(),
-                        null,
-                        null,
-                        line.getQuantity(),
-                        purchasedAt
-                ))
-                .toList();
-        if (!items.isEmpty()) {
-            userInventoryService.importPurchasedItems(new ImportPurchasedInventoryItemsCommand(cart.getUserId(), items));
-        }
-    }
-
-    private Instant inventoryPurchasedAt(Cart cart) {
-        if (cart.getRemoteUpdatedAt() != null) {
-            return cart.getRemoteUpdatedAt();
-        }
-        if (cart.getUpdatedAt() != null) {
-            return cart.getUpdatedAt();
-        }
-        return cart.getRefreshedAt();
-    }
-
-    private String productName(String productTitle, String variantTitle, String fallback) {
-        if (productTitle != null && !productTitle.isBlank()) {
-            return productTitle;
-        }
-        if (variantTitle != null && !variantTitle.isBlank()) {
-            return variantTitle;
-        }
-        return fallback;
     }
 
 }

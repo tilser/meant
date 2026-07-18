@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.command;
 
+import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -13,6 +14,12 @@ import java.util.UUID;
 public record ImportPurchasedInventoryItemsCommand(
         @NotNull
         UUID userId,
+
+        @NotNull
+        UUID checkoutAttemptId,
+
+        @NotNull
+        Instant purchasedAt,
 
         @NotEmpty
         List<@Valid PurchasedItem> items
@@ -47,7 +54,8 @@ public record ImportPurchasedInventoryItemsCommand(
             @Positive
             Integer quantity,
 
-            Instant purchasedAt
+            @Valid
+            UserInventoryCommerceReference commerceReference
     ) {
 
         public PurchasedItem {

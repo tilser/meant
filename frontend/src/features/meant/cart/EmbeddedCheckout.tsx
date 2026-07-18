@@ -8,6 +8,7 @@ import {
   type EmbeddedCheckoutBootstrapProfile,
 } from '../../../lib/apiClient'
 import { type CheckoutLifecycleReason, trackCheckoutLifecycleEvent } from './checkoutAnalytics'
+import { acknowledgeEmbeddedCheckoutOpenedWithRetry } from './embeddedCheckoutAcknowledgement'
 import {
   CheckoutKitAdapterError,
   createCheckoutKitHandle,
@@ -262,6 +263,26 @@ export function EmbeddedCheckout({
               result: 'succeeded',
               reason: 'NONE',
             })
+            if (current.sessionId) {
+              // A confirmed Checkout Kit start is durable business input. Keep this retry alive even
+              // if close/unmount tears down the short-lived UI session immediately afterwards.
+              void acknowledgeEmbeddedCheckoutOpenedWithRetry({
+                cartId: session.cartId,
+                sessionId: current.sessionId,
+                expectedUserId: session.ownerId,
+              }).then(
+                () => {
+                  void Promise.resolve(onReconciledRef.current()).catch(() => undefined)
+                },
+                () => {
+                  trackCheckoutLifecycleEvent('embedded_checkout_error', {
+                    surface,
+                    result: 'failed',
+                    reason: 'START_ACK_FAILED',
+                  })
+                },
+              )
+            }
           },
           onComplete: () => {
             if (generation === generationRef.current) void verifyCompletion(current, generation)

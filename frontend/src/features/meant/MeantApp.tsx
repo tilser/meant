@@ -2387,12 +2387,15 @@ export function MeantApp() {
   }
 
   const refreshActiveCheckout = async (verifiedCheckout?: CheckoutProfile) => {
+    const inventoryRefresh = loadInventory({ silent: true })
     if (!activeCheckout) {
+      await inventoryRefresh
       return
     }
     const requestedUserId = requireCurrentAccountUser()
     const checkoutSession = activeCheckout
     if (checkoutSession.ownerId !== requestedUserId) {
+      await inventoryRefresh
       return
     }
     setCheckoutFlowBusy(true)
@@ -2421,6 +2424,7 @@ export function MeantApp() {
         setCheckoutFlowError('Could not refresh checkout.')
       }
     } finally {
+      await inventoryRefresh
       if (activeUserIdRef.current === requestedUserId) {
         setCheckoutFlowBusy(false)
       }

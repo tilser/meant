@@ -2,7 +2,9 @@ package com.meant.api.module.user.controller.response;
 
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventorySource;
+import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
+import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
@@ -49,6 +51,10 @@ public record UserInventoryItemResponse(
         Integer restockThreshold,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant purchasedAt,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        CommerceReference commerceReference,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        UUID sourceCheckoutAttemptId,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant createdAt,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -77,8 +83,75 @@ public record UserInventoryItemResponse(
                 result.restockEnabled(),
                 result.restockThreshold(),
                 result.purchasedAt(),
+                CommerceReference.from(result.commerceReference()),
+                result.sourceCheckoutAttemptId(),
                 result.createdAt(),
                 result.updatedAt()
         );
+    }
+
+    @Schema(
+            name = "UserInventoryCommerceReferenceResponse",
+            description = "Provider-neutral commerce identity retained for a purchased inventory item."
+    )
+    public record CommerceReference(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String provider,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            UUID merchantIntegrationId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String externalMerchantId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String externalMerchantDomain,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String canonicalProductKey,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String offerKey,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String sourceType,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String sourceIdentity,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String externalProductId,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String externalVariantId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            List<SelectedOption> selectedOptions
+    ) {
+        static CommerceReference from(UserInventoryCommerceReference reference) {
+            if (reference == null) {
+                return null;
+            }
+            return new CommerceReference(
+                    reference.provider(),
+                    reference.merchantIntegrationId(),
+                    reference.externalMerchantId(),
+                    reference.externalMerchantDomain(),
+                    reference.canonicalProductKey(),
+                    reference.offerKey(),
+                    reference.sourceType(),
+                    reference.sourceIdentity(),
+                    reference.externalProductId(),
+                    reference.externalVariantId(),
+                    reference.selectedOptions().stream().map(SelectedOption::from).toList()
+            );
+        }
+    }
+
+    @Schema(
+            name = "UserInventorySelectedOptionResponse",
+            description = "Exact option selected for the purchased product variant."
+    )
+    public record SelectedOption(
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            String group,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String name,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String value
+    ) {
+        static SelectedOption from(UserInventorySelectedOption option) {
+            return new SelectedOption(option.group(), option.name(), option.value());
+        }
     }
 }

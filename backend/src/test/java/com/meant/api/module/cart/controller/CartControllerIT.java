@@ -23,10 +23,20 @@ import com.meant.api.module.cart.service.SelectedOfferCartRoutingService;
 import com.meant.api.module.cart.service.CartBindingMetrics;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
+import com.meant.api.module.checkout.constant.CheckoutAttributionRail;
+import com.meant.api.module.checkout.constant.CheckoutAttributionTrigger;
+import com.meant.api.module.checkout.constant.EmbeddedCheckoutSessionStatus;
+import com.meant.api.module.checkout.entity.EmbeddedCheckoutSession;
+import com.meant.api.module.checkout.repository.CheckoutPurchaseAttributionRepository;
+import com.meant.api.module.checkout.repository.EmbeddedCheckoutSessionRepository;
+import com.meant.api.module.checkout.service.EmbeddedCheckoutSessionStore;
+import com.meant.api.module.checkout.service.command.CreateEmbeddedCheckoutSessionCommand;
+import com.meant.api.module.checkout.service.dto.EmbeddedCheckoutSessionBinding;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOfferQuery;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
+import com.meant.api.module.user.repository.UserInventoryItemRepository;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
@@ -80,6 +90,9 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class CartControllerIT extends PostgresIntegrationTestSupport {
 
+    private static final String EMBEDDED_ORIGIN = "http://localhost:3000";
+    private static final String OTHER_ALLOWED_ORIGIN = "http://127.0.0.1:3000";
+
     @LocalServerPort
     private int port;
 
@@ -91,6 +104,18 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private CartRepository cartRepository;
+
+    @Autowired
+    private EmbeddedCheckoutSessionStore embeddedCheckoutSessionStore;
+
+    @Autowired
+    private EmbeddedCheckoutSessionRepository embeddedCheckoutSessionRepository;
+
+    @Autowired
+    private CheckoutPurchaseAttributionRepository checkoutPurchaseAttributionRepository;
+
+    @Autowired
+    private UserInventoryItemRepository userInventoryItemRepository;
 
     @Autowired
     private FakeCartDispatchService cartDispatchService;
@@ -142,6 +167,14 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         JsonNode cartRequired = schemas.path("CartResponse").path("required");
         JsonNode lineRequired = schemas.path("CartLineResponse").path("required");
         JsonNode embeddedProperties = schemas.path("EmbeddedCheckoutBootstrapResponse").path("properties");
+        JsonNode checkoutProperties = schemas.path("CheckoutResponse").path("properties");
+        JsonNode inventoryProperties = schemas.path("UserInventoryItemResponse").path("properties");
+        JsonNode commerceReferenceProperties = schemas.path("UserInventoryCommerceReferenceResponse")
+                .path("properties");
+        JsonNode selectedOptionProperties = schemas.path("UserInventorySelectedOptionResponse").path("properties");
+        JsonNode openedOperation = openApi.path("paths")
+                .path("/api/carts/{cartId}/checkout/embedded/{sessionId}/opened")
+                .path("post");
 
         assertThat(createProperties.has("merchantId")).isFalse();
         assertThat(createProperties.has("merchantDomain")).isFalse();
@@ -175,7 +208,203 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 "productTitle", "variantTitle", "totalAmount", "subtotalAmount", "currency");
         assertThat(embeddedProperties.has("sessionId")).isTrue();
         assertThat(embeddedProperties.has("checkoutUrl")).isTrue();
+        assertThat(embeddedProperties.has("checkoutAttemptId")).isTrue();
+        assertThat(checkoutProperties.has("checkoutAttemptId")).isTrue();
+        assertThat(inventoryProperties.has("commerceReference")).isTrue();
+        assertThat(inventoryProperties.has("sourceCheckoutAttemptId")).isTrue();
+        assertThat(inventoryProperties.path("commerceReference").path("$ref").asText())
+                .endsWith("/UserInventoryCommerceReferenceResponse");
+        assertThat(commerceReferenceProperties.has("provider")).isTrue();
+        assertThat(commerceReferenceProperties.has("externalMerchantId")).isTrue();
+        assertThat(commerceReferenceProperties.has("sourceIdentity")).isTrue();
+        assertThat(commerceReferenceProperties.has("externalProductId")).isTrue();
+        assertThat(commerceReferenceProperties.path("selectedOptions").path("items").path("$ref").asText())
+                .endsWith("/UserInventorySelectedOptionResponse");
+        assertThat(selectedOptionProperties.has("group")).isTrue();
+        assertThat(selectedOptionProperties.has("name")).isTrue();
+        assertThat(selectedOptionProperties.has("value")).isTrue();
+        assertThat(openedOperation.isMissingNode()).isFalse();
+        assertThat(openedOperation.has("requestBody")).isFalse();
+        assertThat(openedOperation.path("responses").has("204")).isTrue();
         assertThat(embeddedProperties.toString()).doesNotContain("clientSecret", "accessToken");
+    }
+
+    @Test
+    void openedEndpointRequiresAuthenticationAndAcknowledgesRepeatedBodylessRequests() {
+        UUID userId = UUID.randomUUID();
+        CartResponse created = createCart(userId, saveMerchant().getId());
+        CheckoutResponse checkout = checkoutCart(userId, created.cartId());
+        Cart cart = embeddedReadyCart(created.cartId());
+        EmbeddedCheckoutSessionBinding session = createEmbeddedSession(cart, EMBEDDED_ORIGIN);
+
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        created.cartId(), session.sessionId())
+                .header("Origin", EMBEDDED_ORIGIN)
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        assertThat(checkoutPurchaseAttributionRepository
+                .existsByUserIdAndCheckoutAttemptId(userId, checkout.checkoutAttemptId())).isFalse();
+
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        created.cartId(), session.sessionId())
+                .headers(headers -> headers.setBearerAuth(token(userId)))
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        for (int request = 0; request < 2; request++) {
+            client.post().uri(
+                            "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                            created.cartId(), session.sessionId())
+                    .headers(headers -> headers.setBearerAuth(token(userId)))
+                    .header("Origin", EMBEDDED_ORIGIN)
+                    .exchange()
+                    .expectStatus().isNoContent()
+                    .expectBody().isEmpty();
+        }
+
+        EmbeddedCheckoutSession persistedSession = embeddedCheckoutSessionRepository
+                .findById(session.sessionId())
+                .orElseThrow();
+        assertThat(persistedSession.getOpenedAt()).isNotNull();
+
+        var attributions = checkoutPurchaseAttributionRepository.findAll().stream()
+                .filter(attribution -> attribution.getUserId().equals(userId))
+                .filter(attribution -> attribution.getCheckoutAttemptId().equals(checkout.checkoutAttemptId()))
+                .toList();
+        assertThat(attributions).hasSize(1);
+        assertThat(attributions.getFirst().getAttributionRail()).isEqualTo(CheckoutAttributionRail.EMBEDDED_CHECKOUT);
+        assertThat(attributions.getFirst().getAttributionTrigger())
+                .isEqualTo(CheckoutAttributionTrigger.CONFIRMED_ECP_START);
+        assertThat(attributions.getFirst().getEmbeddedSessionId()).isEqualTo(session.sessionId());
+
+        var inventoryItems = userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(userId);
+        assertThat(inventoryItems).hasSize(1);
+        assertThat(inventoryItems.getFirst().getSourceCheckoutAttemptId()).isEqualTo(checkout.checkoutAttemptId());
+    }
+
+    @Test
+    void confirmedStartStillAttributesOnceWhenImmediateCloseWinsTheSessionRace() {
+        UUID userId = UUID.randomUUID();
+        CartResponse created = createCart(userId, saveMerchant().getId());
+        CheckoutResponse checkout = checkoutCart(userId, created.cartId());
+        Cart cart = embeddedReadyCart(created.cartId());
+        EmbeddedCheckoutSessionBinding session = createEmbeddedSession(cart, EMBEDDED_ORIGIN);
+
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/cancel",
+                        created.cartId(), session.sessionId())
+                .headers(headers -> headers.setBearerAuth(token(userId)))
+                .header("Origin", EMBEDDED_ORIGIN)
+                .exchange()
+                .expectStatus().isNoContent();
+
+        for (int request = 0; request < 2; request++) {
+            client.post().uri(
+                            "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                            created.cartId(), session.sessionId())
+                    .headers(headers -> headers.setBearerAuth(token(userId)))
+                    .header("Origin", EMBEDDED_ORIGIN)
+                    .exchange()
+                    .expectStatus().isNoContent();
+        }
+
+        EmbeddedCheckoutSession persistedSession = embeddedCheckoutSessionRepository
+                .findById(session.sessionId())
+                .orElseThrow();
+        assertThat(persistedSession.getStatus()).isEqualTo(EmbeddedCheckoutSessionStatus.CANCELLED);
+        assertThat(persistedSession.getOpenedAt()).isNotNull();
+        assertThat(checkoutPurchaseAttributionRepository.findAll().stream()
+                .filter(attribution -> attribution.getUserId().equals(userId))
+                .filter(attribution -> attribution.getCheckoutAttemptId().equals(checkout.checkoutAttemptId())))
+                .hasSize(1);
+        assertThat(userInventoryItemRepository.findByUserIdOrderByUpdatedAtDesc(userId))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.getQuantity()).isEqualTo(1);
+                    assertThat(item.getSourceCheckoutAttemptId()).isEqualTo(checkout.checkoutAttemptId());
+                });
+    }
+
+    @Test
+    void openedEndpointEnforcesOwnerOriginSessionAndFreshnessBindings() {
+        UUID ownerId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        Merchant merchant = saveMerchant();
+        CartResponse firstCartResponse = createCart(ownerId, merchant.getId());
+        checkoutCart(ownerId, firstCartResponse.cartId());
+        Cart firstCart = embeddedReadyCart(firstCartResponse.cartId());
+        EmbeddedCheckoutSessionBinding session = createEmbeddedSession(firstCart, EMBEDDED_ORIGIN);
+
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        firstCart.getId(), session.sessionId())
+                .headers(headers -> headers.setBearerAuth(token(otherUserId)))
+                .header("Origin", EMBEDDED_ORIGIN)
+                .exchange()
+                .expectStatus().isNotFound();
+
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        firstCart.getId(), session.sessionId())
+                .headers(headers -> headers.setBearerAuth(token(ownerId)))
+                .header("Origin", OTHER_ALLOWED_ORIGIN)
+                .exchange()
+                .expectStatus().isForbidden();
+
+        CartResponse secondCartResponse = createCart(ownerId, merchant.getId());
+        checkoutCart(ownerId, secondCartResponse.cartId());
+        embeddedReadyCart(secondCartResponse.cartId());
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        secondCartResponse.cartId(), session.sessionId())
+                .headers(headers -> headers.setBearerAuth(token(ownerId)))
+                .header("Origin", EMBEDDED_ORIGIN)
+                .exchange()
+                .expectStatus().isForbidden();
+
+        EmbeddedCheckoutSessionBinding staleAttemptSession = embeddedCheckoutSessionStore.create(
+                new CreateEmbeddedCheckoutSessionCommand(
+                        ownerId,
+                        firstCart.getId(),
+                        firstCart.getCheckoutId(),
+                        UUID.randomUUID(),
+                        firstCart.getMerchantIntegrationId(),
+                        firstCart.getRoutingScopeKey(),
+                        EMBEDDED_ORIGIN,
+                        "2026-04-08"
+                ));
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        firstCart.getId(), staleAttemptSession.sessionId())
+                .headers(headers -> headers.setBearerAuth(token(ownerId)))
+                .header("Origin", EMBEDDED_ORIGIN)
+                .exchange()
+                .expectStatus().isForbidden();
+
+        EmbeddedCheckoutSession expiredSession = embeddedCheckoutSessionRepository.saveAndFlush(
+                EmbeddedCheckoutSession.builder()
+                        .userId(ownerId)
+                        .cartId(firstCart.getId())
+                        .checkoutId(firstCart.getCheckoutId())
+                        .checkoutAttemptId(firstCart.getCheckoutAttemptId())
+                        .merchantIntegrationId(firstCart.getMerchantIntegrationId())
+                        .routingScopeKey(firstCart.getRoutingScopeKey())
+                        .allowedOrigin(EMBEDDED_ORIGIN)
+                        .protocolVersion("2026-04-08")
+                        .status(EmbeddedCheckoutSessionStatus.ACTIVE)
+                        .expiresAt(Instant.now().minusSeconds(1))
+                        .createdAt(Instant.now().minusSeconds(2))
+                        .build());
+        client.post().uri(
+                        "/api/carts/{cartId}/checkout/embedded/{sessionId}/opened",
+                        firstCart.getId(), expiredSession.getId())
+                .headers(headers -> headers.setBearerAuth(token(ownerId)))
+                .header("Origin", EMBEDDED_ORIGIN)
+                .exchange()
+                .expectStatus().isEqualTo(409);
     }
 
     @Test
@@ -360,6 +589,60 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(created).isNotNull();
         return created;
+    }
+
+    private CheckoutResponse checkoutCart(UUID userId, UUID cartId) {
+        CheckoutResponse checkout = client.get().uri("/api/carts/{cartId}/checkout", cartId)
+                .headers(headers -> headers.setBearerAuth(token(userId)))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(CheckoutResponse.class)
+                .returnResult()
+                .getResponseBody();
+        assertThat(checkout).isNotNull();
+        assertThat(checkout.checkoutId()).isNotBlank();
+        assertThat(checkout.checkoutAttemptId()).isNotNull();
+        return checkout;
+    }
+
+    private EmbeddedCheckoutSessionBinding createEmbeddedSession(Cart cart, String origin) {
+        return embeddedCheckoutSessionStore.create(new CreateEmbeddedCheckoutSessionCommand(
+                cart.getUserId(),
+                cart.getId(),
+                cart.getCheckoutId(),
+                cart.getCheckoutAttemptId(),
+                cart.getMerchantIntegrationId(),
+                cart.getRoutingScopeKey(),
+                origin,
+                "2026-04-08"
+        ));
+    }
+
+    private Cart embeddedReadyCart(UUID cartId) {
+        Cart cart = cartRepository.findById(cartId).orElseThrow();
+        if (cart.getRoutingScopeKey() == null || cart.getRoutingScopeKey().isBlank()) {
+            String merchantIdentity = cart.getMerchantId().toString();
+            cart.replaceCheckoutSession(
+                    cart.getCheckoutId(),
+                    cart.getCheckoutStatus(),
+                    cart.getCheckoutUrl(),
+                    cart.getContinueUrl(),
+                    null,
+                    cart.getCheckoutProtocolVersion(),
+                    cart.getCheckoutLifecycleState(),
+                    cart.getCheckoutSynchronizedAt()
+            );
+            cart.assignRoutingScope(
+                    cart.getProvider() == null ? MerchantIntegrationProvider.GENERIC_UCP.name() : cart.getProvider(),
+                    null,
+                    merchantIdentity,
+                    "EXTERNAL:merchant:" + merchantIdentity,
+                    null,
+                    cart.getMerchantDomain()
+            );
+            return cartRepository.saveAndFlush(cart);
+        }
+        return cart;
     }
 
     private String createCartBody(UUID merchantId) {

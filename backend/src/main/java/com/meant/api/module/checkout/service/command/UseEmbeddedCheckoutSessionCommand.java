@@ -9,6 +9,7 @@ public record UseEmbeddedCheckoutSessionCommand(
         @NotNull UUID userId,
         @NotNull UUID cartId,
         @NotBlank String checkoutId,
+        @NotNull UUID checkoutAttemptId,
         UUID merchantIntegrationId,
         @NotBlank String routingScopeKey,
         @NotBlank String allowedOrigin

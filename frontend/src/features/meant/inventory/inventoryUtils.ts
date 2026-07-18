@@ -4,6 +4,7 @@ import type {
   UserInventoryItemProfile,
   UserInventoryItemUpdateInput,
   UserInventoryPhotoInput,
+  UserInventorySelectedOptionProfile,
 } from '../../../lib/apiClient'
 
 export interface InventoryFormState {
@@ -56,6 +57,16 @@ export function inventorySourceLabel(source: UserInventoryItemProfile['source'])
 
 export function inventoryItemImage(item: UserInventoryItemProfile): string | null {
   return item.imageUrl || item.photoUrl
+}
+
+export function inventorySelectedOptionLabel(
+  option: UserInventorySelectedOptionProfile,
+): string | null {
+  const name = option.name?.trim()
+  const value = option.value?.trim()
+  if (!name || !value) return null
+  const group = option.group?.trim()
+  return group ? `${group} · ${name}: ${value}` : `${name}: ${value}`
 }
 
 export function upsertInventorySnapshot(

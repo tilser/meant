@@ -29,6 +29,7 @@ import {
   inventoryItemImage,
   inventoryItemInputFromForm,
   inventoryPhotoInputFromForm,
+  inventorySelectedOptionLabel,
   inventorySourceLabel,
   inventoryUpdateInputFromForm,
 } from './inventoryUtils'
@@ -474,6 +475,9 @@ function InventoryItemCard({
   const image = inventoryItemImage(item)
   const purchasedAt = inventoryDateLabel(item.purchasedAt)
   const updatedAt = inventoryDateLabel(item.updatedAt)
+  const selectedOptionLabels = (item.commerceReference?.selectedOptions ?? [])
+    .map(inventorySelectedOptionLabel)
+    .filter((label): label is string => Boolean(label))
 
   useEffect(() => {
     setForm(inventoryFormFromItem(item))
@@ -635,6 +639,13 @@ function InventoryItemCard({
               <div className="mt-chips mt-inv-attrs">
                 {item.attributes.map((attribute) => (
                   <PrefChip key={attribute} label={attribute} variant="muted" small />
+                ))}
+              </div>
+            ) : null}
+            {selectedOptionLabels.length > 0 ? (
+              <div className="mt-chips mt-inv-attrs" aria-label="Purchased options">
+                {selectedOptionLabels.map((label) => (
+                  <PrefChip key={label} label={label} variant="muted" small />
                 ))}
               </div>
             ) : null}

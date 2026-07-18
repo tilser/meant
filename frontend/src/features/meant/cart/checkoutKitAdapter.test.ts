@@ -92,7 +92,11 @@ describe('Meant Checkout Kit adapter', () => {
 
     handle.open()
     handle.focus()
+    expect(events).toEqual(['ready'])
+
     element.emit('checkout:start')
+    expect(events).toEqual(['ready', 'start'])
+
     element.emit('checkout:complete')
     element.emit('checkout:error')
     element.emit('checkout:close')

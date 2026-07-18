@@ -21,6 +21,11 @@ public record CheckoutResponse(
         String remoteCartId,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "Merchant/provider checkout identifier.")
         String checkoutId,
+        @Schema(
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                description = "Stable Meant identity for the current logical checkout attempt."
+        )
+        UUID checkoutAttemptId,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "Current provider checkout status.")
         String status,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "Provider checkout URL when available.")
@@ -73,6 +78,7 @@ public record CheckoutResponse(
                 result.cartId(),
                 result.remoteCartId(),
                 result.checkoutId(),
+                result.checkoutAttemptId(),
                 result.status(),
                 result.checkoutUrl(),
                 result.continueUrl(),

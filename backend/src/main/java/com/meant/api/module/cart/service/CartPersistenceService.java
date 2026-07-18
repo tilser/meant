@@ -10,6 +10,8 @@ import com.meant.api.module.cart.entity.CartLine;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.repository.CartRepository;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.catalog.service.dto.ProductMedia;
+import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
@@ -133,7 +135,7 @@ public class CartPersistenceService {
                         .merchantDomain(provider.domain())
                         .createdAt(now)
                         .build()
-                : cart;
+                : currentCartForSnapshot(cart, userId);
         if (cart != null) {
             validateWritableCart(persistedCart, userId);
         }
@@ -194,6 +196,15 @@ public class CartPersistenceService {
         return cartRepository.save(persistedCart);
     }
 
+    private Cart currentCartForSnapshot(Cart expected, UUID userId) {
+        Cart current = cartRepository.findForCheckoutUpdate(expected.getId(), userId)
+                .orElseThrow(() -> CartException.notFound("Cart not found: " + expected.getId()));
+        if (current.getCheckoutGeneration() != expected.getCheckoutGeneration()) {
+            throw staleCartSnapshot();
+        }
+        return current;
+    }
+
     private void inheritExistingBinding(Cart cart, CartLine replacement, boolean sameRemoteLineId) {
         List<CartLine> candidates = cart.getLines().stream()
                 .filter(line -> line.getOfferKey() != null)
@@ -211,10 +222,18 @@ public class CartPersistenceService {
     }
 
     @Transactional
-    public Cart saveCheckoutHandoff(UUID cartId, UUID userId, UcpCheckoutToolResult result) {
+    public Cart saveCheckoutHandoff(
+            UUID cartId,
+            UUID userId,
+            long expectedCheckoutGeneration,
+            UcpCheckoutToolResult result
+    ) {
         Cart cart = cartRepository.findForCheckoutUpdate(cartId, userId)
                 .orElseThrow(() -> CartException.notFound("Cart not found: " + cartId));
         validateWritableCart(cart, userId);
+        if (cart.getCheckoutGeneration() != expectedCheckoutGeneration) {
+            throw staleCartSnapshot();
+        }
         UcpCheckoutResponse.Checkout checkout = result.response().resolvedCheckout();
         if (checkout == null) {
             throw CartException.upstream("UCP checkout response did not contain checkout");
@@ -243,6 +262,13 @@ public class CartPersistenceService {
                 Instant.now()
         );
         return cartRepository.save(cart);
+    }
+
+    private CartException staleCartSnapshot() {
+        return CartException.binding(
+                CartException.BindingFailure.STALE_OR_UNAVAILABLE,
+                "Cart changed while the remote checkout operation was in flight"
+        );
     }
 
     private boolean persistRawCheckout(Cart cart) {
@@ -288,6 +314,7 @@ public class CartPersistenceService {
             var identity = selectedOffer.identity();
             var merchant = identity.merchantScope().externalMerchantIdentity();
             var source = selectedOffer.provenance().discoverySource();
+            var facts = selectedOffer.commercialFacts();
             builder.provider(identity.provider().value())
                     .merchantIntegrationId(merchantIntegrationId)
                     .externalMerchantId(merchant == null ? null : merchant.value())
@@ -298,15 +325,37 @@ public class CartPersistenceService {
                     .offerVariantId(identity.externalVariantIdentity() == null
                             ? null : identity.externalVariantIdentity().value())
                     .offerKey(selectedOffer.offerKey())
+                    .canonicalProductKey(selectedOffer.canonicalProductKey())
                     .sourceType(source.type().name())
                     .sourceIdentity(source.value())
                     .selectedOptionsJson(toJson(identity.selectedOptions()))
                     .componentsJson(toJson(identity.components()))
                     .sellingPlanJson(identity.sellingPlanIdentity() == null
                             ? null : toJson(identity.sellingPlanIdentity()))
+                    .productTitle(facts == null ? null : blankToNull(facts.title()))
+                    .productBrand(facts == null ? null : blankToNull(facts.merchantName()))
+                    .imageUrl(firstMediaUrl(facts))
+                    .productUrl(sourceProductUrl(facts))
                     .selectedAt(now);
         }
         return builder.build();
+    }
+
+    private String firstMediaUrl(RehydratedCommercialFacts facts) {
+        if (facts == null) {
+            return null;
+        }
+        return facts.sourceMedia().stream()
+                .filter(Objects::nonNull)
+                .map(ProductMedia::url)
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String sourceProductUrl(RehydratedCommercialFacts facts) {
+        return facts == null || facts.productUrl() == null ? null : facts.productUrl().toString();
     }
 
     private List<CartAppliedCode> toAppliedCodes(

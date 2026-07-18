@@ -120,6 +120,7 @@ public class GenericUcpProductObservationMapper {
         return CatalogProductRehydrationResult.fresh(reference, resolved, new RehydratedCommercialFacts(
                 product.title(),
                 integration.merchantName(),
+                httpsUri(product.url()),
                 price,
                 availability(variant.available()),
                 variantId,

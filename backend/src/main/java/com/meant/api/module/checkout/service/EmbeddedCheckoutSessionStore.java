@@ -32,6 +32,7 @@ public class EmbeddedCheckoutSessionStore {
                 .userId(command.userId())
                 .cartId(command.cartId())
                 .checkoutId(command.checkoutId().trim())
+                .checkoutAttemptId(command.checkoutAttemptId())
                 .merchantIntegrationId(command.merchantIntegrationId())
                 .routingScopeKey(command.routingScopeKey().trim())
                 .allowedOrigin(command.allowedOrigin().trim())
@@ -45,12 +46,18 @@ public class EmbeddedCheckoutSessionStore {
 
     @Transactional(readOnly = true)
     public EmbeddedCheckoutSessionBinding requireActive(@NotNull @Valid UseEmbeddedCheckoutSessionCommand command) {
-        return binding(validated(find(command.sessionId()), command));
+        EmbeddedCheckoutSession session = validatedBinding(find(command.sessionId()), command);
+        try {
+            session.requireCompletable(clock.instant());
+        } catch (IllegalStateException exception) {
+            throw EmbeddedCheckoutException.conflict(exception.getMessage());
+        }
+        return binding(session);
     }
 
     @Transactional
     public EmbeddedCheckoutSessionBinding complete(@NotNull @Valid UseEmbeddedCheckoutSessionCommand command) {
-        EmbeddedCheckoutSession session = validated(findForUpdate(command.sessionId()), command);
+        EmbeddedCheckoutSession session = validatedBinding(findForUpdate(command.sessionId()), command);
         try {
             session.complete(clock.instant());
         } catch (IllegalStateException exception) {
@@ -61,7 +68,7 @@ public class EmbeddedCheckoutSessionStore {
 
     @Transactional
     public EmbeddedCheckoutSessionBinding cancel(@NotNull @Valid UseEmbeddedCheckoutSessionCommand command) {
-        EmbeddedCheckoutSession session = validated(findForUpdate(command.sessionId()), command);
+        EmbeddedCheckoutSession session = validatedBinding(findForUpdate(command.sessionId()), command);
         try {
             session.cancel(clock.instant());
         } catch (IllegalStateException exception) {
@@ -70,19 +77,28 @@ public class EmbeddedCheckoutSessionStore {
         return binding(repository.save(session));
     }
 
-    private EmbeddedCheckoutSession validated(
+    @Transactional
+    public EmbeddedCheckoutSessionBinding acknowledgeOpened(
+            @NotNull @Valid UseEmbeddedCheckoutSessionCommand command) {
+        EmbeddedCheckoutSession session = validatedBinding(findForUpdate(command.sessionId()), command);
+        try {
+            session.acknowledgeOpened(clock.instant());
+        } catch (IllegalStateException exception) {
+            throw EmbeddedCheckoutException.conflict(exception.getMessage());
+        }
+        return binding(repository.save(session));
+    }
+
+    private EmbeddedCheckoutSession validatedBinding(
             EmbeddedCheckoutSession session, UseEmbeddedCheckoutSessionCommand command) {
         if (!session.getUserId().equals(command.userId())
                 || !session.getCartId().equals(command.cartId())
                 || !session.getCheckoutId().equals(command.checkoutId().trim())
+                || !session.getCheckoutAttemptId().equals(command.checkoutAttemptId())
                 || !java.util.Objects.equals(session.getMerchantIntegrationId(), command.merchantIntegrationId())
                 || !session.getRoutingScopeKey().equals(command.routingScopeKey().trim())
                 || !session.getAllowedOrigin().equals(command.allowedOrigin().trim())) {
             throw EmbeddedCheckoutException.forbidden("Embedded checkout session binding does not match");
-        }
-        if (session.getStatus() != EmbeddedCheckoutSessionStatus.ACTIVE
-                || !session.getExpiresAt().isAfter(clock.instant())) {
-            throw EmbeddedCheckoutException.conflict("Embedded checkout session is expired or already used");
         }
         return session;
     }
@@ -99,6 +115,7 @@ public class EmbeddedCheckoutSessionStore {
 
     private EmbeddedCheckoutSessionBinding binding(EmbeddedCheckoutSession session) {
         return new EmbeddedCheckoutSessionBinding(session.getId(), session.getCartId(), session.getCheckoutId(),
-                session.getAllowedOrigin(), session.getProtocolVersion(), session.getExpiresAt());
+                session.getCheckoutAttemptId(), session.getAllowedOrigin(), session.getProtocolVersion(),
+                session.getExpiresAt());
     }
 }

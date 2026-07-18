@@ -7,6 +7,7 @@ public record EmbeddedCheckoutSessionBinding(
         UUID sessionId,
         UUID cartId,
         String checkoutId,
+        UUID checkoutAttemptId,
         String allowedOrigin,
         String protocolVersion,
         Instant expiresAt

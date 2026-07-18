@@ -17,9 +17,11 @@ import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCo
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryExportResult;
+import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryPhotoRecognitionResult;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
+import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
@@ -57,6 +59,9 @@ public class UserInventoryService {
 
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
     };
+    private static final TypeReference<List<UserInventorySelectedOption>> SELECTED_OPTION_LIST_TYPE =
+            new TypeReference<>() {
+            };
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
     private static final Pattern NON_ALPHANUMERIC_PATTERN = Pattern.compile("[^a-z0-9 ]");
     private static final Pattern APPAREL_PATTERN = Pattern.compile(
@@ -185,11 +190,11 @@ public class UserInventoryService {
         Map<String, UserInventoryItem> changedItems = new LinkedHashMap<>();
         for (ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem : command.items()) {
             UserInventoryItem existing = existingByProductKey.get(purchasedItem.productKey());
-            Instant purchasedAt = purchasedAt(purchasedItem, now);
-            if (existing != null && Objects.equals(existing.getPurchasedAt(), purchasedAt)) {
+            if (existing != null
+                    && Objects.equals(existing.getSourceCheckoutAttemptId(), command.checkoutAttemptId())) {
                 continue;
             }
-            UserInventoryItem.Snapshot snapshot = purchasedSnapshot(purchasedItem, existing, purchasedAt);
+            UserInventoryItem.Snapshot snapshot = purchasedSnapshot(purchasedItem, existing, command);
             UserInventoryItem item;
             if (existing == null) {
                 if (itemCount >= quota) {
@@ -322,7 +327,19 @@ public class UserInventoryService {
                 command.consumable(),
                 command.restockEnabled(),
                 command.restockThreshold(),
-                command.purchasedAt()
+                command.purchasedAt(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
         );
     }
 
@@ -354,6 +371,18 @@ public class UserInventoryService {
                 consumable,
                 command.restockEnabled(),
                 command.restockThreshold(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null
         );
     }
@@ -384,15 +413,28 @@ public class UserInventoryService {
                 firstPresent(command.consumable(), item.isConsumable()),
                 firstPresent(command.restockEnabled(), item.isRestockEnabled()),
                 command.restockThreshold() == null ? item.getRestockThreshold() : command.restockThreshold(),
-                item.getPurchasedAt()
+                item.getPurchasedAt(),
+                item.getProvider(),
+                item.getMerchantIntegrationId(),
+                item.getExternalMerchantId(),
+                item.getExternalMerchantDomain(),
+                item.getCanonicalProductKey(),
+                item.getOfferKey(),
+                item.getSourceType(),
+                item.getSourceIdentity(),
+                item.getExternalProductId(),
+                item.getExternalVariantId(),
+                item.getSelectedOptionsJson(),
+                item.getSourceCheckoutAttemptId()
         );
     }
 
     private UserInventoryItem.Snapshot purchasedSnapshot(
             ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem,
             UserInventoryItem existing,
-            Instant purchasedAt
+            ImportPurchasedInventoryItemsCommand command
     ) {
+        UserInventoryCommerceReference reference = purchasedItem.commerceReference();
         int quantity = purchasedItem.quantity() + (existing == null ? 0 : existing.getQuantity());
         UserInventoryCategory category = existing == null
                 ? categoryFor(purchasedItem.name())
@@ -419,12 +461,38 @@ public class UserInventoryService {
                 consumable,
                 existing != null && existing.isRestockEnabled(),
                 existing == null ? null : existing.getRestockThreshold(),
-                purchasedAt
+                command.purchasedAt(),
+                reference == null ? existingValue(existing, UserInventoryItem::getProvider) : reference.provider(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getMerchantIntegrationId)
+                        : reference.merchantIntegrationId(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getExternalMerchantId)
+                        : reference.externalMerchantId(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getExternalMerchantDomain)
+                        : reference.externalMerchantDomain(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getCanonicalProductKey)
+                        : reference.canonicalProductKey(),
+                reference == null ? existingValue(existing, UserInventoryItem::getOfferKey) : reference.offerKey(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getSourceType)
+                        : reference.sourceType(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getSourceIdentity)
+                        : reference.sourceIdentity(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getExternalProductId)
+                        : reference.externalProductId(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getExternalVariantId)
+                        : reference.externalVariantId(),
+                reference == null
+                        ? existingValue(existing, UserInventoryItem::getSelectedOptionsJson)
+                        : toJson(reference.selectedOptions()),
+                command.checkoutAttemptId()
         );
-    }
-
-    private Instant purchasedAt(ImportPurchasedInventoryItemsCommand.PurchasedItem purchasedItem, Instant now) {
-        return purchasedItem.purchasedAt() == null ? now : purchasedItem.purchasedAt();
     }
 
     private UserInventoryRecommendationSignal signal(InventoryCandidate candidate, List<UserInventoryItem> items) {
@@ -572,9 +640,45 @@ public class UserInventoryService {
                 entity.isRestockEnabled(),
                 entity.getRestockThreshold(),
                 entity.getPurchasedAt(),
+                commerceReference(entity),
+                entity.getSourceCheckoutAttemptId(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
+    }
+
+    private UserInventoryCommerceReference commerceReference(UserInventoryItem entity) {
+        if (!hasCommerceReference(entity)) {
+            return null;
+        }
+        try {
+            return new UserInventoryCommerceReference(
+                    entity.getProvider(),
+                    entity.getMerchantIntegrationId(),
+                    entity.getExternalMerchantId(),
+                    entity.getExternalMerchantDomain(),
+                    entity.getCanonicalProductKey(),
+                    entity.getOfferKey(),
+                    entity.getSourceType(),
+                    entity.getSourceIdentity(),
+                    entity.getExternalProductId(),
+                    entity.getExternalVariantId(),
+                    selectedOptions(entity.getSelectedOptionsJson())
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new UserException("Could not parse inventory commerce reference", exception);
+        }
+    }
+
+    private boolean hasCommerceReference(UserInventoryItem entity) {
+        return entity.getProvider() != null
+                && !entity.getProvider().isBlank()
+                && entity.getSourceType() != null
+                && !entity.getSourceType().isBlank()
+                && entity.getSourceIdentity() != null
+                && !entity.getSourceIdentity().isBlank()
+                && entity.getExternalProductId() != null
+                && !entity.getExternalProductId().isBlank();
     }
 
     private List<String> mergedAttributes(
@@ -638,6 +742,24 @@ public class UserInventoryService {
         } catch (JacksonException exception) {
             throw new UserException("Could not parse inventory item", exception);
         }
+    }
+
+    private List<UserInventorySelectedOption> selectedOptions(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(value, SELECTED_OPTION_LIST_TYPE);
+        } catch (JacksonException exception) {
+            throw new UserException("Could not parse inventory selected options", exception);
+        }
+    }
+
+    private <T> T existingValue(
+            UserInventoryItem existing,
+            java.util.function.Function<UserInventoryItem, T> extractor
+    ) {
+        return existing == null ? null : extractor.apply(existing);
     }
 
     private String blankToNull(String value) {

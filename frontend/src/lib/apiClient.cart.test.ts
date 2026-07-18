@@ -15,6 +15,7 @@ mock.module('./supabase', () => ({
 }))
 
 const {
+  acknowledgeEmbeddedCheckoutOpened,
   bindSelectedOfferToCart,
   bootstrapEmbeddedCheckout,
   cancelEmbeddedCheckout,
@@ -40,14 +41,17 @@ const {
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
 let requests: Request[] = []
+let requestKeepalive: Array<boolean | undefined> = []
 
 beforeEach(() => {
   authenticatedUserId = 'user-a'
   requests = []
+  requestKeepalive = []
   globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init)
     requests.push(request)
-    if (request.url.endsWith('/cancel')) {
+    requestKeepalive.push(init?.keepalive)
+    if (request.url.endsWith('/cancel') || request.url.endsWith('/opened')) {
       return new Response(null, { status: 204 })
     }
     if (request.url.endsWith('/api/v1/users/me/product-search-qualifications')) {
@@ -70,15 +74,18 @@ beforeEach(() => {
 describe('embedded checkout session API', () => {
   test('uses opaque server session routes without browser checkout authority', async () => {
     await bootstrapEmbeddedCheckout('cart-1')
+    await acknowledgeEmbeddedCheckoutOpened({ cartId: 'cart-1', sessionId: 'session-1' })
     await completeEmbeddedCheckout({ cartId: 'cart-1', sessionId: 'session-1' })
     await cancelEmbeddedCheckout({ cartId: 'cart-1', sessionId: 'session-1' })
 
-    expect(requests.map((request) => request.method)).toEqual(['POST', 'POST', 'POST'])
+    expect(requests.map((request) => request.method)).toEqual(['POST', 'POST', 'POST', 'POST'])
     expect(requests.map((request) => request.url)).toEqual([
       'http://localhost:8080/api/carts/cart-1/checkout/embedded',
+      'http://localhost:8080/api/carts/cart-1/checkout/embedded/session-1/opened',
       'http://localhost:8080/api/carts/cart-1/checkout/embedded/session-1/complete',
       'http://localhost:8080/api/carts/cart-1/checkout/embedded/session-1/cancel',
     ])
+    expect(requestKeepalive[1]).toBe(true)
     for (const request of requests) {
       expect(await request.text()).toBe('')
     }
@@ -316,6 +323,13 @@ describe('account-bound mutation APIs', () => {
     await expect(bootstrapEmbeddedCheckout('cart-1', { expectedUserId: 'user-a' })).rejects.toThrow(
       'Authenticated user changed before request',
     )
+    await expect(
+      acknowledgeEmbeddedCheckoutOpened({
+        cartId: 'cart-1',
+        sessionId: 'session-1',
+        expectedUserId: 'user-a',
+      }),
+    ).rejects.toThrow('Authenticated user changed before request')
 
     expect(requests).toHaveLength(0)
   })

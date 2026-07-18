@@ -36,6 +36,9 @@ public class EmbeddedCheckoutSession {
     @Column(nullable = false, updatable = false)
     private String checkoutId;
 
+    @Column(nullable = false, updatable = false)
+    private UUID checkoutAttemptId;
+
     @Column(updatable = false)
     private UUID merchantIntegrationId;
 
@@ -62,10 +65,13 @@ public class EmbeddedCheckoutSession {
 
     private Instant cancelledAt;
 
+    private Instant openedAt;
+
     public void complete(Instant now) {
-        requireActive(now);
+        requireCompletable(now);
         status = EmbeddedCheckoutSessionStatus.COMPLETED;
         completedAt = now;
+        cancelledAt = null;
     }
 
     public void cancel(Instant now) {
@@ -78,5 +84,23 @@ public class EmbeddedCheckoutSession {
         if (status != EmbeddedCheckoutSessionStatus.ACTIVE || !expiresAt.isAfter(now)) {
             throw new IllegalStateException("Embedded checkout session is no longer active");
         }
+    }
+
+    public void requireCompletable(Instant now) {
+        boolean cancelledAfterStart = status == EmbeddedCheckoutSessionStatus.CANCELLED && openedAt != null;
+        if ((status != EmbeddedCheckoutSessionStatus.ACTIVE && !cancelledAfterStart)
+                || !expiresAt.isAfter(now)) {
+            throw new IllegalStateException("Embedded checkout session is no longer active");
+        }
+    }
+
+    public void acknowledgeOpened(Instant now) {
+        if (openedAt != null) {
+            return;
+        }
+        if (!expiresAt.isAfter(now)) {
+            throw new IllegalStateException("Embedded checkout session is expired");
+        }
+        openedAt = now;
     }
 }

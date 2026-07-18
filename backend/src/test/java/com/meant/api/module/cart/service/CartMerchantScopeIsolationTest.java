@@ -52,7 +52,7 @@ class CartMerchantScopeIsolationTest {
                 mock(MerchantCartPluginDispatchService.class),
                 mock(com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService.class),
                 mock(com.meant.api.module.checkout.service.NativeCheckoutCompletionService.class),
-                mock(com.meant.api.module.user.service.UserInventoryService.class),
+                mock(com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService.class),
                 mock(CartResultMapper.class), mock(CheckoutResultMapper.class),
                 mock(CartCheckoutConsentService.class), resolution, routing,
                 mock(CartOfferRevalidationService.class), metrics, commerceContext,

@@ -140,7 +140,8 @@ public class UserSavedProductOfferResolutionService {
                 selection.offerKey(),
                 identity,
                 provenance,
-                reference
+                reference,
+                result.facts()
         );
     }
 

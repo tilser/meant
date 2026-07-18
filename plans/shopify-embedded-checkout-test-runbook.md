@@ -41,18 +41,24 @@ VITE_CHECKOUT_KIT_DEBUG=true
 4. Sign in to Meant and search for a purchasable Shopify Global Catalog product.
 5. Open the grouped product, choose one exact in-stock offer, and add it to cart.
 6. Start checkout for that merchant cart.
-7. Wait for “Secure checkout is ready,” then click “Open secure checkout.” The explicit click is required so browsers do not treat the popup as unsolicited.
-8. Complete the development-shop checkout in the Shopify window.
-9. Confirm that Meant reports completion only after the backend refreshes Checkout MCP and verifies provider state.
+7. Confirm the item has not been added to Inventory while checkout is bootstrapping or merely ready.
+8. Wait for “Secure checkout is ready,” then click “Open secure checkout.” The explicit click is required so browsers do not treat the popup as unsolicited. If the popup fails before Checkout Kit emits `checkout:start`, confirm Inventory remains unchanged.
+9. Once Meant reports “Checkout is active,” open Inventory and confirm the server-side cart item appears once with its selected options.
+10. Close and reopen the same checkout. Confirm the new short-lived embedded session retains the same checkout-attempt identity and another `checkout:start` does not change inventory quantity.
+11. Complete the development-shop checkout in the Shopify window.
+12. Confirm that Meant reports completion only after the backend refreshes Checkout MCP and verifies provider state, without adding the checkout to Inventory again.
 
 ## Expected behavior
 
 - The Meant top-level page does not navigate away.
 - Checkout Kit opens a merchant popup and speaks ECP `2026-04-08`.
 - The browser receives an opaque Meant session and checkout URL, never Shopify client credentials or the reusable global API token.
+- Bootstrap, Checkout Kit readiness, and an `open()` attempt do not add inventory; only the mapped `checkout:start` event acknowledges the checkout as opened.
+- Repeated starts, refreshes, remounts, and provider completion keep one inventory attribution for the logical checkout attempt.
+- Purchased inventory retains server-side commerce identity and typed selected options; legacy, manual, and photo inventory remain readable without them.
 - Closing Checkout Kit preserves the cart and allows a fresh session to be prepared.
 - Unsupported browsers, disabled rollout, protocol mismatch, SDK failure, and startup timeout expose the merchant-provided external handoff when available.
-- Reloading Meant preserves the merchant cart; reopening checkout refreshes the existing remote checkout and creates a new short-lived embedded session.
+- Reloading Meant preserves the merchant cart and checkout-attempt identity; reopening checkout refreshes the existing remote checkout and creates a new short-lived embedded session.
 
 ## Failure diagnosis
 

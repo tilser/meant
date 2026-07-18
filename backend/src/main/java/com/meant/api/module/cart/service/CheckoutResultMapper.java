@@ -65,6 +65,7 @@ public class CheckoutResultMapper {
                 cart.getId(),
                 cart.getRemoteCartId(),
                 firstText(checkout == null ? null : checkout.id(), cart.getCheckoutId()),
+                cart.getCheckoutAttemptId(),
                 firstText(checkout == null ? null : checkout.status(), cart.getCheckoutStatus()),
                 checkoutUrl,
                 continueUrl,

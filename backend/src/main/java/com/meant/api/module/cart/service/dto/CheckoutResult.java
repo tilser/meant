@@ -12,6 +12,7 @@ public record CheckoutResult(
         UUID cartId,
         String remoteCartId,
         String checkoutId,
+        UUID checkoutAttemptId,
         String status,
         String checkoutUrl,
         String continueUrl,
@@ -48,15 +49,38 @@ public record CheckoutResult(
             List<CapabilityIneligibilityReason> ineligibilityReasons,
             MerchantExecutionPolicy executionPolicy
     ) {
-        this(cartId, remoteCartId, checkoutId, status, checkoutUrl, continueUrl, ucpVersion,
+        this(cartId, remoteCartId, checkoutId, null, status, checkoutUrl, continueUrl, ucpVersion,
                 totalAmountMinor, currency, messages, nextAction, selectedRail, ineligibilityReasons,
                 executionPolicy, null);
+    }
+
+    public CheckoutResult(
+            UUID cartId,
+            String remoteCartId,
+            String checkoutId,
+            String status,
+            String checkoutUrl,
+            String continueUrl,
+            String ucpVersion,
+            Long totalAmountMinor,
+            String currency,
+            List<Message> messages,
+            CheckoutNextAction nextAction,
+            CommerceExecutionRail selectedRail,
+            List<CapabilityIneligibilityReason> ineligibilityReasons,
+            MerchantExecutionPolicy executionPolicy,
+            EmbeddedCheckoutConfiguration embeddedCheckout
+    ) {
+        this(cartId, remoteCartId, checkoutId, null, status, checkoutUrl, continueUrl, ucpVersion,
+                totalAmountMinor, currency, messages, nextAction, selectedRail, ineligibilityReasons,
+                executionPolicy, embeddedCheckout);
     }
 
     public CheckoutResult(UUID cartId, String remoteCartId, String checkoutUrl, String continueUrl) {
         this(
                 cartId,
                 remoteCartId,
+                null,
                 null,
                 null,
                 checkoutUrl,
