@@ -1,6 +1,8 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.service.dto.SanitizedUserDiscoverConversationSnapshot;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -11,10 +13,13 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
-/** Keeps the complete typed conversation while reducing rehydratable search result lists to references. */
+/** Keeps typed conversation history while reducing rehydratable product facts to durable references. */
 @Component
 @RequiredArgsConstructor
 public class UserDiscoverConversationSnapshotSanitizer {
+
+    static final String SIMILAR_AUTO_TITLE_SOURCE = "similar-product-search";
+    static final String SIMILAR_THREAD_TITLE = "Similar products";
 
     private static final Set<String> DURABLE_BLOCK_TYPES = Set.of(
             "text",
@@ -23,6 +28,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
             "reviews",
             "code",
             "similar",
+            "similar-reference",
             "decision",
             "watch",
             "friendvote",
@@ -37,10 +43,27 @@ public class UserDiscoverConversationSnapshotSanitizer {
     private static final Set<String> MESSAGE_ROLES = Set.of("you", "ai");
     private static final String UNAVAILABLE_ATTACHMENT_MESSAGE =
             "This attachment is unavailable in conversation history.";
+    private static final String SIMILAR_REQUEST_TEXT = "Show me similar products.";
+    private static final String SIMILAR_PENDING_TEXT = "Meant is finding similar products.";
+    private static final int MAX_CANONICAL_PRODUCT_KEY_LENGTH = 200;
+    private static final int MAX_ORIGINATING_QUERY_LENGTH = 500;
+    private static final int MAX_SIMILAR_RESULTS = 20;
 
     private final ObjectMapper objectMapper;
 
     public String sanitize(String threadJson) {
+        return sanitized(threadJson).threadJson();
+    }
+
+    public SanitizedUserDiscoverConversationSnapshot sanitize(String title, String threadJson) {
+        SanitizedSnapshot snapshot = sanitized(threadJson);
+        return new SanitizedUserDiscoverConversationSnapshot(
+                snapshot.similarityGeneratedTitle() ? SIMILAR_THREAD_TITLE : title,
+                snapshot.threadJson()
+        );
+    }
+
+    private SanitizedSnapshot sanitized(String threadJson) {
         try {
             JsonNode parsed = objectMapper.readTree(threadJson);
             if (parsed == null || !parsed.isObject()) {
@@ -49,34 +72,59 @@ public class UserDiscoverConversationSnapshotSanitizer {
             ObjectNode snapshot = objectMapper.createObjectNode();
             copyText(parsed, snapshot, "id");
             copyText(parsed, snapshot, "title");
-            copyText(parsed, snapshot, "qualificationId");
+            copyUuid(parsed, snapshot, "qualificationId");
             copyText(parsed, snapshot, "focusProductId");
             copyBoolean(parsed, snapshot, "named");
             copyBoolean(parsed, snapshot, "archived");
             copyNumber(parsed, snapshot, "createdAt");
             copyNumber(parsed, snapshot, "updatedAt");
-            snapshot.set("messages", sanitizeMessages(parsed.get("messages")));
-            return objectMapper.writeValueAsString(snapshot);
+
+            SanitizedMessages messages = sanitizeMessages(parsed.get("messages"));
+            snapshot.set("messages", messages.messages());
+            boolean similarityAutoTitle = SIMILAR_AUTO_TITLE_SOURCE.equals(text(parsed.get("autoTitleSource")));
+            if (similarityAutoTitle) {
+                snapshot.put("autoTitleSource", SIMILAR_AUTO_TITLE_SOURCE);
+            }
+            boolean similarityGeneratedTitle = similarityAutoTitle
+                    || (messages.containsSimilarity()
+                            && !messages.containsNonSimilarity()
+                            && !parsed.path("named").asBoolean(false));
+            if (similarityGeneratedTitle) {
+                snapshot.put("title", SIMILAR_THREAD_TITLE);
+            }
+            return new SanitizedSnapshot(
+                    objectMapper.writeValueAsString(snapshot),
+                    similarityGeneratedTitle
+            );
         } catch (JacksonException exception) {
             throw new UserException("Discover conversation snapshot was not valid JSON", exception);
         }
     }
 
-    private ArrayNode sanitizeMessages(JsonNode messages) {
+    private SanitizedMessages sanitizeMessages(JsonNode messages) {
         ArrayNode durableMessages = objectMapper.createArrayNode();
         if (messages == null) {
-            return durableMessages;
+            return new SanitizedMessages(durableMessages, false, false);
         }
         if (!messages.isArray()) {
             throw new UserException("Discover conversation messages must be an array");
         }
+        boolean containsSimilarity = false;
+        boolean containsNonSimilarity = false;
         for (JsonNode message : messages) {
             if (!message.isObject()) {
                 throw new UserException("Discover conversation message must be a JSON object");
             }
-            durableMessages.add(sanitizeMessage(message));
+            String similarRole = similarRole(message);
+            if (similarRole == null) {
+                durableMessages.add(sanitizeMessage(message));
+                containsNonSimilarity = true;
+            } else {
+                durableMessages.add(sanitizeSimilarMessage(message, similarRole));
+                containsSimilarity = true;
+            }
         }
-        return durableMessages;
+        return new SanitizedMessages(durableMessages, containsSimilarity, containsNonSimilarity);
     }
 
     private ObjectNode sanitizeMessage(JsonNode message) {
@@ -92,6 +140,62 @@ public class UserDiscoverConversationSnapshotSanitizer {
         copyObject(message, durable, "productContext");
         ArrayNode blocks = durableBlocks(message.get("blocks"));
         if (!blocks.isEmpty()) {
+            durable.set("blocks", blocks);
+        }
+        return durable;
+    }
+
+    private ObjectNode sanitizeSimilarMessage(JsonNode message, String similarRole) {
+        ObjectNode durable = objectMapper.createObjectNode();
+        copyText(message, durable, "id");
+        durable.put("role", requiredRole(message));
+        durable.put("similarMessageRole", similarRole);
+
+        String status = similarStatus(message.get("similarSearchStatus"));
+        boolean pending = message.path("pending").asBoolean(false);
+        boolean containsSimilarBlock = containsSimilarBlock(message);
+        ObjectNode reference = firstValidSimilarReference(message);
+        if ("response".equals(similarRole) && !pending) {
+            if (reference == null && (containsSimilarBlock || "success".equals(status))) {
+                status = "error";
+            } else if (reference != null && status == null) {
+                status = "success";
+            }
+        }
+        if (status != null) {
+            durable.put("similarSearchStatus", status);
+        }
+
+        String anchorCanonicalProductKey = canonicalProductKey(message.get("similarAnchorCanonicalProductKey"));
+        if (anchorCanonicalProductKey != null) {
+            durable.put("similarAnchorCanonicalProductKey", anchorCanonicalProductKey);
+        }
+        String query = originatingQuery(message.get("query"));
+        if (query != null) {
+            durable.put("query", query);
+        }
+        copyUuid(message, durable, "qualificationId");
+
+        durable.put("text", "request".equals(similarRole)
+                ? SIMILAR_REQUEST_TEXT
+                : similarResponseText(status));
+        if (pending) {
+            durable.put("pending", true);
+            durable.put("pendingText", SIMILAR_PENDING_TEXT);
+            durable.put("pendingOperation", SIMILAR_AUTO_TITLE_SOURCE);
+        }
+
+        ArrayNode blocks = objectMapper.createArrayNode();
+        if ("response".equals(similarRole) && !pending) {
+            ObjectNode textBlock = objectMapper.createObjectNode();
+            textBlock.put("type", "text");
+            textBlock.put("text", similarResponseText(status));
+            blocks.add(textBlock);
+        }
+        if (reference != null) {
+            blocks.add(reference);
+        }
+        if (message.has("blocks") || !blocks.isEmpty()) {
             durable.set("blocks", blocks);
         }
         return durable;
@@ -134,7 +238,12 @@ public class UserDiscoverConversationSnapshotSanitizer {
             durable.set("products", objectMapper.createArrayNode());
             copyText(block, durable, "productResultSetId");
             copyText(block, durable, "query");
+            copyUuid(block, durable, "qualificationId");
             return durable;
+        }
+        if ("similar".equals(type) || "similar-reference".equals(type)) {
+            ObjectNode reference = similarReference(block, null);
+            return reference == null ? unavailableAttachmentMarker() : reference;
         }
         return (ObjectNode) block.deepCopy();
     }
@@ -152,6 +261,214 @@ public class UserDiscoverConversationSnapshotSanitizer {
         } catch (IllegalArgumentException exception) {
             return false;
         }
+    }
+
+    private ObjectNode firstValidSimilarReference(JsonNode message) {
+        JsonNode blocks = message.get("blocks");
+        if (blocks == null || !blocks.isArray()) {
+            return null;
+        }
+        for (JsonNode block : blocks) {
+            if (block.isObject() && isSimilarBlock(block)) {
+                ObjectNode reference = similarReference(block, message);
+                if (reference != null) {
+                    return reference;
+                }
+            }
+        }
+        return null;
+    }
+
+    private ObjectNode similarReference(JsonNode block, JsonNode message) {
+        String anchorCanonicalProductKey = canonicalProductKey(block.get("anchorCanonicalProductKey"));
+        if (anchorCanonicalProductKey == null) {
+            anchorCanonicalProductKey = productCanonicalProductKey(block.get("product"));
+        }
+        if (anchorCanonicalProductKey == null && message != null) {
+            anchorCanonicalProductKey = canonicalProductKey(message.get("similarAnchorCanonicalProductKey"));
+        }
+        String query = firstOriginatingQuery(
+                block.get("query"),
+                message == null ? null : message.get("query")
+        );
+        if (anchorCanonicalProductKey == null || query == null) {
+            return null;
+        }
+
+        Set<String> resultCanonicalProductKeys = resultCanonicalProductKeys(
+                block, anchorCanonicalProductKey);
+        if (resultCanonicalProductKeys.isEmpty()) {
+            return null;
+        }
+
+        ObjectNode reference = objectMapper.createObjectNode();
+        reference.put("type", "similar-reference");
+        reference.put("anchorCanonicalProductKey", anchorCanonicalProductKey);
+        ArrayNode resultKeys = reference.putArray("resultCanonicalProductKeys");
+        resultCanonicalProductKeys.forEach(resultKeys::add);
+        reference.put("query", query);
+        String qualificationId = firstUuid(
+                block.get("qualificationId"),
+                message == null ? null : message.get("qualificationId")
+        );
+        if (qualificationId != null) {
+            reference.put("qualificationId", qualificationId);
+        }
+        reference.put("status", "idle");
+        return reference;
+    }
+
+    private Set<String> resultCanonicalProductKeys(JsonNode block, String anchorCanonicalProductKey) {
+        Set<String> keys = new LinkedHashSet<>();
+        addCanonicalProductKeys(keys, block.get("resultCanonicalProductKeys"), false, anchorCanonicalProductKey);
+        if (keys.isEmpty()) {
+            addCanonicalProductKeys(keys, block.get("products"), true, anchorCanonicalProductKey);
+        }
+        return keys;
+    }
+
+    private void addCanonicalProductKeys(
+            Set<String> keys,
+            JsonNode candidates,
+            boolean products,
+            String anchorCanonicalProductKey
+    ) {
+        if (candidates == null || !candidates.isArray()) {
+            return;
+        }
+        for (JsonNode candidate : candidates) {
+            String key = products ? productCanonicalProductKey(candidate) : canonicalProductKey(candidate);
+            if (key == null || key.equals(anchorCanonicalProductKey)) {
+                continue;
+            }
+            keys.add(key);
+            if (keys.size() == MAX_SIMILAR_RESULTS) {
+                return;
+            }
+        }
+    }
+
+    private String productCanonicalProductKey(JsonNode product) {
+        if (product == null || !product.isObject()) {
+            return null;
+        }
+        return firstCanonicalProductKey(
+                product.path("canonicalProduct").get("key"),
+                product.get("key"),
+                product.get("id")
+        );
+    }
+
+    private String firstCanonicalProductKey(JsonNode... candidates) {
+        for (JsonNode candidate : candidates) {
+            String key = canonicalProductKey(candidate);
+            if (key != null) {
+                return key;
+            }
+        }
+        return null;
+    }
+
+    private String canonicalProductKey(JsonNode value) {
+        String key = text(value);
+        if (key == null) {
+            return null;
+        }
+        key = key.trim();
+        return key.isEmpty() || key.length() > MAX_CANONICAL_PRODUCT_KEY_LENGTH ? null : key;
+    }
+
+    private String firstOriginatingQuery(JsonNode... candidates) {
+        for (JsonNode candidate : candidates) {
+            String query = originatingQuery(candidate);
+            if (query != null) {
+                return query;
+            }
+        }
+        return null;
+    }
+
+    private String originatingQuery(JsonNode value) {
+        String query = text(value);
+        if (query == null) {
+            return null;
+        }
+        query = query.trim();
+        return query.isEmpty() || query.length() > MAX_ORIGINATING_QUERY_LENGTH ? null : query;
+    }
+
+    private String firstUuid(JsonNode... candidates) {
+        for (JsonNode candidate : candidates) {
+            String value = uuid(candidate);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String uuid(JsonNode value) {
+        String candidate = text(value);
+        if (candidate == null) {
+            return null;
+        }
+        try {
+            String normalized = candidate.trim();
+            return UUID.fromString(normalized).toString().equalsIgnoreCase(normalized)
+                    ? normalized
+                    : null;
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private String similarRole(JsonNode message) {
+        String role = text(message.get("similarMessageRole"));
+        if ("request".equals(role) || "response".equals(role)) {
+            return role;
+        }
+        if (SIMILAR_AUTO_TITLE_SOURCE.equals(text(message.get("pendingOperation")))) {
+            return "response";
+        }
+        if (containsSimilarBlock(message)) {
+            return "response";
+        }
+        return null;
+    }
+
+    private boolean containsSimilarBlock(JsonNode message) {
+        JsonNode blocks = message.get("blocks");
+        if (blocks == null || !blocks.isArray()) {
+            return false;
+        }
+        for (JsonNode block : blocks) {
+            if (block.isObject() && isSimilarBlock(block)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isSimilarBlock(JsonNode block) {
+        String type = text(block.get("type"));
+        return "similar".equals(type) || "similar-reference".equals(type);
+    }
+
+    private String similarStatus(JsonNode value) {
+        String status = text(value);
+        return switch (status == null ? "" : status) {
+            case "requested", "pending", "success", "empty", "error" -> status;
+            default -> null;
+        };
+    }
+
+    private String similarResponseText(String status) {
+        return switch (status == null ? "" : status) {
+            case "success" -> "I found similar products for your search.";
+            case "empty" -> "I could not find another similar product for this search.";
+            case "error" -> "I could not load similar products right now. Please try again.";
+            default -> SIMILAR_PENDING_TEXT;
+        };
     }
 
     private ObjectNode unavailableAttachmentMarker() {
@@ -172,6 +489,13 @@ public class UserDiscoverConversationSnapshotSanitizer {
         JsonNode value = source.get(field);
         if (value != null && value.isBoolean()) {
             target.put(field, value.asBoolean());
+        }
+    }
+
+    private void copyUuid(JsonNode source, ObjectNode target, String field) {
+        String value = uuid(source.get(field));
+        if (value != null) {
+            target.put(field, value);
         }
     }
 
@@ -201,5 +525,19 @@ public class UserDiscoverConversationSnapshotSanitizer {
             }
         }
         target.set(field, strings);
+    }
+
+    private String text(JsonNode value) {
+        return value != null && value.isTextual() ? value.asText() : null;
+    }
+
+    private record SanitizedMessages(
+            ArrayNode messages,
+            boolean containsSimilarity,
+            boolean containsNonSimilarity
+    ) {
+    }
+
+    private record SanitizedSnapshot(String threadJson, boolean similarityGeneratedTitle) {
     }
 }

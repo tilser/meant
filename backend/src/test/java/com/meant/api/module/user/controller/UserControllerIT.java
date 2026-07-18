@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
@@ -1811,7 +1813,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void openApiPublishesOnlyFederatedGroupedAndStreamingSearchRoutes() {
+    void openApiPublishesOnlyFederatedGroupedStreamingAndSimilaritySearchRoutes() throws Exception {
         String openApi = client.get().uri("/v3/api-docs")
                 .exchange()
                 .expectStatus().isOk()
@@ -1826,10 +1828,14 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "\"/api/v1/users/me/product-search-qualifications\"",
                         "\"/api/v1/users/me/product-searches\"",
                         "\"/api/v1/users/me/product-searches:stream\"",
+                        "\"/api/v1/users/me/products:rehydrate\"",
+                        "\"/api/v1/users/me/products/{canonicalProductKey}/similar\"",
                         "\"/api/v1/users/me/product-variant-selections\"",
                         "\"operationId\":\"qualifyProductSearchV1\"",
                         "\"operationId\":\"deleteProductSearchPreference\"",
                         "\"operationId\":\"searchGroupedProductsV1\"",
+                        "\"operationId\":\"searchSimilarProductsV1\"",
+                        "\"operationId\":\"rehydrateCanonicalProductsV1\"",
                         "\"operationId\":\"streamFederatedProductsV1\"",
                         "UserProductSearchQualificationRequest",
                         "UserProductSearchQualificationResponse",
@@ -1838,6 +1844,10 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "UserGroupedProductSearchV1Response",
                         "UserFederatedProductSearchStreamEventResponse",
                         "SelectUserProductVariantRequest",
+                        "UserSimilarProductSearchRequest",
+                        "UserSimilarProductSearchV1Response",
+                        "UserCanonicalProductRehydrationRequest",
+                        "UserCanonicalProductRehydrationV1Response",
                         "UserProductVariantSelectionResponse",
                         "CanonicalProductResponse",
                         "CanonicalProductAttributeResponse",
@@ -1861,6 +1871,12 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "\"/api/users/me/product-searches:stream\"",
                         "\"operationId\":\"searchProducts\""
                 );
+        JsonNode similarRequestProperties = new ObjectMapper().readTree(openApi)
+                .at("/components/schemas/UserSimilarProductSearchRequest/properties");
+        assertThat(similarRequestProperties.isObject()).isTrue();
+        assertThat(similarRequestProperties.size()).isEqualTo(2);
+        assertThat(similarRequestProperties.has("query")).isTrue();
+        assertThat(similarRequestProperties.has("qualificationId")).isTrue();
     }
 
     private String currentSearchPolicyFingerprint() {

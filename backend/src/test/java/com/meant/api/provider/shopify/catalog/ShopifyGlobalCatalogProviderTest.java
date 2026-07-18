@@ -27,6 +27,7 @@ import com.meant.api.provider.shopify.auth.ShopifyUcpTransportException;
 import com.meant.api.provider.shopify.auth.ShopifyUcpTransportFailure;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogContext;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogItemReference;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogGetProductRequest;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogLookupRequest;
@@ -121,6 +122,68 @@ class ShopifyGlobalCatalogProviderTest {
         assertThat(grouped.identityEvidence()).singleElement()
                 .satisfies(evidence -> assertThat(evidence.identifiers().getFirst().value())
                         .isEqualTo("gid://shopify/p/upid-1"));
+    }
+
+    @Test
+    void searchSerializesQueryAndOneProductLevelSimilarityReference() throws Exception {
+        CapturingClient client = new CapturingClient(response(globalResponse()));
+        ShopifyGlobalCatalogProvider provider = provider(client, properties(3));
+        List<String> productIds = List.of(
+                "gid://shopify/p/upid-1",
+                "gid://shopify/Product/merchant-product-1"
+        );
+
+        for (String productId : productIds) {
+            var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                    "black linen shirt",
+                    new ShopifyCatalogItemReference(productId),
+                    null,
+                    null,
+                    null,
+                    null
+            ));
+
+            assertThat(result.successful()).isTrue();
+        }
+
+        assertThat(client.calls).hasSize(2);
+        for (int index = 0; index < productIds.size(); index++) {
+            String productId = productIds.get(index);
+            ShopifyGlobalCatalogArguments arguments =
+                    (ShopifyGlobalCatalogArguments) client.calls.get(index).arguments();
+            assertThat(arguments.catalog().query()).isEqualTo("black linen shirt");
+            assertThat(arguments.catalog().like()).singleElement()
+                    .satisfies(reference -> assertThat(reference.id()).isEqualTo(productId));
+            assertThat(objectMapper.writeValueAsString(arguments))
+                    .contains("\"like\":[{\"id\":\"" + productId + "\"}]")
+                    .doesNotContain("image");
+        }
+    }
+
+    @Test
+    void rejectsNonProductAndSyntheticSimilarityReferencesBeforeCallingShopify() throws Exception {
+        CapturingClient client = new CapturingClient(response(globalResponse()));
+        ShopifyGlobalCatalogProvider provider = provider(client, properties(3));
+
+        for (String invalidId : List.of(
+                "gid://shopify/ProductVariant/variant-1",
+                "gid://shopify/MediaImage/image-1",
+                "gid://shopify/Product/product-1/variant-1",
+                "variant-product:v1:merchant:product"
+        )) {
+            var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                    "black linen shirt",
+                    new ShopifyCatalogItemReference(invalidId),
+                    null,
+                    null,
+                    null,
+                    null
+            ));
+
+            assertThat(result.failure().kind()).isEqualTo(CatalogSourceFailureKind.INVALID_REQUEST);
+        }
+
+        assertThat(client.calls).isEmpty();
     }
 
     @Test
@@ -326,8 +389,8 @@ class ShopifyGlobalCatalogProviderTest {
                 .contains("{\"name\":\"Size\",\"values\":[\"10\",\"10.5\"]}")
                 .contains("{\"name\":\"Target gender\",\"values\":[\"Male\"]}")
                 .contains("\"rating\":{\"variant\":{\"min\":4.5,\"min_count\":10}}")
-                .contains("\"price_tier\":[\"low\",\"medium\"]")
-                .doesNotContain("\"taxonomy\"");
+                 .contains("\"price_tier\":[\"low\",\"medium\"]")
+                 .doesNotContain("\"taxonomy\"");
     }
 
     @Test

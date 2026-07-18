@@ -9,6 +9,8 @@ import type { Preference, Product, ProductId, UserLocation } from '../types'
 function DiscoverChatProduct({
   product,
   index,
+  query,
+  qualificationId,
   deliveryLocations,
   preferences,
   savedSet,
@@ -27,6 +29,8 @@ function DiscoverChatProduct({
 }: Readonly<{
   product: Product
   index: number
+  query?: string
+  qualificationId?: string
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   savedSet: ReadonlySet<ProductId>
@@ -39,7 +43,12 @@ function DiscoverChatProduct({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
+  onDig: (
+    kind: 'reviews' | 'code' | 'similar',
+    product: Product,
+    query?: string,
+    qualificationId?: string,
+  ) => void
   onShelfAdd: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
 }>) {
@@ -131,7 +140,7 @@ function DiscoverChatProduct({
           type="button"
           onClick={(event) => {
             event.stopPropagation()
-            onDig('similar', product)
+            onDig('similar', product, query, qualificationId)
           }}
         >
           Similar
@@ -144,6 +153,7 @@ function DiscoverChatProduct({
 export function DiscoverProductBatch({
   products,
   query,
+  qualificationId,
   deliveryLocations,
   preferences,
   savedSet,
@@ -164,6 +174,7 @@ export function DiscoverProductBatch({
 }: Readonly<{
   products: readonly Product[]
   query?: string
+  qualificationId?: string
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   savedSet: ReadonlySet<ProductId>
@@ -176,7 +187,12 @@ export function DiscoverProductBatch({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
+  onDig: (
+    kind: 'reviews' | 'code' | 'similar',
+    product: Product,
+    query?: string,
+    qualificationId?: string,
+  ) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
@@ -335,6 +351,8 @@ export function DiscoverProductBatch({
             key={product.id}
             product={product}
             index={isPhone ? index % 4 : index}
+            query={query}
+            qualificationId={qualificationId}
             deliveryLocations={deliveryLocations}
             preferences={preferences}
             savedSet={savedSet}

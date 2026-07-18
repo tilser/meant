@@ -30,6 +30,7 @@ import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserCanonicalProductReferenceRepository;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,6 +76,41 @@ public class UserCanonicalProductReferencePersistenceService {
         List<UserCanonicalProductReference> stored =
                 repository.findByUserIdAndCanonicalProductKeyOrderByOfferRankAscIdAsc(
                         userId, canonicalProductKey);
+        return product(canonicalProductKey, stored);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, CanonicalProduct> findProducts(UUID userId, List<String> canonicalProductKeys) {
+        Set<String> requestedKeys = canonicalProductKeys == null
+                ? Set.of()
+                : canonicalProductKeys.stream()
+                        .filter(key -> key != null && !key.isBlank())
+                        .map(String::trim)
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (requestedKeys.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<UserCanonicalProductReference>> storedByKey =
+                repository.findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+                                userId, List.copyOf(requestedKeys))
+                        .stream()
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                UserCanonicalProductReference::getCanonicalProductKey,
+                                LinkedHashMap::new,
+                                java.util.stream.Collectors.toList()
+                        ));
+        Map<String, CanonicalProduct> products = new LinkedHashMap<>();
+        for (String canonicalProductKey : requestedKeys) {
+            product(canonicalProductKey, storedByKey.getOrDefault(canonicalProductKey, List.of()))
+                    .ifPresent(product -> products.put(canonicalProductKey, product));
+        }
+        return Collections.unmodifiableMap(products);
+    }
+
+    private Optional<CanonicalProduct> product(
+            String canonicalProductKey,
+            List<UserCanonicalProductReference> stored
+    ) {
         Map<String, List<DurableObservation>> observationsByOffer = new LinkedHashMap<>();
         for (UserCanonicalProductReference entity : stored) {
             DurableObservation observation = observation(entity);

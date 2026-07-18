@@ -278,7 +278,12 @@ export function DiscoverChatMessageRow({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
+  onDig: (
+    kind: 'reviews' | 'code' | 'similar',
+    product: Product,
+    query?: string,
+    qualificationId?: string,
+  ) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
   onOpenFullCompare: (products: readonly Product[]) => void

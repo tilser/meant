@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEvent;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEventType;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailure;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
@@ -41,7 +42,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 class FederatedCatalogDiscoveryServiceTest {
@@ -84,6 +87,44 @@ class FederatedCatalogDiscoveryServiceTest {
                 .isEqualTo(CatalogDiscoveryTerminalStatus.SUCCESS);
         assertThat(generic.calls()).isOne();
         assertThat(shopify.calls()).isOne();
+    }
+
+    @Test
+    void schedulesOnlySimilarityCapableSourceAndPreservesReferenceAcrossCoverageRewrite() {
+        ProviderIdentity provider = new ProviderIdentity("PROVIDER_A");
+        CatalogSimilarityReference similarityReference = new CatalogSimilarityReference(
+                provider,
+                new ExternalIdentifier(ExternalIdentifierType.PRODUCT, provider.value(), "product-anchor")
+        );
+        AtomicReference<CatalogDiscoveryRequest> receivedRequest = new AtomicReference<>();
+        FakeSource declined = new FakeSource(
+                sourceIdentity("PROVIDER_B", ResultSourceType.MERCHANT_STOREFRONT, "MERCHANT"),
+                Duration.ofSeconds(1),
+                request -> false,
+                (source, request, consumer) -> {
+                    throw new AssertionError("Declined source must not be invoked");
+                }
+        );
+        FakeSource accepted = new FakeSource(
+                sourceIdentity("PROVIDER_A", ResultSourceType.PROVIDER_CATALOG, "GLOBAL"),
+                Duration.ofSeconds(1),
+                request -> request.similarityReference() != null
+                        && provider.equals(request.similarityReference().provider()),
+                (source, request, consumer) -> {
+                    receivedRequest.set(request);
+                    return success(source, List.of());
+                }
+        );
+
+        FederatedCatalogDiscoveryResult result = service(List.of(declined, accepted), Duration.ofSeconds(1))
+                .search(new CatalogDiscoveryRequest(
+                        null, null, 4, null, null, null, similarityReference));
+
+        assertThat(result.status()).isEqualTo(CatalogDiscoveryTerminalStatus.SUCCESS);
+        assertThat(declined.calls()).isZero();
+        assertThat(accepted.calls()).isOne();
+        assertThat(receivedRequest.get().similarityReference()).isEqualTo(similarityReference);
+        assertThat(receivedRequest.get().coveredProviders()).containsExactly(provider);
     }
 
     @Test
@@ -804,12 +845,23 @@ class FederatedCatalogDiscoveryServiceTest {
 
         private final DiscoverySourceIdentity source;
         private final Duration timeout;
+        private final Predicate<CatalogDiscoveryRequest> supportPolicy;
         private final SourceBehavior behavior;
         private final AtomicInteger calls = new AtomicInteger();
 
         private FakeSource(DiscoverySourceIdentity source, Duration timeout, SourceBehavior behavior) {
+            this(source, timeout, ignored -> true, behavior);
+        }
+
+        private FakeSource(
+                DiscoverySourceIdentity source,
+                Duration timeout,
+                Predicate<CatalogDiscoveryRequest> supportPolicy,
+                SourceBehavior behavior
+        ) {
             this.source = source;
             this.timeout = timeout;
+            this.supportPolicy = supportPolicy;
             this.behavior = behavior;
         }
 
@@ -821,6 +873,11 @@ class FederatedCatalogDiscoveryServiceTest {
         @Override
         public Duration timeout() {
             return timeout;
+        }
+
+        @Override
+        public boolean supports(CatalogDiscoveryRequest request) {
+            return supportPolicy.test(request);
         }
 
         @Override

@@ -5,6 +5,7 @@ import type {
   DiscoverChatMessage,
   DiscoverChatThread,
   MiniCompareRow,
+  SimilarProductsRehydrationResult,
 } from './types'
 import { normalizedProductResultSetId } from './productResultSetReference'
 
@@ -13,6 +14,7 @@ const DISCOVER_CHAT_THREADS_STORAGE_KEY = 'meant.discoverChatThreads'
 const LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY = 'meant.discoverChatMessages'
 const DISCOVER_CHAT_THREAD_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const QUALIFICATION_ID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const nextDiscoverChatThreadId = () => {
   if (globalThis.crypto?.randomUUID) {
@@ -23,6 +25,213 @@ const nextDiscoverChatThreadId = () => {
 }
 
 export const DEFAULT_DISCOVER_CHAT_TITLE = 'New chat'
+export const MAX_PERSISTED_SIMILAR_PRODUCTS = 20
+
+const PERSISTED_SIMILAR_THREAD_TITLE = 'Similar products'
+const PERSISTED_SIMILAR_REQUEST_TEXT = 'Show me similar products.'
+const PERSISTED_SIMILAR_PENDING_TEXT = 'Meant is finding similar products.'
+
+function canonicalProductKey(product: Product | undefined): string | null {
+  const value = product?.canonicalProduct?.key?.trim() || product?.id?.trim()
+  return value || null
+}
+
+function normalizedQualificationId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return QUALIFICATION_ID_UUID.test(normalized) ? normalized : undefined
+}
+
+function uniqueCanonicalProductKeys(
+  values: readonly unknown[],
+  anchorCanonicalProductKey: string,
+): string[] {
+  const seen = new Set<string>([anchorCanonicalProductKey])
+  const keys: string[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const key = value.trim()
+    if (!key || key.length > 200 || seen.has(key)) continue
+    seen.add(key)
+    keys.push(key)
+    if (keys.length === MAX_PERSISTED_SIMILAR_PRODUCTS) break
+  }
+  return keys
+}
+
+export function normalizedSimilarReferenceBlock(
+  value: unknown,
+): Extract<DiscoverChatBlock, { type: 'similar-reference' }> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Partial<Extract<DiscoverChatBlock, { type: 'similar-reference' }>>
+  const anchorCanonicalProductKey =
+    typeof candidate.anchorCanonicalProductKey === 'string'
+      ? candidate.anchorCanonicalProductKey.trim()
+      : ''
+  const query = typeof candidate.query === 'string' ? candidate.query.trim() : ''
+  if (
+    !anchorCanonicalProductKey ||
+    anchorCanonicalProductKey.length > 200 ||
+    !query ||
+    query.length > 500 ||
+    !Array.isArray(candidate.resultCanonicalProductKeys) ||
+    candidate.resultCanonicalProductKeys.length === 0 ||
+    candidate.resultCanonicalProductKeys.length > MAX_PERSISTED_SIMILAR_PRODUCTS ||
+    candidate.resultCanonicalProductKeys.some(
+      (key) => typeof key !== 'string' || !key.trim() || key.trim().length > 200,
+    )
+  ) {
+    return null
+  }
+  const resultCanonicalProductKeys = uniqueCanonicalProductKeys(
+    candidate.resultCanonicalProductKeys,
+    anchorCanonicalProductKey,
+  )
+  if (resultCanonicalProductKeys.length === 0) return null
+  const status =
+    candidate.status === 'loading' || candidate.status === 'error' ? candidate.status : 'idle'
+  const qualificationId = normalizedQualificationId(candidate.qualificationId)
+  return {
+    type: 'similar-reference',
+    anchorCanonicalProductKey,
+    resultCanonicalProductKeys,
+    query,
+    qualificationId,
+    status,
+  }
+}
+
+export function rehydratedSimilarBlock(
+  reference: Extract<DiscoverChatBlock, { type: 'similar-reference' }>,
+  result: SimilarProductsRehydrationResult,
+): Extract<DiscoverChatBlock, { type: 'similar' | 'similar-reference' }> {
+  const productsByKey = new Map(
+    result.products.map((product) => [canonicalProductKey(product), product] as const),
+  )
+  const unavailable = new Set(result.unavailableCanonicalProductKeys)
+  const product = unavailable.has(reference.anchorCanonicalProductKey)
+    ? undefined
+    : productsByKey.get(reference.anchorCanonicalProductKey)
+  const products = reference.resultCanonicalProductKeys.flatMap((key) => {
+    if (unavailable.has(key)) return []
+    const candidate = productsByKey.get(key)
+    return candidate ? [candidate] : []
+  })
+  return products.length > 0
+    ? {
+        type: 'similar',
+        product,
+        products,
+        query: reference.query,
+        qualificationId: reference.qualificationId,
+        anchorCanonicalProductKey: reference.anchorCanonicalProductKey,
+        resultCanonicalProductKeys: reference.resultCanonicalProductKeys,
+      }
+    : { ...reference, status: 'error' }
+}
+
+function richSimilarReferenceBlock(
+  block: Extract<DiscoverChatBlock, { type: 'similar' }>,
+  messageQuery?: string,
+): Extract<DiscoverChatBlock, { type: 'similar-reference' }> | null {
+  const anchorCanonicalProductKey =
+    block.anchorCanonicalProductKey?.trim() || canonicalProductKey(block.product)
+  const query = block.query?.trim() || messageQuery?.trim() || ''
+  if (!anchorCanonicalProductKey || !query) return null
+  const resultCanonicalProductKeys = uniqueCanonicalProductKeys(
+    block.resultCanonicalProductKeys?.length
+      ? block.resultCanonicalProductKeys
+      : block.products.map((product) => canonicalProductKey(product)),
+    anchorCanonicalProductKey,
+  )
+  if (resultCanonicalProductKeys.length === 0) return null
+  return {
+    type: 'similar-reference',
+    anchorCanonicalProductKey,
+    resultCanonicalProductKeys,
+    query,
+    qualificationId: normalizedQualificationId(block.qualificationId),
+    status: 'idle',
+  }
+}
+
+function persistedSimilarResponseText(status: DiscoverChatMessage['similarSearchStatus']): string {
+  if (status === 'success') return 'I found similar products for your search.'
+  if (status === 'empty') return 'I could not find another similar product for this search.'
+  if (status === 'error') return 'I could not load similar products right now. Please try again.'
+  return PERSISTED_SIMILAR_PENDING_TEXT
+}
+
+function persistedDiscoverChatMessage(message: DiscoverChatMessage): DiscoverChatMessage {
+  const similarRole = message.similarMessageRole
+  const projectedBlocks = (message.blocks ?? []).flatMap<DiscoverChatBlock>((block) => {
+    const untrustedBlock: unknown = block
+    if (
+      !untrustedBlock ||
+      typeof untrustedBlock !== 'object' ||
+      Array.isArray(untrustedBlock) ||
+      !('type' in untrustedBlock) ||
+      typeof untrustedBlock.type !== 'string'
+    ) {
+      return [block]
+    }
+    if (block.type === 'similar-reference') {
+      const normalized = normalizedSimilarReferenceBlock(block)
+      return normalized ? [{ ...normalized, status: 'idle' }] : []
+    }
+    if (block.type === 'similar') {
+      const reference = richSimilarReferenceBlock(block, message.query)
+      return reference ? [reference] : []
+    }
+    if (similarRole === 'response' && block.type === 'text') return []
+    return [block]
+  })
+  if (!similarRole) {
+    return { ...message, blocks: message.blocks ? projectedBlocks : undefined }
+  }
+
+  const persisted = { ...message }
+  delete persisted.productContext
+  persisted.text =
+    similarRole === 'request'
+      ? PERSISTED_SIMILAR_REQUEST_TEXT
+      : message.text
+        ? persistedSimilarResponseText(message.similarSearchStatus)
+        : undefined
+  persisted.pendingText = message.pending ? PERSISTED_SIMILAR_PENDING_TEXT : undefined
+  persisted.blocks =
+    similarRole === 'response'
+      ? [
+          ...(message.pending
+            ? []
+            : [
+                {
+                  type: 'text' as const,
+                  text: persistedSimilarResponseText(message.similarSearchStatus),
+                },
+              ]),
+          ...projectedBlocks,
+        ]
+      : projectedBlocks
+  return persisted
+}
+
+export function projectDiscoverChatThreadForPersistence(
+  thread: DiscoverChatThread,
+  archived = thread.archived === true,
+): DiscoverChatThread {
+  return durableDiscoverChatThread(thread, archived)
+}
+
+export function discoverChatThreadPersistenceSnapshot(
+  thread: DiscoverChatThread,
+  archived = thread.archived === true,
+): { title: string; threadJson: string } {
+  const persisted = durableDiscoverChatThread(thread, archived)
+  const title =
+    persisted.title.length <= 120 ? persisted.title : `${persisted.title.slice(0, 117)}...`
+  return { title, threadJson: JSON.stringify(persisted) }
+}
 
 type ProductOpenHandler = (
   product: Product,
@@ -34,7 +243,10 @@ export function discoverProductResearchQuery(
   block: DiscoverChatBlock,
   messageQuery: string | null | undefined,
 ): string | null {
-  const blockQuery = block.type === 'products' ? block.query?.trim() : null
+  const blockQuery =
+    block.type === 'products' || block.type === 'similar' || block.type === 'similar-reference'
+      ? block.query?.trim()
+      : null
   return blockQuery || messageQuery?.trim() || null
 }
 
@@ -106,28 +318,66 @@ export function normalizeDiscoverChatThreads(
         ? thread.id
         : nextDiscoverChatThreadId()
     seenIds.add(id)
+    const messages = thread.messages.map((message) => ({
+      ...message,
+      blocks: message.blocks?.map((block) => {
+        if (block.type === 'similar-reference') {
+          return (
+            normalizedSimilarReferenceBlock({ ...block, status: 'idle' }) ?? {
+              type: 'text' as const,
+              text: 'These similar products can no longer be restored.',
+            }
+          )
+        }
+        if (block.type === 'similar') {
+          return (
+            richSimilarReferenceBlock(block, message.query) ?? {
+              type: 'text' as const,
+              text: 'These similar products can no longer be restored.',
+            }
+          )
+        }
+        return block
+      }),
+    }))
     return {
       ...thread,
       id,
-      messages: thread.messages.map((message) =>
-        message.pending
-          ? {
-              ...message,
-              pending: false,
-              pendingText: undefined,
-              suggestedReplies: undefined,
-              blocks:
-                message.blocks && message.blocks.length > 0
-                  ? message.blocks
-                  : [
-                      {
-                        type: 'system' as const,
-                        text: 'This search was interrupted. Send your last answer again to continue.',
-                      },
-                    ],
-            }
-          : message,
-      ),
+      messages: messages.map((message) => {
+        if (!message.pending) return message
+        if (message.pendingOperation === 'similar-product-search') {
+          const interruptedMessage = { ...message }
+          delete interruptedMessage.pendingOperation
+          delete interruptedMessage.pendingText
+          return {
+            ...interruptedMessage,
+            pending: false,
+            suggestedReplies: undefined,
+            ...(message.similarMessageRole ? { similarSearchStatus: 'error' as const } : {}),
+            blocks: [
+              {
+                type: 'text' as const,
+                text: 'This similar-product search was interrupted before it finished. Please try again.',
+              },
+            ],
+          }
+        }
+        return {
+          ...message,
+          pending: false,
+          pendingText: undefined,
+          suggestedReplies: undefined,
+          blocks:
+            message.blocks && message.blocks.length > 0
+              ? message.blocks
+              : [
+                  {
+                    type: 'system' as const,
+                    text: 'This search was interrupted. Send your last answer again to continue.',
+                  },
+                ],
+        }
+      }),
       createdAt,
       updatedAt: thread.updatedAt ?? createdAt,
     }
@@ -168,9 +418,11 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
       }
     case 'products': {
       const productResultSetId = normalizedProductResultSetId(block.productResultSetId)
+      const qualificationId = normalizedQualificationId(block.qualificationId)
       if (!productResultSetId) {
         return {
           ...block,
+          qualificationId,
           products: Array.isArray(block.products) ? [...block.products] : [],
         }
       }
@@ -179,13 +431,31 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
         products: [],
         productResultSetId,
         query: block.query,
+        qualificationId,
       }
+    }
+    case 'similar-reference': {
+      const normalized = normalizedSimilarReferenceBlock(block)
+      return normalized
+        ? { ...normalized, status: 'idle' }
+        : {
+            type: 'system',
+            text: 'These similar products can no longer be restored.',
+          }
+    }
+    case 'similar': {
+      const reference = richSimilarReferenceBlock(block)
+      return (
+        reference ?? {
+          type: 'system',
+          text: 'These similar products can no longer be restored.',
+        }
+      )
     }
     case 'system':
       return { type: 'system', text: block.text }
     case 'reviews':
     case 'code':
-    case 'similar':
     case 'decision':
     case 'watch':
     case 'friendvote':
@@ -205,18 +475,23 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
 }
 
 function durableDiscoverMessage(message: DiscoverChatMessage): DiscoverChatMessage {
-  const durableBlocks = message.blocks?.map(durableDiscoverBlock) ?? []
+  const projected = persistedDiscoverChatMessage(message)
+  const durableBlocks = projected.blocks?.map(durableDiscoverBlock) ?? []
 
   return {
-    id: message.id,
-    role: message.role,
-    text: message.text,
+    id: projected.id,
+    role: projected.role,
+    text: projected.text,
     blocks: durableBlocks.length > 0 ? durableBlocks : undefined,
-    pending: message.pending,
-    pendingText: message.pendingText,
-    suggestedReplies: message.suggestedReplies ? [...message.suggestedReplies] : undefined,
-    query: message.query,
-    productContext: message.productContext,
+    pending: projected.pending,
+    pendingText: projected.pendingText,
+    pendingOperation: projected.pendingOperation,
+    suggestedReplies: projected.suggestedReplies ? [...projected.suggestedReplies] : undefined,
+    query: projected.query,
+    productContext: projected.productContext,
+    similarMessageRole: projected.similarMessageRole,
+    similarSearchStatus: projected.similarSearchStatus,
+    similarAnchorCanonicalProductKey: projected.similarAnchorCanonicalProductKey,
   }
 }
 
@@ -225,9 +500,13 @@ export function durableDiscoverChatThread(
   thread: DiscoverChatThread,
   archived: boolean | undefined = thread.archived,
 ): DiscoverChatThread {
+  const title =
+    thread.autoTitleSource === 'similar-product-search'
+      ? PERSISTED_SIMILAR_THREAD_TITLE
+      : thread.title.trim() || DEFAULT_DISCOVER_CHAT_TITLE
   return {
     id: thread.id,
-    title: thread.title,
+    title,
     archived,
     messages: thread.messages.map(durableDiscoverMessage),
     qualificationId: thread.qualificationId,
@@ -235,6 +514,7 @@ export function durableDiscoverChatThread(
     focusProductId: thread.focusProductId,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
+    autoTitleSource: thread.autoTitleSource,
     persistedRevision: thread.persistedRevision,
   }
 }
@@ -573,7 +853,13 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
     return `${block.product.name} code search: ${block.message ?? 'No accepted code found'}`
   }
   if (block.type === 'similar') {
-    return [`Similar to ${block.product.name}:`, ...block.products.map(productCopyLine)].join('\n')
+    const heading = block.product ? `Similar to ${block.product.name}:` : 'Similar products:'
+    return [heading, ...block.products.map(productCopyLine)].join('\n')
+  }
+  if (block.type === 'similar-reference') {
+    return block.status === 'error'
+      ? 'Similar products could not be restored.'
+      : 'Refreshing similar products.'
   }
   if (block.type === 'decision') {
     return [
@@ -699,6 +985,9 @@ function discoverBlockPreview(block: DiscoverChatBlock): string {
     return block.query
       ? `${block.products.length} products for "${block.query}"`
       : `${block.products.length} products`
+  }
+  if (block.type === 'similar-reference') {
+    return block.status === 'error' ? 'Similar products unavailable' : 'Refreshing similar products'
   }
   if (block.type === 'cart') {
     return `${block.lines.length} cart ${block.lines.length === 1 ? 'item' : 'items'}`

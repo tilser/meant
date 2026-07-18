@@ -16,6 +16,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import com.meant.api.module.user.service.dto.UserProductSearchProductResult;
 import com.meant.api.module.user.exception.UserProductSearchGroupingException;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
@@ -24,6 +25,7 @@ import com.meant.api.module.catalog.service.dto.CatalogSourceFailure;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogSourceOperation;
 import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
+import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
@@ -53,6 +55,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -329,6 +332,79 @@ class UserGroupedProductSearchServiceTest {
         });
         assertThat(discovery.calls).isEqualTo(1);
         assertThat(discovery.request.candidateLimit()).isEqualTo(100);
+    }
+
+    @Test
+    void similaritySearchCarriesTheTrustedReferenceExcludesTheAnchorAndRemembersTheResult() {
+        ProductCandidate anchorCandidate = pageCandidates("similarity-anchor", 1).getFirst();
+        List<ProductCandidate> similarCandidates = pageCandidates("similarity-result", 25);
+        CanonicalProduct anchor = new ExactProductGroupingService().group(List.of(anchorCandidate)).getFirst();
+        CatalogSimilarityReference reference = new CatalogSimilarityReference(
+                anchorCandidate.offer().identity().provider(),
+                anchorCandidate.provenance().getFirst().externalProductReference()
+        );
+        List<ProductCandidate> upstreamCandidates = java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(anchorCandidate), similarCandidates.stream()).toList();
+        DiscoverySourceIdentity similaritySource = new DiscoverySourceIdentity(
+                reference.provider(), ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL");
+        CatalogSourceResult source = new CatalogSourceResult(
+                reference.provider(),
+                similaritySource,
+                CatalogSourceOperation.SEARCH,
+                "2026-04-08",
+                NegotiatedCapabilities.none(),
+                upstreamCandidates,
+                null,
+                true,
+                null
+        );
+        StubFederatedDiscoveryService discovery = new StubFederatedDiscoveryService(
+                new FederatedCatalogDiscoveryResult(
+                        CatalogDiscoveryTerminalStatus.SUCCESS,
+                        List.of(source),
+                        upstreamCandidates,
+                        true
+                )
+        );
+        AtomicReference<List<CanonicalProduct>> persisted = new AtomicReference<>(List.of());
+        UserCanonicalProductReferencePersistenceService persistence =
+                new UserCanonicalProductReferencePersistenceService(null, null, null, List.of()) {
+                    @Override
+                    public void replace(UUID userId, List<CanonicalProduct> products) {
+                        persisted.set(List.copyOf(products));
+                    }
+                };
+        UserCanonicalProductSessionStore store = sessionStore();
+        UserGroupedProductSearchService service = new UserGroupedProductSearchService(
+                new PagingPreparationService(),
+                discovery,
+                new ExactProductGroupingService(),
+                ProductRankingTestFactory.service(),
+                new StubRankingContextFactory(),
+                store,
+                persistence,
+                null,
+                new UserProductPreferenceMatchCuratorService()
+        );
+        EnsureUserProfileCommand profile = profile();
+
+        var result = service.searchSimilar(profile, command(profile.id()), anchor, reference);
+
+        assertThat(discovery.request.similarityReference()).isEqualTo(reference);
+        assertThat(discovery.request.query()).isEqualTo("linen shirt");
+        assertThat(result.products()).hasSize(20).allSatisfy(product -> {
+            assertThat(product.key()).isNotEqualTo(anchor.key());
+            assertThat(store.find(profile.id(), product.key())).isPresent();
+        });
+        assertThat(result.offset()).isZero();
+        assertThat(result.limit()).isEqualTo(20);
+        assertThat(result.nextOffset()).isNull();
+        assertThat(result.hasMore()).isFalse();
+        assertThat(result.upstreamTruncated()).isTrue();
+        assertThat(result.sourceStates()).singleElement().satisfies(state ->
+                assertThat(state.truncated()).isTrue());
+        assertThat(persisted.get()).extracting(CanonicalProduct::key)
+                .containsExactlyElementsOf(result.products().stream().map(CanonicalProduct::key).toList());
     }
 
     @Test
@@ -610,6 +686,15 @@ class UserGroupedProductSearchServiceTest {
                     command.limit(),
                     command.offset() + command.limit() + 1
             );
+        }
+
+        @Override
+        public UserProductSearchPreparation prepare(
+                EnsureUserProfileCommand profileCommand,
+                SearchUserProductsCommand command,
+                CatalogDiscoveryFilters discoveryFilters
+        ) {
+            return prepare(profileCommand, command);
         }
     }
 

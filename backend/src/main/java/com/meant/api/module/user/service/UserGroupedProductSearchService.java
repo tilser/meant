@@ -1,19 +1,19 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.module.catalog.service.ExactProductGroupingService;
+import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
+import com.meant.api.module.catalog.service.ProductRankingService;
 import com.meant.api.module.catalog.service.dto.*;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.exception.UserProductSearchGroupingException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.ReplaceUserDiscoverProductResultSetCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
-import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
-import com.meant.api.module.user.service.dto.UserCatalogSourceState;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
-import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
+import com.meant.api.module.user.service.dto.UserCatalogSourceState;
+import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserProductSearchHistoryContext;
-import com.meant.api.module.catalog.service.ExactProductGroupingService;
-import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
-import com.meant.api.module.catalog.service.ProductRankingService;
+import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
@@ -48,7 +48,7 @@ public class UserGroupedProductSearchService {
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SearchUserProductsCommand command
     ) {
-        return search(command, preparationService.prepare(profileCommand, command), null);
+        return search(command, preparationService.prepare(profileCommand, command), null, null, null);
     }
 
     public UserGroupedProductSearchResult search(
@@ -56,7 +56,13 @@ public class UserGroupedProductSearchService {
             @NotNull @Valid SearchUserProductsCommand command,
             CatalogDiscoveryFilters discoveryFilters
     ) {
-        return search(command, preparationService.prepare(profileCommand, command, discoveryFilters), null);
+        return search(
+                command,
+                preparationService.prepare(profileCommand, command, discoveryFilters),
+                null,
+                null,
+                null
+        );
     }
 
     public UserGroupedProductSearchResult search(
@@ -68,14 +74,43 @@ public class UserGroupedProductSearchService {
         return search(
                 command,
                 preparationService.prepare(profileCommand, command, discoveryFilters),
-                historyContext
+                historyContext,
+                null,
+                null
+        );
+    }
+
+    UserGroupedProductSearchResult searchSimilar(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CanonicalProduct anchor,
+            CatalogSimilarityReference similarityReference
+    ) {
+        return searchSimilar(profileCommand, command, null, anchor, similarityReference);
+    }
+
+    UserGroupedProductSearchResult searchSimilar(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            CanonicalProduct anchor,
+            CatalogSimilarityReference similarityReference
+    ) {
+        return search(
+                command,
+                preparationService.prepare(profileCommand, command, discoveryFilters),
+                null,
+                anchor,
+                similarityReference
         );
     }
 
     private UserGroupedProductSearchResult search(
             SearchUserProductsCommand command,
             UserProductSearchPreparation preparation,
-            UserProductSearchHistoryContext historyContext
+            UserProductSearchHistoryContext historyContext,
+            CanonicalProduct anchor,
+            CatalogSimilarityReference similarityReference
     ) {
         FederatedCatalogDiscoveryResult discovery = federatedDiscoveryService.search(new CatalogDiscoveryRequest(
                 preparation.catalogInput().searchQuery(),
@@ -84,7 +119,9 @@ public class UserGroupedProductSearchService {
                 preparation.catalogInput().context(),
                 preparation.catalogInput().signals(),
                 preparation.catalogInput().filters(),
-                preparation.catalogInput().discoveryFilters()
+                preparation.catalogInput().discoveryFilters(),
+                similarityReference,
+                Set.of()
         ));
         if (discovery.status() == CatalogDiscoveryTerminalStatus.FAILED) {
             if (discovery.sources().isEmpty()) {
@@ -112,19 +149,29 @@ public class UserGroupedProductSearchService {
         }
 
         ProductGroupingResult grouping = exactProductGroupingService.evaluate(discovery.candidates());
+        List<CanonicalProduct> groupedProducts = grouping.products().stream()
+                .filter(product -> !sameProduct(product, anchor, similarityReference))
+                .toList();
         ProductRankingResult ranking = productRankingService.rank(
-                grouping.products(),
-                rankingContextFactory.create(command.userId(), preparation, grouping.products())
+                groupedProducts,
+                rankingContextFactory.create(command.userId(), preparation, groupedProducts)
         );
+        boolean singlePageSimilarity = similarityReference != null;
+        int responseOffset = singlePageSimilarity
+                ? UserProductSearchPagination.DEFAULT_OFFSET
+                : preparation.offset();
+        int responseLimit = singlePageSimilarity
+                ? UserProductSearchPagination.DEFAULT_LIMIT
+                : preparation.limit();
         List<CanonicalProduct> page = ranking.products().stream()
-                .skip(preparation.offset())
-                .limit(preparation.limit())
+                .skip(responseOffset)
+                .limit(responseLimit)
                 .toList();
         int pageEnd = Math.min(
-                preparation.offset() + preparation.limit(),
+                responseOffset + responseLimit,
                 UserProductSearchPagination.MAX_RESULT_WINDOW
         );
-        boolean hasMore = ranking.products().size() > pageEnd;
+        boolean hasMore = !singlePageSimilarity && ranking.products().size() > pageEnd;
         Set<String> visibleOfferKeys = page.stream()
                 .flatMap(product -> product.offers().stream())
                 .map(Offer::key)
@@ -165,8 +212,8 @@ public class UserGroupedProductSearchService {
                             command.userId(),
                             historyContext.conversationId(),
                             historyContext.qualificationId(),
-                            preparation.offset(),
-                            preparation.limit(),
+                            responseOffset,
+                            responseLimit,
                             hasMore ? pageEnd : null,
                             hasMore,
                             discovery.truncated(),
@@ -181,8 +228,8 @@ public class UserGroupedProductSearchService {
                 preparation.normalizedQuery(),
                 preparation.profileHash(),
                 false,
-                preparation.offset(),
-                preparation.limit(),
+                responseOffset,
+                responseLimit,
                 hasMore ? pageEnd : null,
                 hasMore,
                 discovery.truncated(),
@@ -196,5 +243,56 @@ public class UserGroupedProductSearchService {
                 visibleDecisions,
                 productResultSetId
         );
+    }
+
+    private boolean sameProduct(
+            CanonicalProduct candidate,
+            CanonicalProduct anchor,
+            CatalogSimilarityReference similarityReference
+    ) {
+        if (anchor == null || similarityReference == null) {
+            return false;
+        }
+        if (anchor.key().equals(candidate.key())
+                || hasReference(
+                        candidate,
+                        similarityReference.provider(),
+                        similarityReference.productReference().value())) {
+            return true;
+        }
+        boolean matchingProvenance = anchor.provenance().stream().anyMatch(provenance ->
+                hasReference(candidate, provenance.provider(), value(provenance.externalProductReference()))
+                        || hasReference(candidate, provenance.provider(), value(provenance.externalVariantReference())));
+        if (matchingProvenance) {
+            return true;
+        }
+        return anchor.identityEvidence().stream()
+                .flatMap(evidence -> evidence.identifiers().stream())
+                .filter(identifier -> identifier.namespace() != null)
+                .anyMatch(identifier -> hasReference(
+                        candidate,
+                        new ProviderIdentity(identifier.namespace()),
+                        identifier.value()));
+    }
+
+    private boolean hasReference(CanonicalProduct product, ProviderIdentity provider, String reference) {
+        if (provider == null || reference == null || reference.isBlank()) {
+            return false;
+        }
+        boolean evidenceMatch = product.identityEvidence().stream()
+                .flatMap(evidence -> evidence.identifiers().stream())
+                .anyMatch(identifier -> provider.value().equals(identifier.namespace())
+                        && reference.equals(identifier.value()));
+        if (evidenceMatch) {
+            return true;
+        }
+        return product.provenance().stream()
+                .filter(provenance -> provider.equals(provenance.provider()))
+                .anyMatch(provenance -> reference.equals(value(provenance.externalProductReference()))
+                        || reference.equals(value(provenance.externalVariantReference())));
+    }
+
+    private String value(ExternalIdentifier identifier) {
+        return identifier == null ? null : identifier.value();
     }
 }

@@ -18,6 +18,15 @@ export interface FoundDiscountCode {
   validationMessage?: string | null
 }
 
+export type SimilarReferenceStatus = 'idle' | 'loading' | 'error'
+export type SimilarMessageRole = 'request' | 'response'
+export type SimilarSearchStatus = 'requested' | 'pending' | 'success' | 'empty' | 'error'
+
+export interface SimilarProductsRehydrationResult {
+  products: readonly Product[]
+  unavailableCanonicalProductKeys: readonly string[]
+}
+
 export type DiscoverChatBlock =
   | { type: 'text'; text: string }
   | { type: 'newsletter' }
@@ -25,6 +34,7 @@ export type DiscoverChatBlock =
       type: 'products'
       products: readonly Product[]
       query?: string
+      qualificationId?: string
       productResultSetId?: string
       unavailableCount?: number
       historyHydration?: 'loading' | 'loaded' | 'failed'
@@ -41,7 +51,23 @@ export type DiscoverChatBlock =
       status?: 'found' | 'empty' | 'error'
       message?: string
     }
-  | { type: 'similar'; product: Product; products: readonly Product[] }
+  | {
+      type: 'similar'
+      product?: Product
+      products: readonly Product[]
+      query?: string
+      qualificationId?: string
+      anchorCanonicalProductKey?: string
+      resultCanonicalProductKeys?: readonly string[]
+    }
+  | {
+      type: 'similar-reference'
+      anchorCanonicalProductKey: string
+      resultCanonicalProductKeys: readonly string[]
+      query: string
+      qualificationId?: string
+      status: SimilarReferenceStatus
+    }
   | { type: 'decision'; product: Product; runnerUp: Product | null }
   | { type: 'watch'; product: Product; price: number; merchant: string }
   | { type: 'friendvote'; person: string; product: Product; vote: 'up' | 'down'; note: string }
@@ -75,9 +101,13 @@ export interface DiscoverChatMessage {
   blocks?: readonly DiscoverChatBlock[]
   pending?: boolean
   pendingText?: string
+  pendingOperation?: 'similar-product-search'
   suggestedReplies?: readonly string[]
   query?: string
   productContext?: Product
+  similarMessageRole?: SimilarMessageRole
+  similarSearchStatus?: SimilarSearchStatus
+  similarAnchorCanonicalProductKey?: string
   /** Legacy runtime hint. Durable storage preserves the message and omits this flag. */
   sessionOnly?: boolean
 }
@@ -92,6 +122,7 @@ export interface DiscoverChatThread {
   focusProductId?: ProductId
   createdAt?: number
   updatedAt?: number
+  autoTitleSource?: 'similar-product-search'
   /** Server revision this local snapshot was based on. Stored locally, never sent in the snapshot. */
   persistedRevision?: number
 }

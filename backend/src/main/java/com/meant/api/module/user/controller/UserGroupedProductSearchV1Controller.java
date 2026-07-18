@@ -1,8 +1,12 @@
 package com.meant.api.module.user.controller;
 
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
+import com.meant.api.module.user.controller.request.UserCanonicalProductRehydrationRequest;
+import com.meant.api.module.user.controller.request.UserSimilarProductSearchRequest;
 import com.meant.api.module.user.controller.request.UserProductSearchRequest;
 import com.meant.api.module.user.controller.response.UserGroupedProductSearchV1Response;
+import com.meant.api.module.user.controller.response.UserSimilarProductSearchV1Response;
+import com.meant.api.module.user.controller.response.UserCanonicalProductRehydrationV1Response;
 import com.meant.api.module.user.controller.response.UserFederatedProductSearchStreamEventResponse;
 import com.meant.api.module.user.controller.response.UserCanonicalProductDetailV1Response;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
@@ -10,12 +14,15 @@ import com.meant.api.module.user.service.UserFederatedProductSearchStreamService
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
 import com.meant.api.module.user.service.UserQualifiedProductSearchResolver;
 import com.meant.api.module.user.service.UserCanonicalProductDetailService;
+import com.meant.api.module.user.service.UserSimilarProductSearchService;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
+import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
 import com.meant.api.module.user.service.dto.UserProductSearchHistoryContext;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
+import com.meant.api.module.user.service.query.RehydrateUserCanonicalProductsQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -46,6 +53,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class UserGroupedProductSearchV1Controller {
 
     private final UserGroupedProductSearchService userGroupedProductSearchService;
+    private final UserSimilarProductSearchService userSimilarProductSearchService;
     private final UserCanonicalProductDetailService userCanonicalProductDetailService;
     private final UserFederatedProductSearchStreamService userFederatedProductSearchStreamService;
     private final UserProductSearchProperties userProductSearchProperties;
@@ -93,7 +101,8 @@ public class UserGroupedProductSearchV1Controller {
             operationId = "getCanonicalProductDetailV1",
             summary = "Get current detail for a grouped canonical product",
             description = "Resolves a server-issued Meant canonical product key and optional exact offer key from the "
-                    + "authenticated user's live search session, then batch-rehydrates current commercial facts. "
+                    + "authenticated user's live search session or durable identifier-only references, then "
+                    + "batch-rehydrates current commercial facts. "
                     + "Provider endpoints, merchant identities, prices, routing, and checkout URLs are never accepted."
     )
     @ApiResponse(
@@ -111,6 +120,66 @@ public class UserGroupedProductSearchV1Controller {
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 new GetUserCanonicalProductDetailQuery(
                         authenticatedUser.id(), canonicalProductKey, selectedOfferKey)
+        ));
+    }
+
+    @PostMapping("/me/products:rehydrate")
+    @Operation(
+            operationId = "rehydrateCanonicalProductsV1",
+            summary = "Rehydrate canonical products from durable chat references",
+            description = "Deduplicates authenticated-user server-issued canonical product keys in first-seen order, "
+                    + "resolves live-session or durable identifier-only references, and batch-rehydrates current "
+                    + "commercial facts. Unknown, unauthorized, stale, and unavailable keys are reported uniformly."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Available current products and uniformly unavailable canonical keys",
+            content = @Content(schema = @Schema(implementation = UserCanonicalProductRehydrationV1Response.class))
+    )
+    public UserCanonicalProductRehydrationV1Response rehydrateProducts(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody UserCanonicalProductRehydrationRequest request
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserCanonicalProductRehydrationV1Response.from(userCanonicalProductDetailService.rehydrate(
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
+                new RehydrateUserCanonicalProductsQuery(
+                        authenticatedUser.id(), request.canonicalProductKeys())
+        ));
+    }
+
+    @PostMapping("/me/products/{canonicalProductKey}/similar")
+    @Operation(
+            operationId = "searchSimilarProductsV1",
+            summary = "Search for products similar to a grouped canonical product",
+            description = "Resolves the authenticated user's server-issued canonical product key to a trusted "
+                    + "product-level item reference, then narrows provider similarity results with the originating "
+                    + "query and, when supplied, its authenticated READY qualification filters. Returns one fixed "
+                    + "page of up to 20 products with no continuation. Provider identifiers, merchant routing, "
+                    + "endpoints, and image content are never accepted."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "One fixed page of up to 20 grouped similar products excluding the reference product",
+            content = @Content(schema = @Schema(implementation = UserSimilarProductSearchV1Response.class))
+    )
+    public UserSimilarProductSearchV1Response searchSimilarProducts(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String canonicalProductKey,
+            @Valid @RequestBody UserSimilarProductSearchRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        return UserSimilarProductSearchV1Response.from(userSimilarProductSearchService.search(
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
+                new SearchSimilarUserProductsCommand(
+                        authenticatedUser.id(),
+                        canonicalProductKey,
+                        request.query(),
+                        request.qualificationId(),
+                        httpRequest.getRemoteAddr(),
+                        userAgent(httpRequest)
+                )
         ));
     }
 

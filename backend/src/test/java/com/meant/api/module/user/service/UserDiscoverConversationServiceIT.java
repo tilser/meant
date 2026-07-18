@@ -404,6 +404,80 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
         }
     }
 
+    @Test
+    void saveDiscoverConversationEnforcesIdentifierOnlySimilaritySnapshot() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String threadJson = """
+                {
+                  "id": "%s",
+                  "title": "SENTINEL PRODUCT TITLE",
+                  "autoTitleSource": "similar-product-search",
+                  "messages": [
+                    {
+                      "id": "request",
+                      "role": "you",
+                      "text": "Show me products similar to SENTINEL PRODUCT TITLE.",
+                      "productContext": {
+                        "id": "anchor-key",
+                        "name": "SENTINEL PRODUCT TITLE",
+                        "imageUrl": "https://example.test/sentinel.jpg",
+                        "priceFrom": 39,
+                        "offers": [{"price": 39}],
+                        "canonicalProduct": {"key": "anchor-key", "title": "SENTINEL CANONICAL"}
+                      },
+                      "similarMessageRole": "request",
+                      "similarSearchStatus": "requested",
+                      "similarAnchorCanonicalProductKey": "anchor-key"
+                    },
+                    {
+                      "id": "response",
+                      "role": "ai",
+                      "query": "jeans under 50 USD",
+                      "similarMessageRole": "response",
+                      "similarSearchStatus": "success",
+                      "blocks": [{
+                        "type": "similar",
+                        "product": {"id": "anchor-key", "name": "SENTINEL ANCHOR"},
+                        "products": [{
+                          "id": "result-key",
+                          "name": "SENTINEL RESULT",
+                          "imageUrl": "https://example.test/result.jpg",
+                          "offers": [{"price": 42}]
+                        }],
+                        "query": "jeans under 50 USD"
+                      }]
+                    }
+                  ]
+                }
+                """.formatted(conversationId);
+
+        UserDiscoverConversationResult saved = userDiscoverConversationService.save(
+                profileCommand(userId),
+                new SaveUserDiscoverConversationCommand(
+                        userId,
+                        conversationId,
+                        "SENTINEL PRODUCT TITLE",
+                        threadJson,
+                        null
+                )
+        );
+
+        assertThat(saved.title()).isEqualTo("Similar products");
+        assertThat(saved.threadJson())
+                .contains("similar-reference", "anchor-key", "result-key", "jeans under 50 USD")
+                .doesNotContain(
+                        "SENTINEL",
+                        "productContext",
+                        "imageUrl",
+                        "offers",
+                        "canonicalProduct");
+        assertThat(conversationRepository.findById(conversationId)).get().satisfies(conversation -> {
+            assertThat(conversation.getTitle()).isEqualTo("Similar products");
+            assertThat(conversation.getPayload()).isEqualTo(saved.threadJson());
+        });
+    }
+
     private EnsureUserProfileCommand profileCommand(UUID userId) {
         return new EnsureUserProfileCommand(userId, userId + "@example.com", "Mara", null);
     }

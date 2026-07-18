@@ -12,6 +12,7 @@ import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.search.CatalogSearchCapability;
 import com.meant.api.provider.shopify.catalog.ShopifyGlobalCatalogNormalizer.NormalizedCandidates;
 import com.meant.api.provider.shopify.catalog.ShopifyGlobalCatalogResponseParser.ParsedResponse;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogItemReference;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments.Catalog;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogArguments.Pagination;
@@ -37,6 +38,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -45,6 +47,9 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class ShopifyGlobalCatalogProvider {
+
+    private static final Pattern PRODUCT_GID = Pattern.compile(
+            "^gid://shopify/(?:p|Product)/[^/?#\\s]+$");
 
     private final ShopifyUcpClient client;
     private final ShopifyGlobalCatalogResponseParser parser;
@@ -85,14 +90,21 @@ public class ShopifyGlobalCatalogProvider {
 
     /** Makes exactly one Global Catalog search call when the circuit permits an invocation. */
     public CatalogSourceResult searchCatalog(ShopifyGlobalCatalogSearchRequest request) {
-        if (request == null || !hasText(request.query()) || invalidLimit(request.limit())) {
+        if (request == null || invalidLimit(request.limit())) {
+            return invalid(CatalogSourceOperation.SEARCH, "Shopify Global Catalog search request was invalid");
+        }
+        String query = trimToNull(request.query());
+        ShopifyCatalogItemReference itemReference = validatedItemReference(request.itemReference());
+        if ((query == null && request.itemReference() == null)
+                || (request.itemReference() != null && itemReference == null)) {
             return invalid(CatalogSourceOperation.SEARCH, "Shopify Global Catalog search request was invalid");
         }
         int limit = request.limit() == null
                 ? properties.defaultResultLimit()
                 : Math.min(request.limit(), properties.maximumResultLimit());
         ShopifyGlobalCatalogArguments arguments = new ShopifyGlobalCatalogArguments(new Catalog(
-                request.query().trim(),
+                query,
+                itemReference == null ? null : List.of(itemReference),
                 null,
                 null,
                 null,
@@ -116,6 +128,7 @@ public class ShopifyGlobalCatalogProvider {
             return invalid(CatalogSourceOperation.LOOKUP, "Shopify Global Catalog lookup identifiers were invalid");
         }
         ShopifyGlobalCatalogArguments arguments = new ShopifyGlobalCatalogArguments(new Catalog(
+                null,
                 null,
                 ids,
                 null,
@@ -149,6 +162,7 @@ public class ShopifyGlobalCatalogProvider {
             );
         }
         ShopifyGlobalCatalogArguments arguments = new ShopifyGlobalCatalogArguments(new Catalog(
+                null,
                 null,
                 null,
                 request.id().trim(),
@@ -566,6 +580,16 @@ public class ShopifyGlobalCatalogProvider {
 
     private boolean invalidLimit(Integer limit) {
         return limit != null && limit < 1;
+    }
+
+    private ShopifyCatalogItemReference validatedItemReference(ShopifyCatalogItemReference reference) {
+        if (reference == null) {
+            return null;
+        }
+        String id = trimToNull(reference.id());
+        return id != null && PRODUCT_GID.matcher(id).matches()
+                ? new ShopifyCatalogItemReference(id)
+                : null;
     }
 
     private CatalogSourceFailureKind failureKind(ShopifyUcpTransportFailure failure) {

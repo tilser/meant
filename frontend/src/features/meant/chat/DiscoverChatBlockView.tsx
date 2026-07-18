@@ -103,7 +103,12 @@ export function DiscoverChatBlockView({
   onAddCart: (product: Product) => void
   onPin: (product: Product) => void
   onWatch: (product: Product) => void
-  onDig: (kind: 'reviews' | 'code' | 'similar', product: Product) => void
+  onDig: (
+    kind: 'reviews' | 'code' | 'similar',
+    product: Product,
+    query?: string,
+    qualificationId?: string,
+  ) => void
   onJustPick: (products: readonly Product[]) => void
   onCompareHere: (products: readonly Product[]) => void
   onOpenFullCompare: (products: readonly Product[]) => void
@@ -226,6 +231,7 @@ export function DiscoverChatBlockView({
         <DiscoverProductBatch
           products={block.products}
           query={block.query}
+          qualificationId={block.qualificationId}
           deliveryLocations={deliveryLocations}
           preferences={preferences}
           savedSet={savedSet}
@@ -326,14 +332,32 @@ export function DiscoverChatBlockView({
       </div>
     )
   }
+  if (block.type === 'similar-reference') {
+    return (
+      <div className="mt-ct-block">
+        <div className="mt-ct-block-head">
+          <div className="mt-mono mt-ct-block-key">Similar products</div>
+        </div>
+        <div className={`mt-ct-code-empty ${block.status === 'error' ? 'error' : ''}`}>
+          {block.status === 'error'
+            ? 'These similar products could not be refreshed right now. Reopen this chat to try again.'
+            : 'Refreshing similar products...'}
+        </div>
+      </div>
+    )
+  }
   if (block.type === 'similar') {
     return (
       <div className="mt-ct-block">
         <div className="mt-ct-block-head">
-          <div className="mt-mono mt-ct-block-key">Similar to {block.product.name}</div>
+          <div className="mt-mono mt-ct-block-key">
+            {block.product ? `Similar to ${block.product.name}` : 'Similar products'}
+          </div>
         </div>
         <DiscoverProductBatch
           products={block.products}
+          query={researchQuery ?? undefined}
+          qualificationId={block.qualificationId}
           deliveryLocations={deliveryLocations}
           preferences={preferences}
           savedSet={savedSet}

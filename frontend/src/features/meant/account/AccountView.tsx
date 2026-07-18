@@ -336,7 +336,7 @@ export function AccountView({
           <div>
             <div className="mt-acct-link-t">Newsletter updates</div>
             <div className="mt-acct-link-s">
-              Get an email when Watch, Similar, and other new features are ready.
+              Get an email when Watch and other new features are ready.
             </div>
           </div>
           <label className="mt-switch">

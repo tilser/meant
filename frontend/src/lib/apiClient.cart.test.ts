@@ -27,6 +27,8 @@ const {
   getDiscoverConversationProductResultSet,
   getCartCheckout,
   getSavedProduct,
+  rehydrateCanonicalProducts,
+  searchSimilarGroupedProducts,
   qualifyProductSearch,
   saveDiscoverConversation,
   searchDiscountCodes,
@@ -340,6 +342,45 @@ describe('product variant selection API', () => {
         { name: 'Color', value: 'Blue' },
       ],
       preferredOptionName: 'Size',
+    })
+  })
+})
+
+describe('similar grouped product search API', () => {
+  test('posts the encoded canonical key and originating search constraints', async () => {
+    const controller = new AbortController()
+    await searchSimilarGroupedProducts({
+      canonicalProductKey: 'canonical/product key',
+      query: 'trail running shoes',
+      qualificationId: '00000000-0000-4000-8000-000000000099',
+      signal: controller.signal,
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('POST')
+    expect(requests[0]?.url).toBe(
+      'http://localhost:8080/api/v1/users/me/products/canonical%2Fproduct%20key/similar',
+    )
+    expect(await requests[0]?.json()).toEqual({
+      query: 'trail running shoes',
+      qualificationId: '00000000-0000-4000-8000-000000000099',
+    })
+  })
+})
+
+describe('canonical product history rehydration API', () => {
+  test('posts only server-issued canonical product keys', async () => {
+    const controller = new AbortController()
+    await rehydrateCanonicalProducts({
+      canonicalProductKeys: ['anchor-key', 'result-key'],
+      signal: controller.signal,
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('POST')
+    expect(requests[0]?.url).toBe('http://localhost:8080/api/v1/users/me/products:rehydrate')
+    expect(await requests[0]?.json()).toEqual({
+      canonicalProductKeys: ['anchor-key', 'result-key'],
     })
   })
 })

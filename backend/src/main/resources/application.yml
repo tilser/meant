@@ -75,9 +75,13 @@ app:
         - method: POST
           path: /api/v1/users/me/product-searches
         - method: POST
+          path: /api/v1/users/me/products/{canonicalProductKey}/similar
+        - method: POST
           path: /api/v1/users/me/product-searches:stream
         - method: GET
           path: /api/v1/users/me/products/{canonicalProductKey}
+        - method: POST
+          path: /api/v1/users/me/products:rehydrate
         - method: POST
           path: /api/v1/users/me/product-variant-selections
         - method: GET

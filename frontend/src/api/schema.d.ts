@@ -165,6 +165,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/products/{canonicalProductKey}/similar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search for products similar to a grouped canonical product
+         * @description Resolves the authenticated user's server-issued canonical product key to a trusted product-level item reference, then narrows provider similarity results with the originating query. Returns one fixed page of up to 20 products with no continuation. Provider identifiers, merchant routing, endpoints, and image content are never accepted.
+         */
+        post: operations["searchSimilarProductsV1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/me/products:rehydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rehydrate canonical products from durable chat references
+         * @description Deduplicates authenticated-user server-issued canonical product keys in first-seen order, resolves live-session or durable identifier-only references, and batch-rehydrates current commercial facts. Unknown, unauthorized, stale, and unavailable keys are reported uniformly.
+         */
+        post: operations["rehydrateCanonicalProductsV1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me/taste-profile/suggestions/{filterId}:reject": {
         parameters: {
             query?: never;
@@ -1603,6 +1643,26 @@ export interface components {
             /** Format: int32 */
             limit?: number;
         };
+        /** @description Server-issued canonical product keys to rehydrate for durable chat history */
+        UserCanonicalProductRehydrationRequest: {
+            /** @description One to 21 authenticated-user canonical product keys, deduplicated in first-seen order */
+            canonicalProductKeys: string[];
+        };
+        /** @description Fresh canonical products restored from durable identifier-only references */
+        UserCanonicalProductRehydrationV1Response: {
+            /** @description Available canonical products in deduplicated request order */
+            products: components["schemas"]["CanonicalProductResponse"][];
+            /** @description Unknown, unauthorized, stale, or unavailable keys in deduplicated request order */
+            unavailableCanonicalProductKeys: string[];
+        };
+        /** @description Item-reference similarity search narrowed by the originating user query */
+        UserSimilarProductSearchRequest: {
+            /** @description Originating product-search query used to narrow the similarity search */
+            query: string;
+            /** Format: uuid */
+            /** @description Optional originating qualification whose typed filters further narrow similarity results */
+            qualificationId?: string;
+        };
         /** @description One user turn in product-search qualification before catalog discovery. */
         UserProductSearchQualificationRequest: {
             /** Format: uuid */
@@ -1885,6 +1945,49 @@ export interface components {
              * @description Durable server result-set reference used to reopen this page in Discover history
              */
             productResultSetId: string;
+            /**
+             * Format: int32
+             * @description Total typed reconciliation decisions in the fetched candidate window
+             */
+            groupingDecisionCount: number;
+            /** @description Whether grouping decisions were omitted by page filtering or the public diagnostic bound */
+            groupingDecisionsTruncated: boolean;
+            /** @description Typed exact-match and conservative non-match decisions for this page */
+            groupingDecisions: components["schemas"]["ProductGroupingDecisionResponse"][];
+        };
+        /** @description Version 1 transient similar-product response with canonical products and merchant offers */
+        UserSimilarProductSearchV1Response: {
+            /** @description Originating user search query */
+            query: string;
+            /** @description Normalized cache identity for the search */
+            normalizedQuery: string;
+            /** @description Taste and settings profile hash used for the search */
+            profileHash: string;
+            /** @description Whether results came from a source-approved cache */
+            cached: boolean;
+            /**
+             * Format: int32
+             * @description Canonical-product offset applied after grouping
+             */
+            offset: number;
+            /**
+             * Format: int32
+             * @description Canonical-product page size applied after grouping
+             */
+            limit: number;
+            /**
+             * Format: int32
+             * @description Always absent because similarity search has no continuation
+             */
+            nextOffset?: number;
+            /** @description Always false because similarity search returns one fixed page */
+            hasMore: boolean;
+            /** @description Whether an upstream source reported more candidates than this live request could materialize */
+            upstreamTruncated: boolean;
+            /** @description Typed completion, degradation, and truncation state for every invoked source */
+            sourceStates: components["schemas"]["UserCatalogSourceStateResponse"][];
+            /** @description Deterministically ordered canonical products */
+            products: components["schemas"]["CanonicalProductResponse"][];
             /**
              * Format: int32
              * @description Total typed reconciliation decisions in the fetched candidate window
@@ -3786,6 +3889,56 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserGroupedProductSearchV1Response"];
+                };
+            };
+        };
+    };
+    searchSimilarProductsV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canonicalProductKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserSimilarProductSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description One fixed page of up to 20 grouped similar products excluding the reference product */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserSimilarProductSearchV1Response"];
+                };
+            };
+        };
+    };
+    rehydrateCanonicalProductsV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCanonicalProductRehydrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Available current products and uniformly unavailable canonical keys */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserCanonicalProductRehydrationV1Response"];
                 };
             };
         };

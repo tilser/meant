@@ -8,6 +8,7 @@ import {
   cartLineForAddedBlock,
   createDiscoverChatThread,
   deleteStoredDiscoverChatThread,
+  discoverChatThreadPersistenceSnapshot,
   discoverProductResearchQuery,
   discoverSuggestedReplies,
   discoverThreadSearchContext,
@@ -15,6 +16,8 @@ import {
   initialDiscoverChatThreads,
   mergeDiscoverThreadSources,
   normalizeDiscoverChatThreads,
+  normalizedSimilarReferenceBlock,
+  rehydratedSimilarBlock,
   productOpenWithResearchQuery,
   saveStoredDiscoverChatThreads,
 } from './utils'
@@ -91,7 +94,287 @@ describe('discover chat history storage', () => {
 
     saveStoredDiscoverChatThreads([thread])
 
-    expect(initialDiscoverChatThreads()).toEqual([thread])
+    expect(initialDiscoverChatThreads()[0]).toMatchObject(thread)
+  })
+
+  test('persists successful Similar history as references without product facts', () => {
+    const qualificationId = '00000000-0000-4000-8000-000000000099'
+    const anchor = {
+      id: 'anchor-key',
+      name: 'SENTINEL PRODUCT TITLE',
+      imageUrl: 'https://example.test/SENTINEL-IMAGE.jpg',
+      priceFrom: 49.99,
+      offers: [{ merchant: 'SENTINEL OFFER', price: 49.99 }],
+      canonicalProduct: { key: 'anchor-key', title: 'SENTINEL CANONICAL PAYLOAD' },
+    } as unknown as Product
+    const result = {
+      ...anchor,
+      id: 'result-key',
+      name: 'SENTINEL RESULT TITLE',
+      canonicalProduct: { key: 'result-key', title: 'SENTINEL RESULT CANONICAL' },
+    } as unknown as Product
+    const thread = {
+      ...createDiscoverChatThread(
+        [
+          {
+            id: 'similar-request',
+            role: 'you' as const,
+            text: 'Show me products similar to SENTINEL PRODUCT TITLE.',
+            productContext: anchor,
+            similarMessageRole: 'request' as const,
+            similarSearchStatus: 'requested' as const,
+            similarAnchorCanonicalProductKey: 'anchor-key',
+          },
+          {
+            id: 'similar-response',
+            role: 'ai' as const,
+            query: 'jeans under 50 USD',
+            similarMessageRole: 'response' as const,
+            similarSearchStatus: 'success' as const,
+            similarAnchorCanonicalProductKey: 'anchor-key',
+            blocks: [
+              { type: 'text' as const, text: 'SENTINEL PRODUCT TITLE result summary' },
+              {
+                type: 'similar' as const,
+                product: anchor,
+                products: [result],
+                query: 'jeans under 50 USD',
+                qualificationId,
+                anchorCanonicalProductKey: 'anchor-key',
+                resultCanonicalProductKeys: ['result-key'],
+              },
+            ],
+          },
+        ],
+        'SENTINEL PRODUCT TITLE',
+      ),
+      autoTitleSource: 'similar-product-search' as const,
+    }
+
+    const remote = discoverChatThreadPersistenceSnapshot(thread, false)
+    saveStoredDiscoverChatThreads([thread])
+    const localJson = Array.from(store.values()).find((value) => value.includes('similar-request'))
+
+    expect(localJson).toBeDefined()
+    const remoteEnvelopeJson = JSON.stringify(remote)
+    for (const serialized of [localJson ?? '', remote.threadJson, remoteEnvelopeJson]) {
+      expect(serialized).toContain('anchor-key')
+      expect(serialized).toContain('result-key')
+      expect(serialized).toContain('jeans under 50 USD')
+      expect(serialized).toContain(qualificationId)
+      expect(serialized).toContain('similar-reference')
+      expect(serialized).not.toContain('SENTINEL')
+      expect(serialized).not.toContain('imageUrl')
+      expect(serialized).not.toContain('priceFrom')
+      expect(serialized).not.toContain('offers')
+      expect(serialized).not.toContain('canonicalProduct')
+      expect(serialized).not.toContain('productContext')
+    }
+    expect(remote.title).toBe('Similar products')
+    expect({ ...JSON.parse(localJson ?? '[]')[0], archived: false }).toEqual(
+      JSON.parse(remote.threadJson),
+    )
+  })
+
+  test.each([
+    {
+      name: 'pending',
+      status: 'pending' as const,
+      pending: true,
+      pendingText: 'Finding products like SENTINEL PRODUCT TITLE',
+    },
+    {
+      name: 'no-query error',
+      status: 'error' as const,
+      pending: false,
+      pendingText: undefined,
+    },
+  ])('sanitizes $name Similar messages without a rich result block', (scenario) => {
+    const product = {
+      id: 'anchor-key',
+      name: 'SENTINEL PRODUCT TITLE',
+      imageUrl: 'https://example.test/SENTINEL-IMAGE.jpg',
+      priceFrom: 49.99,
+      offers: [{ merchant: 'SENTINEL OFFER', price: 49.99 }],
+      canonicalProduct: { key: 'anchor-key', title: 'SENTINEL CANONICAL PAYLOAD' },
+    } as unknown as Product
+    const thread = {
+      ...createDiscoverChatThread(
+        [
+          {
+            id: 'similar-request',
+            role: 'you' as const,
+            text: 'Show me products similar to SENTINEL PRODUCT TITLE.',
+            productContext: product,
+            similarMessageRole: 'request' as const,
+            similarSearchStatus: 'requested' as const,
+            similarAnchorCanonicalProductKey: 'anchor-key',
+          },
+          {
+            id: 'similar-response',
+            role: 'ai' as const,
+            pending: scenario.pending,
+            pendingText: scenario.pendingText,
+            pendingOperation: scenario.pending ? ('similar-product-search' as const) : undefined,
+            similarMessageRole: 'response' as const,
+            similarSearchStatus: scenario.status,
+            similarAnchorCanonicalProductKey: 'anchor-key',
+            blocks: [{ type: 'text' as const, text: 'SENTINEL PRODUCT TITLE could not be loaded' }],
+          },
+        ],
+        'SENTINEL PRODUCT TITLE',
+      ),
+      autoTitleSource: 'similar-product-search' as const,
+    }
+
+    const serialized = JSON.stringify(discoverChatThreadPersistenceSnapshot(thread, false))
+
+    expect(serialized).toContain('anchor-key')
+    expect(serialized).not.toContain('SENTINEL')
+    expect(serialized).not.toContain('productContext')
+    expect(serialized).not.toContain('imageUrl')
+    expect(serialized).not.toContain('priceFrom')
+    expect(serialized).not.toContain('offers')
+    expect(serialized).not.toContain('canonicalProduct')
+  })
+
+  test('rejects malformed Similar references before restoration', () => {
+    expect(
+      normalizedSimilarReferenceBlock({
+        type: 'similar-reference',
+        anchorCanonicalProductKey: 'a'.repeat(201),
+        resultCanonicalProductKeys: ['result-key'],
+        query: 'jeans',
+        status: 'idle',
+      }),
+    ).toBeNull()
+    expect(
+      normalizedSimilarReferenceBlock({
+        type: 'similar-reference',
+        anchorCanonicalProductKey: 'anchor-key',
+        resultCanonicalProductKeys: ['result-key'],
+        query: 'jeans',
+        qualificationId: 'not-a-uuid',
+        status: 'idle',
+      }),
+    ).toEqual({
+      type: 'similar-reference',
+      anchorCanonicalProductKey: 'anchor-key',
+      resultCanonicalProductKeys: ['result-key'],
+      query: 'jeans',
+      qualificationId: undefined,
+      status: 'idle',
+    })
+    expect(
+      normalizedSimilarReferenceBlock({
+        type: 'similar-reference',
+        anchorCanonicalProductKey: 'anchor-key',
+        resultCanonicalProductKeys: [],
+        query: 'jeans',
+        status: 'idle',
+      }),
+    ).toBeNull()
+    expect(
+      normalizedSimilarReferenceBlock({
+        type: 'similar-reference',
+        anchorCanonicalProductKey: 'anchor-key',
+        resultCanonicalProductKeys: ['r'.repeat(201)],
+        query: 'jeans',
+        status: 'idle',
+      }),
+    ).toBeNull()
+    expect(
+      normalizedSimilarReferenceBlock({
+        type: 'similar-reference',
+        anchorCanonicalProductKey: 'anchor-key',
+        resultCanonicalProductKeys: Array.from({ length: 21 }, (_, index) => `result-${index}`),
+        query: 'jeans',
+        status: 'idle',
+      }),
+    ).toBeNull()
+  })
+
+  test('rehydrates Similar products in stored order with an optional unavailable anchor', () => {
+    const first = {
+      id: 'first-key',
+      canonicalProduct: { key: 'first-key' },
+    } as Product
+    const second = {
+      id: 'second-key',
+      canonicalProduct: { key: 'second-key' },
+    } as Product
+    const reference = {
+      type: 'similar-reference' as const,
+      anchorCanonicalProductKey: 'anchor-key',
+      resultCanonicalProductKeys: ['second-key', 'missing-key', 'first-key'],
+      query: 'jeans under 50 USD',
+      qualificationId: '00000000-0000-4000-8000-000000000099',
+      status: 'loading' as const,
+    }
+
+    expect(
+      rehydratedSimilarBlock(reference, {
+        products: [first, second],
+        unavailableCanonicalProductKeys: ['anchor-key', 'missing-key'],
+      }),
+    ).toEqual({
+      type: 'similar',
+      product: undefined,
+      products: [second, first],
+      query: 'jeans under 50 USD',
+      qualificationId: '00000000-0000-4000-8000-000000000099',
+      anchorCanonicalProductKey: 'anchor-key',
+      resultCanonicalProductKeys: ['second-key', 'missing-key', 'first-key'],
+    })
+  })
+
+  test('marks interrupted restored similarity and other pending work as retryable', () => {
+    const thread = createDiscoverChatThread(
+      [
+        {
+          id: 'similar-search',
+          role: 'ai',
+          pending: true,
+          pendingText: 'Finding similar products.',
+          pendingOperation: 'similar-product-search',
+          blocks: [],
+        },
+        {
+          id: 'discount-search',
+          role: 'ai',
+          pending: true,
+          pendingText: 'Finding a discount code.',
+          blocks: [],
+        },
+      ],
+      'running shoes',
+    )
+    saveStoredDiscoverChatThreads([thread])
+
+    const [restoredSimilarity, restoredDiscount] = initialDiscoverChatThreads()[0]?.messages ?? []
+
+    expect(restoredSimilarity).toEqual({
+      id: 'similar-search',
+      role: 'ai',
+      pending: false,
+      blocks: [
+        {
+          type: 'text',
+          text: 'This similar-product search was interrupted before it finished. Please try again.',
+        },
+      ],
+    })
+    expect(restoredDiscount).toMatchObject({
+      id: 'discount-search',
+      role: 'ai',
+      pending: false,
+      blocks: [
+        {
+          type: 'system',
+          text: 'This search was interrupted. Send your last answer again to continue.',
+        },
+      ],
+    })
   })
 
   test('deletes locally saved discover chat threads', () => {
@@ -127,7 +410,7 @@ describe('discover chat history storage', () => {
 
     saveStoredDiscoverChatThreads([thread])
 
-    expect(initialDiscoverChatThreads()).toEqual([thread])
+    expect(initialDiscoverChatThreads()[0]).toMatchObject(thread)
   })
 
   test('keeps only the server result-set reference for durable product history', () => {
@@ -580,6 +863,17 @@ describe('historical product context', () => {
         '  message search  ',
       ),
     ).toBe('message search')
+    expect(
+      discoverProductResearchQuery(
+        {
+          type: 'similar',
+          product,
+          products: [product],
+          query: '  original similarity constraints  ',
+        },
+        'newer message query',
+      ),
+    ).toBe('original similarity constraints')
     expect(discoverProductResearchQuery({ type: 'reviews', product }, '   ')).toBeNull()
   })
 

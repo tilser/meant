@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
+import com.meant.api.module.user.controller.request.UserSimilarProductSearchRequest;
+import com.meant.api.module.user.controller.request.UserCanonicalProductRehydrationRequest;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
@@ -199,6 +201,13 @@ class UserGroupedProductSearchV1ResponseTest {
         assertRecordSchemas(UserCatalogSourceStateResponse.class);
         assertRecordSchemas(UserOfferCommercialStateResponse.class);
         assertRecordSchemas(UserCanonicalProductDetailV1Response.class);
+        assertRecordSchemas(UserCanonicalProductRehydrationV1Response.class);
+        assertRecordSchemas(UserSimilarProductSearchV1Response.class);
+        assertThat(List.of(UserSimilarProductSearchV1Response.class.getRecordComponents()))
+                .extracting(RecordComponent::getName)
+                .doesNotContain("productResultSetId");
+        assertRecordSchemas(UserSimilarProductSearchRequest.class);
+        assertRecordSchemas(UserCanonicalProductRehydrationRequest.class);
         assertRecordSchemas(UserDiscoverProductResultSetResponse.class);
     }
 

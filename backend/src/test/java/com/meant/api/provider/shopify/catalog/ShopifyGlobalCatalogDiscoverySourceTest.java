@@ -2,7 +2,6 @@ package com.meant.api.provider.shopify.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryCondition;
@@ -10,18 +9,22 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
+import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
 import com.meant.api.module.catalog.service.dto.CatalogSourceOperation;
 import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
-import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequest;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequest;
 import java.time.Duration;
 import java.math.BigDecimal;
 import java.util.List;
@@ -158,6 +161,50 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
     }
 
     @Test
+    void mapsMatchingBroadSimilarityAndDeclinesReferencesOwnedByAnotherProvider() {
+        ShopifyGlobalCatalogProperties properties = properties();
+        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
+                new ProviderIdentity("SHOPIFY"),
+                ResultSourceType.PROVIDER_CATALOG,
+                properties.sourceIdentity()
+        );
+        CatalogSourceResult providerResult = new CatalogSourceResult(
+                source.provider(),
+                source,
+                CatalogSourceOperation.SEARCH,
+                properties.protocolVersion(),
+                NegotiatedCapabilities.none(),
+                List.of(),
+                null,
+                false,
+                null
+        );
+        FakeProvider provider = new FakeProvider(properties, source, providerResult);
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                provider, properties, authProperties(true));
+        CatalogSimilarityReference matchingReference = similarityReference(
+                "SHOPIFY", "gid://shopify/p/anchor-1");
+        CatalogDiscoveryRequest request = new CatalogDiscoveryRequest(
+                "linen shirt", null, 10, null, null, null, matchingReference);
+
+        assertThat(adapter.supports(request)).isTrue();
+        adapter.search(request, ignored -> { });
+
+        assertThat(provider.calls).isEqualTo(1);
+        assertThat(provider.request.query()).isEqualTo("linen shirt");
+        assertThat(provider.request.itemReference().id()).isEqualTo("gid://shopify/p/anchor-1");
+        assertThat(adapter.supports(new CatalogDiscoveryRequest(
+                "linen shirt",
+                null,
+                10,
+                null,
+                null,
+                null,
+                similarityReference("OTHER", "gid://other/Product/anchor-1")
+        ))).isFalse();
+    }
+
+    @Test
     void authEnabledDiscoveryDisabledDoesNotScheduleGlobalCatalog() {
         ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
                 new FakeProvider(properties(false), null, null),
@@ -215,6 +262,18 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
 
     private CatalogDiscoveryRequest broadRequest() {
         return new CatalogDiscoveryRequest("linen shirt", null, 10, null, null, null);
+    }
+
+    private CatalogSimilarityReference similarityReference(String provider, String productReference) {
+        ProviderIdentity providerIdentity = new ProviderIdentity(provider);
+        return new CatalogSimilarityReference(
+                providerIdentity,
+                new ExternalIdentifier(
+                        ExternalIdentifierType.PRODUCT,
+                        providerIdentity.value(),
+                        productReference
+                )
+        );
     }
 
     private ShopifyAgentAuthProperties authProperties(boolean enabled) {

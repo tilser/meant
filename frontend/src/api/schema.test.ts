@@ -8,6 +8,8 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     '/api/v1/users/me/product-searches',
     '/api/v1/users/me/product-searches:stream',
     '/api/v1/users/me/products/{canonicalProductKey}',
+    '/api/v1/users/me/products/{canonicalProductKey}/similar',
+    '/api/v1/users/me/products:rehydrate',
     '/api/v1/users/me/product-variant-selections',
   ]
   const expectedSchemas: Array<keyof components['schemas']> = [
@@ -16,6 +18,7 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     'UserProductSearchQualificationStatus',
     'UserProductSearchFilterKind',
     'UserGroupedProductSearchV1Response',
+    'UserSimilarProductSearchV1Response',
     'CanonicalProductResponse',
     'CanonicalProductPersonalizationResponse',
     'OfferResponse',
@@ -38,6 +41,9 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     'SelectUserProductVariantRequest',
     'UserProductVariantSelectionResponse',
     'CanonicalProductAttributeResponse',
+    'UserSimilarProductSearchRequest',
+    'UserCanonicalProductRehydrationRequest',
+    'UserCanonicalProductRehydrationV1Response',
   ]
   const federatedEventFields: Array<
     keyof components['schemas']['UserFederatedProductSearchStreamEventResponse']
@@ -49,8 +55,8 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     'features',
   ]
 
-  expect(expectedPaths).toHaveLength(5)
-  expect(expectedSchemas).toHaveLength(27)
+  expect(expectedPaths).toHaveLength(7)
+  expect(expectedSchemas).toHaveLength(31)
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
 
@@ -63,6 +69,27 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     keyof components['schemas']['CanonicalProductAttributeResponse']
   > = ['group', 'name', 'value']
   expect(canonicalAttributeFields).toContain('group')
+
+  const similarSearchFields: Array<keyof components['schemas']['UserSimilarProductSearchRequest']> =
+    ['query', 'qualificationId']
+  expect(similarSearchFields).toEqual(['query', 'qualificationId'])
+
+  const groupedResultSetField: keyof components['schemas']['UserGroupedProductSearchV1Response'] =
+    'productResultSetId'
+  const similarResponseFields: Array<
+    keyof components['schemas']['UserSimilarProductSearchV1Response']
+  > = ['query', 'products', 'hasMore']
+  expect(groupedResultSetField).toBe('productResultSetId')
+  expect(similarResponseFields).toEqual(['query', 'products', 'hasMore'])
+
+  const rehydrationRequestFields: Array<
+    keyof components['schemas']['UserCanonicalProductRehydrationRequest']
+  > = ['canonicalProductKeys']
+  const rehydrationResponseFields: Array<
+    keyof components['schemas']['UserCanonicalProductRehydrationV1Response']
+  > = ['products', 'unavailableCanonicalProductKeys']
+  expect(rehydrationRequestFields).toEqual(['canonicalProductKeys'])
+  expect(rehydrationResponseFields).toEqual(['products', 'unavailableCanonicalProductKeys'])
 })
 
 test('cart creation accepts only server-issued offer identity for line selection', () => {

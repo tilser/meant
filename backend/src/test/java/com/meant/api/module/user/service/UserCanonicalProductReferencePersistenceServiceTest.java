@@ -34,6 +34,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -109,6 +110,34 @@ class UserCanonicalProductReferencePersistenceServiceTest {
         assertThat(service.findProduct(USER_ID, product.key())).isEmpty();
     }
 
+    @Test
+    void batchRestoresPolicyApprovedReferencesInRequestedKeyOrder() {
+        UserCanonicalProductReferenceRepository repository = mock(UserCanonicalProductReferenceRepository.class);
+        MutablePolicy policy = new MutablePolicy(CatalogRetentionDecision.identifiersOnly("policy-v1"));
+        UserCanonicalProductReferencePersistenceService service = service(repository, policy);
+        AtomicReference<List<UserCanonicalProductReference>> saved = captureSaved(repository);
+        CanonicalProduct first = product("grouped-product-v3_first", "1");
+        CanonicalProduct second = product("grouped-product-v3_second", "2");
+        service.replace(USER_ID, List.of(first, second));
+        List<UserCanonicalProductReference> reversed = List.of(saved.get().get(1), saved.get().get(0));
+        when(repository
+                .findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+                        USER_ID, List.of(first.key(), second.key())))
+                .thenReturn(reversed);
+
+        Map<String, CanonicalProduct> restored = service.findProducts(
+                USER_ID, List.of(first.key(), second.key(), first.key()));
+
+        assertThat(restored.keySet()).containsExactly(first.key(), second.key());
+        assertThat(restored.get(first.key()).offers()).singleElement().satisfies(offer ->
+                assertThat(offer.identity().externalVariantIdentity().value()).isEqualTo("variant-1"));
+        assertThat(restored.get(second.key()).offers()).singleElement().satisfies(offer ->
+                assertThat(offer.identity().externalVariantIdentity().value()).isEqualTo("variant-2"));
+
+        policy.decision = CatalogRetentionDecision.identifiersOnly("policy-v2");
+        assertThat(service.findProducts(USER_ID, List.of(first.key(), second.key()))).isEmpty();
+    }
+
     private AtomicReference<List<UserCanonicalProductReference>> captureSaved(
             UserCanonicalProductReferenceRepository repository
     ) {
@@ -117,7 +146,9 @@ class UserCanonicalProductReferencePersistenceServiceTest {
             Iterable<UserCanonicalProductReference> values = invocation.getArgument(0);
             List<UserCanonicalProductReference> captured = new ArrayList<>();
             values.forEach(captured::add);
-            saved.set(List.copyOf(captured));
+            List<UserCanonicalProductReference> accumulated = new ArrayList<>(saved.get());
+            accumulated.addAll(captured);
+            saved.set(List.copyOf(accumulated));
             return captured;
         });
         return saved;
@@ -139,9 +170,13 @@ class UserCanonicalProductReferencePersistenceServiceTest {
     }
 
     private CanonicalProduct product() {
-        ExternalIdentifier merchant = identifier(ExternalIdentifierType.MERCHANT, "merchant-1");
-        ExternalIdentifier product = identifier(ExternalIdentifierType.PRODUCT, "product-1");
-        ExternalIdentifier variant = identifier(ExternalIdentifierType.VARIANT, "variant-1");
+        return product("grouped-product-v3_history", "1");
+    }
+
+    private CanonicalProduct product(String canonicalProductKey, String suffix) {
+        ExternalIdentifier merchant = identifier(ExternalIdentifierType.MERCHANT, "merchant-" + suffix);
+        ExternalIdentifier product = identifier(ExternalIdentifierType.PRODUCT, "product-" + suffix);
+        ExternalIdentifier variant = identifier(ExternalIdentifierType.VARIANT, "variant-" + suffix);
         ProductAttribute color = new ProductAttribute("variant-option", "Color", "Blue");
         ResultProvenance provenance = new ResultProvenance(
                 PROVIDER,
@@ -175,7 +210,7 @@ class UserCanonicalProductReferencePersistenceServiceTest {
                 List.of(provenance)
         );
         return new CanonicalProduct(
-                "grouped-product-v3_history",
+                canonicalProductKey,
                 "Persisted display title",
                 "Persisted display description",
                 List.of(),

@@ -77,6 +77,7 @@ import type {
   DiscoverProductSearchTurnInput,
   DiscoverProductSearchTurnResult,
   ProductDetailChatRequest,
+  SimilarProductsRehydrationResult,
 } from './types'
 import {
   cartItemsWithFallback,
@@ -92,6 +93,7 @@ import {
   initialDiscoverChatThreads,
   mergeDiscoverThreadSources,
   normalizeDiscoverChatThreads,
+  rehydratedSimilarBlock,
   saveStoredDiscoverChatThreads,
 } from './utils'
 
@@ -99,6 +101,10 @@ const DISCOVER_HISTORY_SYNC_DELAY = 500
 
 function hasDiscoverThreadHistory(thread: DiscoverChatThread): boolean {
   return thread.messages.length > 0 || Boolean(thread.focusProductId) || thread.named === true
+}
+
+function canonicalProductKey(product: Product): string {
+  return product.canonicalProduct?.key?.trim() || product.id
 }
 
 function timestampFromProfile(value: string): number {
@@ -146,7 +152,6 @@ function discoverThreadTitle(thread: DiscoverChatThread): string {
   const title = thread.title.trim() || DEFAULT_DISCOVER_CHAT_TITLE
   return title.length <= 120 ? title : `${title.slice(0, 117)}...`
 }
-
 function activeAndArchivedDiscoverThreads(restoredThreads: readonly DiscoverChatThread[]): {
   threads: DiscoverChatThread[]
   archivedThreads: DiscoverChatThread[]
@@ -356,7 +361,7 @@ function discoverBlockPrimaryProduct(block: DiscoverChatBlock): Product | null {
     return block.products[0] ?? null
   }
   if (block.type === 'similar') {
-    return block.products[0] ?? block.product
+    return block.products[0] ?? block.product ?? null
   }
   if (block.type === 'decision') {
     return block.product
@@ -388,7 +393,7 @@ function discoverBlockHasProduct(block: DiscoverChatBlock, productId: ProductId)
   }
   if (block.type === 'similar') {
     return (
-      block.product.id === productId || block.products.some((product) => product.id === productId)
+      block.product?.id === productId || block.products.some((product) => product.id === productId)
     )
   }
   if (block.type === 'cart') {
@@ -504,7 +509,10 @@ function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapsho
     }
     if (block.type === 'similar') {
       title = 'Similar picks'
-      products.push(block.product, ...block.products)
+      if (block.product) {
+        products.push(block.product)
+      }
+      products.push(...block.products)
     }
     if (block.type === 'reviews') {
       title = 'Reviews'
@@ -633,6 +641,8 @@ export function ChatDiscoverView({
   savedSet,
   savePendingSet,
   onSubmit,
+  onSearchSimilarProducts,
+  onRehydrateSimilarProducts,
   onOpen,
   onToggleSave,
   onAddProductToCart,
@@ -679,6 +689,16 @@ export function ChatDiscoverView({
   savedSet: ReadonlySet<ProductId>
   savePendingSet: ReadonlySet<ProductId>
   onSubmit: (input: DiscoverProductSearchTurnInput) => Promise<DiscoverProductSearchTurnResult>
+  onSearchSimilarProducts: (
+    product: Product,
+    sourceQuery: string,
+    qualificationId: string | undefined,
+    signal: AbortSignal,
+  ) => Promise<Product[]>
+  onRehydrateSimilarProducts: (
+    canonicalProductKeys: readonly string[],
+    signal: AbortSignal,
+  ) => Promise<SimilarProductsRehydrationResult>
   onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
   onAddProductToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
@@ -713,6 +733,8 @@ export function ChatDiscoverView({
   const activeThread =
     threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? fallbackThread
   const activeThreadIdSafe = activeThread.id
+  const activeThreadIdRef = useRef(activeThreadIdSafe)
+  activeThreadIdRef.current = activeThreadIdSafe
   const messages = activeThread.messages
   const searchContext = discoverThreadSearchContext(activeThread)
   const query = searchContext.query
@@ -733,14 +755,20 @@ export function ChatDiscoverView({
   )
   const [trayClearing, setTrayClearing] = useState(false)
   const [newsletterPending, setNewsletterPending] = useState(false)
+  const [similarHistoryRetryVersion, setSimilarHistoryRetryVersion] = useState(0)
   const chatBottomRef = useRef<HTMLDivElement | null>(null)
   const previousMessageCountRef = useRef(messages.length)
   const previousActiveThreadIdRef = useRef(activeThreadIdSafe)
-  const activeThreadIdRef = useRef(activeThreadIdSafe)
-  activeThreadIdRef.current = activeThreadIdSafe
   const didInitialScrollRef = useRef(false)
   const handledDiscoverFindRequestRef = useRef<string | null>(null)
   const scheduledChatTimersRef = useRef<number[]>([])
+  const similarSearchControllersRef = useRef(
+    new Map<string, { threadId: string; controller: AbortController }>(),
+  )
+  const similarHistoryControllersRef = useRef(new Map<string, AbortController>())
+  const deletedDiscoverThreadIdsRef = useRef(new Set<string>())
+  const threadsRef = useRef(threads)
+  threadsRef.current = threads
   const conversationPersistenceRef = useRef(createConversationPersistenceCoordinator())
   const persistenceScopeRef = useRef(storageScope)
   persistenceScopeRef.current = storageScope
@@ -1232,6 +1260,14 @@ export function ChatDiscoverView({
         window.clearTimeout(timer)
       }
       scheduledChatTimersRef.current = []
+      for (const { controller } of similarSearchControllersRef.current.values()) {
+        controller.abort()
+      }
+      similarSearchControllersRef.current.clear()
+      for (const controller of similarHistoryControllersRef.current.values()) {
+        controller.abort()
+      }
+      similarHistoryControllersRef.current.clear()
     },
     [],
   )
@@ -1268,6 +1304,116 @@ export function ChatDiscoverView({
     [setThreads],
   )
 
+  const updateThreadMessagesTransient = useCallback(
+    (threadId: string, action: SetStateAction<readonly DiscoverChatMessage[]>) => {
+      setThreads((current) =>
+        current.map((thread) =>
+          thread.id === threadId
+            ? { ...thread, messages: resolveStateAction(action, thread.messages) }
+            : thread,
+        ),
+      )
+    },
+    [setThreads],
+  )
+
+  useEffect(() => {
+    if (!discoverHistoryLoaded) return undefined
+    const threadId = activeThreadIdSafe
+    const thread = threadsRef.current.find((candidate) => candidate.id === threadId)
+    if (!thread) return undefined
+    const targets = thread.messages.flatMap((message) =>
+      (message.blocks ?? []).flatMap((block, blockIndex) =>
+        block.type === 'similar-reference'
+          ? [{ messageId: message.id, blockIndex, reference: block }]
+          : [],
+      ),
+    )
+    if (targets.length === 0) return undefined
+
+    const controller = new AbortController()
+    const historyControllers = similarHistoryControllersRef.current
+    historyControllers.get(threadId)?.abort()
+    historyControllers.set(threadId, controller)
+    updateThreadMessagesTransient(threadId, (current) =>
+      current.map((message) => {
+        const targetIndexes = new Set(
+          targets
+            .filter((target) => target.messageId === message.id)
+            .map((target) => target.blockIndex),
+        )
+        if (targetIndexes.size === 0) return message
+        return {
+          ...message,
+          blocks: message.blocks?.map((block, index) =>
+            targetIndexes.has(index) && block.type === 'similar-reference'
+              ? { ...block, status: 'loading' as const }
+              : block,
+          ),
+        }
+      }),
+    )
+
+    const replaceTarget = (
+      messageId: string,
+      blockIndex: number,
+      replacement: DiscoverChatBlock,
+    ) => {
+      if (
+        controller.signal.aborted ||
+        activeThreadIdRef.current !== threadId ||
+        deletedDiscoverThreadIdsRef.current.has(threadId)
+      ) {
+        return
+      }
+      updateThreadMessagesTransient(threadId, (current) =>
+        current.map((message) =>
+          message.id !== messageId
+            ? message
+            : {
+                ...message,
+                blocks: message.blocks?.map((block, index) =>
+                  index === blockIndex && block.type === 'similar-reference' ? replacement : block,
+                ),
+              },
+        ),
+      )
+    }
+
+    const rehydrateTargets = async () => {
+      for (const { messageId, blockIndex, reference } of targets) {
+        if (controller.signal.aborted) return
+        const canonicalProductKeys = [
+          reference.anchorCanonicalProductKey,
+          ...reference.resultCanonicalProductKeys,
+        ]
+        try {
+          const result = await onRehydrateSimilarProducts(canonicalProductKeys, controller.signal)
+          if (controller.signal.aborted) return
+          replaceTarget(messageId, blockIndex, rehydratedSimilarBlock(reference, result))
+        } catch {
+          if (!controller.signal.aborted) {
+            replaceTarget(messageId, blockIndex, { ...reference, status: 'error' })
+          }
+        }
+      }
+    }
+    void rehydrateTargets()
+
+    return () => {
+      controller.abort()
+      if (historyControllers.get(threadId) === controller) {
+        historyControllers.delete(threadId)
+      }
+    }
+  }, [
+    activeThreadIdSafe,
+    discoverHistoryLoaded,
+    onRehydrateSimilarProducts,
+    similarHistoryRetryVersion,
+    updateThreadMessagesTransient,
+  ])
+
   const setMessages = useCallback(
     (action: SetStateAction<readonly DiscoverChatMessage[]>) => {
       updateThreadMessages(activeThreadIdSafe, action)
@@ -1278,7 +1424,11 @@ export function ChatDiscoverView({
   const appendMessagesToActiveThread = useCallback(
     (
       nextMessages: readonly DiscoverChatMessage[],
-      options: { titleSeed?: string; focusProductId?: ProductId } = {},
+      options: {
+        titleSeed?: string
+        focusProductId?: ProductId
+        autoTitleSource?: DiscoverChatThread['autoTitleSource']
+      } = {},
     ) => {
       const now = Date.now()
       setThreads((current) =>
@@ -1290,6 +1440,7 @@ export function ChatDiscoverView({
           return {
             ...thread,
             title: shouldTitle ? deriveDiscoverChatTitle(options.titleSeed ?? '') : thread.title,
+            autoTitleSource: shouldTitle ? options.autoTitleSource : thread.autoTitleSource,
             focusProductId: options.focusProductId ?? thread.focusProductId,
             messages: [...thread.messages, ...nextMessages],
             updatedAt: now,
@@ -1541,6 +1692,180 @@ export function ChatDiscoverView({
     ],
   )
 
+  const updateSimilarProductMessage = useCallback(
+    (
+      threadId: string,
+      messageId: string,
+      sourceQuery: string,
+      status: DiscoverChatMessage['similarSearchStatus'],
+      blocks: readonly DiscoverChatBlock[],
+    ) => {
+      updateThreadMessages(threadId, (current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                query: sourceQuery,
+                pending: false,
+                pendingText: undefined,
+                pendingOperation: undefined,
+                similarSearchStatus: status,
+                blocks,
+              }
+            : message,
+        ),
+      )
+      if (activeThreadIdRef.current === threadId) {
+        scrollChatToBottom()
+      }
+    },
+    [scrollChatToBottom, updateThreadMessages],
+  )
+
+  const appendSimilarProductSearch = useCallback(
+    (product: Product, originatingQuery?: string, originatingQualificationId?: string) => {
+      const sourceQuery = originatingQuery?.trim() ?? ''
+      const qualificationId = originatingQualificationId?.trim() || undefined
+      const question = `Show me products similar to ${product.name}.`
+      const anchorCanonicalProductKey = canonicalProductKey(product)
+      const threadId = activeThreadIdSafe
+      const aiId = nextDiscoverChatMessageId()
+
+      if (!sourceQuery) {
+        appendMessagesToActiveThread(
+          [
+            {
+              id: nextDiscoverChatMessageId(),
+              role: 'you',
+              text: question,
+              productContext: product,
+              similarMessageRole: 'request',
+              similarSearchStatus: 'requested',
+              similarAnchorCanonicalProductKey: anchorCanonicalProductKey,
+            },
+            {
+              id: aiId,
+              role: 'ai',
+              similarMessageRole: 'response',
+              similarSearchStatus: 'error',
+              similarAnchorCanonicalProductKey: anchorCanonicalProductKey,
+              blocks: [
+                {
+                  type: 'text',
+                  text: 'I no longer have the original search query for this product. Run a new product search and try Similar again.',
+                },
+              ],
+            },
+          ],
+          {
+            titleSeed: question,
+            focusProductId: product.id,
+            autoTitleSource: 'similar-product-search',
+          },
+        )
+        return
+      }
+
+      appendMessagesToActiveThread(
+        [
+          {
+            id: nextDiscoverChatMessageId(),
+            role: 'you',
+            text: question,
+            productContext: product,
+            similarMessageRole: 'request',
+            similarSearchStatus: 'requested',
+            similarAnchorCanonicalProductKey: anchorCanonicalProductKey,
+          },
+          {
+            id: aiId,
+            role: 'ai',
+            query: sourceQuery,
+            pending: true,
+            pendingText: `Meant is finding products similar to ${product.name}.`,
+            pendingOperation: 'similar-product-search',
+            similarMessageRole: 'response',
+            similarSearchStatus: 'pending',
+            similarAnchorCanonicalProductKey: anchorCanonicalProductKey,
+            blocks: [],
+          },
+        ],
+        {
+          titleSeed: question,
+          focusProductId: product.id,
+          autoTitleSource: 'similar-product-search',
+        },
+      )
+
+      const controller = new AbortController()
+      similarSearchControllersRef.current.set(aiId, { threadId, controller })
+      const search = async () => {
+        try {
+          const similarProducts = await onSearchSimilarProducts(
+            product,
+            sourceQuery,
+            qualificationId,
+            controller.signal,
+          )
+          if (controller.signal.aborted) {
+            return
+          }
+          updateSimilarProductMessage(
+            threadId,
+            aiId,
+            sourceQuery,
+            similarProducts.length > 0 ? 'success' : 'empty',
+            similarProducts.length > 0
+              ? [
+                  {
+                    type: 'text',
+                    text: `I found ${similarProducts.length} product${similarProducts.length === 1 ? '' : 's'} similar to ${product.name}.`,
+                  },
+                  {
+                    type: 'similar',
+                    product,
+                    products: similarProducts,
+                    query: sourceQuery,
+                    qualificationId,
+                    anchorCanonicalProductKey,
+                    resultCanonicalProductKeys: similarProducts
+                      .map(canonicalProductKey)
+                      .slice(0, 20),
+                  },
+                ]
+              : [
+                  {
+                    type: 'text',
+                    text: `I couldn't find another product similar to ${product.name} for this search.`,
+                  },
+                ],
+          )
+        } catch {
+          if (controller.signal.aborted) {
+            return
+          }
+          updateSimilarProductMessage(threadId, aiId, sourceQuery, 'error', [
+            {
+              type: 'text',
+              text: `I couldn't load products similar to ${product.name} right now. Please try again.`,
+            },
+          ])
+        } finally {
+          if (similarSearchControllersRef.current.get(aiId)?.controller === controller) {
+            similarSearchControllersRef.current.delete(aiId)
+          }
+        }
+      }
+      void search()
+    },
+    [
+      activeThreadIdSafe,
+      appendMessagesToActiveThread,
+      onSearchSimilarProducts,
+      updateSimilarProductMessage,
+    ],
+  )
+
   const appendProductDetailQuestion = useCallback(
     (product: Product, question: string, requestProducts: readonly Product[]) => {
       if (isDiscountCodeQuestion(question)) {
@@ -1590,6 +1915,19 @@ export function ChatDiscoverView({
   ])
 
   const deleteMessage = (messageId: string) => {
+    const similarSearch = similarSearchControllersRef.current.get(messageId)
+    similarSearch?.controller.abort()
+    similarSearchControllersRef.current.delete(messageId)
+    const deletingSimilarReference = messages.some(
+      (message) =>
+        message.id === messageId &&
+        message.blocks?.some((block) => block.type === 'similar-reference'),
+    )
+    if (deletingSimilarReference) {
+      similarHistoryControllersRef.current.get(activeThreadIdSafe)?.abort()
+      similarHistoryControllersRef.current.delete(activeThreadIdSafe)
+      setSimilarHistoryRetryVersion((current) => current + 1)
+    }
     setMessages((current) => current.filter((message) => message.id !== messageId))
     if (searchTargetsByThread[activeThreadIdSafe] === messageId) {
       setSearchTargetsByThread((current) => {
@@ -1808,6 +2146,7 @@ export function ChatDiscoverView({
             type: 'products',
             products: result.products,
             query: result.effectiveQuery,
+            qualificationId: result.qualificationId,
             productResultSetId: result.productResultSetId,
           })
         }
@@ -2209,7 +2548,12 @@ export function ChatDiscoverView({
     )
   }
 
-  const digIntoProduct = (kind: 'reviews' | 'code' | 'similar', product: Product) => {
+  const digIntoProduct = (
+    kind: 'reviews' | 'code' | 'similar',
+    product: Product,
+    originatingQuery?: string,
+    originatingQualificationId?: string,
+  ) => {
     if (kind === 'reviews') {
       appendMessagePair(`What do reviewers say about ${product.name}?`, [
         {
@@ -2225,7 +2569,7 @@ export function ChatDiscoverView({
       return
     }
     if (kind === 'similar') {
-      appendUnavailableFeatureMessage(product)
+      appendSimilarProductSearch(product, originatingQuery, originatingQualificationId)
       return
     }
   }
@@ -2339,6 +2683,14 @@ export function ChatDiscoverView({
     if (!deletion) {
       return
     }
+    for (const [messageId, search] of similarSearchControllersRef.current) {
+      if (search.threadId !== threadId) continue
+      search.controller.abort()
+      similarSearchControllersRef.current.delete(messageId)
+    }
+    similarHistoryControllersRef.current.get(threadId)?.abort()
+    similarHistoryControllersRef.current.delete(threadId)
+    deletedDiscoverThreadIdsRef.current.add(threadId)
     setDeletingThreadIds((current) => new Set(current).add(threadId))
     setConversationDeleteError(null)
 
@@ -2368,6 +2720,8 @@ export function ChatDiscoverView({
       })
       .catch(() => {
         if (persistenceScopeRef.current !== persistenceScope) return
+        deletedDiscoverThreadIdsRef.current.delete(threadId)
+        setSimilarHistoryRetryVersion((current) => current + 1)
         setConversationDeleteError(
           "Couldn't delete that chat. It is still available; please try again.",
         )
@@ -2385,7 +2739,15 @@ export function ChatDiscoverView({
     const now = Date.now()
     setThreads((current) =>
       current.map((thread) =>
-        thread.id === threadId ? { ...thread, title, named: true, updatedAt: now } : thread,
+        thread.id === threadId
+          ? {
+              ...thread,
+              title,
+              named: true,
+              autoTitleSource: undefined,
+              updatedAt: now,
+            }
+          : thread,
       ),
     )
   }

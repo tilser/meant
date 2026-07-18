@@ -101,11 +101,13 @@ import {
   removeSavedProduct,
   removeUserTasteSignal,
   rejectUserTasteSuggestion,
+  rehydrateCanonicalProducts,
   qualifyProductSearch,
   revokeMerchantIdentityLink,
   saveUserProduct,
   startMerchantIdentityAuthorization,
   searchGroupedProducts,
+  searchSimilarGroupedProducts,
   type CheckoutAssistantMessage,
   type CheckoutProfile,
   type MerchantIdentityLinkProfile,
@@ -2214,6 +2216,58 @@ export function MeantApp() {
     }
   }
 
+  const findSimilarProducts = useCallback(
+    async (
+      product: Product,
+      sourceQuery: string,
+      qualificationId: string | undefined,
+      signal: AbortSignal,
+    ): Promise<Product[]> => {
+      const canonicalProductKey = product.canonicalProduct?.key ?? product.id
+      const result = await searchSimilarGroupedProducts({
+        canonicalProductKey,
+        query: sourceQuery,
+        qualificationId,
+        signal,
+      })
+      if (signal.aborted) {
+        return []
+      }
+      const seen = new Set<ProductId>([product.id, canonicalProductKey])
+      const similarProducts = result.products
+        .filter((candidate) => candidate.key !== canonicalProductKey)
+        .map(productFromCanonical)
+        .filter(isRenderableSearchProduct)
+        .filter((candidate) => {
+          if (seen.has(candidate.id)) {
+            return false
+          }
+          seen.add(candidate.id)
+          return true
+        })
+
+      setRemoteProducts((current) => appendProductSnapshots(current, similarProducts))
+      return similarProducts
+    },
+    [],
+  )
+
+  const rehydrateSimilarProducts = useCallback(
+    async (canonicalProductKeys: readonly string[], signal: AbortSignal) => {
+      const result = await rehydrateCanonicalProducts({ canonicalProductKeys, signal })
+      if (signal.aborted) {
+        throw new DOMException('Similar product rehydration was aborted', 'AbortError')
+      }
+      const products = result.products.map(productFromCanonical).filter(isRenderableSearchProduct)
+      setRemoteProducts((current) => appendProductSnapshots(current, products))
+      return {
+        products,
+        unavailableCanonicalProductKeys: result.unavailableCanonicalProductKeys,
+      }
+    },
+    [],
+  )
+
   const compareChatProducts = (products: readonly Product[]) => {
     const nextProducts = products.slice(0, 4)
     if (nextProducts.length < 2) {
@@ -2587,6 +2641,8 @@ export function MeantApp() {
             productDetailChatRequest={currentProductDetailChatRequest}
             newsletter={user.newsletter}
             onSubmit={runProductSearch}
+            onSearchSimilarProducts={findSimilarProducts}
+            onRehydrateSimilarProducts={rehydrateSimilarProducts}
             onOpen={(product, products, researchQuery) =>
               openProduct(product, products ?? feedProducts, researchQuery)
             }

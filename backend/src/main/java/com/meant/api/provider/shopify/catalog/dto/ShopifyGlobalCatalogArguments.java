@@ -10,6 +10,7 @@ public record ShopifyGlobalCatalogArguments(Catalog catalog) {
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Catalog(
             String query,
+            List<ShopifyCatalogItemReference> like,
             List<String> ids,
             String id,
             List<ShopifyCatalogSelectedOption> selected,
@@ -19,6 +20,20 @@ public record ShopifyGlobalCatalogArguments(Catalog catalog) {
             String view,
             Pagination pagination
     ) {
+
+        public Catalog(
+                String query,
+                List<String> ids,
+                String id,
+                List<ShopifyCatalogSelectedOption> selected,
+                List<String> preferences,
+                ShopifyCatalogContext context,
+                ShopifyCatalogFilters filters,
+                String view,
+                Pagination pagination
+        ) {
+            this(query, null, ids, id, selected, preferences, context, filters, view, pagination);
+        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

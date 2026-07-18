@@ -121,6 +121,54 @@ class ExpensiveEndpointRateLimitFilterTest {
     }
 
     @Test
+    void limitsParameterizedSimilaritySearchPaths() throws Exception {
+        ExpensiveEndpointRateLimitFilter filter = filter(
+                1,
+                endpoint("POST", "/api/v1/users/me/products/{canonicalProductKey}/similar")
+        );
+        authenticate("user-1");
+
+        assertAllowed(filter, request(
+                "POST",
+                "/api/v1/users/me/products/canonical-product-1/similar",
+                "203.0.113.10"
+        ));
+
+        MockHttpServletResponse limited = doFilter(
+                filter,
+                request(
+                        "POST",
+                        "/api/v1/users/me/products/canonical-product-2/similar",
+                        "203.0.113.10"
+                )
+        );
+
+        assertThat(limited.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void limitsTheStaticCanonicalProductRehydrationPath() throws Exception {
+        ExpensiveEndpointRateLimitFilter filter = filter(
+                1,
+                endpoint("POST", "/api/v1/users/me/products:rehydrate")
+        );
+        authenticate("user-1");
+
+        assertAllowed(filter, request(
+                "POST",
+                "/api/v1/users/me/products:rehydrate",
+                "203.0.113.10"
+        ));
+
+        MockHttpServletResponse limited = doFilter(
+                filter,
+                request("POST", "/api/v1/users/me/products:rehydrate", "203.0.113.10")
+        );
+
+        assertThat(limited.getStatus()).isEqualTo(429);
+    }
+
+    @Test
     void allowsUnmatchedTrafficWithoutConsumingRateLimit() throws Exception {
         ExpensiveEndpointRateLimitFilter filter = filter(
                 1,

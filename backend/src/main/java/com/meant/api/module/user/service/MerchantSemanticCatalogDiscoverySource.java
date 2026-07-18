@@ -80,7 +80,7 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
 
     @Override
     public boolean supports(CatalogDiscoveryRequest request) {
-        return !request.broad();
+        return !request.broad() && request.similarityReference() == null;
     }
 
     @Override

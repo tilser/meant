@@ -1,19 +1,21 @@
 package com.meant.api.provider.shopify.catalog;
 
-import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
 import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
 import com.meant.api.module.catalog.service.port.CatalogDiscoverySource;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogContext;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters;
+import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogItemReference;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequest;
-import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
@@ -41,7 +43,11 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
 
     @Override
     public boolean supports(CatalogDiscoveryRequest request) {
-        return request.broad() && properties.discoveryEnabled() && authProperties.isEnabled();
+        CatalogSimilarityReference similarity = request.similarityReference();
+        return request.broad()
+                && properties.discoveryEnabled()
+                && authProperties.isEnabled()
+                && (similarity == null || sourceIdentity().provider().equals(similarity.provider()));
     }
 
     @Override
@@ -51,6 +57,7 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
     ) {
         CatalogSourceResult result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
                 request.query(),
+                itemReference(request.similarityReference()),
                 context(request.context()),
                 filters(request.filters(), request.discoveryFilters()),
                 request.candidateLimit(),
@@ -60,6 +67,10 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             result.candidates().forEach(candidateConsumer);
         }
         return result;
+    }
+
+    private ShopifyCatalogItemReference itemReference(CatalogSimilarityReference reference) {
+        return reference == null ? null : new ShopifyCatalogItemReference(reference.productReference().value());
     }
 
     private ShopifyCatalogContext context(CatalogSearchContext context) {

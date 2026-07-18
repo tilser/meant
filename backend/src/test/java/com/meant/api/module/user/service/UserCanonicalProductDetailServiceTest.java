@@ -40,6 +40,7 @@ import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
+import com.meant.api.module.user.service.query.RehydrateUserCanonicalProductsQuery;
 import com.meant.api.provider.shopify.catalog.ShopifyOfferIdentityStrategy;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
@@ -72,6 +73,8 @@ class UserCanonicalProductDetailServiceTest {
     private final AtomicInteger providerCalls = new AtomicInteger();
     private final AtomicBoolean transactionActiveAtProvider = new AtomicBoolean();
     private final AtomicReference<CatalogRehydrationContext> providerContext = new AtomicReference<>();
+    private final AtomicReference<List<CatalogProductReference>> providerReferences =
+            new AtomicReference<>(List.of());
     private final AtomicReference<UnaryOperator<CatalogProductReference>> resolvedReferenceMutation =
             new AtomicReference<>(UnaryOperator.identity());
     private final UserCanonicalProductSessionStore store =
@@ -101,6 +104,7 @@ class UserCanonicalProductDetailServiceTest {
             ) {
                 providerCalls.incrementAndGet();
                 providerContext.set(context);
+                providerReferences.set(List.copyOf(references));
                 transactionActiveAtProvider.set(TransactionSynchronizationManager.isActualTransactionActive());
                 ResultFreshness freshness = new ResultFreshness(FRESH_AT, FRESH_AT.plusSeconds(120));
                 return references.stream().map(reference -> {
@@ -189,6 +193,73 @@ class UserCanonicalProductDetailServiceTest {
         assertThat(restartedStore.find(USER_ID, product.key())).isPresent();
         assertThat(restartedStore.findOffer(USER_ID, result.selectedOfferKey())).isPresent();
         assertThat(providerCalls).hasValue(1);
+    }
+
+    @Test
+    void batchRehydratesSessionAndDurableProductsOnceInFirstSeenOrderAndReportsUnavailableKeys() {
+        CanonicalProduct durable = canonicalProduct(
+                "grouped-product-v3_durable",
+                offer("merchant-c", "product-c", "variant-c", 1200));
+        CanonicalProduct stale = canonicalProduct(
+                "grouped-product-v3_stale",
+                offer("merchant-b", "product-stale", "variant-stale", 1100));
+        productReferencePersistenceService.product(USER_ID, identifierOnlyProduct(durable));
+        productReferencePersistenceService.product(USER_ID, identifierOnlyProduct(stale));
+
+        var result = service.rehydrate(
+                profile(USER_ID),
+                new RehydrateUserCanonicalProductsQuery(USER_ID, List.of(
+                        durable.key(),
+                        "grouped-product-v3_unknown",
+                        product.key(),
+                        stale.key(),
+                        durable.key()
+                ))
+        );
+
+        assertThat(result.products())
+                .extracting(detail -> detail.product().key())
+                .containsExactly(durable.key(), product.key());
+        assertThat(result.unavailableCanonicalProductKeys())
+                .containsExactly("grouped-product-v3_unknown", stale.key());
+        assertThat(providerCalls).hasValue(1);
+        assertThat(providerReferences.get())
+                .extracting(reference -> reference.externalVariantReference().value())
+                .containsExactly("variant-c", "variant-a", "variant-b", "variant-stale");
+        assertThat(userSettingsService.calls()).isEqualTo(1);
+        assertThat(store.find(USER_ID, durable.key())).isPresent();
+        assertThat(store.find(USER_ID, stale.key())).isEmpty();
+    }
+
+    @Test
+    void batchTreatsUnknownAndOtherUserKeysUniformlyWithoutCallingTheProvider() {
+        CanonicalProduct otherUsersProduct = canonicalProduct(
+                "grouped-product-v3_other-user",
+                offer("merchant-c", "product-other", "variant-other", 1000));
+        productReferencePersistenceService.product(
+                OTHER_USER_ID, identifierOnlyProduct(otherUsersProduct));
+
+        var result = service.rehydrate(
+                profile(USER_ID),
+                new RehydrateUserCanonicalProductsQuery(
+                        USER_ID, List.of("grouped-product-v3_unknown", otherUsersProduct.key()))
+        );
+
+        assertThat(result.products()).isEmpty();
+        assertThat(result.unavailableCanonicalProductKeys())
+                .containsExactly("grouped-product-v3_unknown", otherUsersProduct.key());
+        assertThat(providerCalls).hasValue(0);
+        assertThat(userSettingsService.calls()).isZero();
+    }
+
+    @Test
+    void batchRejectsAnAuthenticatedUserMismatchBeforeResolvingReferences() {
+        assertThatThrownBy(() -> service.rehydrate(
+                profile(OTHER_USER_ID),
+                new RehydrateUserCanonicalProductsQuery(USER_ID, List.of(product.key()))
+        )).isInstanceOf(UserException.class);
+
+        assertThat(providerCalls).hasValue(0);
     }
 
     @Test
@@ -457,12 +528,20 @@ class UserCanonicalProductDetailServiceTest {
 
     private void rememberProduct(Offer... offers) {
         List<Offer> offerList = List.of(offers);
-        product = new CanonicalProduct(
-                "grouped-product-v3_fixture", "Shared product", null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                offerList.stream().flatMap(offer -> offer.provenance().stream()).toList(),
-                offerList);
+        product = canonicalProduct("grouped-product-v3_fixture", offerList);
         store.remember(USER_ID, List.of(product), Map.of(), Map.of(), List.of());
+    }
+
+    private CanonicalProduct canonicalProduct(String key, Offer... offers) {
+        return canonicalProduct(key, List.of(offers));
+    }
+
+    private CanonicalProduct canonicalProduct(String key, List<Offer> offers) {
+        return new CanonicalProduct(
+                key, "Shared product", null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                offers.stream().flatMap(offer -> offer.provenance().stream()).toList(),
+                offers);
     }
 
     private CanonicalProduct identifierOnlyProduct(CanonicalProduct source) {
@@ -584,26 +663,30 @@ class UserCanonicalProductDetailServiceTest {
 
     private static final class StubCanonicalProductReferencePersistenceService
             extends UserCanonicalProductReferencePersistenceService {
-        private UUID userId;
-        private CanonicalProduct product;
+        private final Map<UUID, Map<String, CanonicalProduct>> products = new java.util.HashMap<>();
 
         private StubCanonicalProductReferencePersistenceService() {
             super(null, null, null, List.of());
         }
 
         private void product(UUID owner, CanonicalProduct value) {
-            userId = owner;
-            product = value;
+            products.computeIfAbsent(owner, ignored -> new java.util.HashMap<>())
+                    .put(value.key(), value);
         }
 
         @Override
         public Optional<CanonicalProduct> findProduct(UUID owner, String canonicalProductKey) {
-            return userId != null
-                    && userId.equals(owner)
-                    && product != null
-                    && product.key().equals(canonicalProductKey)
-                    ? Optional.of(product)
-                    : Optional.empty();
+            return Optional.ofNullable(products.getOrDefault(owner, Map.of()).get(canonicalProductKey));
+        }
+
+        @Override
+        public Map<String, CanonicalProduct> findProducts(UUID owner, List<String> canonicalProductKeys) {
+            Map<String, CanonicalProduct> owned = products.getOrDefault(owner, Map.of());
+            Map<String, CanonicalProduct> found = new java.util.LinkedHashMap<>();
+            canonicalProductKeys.stream().distinct()
+                    .filter(owned::containsKey)
+                    .forEach(key -> found.put(key, owned.get(key)));
+            return Map.copyOf(found);
         }
     }
 }

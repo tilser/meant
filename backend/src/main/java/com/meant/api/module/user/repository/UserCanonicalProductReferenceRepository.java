@@ -13,5 +13,10 @@ public interface UserCanonicalProductReferenceRepository
             String canonicalProductKey
     );
 
+    List<UserCanonicalProductReference> findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+            UUID userId,
+            List<String> canonicalProductKeys
+    );
+
     long deleteByUserIdAndCanonicalProductKey(UUID userId, String canonicalProductKey);
 }

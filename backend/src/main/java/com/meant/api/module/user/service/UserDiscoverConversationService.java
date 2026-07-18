@@ -70,8 +70,9 @@ public class UserDiscoverConversationService {
         conversationRepository.lockId(command.conversationId());
         rejectDeleted(command.conversationId());
         Instant now = persistenceTimestamp();
-        String title = title(command.title());
-        String threadJson = snapshotSanitizer.sanitize(command.threadJson());
+        var sanitizedSnapshot = snapshotSanitizer.sanitize(title(command.title()), command.threadJson());
+        String title = title(sanitizedSnapshot.title());
+        String threadJson = sanitizedSnapshot.threadJson();
         UserDiscoverConversation conversation = conversationRepository.findByIdForUpdate(command.conversationId())
                 .map(existing -> update(existing, command, title, threadJson, now))
                 .orElseGet(() -> create(command, title, threadJson, now));

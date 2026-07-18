@@ -13,10 +13,16 @@ const PROFILE_PICTURE_SIGNED_URL_SECONDS = 60 * 60
 export type UserProfile = components['schemas']['UserResponse']
 export type GroupedProductSearchProfile =
   components['schemas']['UserGroupedProductSearchV1Response']
+export type SimilarProductSearchProfile =
+  components['schemas']['UserSimilarProductSearchV1Response']
+export type SimilarProductSearchRequestProfile =
+  components['schemas']['UserSimilarProductSearchRequest']
 export type CanonicalProductDetailProfile =
   components['schemas']['UserCanonicalProductDetailV1Response']
 export type CanonicalProductProfile = components['schemas']['CanonicalProductResponse']
 export type CanonicalOfferProfile = components['schemas']['OfferResponse']
+export type CanonicalProductsRehydrationProfile =
+  components['schemas']['UserCanonicalProductRehydrationV1Response']
 
 export interface ShoppingFilterProfile {
   id: string
@@ -1077,6 +1083,33 @@ export async function searchGroupedProducts(input: {
   )
 }
 
+export async function searchSimilarGroupedProducts(
+  input: SimilarProductSearchRequestProfile & {
+    canonicalProductKey: string
+    signal?: AbortSignal
+  },
+): Promise<SimilarProductSearchProfile> {
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/products/${encodeURIComponent(input.canonicalProductKey)}/similar`,
+    {
+      method: 'POST',
+      headers: {
+        ...(await authHeaders()),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: input.query,
+        qualificationId: input.qualificationId ?? undefined,
+      }),
+      signal: input.signal,
+    },
+  )
+  return parseJsonResponse<SimilarProductSearchProfile>(
+    response,
+    'Failed to search similar products',
+  )
+}
+
 export async function getCanonicalProductDetail(input: {
   canonicalProductKey: string
   selectedOfferKey?: string | null
@@ -1099,6 +1132,25 @@ export async function getCanonicalProductDetail(input: {
   return parseJsonResponse<CanonicalProductDetailProfile>(
     response,
     'Failed to load canonical product details',
+  )
+}
+
+export async function rehydrateCanonicalProducts(input: {
+  canonicalProductKeys: readonly string[]
+  signal?: AbortSignal
+}): Promise<CanonicalProductsRehydrationProfile> {
+  const response = await fetch(`${API_URL}/api/v1/users/me/products:rehydrate`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ canonicalProductKeys: input.canonicalProductKeys }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<CanonicalProductsRehydrationProfile>(
+    response,
+    'Failed to rehydrate canonical products',
   )
 }
 

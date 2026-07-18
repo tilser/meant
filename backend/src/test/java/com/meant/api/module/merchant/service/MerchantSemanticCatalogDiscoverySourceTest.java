@@ -30,7 +30,11 @@ import com.meant.api.module.user.service.UserProductSearchHashService;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEvent;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEventType;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.FederatedCatalogDiscoveryResult;
+import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.CatalogDiscoverySourceMetrics;
 import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryMetrics;
 import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
@@ -110,6 +114,28 @@ class MerchantSemanticCatalogDiscoverySourceTest {
 
         assertThat(result.candidates()).isEmpty();
         verify(integrationLookup).listByMerchant(any());
+    }
+
+    @Test
+    void declinesSimilarityRequestsEvenWhenTheyAlsoContainAQuery() {
+        MerchantSemanticCatalogDiscoverySource source = new MerchantSemanticCatalogDiscoverySource(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new MerchantMcpToolProperties(100, 100, 500, Duration.ofMinutes(1))
+        );
+        ProviderIdentity provider = new ProviderIdentity("GENERIC_UCP");
+        CatalogSimilarityReference similarityReference = new CatalogSimilarityReference(
+                provider,
+                new ExternalIdentifier(ExternalIdentifierType.PRODUCT, provider.value(), "product-1")
+        );
+
+        assertThat(source.supports(new CatalogDiscoveryRequest(
+                "linen shirt", MERCHANT_ID, 1, null, null, null, similarityReference
+        ))).isFalse();
     }
 
     private MerchantSemanticCatalogDiscoverySource source(
