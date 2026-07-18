@@ -11,13 +11,29 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
-/** Keeps the durable conversation while removing transient catalog payloads block by block. */
+/** Keeps the complete typed conversation while reducing rehydratable search result lists to references. */
 @Component
 @RequiredArgsConstructor
 public class UserDiscoverConversationSnapshotSanitizer {
 
     private static final Set<String> DURABLE_BLOCK_TYPES = Set.of(
-            "text", "newsletter", "prefs", "system", "products");
+            "text",
+            "newsletter",
+            "products",
+            "reviews",
+            "code",
+            "similar",
+            "decision",
+            "watch",
+            "friendvote",
+            "added",
+            "saved",
+            "orders",
+            "prefs",
+            "cart",
+            "checkout",
+            "minicompare",
+            "system");
     private static final Set<String> MESSAGE_ROLES = Set.of("you", "ai");
     private static final String UNAVAILABLE_ATTACHMENT_MESSAGE =
             "This attachment is unavailable in conversation history.";
@@ -73,6 +89,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
         copyText(message, durable, "pendingText");
         copyStringArray(message, durable, "suggestedReplies");
         copyText(message, durable, "query");
+        copyObject(message, durable, "productContext");
         ArrayNode blocks = durableBlocks(message.get("blocks"));
         if (!blocks.isEmpty()) {
             durable.set("blocks", blocks);
@@ -108,34 +125,20 @@ public class UserDiscoverConversationSnapshotSanitizer {
             return unavailableAttachmentMarker();
         }
         String type = block.path("type").asText();
-        if (!durableBlockType(block)) {
+        if (!DURABLE_BLOCK_TYPES.contains(type)) {
             return unavailableAttachmentMarker();
         }
-        ObjectNode durable = objectMapper.createObjectNode();
-        durable.put("type", type);
-        switch (type) {
-            case "text", "system" -> copyText(block, durable, "text");
-            case "prefs" -> durable.set("preferences", durablePreferences(block.get("preferences")));
-            case "newsletter" -> {
-                // The block is intentionally fieldless.
-            }
-            case "products" -> {
-                copyText(block, durable, "productResultSetId");
-                copyText(block, durable, "query");
-            }
-            default -> throw new IllegalStateException("Unexpected durable Discover block type");
+        if ("products".equals(type) && hasProductResultReference(block)) {
+            ObjectNode durable = objectMapper.createObjectNode();
+            durable.put("type", type);
+            copyText(block, durable, "productResultSetId");
+            copyText(block, durable, "query");
+            return durable;
         }
-        return durable;
+        return (ObjectNode) block.deepCopy();
     }
 
-    private boolean durableBlockType(JsonNode block) {
-        String type = block.path("type").asText();
-        if (!DURABLE_BLOCK_TYPES.contains(type)) {
-            return false;
-        }
-        if (!"products".equals(type)) {
-            return true;
-        }
+    private boolean hasProductResultReference(JsonNode block) {
         JsonNode resultSetId = block.get("productResultSetId");
         JsonNode query = block.get("query");
         if (resultSetId == null || !resultSetId.isTextual()
@@ -148,27 +151,6 @@ public class UserDiscoverConversationSnapshotSanitizer {
         } catch (IllegalArgumentException exception) {
             return false;
         }
-    }
-
-    private ArrayNode durablePreferences(JsonNode preferences) {
-        ArrayNode durable = objectMapper.createArrayNode();
-        if (preferences == null || !preferences.isArray()) {
-            return durable;
-        }
-        for (JsonNode preference : preferences) {
-            if (!preference.isObject()) {
-                continue;
-            }
-            ObjectNode value = objectMapper.createObjectNode();
-            copyText(preference, value, "id");
-            copyText(preference, value, "label");
-            copyText(preference, value, "desc");
-            copyText(preference, value, "category");
-            copyText(preference, value, "polarity");
-            copyNumber(preference, value, "displayOrder");
-            durable.add(value);
-        }
-        return durable;
     }
 
     private ObjectNode unavailableAttachmentMarker() {
@@ -189,6 +171,13 @@ public class UserDiscoverConversationSnapshotSanitizer {
         JsonNode value = source.get(field);
         if (value != null && value.isBoolean()) {
             target.put(field, value.asBoolean());
+        }
+    }
+
+    private void copyObject(JsonNode source, ObjectNode target, String field) {
+        JsonNode value = source.get(field);
+        if (value != null && value.isObject()) {
+            target.set(field, value.deepCopy());
         }
     }
 

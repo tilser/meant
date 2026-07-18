@@ -50,7 +50,7 @@ class UserDiscoverConversationSnapshotSanitizerTest {
     }
 
     @Test
-    void replacesOnlyLegacyOrNonCanonicalProductAttachmentsWithTheSafeMarker() {
+    void preservesProductSnapshotsWithoutACanonicalServerResultReference() {
         String legacy = sanitizer.sanitize("""
                 {"messages":[{"role":"ai","blocks":[
                   {"type":"text","text":"I can still keep this answer."},
@@ -66,15 +66,16 @@ class UserDiscoverConversationSnapshotSanitizerTest {
         assertThat(legacy)
                 .contains(
                         "I can still keep this answer.",
-                        "This attachment is unavailable in conversation history")
-                .doesNotContain("legacy");
+                        "\"type\":\"products\"",
+                        "legacy")
+                .doesNotContain("This attachment is unavailable in conversation history");
         assertThat(shortenedUuid)
-                .contains("This attachment is unavailable in conversation history")
-                .doesNotContain("1-1-1-1-1");
+                .contains("\"type\":\"products\"", "1-1-1-1-1")
+                .doesNotContain("This attachment is unavailable in conversation history");
     }
 
     @Test
-    void keepsMessageEnvelopeAndSafeBlocksWhenTransientMessageFieldsOrRichBlocksArePresent() {
+    void keepsMessageEnvelopeProductContextAndOriginalRichBlocks() {
         String sanitized = sanitizer.sanitize("""
                 {
                   "focusProductId":"canonical-product-1",
@@ -103,16 +104,39 @@ class UserDiscoverConversationSnapshotSanitizerTest {
                         "Show another",
                         "Compare",
                         "The explanation remains.",
-                        "This attachment is unavailable in conversation history",
-                        "Current status")
-                .doesNotContain(
-                        "sessionOnly",
-                        "productContext",
+                        "Current status",
+                        "\"productContext\"",
+                        "\"type\":\"reviews\"",
                         "private product",
                         "12900",
                         "cdn.shopify.com",
-                        "hidden",
+                        "hidden")
+                .doesNotContain(
+                        "sessionOnly",
                         "42");
+    }
+
+    @Test
+    void keepsComparisonAndCartBlocksForTheOriginalHistoryUi() {
+        String sanitized = sanitizer.sanitize("""
+                {"messages":[{"id":"answer-1","role":"ai","blocks":[
+                  {"type":"minicompare","products":[{"id":"product-1","name":"Jacket"}],
+                   "rows":[{"label":"Match","values":["87%"],"winnerIndex":0}],"pickIndex":0},
+                  {"type":"cart","lines":[{"id":"product-1","merchant":"Store","qty":2}],
+                   "products":[{"id":"product-1","name":"Jacket"}]}
+                ]}]}
+                """);
+
+        assertThat(sanitized)
+                .contains(
+                        "\"type\":\"minicompare\"",
+                        "\"rows\"",
+                        "\"winnerIndex\":0",
+                        "\"pickIndex\":0",
+                        "\"type\":\"cart\"",
+                        "\"lines\"",
+                        "\"merchant\":\"Store\"",
+                        "\"qty\":2");
     }
 
     @Test

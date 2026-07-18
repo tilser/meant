@@ -134,9 +134,6 @@ export function normalizeDiscoverChatThreads(
   })
 }
 
-const SESSION_ONLY_RESULTS_MESSAGE =
-  'Product results are available only in the active session. Search again to refresh them.'
-
 function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
   switch (block.type) {
     case 'text':
@@ -158,7 +155,7 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
     case 'products': {
       const productResultSetId = normalizedProductResultSetId(block.productResultSetId)
       if (!productResultSetId) {
-        return { type: 'system', text: SESSION_ONLY_RESULTS_MESSAGE }
+        return { ...block, products: [...block.products] }
       }
       return {
         type: 'products',
@@ -170,7 +167,7 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
     case 'system':
       return { type: 'system', text: block.text }
     default:
-      return { type: 'text', text: discoverBlockCopyText(block) }
+      return { ...block }
   }
 }
 
@@ -186,10 +183,11 @@ function durableDiscoverMessage(message: DiscoverChatMessage): DiscoverChatMessa
     pendingText: message.pendingText,
     suggestedReplies: message.suggestedReplies ? [...message.suggestedReplies] : undefined,
     query: message.query,
+    productContext: message.productContext,
   }
 }
 
-/** Stores the complete transcript while replacing volatile rich payloads with safe text snapshots. */
+/** Stores the complete structured conversation while rehydrating server-backed search result lists. */
 export function durableDiscoverChatThread(
   thread: DiscoverChatThread,
   archived: boolean | undefined = thread.archived,

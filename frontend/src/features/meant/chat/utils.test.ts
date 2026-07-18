@@ -179,7 +179,7 @@ describe('discover chat history storage', () => {
     ])
   })
 
-  test('replaces only a legacy product block and keeps its sibling transcript', () => {
+  test('preserves a legacy product block when no server result-set reference exists', () => {
     const product = { id: 'legacy-product', name: 'Legacy product' } as unknown as Product
     const thread = createDiscoverChatThread([
       {
@@ -192,16 +192,12 @@ describe('discover chat history storage', () => {
       },
     ])
 
-    expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual([
-      { type: 'text', text: 'Legacy result text' },
-      {
-        type: 'system',
-        text: 'Product results are available only in the active session. Search again to refresh them.',
-      },
-    ])
+    expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual(
+      thread.messages[0]?.blocks,
+    )
   })
 
-  test('does not persist a malformed product result-set reference', () => {
+  test('preserves the product snapshot when its result-set reference is malformed', () => {
     const product = { id: 'product-1', name: 'Product' } as unknown as Product
     const thread = createDiscoverChatThread([
       {
@@ -217,7 +213,9 @@ describe('discover chat history storage', () => {
       },
     ])
 
-    expect(durableDiscoverChatThread(thread).messages[0]?.blocks?.[0]?.type).toBe('system')
+    expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual(
+      thread.messages[0]?.blocks,
+    )
   })
 
   test('preserves session-only transcript text while removing caller-controlled nested fields', () => {
@@ -256,7 +254,7 @@ describe('discover chat history storage', () => {
     expect(serialized).toContain('Natural materials')
   })
 
-  test('stores a complete review transcript without the volatile product payload', () => {
+  test('stores the original structured review block', () => {
     const product = historyProduct()
     const thread = createDiscoverChatThread([
       {
@@ -272,19 +270,14 @@ describe('discover chat history storage', () => {
     const durable = durableDiscoverChatThread(thread)
     const serialized = JSON.stringify(durable)
 
-    expect(durable.messages[0]?.blocks).toEqual([
-      { type: 'text', text: 'Here is what reviewers say about Brooks Ghost 14.' },
-      {
-        type: 'text',
-        text: 'Brooks Ghost 14 reviews: 4.7/5 from 321 reviews. Runners consistently praise the cushioning.',
-      },
-    ])
-    expect(serialized).not.toContain('cdn.shopify.com')
-    expect(serialized).not.toContain('volatile-offer-key')
-    expect(serialized).not.toContain('"product":')
+    expect(durable.messages[0]?.blocks).toEqual(thread.messages[0]?.blocks)
+    expect(serialized).toContain('"type":"reviews"')
+    expect(serialized).toContain('cdn.shopify.com')
+    expect(serialized).toContain('volatile-offer-key')
+    expect(serialized).toContain('"product":')
   })
 
-  test('stores complete compare and decision transcripts without product objects', () => {
+  test('stores the original comparison table and decision blocks', () => {
     const first = historyProduct()
     const second = historyProduct({
       id: 'product-2',
@@ -319,31 +312,18 @@ describe('discover chat history storage', () => {
     ])
 
     const durable = durableDiscoverChatThread(thread)
-    const compareText = durable.messages[0]?.blocks?.[1]
-    const decisionText = durable.messages[1]?.blocks?.[0]
     const serialized = JSON.stringify(durable)
 
-    expect(compareText).toMatchObject({ type: 'text' })
-    expect(compareText?.type === 'text' ? compareText.text : '').toContain(
-      'Match: Brooks Ghost 14 91% (best) Nike Pegasus 41 86%',
-    )
-    expect(compareText?.type === 'text' ? compareText.text : '').toContain(
-      'Recommended: Brooks Ghost 14.',
-    )
-    expect(decisionText).toEqual({
-      type: 'text',
-      text: [
-        'Pick: Brooks Ghost 14 - $129.00 - Running Store',
-        'Why: The strongest fit for the requested cushioning.',
-        'Runner-up: Nike Pegasus 41 - $139.00 - Running Store',
-      ].join('\n'),
-    })
-    expect(serialized).not.toContain('cdn.shopify.com')
-    expect(serialized).not.toContain('volatile-offer-key')
-    expect(serialized).not.toContain('"products":[')
+    expect(durable.messages).toEqual(thread.messages)
+    expect(durable.messages[0]?.blocks?.[1]?.type).toBe('minicompare')
+    expect(durable.messages[1]?.blocks?.[0]?.type).toBe('decision')
+    expect(serialized).toContain('"rows"')
+    expect(serialized).toContain('cdn.shopify.com')
+    expect(serialized).toContain('volatile-offer-key')
+    expect(serialized).toContain('"products":[')
   })
 
-  test('keeps user text and focus while removing raw product context', () => {
+  test('keeps user text, focus, and structured product context', () => {
     const product = historyProduct()
     const thread = {
       ...createDiscoverChatThread([
@@ -361,18 +341,39 @@ describe('discover chat history storage', () => {
     const serialized = JSON.stringify(durable)
 
     expect(durable.focusProductId).toBe(product.id)
-    expect(durable.messages[0]).toEqual({
-      id: 'question-1',
-      role: 'you',
-      text: 'What do reviewers say about Brooks Ghost 14?',
-      blocks: undefined,
-      pending: undefined,
-      pendingText: undefined,
-      suggestedReplies: undefined,
-      query: undefined,
-    })
-    expect(serialized).not.toContain('productContext')
-    expect(serialized).not.toContain('cdn.shopify.com')
+    expect(durable.messages[0]?.productContext).toEqual(product)
+    expect(serialized).toContain('productContext')
+    expect(serialized).toContain('cdn.shopify.com')
+  })
+
+  test('round-trips a cart block as the original structured chat UI', () => {
+    const product = historyProduct()
+    const cartLine: CartItem = {
+      id: product.id,
+      merchant: 'Running Store',
+      qty: 2,
+      offerKey: 'offer-1',
+      variantTitle: 'Black / 10',
+      productTitle: product.name,
+      lineTotalAmount: '258.00',
+      cartCurrency: 'USD',
+    }
+    const thread = createDiscoverChatThread([
+      {
+        id: 'cart-answer',
+        role: 'ai',
+        blocks: [
+          { type: 'text', text: 'Here is your cart.' },
+          { type: 'cart', lines: [cartLine], products: [product] },
+        ],
+      },
+    ])
+
+    saveStoredDiscoverChatThreads([thread], 'user-1')
+    const [restored] = initialDiscoverChatThreads('user-1')
+
+    expect(restored?.messages[0]?.blocks).toEqual(thread.messages[0]?.blocks)
+    expect(restored?.messages[0]?.blocks?.[1]?.type).toBe('cart')
   })
 
   test('purges pre-account shared history instead of migrating Shopify facts', () => {

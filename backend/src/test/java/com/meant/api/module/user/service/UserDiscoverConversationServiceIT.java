@@ -169,7 +169,7 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void saveKeepsConversationTextWhileRemovingSessionOnlyCatalogFactsBlockByBlock() {
+    void savePreservesStructuredConversationBlocksAndKnownMessageContext() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         String threadJson = """
@@ -203,19 +203,20 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
         assertThat(saved.threadJson())
                 .contains(
                         "Search completed.",
-                        "This attachment is unavailable in conversation history",
-                        "Natural materials")
-                .doesNotContain(
+                        "Natural materials",
+                        "\"productContext\"",
                         "private product",
-                        "top-level private product",
-                        "nested private product",
-                        "message private product",
+                        "\"type\":\"products\"",
                         "cdn.shopify.com",
-                        "\"type\":\"products\"");
+                        "nested private product")
+                .doesNotContain(
+                        "top-level private product",
+                        "message private product",
+                        "sessionProducts");
     }
 
     @Test
-    void listSanitizesStoredLegacyAttachmentsWithoutRemovingConversationText() {
+    void listPreservesStoredLegacyConversationContext() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         userDiscoverConversationService.list(
@@ -234,12 +235,11 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
                 .getFirst();
 
         assertThat(listed.threadJson())
-                .contains("Legacy price was $99")
-                .doesNotContain("legacy product", "productContext");
+                .contains("Legacy price was $99", "legacy product", "productContext");
     }
 
     @Test
-    void saveAndGetPreserveCompleteMultiTurnTextAndBlockOrderWithoutRawProductFacts() {
+    void saveAndGetPreserveCompleteMultiTurnRichConversationUi() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         UUID resultSetId = UUID.randomUUID();
@@ -299,6 +299,17 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
                       "products":[{"title":"private comparison title","price":9900}],
                       "rows":[{"label":"Price","values":["$99"]}]
                     }]
+                  },{
+                    "id":"cart-answer",
+                    "role":"ai",
+                    "blocks":[{
+                      "type":"text",
+                      "text":"Here is your cart."
+                    },{
+                      "type":"cart",
+                      "lines":[{"id":"canonical-shoe-1","merchant":"Running Store","qty":2}],
+                      "products":[{"id":"canonical-shoe-1","title":"private cart title"}]
+                    }]
                   }]
                 }
                 """.formatted(conversationId, resultSetId);
@@ -317,25 +328,27 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
                         "I found current matches.",
                         "What do reviewers say?",
                         "Here is the review summary.",
-                        "This attachment is unavailable in conversation history",
                         "The available evidence is limited.",
                         "Compare these here.",
                         "I lined them up here.",
-                        "This attachment is unavailable in conversation history")
+                        "Here is your cart.")
                 .contains(
                         "\"focusProductId\":\"canonical-shoe-1\"",
-                        "\"productResultSetId\":\"" + resultSetId + "\"")
-                .doesNotContain(
+                        "\"productResultSetId\":\"" + resultSetId + "\"",
+                        "\"productContext\"",
                         "private search title",
-                        "private comparison title",
+                        "\"type\":\"reviews\"",
                         "cdn.shopify.com",
-                        "12900",
+                        "\"type\":\"minicompare\"",
+                        "private comparison title",
                         "9900",
                         "$99",
-                        "productContext",
-                        "sessionOnly",
-                        "\"type\":\"reviews\"",
-                        "\"type\":\"minicompare\"");
+                        "\"type\":\"cart\"",
+                        "private cart title",
+                        "\"qty\":2")
+                .doesNotContain(
+                        "12900",
+                        "sessionOnly");
         assertThat(snapshotSanitizer.sanitize(loaded.threadJson())).isEqualTo(loaded.threadJson());
     }
 

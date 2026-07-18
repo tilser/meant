@@ -78,7 +78,7 @@ export interface DiscoverChatMessage {
   suggestedReplies?: readonly string[]
   query?: string
   productContext?: Product
-  /** Legacy runtime hint. Durable storage keeps safe transcript text and omits this flag. */
+  /** Legacy runtime hint. Durable storage preserves the message and omits this flag. */
   sessionOnly?: boolean
 }
 
