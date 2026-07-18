@@ -15,6 +15,7 @@ import com.meant.api.module.user.service.query.ListUserDiscoverConversationsQuer
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -68,7 +69,7 @@ public class UserDiscoverConversationService {
         userService.ensureProfile(profileCommand);
         conversationRepository.lockId(command.conversationId());
         rejectDeleted(command.conversationId());
-        Instant now = Instant.now();
+        Instant now = persistenceTimestamp();
         String title = title(command.title());
         String threadJson = snapshotSanitizer.sanitize(command.threadJson());
         UserDiscoverConversation conversation = conversationRepository.findByIdForUpdate(command.conversationId())
@@ -90,7 +91,7 @@ public class UserDiscoverConversationService {
                 .filter(existing -> UserConversationKind.DISCOVER.name().equals(existing.getKind()))
                 .orElseThrow(() -> UserException.notFound("Discover conversation not found"));
         tombstoneRepository.save(UserDiscoverConversationTombstone.create(
-                conversation.getId(), conversation.getUserId(), Instant.now()));
+                conversation.getId(), conversation.getUserId(), persistenceTimestamp()));
         conversationRepository.delete(conversation);
     }
 
@@ -163,5 +164,9 @@ public class UserDiscoverConversationService {
             return normalized;
         }
         return normalized.substring(0, 77) + "...";
+    }
+
+    private Instant persistenceTimestamp() {
+        return Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 }

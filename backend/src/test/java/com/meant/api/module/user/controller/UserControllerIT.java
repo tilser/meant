@@ -496,7 +496,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         MerchantCartPluginDispatchService testMerchantCartPluginDispatchService() {
             MerchantCartPluginDispatchService service = mock(MerchantCartPluginDispatchService.class);
             when(service.createCart(
-                    any(CartRoutingTarget.class), any(CreateCartRequest.class), any(UcpSession.class)))
+                    any(CartRoutingTarget.class), any(CreateCartRequest.class), any(UcpSession.class), any()))
                     .thenAnswer(invocation -> {
                         CreateCartRequest request = invocation.getArgument(1);
                         assertThat(request.addItems()).singleElement().satisfies(item -> {
