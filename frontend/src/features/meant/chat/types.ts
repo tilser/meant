@@ -21,7 +21,14 @@ export interface FoundDiscountCode {
 export type DiscoverChatBlock =
   | { type: 'text'; text: string }
   | { type: 'newsletter' }
-  | { type: 'products'; products: readonly Product[]; query?: string }
+  | {
+      type: 'products'
+      products: readonly Product[]
+      query?: string
+      productResultSetId?: string
+      unavailableCount?: number
+      historyHydration?: 'loading' | 'loaded' | 'failed'
+    }
   | { type: 'reviews'; product: Product }
   | {
       type: 'code'
@@ -71,7 +78,7 @@ export interface DiscoverChatMessage {
   suggestedReplies?: readonly string[]
   query?: string
   productContext?: Product
-  /** Marks assistant output derived from transient catalog/product facts. Never stored durably. */
+  /** Legacy runtime hint. Durable storage keeps safe transcript text and omits this flag. */
   sessionOnly?: boolean
 }
 
@@ -111,6 +118,7 @@ export type DiscoverProductSearchTurnResult =
       suggestedReplies: readonly string[]
       effectiveQuery: string
       products: readonly Product[]
+      productResultSetId: string
     }
 
 export interface ProductDetailChatRequest {

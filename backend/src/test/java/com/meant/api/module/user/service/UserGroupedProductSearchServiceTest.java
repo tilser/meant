@@ -91,6 +91,7 @@ class UserGroupedProductSearchServiceTest {
                 new StubRankingContextFactory(),
                 sessionStore(),
                 referencePersistence(),
+                null,
                 new UserProductPreferenceMatchCuratorService()
         );
         EnsureUserProfileCommand profile = profile();
@@ -263,6 +264,7 @@ class UserGroupedProductSearchServiceTest {
                 new StubRankingContextFactory(),
                 sessionStore(),
                 referencePersistence(),
+                null,
                 new UserProductPreferenceMatchCuratorService()
         );
 
@@ -311,6 +313,7 @@ class UserGroupedProductSearchServiceTest {
                 new StubRankingContextFactory(),
                 sessionStore(),
                 referencePersistence(),
+                null,
                 new UserProductPreferenceMatchCuratorService()
         );
 
@@ -402,6 +405,7 @@ class UserGroupedProductSearchServiceTest {
                 new StubRankingContextFactory(),
                 sessionStore(),
                 referencePersistence(),
+                null,
                 new UserProductPreferenceMatchCuratorService()
         );
     }
@@ -520,6 +524,7 @@ class UserGroupedProductSearchServiceTest {
                 new StubRankingContextFactory(),
                 sessionStore(),
                 referencePersistence(),
+                null,
                 new UserProductPreferenceMatchCuratorService()
         );
     }

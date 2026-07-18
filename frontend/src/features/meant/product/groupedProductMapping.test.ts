@@ -55,6 +55,27 @@ describe('grouped product card mapping', () => {
     expect(mapped[0]?.canonicalProduct).toBe(canonical[0])
     expect(mapped[0]?.merchants).toBe(2)
     expect(mapped[0]?.priceFrom).toBe(10)
+    expect(mapped[0]?.rankingUnavailable).toBe(true)
+  })
+
+  test('marks a product ranking as available only when the canonical response includes it', () => {
+    const canonical = canonicalProduct('ranked')
+    canonical.rankingExplanation = {
+      rankingVersion: 'rank-v1',
+      diversityPolicyVersion: 'diversity-v1',
+      scoreBasisPoints: 8700,
+      finalRank: 1,
+      execution: 'DETERMINISTIC',
+      diversityPolicyOutcome: 'STRICT',
+      diversityDecision: 'NONE',
+      deterministicTieBreakKey: 'ranked',
+      features: [],
+    }
+
+    const mapped = productFromCanonical(canonical)
+
+    expect(mapped.match).toBe(87)
+    expect(mapped.rankingUnavailable).toBe(false)
   })
 
   test('keeps exact generated offer keys only in the canonical payload', () => {

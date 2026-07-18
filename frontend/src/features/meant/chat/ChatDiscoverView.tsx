@@ -12,6 +12,7 @@ import {
   ApiError,
   deleteDiscoverConversation,
   getDiscoverConversation,
+  getDiscoverConversationProductResultSet,
   getDiscoverConversations,
   saveDiscoverConversation,
   searchDiscountCodes,
@@ -59,6 +60,14 @@ import { DiscoverShareSheet } from './DiscoverShareSheet'
 import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
 import { DiscoverThreadTabs } from './DiscoverThreadTabs'
 import { Workbench } from './workbench/Workbench'
+import {
+  applyProductResultSetHydration,
+  markProductResultSetsLoading,
+  resetLoadingProductResultSets,
+  retryFailedProductResultSet,
+  type ProductResultSetHydrationResolution,
+  unresolvedProductResultSetIds,
+} from './productResultSetHydration'
 import type {
   AgentActivity,
   DiscoverChatBlock,
@@ -699,6 +708,7 @@ export function ChatDiscoverView({
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [archivedThreads, setArchivedThreads] = useState<DiscoverChatThread[]>([])
   const [discoverHistoryLoaded, setDiscoverHistoryLoaded] = useState(false)
+  const [productResultRetryToken, setProductResultRetryToken] = useState(0)
   const fallbackThread = useMemo(() => createDiscoverChatThread(), [])
   const activeThread =
     threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? fallbackThread
@@ -828,6 +838,16 @@ export function ChatDiscoverView({
     setArchivedThreads(attachRevision)
   }, [])
 
+  const updateProductResultThread = useCallback(
+    (threadId: string, update: (thread: DiscoverChatThread) => DiscoverChatThread) => {
+      const apply = (current: DiscoverChatThread[]) =>
+        current.map((thread) => (thread.id === threadId ? update(thread) : thread))
+      setThreads(apply)
+      setArchivedThreads(apply)
+    },
+    [],
+  )
+
   const restoreRemoteConversation = useCallback(
     async (
       threadId: string,
@@ -948,6 +968,80 @@ export function ChatDiscoverView({
     }
     saveStoredDiscoverChatThreads([...threads, ...archivedThreads], storageScope)
   }, [archivedThreads, discoverHistoryLoaded, storageScope, threads])
+
+  useEffect(() => {
+    if (!discoverHistoryLoaded) {
+      return undefined
+    }
+    const state = conversationStateRef.current
+    const thread = [...state.threads, ...state.archivedThreads].find(
+      (candidate) => candidate.id === activeThreadIdSafe,
+    )
+    if (!thread) {
+      return undefined
+    }
+    const resultSetIds = unresolvedProductResultSetIds(thread)
+    if (resultSetIds.length === 0) {
+      return undefined
+    }
+
+    const controller = new AbortController()
+    const hydrationScope = storageScope
+    updateProductResultThread(thread.id, (current) =>
+      markProductResultSetsLoading(current, resultSetIds),
+    )
+
+    const load = async (resultSetId: string): Promise<ProductResultSetHydrationResolution> => {
+      try {
+        const response = await getDiscoverConversationProductResultSet(thread.id, resultSetId, {
+          expectedUserId: hydrationScope,
+          signal: controller.signal,
+        })
+        if (response.resultSetId !== resultSetId) {
+          throw new Error('Saved product result-set identity did not match the request')
+        }
+        return {
+          resultSetId,
+          status: 'loaded',
+          products: response.products,
+          unavailableCount: response.unavailableCount,
+        }
+      } catch (error: unknown) {
+        if (controller.signal.aborted) {
+          throw error
+        }
+        return { resultSetId, status: 'failed' }
+      }
+    }
+
+    void Promise.all(resultSetIds.map(load))
+      .then((resolutions) => {
+        if (
+          controller.signal.aborted ||
+          persistenceScopeRef.current !== hydrationScope ||
+          activeThreadIdRef.current !== thread.id
+        ) {
+          return
+        }
+        updateProductResultThread(thread.id, (current) =>
+          applyProductResultSetHydration(current, resolutions),
+        )
+      })
+      .catch(() => undefined)
+
+    return () => {
+      controller.abort()
+      updateProductResultThread(thread.id, (current) =>
+        resetLoadingProductResultSets(current, resultSetIds),
+      )
+    }
+  }, [
+    activeThreadIdSafe,
+    discoverHistoryLoaded,
+    productResultRetryToken,
+    storageScope,
+    updateProductResultThread,
+  ])
 
   useEffect(() => {
     if (!discoverHistoryLoaded) {
@@ -1197,14 +1291,7 @@ export function ChatDiscoverView({
             ...thread,
             title: shouldTitle ? deriveDiscoverChatTitle(options.titleSeed ?? '') : thread.title,
             focusProductId: options.focusProductId ?? thread.focusProductId,
-            messages: [
-              ...thread.messages,
-              ...nextMessages.map((message) =>
-                options.focusProductId && message.role === 'ai'
-                  ? { ...message, sessionOnly: true }
-                  : message,
-              ),
-            ],
+            messages: [...thread.messages, ...nextMessages],
             updatedAt: now,
           }
         }),
@@ -1721,6 +1808,7 @@ export function ChatDiscoverView({
             type: 'products',
             products: result.products,
             query: result.effectiveQuery,
+            productResultSetId: result.productResultSetId,
           })
         }
         const now = Date.now()
@@ -2233,6 +2321,13 @@ export function ChatDiscoverView({
     setActiveThreadId(threadId)
   }
 
+  const retryProductResultSet = (threadId: string, resultSetId: string) => {
+    updateProductResultThread(threadId, (thread) =>
+      retryFailedProductResultSet(thread, resultSetId),
+    )
+    setProductResultRetryToken((current) => current + 1)
+  }
+
   const deleteHistoryThread = (threadId: string) => {
     const persistenceScope = storageScope
     const deletion = conversationPersistenceRef.current.delete(threadId, async () => {
@@ -2420,6 +2515,7 @@ export function ChatDiscoverView({
     onShelfAddProduct: addProductToShelf,
     onDragMessage: dragMessage,
     onDragProduct: dragProduct,
+    onRetryProductResultSet: retryProductResultSet,
   }
 
   const empty = messages.length === 0

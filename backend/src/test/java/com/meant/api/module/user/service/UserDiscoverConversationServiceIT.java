@@ -126,7 +126,50 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void saveRemovesSessionOnlyCatalogFactsFromDurableSnapshot() {
+    void saveAndGetRetainOnlyTheServerResultSetReferenceForHistoricalProducts() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID resultSetId = UUID.randomUUID();
+        String threadJson = """
+                {
+                  "id":"%s",
+                  "title":"shoes",
+                  "messages":[{
+                    "id":"assistant-result",
+                    "role":"ai",
+                    "blocks":[{
+                      "type":"text",
+                      "text":"I found two current options."
+                    },{
+                      "type":"products",
+                      "productResultSetId":"%s",
+                      "query":"shoes",
+                      "products":[{"title":"private title","price":"$99"}],
+                      "selectedProduct":{"image":"https://cdn.shopify.com/private.jpg"}
+                    }]
+                  }]
+                }
+                """.formatted(conversationId, resultSetId);
+
+        UserDiscoverConversationResult saved = userDiscoverConversationService.save(
+                profileCommand(userId),
+                new SaveUserDiscoverConversationCommand(userId, conversationId, "shoes", threadJson, null)
+        );
+        UserDiscoverConversationResult loaded = userDiscoverConversationService.get(
+                new GetUserDiscoverConversationQuery(userId, conversationId));
+
+        assertThat(loaded.threadJson()).isEqualTo(saved.threadJson());
+        assertThat(loaded.threadJson())
+                .contains(
+                        "I found two current options.",
+                        "\"type\":\"products\"",
+                        "\"productResultSetId\":\"" + resultSetId + "\"",
+                        "\"query\":\"shoes\"")
+                .doesNotContain("private title", "$99", "cdn.shopify.com", "selectedProduct");
+    }
+
+    @Test
+    void saveKeepsConversationTextWhileRemovingSessionOnlyCatalogFactsBlockByBlock() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         String threadJson = """
@@ -158,20 +201,21 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
         );
 
         assertThat(saved.threadJson())
-                .contains("Product results are available only in the active session")
-                .doesNotContain(
+                .contains(
                         "Search completed.",
+                        "This attachment is unavailable in conversation history",
+                        "Natural materials")
+                .doesNotContain(
                         "private product",
                         "top-level private product",
                         "nested private product",
                         "message private product",
                         "cdn.shopify.com",
                         "\"type\":\"products\"");
-        assertThat(saved.threadJson()).contains("Natural materials");
     }
 
     @Test
-    void listSanitizesAStoredLegacySnapshotBeforeReturningIt() {
+    void listSanitizesStoredLegacyAttachmentsWithoutRemovingConversationText() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         userDiscoverConversationService.list(
@@ -190,8 +234,109 @@ class UserDiscoverConversationServiceIT extends PostgresIntegrationTestSupport {
                 .getFirst();
 
         assertThat(listed.threadJson())
-                .contains("Product results are available only in the active session")
-                .doesNotContain("legacy product", "$99");
+                .contains("Legacy price was $99")
+                .doesNotContain("legacy product", "productContext");
+    }
+
+    @Test
+    void saveAndGetPreserveCompleteMultiTurnTextAndBlockOrderWithoutRawProductFacts() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID resultSetId = UUID.randomUUID();
+        String threadJson = """
+                {
+                  "id":"%s",
+                  "title":"running shoes",
+                  "focusProductId":"canonical-shoe-1",
+                  "messages":[{
+                    "id":"search-question",
+                    "role":"you",
+                    "text":"Show me running shoes"
+                  },{
+                    "id":"search-answer",
+                    "role":"ai",
+                    "query":"running shoes",
+                    "blocks":[{
+                      "type":"text",
+                      "text":"I found current matches."
+                    },{
+                      "type":"products",
+                      "productResultSetId":"%s",
+                      "query":"running shoes",
+                      "products":[{"title":"private search title","price":12900}]
+                    }]
+                  },{
+                    "id":"review-question",
+                    "role":"you",
+                    "text":"What do reviewers say?",
+                    "productContext":{"title":"private search title"}
+                  },{
+                    "id":"review-answer",
+                    "role":"ai",
+                    "sessionOnly":true,
+                    "blocks":[{
+                      "type":"text",
+                      "text":"Here is the review summary."
+                    },{
+                      "type":"reviews",
+                      "product":{"title":"private search title","image":"https://cdn.shopify.com/private.jpg"}
+                    },{
+                      "type":"text",
+                      "text":"The available evidence is limited."
+                    }]
+                  },{
+                    "id":"compare-question",
+                    "role":"you",
+                    "text":"Compare these here."
+                  },{
+                    "id":"compare-answer",
+                    "role":"ai",
+                    "blocks":[{
+                      "type":"text",
+                      "text":"I lined them up here."
+                    },{
+                      "type":"minicompare",
+                      "products":[{"title":"private comparison title","price":9900}],
+                      "rows":[{"label":"Price","values":["$99"]}]
+                    }]
+                  }]
+                }
+                """.formatted(conversationId, resultSetId);
+
+        UserDiscoverConversationResult saved = userDiscoverConversationService.save(
+                profileCommand(userId),
+                new SaveUserDiscoverConversationCommand(
+                        userId, conversationId, "running shoes", threadJson, null));
+        UserDiscoverConversationResult loaded = userDiscoverConversationService.get(
+                new GetUserDiscoverConversationQuery(userId, conversationId));
+
+        assertThat(loaded.threadJson()).isEqualTo(saved.threadJson());
+        assertThat(loaded.threadJson())
+                .containsSubsequence(
+                        "Show me running shoes",
+                        "I found current matches.",
+                        "What do reviewers say?",
+                        "Here is the review summary.",
+                        "This attachment is unavailable in conversation history",
+                        "The available evidence is limited.",
+                        "Compare these here.",
+                        "I lined them up here.",
+                        "This attachment is unavailable in conversation history")
+                .contains(
+                        "\"focusProductId\":\"canonical-shoe-1\"",
+                        "\"productResultSetId\":\"" + resultSetId + "\"")
+                .doesNotContain(
+                        "private search title",
+                        "private comparison title",
+                        "cdn.shopify.com",
+                        "12900",
+                        "9900",
+                        "$99",
+                        "productContext",
+                        "sessionOnly",
+                        "\"type\":\"reviews\"",
+                        "\"type\":\"minicompare\"");
+        assertThat(snapshotSanitizer.sanitize(loaded.threadJson())).isEqualTo(loaded.threadJson());
     }
 
     @Test

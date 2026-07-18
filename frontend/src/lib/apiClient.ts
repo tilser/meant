@@ -316,6 +316,9 @@ export interface UserDiscoverConversationProfile {
   revision: number
 }
 
+export type UserDiscoverProductResultSetProfile =
+  components['schemas']['UserDiscoverProductResultSetResponse']
+
 export interface UserSavedProductOfferProfile {
   offerKey?: string | null
   merchant: string | null
@@ -1358,6 +1361,25 @@ export async function getDiscoverConversation(
   return parseJsonResponse<UserDiscoverConversationProfile>(
     response,
     'Failed to load Discover conversation',
+  )
+}
+
+export async function getDiscoverConversationProductResultSet(
+  conversationId: string,
+  resultSetId: string,
+  options?: { expectedUserId?: string; signal?: AbortSignal },
+): Promise<UserDiscoverProductResultSetProfile> {
+  const response = await fetch(
+    `${API_URL}/api/v1/users/me/discover/conversations/${encodeURIComponent(conversationId)}/product-result-sets/${encodeURIComponent(resultSetId)}`,
+    {
+      cache: 'no-store',
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<UserDiscoverProductResultSetProfile>(
+    response,
+    'Failed to refresh saved product results',
   )
 }
 

@@ -2,6 +2,7 @@ package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.exception.UserException;
 import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
@@ -10,16 +11,16 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
-/** Enforces the session-only catalog retention boundary on every durable Discover snapshot. */
+/** Keeps the durable conversation while removing transient catalog payloads block by block. */
 @Component
 @RequiredArgsConstructor
 public class UserDiscoverConversationSnapshotSanitizer {
 
     private static final Set<String> DURABLE_BLOCK_TYPES = Set.of(
-            "text", "newsletter", "prefs", "system");
+            "text", "newsletter", "prefs", "system", "products");
     private static final Set<String> MESSAGE_ROLES = Set.of("you", "ai");
-    private static final String SESSION_ONLY_MESSAGE =
-            "Product results are available only in the active session. Search again to refresh them.";
+    private static final String UNAVAILABLE_ATTACHMENT_MESSAGE =
+            "This attachment is unavailable in conversation history.";
 
     private final ObjectMapper objectMapper;
 
@@ -33,6 +34,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
             copyText(parsed, snapshot, "id");
             copyText(parsed, snapshot, "title");
             copyText(parsed, snapshot, "qualificationId");
+            copyText(parsed, snapshot, "focusProductId");
             copyBoolean(parsed, snapshot, "named");
             copyBoolean(parsed, snapshot, "archived");
             copyNumber(parsed, snapshot, "createdAt");
@@ -63,19 +65,6 @@ public class UserDiscoverConversationSnapshotSanitizer {
 
     private ObjectNode sanitizeMessage(JsonNode message) {
         String role = requiredRole(message);
-        boolean removedSessionData = message.has("productContext")
-                || message.path("sessionOnly").asBoolean(false)
-                || containsSessionBlock(message.get("blocks"));
-        if ("ai".equals(role) && removedSessionData) {
-            ObjectNode markerMessage = objectMapper.createObjectNode();
-            copyText(message, markerMessage, "id");
-            markerMessage.put("role", "ai");
-            ArrayNode blocks = objectMapper.createArrayNode();
-            blocks.add(sessionOnlyMarker());
-            markerMessage.set("blocks", blocks);
-            return markerMessage;
-        }
-
         ObjectNode durable = objectMapper.createObjectNode();
         copyText(message, durable, "id");
         durable.put("role", role);
@@ -99,42 +88,28 @@ public class UserDiscoverConversationSnapshotSanitizer {
         return role.asText();
     }
 
-    private boolean containsSessionBlock(JsonNode blocks) {
-        if (blocks == null) {
-            return false;
-        }
-        if (!blocks.isArray()) {
-            return true;
-        }
-        for (JsonNode block : blocks) {
-            if (!block.isObject() || !DURABLE_BLOCK_TYPES.contains(block.path("type").asText())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private ArrayNode durableBlocks(JsonNode blocks) {
         ArrayNode durable = objectMapper.createArrayNode();
-        if (blocks == null || !blocks.isArray()) {
+        if (blocks == null) {
+            return durable;
+        }
+        if (!blocks.isArray()) {
+            durable.add(unavailableAttachmentMarker());
             return durable;
         }
         for (JsonNode block : blocks) {
-            ObjectNode sanitized = durableBlock(block);
-            if (sanitized != null) {
-                durable.add(sanitized);
-            }
+            durable.add(durableBlock(block));
         }
         return durable;
     }
 
     private ObjectNode durableBlock(JsonNode block) {
         if (!block.isObject()) {
-            return null;
+            return unavailableAttachmentMarker();
         }
         String type = block.path("type").asText();
-        if (!DURABLE_BLOCK_TYPES.contains(type)) {
-            return null;
+        if (!durableBlockType(block)) {
+            return unavailableAttachmentMarker();
         }
         ObjectNode durable = objectMapper.createObjectNode();
         durable.put("type", type);
@@ -144,9 +119,35 @@ public class UserDiscoverConversationSnapshotSanitizer {
             case "newsletter" -> {
                 // The block is intentionally fieldless.
             }
+            case "products" -> {
+                copyText(block, durable, "productResultSetId");
+                copyText(block, durable, "query");
+            }
             default -> throw new IllegalStateException("Unexpected durable Discover block type");
         }
         return durable;
+    }
+
+    private boolean durableBlockType(JsonNode block) {
+        String type = block.path("type").asText();
+        if (!DURABLE_BLOCK_TYPES.contains(type)) {
+            return false;
+        }
+        if (!"products".equals(type)) {
+            return true;
+        }
+        JsonNode resultSetId = block.get("productResultSetId");
+        JsonNode query = block.get("query");
+        if (resultSetId == null || !resultSetId.isTextual()
+                || query == null || !query.isTextual() || query.asText().isBlank()) {
+            return false;
+        }
+        try {
+            String value = resultSetId.asText().trim();
+            return UUID.fromString(value).toString().equalsIgnoreCase(value);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private ArrayNode durablePreferences(JsonNode preferences) {
@@ -170,10 +171,10 @@ public class UserDiscoverConversationSnapshotSanitizer {
         return durable;
     }
 
-    private ObjectNode sessionOnlyMarker() {
+    private ObjectNode unavailableAttachmentMarker() {
         ObjectNode marker = objectMapper.createObjectNode();
         marker.put("type", "system");
-        marker.put("text", SESSION_ONLY_MESSAGE);
+        marker.put("text", UNAVAILABLE_ATTACHMENT_MESSAGE);
         return marker;
     }
 

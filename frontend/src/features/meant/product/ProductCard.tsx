@@ -135,9 +135,11 @@ export function ProductCard({
       <div className="mt-card-media">
         <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
         <span className="mt-mono mt-card-cat">{product.category}</span>
-        <div className="mt-card-ring">
-          <MatchRing value={product.match} />
-        </div>
+        {!product.rankingUnavailable ? (
+          <div className="mt-card-ring">
+            <MatchRing value={product.match} />
+          </div>
+        ) : null}
         <button
           className={`mt-save ${savedSet.has(product.id) ? 'on' : ''}`}
           type="button"

@@ -76,6 +76,7 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     .filter((item) => Boolean(item.url))
     .map((item) => ({ type: item.type || 'image', url: item.url, altText: item.altText }))
   const merchantName = recommended?.merchantName?.trim()
+  const rankingUnavailable = !product.rankingExplanation
   const match = Math.round((product.rankingExplanation?.scoreBasisPoints ?? 0) / 100)
   const detailOptions = canonicalProductOptions(product)
   const selectedOptions = recommended?.selectedOptions.map((option) => ({
@@ -100,6 +101,7 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     imageUrl: media.find((item) => item.type.toLowerCase() === 'image')?.url ?? null,
     remote: true,
     match: Math.max(0, Math.min(100, match)),
+    rankingUnavailable,
     priceFrom: price,
     priceFromMinorUnits: displayedPrice?.minorUnits ?? null,
     priceCurrency: displayedPrice?.currency ?? null,

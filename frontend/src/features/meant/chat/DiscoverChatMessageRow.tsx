@@ -257,6 +257,7 @@ export function DiscoverChatMessageRow({
   onShelfAddProduct,
   onDragMessage,
   onDragProduct,
+  onRetryProductResultSet,
 }: Readonly<{
   threadId: string
   message: DiscoverChatMessage
@@ -319,6 +320,7 @@ export function DiscoverChatMessageRow({
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragMessage: (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
+  onRetryProductResultSet: (threadId: string, resultSetId: string) => void
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
@@ -424,6 +426,7 @@ export function DiscoverChatMessageRow({
                 onNewsletterSignup={onNewsletterSignup}
                 onShelfAddProduct={onShelfAddProduct}
                 onDragProduct={onDragProduct}
+                onRetryProductResultSet={onRetryProductResultSet}
               />
             ))}
             {message.pending ? (

@@ -21,6 +21,35 @@ import {
 const originalWindow = globalThis.window
 let store: Map<string, string>
 
+function historyProduct(overrides: Partial<Product> = {}): Product {
+  return {
+    id: 'product-1',
+    name: 'Brooks Ghost 14',
+    brand: 'Brooks',
+    category: 'Running shoes',
+    tone: '#ffffff',
+    imageUrl: 'https://cdn.shopify.com/volatile-product.jpg',
+    match: 91,
+    priceFrom: 129,
+    merchants: 1,
+    satisfies: [],
+    misses: [],
+    note: 'The strongest fit for the requested cushioning.',
+    pros: [],
+    cons: [],
+    review: { score: 4.7, count: 321, insight: 'Runners consistently praise the cushioning.' },
+    offers: [
+      {
+        offerKey: 'volatile-offer-key',
+        merchant: 'Running Store',
+        price: 129,
+        delivery: 'Ships in two days',
+      },
+    ],
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   store = new Map<string, string>()
   Object.defineProperty(globalThis, 'window', {
@@ -100,7 +129,7 @@ describe('discover chat history storage', () => {
     expect(initialDiscoverChatThreads()).toEqual([thread])
   })
 
-  test('keeps Shopify product facts and media out of durable history', () => {
+  test('keeps only the server result-set reference for durable product history', () => {
     const product = {
       id: 'product-1',
       name: 'Session-only shoe',
@@ -113,10 +142,14 @@ describe('discover chat history storage', () => {
           id: 'message-1',
           role: 'ai' as const,
           query: 'running shoes',
-          productContext: product,
           blocks: [
             { type: 'text' as const, text: 'I found matching products.' },
-            { type: 'products' as const, products: [product], query: 'running shoes' },
+            {
+              type: 'products' as const,
+              products: [product],
+              query: 'running shoes',
+              productResultSetId: '00000000-0000-4000-8000-000000000101',
+            },
           ],
         },
       ]),
@@ -126,13 +159,41 @@ describe('discover chat history storage', () => {
     const serialized = JSON.stringify(durableDiscoverChatThread(thread))
     expect(serialized).not.toContain('Session-only shoe')
     expect(serialized).not.toContain('cdn.shopify.com')
-    expect(serialized).toContain('Product results are available only in the active session')
+    expect(serialized).toContain('I found matching products.')
+    expect(serialized).toContain('00000000-0000-4000-8000-000000000101')
 
     saveStoredDiscoverChatThreads([thread], 'user-1')
     const [restored] = initialDiscoverChatThreads('user-1')
     expect(restored?.qualificationId).toBe('qualification-1')
-    expect(restored?.messages[0]?.productContext).toBeUndefined()
     expect(restored?.messages[0]?.blocks).toEqual([
+      {
+        type: 'text',
+        text: 'I found matching products.',
+      },
+      {
+        type: 'products',
+        products: [],
+        productResultSetId: '00000000-0000-4000-8000-000000000101',
+        query: 'running shoes',
+      },
+    ])
+  })
+
+  test('replaces only a legacy product block and keeps its sibling transcript', () => {
+    const product = { id: 'legacy-product', name: 'Legacy product' } as unknown as Product
+    const thread = createDiscoverChatThread([
+      {
+        id: 'message-1',
+        role: 'ai',
+        blocks: [
+          { type: 'text', text: 'Legacy result text' },
+          { type: 'products', products: [product], query: 'legacy query' },
+        ],
+      },
+    ])
+
+    expect(durableDiscoverChatThread(thread).messages[0]?.blocks).toEqual([
+      { type: 'text', text: 'Legacy result text' },
       {
         type: 'system',
         text: 'Product results are available only in the active session. Search again to refresh them.',
@@ -140,7 +201,26 @@ describe('discover chat history storage', () => {
     ])
   })
 
-  test('removes product-derived text and caller-controlled nested fields', () => {
+  test('does not persist a malformed product result-set reference', () => {
+    const product = { id: 'product-1', name: 'Product' } as unknown as Product
+    const thread = createDiscoverChatThread([
+      {
+        id: 'message-1',
+        role: 'ai',
+        blocks: [
+          {
+            type: 'products',
+            products: [product],
+            productResultSetId: 'not-a-server-uuid',
+          },
+        ],
+      },
+    ])
+
+    expect(durableDiscoverChatThread(thread).messages[0]?.blocks?.[0]?.type).toBe('system')
+  })
+
+  test('preserves session-only transcript text while removing caller-controlled nested fields', () => {
     const thread = {
       ...createDiscoverChatThread(),
       messages: [
@@ -168,11 +248,131 @@ describe('discover chat history storage', () => {
 
     const serialized = JSON.stringify(durableDiscoverChatThread(thread))
 
-    expect(serialized).not.toContain('$129')
+    expect(serialized).toContain('$129 at a Shopify merchant')
+    expect(serialized).not.toContain('sessionOnly')
     expect(serialized).not.toContain('hidden product')
     expect(serialized).not.toContain('also hidden')
     expect(serialized).not.toContain('top-level hidden')
     expect(serialized).toContain('Natural materials')
+  })
+
+  test('stores a complete review transcript without the volatile product payload', () => {
+    const product = historyProduct()
+    const thread = createDiscoverChatThread([
+      {
+        id: 'review-answer',
+        role: 'ai',
+        blocks: [
+          { type: 'text', text: `Here is what reviewers say about ${product.name}.` },
+          { type: 'reviews', product },
+        ],
+      },
+    ])
+
+    const durable = durableDiscoverChatThread(thread)
+    const serialized = JSON.stringify(durable)
+
+    expect(durable.messages[0]?.blocks).toEqual([
+      { type: 'text', text: 'Here is what reviewers say about Brooks Ghost 14.' },
+      {
+        type: 'text',
+        text: 'Brooks Ghost 14 reviews: 4.7/5 from 321 reviews. Runners consistently praise the cushioning.',
+      },
+    ])
+    expect(serialized).not.toContain('cdn.shopify.com')
+    expect(serialized).not.toContain('volatile-offer-key')
+    expect(serialized).not.toContain('"product":')
+  })
+
+  test('stores complete compare and decision transcripts without product objects', () => {
+    const first = historyProduct()
+    const second = historyProduct({
+      id: 'product-2',
+      name: 'Nike Pegasus 41',
+      priceFrom: 139,
+      match: 86,
+      note: 'A firmer alternative.',
+      review: { score: 4.5, count: 210, insight: 'Reviewers like its responsive ride.' },
+    })
+    const thread = createDiscoverChatThread([
+      {
+        id: 'compare-answer',
+        role: 'ai',
+        blocks: [
+          { type: 'text', text: 'I lined them up here.' },
+          {
+            type: 'minicompare',
+            products: [first, second],
+            rows: [
+              { label: 'Match', values: ['91%', '86%'], winnerIndex: 0 },
+              { label: 'Reviews', values: ['4.7 · 321', '4.5 · 210'], winnerIndex: 0 },
+            ],
+            pickIndex: 0,
+          },
+        ],
+      },
+      {
+        id: 'decision-answer',
+        role: 'ai',
+        blocks: [{ type: 'decision', product: first, runnerUp: second }],
+      },
+    ])
+
+    const durable = durableDiscoverChatThread(thread)
+    const compareText = durable.messages[0]?.blocks?.[1]
+    const decisionText = durable.messages[1]?.blocks?.[0]
+    const serialized = JSON.stringify(durable)
+
+    expect(compareText).toMatchObject({ type: 'text' })
+    expect(compareText?.type === 'text' ? compareText.text : '').toContain(
+      'Match: Brooks Ghost 14 91% (best) Nike Pegasus 41 86%',
+    )
+    expect(compareText?.type === 'text' ? compareText.text : '').toContain(
+      'Recommended: Brooks Ghost 14.',
+    )
+    expect(decisionText).toEqual({
+      type: 'text',
+      text: [
+        'Pick: Brooks Ghost 14 - $129.00 - Running Store',
+        'Why: The strongest fit for the requested cushioning.',
+        'Runner-up: Nike Pegasus 41 - $139.00 - Running Store',
+      ].join('\n'),
+    })
+    expect(serialized).not.toContain('cdn.shopify.com')
+    expect(serialized).not.toContain('volatile-offer-key')
+    expect(serialized).not.toContain('"products":[')
+  })
+
+  test('keeps user text and focus while removing raw product context', () => {
+    const product = historyProduct()
+    const thread = {
+      ...createDiscoverChatThread([
+        {
+          id: 'question-1',
+          role: 'you' as const,
+          text: `What do reviewers say about ${product.name}?`,
+          productContext: product,
+        },
+      ]),
+      focusProductId: product.id,
+    }
+
+    const durable = durableDiscoverChatThread(thread)
+    const serialized = JSON.stringify(durable)
+
+    expect(durable.focusProductId).toBe(product.id)
+    expect(durable.messages[0]).toEqual({
+      id: 'question-1',
+      role: 'you',
+      text: 'What do reviewers say about Brooks Ghost 14?',
+      blocks: undefined,
+      pending: undefined,
+      pendingText: undefined,
+      suggestedReplies: undefined,
+      query: undefined,
+    })
+    expect(serialized).not.toContain('productContext')
+    expect(serialized).not.toContain('cdn.shopify.com')
   })
 
   test('purges pre-account shared history instead of migrating Shopify facts', () => {

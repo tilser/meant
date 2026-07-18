@@ -190,7 +190,8 @@ export function AskThread({
                       <span className="mt-msg-product-main">
                         <span className="mt-msg-product-name">{product.name}</span>
                         <span className="mt-mono mt-msg-product-meta">
-                          {product.match}% · {money(product.priceFrom)}
+                          {product.rankingUnavailable ? 'Match not re-ranked' : `${product.match}%`}{' '}
+                          · {money(product.priceFrom)}
                         </span>
                       </span>
                     </button>

@@ -11,6 +11,7 @@ import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
+import com.meant.api.module.user.service.dto.UserProductSearchHistoryContext;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
 import com.meant.api.module.user.exception.UserException;
@@ -56,6 +57,7 @@ class UserGroupedProductSearchV1ControllerTest {
 
         assertThat(response.query()).isEqualTo("linen");
         assertThat(response.products()).isEmpty();
+        assertThat(response.productResultSetId()).isEqualTo(CapturingGroupedProductSearchService.RESULT_SET_ID);
         assertThat(service.profileCommand)
                 .extracting(
                         EnsureUserProfileCommand::id,
@@ -68,6 +70,9 @@ class UserGroupedProductSearchV1ControllerTest {
         assertThat(service.searchCommand.userAgent()).isEqualTo("grouped-client");
         assertThat(service.searchCommand.offset()).isEqualTo(5);
         assertThat(service.searchCommand.limit()).isEqualTo(10);
+        assertThat(service.historyContext.conversationId())
+                .isEqualTo(UUID.fromString("60000000-0000-0000-0000-000000000098"));
+        assertThat(service.historyContext.qualificationId()).isEqualTo(FixedQualifiedSearchResolver.QUALIFICATION_ID);
     }
 
     @Test
@@ -93,25 +98,30 @@ class UserGroupedProductSearchV1ControllerTest {
     }
 
     private static final class CapturingGroupedProductSearchService extends UserGroupedProductSearchService {
+        private static final UUID RESULT_SET_ID =
+                UUID.fromString("60000000-0000-0000-0000-000000000097");
 
         private EnsureUserProfileCommand profileCommand;
         private SearchUserProductsCommand searchCommand;
+        private UserProductSearchHistoryContext historyContext;
 
         private CapturingGroupedProductSearchService() {
-            super(null, null, null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null, null, null);
         }
 
         @Override
         public UserGroupedProductSearchResult search(
                 EnsureUserProfileCommand profileCommand,
                 SearchUserProductsCommand searchCommand,
-                CatalogDiscoveryFilters discoveryFilters
+                CatalogDiscoveryFilters discoveryFilters,
+                UserProductSearchHistoryContext historyContext
         ) {
             this.profileCommand = profileCommand;
             this.searchCommand = searchCommand;
+            this.historyContext = historyContext;
             return new UserGroupedProductSearchResult(
                     "linen", "linen", "profile", false, 5, 10, 15, true, false,
-                    List.of(), 0, false, List.of());
+                    List.of(), Map.of(), Map.of(), Map.of(), List.of(), 0, false, List.of(), RESULT_SET_ID);
         }
     }
 

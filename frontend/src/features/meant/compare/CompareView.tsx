@@ -39,7 +39,9 @@ export function CompareView({
   const gridStyle = {
     gridTemplateColumns: `180px repeat(${compareColumnCount}, minmax(180px, 240px))`,
   }
-  const bestMatch = enough ? Math.max(...items.map((product) => product.match)) : null
+  const rankedItems = items.filter((product) => !product.rankingUnavailable)
+  const bestMatch =
+    rankedItems.length >= 2 ? Math.max(...rankedItems.map((product) => product.match)) : null
   const knownPrices = items
     .map((product) => productPriceFrom(product, deliveryLocations))
     .filter((price): price is number => price != null)
@@ -50,6 +52,7 @@ export function CompareView({
   const winner = enough
     ? [...items].sort(
         (left, right) =>
+          Number(Boolean(left.rankingUnavailable)) - Number(Boolean(right.rankingUnavailable)) ||
           right.match - left.match ||
           (productPriceFrom(left, deliveryLocations) ?? Number.POSITIVE_INFINITY) -
             (productPriceFrom(right, deliveryLocations) ?? Number.POSITIVE_INFINITY),
@@ -102,8 +105,9 @@ export function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: `${product.match}%`,
-                win: bestMatch !== null && product.match === bestMatch,
+                value: product.rankingUnavailable ? 'Not re-ranked' : `${product.match}%`,
+                win:
+                  !product.rankingUnavailable && bestMatch !== null && product.match === bestMatch,
               }))}
               addSpacer={showAdd}
             />
@@ -283,9 +287,11 @@ function CompareSlot({
           aria-label={`Open ${product.name}`}
         >
           <ProductArtwork product={product} label={`${product.category.toLowerCase()} shot`} />
-          <div className="mt-cmp-ring">
-            <MatchRing value={product.match} size={48} stroke={3} />
-          </div>
+          {!product.rankingUnavailable ? (
+            <div className="mt-cmp-ring">
+              <MatchRing value={product.match} size={48} stroke={3} />
+            </div>
+          ) : null}
         </button>
         {canRemove ? (
           <button
@@ -363,7 +369,9 @@ function CompareMenu({
             <span className="mt-cmp-opt-name">{product.name}</span>
             <span className="mt-mono mt-cmp-opt-cat">{product.category}</span>
           </span>
-          <span className="mt-mono mt-cmp-opt-match">{product.match}%</span>
+          <span className="mt-mono mt-cmp-opt-match">
+            {product.rankingUnavailable ? 'Not re-ranked' : `${product.match}%`}
+          </span>
         </button>
       ))}
     </div>

@@ -6,6 +6,7 @@ import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
 import com.meant.api.module.catalog.service.dto.ProductGroupingDecision;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public record UserGroupedProductSearchResult(
         String query,
@@ -24,7 +25,8 @@ public record UserGroupedProductSearchResult(
         List<UserCatalogSourceState> sourceStates,
         int groupingDecisionCount,
         boolean groupingDecisionsTruncated,
-        List<ProductGroupingDecision> groupingDecisions
+        List<ProductGroupingDecision> groupingDecisions,
+        UUID productResultSetId
 ) {
 
     public UserGroupedProductSearchResult {
@@ -59,7 +61,7 @@ public record UserGroupedProductSearchResult(
         this(
                 query, normalizedQuery, profileHash, cached, offset, limit, nextOffset, hasMore,
                 upstreamTruncated, products, productRankingExplanations, offerRankingExplanations,
-                Map.of(), List.of(), groupingDecisionCount, groupingDecisionsTruncated, groupingDecisions);
+                Map.of(), List.of(), groupingDecisionCount, groupingDecisionsTruncated, groupingDecisions, null);
     }
 
     public UserGroupedProductSearchResult(
@@ -94,7 +96,49 @@ public record UserGroupedProductSearchResult(
                 List.of(),
                 groupingDecisionCount,
                 groupingDecisionsTruncated,
-                groupingDecisions
+                groupingDecisions,
+                null
+        );
+    }
+
+    public UserGroupedProductSearchResult(
+            String query,
+            String normalizedQuery,
+            String profileHash,
+            boolean cached,
+            int offset,
+            int limit,
+            Integer nextOffset,
+            boolean hasMore,
+            boolean upstreamTruncated,
+            List<CanonicalProduct> products,
+            Map<String, ProductRankingExplanation> productRankingExplanations,
+            Map<String, OfferRankingExplanation> offerRankingExplanations,
+            Map<String, UserCanonicalProductPersonalizationResult> productPersonalizations,
+            List<UserCatalogSourceState> sourceStates,
+            int groupingDecisionCount,
+            boolean groupingDecisionsTruncated,
+            List<ProductGroupingDecision> groupingDecisions
+    ) {
+        this(
+                query,
+                normalizedQuery,
+                profileHash,
+                cached,
+                offset,
+                limit,
+                nextOffset,
+                hasMore,
+                upstreamTruncated,
+                products,
+                productRankingExplanations,
+                offerRankingExplanations,
+                productPersonalizations,
+                sourceStates,
+                groupingDecisionCount,
+                groupingDecisionsTruncated,
+                groupingDecisions,
+                null
         );
     }
 }

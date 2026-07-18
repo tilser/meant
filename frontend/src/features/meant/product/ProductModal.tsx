@@ -757,9 +757,11 @@ export function ProductModal({
                 label={`${(productCategory ?? 'product').toLowerCase()} shot`}
                 imageUrl={modalImageUrl}
               />
-              <div className="mt-modal-ring">
-                <MatchRing value={product.match} size={56} stroke={4} />
-              </div>
+              {!product.rankingUnavailable ? (
+                <div className="mt-modal-ring">
+                  <MatchRing value={product.match} size={56} stroke={4} />
+                </div>
+              ) : null}
             </button>
             {modalMedia.length > 1 ? (
               <div className={`mt-modal-thumbs-wrap ${hasMediaPages ? 'paged' : ''}`}>

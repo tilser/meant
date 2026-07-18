@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-user-discover-product-result-sets" author="meant">
+        <createTable tableName="user_discover_product_result_sets">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="conversation_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="qualification_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="page_offset" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="result_limit" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="result_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="next_offset" type="integer"/>
+            <column name="has_more" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="upstream_truncated" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint
+                baseTableName="user_discover_product_result_sets"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_discover_product_result_sets_user"/>
+        <addForeignKeyConstraint
+                baseTableName="user_discover_product_result_sets"
+                baseColumnNames="conversation_id"
+                referencedTableName="user_discover_conversations"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_discover_product_result_sets_conversation"/>
+        <addForeignKeyConstraint
+                baseTableName="user_discover_product_result_sets"
+                baseColumnNames="qualification_id"
+                referencedTableName="user_product_search_qualifications"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_discover_product_result_sets_qualification"/>
+        <addUniqueConstraint
+                tableName="user_discover_product_result_sets"
+                columnNames="qualification_id, page_offset, result_limit"
+                constraintName="uk_user_discover_product_result_sets_page"/>
+        <createIndex
+                tableName="user_discover_product_result_sets"
+                indexName="idx_user_discover_product_result_sets_conversation">
+            <column name="user_id"/>
+            <column name="conversation_id"/>
+            <column name="created_at"/>
+        </createIndex>
+        <sql>
+            ALTER TABLE user_discover_product_result_sets
+            ADD CONSTRAINT ck_user_discover_product_result_sets_bounds
+            CHECK (page_offset &gt;= 0 AND result_limit &gt; 0 AND result_count &gt;= 0)
+        </sql>
+        <sql>
+            ALTER TABLE user_discover_product_result_sets
+            ADD CONSTRAINT ck_user_discover_product_result_sets_next_offset
+            CHECK (
+                ((has_more AND next_offset IS NOT NULL)
+                    OR (NOT has_more AND next_offset IS NULL))
+                AND (next_offset IS NULL OR next_offset &gt; page_offset)
+            )
+        </sql>
+    </changeSet>
+
+    <changeSet id="002-create-user-discover-product-result-items" author="meant">
+        <createTable tableName="user_discover_product_result_items">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="result_set_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="canonical_product_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="result_rank" type="integer">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint
+                baseTableName="user_discover_product_result_items"
+                baseColumnNames="result_set_id"
+                referencedTableName="user_discover_product_result_sets"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_discover_product_result_items_set"/>
+        <addUniqueConstraint
+                tableName="user_discover_product_result_items"
+                columnNames="result_set_id, canonical_product_key"
+                constraintName="uk_user_discover_product_result_items_product"/>
+        <addUniqueConstraint
+                tableName="user_discover_product_result_items"
+                columnNames="result_set_id, result_rank"
+                constraintName="uk_user_discover_product_result_items_rank"/>
+        <createIndex
+                tableName="user_discover_product_result_items"
+                indexName="idx_user_discover_product_result_items_set_rank">
+            <column name="result_set_id"/>
+            <column name="result_rank"/>
+        </createIndex>
+        <sql>
+            ALTER TABLE user_discover_product_result_items
+            ADD CONSTRAINT ck_user_discover_product_result_items_rank
+            CHECK (result_rank &gt;= 0)
+        </sql>
+    </changeSet>
+</databaseChangeLog>

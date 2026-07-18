@@ -24,6 +24,7 @@ const {
   deleteDiscoverConversation,
   deleteUserProductSearchPreference,
   getDiscoverConversation,
+  getDiscoverConversationProductResultSet,
   getCartCheckout,
   getSavedProduct,
   qualifyProductSearch,
@@ -421,6 +422,20 @@ describe('Discover conversation persistence API', () => {
     expect(requests[0]?.method).toBe('GET')
     expect(requests[0]?.url).toBe(
       'http://localhost:8080/api/v1/users/me/discover/conversations/conversation%2F51',
+    )
+  })
+
+  test('loads one durable product result set inside its owned conversation', async () => {
+    await getDiscoverConversationProductResultSet(
+      'conversation/51',
+      '00000000-0000-4000-8000-000000000102',
+    )
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('GET')
+    expect(requests[0]?.cache).toBe('no-store')
+    expect(requests[0]?.url).toBe(
+      'http://localhost:8080/api/v1/users/me/discover/conversations/conversation%2F51/product-result-sets/00000000-0000-4000-8000-000000000102',
     )
   })
 

@@ -84,6 +84,7 @@ export function DiscoverChatBlockView({
   onNewsletterSignup,
   onShelfAddProduct,
   onDragProduct,
+  onRetryProductResultSet,
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -137,6 +138,7 @@ export function DiscoverChatBlockView({
   onNewsletterSignup: () => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
+  onRetryProductResultSet: (threadId: string, resultSetId: string) => void
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
@@ -182,28 +184,74 @@ export function DiscoverChatBlockView({
     )
   }
   if (block.type === 'products') {
+    const unavailableCount = Math.max(0, block.unavailableCount ?? 0)
+    const productResultSetId = block.productResultSetId
+    if (block.historyHydration === 'loading') {
+      return (
+        <div className="mt-ct-system">
+          <SparkMark size={11} color="var(--faint)" />
+          Refreshing saved product results…
+        </div>
+      )
+    }
+    if (block.historyHydration === 'failed') {
+      return (
+        <div className="mt-ct-system">
+          <SparkMark size={11} color="var(--faint)" />
+          <span>Saved product results couldn&apos;t be refreshed right now.</span>
+          {productResultSetId ? (
+            <button
+              className="mt-ct-inline-link"
+              type="button"
+              onClick={() => onRetryProductResultSet(threadId, productResultSetId)}
+            >
+              Try again
+            </button>
+          ) : null}
+        </div>
+      )
+    }
+    if (block.historyHydration === 'loaded' && block.products.length === 0) {
+      return (
+        <div className="mt-ct-system">
+          <SparkMark size={11} color="var(--faint)" />
+          {unavailableCount > 0
+            ? `${unavailableCount} saved ${unavailableCount === 1 ? 'result is' : 'results are'} no longer available.`
+            : 'No products from these saved results are currently available.'}
+        </div>
+      )
+    }
     return (
-      <DiscoverProductBatch
-        products={block.products}
-        query={block.query}
-        deliveryLocations={deliveryLocations}
-        preferences={preferences}
-        savedSet={savedSet}
-        savePendingSet={savePendingSet}
-        pinnedSet={pinnedSet}
-        watchedSet={watchedSet}
-        shelfProductSet={shelfProductSet}
-        onOpen={openProduct}
-        onToggleSave={onToggleSave}
-        onAddCart={onAddCart}
-        onPin={onPin}
-        onWatch={onWatch}
-        onDig={onDig}
-        onJustPick={onJustPick}
-        onCompareHere={onCompareHere}
-        onShelfAddProduct={onShelfAddProduct}
-        onDragProduct={onDragProduct}
-      />
+      <>
+        <DiscoverProductBatch
+          products={block.products}
+          query={block.query}
+          deliveryLocations={deliveryLocations}
+          preferences={preferences}
+          savedSet={savedSet}
+          savePendingSet={savePendingSet}
+          pinnedSet={pinnedSet}
+          watchedSet={watchedSet}
+          shelfProductSet={shelfProductSet}
+          onOpen={openProduct}
+          onToggleSave={onToggleSave}
+          onAddCart={onAddCart}
+          onPin={onPin}
+          onWatch={onWatch}
+          onDig={onDig}
+          onJustPick={onJustPick}
+          onCompareHere={onCompareHere}
+          onShelfAddProduct={onShelfAddProduct}
+          onDragProduct={onDragProduct}
+        />
+        {block.historyHydration === 'loaded' && unavailableCount > 0 ? (
+          <div className="mt-ct-system">
+            <SparkMark size={11} color="var(--faint)" />
+            {unavailableCount} saved {unavailableCount === 1 ? 'result is' : 'results are'} no
+            longer available.
+          </div>
+        ) : null}
+      </>
     )
   }
   if (block.type === 'reviews') {
@@ -315,7 +363,9 @@ export function DiscoverChatBlockView({
             <SparkMark size={12} /> Meant's pick
           </span>
           <span className="mt-ct-decision-conf">
-            {Math.max(76, block.product.match)}% confident
+            {block.product.rankingUnavailable
+              ? 'Saved search order'
+              : `${Math.max(76, block.product.match)}% confident`}
           </span>
         </div>
         <button
@@ -337,7 +387,10 @@ export function DiscoverChatBlockView({
         <p className="mt-ct-decision-why">{productCuratedTake(block.product, preferences)}</p>
         {block.runnerUp ? (
           <div className="mt-ct-decision-beat">
-            <span className="mt-mono">vs.</span> Beat {block.runnerUp.name} on match score and fit.
+            <span className="mt-mono">vs.</span>{' '}
+            {block.product.rankingUnavailable
+              ? `Preferred over ${block.runnerUp.name} in the saved search order.`
+              : `Beat ${block.runnerUp.name} on match score and fit.`}
           </div>
         ) : null}
         <div className="mt-ct-decision-actions">

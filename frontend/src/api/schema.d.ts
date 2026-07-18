@@ -48,6 +48,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/discover/conversations/{conversationId}/product-result-sets/{resultSetId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reopen one Discover product result set
+         * @description Resolves a user-owned identifiers-only result reference and batch-rehydrates current product facts without persisting provider facts or media.
+         */
+        get: operations["discoverConversationProductResultSet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/webhooks/shopify/orders": {
         parameters: {
             query?: never;
@@ -1098,6 +1118,21 @@ export interface components {
             /** Format: int64 */
             revision: number;
         };
+        /** @description Current products rehydrated from one identifiers-only Discover history reference. */
+        UserDiscoverProductResultSetResponse: {
+            /**
+             * Format: uuid
+             * @description Server-issued identifier of the historical result set
+             */
+            resultSetId: string;
+            /** @description Current products restored in their original result order */
+            products: components["schemas"]["CanonicalProductResponse"][];
+            /**
+             * Format: int32
+             * @description Referenced products that could not be authoritatively rehydrated
+             */
+            unavailableCount: number;
+        };
         /** @description Select one exact product variant from a server-issued live or saved offer anchor */
         SelectUserProductVariantRequest: {
             /** @description Server-issued live canonical or durable saved offer key used only as the trusted anchor */
@@ -1845,6 +1880,11 @@ export interface components {
             sourceStates: components["schemas"]["UserCatalogSourceStateResponse"][];
             /** @description Deterministically ordered canonical products */
             products: components["schemas"]["CanonicalProductResponse"][];
+            /**
+             * Format: uuid
+             * @description Durable server result-set reference used to reopen this page in Discover history
+             */
+            productResultSetId: string;
             /**
              * Format: int32
              * @description Total typed reconciliation decisions in the fetched candidate window
@@ -3576,6 +3616,31 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserDiscoverConversationResponse"];
+                };
+            };
+        };
+    };
+    discoverConversationProductResultSet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** Format: uuid */
+                conversationId: string;
+                /** Format: uuid */
+                resultSetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current products for the historical Discover result set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserDiscoverProductResultSetResponse"];
                 };
             };
         };

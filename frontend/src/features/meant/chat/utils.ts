@@ -6,6 +6,7 @@ import type {
   DiscoverChatThread,
   MiniCompareRow,
 } from './types'
+import { normalizedProductResultSetId } from './productResultSetReference'
 
 let discoverChatThreadSequence = 0
 const DISCOVER_CHAT_THREADS_STORAGE_KEY = 'meant.discoverChatThreads'
@@ -136,7 +137,7 @@ export function normalizeDiscoverChatThreads(
 const SESSION_ONLY_RESULTS_MESSAGE =
   'Product results are available only in the active session. Search again to refresh them.'
 
-function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock | null {
+function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock {
   switch (block.type) {
     case 'text':
       return { type: 'text', text: block.text }
@@ -154,30 +155,27 @@ function durableDiscoverBlock(block: DiscoverChatBlock): DiscoverChatBlock | nul
           displayOrder: preference.displayOrder,
         })),
       }
+    case 'products': {
+      const productResultSetId = normalizedProductResultSetId(block.productResultSetId)
+      if (!productResultSetId) {
+        return { type: 'system', text: SESSION_ONLY_RESULTS_MESSAGE }
+      }
+      return {
+        type: 'products',
+        products: [],
+        productResultSetId,
+        query: block.query,
+      }
+    }
     case 'system':
       return { type: 'system', text: block.text }
     default:
-      return null
+      return { type: 'text', text: discoverBlockCopyText(block) }
   }
 }
 
 function durableDiscoverMessage(message: DiscoverChatMessage): DiscoverChatMessage {
-  const sourceBlocks = message.blocks ?? []
-  const durableBlocks = sourceBlocks
-    .map(durableDiscoverBlock)
-    .filter((block): block is DiscoverChatBlock => block !== null)
-  const removedSessionData =
-    message.sessionOnly === true ||
-    Boolean(message.productContext) ||
-    durableBlocks.length !== sourceBlocks.length
-
-  if (message.role === 'ai' && removedSessionData) {
-    return {
-      id: message.id,
-      role: 'ai',
-      blocks: [{ type: 'system', text: SESSION_ONLY_RESULTS_MESSAGE }],
-    }
-  }
+  const durableBlocks = message.blocks?.map(durableDiscoverBlock) ?? []
 
   return {
     id: message.id,
@@ -191,7 +189,7 @@ function durableDiscoverMessage(message: DiscoverChatMessage): DiscoverChatMessa
   }
 }
 
-/** Removes Shopify search facts, media, offers, and transaction snapshots before durable storage. */
+/** Stores the complete transcript while replacing volatile rich payloads with safe text snapshots. */
 export function durableDiscoverChatThread(
   thread: DiscoverChatThread,
   archived: boolean | undefined = thread.archived,
@@ -203,6 +201,7 @@ export function durableDiscoverChatThread(
     messages: thread.messages.map(durableDiscoverMessage),
     qualificationId: thread.qualificationId,
     named: thread.named,
+    focusProductId: thread.focusProductId,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     persistedRevision: thread.persistedRevision,
@@ -515,12 +514,30 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
     ].join('\n')
   }
   if (block.type === 'reviews') {
-    return `${block.product.name} reviews: ${block.product.review.insight}`
+    const reviewCount = block.product.review.count
+    const rating = block.product.review.score
+    const ratingSummary =
+      rating === null
+        ? `${reviewCount.toLocaleString()} ${reviewCount === 1 ? 'review' : 'reviews'}`
+        : `${rating.toFixed(1)}/5 from ${reviewCount.toLocaleString()} ${reviewCount === 1 ? 'review' : 'reviews'}`
+    return `${block.product.name} reviews: ${ratingSummary}. ${block.product.review.insight}`
   }
   if (block.type === 'code') {
-    const codes = block.codes?.map((code) => code.code) ?? []
+    const codes = block.codes ?? []
     if (codes.length > 0) {
-      return `${block.product.name} ${codes.length === 1 ? 'code' : 'codes'}: ${codes.join(', ')}`
+      return [
+        `${block.product.name} ${codes.length === 1 ? 'code' : 'codes'}:`,
+        ...codes.map((code) => {
+          const details = [
+            code.description ?? code.title,
+            code.restrictions,
+            code.validationMessage,
+            code.validUntil ? `Valid until ${code.validUntil}` : null,
+            code.expiresAt ? `Expires ${code.expiresAt}` : null,
+          ].filter((value): value is string => Boolean(value?.trim()))
+          return `${code.code}${details.length > 0 ? ` - ${details.join(' · ')}` : ''}`
+        }),
+      ].join('\n')
     }
     return `${block.product.name} code search: ${block.message ?? 'No accepted code found'}`
   }
@@ -528,7 +545,13 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
     return [`Similar to ${block.product.name}:`, ...block.products.map(productCopyLine)].join('\n')
   }
   if (block.type === 'decision') {
-    return `Pick: ${productCopyLine(block.product)}`
+    return [
+      `Pick: ${productCopyLine(block.product)}`,
+      block.product.note ? `Why: ${block.product.note}` : '',
+      block.runnerUp ? `Runner-up: ${productCopyLine(block.runnerUp)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
   }
   if (block.type === 'watch') {
     return `Watching ${block.product.name}: ${money(block.price)} at ${block.merchant}`
@@ -537,13 +560,34 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
     return `${block.person} voted ${block.vote} on ${block.product.name}: ${block.note}`
   }
   if (block.type === 'added') {
-    return `Added ${block.product.name} to cart from ${block.merchant}.`
+    const price = block.price ?? block.product.priceFrom
+    return [
+      `Added ${block.product.name} to cart from ${block.merchant}.`,
+      price === null ? '' : `Price: ${money(price)}.`,
+      block.count === undefined
+        ? ''
+        : `${block.count} ${block.count === 1 ? 'item' : 'items'} in cart.`,
+    ]
+      .filter(Boolean)
+      .join(' ')
   }
   if (block.type === 'saved') {
     return ['Saved products:', ...block.products.map(productCopyLine)].join('\n')
   }
   if (block.type === 'orders') {
-    return `${block.orders.length} recent ${block.orders.length === 1 ? 'order' : 'orders'}`
+    return [
+      `${block.orders.length} recent ${block.orders.length === 1 ? 'order' : 'orders'}:`,
+      ...block.orders.map((order) => {
+        const details = [
+          order.status,
+          order.date,
+          order.statusNote,
+          `${order.items.length} ${order.items.length === 1 ? 'item' : 'items'}`,
+          order.savedNote,
+        ].filter((value) => value.trim())
+        return `${order.id} - ${details.join(' · ')}`
+      }),
+    ].join('\n')
   }
   if (block.type === 'prefs') {
     return ['Preferences:', ...block.preferences.map((preference) => preference.label)].join('\n')
@@ -551,21 +595,38 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
   if (block.type === 'cart') {
     return [
       'Cart:',
-      ...block.lines.map(
-        (line) =>
-          `${line.qty} x ${line.id}${line.variantTitle ? ` (${line.variantTitle})` : ''} - ${line.merchant}`,
-      ),
+      ...block.lines.map((line) => {
+        const product = line.productTitle?.trim() || line.id
+        const price = line.lineTotalAmount ?? line.unitPriceAmount
+        const priceLabel = price
+          ? ` · ${price}${line.cartCurrency ? ` ${line.cartCurrency}` : ''}`
+          : ''
+        return `${line.qty} x ${product}${line.variantTitle ? ` (${line.variantTitle})` : ''} - ${line.merchant}${priceLabel}`
+      }),
     ].join('\n')
   }
   if (block.type === 'checkout') {
     return `Checkout across ${block.merchantCount} ${block.merchantCount === 1 ? 'merchant' : 'merchants'}`
   }
+  const pick = block.products[block.pickIndex]
   return [
     'Compare:',
     ...block.products.map((product, index) =>
       index === block.pickIndex ? `${productCopyLine(product)} (pick)` : productCopyLine(product),
     ),
-  ].join('\n')
+    ...block.rows.map((row) =>
+      [
+        `${row.label}:`,
+        ...row.values.map((value, index) => {
+          const name = block.products[index]?.name ?? `Option ${index + 1}`
+          return `${name} ${value}${row.winnerIndex === index ? ' (best)' : ''}`
+        }),
+      ].join(' '),
+    ),
+    pick ? `Recommended: ${pick.name}.` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 export function discoverChatMessageCopyText(message: DiscoverChatMessage): string {

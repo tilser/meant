@@ -73,6 +73,11 @@ public record UserGroupedProductSearchV1Response(
         List<UserCatalogSourceStateResponse> sourceStates,
         @Schema(description = "Deterministically ordered canonical products", requiredMode = Schema.RequiredMode.REQUIRED)
         List<CanonicalProductResponse> products,
+        @Schema(
+                description = "Server-issued identifiers-only handle for reopening this result page from Discover history",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        UUID productResultSetId,
         @Schema(description = "Total typed reconciliation decisions in the fetched candidate window", requiredMode = Schema.RequiredMode.REQUIRED)
         int groupingDecisionCount,
         @Schema(description = "Whether grouping decisions were omitted by page filtering or the public diagnostic bound", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -82,6 +87,8 @@ public record UserGroupedProductSearchV1Response(
 ) {
 
     public static UserGroupedProductSearchV1Response from(UserGroupedProductSearchResult result) {
+        UUID productResultSetId = java.util.Objects.requireNonNull(
+                result.productResultSetId(), "Public grouped searches require a product result-set id");
         return new UserGroupedProductSearchV1Response(
                 result.query(),
                 result.normalizedQuery(),
@@ -103,6 +110,7 @@ public record UserGroupedProductSearchV1Response(
                                         Offer::key, UserOfferCommercialState::discovery))
                         ))
                         .toList(),
+                productResultSetId,
                 result.groupingDecisionCount(),
                 result.groupingDecisionsTruncated(),
                 result.groupingDecisions().stream().map(ProductGroupingDecisionResponse::from).toList()

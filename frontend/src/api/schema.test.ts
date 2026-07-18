@@ -142,6 +142,18 @@ test('Discover conversation persistence uses optimistic revisions', () => {
     '/api/v1/users/me/discover/conversations/{conversationId}',
   ]
   expect(ownedDetailPaths).toHaveLength(1)
+
+  type ProductResultSet = components['schemas']['UserDiscoverProductResultSetResponse']
+  const productResultSetFields: Array<keyof ProductResultSet> = [
+    'resultSetId',
+    'products',
+    'unavailableCount',
+  ]
+  const productResultSetPaths: Array<keyof paths> = [
+    '/api/v1/users/me/discover/conversations/{conversationId}/product-result-sets/{resultSetId}',
+  ]
+  expect(productResultSetFields).toContain('products')
+  expect(productResultSetPaths).toHaveLength(1)
 })
 
 test('saved products retain typed routing and return a durable exact offer key', () => {

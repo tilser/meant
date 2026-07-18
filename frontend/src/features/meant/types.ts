@@ -96,6 +96,8 @@ export interface Product {
   productUrl?: string | null
   remote?: boolean
   match: number
+  /** The current product was rehydrated without the original search-ranking explanation. */
+  rankingUnavailable?: boolean
   priceFrom: number | null
   priceFromMinorUnits?: number | null
   priceCurrency?: string | null

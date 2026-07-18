@@ -140,7 +140,8 @@ class UserGroupedProductSearchV1ResponseTest {
                                 10_000,
                                 List.of(),
                                 List.of()
-                        ))
+                        )),
+                        UUID.fromString("50000000-0000-0000-0000-000000000099")
                 )
         );
 
@@ -198,6 +199,7 @@ class UserGroupedProductSearchV1ResponseTest {
         assertRecordSchemas(UserCatalogSourceStateResponse.class);
         assertRecordSchemas(UserOfferCommercialStateResponse.class);
         assertRecordSchemas(UserCanonicalProductDetailV1Response.class);
+        assertRecordSchemas(UserDiscoverProductResultSetResponse.class);
     }
 
     private void assertRecordSchemas(Class<?> recordType) {

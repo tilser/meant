@@ -2191,6 +2191,7 @@ export function MeantApp() {
         suggestedReplies: qualification.suggestedReplies,
         effectiveQuery,
         products,
+        productResultSetId: result.productResultSetId,
       }
     } catch (error: unknown) {
       const errorMessage =

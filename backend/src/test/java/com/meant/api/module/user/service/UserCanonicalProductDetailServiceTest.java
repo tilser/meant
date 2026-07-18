@@ -137,7 +137,7 @@ class UserCanonicalProductDetailServiceTest {
         service = new UserCanonicalProductDetailService(
                 store,
                 productReferencePersistenceService,
-                productRehydrationService,
+                new UserCanonicalProductRehydrationService(productRehydrationService),
                 userSettingsService,
                 new UserProductPreferenceMatchCuratorService());
     }
@@ -172,7 +172,7 @@ class UserCanonicalProductDetailServiceTest {
         UserCanonicalProductDetailService restartedService = new UserCanonicalProductDetailService(
                 restartedStore,
                 productReferencePersistenceService,
-                productRehydrationService,
+                new UserCanonicalProductRehydrationService(productRehydrationService),
                 userSettingsService,
                 new UserProductPreferenceMatchCuratorService()
         );
