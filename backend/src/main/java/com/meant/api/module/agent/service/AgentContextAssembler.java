@@ -18,12 +18,14 @@ import com.meant.api.module.agent.service.dto.AgentModelMessage;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -249,13 +251,20 @@ public class AgentContextAssembler {
         if (history.isEmpty()) {
             return "No current cart snapshot is available.";
         }
-        Map<String, CartSnapshot> currentByRoutingScope = new LinkedHashMap<>();
-        history.forEach(snapshot -> currentByRoutingScope.putIfAbsent(routingPartitionKey(snapshot), snapshot));
+        Map<String, CartSnapshot> currentByPartition = new LinkedHashMap<>();
+        Set<UUID> currentCartIds = new HashSet<>();
+        history.forEach(snapshot -> {
+            if (currentCartIds.add(snapshot.cartId())) {
+                currentByPartition.putIfAbsent(snapshot.partitionKey(), snapshot);
+            }
+        });
+        Map<UUID, CartSnapshot> currentByCartId = new LinkedHashMap<>();
+        currentByPartition.values().forEach(snapshot -> currentByCartId.put(snapshot.cartId(), snapshot));
 
         StringBuilder state = new StringBuilder(
                 "Only the carts and cart lines listed here are current; older cart artifacts are historical.\n"
         );
-        currentByRoutingScope.values().forEach(snapshot -> {
+        currentByPartition.values().forEach(snapshot -> {
             state.append("- cartId=").append(snapshot.cartId())
                     .append(" routingScopeKey=").append(contextValue(snapshot.routingScopeKey()));
             if (present(snapshot.label())) {
@@ -272,7 +281,7 @@ public class AgentContextAssembler {
                     .append(" label=").append(contextValue(line.label()))
                     .append('\n'));
         });
-        mostRecentlyRemovedLine(history, currentByRoutingScope).ifPresent(removed -> state
+        mostRecentlyRemovedLine(history, currentByCartId).ifPresent(removed -> state
                 .append("Most recently removed re-add reference (not a current cart line): cartId=")
                 .append(removed.currentCartId())
                 .append(" priorCartLineId=").append(removed.line().cartLineId())
@@ -293,6 +302,7 @@ public class AgentContextAssembler {
                     artifact,
                     artifact.getCartId(),
                     routingScopeKey(artifact, payload),
+                    cartPartitionKey(artifact, payload),
                     artifact.getLabel(),
                     cartLines(artifact, payload, artifacts)
             ));
@@ -316,6 +326,31 @@ public class AgentContextAssembler {
     private String routingScopeKey(AgentArtifactReference artifact, JsonNode payload) {
         String routingScopeKey = text(payload, "routingScopeKey");
         return present(routingScopeKey) ? routingScopeKey : "cart:" + artifact.getCartId();
+    }
+
+    private String cartPartitionKey(AgentArtifactReference artifact, JsonNode payload) {
+        String routing = text(payload, "routingScopeKey");
+        if (present(routing)) {
+            return "routing:" + routing.toLowerCase(Locale.ROOT);
+        }
+        String integration = text(payload, "merchantIntegrationId");
+        if (present(integration)) {
+            return "integration:" + integration.toLowerCase(Locale.ROOT);
+        }
+        String merchant = text(payload, "merchantId");
+        if (present(merchant)) {
+            return "merchant:" + merchant.toLowerCase(Locale.ROOT);
+        }
+        String provider = Optional.ofNullable(text(payload, "provider")).orElse("").toLowerCase(Locale.ROOT);
+        String external = text(payload, "externalMerchantId");
+        if (present(external)) {
+            return "external:" + provider + ":" + external.toLowerCase(Locale.ROOT);
+        }
+        String domain = text(payload, "merchantDomain");
+        if (present(domain)) {
+            return "domain:" + provider + ":" + domain.toLowerCase(Locale.ROOT);
+        }
+        return "cart:" + artifact.getCartId();
     }
 
     private List<CartLine> cartLines(
@@ -354,7 +389,7 @@ public class AgentContextAssembler {
 
     private Optional<RemovedCartLine> mostRecentlyRemovedLine(
             List<CartSnapshot> history,
-            Map<String, CartSnapshot> currentByRoutingScope
+            Map<UUID, CartSnapshot> currentByCartId
     ) {
         for (int newerIndex = 0; newerIndex < history.size(); newerIndex++) {
             CartSnapshot newer = history.get(newerIndex);
@@ -373,7 +408,7 @@ public class AgentContextAssembler {
                 continue;
             }
             CartLine line = removed.getFirst();
-            CartSnapshot current = currentByRoutingScope.get(routingPartitionKey(newer));
+            CartSnapshot current = currentByCartId.get(newer.cartId());
             if (current != null
                     && current.cartId().equals(newer.cartId())
                     && current.lines().stream().noneMatch(candidate -> sameOffer(candidate, line))) {
@@ -381,10 +416,6 @@ public class AgentContextAssembler {
             }
         }
         return Optional.empty();
-    }
-
-    private String routingPartitionKey(CartSnapshot snapshot) {
-        return snapshot.routingScopeKey().toLowerCase(Locale.ROOT);
     }
 
     private boolean sameOffer(CartLine left, CartLine right) {
@@ -440,6 +471,7 @@ public class AgentContextAssembler {
             AgentArtifactReference artifact,
             UUID cartId,
             String routingScopeKey,
+            String partitionKey,
             String label,
             List<CartLine> lines
     ) {

@@ -970,6 +970,57 @@ describe('agent artifact mapping', () => {
     })
   })
 
+  test('keeps the newest snapshot when a cart gains authoritative routing metadata', () => {
+    const oldCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:transition:legacy',
+      messageId: 'message-transition-old',
+      cartId: 'transition-cart',
+      payloadJson: JSON.stringify({
+        cartId: 'transition-cart',
+        provider: 'SHOPIFY',
+        merchantId: 'merchant-transition',
+      }),
+    })
+    const oldLine = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:transition-old',
+      messageId: oldCart.messageId,
+      cartId: oldCart.cartId,
+      cartLineId: 'transition-old-line',
+      offerKey: 'transition-old-offer',
+      ordinal: 2,
+      payloadJson: JSON.stringify({
+        productId: 'transition-old-product',
+        productTitle: 'Removed product',
+        quantity: 1,
+        offerKey: 'transition-old-offer',
+      }),
+    })
+    const newCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:transition:current',
+      messageId: 'message-transition-new',
+      cartId: 'transition-cart',
+      createdAt: '2026-07-18T12:02:00Z',
+      payloadJson: JSON.stringify({
+        cartId: 'transition-cart',
+        provider: 'SHOPIFY',
+        merchantId: 'merchant-transition',
+        routingScopeKey: 'shopify:integration:transition',
+        lines: [],
+      }),
+    })
+
+    expect(latestCartSnapshotArtifacts([oldCart, oldLine, newCart])).toEqual([newCart])
+    expect(cartStateReplacementsFromAgentArtifacts([oldCart, oldLine, newCart], [])).toMatchObject([
+      {
+        snapshot: { cartId: 'transition-cart' },
+        lines: [],
+      },
+    ])
+  })
+
   test('rebuilds the immutable transcript from server-owned messages and artifacts', () => {
     const user: AgentMessageProfile = {
       messageId: 'message-user',

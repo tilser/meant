@@ -660,7 +660,7 @@ export function latestCartSnapshotArtifacts(
   artifacts: readonly AgentArtifactProfile[],
   beforeOrAt?: string,
 ): AgentArtifactProfile[] {
-  const selectedCarts = new Map<string, AgentArtifactProfile>()
+  const selectedByCartId = new Map<string, AgentArtifactProfile>()
   for (const artifact of artifacts) {
     if (
       artifact.type !== 'CART' ||
@@ -669,6 +669,16 @@ export function latestCartSnapshotArtifacts(
     ) {
       continue
     }
+    const cart = parsedCartArtifact(artifact)
+    if (!cart) continue
+    const current = selectedByCartId.get(cart.cartId)
+    if (!current || isPreferredCartSnapshot(artifact, current)) {
+      selectedByCartId.set(cart.cartId, artifact)
+    }
+  }
+
+  const selectedCarts = new Map<string, AgentArtifactProfile>()
+  for (const artifact of selectedByCartId.values()) {
     const cart = parsedCartArtifact(artifact)
     if (!cart) continue
     const partitionKey = cartPartitionKey(cart)

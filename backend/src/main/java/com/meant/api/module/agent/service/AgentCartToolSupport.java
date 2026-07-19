@@ -90,12 +90,12 @@ class AgentCartToolSupport {
         if (cart.merchantIntegrationId() != null) {
             return "integration:" + cart.merchantIntegrationId();
         }
+        if (cart.merchantId() != null) {
+            return "merchant:" + cart.merchantId();
+        }
         String provider = cart.provider() == null ? "" : cart.provider().toLowerCase(Locale.ROOT);
         if (cart.externalMerchantId() != null && !cart.externalMerchantId().isBlank()) {
             return "external:" + provider + ":" + cart.externalMerchantId().toLowerCase(Locale.ROOT);
-        }
-        if (cart.merchantId() != null) {
-            return "merchant:" + cart.merchantId();
         }
         if (cart.merchantDomain() != null && !cart.merchantDomain().isBlank()) {
             return "domain:" + provider + ":" + cart.merchantDomain().toLowerCase(Locale.ROOT);

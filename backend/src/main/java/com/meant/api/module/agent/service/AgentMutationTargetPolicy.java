@@ -600,10 +600,10 @@ public class AgentMutationTargetPolicy {
 
     private List<CartSnapshot> currentCartSnapshots(List<AgentArtifactReference> recent) {
         Map<String, CartSnapshot> snapshots = new LinkedHashMap<>();
+        Set<UUID> currentCartIds = new HashSet<>();
         for (CartSnapshot candidate : cartSnapshots(recent)) {
-            CartSnapshot current = snapshots.get(candidate.partitionKey());
-            if (current == null || newerCartSnapshot(candidate, current)) {
-                snapshots.put(candidate.partitionKey(), candidate);
+            if (currentCartIds.add(candidate.cartId())) {
+                snapshots.putIfAbsent(candidate.partitionKey(), candidate);
             }
         }
         return List.copyOf(snapshots.values());
@@ -705,7 +705,12 @@ public class AgentMutationTargetPolicy {
         List<AgentArtifactReference> artifacts = recent(context.conversationId());
         List<CartSnapshot> history = cartSnapshots(artifacts);
         Map<UUID, CartSnapshot> current = currentCartSnapshots(artifacts).stream()
-                .collect(java.util.stream.Collectors.toMap(CartSnapshot::cartId, snapshot -> snapshot));
+                .collect(java.util.stream.Collectors.toMap(
+                        CartSnapshot::cartId,
+                        snapshot -> snapshot,
+                        (existing, candidate) -> newerCartSnapshot(candidate, existing) ? candidate : existing,
+                        LinkedHashMap::new
+                ));
         for (int newerIndex = 0; newerIndex < history.size(); newerIndex++) {
             CartSnapshot newer = history.get(newerIndex);
             CartSnapshot older = null;

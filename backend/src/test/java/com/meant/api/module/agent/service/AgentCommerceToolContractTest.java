@@ -161,6 +161,48 @@ class AgentCommerceToolContractTest {
     }
 
     @Test
+    void prepareCartDoesNotReuseALegacyCartWithoutTheExactAuthoritativeRoutingScope() {
+        CartService cartService = mock(CartService.class);
+        UUID merchantId = UUID.randomUUID();
+        CartResult legacy = mock(CartResult.class);
+        CartResult created = mock(CartResult.class);
+        when(legacy.cartId()).thenReturn(UUID.randomUUID());
+        when(legacy.provider()).thenReturn("SHOPIFY");
+        when(legacy.merchantId()).thenReturn(merchantId);
+        when(legacy.externalMerchantId()).thenReturn("merchant-1");
+        when(created.cartId()).thenReturn(UUID.randomUUID());
+        when(cartService.partitionSelectedOffers(any())).thenReturn(List.of(new CartOfferPartitionResult(
+                "SHOPIFY:integration:verified-1",
+                "SHOPIFY",
+                null,
+                "merchant-1",
+                merchantId,
+                "running.example",
+                List.of(new CartOfferPartitionResult.Item("offer-1", 1))
+        )));
+        when(cartService.listActive(any())).thenReturn(List.of(legacy));
+        when(cartService.create(any(), any())).thenReturn(created);
+        AgentCartToolSupport support = new AgentCartToolSupport(
+                ownedConversationRepository(),
+                mock(AgentProductReadReferenceService.class),
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+
+        support.prepare(
+                context(),
+                new AgentCartToolArguments.Prepare(List.of(
+                        new AgentCartToolArguments.ExactOffer("offer-1", 1)))
+        );
+
+        verify(cartService).create(any(), any());
+        verify(cartService, never()).update(any(), any());
+    }
+
+    @Test
     void activeCartContextKeepsOnlyTheNewestCartForEachMerchantRoute() {
         CartService cartService = mock(CartService.class);
         CartResult newest = mock(CartResult.class);
@@ -169,6 +211,37 @@ class AgentCommerceToolContractTest {
         when(newest.routingScopeKey()).thenReturn("SHOPIFY:merchant-1");
         when(olderDuplicate.routingScopeKey()).thenReturn("SHOPIFY:merchant-1");
         when(otherMerchant.routingScopeKey()).thenReturn("SHOPIFY:merchant-2");
+        when(cartService.listActive(any())).thenReturn(List.of(newest, olderDuplicate, otherMerchant));
+        AgentCartToolSupport support = new AgentCartToolSupport(
+                ownedConversationRepository(),
+                mock(AgentProductReadReferenceService.class),
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+
+        assertThat(support.active(context(), new AgentCartToolArguments.GetActive(10)))
+                .containsExactly(newest, otherMerchant);
+    }
+
+    @Test
+    void activeCartFallbackUsesMerchantIdentityBeforeExternalIdentity() {
+        CartService cartService = mock(CartService.class);
+        UUID merchantId = UUID.randomUUID();
+        CartResult newest = mock(CartResult.class);
+        CartResult olderDuplicate = mock(CartResult.class);
+        CartResult otherMerchant = mock(CartResult.class);
+        when(newest.provider()).thenReturn("SHOPIFY");
+        when(newest.merchantId()).thenReturn(merchantId);
+        when(newest.externalMerchantId()).thenReturn("external-current");
+        when(olderDuplicate.provider()).thenReturn("SHOPIFY");
+        when(olderDuplicate.merchantId()).thenReturn(merchantId);
+        when(olderDuplicate.externalMerchantId()).thenReturn("external-stale");
+        when(otherMerchant.provider()).thenReturn("SHOPIFY");
+        when(otherMerchant.merchantId()).thenReturn(UUID.randomUUID());
+        when(otherMerchant.externalMerchantId()).thenReturn("external-other");
         when(cartService.listActive(any())).thenReturn(List.of(newest, olderDuplicate, otherMerchant));
         AgentCartToolSupport support = new AgentCartToolSupport(
                 ownedConversationRepository(),

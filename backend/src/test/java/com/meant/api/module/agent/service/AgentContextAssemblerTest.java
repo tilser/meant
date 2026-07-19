@@ -144,6 +144,84 @@ class AgentContextAssemblerTest {
                 .doesNotContain("priorCartLineId=" + staleLineId);
     }
 
+    @Test
+    void fallbackIdentityUsesMerchantBeforeExternalIdentityWhenRoutingScopeIsMissing() {
+        UUID currentCartId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID staleCartId = UUID.fromString("00000000-0000-0000-0000-000000000402");
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000403");
+        UUID staleLineId = UUID.fromString("00000000-0000-0000-0000-000000000404");
+        CartLine staleLine = new CartLine(staleLineId, "offer-stale", "Stale jacket");
+        givenRunAndMessages();
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(any(), any()))
+                .thenReturn(List.of(
+                        fallbackCart(
+                                CART_MESSAGE_ID,
+                                currentCartId,
+                                BASE.plusSeconds(3),
+                                merchantId,
+                                "external-current",
+                                List.of()
+                        ),
+                        fallbackCart(
+                                OLD_CART_MESSAGE_ID,
+                                staleCartId,
+                                BASE.plusSeconds(2),
+                                merchantId,
+                                "external-stale",
+                                List.of(staleLine)
+                        ),
+                        cartLine(OLD_CART_MESSAGE_ID, 2, staleCartId, BASE.plusSeconds(2), staleLine)
+                ));
+
+        String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
+
+        assertThat(grounding)
+                .contains("cartId=" + currentCartId + " routingScopeKey=cart:" + currentCartId)
+                .contains("lines=none")
+                .doesNotContain("cartId=" + staleCartId)
+                .doesNotContain("cartLineId=" + staleLineId);
+    }
+
+    @Test
+    void newestCartSnapshotWinsBeforeItsIdentityChangesToAuthoritativeRouting() {
+        UUID cartId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+        UUID merchantId = UUID.fromString("00000000-0000-0000-0000-000000000502");
+        UUID staleLineId = UUID.fromString("00000000-0000-0000-0000-000000000503");
+        UUID postRemovalMessageId = UUID.fromString("00000000-0000-0000-0000-000000000504");
+        CartLine staleLine = new CartLine(staleLineId, "offer-stale", "Removed jacket");
+        givenRunAndMessages();
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(any(), any()))
+                .thenReturn(List.of(
+                        cart(CART_MESSAGE_ID, 1, cartId, BASE.plusSeconds(4), List.of()),
+                        fallbackCart(
+                                postRemovalMessageId,
+                                cartId,
+                                BASE.plusSeconds(3),
+                                merchantId,
+                                "external-stale",
+                                List.of()
+                        ),
+                        fallbackCart(
+                                OLD_CART_MESSAGE_ID,
+                                cartId,
+                                BASE.plusSeconds(2),
+                                merchantId,
+                                "external-stale",
+                                List.of(staleLine)
+                        ),
+                        cartLine(OLD_CART_MESSAGE_ID, 2, cartId, BASE.plusSeconds(2), staleLine)
+                ));
+
+        String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
+
+        assertThat(grounding)
+                .contains("cartId=" + cartId + " routingScopeKey=" + ROUTING_SCOPE)
+                .contains("lines=none")
+                .doesNotContain("cartLineId=" + staleLineId)
+                .contains("priorCartLineId=" + staleLineId)
+                .containsOnlyOnce("- cartId=" + cartId);
+    }
+
     private void givenRunAndMessages() {
         AgentConversation conversation = AgentConversation.builder()
                 .id(CONVERSATION_ID)
@@ -288,6 +366,35 @@ class AgentContextAssemblerTest {
                 .cartId(cartId)
                 .cartLineId(line.id())
                 .payloadJson(cartLineJson(line))
+                .createdAt(createdAt)
+                .build();
+    }
+
+    private AgentArtifactReference fallbackCart(
+            UUID messageId,
+            UUID cartId,
+            Instant createdAt,
+            UUID merchantId,
+            String externalMerchantId,
+            List<CartLine> lines
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(messageId)
+                .artifactType(AgentArtifactType.CART)
+                .ordinal(1)
+                .stableKey("cart:" + cartId)
+                .label("Cart at jackets.example")
+                .cartId(cartId)
+                .payloadJson("""
+                        {"cartId":"%s","provider":"SHOPIFY","merchantId":"%s",\
+                        "externalMerchantId":"%s","lines":[%s]}
+                        """.formatted(
+                        cartId,
+                        merchantId,
+                        externalMerchantId,
+                        String.join(",", lines.stream().map(this::cartLineJson).toList())
+                ).strip())
                 .createdAt(createdAt)
                 .build();
     }

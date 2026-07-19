@@ -500,6 +500,41 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void readdUsesTheNewestSnapshotWhenTheSameCartGainsAuthoritativeRoutingMetadata() {
+        UUID populatedMessageId = UUID.randomUUID();
+        UUID emptyMessageId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+        Instant populatedAt = Instant.parse("2026-07-19T10:00:00Z");
+        Instant emptiedAt = Instant.parse("2026-07-19T10:01:00Z");
+        CartSnapshotLine removed = new CartSnapshotLine(
+                UUID.randomUUID(), "product-jacket", "offer-jacket", "Black cotton jacket");
+        AgentArtifactReference populatedWithoutRouting = withoutRoutingScope(
+                cartSnapshot(populatedMessageId, cartId, populatedAt, List.of(removed)));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(emptyMessageId, cartId, emptiedAt, List.of()),
+                        populatedWithoutRouting,
+                        cartLineSnapshot(populatedMessageId, 2, cartId, populatedAt, removed)
+                ));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Add it again."),
+                "add_cart_line",
+                addLineArguments(cartId, "offer-jacket")
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("Add it again."),
+                "add_cart_line",
+                addLineArguments(cartId, "offer-unrelated")
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("Remove it."),
+                "remove_cart_line",
+                removeLineArguments(cartId, removed.cartLineId())
+        )).isFalse();
+    }
+
+    @Test
     void delegatedMissionCanOnlyMutateItsSelectedOffersAndAttachedCarts() {
         UUID missionCartId = UUID.randomUUID();
         UUID unrelatedCartId = UUID.randomUUID();
@@ -760,6 +795,26 @@ class AgentMutationTargetPolicyTest {
                 .checkoutAttemptId(source.getCheckoutAttemptId())
                 .payloadJson(source.getPayloadJson())
                 .createdAt(createdAt)
+                .build();
+    }
+
+    private AgentArtifactReference withoutRoutingScope(AgentArtifactReference source) {
+        return AgentArtifactReference.builder()
+                .conversationId(source.getConversationId())
+                .messageId(source.getMessageId())
+                .artifactType(source.getArtifactType())
+                .ordinal(source.getOrdinal())
+                .stableKey(source.getStableKey())
+                .label(source.getLabel())
+                .canonicalProductKey(source.getCanonicalProductKey())
+                .offerKey(source.getOfferKey())
+                .inventoryItemId(source.getInventoryItemId())
+                .cartId(source.getCartId())
+                .cartLineId(source.getCartLineId())
+                .checkoutAttemptId(source.getCheckoutAttemptId())
+                .payloadJson(source.getPayloadJson().replace(
+                        "\"routingScopeKey\":\"SHOPIFY:merchant-jackets\",", ""))
+                .createdAt(source.getCreatedAt())
                 .build();
     }
 
