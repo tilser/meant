@@ -75,6 +75,9 @@ public class AgentProductClarificationService {
             if (descriptor == null || !authorizationPolicy.authorized(context, descriptor)) {
                 continue;
             }
+            if (authorizationPolicy.isUnqualifiedDelegatedCartAddition(context, call.name())) {
+                continue;
+            }
             if (!mutationTargetPolicy.requiresProductClarification(context, call.name())) {
                 continue;
             }
@@ -99,6 +102,8 @@ public class AgentProductClarificationService {
                 .map(this::descriptor)
                 .flatMap(Optional::stream)
                 .filter(descriptor -> authorizationPolicy.authorized(context, descriptor))
+                .filter(descriptor -> !authorizationPolicy.isUnqualifiedDelegatedCartAddition(
+                        context, descriptor.name()))
                 .filter(descriptor -> mutationTargetPolicy.requiresProductClarification(
                         context, descriptor.name()))
                 .findFirst()

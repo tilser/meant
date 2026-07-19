@@ -208,14 +208,17 @@ public class AgentRunCoordinator {
         Map<String, Integer> perToolCounts = new HashMap<>();
         Map<String, Integer> repeatedCalls = new HashMap<>();
         int totalToolCalls = 0;
+        boolean mutationAttempted = false;
 
         for (int iteration = 0; iteration < properties.maximumModelIterations(); iteration++) {
             requireActive(runId, executionOwner, deadline);
-            Optional<AgentProductClarification> unresolvedIntent =
-                    productClarificationService.unresolvedIntent(toolContext);
-            if (unresolvedIntent.isPresent()) {
-                waitForProductClarification(runId, executionOwner, unresolvedIntent.get());
-                return;
+            if (!mutationAttempted) {
+                Optional<AgentProductClarification> unresolvedIntent =
+                        productClarificationService.unresolvedIntent(toolContext);
+                if (unresolvedIntent.isPresent()) {
+                    waitForProductClarification(runId, executionOwner, unresolvedIntent.get());
+                    return;
+                }
             }
             List<AgentToolDescriptor> descriptors = authorizationPolicy.available(
                     toolContext,
@@ -271,6 +274,8 @@ public class AgentRunCoordinator {
             }
 
             List<AgentModelToolResult> results = executeTools(toolContext, calls, executionOwner, deadline);
+            mutationAttempted = mutationAttempted
+                    || calls.stream().anyMatch(call -> risk(call) != AgentToolRisk.READ);
             modelMessages.add(AgentModelMessage.tools(results));
         }
         terminateForLimit(

@@ -161,6 +161,72 @@ class AgentProductClarificationServiceTest {
     }
 
     @Test
+    void unresolvedIntentDoesNotClarifyAnUnqualifiedDelegatedMissionCartAddition() {
+        AgentToolExecutionContext context = context("Prepare everything I need for the picnic");
+        AgentToolDescriptor descriptor = descriptor("prepare_carts");
+        when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
+        when(authorizationPolicy.isUnqualifiedDelegatedCartAddition(context, "prepare_carts"))
+                .thenReturn(true);
+
+        assertThat(service.unresolvedIntent(context)).isEmpty();
+        verify(mutationTargetPolicy, never()).requiresProductClarification(
+                context, "prepare_carts");
+    }
+
+    @Test
+    void preflightDoesNotClarifyAnUnqualifiedDelegatedMissionCartAddition() {
+        AgentToolExecutionContext context = context("Prepare everything I need for the picnic");
+        AgentToolDescriptor descriptor = descriptor("prepare_carts");
+        when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
+        when(authorizationPolicy.isUnqualifiedDelegatedCartAddition(context, "prepare_carts"))
+                .thenReturn(true);
+
+        assertThat(service.preflight(
+                context,
+                List.of(new AgentModelToolCall(
+                        "call-1",
+                        "prepare_carts",
+                        "{\"offers\":[{\"offerKey\":\"offer-selected-by-mission\"}]}"
+                ))
+        )).isEmpty();
+        verify(mutationTargetPolicy, never()).requiresProductClarification(
+                context, "prepare_carts");
+    }
+
+    @Test
+    void conflictingDelegatedWordingStillClarifiesTheVisibleProductTarget() {
+        AgentToolExecutionContext context = context(
+                "Prepare everything; add the third blue one to my cart."
+        );
+        List<AgentVisibleProductReference> products = List.of(
+                new AgentVisibleProductReference(1, 1, "product-green", "offer-green", "Green cap"),
+                new AgentVisibleProductReference(2, 2, "product-blue", "offer-blue", "Blue cap"),
+                new AgentVisibleProductReference(3, 3, "product-red", "offer-red", "Red cap")
+        );
+        AgentToolDescriptor descriptor = descriptor("prepare_carts");
+        when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
+        when(authorizationPolicy.isUnqualifiedDelegatedCartAddition(context, "prepare_carts"))
+                .thenReturn(false);
+        when(mutationTargetPolicy.requiresProductClarification(context, "prepare_carts"))
+                .thenReturn(true);
+        when(mutationTargetPolicy.productClarificationCandidates(context, "prepare_carts"))
+                .thenReturn(products);
+
+        assertThat(service.preflight(
+                context,
+                List.of(new AgentModelToolCall(
+                        "call-1",
+                        "prepare_carts",
+                        "{\"offers\":[{\"offerKey\":\"offer-red\"}]}"
+                ))
+        )).contains(new AgentProductClarification(
+                "prepare_carts",
+                "Prepare everything; add the third blue one to my cart.",
+                products
+        ));
+    }
+
+    @Test
     void questionIsPlainTextAndFallsBackWhenATitleIsMissing() {
         AgentProductClarification clarification = new AgentProductClarification(
                 "prepare_carts",

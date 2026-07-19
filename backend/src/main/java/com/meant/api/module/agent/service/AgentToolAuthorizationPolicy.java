@@ -9,7 +9,10 @@ import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -127,6 +130,42 @@ public class AgentToolAuthorizationPolicy {
                     + "finish\\s+the\\s+mission)\\b",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern EXPLICIT_PRODUCT_ORDINAL = Pattern.compile(
+            "\\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+                    + "1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th|"
+                    + "(?:product|item|option|number)\\s+(?:10|[1-9]))\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern EXPLICIT_PRODUCT_SELECTION_ACTION = Pattern.compile(
+            "\\b(?:add|put|place|buy|purchase|order|choose|pick|select|prefer|want|take|get|use|include)\\b"
+                    + "|\\bgo\\s+with\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern BARE_PRODUCT_NUMBER = Pattern.compile(
+            "(?:^|[,.!?;:\\n]+)\\s*#?(?:10|[1-9])(?:[.)])?(?=\\s|$)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CONTEXTUAL_PRODUCT_QUALIFIER = Pattern.compile(
+            "\\b(?:except|excluding|exclude|without|other\\s+than|instead\\s+of|only)\\b"
+                    + "|\\b(?:the|this|that|these|those)\\b"
+                    + "(?:\\s+[\\p{L}\\p{N}'’#-]+){0,6}\\s+"
+                    + "(?:one|ones|item|items|product|products|option|options)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern UNQUALIFIED_MISSION_SUFFIX = Pattern.compile(
+            "^(?:(?:(?:that\\s+)?(?:i|we)\\s+need|needed)(?:\\s+for\\b.*)?|for\\b.+)?$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern MISSION_DELEGATION_CONTINUATION = Pattern.compile(
+            "^(?:please\\s+)?(?:go\\s+ahead|proceed|continue)(?:\\s+(?:with|through)\\s+(?:the\\s+)?"
+                    + "(?:mission|plan|bundle|cart|checkout))?[.!]?$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
+    private static final Set<String> MISSION_PURPOSE_FILLER = Set.of(
+            "a", "an", "for", "i", "my", "need", "needed", "our", "please", "that", "the", "to", "we",
+            "your"
+    );
     private static final Pattern SHORT_APPROVAL = Pattern.compile(
             "^(?:please\\s+)?(?:go\\s+ahead|proceed|continue)(?:\\s+with\\s+(?:the\\s+)?"
                     + "(?:mission|plan|bundle|cart|checkout))?[.!]?$",
@@ -213,6 +252,100 @@ public class AgentToolAuthorizationPolicy {
         }
         return mutationTargetPolicy.matchesMutationTarget(
                 context, descriptor.name(), canonicalArgumentsJson);
+    }
+
+    /**
+     * Identifies an unqualified, mission-wide cart addition. Explicit product targets and pending choices keep the
+     * generic product-choice guard; {@link #authorizedInvocation(AgentToolExecutionContext, AgentToolDescriptor,
+     * String)} still validates every proposed offer and cart against the delegated mission before execution.
+     */
+    public boolean isUnqualifiedDelegatedCartAddition(
+            AgentToolExecutionContext context,
+            String toolName
+    ) {
+        if (context == null
+                || context.pendingProductClarification() != null
+                || !CART_ADDITIONS.contains(toolName)) {
+            return false;
+        }
+        String turn = authorizationTurn(context, toolName);
+        if (positiveClause(turn, CART_ADDITION_INTENT)
+                || discoveryThenActionClause(turn, CART_ADDITION_INTENT)
+                || EXPLICIT_PRODUCT_ORDINAL.matcher(turn).find()
+                || EXPLICIT_PRODUCT_SELECTION_ACTION.matcher(turn).find()
+                || BARE_PRODUCT_NUMBER.matcher(turn).find()
+                || CONTEXTUAL_PRODUCT_QUALIFIER.matcher(turn).find()
+                || mentionsVisibleProduct(context, turn)) {
+            return false;
+        }
+        return delegatedMission(context, turn)
+                .filter(mission -> hasOnlyUnqualifiedMissionWording(turn, mission))
+                .isPresent();
+    }
+
+    private boolean hasOnlyUnqualifiedMissionWording(String turn, ShoppingMission mission) {
+        boolean foundDelegation = false;
+        for (String clause : CLAUSE_BOUNDARY.split(turn)) {
+            String candidate = clause.strip();
+            if (candidate.isEmpty()) {
+                continue;
+            }
+            Matcher delegation = MISSION_DELEGATION_INTENT.matcher(candidate);
+            if (delegation.find() && positiveClause(candidate, MISSION_DELEGATION_INTENT)) {
+                String suffix = candidate.substring(delegation.end()).strip();
+                if (foundDelegation
+                        || !UNQUALIFIED_MISSION_SUFFIX.matcher(suffix).matches()
+                        || !purposeMatchesMission(suffix, mission)) {
+                    return false;
+                }
+                foundDelegation = true;
+                continue;
+            }
+            if (!MISSION_DELEGATION_CONTINUATION.matcher(candidate).matches()) {
+                return false;
+            }
+        }
+        return foundDelegation;
+    }
+
+    private boolean purposeMatchesMission(String suffix, ShoppingMission mission) {
+        Set<String> purposeTokens = tokens(suffix);
+        purposeTokens.removeAll(MISSION_PURPOSE_FILLER);
+        if (purposeTokens.isEmpty()) {
+            return true;
+        }
+        return mission.getGoal() != null && tokens(mission.getGoal()).containsAll(purposeTokens);
+    }
+
+    private Set<String> tokens(String value) {
+        Set<String> result = new HashSet<>();
+        Matcher matcher = TOKEN.matcher(normalize(value).toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            result.add(matcher.group());
+        }
+        return result;
+    }
+
+    private boolean mentionsVisibleProduct(AgentToolExecutionContext context, String turn) {
+        if (context.visibleProductContext() == null || turn == null || turn.isBlank()) {
+            return false;
+        }
+        String normalizedTurn = normalize(turn).toLowerCase(Locale.ROOT);
+        return context.visibleProductContext().products().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(product -> mentionsVisibleProduct(normalizedTurn, product));
+    }
+
+    private boolean mentionsVisibleProduct(String normalizedTurn, AgentVisibleProductReference product) {
+        return containsNormalized(normalizedTurn, product.canonicalProductKey())
+                || containsNormalized(normalizedTurn, product.recommendedOfferKey())
+                || containsNormalized(normalizedTurn, product.title());
+    }
+
+    private boolean containsNormalized(String normalizedTurn, String candidate) {
+        return candidate != null
+                && !candidate.isBlank()
+                && normalizedTurn.contains(normalize(candidate).toLowerCase(Locale.ROOT));
     }
 
     private boolean productStateAuthorized(String toolName, String turn) {

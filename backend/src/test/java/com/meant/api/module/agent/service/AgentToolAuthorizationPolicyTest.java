@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.constant.AgentContentKind;
@@ -18,6 +19,7 @@ import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import java.util.List;
 import java.util.Optional;
@@ -310,9 +312,103 @@ class AgentToolAuthorizationPolicyTest {
         )).isTrue();
     }
 
+    @Test
+    void onlyAnUnqualifiedDelegatedCartAdditionBypassesProductClarification() {
+        ShoppingMission mission = activeMission();
+        when(missions.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(any(), any()))
+                .thenReturn(Optional.of(mission));
+        AgentToolExecutionContext context = context(
+                "Prepare everything I need for the picnic; go ahead through checkout."
+        );
+        AgentToolDescriptor prepareCarts = descriptor(
+                "prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION);
+        String arguments = "{\"offers\":[{\"offerKey\":\"offer-outside-mission\"}]}";
+
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(context, "prepare_carts")).isTrue();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(context, "prepare_checkout")).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Add the second one to my cart."), "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; add the third blue one to my cart."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; choose the blue one."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; I want the blue one."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; choose 3."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; add #3."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; #3."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything; the blue one."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything except that one."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything with the blue cap."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything I need for the picnic with the blue one."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything for the picnic except the blue one."),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("Prepare everything I need; the Blue cap is the target.")
+                        .withVisibleProductContext(new AgentVisibleProductContext(
+                                UUID.randomUUID(),
+                                List.of(new AgentVisibleProductReference(
+                                        3, 3, "product-blue", "offer-blue", "Blue cap"))
+                        )),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.authorizedInvocation(context, prepareCarts, arguments)).isFalse();
+        verify(targetPolicy).matchesDelegatedMission(
+                mission, "prepare_carts", arguments);
+    }
+
+    @Test
+    void pendingProductClarificationIsNeverTreatedAsAnUnqualifiedMissionAddition() {
+        ShoppingMission mission = activeMission();
+        when(missions.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(any(), any()))
+                .thenReturn(Optional.of(mission));
+        AgentProductClarification pending = new AgentProductClarification(
+                "prepare_carts",
+                "Prepare everything I need for the picnic.",
+                List.of(new AgentVisibleProductReference(
+                        2, 2, "product-blue", "offer-blue", "Blue cap"))
+        );
+
+        assertThat(policy.isUnqualifiedDelegatedCartAddition(
+                context("2.").withPendingProductClarification(pending),
+                "prepare_carts"
+        )).isFalse();
+    }
+
     private ShoppingMission activeMission() {
         ShoppingMission mission = mock(ShoppingMission.class);
         when(mission.getId()).thenReturn(UUID.randomUUID());
+        when(mission.getGoal()).thenReturn("Prepare a complete picnic");
         when(mission.getStatus()).thenReturn(ShoppingMissionStatus.READY);
         return mission;
     }

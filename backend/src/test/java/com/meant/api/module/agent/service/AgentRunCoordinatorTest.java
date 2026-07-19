@@ -273,6 +273,79 @@ class AgentRunCoordinatorTest {
     }
 
     @Test
+    void completedMutationIsNotReclassifiedAsAnUnresolvedProductIntent() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall mutation = new AgentModelToolCall(
+                "call-1",
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-red\"}]}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(mutation))),
+                response(model("I added the selected product to your cart.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentProductClarification staleClarification = clarification();
+        when(fixture.productClarificationService().unresolvedIntent(any()))
+                .thenReturn(Optional.empty(), Optional.of(staleClarification));
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenReturn(new AgentExecutedToolCall(
+                        new AgentModelToolResult("call-1", "prepare_carts", "{\"carts\":[]}"),
+                        true
+                ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I added the selected product to your cart.",
+                false
+        );
+        verify(fixture.productClarificationService(), timeout(3000).times(1)).unresolvedIntent(any());
+        assertThat(model.requests()).hasSize(2);
+    }
+
+    @Test
+    void readOnlyRoundStillRechecksForAnUnresolvedProductIntent() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall read = new AgentModelToolCall(
+                "call-1", "search_catalog", "{\"query\":\"caps\"}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(read)))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentProductClarification clarification = clarification();
+        when(fixture.productClarificationService().unresolvedIntent(any()))
+                .thenReturn(Optional.empty(), Optional.of(clarification));
+        when(fixture.productClarificationService().question(clarification))
+                .thenReturn("Which product should I add to your cart?\n1. Blue cap\n2. Red cap");
+        when(fixture.productClarificationContextService().serialize(clarification))
+                .thenReturn("{\"pendingProductClarification\":true}");
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenReturn(new AgentExecutedToolCall(
+                        new AgentModelToolResult("call-1", "search_catalog", "{\"products\":[]}"),
+                        true
+                ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Which product should I add to your cart?\n1. Blue cap\n2. Red cap",
+                "{\"pendingProductClarification\":true}",
+                true
+        );
+        verify(fixture.productClarificationService(), timeout(3000).times(2)).unresolvedIntent(any());
+        verify(fixture.toolExecutor(), timeout(3000)).execute(any(), any());
+        assertThat(model.requests()).hasSize(1);
+    }
+
+    @Test
     void productPreflightStopsEveryCallInTheResponseBeforeExecution() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
