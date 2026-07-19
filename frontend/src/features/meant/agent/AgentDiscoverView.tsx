@@ -88,6 +88,10 @@ import {
 import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
 import { AgentActionRequestIdentityStore } from './requestIdentity'
 import { agentActionQueueFor } from './actionQueue'
+import {
+  PRODUCT_PIN_NOTICE_LIFETIME_MS,
+  isProductPinNotice,
+} from './autoDismissNotices'
 
 const MUTATING_AGENT_ACTIONS = new Set([
   'prepare_carts',
@@ -362,6 +366,7 @@ export function AgentDiscoverView({
   const actionIdempotencyRef = useRef(new AgentActionRequestIdentityStore())
   const submissionInFlightRef = useRef(false)
   const actionQueue = useMemo(() => agentActionQueueFor(expectedUserId), [expectedUserId])
+  const autoDismissTimeoutsRef = useRef(new Map<string, number>())
   const visibleCartRef = useRef(cart)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const handledHomeRequestRef = useRef(homeRequestId)
@@ -841,6 +846,34 @@ export function AgentDiscoverView({
     },
     [activeConversationId, setDismissedMessageIds],
   )
+
+  useEffect(() => {
+    if (!combinedConversation) return
+    const conversationId = combinedConversation.conversationId
+    const dismissed = new Set(dismissedMessageIds[conversationId] ?? [])
+    for (const message of combinedConversation.messages) {
+      if (!isProductPinNotice(message) || dismissed.has(message.messageId)) continue
+      const timeoutKey = `${conversationId}:${message.messageId}`
+      if (autoDismissTimeoutsRef.current.has(timeoutKey)) continue
+      const timeout = window.setTimeout(() => {
+        setDismissedMessageIds((current) => {
+          const existing = current[conversationId] ?? []
+          if (existing.includes(message.messageId)) return current
+          return { ...current, [conversationId]: [...existing, message.messageId] }
+        })
+        autoDismissTimeoutsRef.current.delete(timeoutKey)
+      }, PRODUCT_PIN_NOTICE_LIFETIME_MS)
+      autoDismissTimeoutsRef.current.set(timeoutKey, timeout)
+    }
+  }, [combinedConversation, dismissedMessageIds, setDismissedMessageIds])
+
+  useEffect(() => {
+    const timeouts = autoDismissTimeoutsRef.current
+    return () => {
+      timeouts.forEach((timeout) => window.clearTimeout(timeout))
+      timeouts.clear()
+    }
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -1443,6 +1476,12 @@ export function AgentDiscoverView({
   const deleteConversation = async (conversationId: string) => {
     try {
       await deleteAgentConversation(conversationId, { expectedUserId })
+      const timeoutPrefix = `${conversationId}:`
+      for (const [key, timeout] of autoDismissTimeoutsRef.current) {
+        if (!key.startsWith(timeoutPrefix)) continue
+        window.clearTimeout(timeout)
+        autoDismissTimeoutsRef.current.delete(key)
+      }
       const remaining = conversations.filter((item) => item.conversationId !== conversationId)
       setConversations(remaining)
       setArchivedConversations((current) =>

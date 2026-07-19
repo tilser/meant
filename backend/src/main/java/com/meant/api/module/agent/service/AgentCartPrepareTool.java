@@ -41,9 +41,17 @@ public class AgentCartPrepareTool implements AgentTool {
         String resultJson = support.json(result);
         return new AgentToolExecutionResult(
                 resultJson,
-                "Prepared " + result.carts().size() + " cart(s); " + result.failures().size() + " route(s) failed.",
+                safeSummary(result.carts().size(), result.failures().size()),
                 support.artifacts(result),
                 result.carts().isEmpty() ? null : AgentRunEventType.CART_CHANGED
         );
+    }
+
+    static String safeSummary(int preparedCount, int failureCount) {
+        String prepared = "Prepared " + preparedCount + " cart(s)";
+        if (failureCount == 0) {
+            return prepared + ".";
+        }
+        return prepared + "; " + failureCount + " route(s) failed.";
     }
 }
