@@ -17,7 +17,8 @@ public class AgentCartRemoveLineTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "remove_cart_line",
-            "Remove an owned cart line using its stable Meant cart-line ID.",
+            "Remove an exact line from the authoritative current conversation cart. Resolve it or that only when "
+                    + "the current cart state identifies one line; otherwise ask which item.",
             """
                     {"type":"object","additionalProperties":false,"required":["cartId","cartLineId"],"properties":{"cartId":{"type":"string","format":"uuid"},"cartLineId":{"type":"string","format":"uuid"}}}
                     """,

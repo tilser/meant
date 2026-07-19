@@ -117,7 +117,7 @@ public class AgentToolCallExecutor {
                             jsonSupport.write(new AgentToolErrorPayload(
                                     false,
                                     "authorization_required",
-                                    "That action does not match the exact product the user selected.",
+                                    "That action could not be resolved to one exact current conversation item.",
                                     false
                             ))
                     ),

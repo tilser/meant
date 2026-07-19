@@ -488,6 +488,90 @@ describe('agent artifact mapping', () => {
     expect(cartItemsFromAgentArtifacts(snapshot, products)).toEqual([])
   })
 
+  test('keeps the first active cart and all of its lines for a timestamp-tied merchant route', () => {
+    const newestCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:newest-active',
+      messageId: 'message-active-carts',
+      cartId: 'newest-active',
+      ordinal: 1,
+      payloadJson: JSON.stringify({
+        cartId: 'newest-active',
+        routingScopeKey: 'shopify:external:active-merchant',
+      }),
+    })
+    const newestFirstLine = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:newest-active-first',
+      messageId: newestCart.messageId,
+      cartId: newestCart.cartId,
+      cartLineId: 'newest-active-first',
+      offerKey: 'offer-newest-first',
+      ordinal: 2,
+      payloadJson: JSON.stringify({
+        cartLineId: 'newest-active-first',
+        productTitle: 'Newest first product',
+        quantity: 1,
+        offerKey: 'offer-newest-first',
+      }),
+    })
+    const newestSecondLine = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:newest-active-second',
+      messageId: newestCart.messageId,
+      cartId: newestCart.cartId,
+      cartLineId: 'newest-active-second',
+      offerKey: 'offer-newest-second',
+      ordinal: 3,
+      payloadJson: JSON.stringify({
+        cartLineId: 'newest-active-second',
+        productTitle: 'Newest second product',
+        quantity: 1,
+        offerKey: 'offer-newest-second',
+      }),
+    })
+    const olderCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:older-active',
+      messageId: newestCart.messageId,
+      cartId: 'older-active',
+      ordinal: 4,
+      payloadJson: JSON.stringify({
+        cartId: 'older-active',
+        routingScopeKey: 'shopify:external:active-merchant',
+      }),
+    })
+    const olderLine = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:older-active',
+      messageId: olderCart.messageId,
+      cartId: olderCart.cartId,
+      cartLineId: 'older-active-line',
+      offerKey: 'offer-older',
+      ordinal: 5,
+      payloadJson: JSON.stringify({
+        cartLineId: 'older-active-line',
+        productTitle: 'Older product',
+        quantity: 1,
+        offerKey: 'offer-older',
+      }),
+    })
+
+    const snapshot = latestCartSnapshotArtifacts([
+      newestCart,
+      newestFirstLine,
+      newestSecondLine,
+      olderCart,
+      olderLine,
+    ])
+
+    expect(snapshot.map((item) => item.artifactId)).toEqual([
+      newestCart.artifactId,
+      newestFirstLine.artifactId,
+      newestSecondLine.artifactId,
+    ])
+  })
+
   test('selects the nanosecond-later cart snapshot when instant precision differs', () => {
     const exactSecondCart = artifact({
       type: 'CART',

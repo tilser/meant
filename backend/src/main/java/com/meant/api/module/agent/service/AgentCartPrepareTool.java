@@ -16,7 +16,9 @@ public class AgentCartPrepareTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "prepare_carts",
-            "Revalidate exact server-issued offer keys, partition them by merchant/provider route, and prepare one cart per route. Partial merchant failures are returned alongside successful carts.",
+            "Prepare carts from exact server-issued offers, reusing the newest compatible current cart for each "
+                    + "merchant/provider route and creating one only when none exists. Prefer add_cart_line when "
+                    + "the target cart is already known. Offers are revalidated before every mutation.",
             """
                     {"type":"object","additionalProperties":false,"required":["offers"],"properties":{"offers":{"type":"array","minItems":1,"maxItems":50,"items":{"type":"object","additionalProperties":false,"required":["offerKey"],"properties":{"offerKey":{"type":"string","minLength":1,"maxLength":200},"quantity":{"type":"integer","minimum":1,"maximum":1000}}}}}}
                     """,

@@ -629,6 +629,16 @@ function isNewerArtifact(candidate: AgentArtifactProfile, current: AgentArtifact
   )
 }
 
+function isPreferredCartSnapshot(
+  candidate: AgentArtifactProfile,
+  current: AgentArtifactProfile,
+): boolean {
+  const timestampComparison = compareArtifactTimestamps(candidate.createdAt, current.createdAt)
+  if (timestampComparison !== 0) return timestampComparison > 0
+  if (candidate.messageId === current.messageId) return candidate.ordinal < current.ordinal
+  return candidate.ordinal >= current.ordinal
+}
+
 function cartPartitionKey(cart: ParsedCartArtifact): string {
   const provider = cart.provider?.trim().toLowerCase() ?? ''
   if (cart.routingScopeKey) return `routing:${cart.routingScopeKey.trim().toLowerCase()}`
@@ -663,7 +673,7 @@ export function latestCartSnapshotArtifacts(
     if (!cart) continue
     const partitionKey = cartPartitionKey(cart)
     const current = selectedCarts.get(partitionKey)
-    if (!current || isNewerArtifact(artifact, current)) {
+    if (!current || isPreferredCartSnapshot(artifact, current)) {
       selectedCarts.set(partitionKey, artifact)
     }
   }

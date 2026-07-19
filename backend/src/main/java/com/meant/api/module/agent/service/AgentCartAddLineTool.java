@@ -17,7 +17,9 @@ public class AgentCartAddLineTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "add_cart_line",
-            "Add an exact server-issued offer to an owned cart. The offer is revalidated and must match the cart's merchant/provider route.",
+            "Add an exact server-issued offer to a current owned cart. Resolve references such as the second one, "
+                    + "it, or add it again from the supplied conversation state. The offer is revalidated and must "
+                    + "match the cart's merchant/provider route.",
             """
                     {"type":"object","additionalProperties":false,"required":["cartId","offerKey"],"properties":{"cartId":{"type":"string","format":"uuid"},"offerKey":{"type":"string","minLength":1,"maxLength":200},"quantity":{"type":"integer","minimum":1,"maximum":1000}}}
                     """,

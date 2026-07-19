@@ -84,6 +84,7 @@ class AgentCommerceToolContractTest {
                 "running.example",
                 List.of(new CartOfferPartitionResult.Item("offer-1", 1))
         )));
+        when(cartService.listActive(any())).thenReturn(List.of());
         when(cartService.create(any(), any())).thenReturn(result);
         AgentCartToolSupport support = new AgentCartToolSupport(
                 conversations,
@@ -104,6 +105,83 @@ class AgentCommerceToolContractTest {
         ArgumentCaptor<CreateCartCommand> command = ArgumentCaptor.forClass(CreateCartCommand.class);
         verify(cartService).create(command.capture(), any());
         assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
+    void prepareCartReusesTheNewestCompatibleActiveCartInsteadOfCreatingADuplicate() {
+        AgentConversationRepository conversations = ownedConversationRepository();
+        CartService cartService = mock(CartService.class);
+        AgentProductReadReferenceService references = mock(AgentProductReadReferenceService.class);
+        UUID cartId = UUID.randomUUID();
+        CartResult active = mock(CartResult.class);
+        CartResult updated = mock(CartResult.class);
+        when(active.cartId()).thenReturn(cartId);
+        when(active.routingScopeKey()).thenReturn("SHOPIFY:merchant-1");
+        when(updated.cartId()).thenReturn(cartId);
+        when(updated.routingScopeKey()).thenReturn("SHOPIFY:merchant-1");
+        when(cartService.partitionSelectedOffers(any())).thenReturn(List.of(new CartOfferPartitionResult(
+                "shopify:merchant-1",
+                "SHOPIFY",
+                null,
+                "merchant-1",
+                null,
+                "running.example",
+                List.of(new CartOfferPartitionResult.Item("offer-1", 2))
+        )));
+        when(cartService.listActive(any())).thenReturn(List.of(active));
+        when(cartService.update(any(), any())).thenReturn(updated);
+        AgentCartToolSupport support = new AgentCartToolSupport(
+                conversations,
+                references,
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+
+        support.prepare(
+                context().withBuyerIp("203.0.113.42"),
+                new AgentCartToolArguments.Prepare(List.of(
+                        new AgentCartToolArguments.ExactOffer("offer-1", 2)))
+        );
+
+        ArgumentCaptor<UpdateCartCommand> command = ArgumentCaptor.forClass(UpdateCartCommand.class);
+        verify(cartService).update(command.capture(), any());
+        verify(cartService, never()).create(any(), any());
+        assertThat(command.getValue().cartId()).isEqualTo(cartId);
+        assertThat(command.getValue().userId()).isEqualTo(USER_ID);
+        assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
+        assertThat(command.getValue().addItems())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.offerKey()).isEqualTo("offer-1");
+                    assertThat(item.quantity()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    void activeCartContextKeepsOnlyTheNewestCartForEachMerchantRoute() {
+        CartService cartService = mock(CartService.class);
+        CartResult newest = mock(CartResult.class);
+        CartResult olderDuplicate = mock(CartResult.class);
+        CartResult otherMerchant = mock(CartResult.class);
+        when(newest.routingScopeKey()).thenReturn("SHOPIFY:merchant-1");
+        when(olderDuplicate.routingScopeKey()).thenReturn("SHOPIFY:merchant-1");
+        when(otherMerchant.routingScopeKey()).thenReturn("SHOPIFY:merchant-2");
+        when(cartService.listActive(any())).thenReturn(List.of(newest, olderDuplicate, otherMerchant));
+        AgentCartToolSupport support = new AgentCartToolSupport(
+                ownedConversationRepository(),
+                mock(AgentProductReadReferenceService.class),
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+
+        assertThat(support.active(context(), new AgentCartToolArguments.GetActive(10)))
+                .containsExactly(newest, otherMerchant);
     }
 
     @Test

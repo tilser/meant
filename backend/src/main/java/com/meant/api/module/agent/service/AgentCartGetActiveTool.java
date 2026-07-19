@@ -41,7 +41,7 @@ public class AgentCartGetActiveTool implements AgentTool {
         String resultJson = support.json(result);
         return AgentToolExecutionResult.read(
                 resultJson,
-                "Found " + carts.size() + " active cart(s).",
+                "Loaded " + carts.size() + " current cart(s).",
                 support.artifacts(result)
         );
     }

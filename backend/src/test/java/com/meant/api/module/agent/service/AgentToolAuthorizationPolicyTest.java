@@ -87,6 +87,18 @@ class AgentToolAuthorizationPolicyTest {
     }
 
     @Test
+    void naturalFollowUpsExposeExistingCartMutations() {
+        assertThat(policy.authorized(
+                context("You know I don't like it, remove it from the cart."),
+                descriptor("remove_cart_line", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+        assertThat(policy.authorized(
+                context("Add it again."),
+                descriptor("add_cart_line", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+    }
+
+    @Test
     void conversationalContinueDoesNotDelegateCommerceButAShortApprovalCan() {
         AgentToolDescriptor checkout = descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION);
 

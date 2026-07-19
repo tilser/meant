@@ -21,7 +21,10 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
@@ -74,7 +77,30 @@ class AgentCartToolSupport {
     List<CartResult> active(AgentToolExecutionContext context, AgentCartToolArguments.GetActive arguments) {
         ownedContext(context);
         int limit = arguments.limit() == null ? 10 : arguments.limit();
-        return cartService.listActive(new ListActiveCartsQuery(context.userId(), limit));
+        Map<String, CartResult> currentByRoute = new LinkedHashMap<>();
+        cartService.listActive(new ListActiveCartsQuery(context.userId(), 20))
+                .forEach(cart -> currentByRoute.putIfAbsent(cartRouteKey(cart), cart));
+        return currentByRoute.values().stream().limit(limit).toList();
+    }
+
+    private String cartRouteKey(CartResult cart) {
+        if (cart.routingScopeKey() != null && !cart.routingScopeKey().isBlank()) {
+            return "routing:" + cart.routingScopeKey().toLowerCase(Locale.ROOT);
+        }
+        if (cart.merchantIntegrationId() != null) {
+            return "integration:" + cart.merchantIntegrationId();
+        }
+        String provider = cart.provider() == null ? "" : cart.provider().toLowerCase(Locale.ROOT);
+        if (cart.externalMerchantId() != null && !cart.externalMerchantId().isBlank()) {
+            return "external:" + provider + ":" + cart.externalMerchantId().toLowerCase(Locale.ROOT);
+        }
+        if (cart.merchantId() != null) {
+            return "merchant:" + cart.merchantId();
+        }
+        if (cart.merchantDomain() != null && !cart.merchantDomain().isBlank()) {
+            return "domain:" + provider + ":" + cart.merchantDomain().toLowerCase(Locale.ROOT);
+        }
+        return "cart:" + cart.cartId();
     }
 
     CartResult get(AgentToolExecutionContext context, AgentCartToolArguments.Get arguments) {
@@ -97,29 +123,17 @@ class AgentCartToolSupport {
         List<AgentCartResult.Cart> carts = new ArrayList<>();
         List<AgentCartResult.Failure> failures = new ArrayList<>();
         List<UUID> cartIds = new ArrayList<>();
+        Map<String, CartResult> activeByRoute = new LinkedHashMap<>();
+        cartService.listActive(new ListActiveCartsQuery(context.userId(), 20))
+                .forEach(cart -> activeByRoute.putIfAbsent(cartRouteKey(cart), cart));
         for (CartOfferPartitionResult partition : partitions) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new CancellationException("Cart preparation was cancelled");
             }
             try {
-                CartResult created = cartService.create(new CreateCartCommand(
-                        context.userId(),
-                        null,
-                        null,
-                        partition.items().stream()
-                                .map(item -> new CreateCartCommand.AddItem(item.offerKey(), item.quantity()))
-                                .toList(),
-                        null,
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        null,
-                        context.buyerIp()
-                ), scopedIdempotencyKey(context, partition.routingScopeKey()));
-                carts.add(AgentCartResult.Cart.from(created));
-                cartIds.add(created.cartId());
+                CartResult prepared = preparePartition(context, partition, activeByRoute);
+                carts.add(AgentCartResult.Cart.from(prepared));
+                cartIds.add(prepared.cartId());
             } catch (CancellationException exception) {
                 throw exception;
             } catch (RuntimeException exception) {
@@ -135,6 +149,49 @@ class AgentCartToolSupport {
         }
         missionSupport.attachCartReferences(context, cartIds);
         return new AgentCartResult(carts, failures);
+    }
+
+    private CartResult preparePartition(
+            AgentToolExecutionContext context,
+            CartOfferPartitionResult partition,
+            Map<String, CartResult> activeByRoute
+    ) {
+        UUID idempotencyKey = scopedIdempotencyKey(context, partition.routingScopeKey());
+        CartResult active = activeByRoute.get(normalizedRoutingScopeKey(partition.routingScopeKey()));
+        if (active != null) {
+            return cartService.update(updateCommand(
+                    active.cartId(),
+                    context.userId(),
+                    partition.items().stream()
+                            .map(item -> new UpdateCartCommand.AddItem(item.offerKey(), item.quantity()))
+                            .toList(),
+                    List.of(),
+                    List.of(),
+                    context.buyerIp()
+            ), idempotencyKey);
+        }
+        return cartService.create(new CreateCartCommand(
+                context.userId(),
+                null,
+                null,
+                partition.items().stream()
+                        .map(item -> new CreateCartCommand.AddItem(item.offerKey(), item.quantity()))
+                        .toList(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                context.buyerIp()
+        ), idempotencyKey);
+    }
+
+    private String normalizedRoutingScopeKey(String routingScopeKey) {
+        return routingScopeKey == null || routingScopeKey.isBlank()
+                ? ""
+                : "routing:" + routingScopeKey.toLowerCase(Locale.ROOT);
     }
 
     CartResult addLine(AgentToolExecutionContext context, AgentCartToolArguments.AddLine arguments) {
