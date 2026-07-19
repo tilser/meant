@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -17,7 +18,9 @@ import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
+import com.meant.api.module.agent.service.dto.AgentMessageResult;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
+import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,6 +39,8 @@ class AgentToolInvocationServiceTest {
     private AgentArtifactReferenceRepository artifactRepository;
     private AgentRunRepository runRepository;
     private AgentRunService runService;
+    private AgentMessageLedgerService messageLedgerService;
+    private AgentArtifactService artifactService;
     private AgentJsonSupport jsonSupport;
     private AgentToolInvocationService service;
     private AgentRun run;
@@ -46,14 +51,16 @@ class AgentToolInvocationServiceTest {
         artifactRepository = mock(AgentArtifactReferenceRepository.class);
         runRepository = mock(AgentRunRepository.class);
         runService = mock(AgentRunService.class);
+        messageLedgerService = mock(AgentMessageLedgerService.class);
+        artifactService = mock(AgentArtifactService.class);
         jsonSupport = mock(AgentJsonSupport.class);
         service = new AgentToolInvocationService(
                 invocationRepository,
                 artifactRepository,
                 runRepository,
                 runService,
-                mock(AgentMessageLedgerService.class),
-                mock(AgentArtifactService.class),
+                messageLedgerService,
+                artifactService,
                 jsonSupport,
                 mock(AgentMetrics.class),
                 properties(),
@@ -157,6 +164,45 @@ class AgentToolInvocationServiceTest {
                 .hasMessageContaining("already in progress");
 
         assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.RUNNING);
+    }
+
+    @Test
+    void completionAcquiresTheConversationAndRunLedgerLocksBeforeMutatingTheInvocation() {
+        UUID invocationId = UUID.randomUUID();
+        UUID executionOwner = UUID.randomUUID();
+        AgentToolInvocation invocation = runningInvocation(NOW.minusSeconds(1));
+        when(invocationRepository.findById(invocationId)).thenReturn(Optional.of(invocation));
+        when(jsonSupport.bounded("{\"ok\":true}")).thenReturn("{\"ok\":true}");
+        when(messageLedgerService.appendToolResult(
+                run.getId(), executionOwner, "call-1", "prepare_carts", "{\"ok\":true}"
+        )).thenReturn(new AgentMessageResult(
+                UUID.randomUUID(), run.getId(), 1, null, null, null, "{\"ok\":true}", null, NOW
+        ));
+
+        service.complete(
+                run.getId(),
+                run.getConversationId(),
+                invocationId,
+                "call-1",
+                "prepare_carts",
+                AgentToolExecutionResult.read("{\"ok\":true}", "Prepared cart", java.util.List.of()),
+                10,
+                executionOwner
+        );
+
+        var ordered = inOrder(messageLedgerService, invocationRepository, artifactService);
+        ordered.verify(messageLedgerService).appendToolResult(
+                run.getId(), executionOwner, "call-1", "prepare_carts", "{\"ok\":true}"
+        );
+        ordered.verify(invocationRepository).findById(invocationId);
+        ordered.verify(artifactService).persist(
+                org.mockito.ArgumentMatchers.eq(run.getConversationId()),
+                org.mockito.ArgumentMatchers.eq(run.getId()),
+                org.mockito.ArgumentMatchers.eq(executionOwner),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(invocationId),
+                org.mockito.ArgumentMatchers.anyList()
+        );
     }
 
     private AgentToolInvocation uncertainInvocation(UUID runId, String arguments) {

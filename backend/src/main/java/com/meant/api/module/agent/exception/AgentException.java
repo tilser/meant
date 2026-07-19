@@ -43,11 +43,35 @@ public class AgentException extends RuntimeException implements ApiException {
         return new AgentException(HttpStatus.CONFLICT, ApiErrorCode.AGENT_CONFLICT, message);
     }
 
+    public static AgentException actionInProgress() {
+        return new AgentException(
+                HttpStatus.CONFLICT,
+                ApiErrorCode.AGENT_ACTION_IN_PROGRESS,
+                "This action is already in progress."
+        );
+    }
+
+    public static AgentException actionUncertain(HttpStatus status, String message) {
+        return new AgentException(status, ApiErrorCode.AGENT_ACTION_UNCERTAIN, message);
+    }
+
+    public static AgentException actionUncertain(HttpStatus status, String message, Throwable cause) {
+        return new AgentException(status, ApiErrorCode.AGENT_ACTION_UNCERTAIN, message, cause);
+    }
+
     public static AgentException cursorExpired() {
         return new AgentException(
                 HttpStatus.GONE,
                 ApiErrorCode.AGENT_CURSOR_EXPIRED,
                 "The event cursor has expired. Reload the run snapshot and reconnect from its latest cursor."
+        );
+    }
+
+    public static AgentException streamLimit() {
+        return new AgentException(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ApiErrorCode.AGENT_STREAM_LIMIT,
+                "Too many agent event streams are already open. Close another stream and try again."
         );
     }
 }

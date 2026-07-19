@@ -35,6 +35,14 @@ public class AgentMutationTargetPolicy {
             "\\bfirst\\s+(two|three|four|2|3|4)\\b",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
+    private static final Set<String> NON_DESCRIPTIVE_TOKENS = Set.of(
+            "add", "and", "bag", "basket", "both", "buy", "cart", "check", "checkout", "delete",
+            "details", "from", "get", "into", "item", "items", "more", "need", "new", "one", "ones",
+            "order", "pair", "pin", "place", "please", "product", "products", "purchase", "put", "remove",
+            "same", "save", "show", "size", "take", "tell", "that", "the", "them", "these", "this", "those",
+            "want", "watch", "with"
+    );
 
     private final AgentArtifactReferenceRepository artifactRepository;
     private final ObjectMapper objectMapper;
@@ -169,8 +177,10 @@ public class AgentMutationTargetPolicy {
             String turn = context.triggeringUserText();
             return switch (toolName) {
                 case "pin_product", "unpin_product", "watch_product", "unwatch_product" ->
-                        literalReference(turn, text(arguments, "canonicalProductKey"));
-                case "prepare_carts" -> allLiteral(turn, arrayField(arguments, "offers", "offerKey"));
+                        literalReference(turn, text(arguments, "canonicalProductKey"))
+                                || matchesNamedProduct(context, text(arguments, "canonicalProductKey"));
+                case "prepare_carts" -> allLiteral(turn, arrayField(arguments, "offers", "offerKey"))
+                        || matchesNamedPreparedOffer(context, arguments);
                 case "add_cart_line" -> literalReference(turn, text(arguments, "offerKey"))
                         && literalReference(turn, text(arguments, "cartId"));
                 case "update_cart_line", "remove_cart_line" ->
@@ -183,6 +193,78 @@ public class AgentMutationTargetPolicy {
         } catch (RuntimeException exception) {
             return false;
         }
+    }
+
+    private boolean matchesNamedProduct(AgentToolExecutionContext context, String canonicalProductKey) {
+        return uniquelyMentionedProduct(context)
+                .map(reference -> reference.getCanonicalProductKey().equals(canonicalProductKey))
+                .orElse(false);
+    }
+
+    private boolean matchesNamedPreparedOffer(AgentToolExecutionContext context, JsonNode arguments) {
+        JsonNode offers = arguments == null ? null : arguments.get("offers");
+        if (offers == null || !offers.isArray() || offers.size() != 1) {
+            return false;
+        }
+        String offerKey = text(offers.get(0), "offerKey");
+        if (offerKey == null || offerKey.isBlank()) {
+            return false;
+        }
+        return uniquelyMentionedProduct(context)
+                .map(reference -> offerBelongsToProduct(
+                        context.conversationId(), offerKey, reference.getCanonicalProductKey()))
+                .orElse(false);
+    }
+
+    /** Resolves descriptive follow-ups only when one product in the latest result set is the unique best match. */
+    private Optional<AgentArtifactReference> uniquelyMentionedProduct(AgentToolExecutionContext context) {
+        Set<String> turnTokens = descriptiveTokens(context.triggeringUserText());
+        if (turnTokens.isEmpty()) {
+            return Optional.empty();
+        }
+        List<AgentArtifactReference> recent = recent(context.conversationId());
+        Optional<AgentArtifactReference> newest = recent.stream()
+                .filter(this::isProductReference)
+                .findFirst();
+        if (newest.isEmpty()) {
+            return Optional.empty();
+        }
+        AgentArtifactReference anchor = newest.get();
+        List<AgentArtifactReference> candidates = recent.stream()
+                .filter(this::isProductReference)
+                .filter(reference -> sameResultSet(anchor, reference))
+                .filter(reference -> reference.getLabel() != null && !reference.getLabel().isBlank())
+                .toList();
+        int bestScore = candidates.stream()
+                .mapToInt(reference -> overlap(turnTokens, descriptiveTokens(reference.getLabel())))
+                .max()
+                .orElse(0);
+        if (bestScore == 0) {
+            return Optional.empty();
+        }
+        List<AgentArtifactReference> matches = candidates.stream()
+                .filter(reference -> overlap(turnTokens, descriptiveTokens(reference.getLabel())) == bestScore)
+                .toList();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    private Set<String> descriptiveTokens(String value) {
+        if (value == null || value.isBlank()) {
+            return Set.of();
+        }
+        Set<String> tokens = new LinkedHashSet<>();
+        Matcher matcher = TOKEN.matcher(value.toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            String token = matcher.group();
+            if (token.length() >= 3 && !NON_DESCRIPTIVE_TOKENS.contains(token)) {
+                tokens.add(token);
+            }
+        }
+        return Set.copyOf(tokens);
+    }
+
+    private int overlap(Set<String> left, Set<String> right) {
+        return (int) left.stream().filter(right::contains).count();
     }
 
     private boolean matchesPreparedOffers(

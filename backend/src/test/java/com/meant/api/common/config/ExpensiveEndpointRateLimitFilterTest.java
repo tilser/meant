@@ -147,6 +147,32 @@ class ExpensiveEndpointRateLimitFilterTest {
     }
 
     @Test
+    void limitsParameterizedAgentEventStreamPaths() throws Exception {
+        ExpensiveEndpointRateLimitFilter filter = filter(
+                1,
+                endpoint("GET", "/api/v1/users/me/agent/runs/{runId}/events")
+        );
+        authenticate("user-1");
+
+        assertAllowed(filter, request(
+                "GET",
+                "/api/v1/users/me/agent/runs/00000000-0000-0000-0000-000000000001/events",
+                "203.0.113.10"
+        ));
+
+        MockHttpServletResponse limited = doFilter(
+                filter,
+                request(
+                        "GET",
+                        "/api/v1/users/me/agent/runs/00000000-0000-0000-0000-000000000002/events",
+                        "203.0.113.10"
+                )
+        );
+
+        assertThat(limited.getStatus()).isEqualTo(429);
+    }
+
+    @Test
     void limitsTheStaticCanonicalProductRehydrationPath() throws Exception {
         ExpensiveEndpointRateLimitFilter filter = filter(
                 1,

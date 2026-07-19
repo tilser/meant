@@ -6,6 +6,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.common.constant.ApiErrorCode;
+import com.meant.api.module.agent.constant.AgentContentKind;
+import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
 import com.meant.api.module.agent.entity.AgentConversation;
 import com.meant.api.module.agent.entity.AgentMessage;
@@ -99,17 +102,52 @@ class AgentUserActionPersistenceServiceTest {
     }
 
     @Test
-    void uncertainActionCannotReplayAcrossToolContractVersions() {
+    void uncertainActionAcrossToolVersionsRemainsTypedAndNonRotating() {
         AgentUserAction action = uncertainAction();
         when(actionRepository.findByUserIdAndConversationIdAndIdempotencyKey(
                 userId, conversation.getId(), "client-key"))
                 .thenReturn(Optional.of(action));
 
         assertThatThrownBy(() -> service.reserve(command(ARGUMENTS), ARGUMENTS, "v2"))
-                .isInstanceOf(AgentException.class)
-                .hasMessageContaining("different tool contract or arguments");
+                .isInstanceOfSatisfying(AgentException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(ApiErrorCode.AGENT_ACTION_UNCERTAIN));
 
         assertThat(action.getStatus()).isEqualTo(AgentUserActionStatus.UNCERTAIN);
+    }
+
+    @Test
+    void completedActionReplaysAcrossToolVersionChangesWithoutExecutingAgain() {
+        AgentMessage message = AgentMessage.builder()
+                .conversationId(conversation.getId())
+                .role(AgentMessageRole.USER_ACTION)
+                .contentKind(AgentContentKind.ACTION)
+                .sequenceNumber(1L)
+                .textContent("Pinned the verified product.")
+                .createdAt(NOW)
+                .build();
+        AgentUserAction action = AgentUserAction.builder()
+                .userId(userId)
+                .conversationId(conversation.getId())
+                .toolName("pin_product")
+                .toolVersion("v1")
+                .argumentsJson(ARGUMENTS)
+                .idempotencyKey("client-key")
+                .status(AgentUserActionStatus.COMPLETED)
+                .messageId(message.getId())
+                .resultJson("{\"ok\":true}")
+                .createdAt(NOW)
+                .completedAt(NOW)
+                .build();
+        when(actionRepository.findByUserIdAndConversationIdAndIdempotencyKey(
+                userId, conversation.getId(), "client-key"))
+                .thenReturn(Optional.of(action));
+        when(messageRepository.findById(message.getId())).thenReturn(Optional.of(message));
+
+        var reservation = service.reserve(command(ARGUMENTS), ARGUMENTS, "v2");
+
+        assertThat(reservation.execute()).isFalse();
+        assertThat(reservation.actionId()).isEqualTo(action.getId());
+        assertThat(reservation.completedResult().resultJson()).isEqualTo("{\"ok\":true}");
     }
 
     @Test
@@ -169,8 +207,10 @@ class AgentUserActionPersistenceServiceTest {
                 .thenReturn(Optional.of(fresh));
 
         assertThatThrownBy(() -> service.reserve(command(ARGUMENTS), ARGUMENTS, "v1"))
-                .isInstanceOf(AgentException.class)
-                .hasMessageContaining("already in progress");
+                .isInstanceOfSatisfying(AgentException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(ApiErrorCode.AGENT_ACTION_IN_PROGRESS);
+                    assertThat(exception.getSafeMessage()).contains("already in progress");
+                });
         assertThat(fresh.getStatus()).isEqualTo(AgentUserActionStatus.RUNNING);
     }
 

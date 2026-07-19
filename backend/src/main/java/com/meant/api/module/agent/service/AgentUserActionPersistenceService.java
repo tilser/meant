@@ -21,6 +21,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,7 +61,6 @@ public class AgentUserActionPersistenceService {
         if (existing.isPresent()) {
             AgentUserAction action = existing.get();
             if (!action.getToolName().equals(command.toolName())
-                    || !action.getToolVersion().equals(toolVersion)
                     || !action.getArgumentsJson().equals(argumentsJson)) {
                 throw AgentException.conflict(
                         "The action idempotency key was already used for a different tool contract or arguments.");
@@ -81,9 +81,28 @@ public class AgentUserActionPersistenceService {
                         )
                 );
             }
+            if (!action.getToolVersion().equals(toolVersion)) {
+                if (action.getStatus() == AgentUserActionStatus.RESERVED
+                        || action.getStatus() == AgentUserActionStatus.RUNNING) {
+                    throw AgentException.actionInProgress();
+                }
+                if (action.getStatus() == AgentUserActionStatus.UNCERTAIN) {
+                    throw AgentException.actionUncertain(
+                            HttpStatus.CONFLICT,
+                            "The original action outcome is still uncertain after a tool update."
+                    );
+                }
+                throw AgentException.conflict(
+                        "The action idempotency key was already used with a different tool version."
+                );
+            }
             if (action.getStatus() == AgentUserActionStatus.UNCERTAIN) {
                 action.retry();
                 return new AgentUserActionReservation(action.getId(), true, null);
+            }
+            if (action.getStatus() == AgentUserActionStatus.RESERVED
+                    || action.getStatus() == AgentUserActionStatus.RUNNING) {
+                throw AgentException.actionInProgress();
             }
             throw AgentException.conflict("This action is already in progress or cannot be retried.");
         }

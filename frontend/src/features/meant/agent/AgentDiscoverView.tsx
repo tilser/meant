@@ -68,6 +68,7 @@ import {
   type AgentEventReducerState,
 } from './eventReducer'
 import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
+import { AgentActionRequestIdentityStore } from './requestIdentity'
 
 const TERMINAL_RUNS = new Set(['WAITING_FOR_USER', 'COMPLETED', 'FAILED', 'CANCELLED'])
 
@@ -280,6 +281,7 @@ export function AgentDiscoverView({
   const activeConversationIdRef = useRef(activeConversationId)
   const recoveryInFlightRef = useRef(new Set<string>())
   const actionPendingRef = useRef(new Set<string>())
+  const actionIdempotencyRef = useRef(new AgentActionRequestIdentityStore())
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const handledHomeRequestRef = useRef(homeRequestId)
   const handledFindRequestRef = useRef<string | null>(null)
@@ -711,8 +713,12 @@ export function AgentDiscoverView({
     async (toolName: string, argumentsValue: unknown, summary: string) => {
       if (!activeConversationId) return null
       const targetConversationId = activeConversationId
-      const pendingKey = `${toolName}:${JSON.stringify(argumentsValue)}`
+      const argumentsJson = JSON.stringify(argumentsValue)
+      const pendingKey = `${expectedUserId}:${activeConversationId}:${toolName}:${argumentsJson}`
       if (actionPendingRef.current.has(pendingKey)) return null
+      const idempotencyKey = actionIdempotencyRef.current.keyFor(pendingKey, () =>
+        uniqueRequestId('action'),
+      )
       actionPendingRef.current.add(pendingKey)
       setActionPending((current) => new Set(current).add(pendingKey))
       setError(null)
@@ -720,8 +726,8 @@ export function AgentDiscoverView({
         const result = await recordAgentDirectAction({
           conversationId: activeConversationId,
           toolName,
-          argumentsJson: JSON.stringify(argumentsValue),
-          idempotencyKey: uniqueRequestId('action'),
+          argumentsJson,
+          idempotencyKey,
           summary,
           expectedUserId,
         })
@@ -738,9 +744,11 @@ export function AgentDiscoverView({
             cartIds,
           )
         }
+        actionIdempotencyRef.current.completed(pendingKey)
         void refreshLists()
         return result
       } catch (caught) {
+        actionIdempotencyRef.current.failed(pendingKey, caught)
         setError(caught instanceof Error ? caught.message : 'That action could not be completed.')
         return null
       } finally {

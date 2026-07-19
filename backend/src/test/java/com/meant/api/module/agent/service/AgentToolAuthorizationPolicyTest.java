@@ -36,16 +36,62 @@ class AgentToolAuthorizationPolicyTest {
         AgentToolDescriptor descriptor = descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION);
 
         assertThat(policy.authorized(context("Add the second one."), descriptor)).isTrue();
+        assertThat(policy.authorized(context("Add the gray pair to my cart."), descriptor)).isTrue();
         assertThat(policy.authorized(directContext(), descriptor)).isTrue();
     }
 
     @Test
-    void bareOrAttributeOnlyCartLanguageCannotAuthorizeAnArbitraryOffer() {
+    void cartLanguageExposesTheCapabilityButCannotAuthorizeAnUnprovenTarget() {
         AgentToolDescriptor descriptor = descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION);
+        when(targetPolicy.matchesMutationTarget(any(), eq("prepare_carts"), anyString())).thenReturn(false);
 
-        assertThat(policy.authorized(context("Add to cart."), descriptor)).isFalse();
-        assertThat(policy.authorized(context("Add the blue shoes to my cart."), descriptor)).isFalse();
-        assertThat(policy.authorized(context("Buy this one."), descriptor)).isFalse();
+        assertThat(policy.authorized(context("Add to cart."), descriptor)).isTrue();
+        assertThat(policy.authorizedInvocation(
+                context("Add the blue shoes to my cart."),
+                descriptor,
+                "{\"offers\":[{\"offerKey\":\"offer-2\"}]}"
+        )).isFalse();
+        assertThat(policy.authorizedInvocation(
+                context("Buy this one."),
+                descriptor,
+                "{\"offers\":[{\"offerKey\":\"offer-2\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void unrelatedDetailLanguageDoesNotExposeCartMutationTools() {
+        assertThat(policy.authorized(
+                context("Get more details on the second one."),
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+    }
+
+    @Test
+    void informationalQuestionAboutCartImpactDoesNotAuthorizeMutation() {
+        assertThat(policy.authorized(
+                context("How much would the gray pair add to my cart?"),
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("I'd like to know whether the gray pair would add to my cart."),
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+    }
+
+    @Test
+    void politeDirectCartRequestRemainsAuthorized() {
+        assertThat(policy.authorized(
+                context("Could you add the gray pair to my cart?"),
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+    }
+
+    @Test
+    void conversationalContinueDoesNotDelegateCommerceButAShortApprovalCan() {
+        AgentToolDescriptor checkout = descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION);
+
+        assertThat(policy.authorized(context("Continue explaining the sizing details."), checkout)).isFalse();
+        assertThat(policy.authorized(context("Proceed."), checkout)).isTrue();
     }
 
     @Test
@@ -76,6 +122,14 @@ class AgentToolAuthorizationPolicyTest {
                 context("Don't add the second one to my cart."),
                 descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
         )).isFalse();
+    }
+
+    @Test
+    void negationInAnEarlierClauseDoesNotBlockALaterExplicitMutation() {
+        assertThat(policy.authorized(
+                context("I don't want the red one — add the second one to my cart."),
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
     }
 
     @Test

@@ -91,6 +91,53 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void uniqueProductDescriptionBindsTheExactIssuedOfferWithoutTrustingTheModelLabel() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference first = productWithLabel(
+                messageId, 1, "product-1", "offer-1", "Blue trail runners");
+        AgentArtifactReference second = productWithLabel(
+                messageId, 2, "product-2", "offer-2", "Gray city sneakers");
+        AgentArtifactReference secondOffer = offer(messageId, 2, "product-2", "offer-2");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(first, second, secondOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-2"))
+                .thenReturn(Optional.of(secondOffer));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Add the gray pair to my cart."),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-2\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("Add the gray pair to my cart."),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-1\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("Add the gray pair to my cart."),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-2\"},{\"offerKey\":\"offer-2\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void ambiguousProductDescriptionCannotAuthorizeEitherIssuedOffer() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference first = productWithLabel(
+                messageId, 1, "product-1", "offer-1", "Gray trail runners");
+        AgentArtifactReference second = productWithLabel(
+                messageId, 2, "product-2", "offer-2", "Gray city sneakers");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(first, second));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Add the gray pair to my cart."),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-2\"}]}"
+        )).isFalse();
+    }
+
+    @Test
     void cartLineMutationRequiresTheExactDisplayedLineOrdinal() {
         UUID messageId = UUID.randomUUID();
         UUID cartId = UUID.randomUUID();
@@ -250,6 +297,27 @@ class AgentMutationTargetPolicyTest {
             String offerKey
     ) {
         return reference(messageId, AgentArtifactType.PRODUCT, ordinal, productKey, productKey, offerKey);
+    }
+
+    private AgentArtifactReference productWithLabel(
+            UUID messageId,
+            int ordinal,
+            String productKey,
+            String offerKey,
+            String label
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(messageId)
+                .artifactType(AgentArtifactType.PRODUCT)
+                .ordinal(ordinal)
+                .stableKey(productKey)
+                .label(label)
+                .canonicalProductKey(productKey)
+                .offerKey(offerKey)
+                .payloadJson("{}")
+                .createdAt(Instant.parse("2026-07-18T12:00:00Z"))
+                .build();
     }
 
     private AgentArtifactReference offer(

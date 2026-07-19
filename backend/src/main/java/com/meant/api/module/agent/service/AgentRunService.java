@@ -38,6 +38,7 @@ public class AgentRunService {
     private final AgentRunEventRepository eventRepository;
     private final AgentJsonSupport jsonSupport;
     private final AgentMetrics metrics;
+    private final AgentRunEventNotifier eventNotifier;
     private final AgentProperties properties;
     private final Clock clock;
 
@@ -341,6 +342,8 @@ public class AgentRunService {
                 .payloadJson(jsonSupport.write(payload))
                 .occurredAt(now)
                 .build();
-        return eventRepository.save(event);
+        AgentRunEvent stored = eventRepository.save(event);
+        eventNotifier.signalAfterCommit(run.getId(), stored.getCursor());
+        return stored;
     }
 }

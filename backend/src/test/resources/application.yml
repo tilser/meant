@@ -67,6 +67,8 @@ app:
           path: /api/v1/users/me/agent/conversations/{conversationId}/turns
         - method: POST
           path: /api/v1/users/me/agent/conversations/{conversationId}/actions
+        - method: GET
+          path: /api/v1/users/me/agent/runs/{runId}/events
 
 ucp:
   agent:
@@ -111,6 +113,9 @@ commerce:
     event-stream-queue-size: 128
     event-retention: 7d
     stale-run-age: 3m
+    stream-admission:
+      maximum-per-user: 4
+      maximum-per-run: 2
   checkout:
     embedded:
       session-ttl: 5m

@@ -108,6 +108,8 @@ app:
           path: /api/v1/users/me/agent/conversations/{conversationId}/turns
         - method: POST
           path: /api/v1/users/me/agent/conversations/{conversationId}/actions
+        - method: GET
+          path: /api/v1/users/me/agent/runs/{runId}/events
 
 ucp:
   agent:
@@ -150,10 +152,13 @@ commerce:
     model-timeout: ${COMMERCE_AGENT_MODEL_TIMEOUT:45s}
     tool-deadline: ${COMMERCE_AGENT_TOOL_DEADLINE:20s}
     event-stream-timeout: ${COMMERCE_AGENT_EVENT_STREAM_TIMEOUT:2m}
-    event-poll-interval: ${COMMERCE_AGENT_EVENT_POLL_INTERVAL:200ms}
+    event-poll-interval: ${COMMERCE_AGENT_EVENT_POLL_INTERVAL:5s}
     event-stream-queue-size: ${COMMERCE_AGENT_EVENT_STREAM_QUEUE_SIZE:128}
     event-retention: ${COMMERCE_AGENT_EVENT_RETENTION:7d}
     stale-run-age: ${COMMERCE_AGENT_STALE_RUN_AGE:3m}
+    stream-admission:
+      maximum-per-user: ${COMMERCE_AGENT_MAXIMUM_STREAMS_PER_USER:4}
+      maximum-per-run: ${COMMERCE_AGENT_MAXIMUM_STREAMS_PER_RUN:2}
   checkout:
     embedded:
       session-ttl: ${COMMERCE_EMBEDDED_CHECKOUT_SESSION_TTL:5m}

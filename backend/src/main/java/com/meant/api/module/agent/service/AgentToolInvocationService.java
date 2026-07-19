@@ -380,12 +380,19 @@ public class AgentToolInvocationService {
             long latencyMilliseconds,
             UUID executionOwner
     ) {
-        requireOwnedExecution(runId, executionOwner);
+        String boundedResult = jsonSupport.bounded(result.resultJson());
+        AgentMessageResult message = messageLedgerService.appendToolResult(
+                runId,
+                executionOwner,
+                modelToolCallId,
+                toolName,
+                boundedResult
+        );
         AgentToolInvocation invocation = invocationRepository.findById(invocationId)
                 .orElseThrow(AgentException::notFound);
         var first = result.artifacts().stream().findFirst().orElse(null);
         invocation.complete(
-                jsonSupport.bounded(result.resultJson()),
+                boundedResult,
                 latencyMilliseconds,
                 first == null ? null : first.canonicalProductKey(),
                 first == null ? null : first.offerKey(),
@@ -394,13 +401,6 @@ public class AgentToolInvocationService {
                 first == null ? null : first.cartLineId(),
                 first == null ? null : first.checkoutAttemptId(),
                 clock.instant()
-        );
-        AgentMessageResult message = messageLedgerService.appendToolResult(
-                runId,
-                executionOwner,
-                modelToolCallId,
-                toolName,
-                jsonSupport.bounded(result.resultJson())
         );
         artifactService.persist(
                 conversationId,

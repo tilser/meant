@@ -42,6 +42,7 @@ class AgentRunServiceTest {
         ArgumentCaptor<AgentRunEvent> event = ArgumentCaptor.forClass(AgentRunEvent.class);
         verify(fixture.events()).save(event.capture());
         assertThat(event.getValue().getEventType()).isEqualTo(AgentRunEventType.RUN_STARTED);
+        verify(fixture.eventNotifier()).signalAfterCommit(runId, 1L);
     }
 
     @Test
@@ -197,6 +198,7 @@ class AgentRunServiceTest {
         AgentRunRepository runs = mock(AgentRunRepository.class);
         AgentRunEventRepository events = mock(AgentRunEventRepository.class);
         AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AgentRunEventNotifier eventNotifier = mock(AgentRunEventNotifier.class);
         when(runs.findForUpdate(run.getId())).thenReturn(Optional.of(run));
         when(runs.findById(run.getId())).thenReturn(Optional.of(run));
         when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -206,10 +208,11 @@ class AgentRunServiceTest {
                 events,
                 json,
                 mock(AgentMetrics.class),
+                eventNotifier,
                 properties(),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
-        return new Fixture(service, runs, events, json);
+        return new Fixture(service, runs, events, json, eventNotifier);
     }
 
     private AgentRun queued(UUID id) {
@@ -261,7 +264,8 @@ class AgentRunServiceTest {
             AgentRunService service,
             AgentRunRepository runs,
             AgentRunEventRepository events,
-            AgentJsonSupport json
+            AgentJsonSupport json,
+            AgentRunEventNotifier eventNotifier
     ) {
     }
 }

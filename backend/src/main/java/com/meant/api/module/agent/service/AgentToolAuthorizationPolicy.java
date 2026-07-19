@@ -7,7 +7,6 @@ import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -24,9 +23,71 @@ public class AgentToolAuthorizationPolicy {
     private static final Set<String> CART_ADDITIONS = Set.of("prepare_carts", "add_cart_line");
     private static final Set<String> CART_UPDATES = Set.of("update_cart_line", "remove_cart_line");
     private static final Set<String> CHECKOUT_MUTATIONS = Set.of("prepare_checkout", "update_checkout");
-    private static final Pattern EXPLICIT_RESULT_ORDINAL = Pattern.compile(
-            "\\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
-                    + "1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th)\\b",
+    private static final Pattern CLAUSE_BOUNDARY = Pattern.compile(
+            "(?:[,.!?;:\\n]+|\\s+[—–]\\s+|\\b(?:but|however)\\b)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern NEGATION = Pattern.compile(
+            "\\b(?:don't|dont|do not|never|avoid|without|not)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final String MUTATION_ACTION = "(?:add|put|place|buy|purchase|order|pin|save|unpin|"
+            + "remove|delete|take\\s+out|stop|watch|unwatch|change|update|increase|decrease|set|apply|use|"
+            + "checkout|check\\s+out|prepare|handle|build|finish)";
+    private static final Pattern ACTION_REQUEST = Pattern.compile(
+            "^(?:(?:okay|ok|sure|yes|now|then|also)\\s+)?(?:please\\s+)?(?:"
+                    + MUTATION_ACTION + "\\b"
+                    + "|(?:can|could|would|will)\\s+(?:you|we)\\s+(?:please\\s+)?"
+                    + MUTATION_ACTION + "\\b"
+                    + "|(?:i\\s+(?:want|need)\\s+(?:you\\s+)?to|"
+                    + "i(?:['’]d|\\s+would)\\s+like\\s+(?:you\\s+)?to)\\s+"
+                    + MUTATION_ACTION + "\\b"
+                    + "|(?:let(?:['’]s|\\s+us)|go\\s+ahead(?:\\s+and)?)\\s+"
+                    + MUTATION_ACTION + "\\b"
+                    + "|(?:i(?:['’]m|\\s+am)\\s+)?ready\\s+to\\s+(?:order|pay)\\b)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern PIN_INTENT = word("pin|save");
+    private static final Pattern UNPIN_INTENT = Pattern.compile(
+            "\\b(?:unpin|remove\\s+(?:the\\s+)?pin|stop\\s+pinning)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern WATCH_INTENT = word("watch|watching");
+    private static final Pattern UNWATCH_INTENT = Pattern.compile(
+            "\\b(?:unwatch|stop\\s+watching)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CART_ADDITION_INTENT = Pattern.compile(
+            "(?:\\b(?:add|put|place)\\b.*\\b(?:cart|basket|bag|one|ones|it|them|both|pair|item|items)\\b)"
+                    + "|(?:\\b(?:buy|purchase|order)\\b.*"
+                    + "\\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+                    + "1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th|one|ones|it|them|both|pair|item|items)\\b)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CART_REMOVAL_INTENT = Pattern.compile(
+            "\\b(?:remove|delete|take\\s+out)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CART_UPDATE_INTENT = Pattern.compile(
+            "\\b(?:change|update|increase|decrease|set)\\b.*\\b(?:quantity|amount|count|line|item)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CHECKOUT_UPDATE_INTENT = Pattern.compile(
+            "\\b(?:apply|change|set|update|use)\\b.*\\b(?:shipping|delivery|billing|contact|phone|email|code)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CHECKOUT_PREPARATION_INTENT = Pattern.compile(
+            "\\b(?:checkout|check\\s+out|ready\\s+to\\s+(?:order|pay)|prepare\\s+payment)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern MISSION_DELEGATION_INTENT = Pattern.compile(
+            "\\b(?:prepare\\s+everything|handle\\s+everything|build\\s+(?:the\\s+bundle|my\\s+cart)|"
+                    + "finish\\s+the\\s+mission)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SHORT_APPROVAL = Pattern.compile(
+            "^(?:please\\s+)?(?:go\\s+ahead|proceed|continue)(?:\\s+with\\s+(?:the\\s+)?"
+                    + "(?:mission|plan|bundle|cart|checkout))?[.!]?$",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -52,16 +113,16 @@ public class AgentToolAuthorizationPolicy {
             return true;
         }
         if (PRODUCT_STATE_MUTATIONS.contains(name)) {
-            return !negated(turn) && productStateAuthorized(name, turn);
+            return productStateAuthorized(name, turn);
         }
         if (CART_ADDITIONS.contains(name)) {
-            return !negated(turn) && (cartAdditionAuthorized(turn) || delegatedMission(context, turn).isPresent());
+            return positiveClause(turn, CART_ADDITION_INTENT) || delegatedMission(context, turn).isPresent();
         }
         if (CART_UPDATES.contains(name)) {
-            return !negated(turn) && (cartUpdateAuthorized(name, turn) || delegatedMission(context, turn).isPresent());
+            return cartUpdateAuthorized(name, turn) || delegatedMission(context, turn).isPresent();
         }
         if (CHECKOUT_MUTATIONS.contains(name)) {
-            return !negated(turn) && (checkoutAuthorized(name, turn) || delegatedMission(context, turn).isPresent());
+            return checkoutAuthorized(name, turn) || delegatedMission(context, turn).isPresent();
         }
         return false;
     }
@@ -95,55 +156,32 @@ public class AgentToolAuthorizationPolicy {
 
     private boolean productStateAuthorized(String toolName, String turn) {
         return switch (toolName) {
-            case "pin_product" -> containsWord(turn, "pin");
-            case "unpin_product" -> containsWord(turn, "unpin") || containsAny(turn, "remove pin", "stop pinning");
-            case "watch_product" -> !containsAny(turn, "stop watching")
-                    && !containsWord(turn, "unwatch")
-                    && (containsWord(turn, "watch") || containsWord(turn, "watching"));
-            case "unwatch_product" -> containsWord(turn, "unwatch") || containsAny(turn, "stop watching");
+            case "pin_product" -> positiveClause(turn, PIN_INTENT)
+                    && !positiveClause(turn, UNPIN_INTENT);
+            case "unpin_product" -> positiveClause(turn, UNPIN_INTENT);
+            case "watch_product" -> positiveClause(turn, WATCH_INTENT)
+                    && !positiveClause(turn, UNWATCH_INTENT);
+            case "unwatch_product" -> positiveClause(turn, UNWATCH_INTENT);
             default -> false;
         };
     }
 
-    private boolean cartAdditionAuthorized(String turn) {
-        if (!EXPLICIT_RESULT_ORDINAL.matcher(turn).find()) {
-            return false;
-        }
-        return containsAny(turn, "add to cart", "add it to", "put in cart", "put it in", "build my cart",
-                "prepare my cart", "prepare the cart", "cart these")
-                || containsAny(turn, "add ", "buy ", "take ", "get ");
-    }
-
     private boolean cartUpdateAuthorized(String toolName, String turn) {
         if ("remove_cart_line".equals(toolName)) {
-            return containsWord(turn, "remove") || containsWord(turn, "delete") || containsAny(turn, "take out");
+            return positiveClause(turn, CART_REMOVAL_INTENT);
         }
-        return containsAny(
-                turn,
-                "change the quantity", "update the quantity", "increase", "decrease", "make it ", "set quantity"
-        );
+        return positiveClause(turn, CART_UPDATE_INTENT);
     }
 
     private boolean checkoutAuthorized(String toolName, String turn) {
         if ("update_checkout".equals(toolName)) {
-            return containsAny(
-                    turn,
-                    "shipping address", "delivery address", "billing address", "contact details",
-                    "phone number", "email address", "apply the code", "apply code"
-            );
+            return positiveClause(turn, CHECKOUT_UPDATE_INTENT);
         }
-        return containsAny(
-                turn,
-                "checkout", "check out", "proceed", "ready to order", "ready to pay", "prepare payment"
-        );
+        return positiveClause(turn, CHECKOUT_PREPARATION_INTENT) || shortApproval(turn);
     }
 
     private Optional<ShoppingMission> delegatedMission(AgentToolExecutionContext context, String turn) {
-        if (!containsAny(
-                turn,
-                "prepare everything", "handle everything", "build the bundle", "build my cart",
-                "go ahead", "proceed", "continue", "finish the mission"
-        )) {
+        if (!positiveClause(turn, MISSION_DELEGATION_INTENT) && !shortApproval(turn)) {
             return Optional.empty();
         }
         return missionRepository.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(
@@ -160,30 +198,27 @@ public class AgentToolAuthorizationPolicy {
                 || name.startsWith("evaluate_mission_coverage");
     }
 
-    private boolean negated(String turn) {
-        return containsAny(
-                turn,
-                " don't ", " do not ", " never ", " avoid ", " not add", " not buy", " not pin", " not watch",
-                " without adding", " without checkout", " without checking out"
-        );
-    }
-
     private String normalize(String value) {
-        return value == null ? "" : " " + value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+        return value == null ? "" : value.replaceAll("\\s+", " ").trim();
     }
 
-    private boolean containsAny(String value, String... candidates) {
-        for (String candidate : candidates) {
-            if (value.contains(candidate)) {
+    private boolean positiveClause(String value, Pattern intent) {
+        for (String clause : CLAUSE_BOUNDARY.split(value)) {
+            String candidate = clause.strip();
+            if (intent.matcher(candidate).find()
+                    && !NEGATION.matcher(candidate).find()
+                    && ACTION_REQUEST.matcher(candidate).find()) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean containsWord(String value, String word) {
-        return Pattern.compile("(?:^|[^a-z0-9_])" + Pattern.quote(word) + "(?:$|[^a-z0-9_])")
-                .matcher(value)
-                .find();
+    private boolean shortApproval(String value) {
+        return SHORT_APPROVAL.matcher(value).matches() && !NEGATION.matcher(value).find();
+    }
+
+    private static Pattern word(String alternatives) {
+        return Pattern.compile("\\b(?:" + alternatives + ")\\b", Pattern.CASE_INSENSITIVE);
     }
 }

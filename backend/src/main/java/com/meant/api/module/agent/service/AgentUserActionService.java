@@ -84,7 +84,10 @@ public class AgentUserActionService {
                     "cancelled",
                     elapsedMilliseconds(started)
             );
-            throw AgentException.conflict("The action was interrupted.");
+            throw AgentException.actionUncertain(
+                    HttpStatus.CONFLICT,
+                    "The action was interrupted before its outcome could be confirmed. Try again."
+            );
         } catch (TimeoutException exception) {
             future.cancel(true);
             persistenceService.fail(
@@ -98,15 +101,13 @@ public class AgentUserActionService {
                     "timeout",
                     elapsedMilliseconds(started)
             );
-            throw new AgentException(
+            throw AgentException.actionUncertain(
                     HttpStatus.REQUEST_TIMEOUT,
-                    ApiErrorCode.BAD_REQUEST,
                     "The action timed out. Try again."
             );
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
-            boolean uncertainMutation = tool.descriptor().riskClass() != AgentToolRisk.READ
-                    && !(cause instanceof AgentException);
+            boolean uncertainMutation = outcomeUncertain(tool.descriptor().riskClass(), cause);
             String safeMessage = cause instanceof AgentException agentException
                     ? agentException.getSafeMessage()
                     : "The action could not complete. Try again.";
@@ -121,11 +122,28 @@ public class AgentUserActionService {
                     "failed",
                     elapsedMilliseconds(started)
             );
+            if (uncertainMutation) {
+                HttpStatus status = cause instanceof AgentException agentException
+                        ? HttpStatus.valueOf(agentException.getStatus().value())
+                        : HttpStatus.BAD_REQUEST;
+                throw AgentException.actionUncertain(status, safeMessage, cause);
+            }
             if (cause instanceof AgentException agentException) {
                 throw agentException;
             }
             throw new AgentException(HttpStatus.BAD_REQUEST, ApiErrorCode.BAD_REQUEST, safeMessage, cause);
         }
+    }
+
+    private boolean outcomeUncertain(AgentToolRisk risk, Throwable cause) {
+        if (risk == AgentToolRisk.READ) {
+            return false;
+        }
+        if (!(cause instanceof AgentException agentException)) {
+            return true;
+        }
+        return agentException.getStatus().value() == HttpStatus.REQUEST_TIMEOUT.value()
+                || agentException.getStatus().is5xxServerError();
     }
 
     private long elapsedMilliseconds(long started) {

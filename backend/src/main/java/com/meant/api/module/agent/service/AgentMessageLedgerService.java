@@ -119,15 +119,17 @@ public class AgentMessageLedgerService {
             String toolName,
             String resultJson
     ) {
-        if (executionOwner != null) {
-            runService.requireOwnedExecution(runId, executionOwner);
-        }
         AgentRun run = runRepository.findById(runId).orElseThrow(AgentException::notFound);
         AgentConversation conversation = conversationRepository.findOwnedForUpdate(
                         run.getConversationId(),
                         run.getUserId()
                 )
                 .orElseThrow(AgentException::notFound);
+        if (executionOwner == null) {
+            runRepository.findForUpdate(runId).orElseThrow(AgentException::notFound);
+        } else {
+            runService.requireOwnedExecution(runId, executionOwner);
+        }
         Instant now = clock.instant();
         AgentMessage message = messageRepository.save(AgentMessage.builder()
                 .conversationId(conversation.getId())
