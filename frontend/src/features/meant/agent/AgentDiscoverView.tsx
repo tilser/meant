@@ -342,6 +342,7 @@ export function AgentDiscoverView({
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
+  const [trayClearing, setTrayClearing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shareNotice, setShareNotice] = useState<string | null>(null)
   const [dismissedMessageIds, setDismissedMessageIds] = useStoredState<Record<string, string[]>>(
@@ -776,6 +777,10 @@ export function AgentDiscoverView({
     () => productInteractionState(combinedConversation?.artifacts ?? []),
     [combinedConversation?.artifacts],
   )
+  const pinnedProducts = useMemo(
+    () => products.filter((product) => interactionState.pinned.has(product.id)),
+    [interactionState.pinned, products],
+  )
   const visibleCart = cart
 
   const allMessages = useMemo(() => {
@@ -1133,6 +1138,22 @@ export function AgentDiscoverView({
       { canonicalProductKey: product.id, offerKey: exactOfferKey(product) ?? undefined },
       `${pinned ? 'Unpinned' : 'Pinned'} ${product.name}`,
     )
+  }
+  const clearCompareTray = async () => {
+    setTrayClearing(true)
+    try {
+      await Promise.all(
+        pinnedProducts.map((product) =>
+          performAction(
+            'unpin_product',
+            { canonicalProductKey: product.id, offerKey: exactOfferKey(product) ?? undefined },
+            `Unpinned ${product.name}`,
+          ),
+        ),
+      )
+    } finally {
+      setTrayClearing(false)
+    }
   }
   const toggleWatch = (product: Product) => {
     const watched = interactionState.watched.has(product.id)
@@ -1677,53 +1698,51 @@ export function AgentDiscoverView({
         <div ref={bottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
       </div>
 
-      {interactionState.pinned.size > 0 ? (
+      {pinnedProducts.length > 0 ? (
         <div className="mt-ct-tray">
           <span className="mt-mono mt-ct-tray-label">Compare tray</span>
           <div className="mt-ct-tray-items">
-            {products
-              .filter((product) => interactionState.pinned.has(product.id))
-              .map((product) => (
-                <span className="mt-ct-tray-chip" key={product.id}>
-                  <span className="mt-ct-tray-thumb">
-                    <ProductArtwork product={product} label={product.category.toLowerCase()} />
-                  </span>
-                  {product.name}
-                  <button
-                    className="mt-ct-tray-x"
-                    type="button"
-                    aria-label={`Unpin ${product.name}`}
-                    onClick={() => togglePin(product)}
-                  >
-                    ×
-                  </button>
+            {pinnedProducts.map((product) => (
+              <span className="mt-ct-tray-chip" key={product.id}>
+                <span className="mt-ct-tray-thumb">
+                  <ProductArtwork product={product} label={product.category.toLowerCase()} />
                 </span>
-              ))}
+                {product.name}
+                <button
+                  className="mt-ct-tray-x"
+                  type="button"
+                  aria-label={`Unpin ${product.name}`}
+                  disabled={trayClearing}
+                  onClick={() => togglePin(product)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
           <button
             className="mt-ct-tray-mini"
             type="button"
-            disabled={interactionState.pinned.size < 2}
-            onClick={() =>
-              void compareHere(
-                products.filter((product) => interactionState.pinned.has(product.id)),
-              )
-            }
+            disabled={pinnedProducts.length < 2 || trayClearing}
+            onClick={() => void compareHere(pinnedProducts)}
           >
             Compare here
           </button>
           <button
             className="mt-ct-tray-go"
             type="button"
-            disabled={interactionState.pinned.size < 2}
-            onClick={() =>
-              void compareHere(
-                products.filter((product) => interactionState.pinned.has(product.id)),
-                true,
-              )
-            }
+            disabled={pinnedProducts.length < 2 || trayClearing}
+            onClick={() => void compareHere(pinnedProducts, true)}
           >
             Full compare
+          </button>
+          <button
+            className="mt-ct-tray-clear"
+            type="button"
+            onClick={() => void clearCompareTray()}
+            disabled={trayClearing}
+          >
+            Clear
           </button>
         </div>
       ) : null}
