@@ -94,6 +94,10 @@ public class AgentToolCallExecutor {
                     call.argumentsJson(),
                     context.executionOwner()
             );
+            boolean retryable = exception instanceof AgentException;
+            String message = retryable
+                    ? ((AgentException) exception).getSafeMessage()
+                    : "The tool arguments were invalid.";
             return new AgentExecutedToolCall(
                     new AgentModelToolResult(
                             call.id(),
@@ -101,8 +105,8 @@ public class AgentToolCallExecutor {
                             jsonSupport.write(new AgentToolErrorPayload(
                                     false,
                                     "invalid_arguments",
-                                    "The tool arguments were invalid.",
-                                    false
+                                    message,
+                                    retryable
                             ))
                     ),
                     false

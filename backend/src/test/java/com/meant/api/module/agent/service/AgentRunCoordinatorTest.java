@@ -113,6 +113,28 @@ class AgentRunCoordinatorTest {
     }
 
     @Test
+    void emptyPrimaryModelResponseUsesFallbackInsteadOfTheGenericRecoveryMessage() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of())),
+                response(model("I found a grounded option with the fallback.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I found a grounded option with the fallback.",
+                false
+        );
+        assertThat(model.requests()).extracting(request -> request.model())
+                .containsExactly("primary-model", "fallback-model");
+    }
+
+    @Test
     void repeatedIdenticalToolCallsTerminateBeforeASecondMutationStarts() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();

@@ -24,6 +24,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class AgentToolCallExecutorTest {
 
@@ -97,6 +98,48 @@ class AgentToolCallExecutorTest {
                 anyLong(),
                 isNull()
         );
+    }
+
+    @Test
+    void invalidArgumentsTellTheModelHowToCorrectItsRetry() {
+        AgentTool tool = mock(AgentTool.class);
+        AgentToolDescriptor descriptor = new AgentToolDescriptor(
+                "search_catalog",
+                "Search catalog",
+                "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"query\"],"
+                        + "\"properties\":{\"query\":{\"type\":\"string\"}}}",
+                "v1",
+                AgentToolRisk.READ
+        );
+        when(tool.descriptor()).thenReturn(descriptor);
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        when(authorizationPolicy.authorized(any(), eq(descriptor))).thenReturn(true);
+        AgentToolInvocationService invocationService = mock(AgentToolInvocationService.class);
+        AgentRunService runService = mock(AgentRunService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        AgentJsonSupport jsonSupport = new AgentJsonSupport(objectMapper, properties());
+        executor = new AgentToolCallExecutor(
+                new AgentToolRegistry(List.of(tool)),
+                authorizationPolicy,
+                invocationService,
+                runService,
+                jsonSupport,
+                new AgentToolSchemaValidator(objectMapper),
+                properties()
+        );
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "find shoes");
+
+        var result = executor.execute(
+                context,
+                new AgentModelToolCall("call-1", "search_catalog", "{\"unexpected\":true}")
+        );
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.modelResult().resultJson())
+                .contains("\"code\":\"invalid_arguments\"")
+                .contains("$.query is required.")
+                .contains("\"retryable\":true");
     }
 
     private AgentProperties properties() {

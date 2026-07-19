@@ -115,7 +115,13 @@ class AgentContextAssemblerTest {
                 .contains("1. <label>")
                 .contains("WAITING_FOR_USER: Which cart item should I remove?")
                 .contains("Reuse an existing compatible cart with add_cart_line instead of prepare_carts.")
-                .contains("most recently removed offer reference");
+                .contains("most recently removed offer reference")
+                .contains("A request for one product or category is catalog discovery")
+                .contains("Missing color, size")
+                .contains("Use create_shopping_mission only for explicit multi-item")
+                .contains("use pick_recommended_product to ground one exact purchasable choice")
+                .contains("Wait for each")
+                .contains("tool result before calling a dependent tool");
 
         String grounding = context.messages().get(1).text();
         assertThat(grounding)

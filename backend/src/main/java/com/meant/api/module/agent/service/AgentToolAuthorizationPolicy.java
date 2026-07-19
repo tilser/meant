@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -50,6 +51,36 @@ public class AgentToolAuthorizationPolicy {
                     + MUTATION_ACTION + "\\b"
                     + "|(?:i(?:['’]m|\\s+am)\\s+)?ready\\s+to\\s+(?:order|pay)\\b)",
             Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern DISCOVERY_THEN_ACTION_PREFIX = Pattern.compile(
+            "^(?:(?:okay|ok|sure|yes|now|then|also)\\s+)?(?:please\\s+)?"
+                    + "(?:(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?)?"
+                    + "(?:find|search(?:\\s+for)?|look\\s+for|show|choose|pick|get)\\b.*"
+                    + "\\b(?:and|then)\\s+",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern MISSION_CREATION_INTENT = Pattern.compile(
+            "(?:\\b(?:create|start|make|build)\\b.{0,100}\\b(?:shopping\\s+)?"
+                    + "(?:mission|checklist|bundle)\\b)"
+                    + "|(?:\\b(?:plan|organize|prepare|build)\\b.{0,100}\\b"
+                    + "(?:outfit|setup|kit|bundle)\\b)"
+                    + "|(?:\\b(?:plan|organize|prepare|build)\\b.{0,100}\\b"
+                    + "(?:party|picnic|meal)\\b(?=\\s*(?:$|[.!?]|(?:for|with|in|on|at|of)\\b)))"
+                    + "|(?:\\b(?:plan|organize|prepare|find|get|buy|shop\\s+for)\\b.{0,100}\\b"
+                    + "(?:everything|all\\s+(?:the\\s+)?(?:items|things|gear|supplies))\\b)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern MISSION_UPDATE_INTENT = Pattern.compile(
+            "(?:\\b(?:add|remove|change|update|set|cancel|complete|finish)\\b.*"
+                    + "\\b(?:mission|plan|checklist|bundle|outfit)\\b)"
+                    + "|(?:\\b(?:evaluate|recalculate)\\b.*\\b(?:mission|coverage)\\b)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern MISSION_CREATION_REQUEST = actionRequest(
+            "(?:create|start|make|build|plan|organize|prepare|find|get|buy|shop\\s+for)"
+    );
+    private static final Pattern MISSION_UPDATE_REQUEST = actionRequest(
+            "(?:add|remove|change|update|set|cancel|complete|finish|evaluate|recalculate)"
     );
     private static final Pattern PIN_INTENT = word("pin|save");
     private static final Pattern UNPIN_INTENT = Pattern.compile(
@@ -101,6 +132,11 @@ public class AgentToolAuthorizationPolicy {
                     + "(?:mission|plan|bundle|cart|checkout))?[.!]?$",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern MISSION_APPROVAL = Pattern.compile(
+            "^(?:please\\s+)?(?:go\\s+ahead|proceed|continue)\\s+(?:with\\s+)?(?:the\\s+)?"
+                    + "(?:mission|plan|bundle)[.!]?$",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final ShoppingMissionRepository missionRepository;
     private final AgentMutationTargetPolicy mutationTargetPolicy;
@@ -119,16 +155,20 @@ public class AgentToolAuthorizationPolicy {
         }
         String name = descriptor.name();
         String turn = normalize(context.triggeringUserText());
-        if (name.startsWith("create_shopping_mission")
-                || name.startsWith("update_shopping_mission")
+        if (name.startsWith("create_shopping_mission")) {
+            return missionCreationAuthorized(turn) && activeMission(context).isEmpty();
+        }
+        if (name.startsWith("update_shopping_mission")
                 || name.startsWith("evaluate_mission_coverage")) {
-            return true;
+            return activeMission(context).isPresent() && missionContinuationAuthorized(turn);
         }
         if (PRODUCT_STATE_MUTATIONS.contains(name)) {
             return productStateAuthorized(name, turn);
         }
         if (CART_ADDITIONS.contains(name)) {
-            return positiveClause(turn, CART_ADDITION_INTENT) || delegatedMission(context, turn).isPresent();
+            return positiveClause(turn, CART_ADDITION_INTENT)
+                    || discoveryThenActionClause(turn, CART_ADDITION_INTENT)
+                    || delegatedMission(context, turn).isPresent();
         }
         if (CART_UPDATES.contains(name)) {
             return cartUpdateAuthorized(context, name, turn) || delegatedMission(context, turn).isPresent();
@@ -147,8 +187,14 @@ public class AgentToolAuthorizationPolicy {
         if (!authorized(context, descriptor)) {
             return false;
         }
-        if (context.runId() == null || missionPlanningTool(descriptor.name())) {
+        if (context.runId() == null || descriptor.name().startsWith("create_shopping_mission")) {
             return true;
+        }
+        if (descriptor.name().startsWith("update_shopping_mission")
+                || descriptor.name().startsWith("evaluate_mission_coverage")) {
+            return activeMission(context)
+                    .filter(mission -> mutationTargetPolicy.matchesMissionTarget(mission, canonicalArgumentsJson))
+                    .isPresent();
         }
         if (descriptor.riskClass() == AgentToolRisk.READ) {
             return mutationTargetPolicy.matchesExplicitOrdinal(
@@ -213,22 +259,31 @@ public class AgentToolAuthorizationPolicy {
         if (!positiveClause(turn, MISSION_DELEGATION_INTENT) && !shortApproval(turn)) {
             return Optional.empty();
         }
+        return activeMission(context)
+                .filter(mission -> mission.getStatus() == ShoppingMissionStatus.READY
+                        || mission.getStatus() == ShoppingMissionStatus.CHECKOUT_PREPARED);
+    }
+
+    private Optional<ShoppingMission> activeMission(AgentToolExecutionContext context) {
         return missionRepository.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(
                         context.conversationId(), context.userId())
                 .filter(mission -> mission.getStatus() != ShoppingMissionStatus.CANCELLED
-                        && mission.getStatus() != ShoppingMissionStatus.COMPLETED
-                        && (mission.getStatus() == ShoppingMissionStatus.READY
-                        || mission.getStatus() == ShoppingMissionStatus.CHECKOUT_PREPARED));
-    }
-
-    private boolean missionPlanningTool(String name) {
-        return name.startsWith("create_shopping_mission")
-                || name.startsWith("update_shopping_mission")
-                || name.startsWith("evaluate_mission_coverage");
+                        && mission.getStatus() != ShoppingMissionStatus.COMPLETED);
     }
 
     private String normalize(String value) {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
+    }
+
+    private boolean missionCreationAuthorized(String value) {
+        return requestedPatternClause(value, MISSION_CREATION_INTENT, MISSION_CREATION_REQUEST);
+    }
+
+    private boolean missionContinuationAuthorized(String value) {
+        return missionCreationAuthorized(value)
+                || requestedPatternClause(value, MISSION_UPDATE_INTENT, MISSION_UPDATE_REQUEST)
+                || positiveClause(value, MISSION_DELEGATION_INTENT)
+                || MISSION_APPROVAL.matcher(value).matches();
     }
 
     private boolean positiveClause(String value, Pattern intent) {
@@ -243,11 +298,57 @@ public class AgentToolAuthorizationPolicy {
         return false;
     }
 
+    private boolean discoveryThenActionClause(String value, Pattern intent) {
+        for (String clause : CLAUSE_BOUNDARY.split(value)) {
+            String candidate = clause.strip();
+            if (NEGATION.matcher(candidate).find()) {
+                continue;
+            }
+            Matcher prefix = DISCOVERY_THEN_ACTION_PREFIX.matcher(candidate);
+            if (!prefix.find()) {
+                continue;
+            }
+            String requestedAction = candidate.substring(prefix.end()).strip();
+            if (ACTION_REQUEST.matcher(requestedAction).find()
+                    && intent.matcher(requestedAction).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean requestedPatternClause(String value, Pattern intent, Pattern actionRequest) {
+        for (String clause : CLAUSE_BOUNDARY.split(value)) {
+            String candidate = clause.strip();
+            if (intent.matcher(candidate).find()
+                    && !NEGATION.matcher(candidate).find()
+                    && actionRequest.matcher(candidate).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean shortApproval(String value) {
         return SHORT_APPROVAL.matcher(value).matches() && !NEGATION.matcher(value).find();
     }
 
     private static Pattern word(String alternatives) {
         return Pattern.compile("\\b(?:" + alternatives + ")\\b", Pattern.CASE_INSENSITIVE);
+    }
+
+    private static Pattern actionRequest(String action) {
+        return Pattern.compile(
+                "^(?:(?:okay|ok|sure|yes|now|then|also)\\s+)?(?:please\\s+)?(?:"
+                        + action + "\\b"
+                        + "|(?:can|could|would|will)\\s+(?:you|we)\\s+(?:please\\s+)?"
+                        + action + "\\b"
+                        + "|(?:i\\s+(?:want|need)\\s+(?:you\\s+)?to|"
+                        + "i(?:['’]d|\\s+would)\\s+like\\s+(?:you\\s+)?to)\\s+"
+                        + action + "\\b"
+                        + "|(?:let(?:['’]s|\\s+us)|go\\s+ahead(?:\\s+and)?)\\s+"
+                        + action + "\\b)",
+                Pattern.CASE_INSENSITIVE
+        );
     }
 }

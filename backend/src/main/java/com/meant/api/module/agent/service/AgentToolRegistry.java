@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,7 @@ public class AgentToolRegistry {
                 throw new IllegalStateException("Duplicate agent tool registration: " + name);
             }
         }
-        tools = Map.copyOf(byName);
+        tools = Collections.unmodifiableMap(new LinkedHashMap<>(byName));
     }
 
     public List<AgentToolDescriptor> descriptors() {

@@ -33,6 +33,21 @@ class AgentMutationTargetPolicyTest {
     );
 
     @Test
+    void missionMutationMustUseTheSelectedMissionId() {
+        ShoppingMission mission = mock(ShoppingMission.class);
+        UUID missionId = UUID.randomUUID();
+        when(mission.getId()).thenReturn(missionId);
+
+        assertThat(policy.matchesMissionTarget(
+                mission, "{\"missionId\":\"" + missionId + "\"}"
+        )).isTrue();
+        assertThat(policy.matchesMissionTarget(
+                mission, "{\"missionId\":\"" + UUID.randomUUID() + "\"}"
+        )).isFalse();
+        assertThat(policy.matchesMissionTarget(mission, "{}")).isFalse();
+    }
+
+    @Test
     void secondProductOnlyAcceptsAnOfferFromTheSecondProductInTheLatestResultSet() {
         UUID messageId = UUID.randomUUID();
         AgentArtifactReference first = product(messageId, 1, "product-1", "offer-1");
@@ -164,6 +179,36 @@ class AgentMutationTargetPolicyTest {
                 context("Add the gray pair to my cart."),
                 "prepare_carts",
                 "{\"offers\":[{\"offerKey\":\"offer-2\"},{\"offerKey\":\"offer-2\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void laterCheckoutInstructionDoesNotPolluteTheNamedProductTarget() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference blackHat = productWithLabel(
+                messageId, 1, "product-black-hat", "offer-black-hat", "Black SF baseball hat");
+        AgentArtifactReference whiteHat = productWithLabel(
+                messageId, 2, "product-white-hat", "offer-white-hat", "White SF baseball hat");
+        AgentArtifactReference blackOffer = offer(
+                messageId, 1, "product-black-hat", "offer-black-hat");
+        AgentArtifactReference whiteOffer = offer(
+                messageId, 2, "product-white-hat", "offer-white-hat");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(blackHat, whiteHat, blackOffer, whiteOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-black-hat")).thenReturn(Optional.of(blackOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-white-hat")).thenReturn(Optional.of(whiteOffer));
+
+        assertThat(policy.matchesMutationTarget(
+                context("find a black SF hat and put it into cart, prepare the checkout for me"),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-black-hat\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("find a black SF hat and put it into cart, prepare the checkout for me"),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-white-hat\"}]}"
         )).isFalse();
     }
 

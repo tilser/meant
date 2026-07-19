@@ -134,10 +134,10 @@ commerce:
     api-key: ${OPENROUTER_API_KEY:}
     app-title: ${OPENROUTER_APP_TITLE:Meant}
     site-url: ${COMMERCE_AGENT_SITE_URL:https://meant.com}
-    prompt-version: ${COMMERCE_AGENT_PROMPT_VERSION:v1}
+    prompt-version: ${COMMERCE_AGENT_PROMPT_VERSION:v2}
     tool-version: ${COMMERCE_AGENT_TOOL_VERSION:v1}
     temperature: ${COMMERCE_AGENT_TEMPERATURE:0.2}
-    maximum-output-tokens: ${COMMERCE_AGENT_MAXIMUM_OUTPUT_TOKENS:2048}
+    maximum-output-tokens: ${COMMERCE_AGENT_MAXIMUM_OUTPUT_TOKENS:4096}
     maximum-model-iterations: ${COMMERCE_AGENT_MAXIMUM_MODEL_ITERATIONS:8}
     maximum-total-tool-invocations: ${COMMERCE_AGENT_MAXIMUM_TOTAL_TOOL_INVOCATIONS:24}
     maximum-per-tool-invocations: ${COMMERCE_AGENT_MAXIMUM_PER_TOOL_INVOCATIONS:6}

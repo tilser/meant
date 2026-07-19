@@ -16,7 +16,9 @@ public class AgentMissionCreateTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "create_shopping_mission",
-            "Create a durable shopping mission with a deduplicated checklist, assumptions, constraints, and product alternatives.",
+            "Create a durable mission only for an explicit multi-item, bundle, outfit, or checklist planning goal. "
+                    + "Never use this for one product or category; use search_catalog directly instead. Missions include "
+                    + "a deduplicated checklist, assumptions, constraints, and product alternatives.",
             """
                     {"type":"object","additionalProperties":false,"required":["goal"],"properties":{
                       "goal":{"type":"string","minLength":1,"maxLength":500},

@@ -130,7 +130,8 @@ public class AgentRunCoordinator {
                     "Agent run failed. runId={}, conversationId={}, failureType={}",
                     runId,
                     conversationId,
-                    exception.getClass().getName()
+                    exception.getClass().getName(),
+                    exception
             );
             if (executionOwner != null) {
                 safelyPersistFailure(runId, executionOwner, "agent_run_failed", RECOVERY_MESSAGE);
@@ -270,11 +271,14 @@ public class AgentRunCoordinator {
             AgentModelResponse response = modelGateway.turn(
                     request(properties.model(), messages, descriptors),
                     delta -> {
-                        emitted.set(true);
+                        if (delta != null && !delta.isBlank()) {
+                            emitted.set(true);
+                        }
                         deltaWriter.accept(delta);
                     },
                     deltaWriter::cancelled
             );
+            requireUsableModelResponse(response);
             metrics.modelTurn(properties.model(), "success", System.nanoTime() - primaryStarted);
             return response;
         } catch (CancellationException cancellation) {
@@ -292,6 +296,7 @@ public class AgentRunCoordinator {
                         deltaWriter::accept,
                         deltaWriter::cancelled
                 );
+                requireUsableModelResponse(response);
                 metrics.modelTurn(
                         properties.fallbackModel(),
                         "success",
@@ -313,6 +318,12 @@ public class AgentRunCoordinator {
                 );
                 throw fallbackFailure;
             }
+        }
+    }
+
+    private void requireUsableModelResponse(AgentModelResponse response) {
+        if (response == null || (response.text().isBlank() && response.toolCalls().isEmpty())) {
+            throw new IllegalStateException("Agent model returned neither text nor tool calls");
         }
     }
 

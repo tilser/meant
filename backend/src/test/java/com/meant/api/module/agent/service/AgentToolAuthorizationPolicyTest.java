@@ -38,6 +38,142 @@ class AgentToolAuthorizationPolicyTest {
     }
 
     @Test
+    void singleProductTravelRequestUsesDiscoveryInsteadOfCreatingAMission() {
+        AgentToolExecutionContext context = context("I am going to Spain, I need swimming shorts");
+
+        assertThat(policy.authorized(
+                context,
+                descriptor("search_catalog", AgentToolRisk.READ)
+        )).isTrue();
+        assertThat(policy.authorized(
+                context,
+                descriptor("create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+    }
+
+    @Test
+    void singleProductRequestDoesNotBecomeAMissionJustBecauseItMentionsATrip() {
+        assertThat(policy.authorized(
+                context("Prepare for my Spain trip by finding swimming shorts."),
+                descriptor("create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+    }
+
+    @Test
+    void explicitMultiItemPlanningRequestCanCreateAMission() {
+        assertThat(policy.authorized(
+                context("Plan everything I need for a summer picnic."),
+                descriptor("create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+        assertThat(policy.authorized(
+                context("Plan a summer picnic in San Francisco."),
+                descriptor("create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+        assertThat(policy.authorized(
+                context("Could you create a shopping mission for me?"),
+                descriptor("create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+    }
+
+    @Test
+    void negatedOrSingleItemPlanningLanguageCannotCreateAMission() {
+        AgentToolDescriptor mission = descriptor(
+                "create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION);
+
+        assertThat(policy.authorized(
+                context("Don't create a shopping mission; just find swimming shorts."), mission
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("Create a plan for one swimsuit."), mission
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("How do I create a shopping mission?"), mission
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("Plan a picnic blanket purchase."), mission
+        )).isFalse();
+    }
+
+    @Test
+    void anExplicitOutfitGoalCanCreateAMission() {
+        assertThat(policy.authorized(
+                context("Build me a summer outfit."),
+                descriptor("create_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+    }
+
+    @Test
+    void anOldActiveMissionCannotBeChangedByAnUnrelatedProductSearch() {
+        ShoppingMission mission = activeMission();
+        when(missions.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(any(), any()))
+                .thenReturn(Optional.of(mission));
+
+        AgentToolExecutionContext search = context("Find swimming shorts for Spain.");
+        assertThat(policy.authorized(
+                search,
+                descriptor("update_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+        assertThat(policy.authorized(
+                search,
+                descriptor("evaluate_mission_coverage", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("Proceed."),
+                descriptor("update_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("Proceed with the mission."),
+                descriptor("update_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+        assertThat(policy.authorized(
+                context("Can you explain how to update the mission?"),
+                descriptor("update_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+    }
+
+    @Test
+    void anExplicitMissionUpdateMustTargetTheActiveMission() {
+        ShoppingMission mission = activeMission();
+        when(missions.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(any(), any()))
+                .thenReturn(Optional.of(mission));
+        AgentToolDescriptor update = descriptor(
+                "update_shopping_mission", AgentToolRisk.REVERSIBLE_MUTATION);
+        AgentToolExecutionContext context = context("Add sunscreen to the mission.");
+        String arguments = "{\"missionId\":\"" + mission.getId() + "\"}";
+
+        assertThat(policy.authorized(context, update)).isTrue();
+        when(targetPolicy.matchesMissionTarget(mission, arguments)).thenReturn(true);
+        assertThat(policy.authorizedInvocation(context, update, arguments)).isTrue();
+
+        String otherArguments = "{\"missionId\":\"" + UUID.randomUUID() + "\"}";
+        assertThat(policy.authorizedInvocation(context, update, otherArguments)).isFalse();
+    }
+
+    @Test
+    void compoundDiscoveryCartAndCheckoutRequestRetainsBothRequestedMutations() {
+        AgentToolExecutionContext context = context(
+                "find a black SF hat and put it into cart, prepare the checkout for me"
+        );
+
+        assertThat(policy.authorized(
+                context,
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
+        assertThat(policy.authorized(
+                context,
+                descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION)
+        )).isTrue();
+    }
+
+    @Test
+    void discoveryPlusOneMutationDoesNotAuthorizeAnUnrelatedMentionedMutation() {
+        assertThat(policy.authorized(
+                context("Find a black hat and save it while explaining how checkout works."),
+                descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION)
+        )).isFalse();
+    }
+
+    @Test
     void exactFollowUpAndDirectClickAuthorizeTheSameCartCapability() {
         AgentToolDescriptor descriptor = descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION);
 
@@ -160,8 +296,7 @@ class AgentToolAuthorizationPolicyTest {
 
     @Test
     void aDelegatedActiveMissionCanPrepareItsBundle() {
-        ShoppingMission mission = mock(ShoppingMission.class);
-        when(mission.getStatus()).thenReturn(ShoppingMissionStatus.READY);
+        ShoppingMission mission = activeMission();
         when(missions.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()
         )).thenReturn(Optional.of(mission));
@@ -170,6 +305,13 @@ class AgentToolAuthorizationPolicyTest {
                 context("Prepare everything I need for the picnic."),
                 descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
         )).isTrue();
+    }
+
+    private ShoppingMission activeMission() {
+        ShoppingMission mission = mock(ShoppingMission.class);
+        when(mission.getId()).thenReturn(UUID.randomUUID());
+        when(mission.getStatus()).thenReturn(ShoppingMissionStatus.READY);
+        return mission;
     }
 
     @Test

@@ -58,7 +58,7 @@ public class AgentMutationTargetPolicy {
             "details", "find", "four", "from", "get", "give", "how", "inspect", "into", "item", "items",
             "look", "looking", "more", "need", "new", "not", "one", "ones",
             "ninth", "know", "like", "may", "might", "must", "now", "okay", "our",
-            "order", "pair", "pin", "place", "please", "product", "products", "purchase", "put", "remove",
+            "order", "pair", "pin", "place", "please", "prepare", "product", "products", "purchase", "put", "remove",
             "pick", "really", "recommend", "recommended", "review", "reviews", "same", "save", "second",
             "select", "selected", "seventh", "should", "show", "similar", "sixth", "size", "take", "tell",
             "tenth", "that", "the", "them", "then", "these", "third", "this", "those", "three", "two",
@@ -144,6 +144,19 @@ public class AgentMutationTargetPolicy {
                         && !stringValues(mission.getCheckoutReferencesJson()).isEmpty();
                 default -> false;
             };
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    /** Binds mission updates and coverage evaluation to the latest active mission selected by the policy. */
+    public boolean matchesMissionTarget(ShoppingMission mission, String canonicalArgumentsJson) {
+        if (mission == null || mission.getId() == null) {
+            return false;
+        }
+        try {
+            JsonNode arguments = objectMapper.readTree(canonicalArgumentsJson);
+            return mission.getId().toString().equals(text(arguments, "missionId"));
         } catch (RuntimeException exception) {
             return false;
         }

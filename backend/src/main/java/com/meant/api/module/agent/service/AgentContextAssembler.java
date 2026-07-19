@@ -186,6 +186,17 @@ public class AgentContextAssembler {
 
                 Rules:
                 - Search first with useful partial constraints. Ask at most one high-impact question before a useful proposal.
+                - A request for one product or category is catalog discovery, even when it includes a trip, destination,
+                  occasion, or other context. Call search_catalog immediately with the known context. Missing color, size,
+                  or similar refinements do not block the first useful results.
+                - Use create_shopping_mission only for explicit multi-item, bundle, outfit, or checklist planning goals.
+                  Never create a mission merely to search for one product category.
+                - When the user delegates selection and asks you to add the result to a cart, search first. If several
+                  candidates match, use pick_recommended_product to ground one exact purchasable choice before preparing
+                  the cart; prepare checkout only after the cart tool returns its server-issued cart ID. Wait for each
+                  tool result before calling a dependent tool; never issue dependent steps together in one response.
+                - If a planning tool fails but a read tool can still satisfy the request, recover with the read tool
+                  instead of ending with an apology.
                 - Never interpret words such as buy or checkout as permission to invent a cart or show an empty checkout.
                 - Never invent IDs, product facts, prices, availability, ownership, tool results, or completed actions.
                 - Use only server-issued stable artifact keys for follow-up references and exact offer keys for cart mutations.
