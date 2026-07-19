@@ -63,6 +63,10 @@ class AgentCartArtifactTest {
         JsonNode line = objectMapper.readTree(artifacts.getLast().payloadJson());
         assertThat(line.get("cartLineId").asText()).isEqualTo(CART_LINE_ID.toString());
         assertThat(line.get("offerKey").asText()).isEqualTo("offer-1");
+        assertThat(line.get("canonicalProductKey").asText()).isEqualTo("product-key-1");
+        assertThat(line.get("productBrand").asText()).isEqualTo("Meant Running");
+        assertThat(line.get("selectedOptionsJson").asText()).contains("Size", "42");
+        assertThat(artifacts.getLast().canonicalProductKey()).isEqualTo("product-key-1");
     }
 
     @Test
@@ -159,6 +163,7 @@ class AgentCartArtifactTest {
                 "remote-line-" + number,
                 "product-" + number,
                 "Running shoe " + number,
+                "Meant Running",
                 "variant-" + number,
                 "Size 42",
                 1,
@@ -166,6 +171,10 @@ class AgentCartArtifactTest {
                 "95.00",
                 "USD",
                 "offer-" + number,
+                "product-key-" + number,
+                "[{\"name\":\"Size\",\"value\":\"42\"}]",
+                "[]",
+                null,
                 "SHOPIFY",
                 null,
                 "merchant-1",

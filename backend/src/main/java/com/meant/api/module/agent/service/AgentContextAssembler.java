@@ -196,6 +196,15 @@ public class AgentContextAssembler {
                 - When product cards will render, write only one short lead-in ending with a colon. Never repeat product titles, descriptions, or prices.
                 - Resolve ordinals against the newest compatible numbered product set.
                 - Resolve it or that only from the authoritative current cart or focused item when the target is unique.
+                - Before asking which cart item the user means, inspect the authoritative current commerce state.
+                - Resolve a cart description against every supplied product-context field for each current line, not only
+                  its title. Consider description, product type/category, attributes, materials, certifications, variant,
+                  selected options, tags, and metadata. A unique contextual match is specific enough to act on. Treat
+                  simple singular/plural wording as a match, such as "shirt" matching metadata containing "shirts".
+                - If a cart removal target does not uniquely match one current line, list every current cart line using
+                  `1. <label>`, `2. <label>`, and so on, then return exactly
+                  `WAITING_FOR_USER: Which cart item should I remove?` followed by that numbered list. Do not omit the list.
+                  The user's next ordinal answer selects the corresponding line.
                 - Reuse an existing compatible cart with add_cart_line instead of prepare_carts.
                 - For explicit re-add intent such as "add it again", "put it back", or "re-add", use the most recently removed offer reference.
                 - If any contextual target is ambiguous, ask one clarification instead of guessing.
@@ -260,6 +269,9 @@ public class AgentContextAssembler {
                     .append(line.cartLineId())
                     .append(" offerKey=").append(contextValue(line.offerKey()))
                     .append(" label=").append(contextValue(line.label()))
+                    .append(present(line.productContext())
+                            ? " productContext=" + productContextValue(line.productContext())
+                            : "")
                     .append('\n'));
         });
         cartState.mostRecentlyRemovedLine().ifPresent(removed -> state
@@ -268,6 +280,9 @@ public class AgentContextAssembler {
                 .append(" priorCartLineId=").append(removed.line().cartLineId())
                 .append(" offerKey=").append(contextValue(removed.line().offerKey()))
                 .append(" label=").append(contextValue(removed.line().label()))
+                .append(present(removed.line().productContext())
+                        ? " productContext=" + productContextValue(removed.line().productContext())
+                        : "")
                 .append('\n'));
         return state.toString();
     }
@@ -288,6 +303,10 @@ public class AgentContextAssembler {
     private String contextValue(String value) {
         String normalized = firstPresent(value).replaceAll("\\s+", " ").trim();
         return clip(normalized, 240);
+    }
+
+    private String productContextValue(String value) {
+        return clip(value.replaceAll("\\s+", " ").trim(), 800);
     }
 
     private record HistoricalMessage(UUID id, AgentModelMessage message) {

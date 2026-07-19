@@ -22,6 +22,11 @@ public interface AgentMessageRepository extends JpaRepository<AgentMessage, UUID
 
     List<AgentMessage> findByRunIdOrderBySequenceNumberAsc(UUID runId);
 
+    Optional<AgentMessage> findFirstByConversationIdAndSequenceNumberLessThanOrderBySequenceNumberDesc(
+            UUID conversationId,
+            long sequenceNumber
+    );
+
     List<AgentMessage> findByConversationIdAndSequenceNumberGreaterThanAndSequenceNumberLessThanEqualOrderBySequenceNumberAsc(
             UUID conversationId,
             long afterSequence,

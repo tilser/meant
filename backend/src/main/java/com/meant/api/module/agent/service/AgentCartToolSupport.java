@@ -238,7 +238,7 @@ class AgentCartToolSupport {
                         ordinal++,
                         "cart-line:" + line.cartLineId(),
                         line.productTitle(),
-                        null,
+                        line.canonicalProductKey(),
                         line.offerKey(),
                         null,
                         cart.cartId(),

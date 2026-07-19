@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -134,7 +135,8 @@ final class AgentCartSnapshotSupport {
                             cart.getCartId(),
                             cartLineId,
                             normalized(text(line, "offerKey")),
-                            firstPresent(text(line, "productTitle"), text(line, "label"), "Cart item")
+                            firstPresent(text(line, "productTitle"), text(line, "label"), "Cart item"),
+                            productContext(line, normalized(text(line, "offerKey")), artifacts)
                     ));
                 }
             });
@@ -150,9 +152,145 @@ final class AgentCartSnapshotSupport {
                         cart.getCartId(),
                         reference.getCartLineId(),
                         normalized(reference.getOfferKey()),
-                        firstPresent(reference.getLabel(), "Cart item")
+                        firstPresent(reference.getLabel(), "Cart item"),
+                        productContext(
+                                readPayload(reference),
+                                normalized(reference.getOfferKey()),
+                                artifacts
+                        )
                 ))
                 .toList();
+    }
+
+    private String productContext(
+            JsonNode cartLine,
+            String offerKey,
+            List<AgentArtifactReference> artifacts
+    ) {
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        appendFields(values, cartLine,
+                "productTitle", "productBrand", "variantTitle", "productType", "category");
+        appendSemanticValues(values, field(cartLine, "selectedOptions"), 0);
+        appendSemanticValues(values, readEmbeddedJson(cartLine, "selectedOptionsJson"), 0);
+        appendSemanticValues(values, readEmbeddedJson(cartLine, "componentsJson"), 0);
+        appendSemanticValues(values, readEmbeddedJson(cartLine, "sellingPlanJson"), 0);
+
+        Set<String> canonicalProductKeys = artifacts.stream()
+                .filter(reference -> offerKey != null && offerKey.equals(reference.getOfferKey()))
+                .map(AgentArtifactReference::getCanonicalProductKey)
+                .filter(this::present)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+        artifacts.stream()
+                .filter(reference -> reference.getArtifactType() == AgentArtifactType.PRODUCT
+                        || reference.getArtifactType() == AgentArtifactType.SAVED_PRODUCT)
+                .filter(reference -> canonicalProductKeys.contains(reference.getCanonicalProductKey())
+                        || offerKey != null && offerKey.equals(reference.getOfferKey())
+                        || payloadContainsOffer(readPayload(reference), offerKey))
+                .map(this::readPayload)
+                .filter(Objects::nonNull)
+                .forEach(payload -> appendProductContext(values, payload, offerKey));
+
+        artifacts.stream()
+                .filter(reference -> reference.getArtifactType() == AgentArtifactType.OFFER)
+                .filter(reference -> offerKey != null && offerKey.equals(reference.getOfferKey()))
+                .map(this::readPayload)
+                .filter(Objects::nonNull)
+                .forEach(payload -> {
+                    appendFields(values, payload, "variantTitle", "productType", "category");
+                    appendSemanticValues(values, field(payload, "selectedOptions"), 0);
+                    appendSemanticValues(values, field(payload, "attributes"), 0);
+                    appendSemanticValues(values, field(payload, "metadata"), 0);
+                    appendSemanticValues(values, field(payload, "tags"), 0);
+                });
+        return values.isEmpty() ? null : String.join(" | ", values);
+    }
+
+    private void appendProductContext(LinkedHashSet<String> values, JsonNode payload, String offerKey) {
+        appendFields(values, payload,
+                "title", "description", "productType", "category", "brand", "vendor");
+        for (String field : List.of(
+                "categories", "tags", "attributes", "materials", "certifications", "metadata", "taxonomy")) {
+            appendSemanticValues(values, field(payload, field), 0);
+        }
+        JsonNode offers = field(payload, "offers");
+        if (offers == null || !offers.isArray() || offerKey == null) {
+            return;
+        }
+        offers.forEach(offer -> {
+            if (offerKey.equals(text(offer, "key"))) {
+                appendFields(values, offer, "variantTitle");
+                appendSemanticValues(values, field(offer, "selectedOptions"), 0);
+                appendSemanticValues(values, field(offer, "attributes"), 0);
+                appendSemanticValues(values, field(offer, "metadata"), 0);
+            }
+        });
+    }
+
+    private boolean payloadContainsOffer(JsonNode payload, String offerKey) {
+        if (payload == null || offerKey == null) {
+            return false;
+        }
+        JsonNode offers = field(payload, "offers");
+        if (offers == null || !offers.isArray()) {
+            return false;
+        }
+        for (JsonNode offer : offers) {
+            if (offerKey.equals(text(offer, "key"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void appendFields(LinkedHashSet<String> values, JsonNode node, String... fields) {
+        for (String field : fields) {
+            appendValue(values, text(node, field));
+        }
+    }
+
+    private void appendSemanticValues(LinkedHashSet<String> values, JsonNode node, int depth) {
+        if (node == null || depth > 6) {
+            return;
+        }
+        if (node.isTextual()) {
+            appendValue(values, node.asText());
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(value -> appendSemanticValues(values, value, depth + 1));
+            return;
+        }
+        if (node.isObject()) {
+            node.properties().forEach(entry -> appendSemanticValues(values, entry.getValue(), depth + 1));
+        }
+    }
+
+    private void appendValue(LinkedHashSet<String> values, String value) {
+        if (!present(value)) {
+            return;
+        }
+        String normalized = value.replaceAll("\\s+", " ").trim();
+        if (normalized.length() > 1_000) {
+            normalized = normalized.substring(0, 1_000);
+        }
+        values.add(normalized);
+    }
+
+    private JsonNode readEmbeddedJson(JsonNode node, String field) {
+        String value = text(node, field);
+        if (!present(value)) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(value);
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private JsonNode field(JsonNode node, String name) {
+        return node == null ? null : node.get(name);
     }
 
     private Optional<RemovedCartLine> mostRecentlyRemovedLine(
@@ -255,7 +393,11 @@ final class AgentCartSnapshotSupport {
     ) {
     }
 
-    record CartLine(UUID cartId, UUID cartLineId, String offerKey, String label) {
+    record CartLine(UUID cartId, UUID cartLineId, String offerKey, String label, String productContext) {
+
+        String matchingText() {
+            return productContext == null ? label : label + " " + productContext;
+        }
     }
 
     record RemovedCartLine(UUID currentCartId, CartLine line) {

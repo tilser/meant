@@ -77,8 +77,14 @@ class AgentContextAssemblerTest {
                         product(SEARCH_MESSAGE_ID, 1, "product-jacket-1", "offer-jacket-1",
                                 "Canvas field jacket"),
                         offer(SEARCH_MESSAGE_ID, 1, "product-jacket-1", "offer-jacket-1"),
-                        product(SEARCH_MESSAGE_ID, 2, "product-jacket-2", "offer-jacket-2",
-                                "Black cotton jacket"),
+                        productWithContext(
+                                SEARCH_MESSAGE_ID,
+                                2,
+                                "product-jacket-2",
+                                "offer-jacket-2",
+                                "Black cotton jacket",
+                                "Weatherproof outerwear for rainy commutes"
+                        ),
                         offer(SEARCH_MESSAGE_ID, 2, "product-jacket-2", "offer-jacket-2")
                 ));
 
@@ -105,6 +111,9 @@ class AgentContextAssemblerTest {
         String systemPrompt = context.messages().getFirst().text();
         assertThat(systemPrompt)
                 .contains("Resolve ordinals against the newest compatible numbered product set.")
+                .contains("Before asking which cart item the user means, inspect the authoritative current commerce state.")
+                .contains("1. <label>")
+                .contains("WAITING_FOR_USER: Which cart item should I remove?")
                 .contains("Reuse an existing compatible cart with add_cart_line instead of prepare_carts.")
                 .contains("most recently removed offer reference");
 
@@ -114,6 +123,7 @@ class AgentContextAssemblerTest {
                 .contains("item=2 key=product-jacket-2 [PRODUCT] Black cotton jacket")
                 .contains("cartId=" + currentCartId)
                 .contains("cartLineId=" + currentLineId + " offerKey=offer-jacket-2 label=Black cotton jacket")
+                .contains("productContext=Black cotton jacket | Weatherproof outerwear for rainy commutes")
                 .doesNotContain("cartLineId=" + removedLineId)
                 .contains("priorCartLineId=" + removedLineId + " offerKey=offer-jacket-1")
                 .doesNotContain("[CART_LINE]");
@@ -356,6 +366,32 @@ class AgentContextAssemblerTest {
                 .canonicalProductKey(productKey)
                 .offerKey(offerKey)
                 .payloadJson("{}")
+                .createdAt(BASE)
+                .build();
+    }
+
+    private AgentArtifactReference productWithContext(
+            UUID messageId,
+            int ordinal,
+            String productKey,
+            String offerKey,
+            String label,
+            String description
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(messageId)
+                .artifactType(AgentArtifactType.PRODUCT)
+                .ordinal(ordinal)
+                .stableKey(productKey)
+                .label(label)
+                .canonicalProductKey(productKey)
+                .offerKey(offerKey)
+                .payloadJson("""
+                        {"key":"%s","title":"%s","description":"%s",\
+                        "attributes":[{"name":"Product type","value":"Outerwear"}],\
+                        "offers":[{"key":"%s"}]}
+                        """.formatted(productKey, label, description, offerKey))
                 .createdAt(BASE)
                 .build();
     }

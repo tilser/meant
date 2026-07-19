@@ -1,12 +1,16 @@
 package com.meant.api.module.agent.service;
 
+import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.constant.ShoppingMissionStatus;
+import com.meant.api.module.agent.entity.AgentMessage;
 import com.meant.api.module.agent.entity.ShoppingMission;
+import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -68,6 +72,13 @@ public class AgentToolAuthorizationPolicy {
             "\\b(?:remove|delete|take\\s+out)\\b",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern CART_ITEM_SELECTION = Pattern.compile(
+            "^(?:the\\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+                    + "1(?:st)?|2(?:nd)?|3(?:rd)?|4(?:th)?|5(?:th)?|6(?:th)?|7(?:th)?|8(?:th)?|"
+                    + "9(?:th)?|10(?:th)?)(?:\\s+(?:one|item|line))?[.!]?$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final String CART_REMOVAL_CLARIFICATION = "Which cart item should I remove?";
     private static final Pattern CART_UPDATE_INTENT = Pattern.compile(
             "\\b(?:change|update|increase|decrease|set)\\b.*\\b(?:quantity|amount|count|line|item)\\b",
             Pattern.CASE_INSENSITIVE
@@ -93,6 +104,7 @@ public class AgentToolAuthorizationPolicy {
 
     private final ShoppingMissionRepository missionRepository;
     private final AgentMutationTargetPolicy mutationTargetPolicy;
+    private final AgentMessageRepository messageRepository;
 
     public List<AgentToolDescriptor> available(
             AgentToolExecutionContext context,
@@ -119,7 +131,7 @@ public class AgentToolAuthorizationPolicy {
             return positiveClause(turn, CART_ADDITION_INTENT) || delegatedMission(context, turn).isPresent();
         }
         if (CART_UPDATES.contains(name)) {
-            return cartUpdateAuthorized(name, turn) || delegatedMission(context, turn).isPresent();
+            return cartUpdateAuthorized(context, name, turn) || delegatedMission(context, turn).isPresent();
         }
         if (CHECKOUT_MUTATIONS.contains(name)) {
             return checkoutAuthorized(name, turn) || delegatedMission(context, turn).isPresent();
@@ -166,11 +178,28 @@ public class AgentToolAuthorizationPolicy {
         };
     }
 
-    private boolean cartUpdateAuthorized(String toolName, String turn) {
+    private boolean cartUpdateAuthorized(AgentToolExecutionContext context, String toolName, String turn) {
         if ("remove_cart_line".equals(toolName)) {
-            return positiveClause(turn, CART_REMOVAL_INTENT);
+            return positiveClause(turn, CART_REMOVAL_INTENT)
+                    || answersCartRemovalClarification(context, turn);
         }
         return positiveClause(turn, CART_UPDATE_INTENT);
+    }
+
+    private boolean answersCartRemovalClarification(AgentToolExecutionContext context, String turn) {
+        if (context.triggeringMessageId() == null || !CART_ITEM_SELECTION.matcher(turn).matches()) {
+            return false;
+        }
+        return messageRepository.findById(context.triggeringMessageId())
+                .flatMap(triggering -> messageRepository
+                        .findFirstByConversationIdAndSequenceNumberLessThanOrderBySequenceNumberDesc(
+                                context.conversationId(), triggering.getSequenceNumber()))
+                .filter(message -> message.getRole() == AgentMessageRole.ASSISTANT)
+                .map(AgentMessage::getTextContent)
+                .filter(Objects::nonNull)
+                .map(text -> text.lines().findFirst().orElse(""))
+                .filter(CART_REMOVAL_CLARIFICATION::equals)
+                .isPresent();
     }
 
     private boolean checkoutAuthorized(String toolName, String turn) {

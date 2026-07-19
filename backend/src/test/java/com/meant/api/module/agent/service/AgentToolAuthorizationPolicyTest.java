@@ -7,9 +7,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.module.agent.constant.AgentContentKind;
+import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.constant.ShoppingMissionStatus;
+import com.meant.api.module.agent.entity.AgentMessage;
 import com.meant.api.module.agent.entity.ShoppingMission;
+import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
@@ -21,7 +25,9 @@ class AgentToolAuthorizationPolicyTest {
 
     private final ShoppingMissionRepository missions = mock(ShoppingMissionRepository.class);
     private final AgentMutationTargetPolicy targetPolicy = mock(AgentMutationTargetPolicy.class);
-    private final AgentToolAuthorizationPolicy policy = new AgentToolAuthorizationPolicy(missions, targetPolicy);
+    private final AgentMessageRepository messages = mock(AgentMessageRepository.class);
+    private final AgentToolAuthorizationPolicy policy = new AgentToolAuthorizationPolicy(
+            missions, targetPolicy, messages);
 
     @Test
     void broadShoppingLanguageDoesNotAuthorizeAnUnrequestedCartMutation() {
@@ -96,6 +102,52 @@ class AgentToolAuthorizationPolicyTest {
                 context("Add it again."),
                 descriptor("add_cart_line", AgentToolRisk.REVERSIBLE_MUTATION)
         )).isTrue();
+    }
+
+    @Test
+    void numberedAnswerToImmediateCartRemovalClarificationAuthorizesTheSelectedLine() {
+        UUID conversationId = UUID.randomUUID();
+        UUID triggeringMessageId = UUID.randomUUID();
+        AgentToolExecutionContext context = context(conversationId, triggeringMessageId, "1.");
+        AgentToolDescriptor remove = descriptor("remove_cart_line", AgentToolRisk.REVERSIBLE_MUTATION);
+        AgentMessage triggering = message(
+                triggeringMessageId, conversationId, AgentMessageRole.USER, 12, "1.");
+        AgentMessage clarification = message(
+                UUID.randomUUID(),
+                conversationId,
+                AgentMessageRole.ASSISTANT,
+                11,
+                "Which cart item should I remove?\n1. Camo trucker hats\n2. Wool winter hat"
+        );
+        when(messages.findById(triggeringMessageId)).thenReturn(Optional.of(triggering));
+        when(messages.findFirstByConversationIdAndSequenceNumberLessThanOrderBySequenceNumberDesc(
+                conversationId, 12)).thenReturn(Optional.of(clarification));
+        when(targetPolicy.matchesMutationTarget(context, "remove_cart_line", "{\"cartLineId\":\"line-1\"}"))
+                .thenReturn(true);
+
+        assertThat(policy.authorized(context, remove)).isTrue();
+        assertThat(policy.authorizedInvocation(
+                context, remove, "{\"cartLineId\":\"line-1\"}"
+        )).isTrue();
+    }
+
+    @Test
+    void bareNumberDoesNotAuthorizeRemovalWithoutAnImmediateRemovalClarification() {
+        UUID conversationId = UUID.randomUUID();
+        UUID triggeringMessageId = UUID.randomUUID();
+        AgentToolExecutionContext context = context(conversationId, triggeringMessageId, "1.");
+        AgentMessage triggering = message(
+                triggeringMessageId, conversationId, AgentMessageRole.USER, 12, "1.");
+        AgentMessage unrelatedQuestion = message(
+                UUID.randomUUID(), conversationId, AgentMessageRole.ASSISTANT, 11, "Which color do you prefer?");
+        when(messages.findById(triggeringMessageId)).thenReturn(Optional.of(triggering));
+        when(messages.findFirstByConversationIdAndSequenceNumberLessThanOrderBySequenceNumberDesc(
+                conversationId, 12)).thenReturn(Optional.of(unrelatedQuestion));
+
+        assertThat(policy.authorized(
+                context,
+                descriptor("remove_cart_line", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
     }
 
     @Test
@@ -207,6 +259,28 @@ class AgentToolAuthorizationPolicyTest {
                 UUID.randomUUID(),
                 text
         );
+    }
+
+    private AgentToolExecutionContext context(UUID conversationId, UUID triggeringMessageId, String text) {
+        return new AgentToolExecutionContext(
+                UUID.randomUUID(), conversationId, UUID.randomUUID(), triggeringMessageId, text);
+    }
+
+    private AgentMessage message(
+            UUID id,
+            UUID conversationId,
+            AgentMessageRole role,
+            long sequenceNumber,
+            String text
+    ) {
+        return AgentMessage.builder()
+                .id(id)
+                .conversationId(conversationId)
+                .role(role)
+                .contentKind(AgentContentKind.TEXT)
+                .sequenceNumber(sequenceNumber)
+                .textContent(text)
+                .build();
     }
 
     private AgentToolExecutionContext directContext() {

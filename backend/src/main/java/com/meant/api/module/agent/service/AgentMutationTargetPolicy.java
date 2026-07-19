@@ -37,6 +37,10 @@ public class AgentMutationTargetPolicy {
             "\\bfirst\\s+(two|three|four|2|3|4)\\b",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern NUMERIC_ORDINAL_SELECTION = Pattern.compile(
+            "^(?:the\\s+)?(10|[1-9])(?:\\s+(?:one|item|line))?\\s*[.!]?$",
+            Pattern.CASE_INSENSITIVE
+    );
     private static final Pattern CONTEXTUAL_REFERENCE = Pattern.compile(
             "\\b(?:it|that|this|one|item|product|them|those|these)\\b",
             Pattern.CASE_INSENSITIVE
@@ -372,7 +376,7 @@ public class AgentMutationTargetPolicy {
             return Optional.empty();
         }
         List<AgentCartSnapshotSupport.CartLine> matches = candidates.stream()
-                .filter(line -> descriptiveTokens(line.label()).containsAll(turnTokens))
+                .filter(line -> descriptiveTokens(line.matchingText()).containsAll(turnTokens))
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
@@ -388,12 +392,33 @@ public class AgentMutationTargetPolicy {
                 .replace("'", "");
         Matcher matcher = TOKEN.matcher(normalized);
         while (matcher.find()) {
-            String token = matcher.group();
+            String rawToken = matcher.group();
+            if (NON_DESCRIPTIVE_TOKENS.contains(rawToken)) {
+                continue;
+            }
+            String token = singularToken(rawToken);
             if (token.length() >= 3 && !NON_DESCRIPTIVE_TOKENS.contains(token)) {
                 tokens.add(token);
             }
         }
         return Set.copyOf(tokens);
+    }
+
+    private String singularToken(String token) {
+        if (token.length() > 4 && token.endsWith("ies")) {
+            return token.substring(0, token.length() - 3) + "y";
+        }
+        if (token.length() > 4 && (token.endsWith("sses")
+                || token.endsWith("xes")
+                || token.endsWith("zes")
+                || token.endsWith("ches")
+                || token.endsWith("shes"))) {
+            return token.substring(0, token.length() - 2);
+        }
+        if (token.length() > 3 && token.endsWith("s") && !token.endsWith("ss")) {
+            return token.substring(0, token.length() - 1);
+        }
+        return token;
     }
 
     private int overlap(Set<String> left, Set<String> right) {
@@ -830,6 +855,10 @@ public class AgentMutationTargetPolicy {
     private List<Integer> ordinals(String userText) {
         if (userText == null) {
             return List.of();
+        }
+        Matcher numericSelection = NUMERIC_ORDINAL_SELECTION.matcher(userText);
+        if (numericSelection.matches()) {
+            return List.of(Integer.parseInt(numericSelection.group(1)));
         }
         Matcher firstCount = FIRST_COUNT.matcher(userText);
         if (firstCount.find()) {

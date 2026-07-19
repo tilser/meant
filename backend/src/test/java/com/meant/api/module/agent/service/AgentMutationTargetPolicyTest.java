@@ -242,6 +242,9 @@ class AgentMutationTargetPolicyTest {
                 context("Remove the second line."), "remove_cart_line", secondArguments
         )).isTrue();
         assertThat(policy.matchesMutationTarget(
+                context("2."), "remove_cart_line", secondArguments
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
                 context("Set the second line quantity to 3."), "update_cart_line", secondArguments
         )).isTrue();
 
@@ -249,6 +252,9 @@ class AgentMutationTargetPolicyTest {
                 + firstLineId + "\"}";
         assertThat(policy.matchesMutationTarget(
                 context("Remove the second line."), "remove_cart_line", wrongArguments
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("2."), "remove_cart_line", wrongArguments
         )).isFalse();
     }
 
@@ -276,6 +282,123 @@ class AgentMutationTargetPolicyTest {
                 "remove_cart_line",
                 removeLineArguments(cartId, lineId)
         )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("Remove this from the cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, lineId)
+        )).isTrue();
+    }
+
+    @Test
+    void singularCategoryUniquelyMatchesAPluralCartLineLabel() {
+        UUID messageId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-07-19T10:00:00Z");
+        CartSnapshotLine hats = new CartSnapshotLine(
+                UUID.randomUUID(),
+                "product-hats",
+                "offer-hats",
+                "12 Richardson 112PFP Camo Trucker Hats"
+        );
+        CartSnapshotLine shoes = new CartSnapshotLine(
+                UUID.randomUUID(), "product-shoes", "offer-shoes", "Gray trail shoes");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(messageId, cartId, createdAt, List.of(hats, shoes)),
+                        cartLineSnapshot(messageId, 2, cartId, createdAt, hats),
+                        cartLineSnapshot(messageId, 3, cartId, createdAt, shoes)
+                ));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the hat from my cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, hats.cartLineId())
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the hat from my cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, shoes.cartLineId())
+        )).isFalse();
+    }
+
+    @Test
+    void cartLineDescriptionAndMetadataCanIdentifyAProductWhoseTitleDoesNotNameItsType() {
+        UUID cartMessageId = UUID.randomUUID();
+        UUID productMessageId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+        Instant cartAt = Instant.parse("2026-07-19T10:00:00Z");
+        Instant productAt = cartAt.minusSeconds(60);
+        CartSnapshotLine shirt = new CartSnapshotLine(
+                UUID.randomUUID(), "product-shirt", "offer-shirt", "Oxford Button-Down");
+        CartSnapshotLine hat = new CartSnapshotLine(
+                UUID.randomUUID(), "product-hat", "offer-hat", "Camo Trucker");
+        AgentArtifactReference shirtProduct = productWithMetadata(
+                productMessageId,
+                1,
+                "product-shirt",
+                "offer-shirt",
+                "Oxford Button-Down",
+                "A breathable everyday shirt",
+                "Shirts"
+        );
+        AgentArtifactReference hatProduct = productWithMetadata(
+                productMessageId,
+                2,
+                "product-hat",
+                "offer-hat",
+                "Camo Trucker",
+                "A structured cap for sunny days",
+                "Headwear"
+        );
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(cartMessageId, cartId, cartAt, List.of(shirt, hat)),
+                        cartLineSnapshot(cartMessageId, 2, cartId, cartAt, shirt),
+                        cartLineSnapshot(cartMessageId, 3, cartId, cartAt, hat),
+                        withCreatedAt(shirtProduct, productAt),
+                        withCreatedAt(offer(productMessageId, 1, "product-shirt", "offer-shirt"), productAt),
+                        withCreatedAt(hatProduct, productAt),
+                        withCreatedAt(offer(productMessageId, 2, "product-hat", "offer-hat"), productAt)
+                ));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the shirt from my cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, shirt.cartLineId())
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the shirt from my cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, hat.cartLineId())
+        )).isFalse();
+    }
+
+    @Test
+    void singularCategoryCannotChooseBetweenSeveralMatchingPluralCartLines() {
+        UUID messageId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-07-19T10:00:00Z");
+        CartSnapshotLine first = new CartSnapshotLine(
+                UUID.randomUUID(), "product-hat-1", "offer-hat-1", "Camo trucker hats");
+        CartSnapshotLine second = new CartSnapshotLine(
+                UUID.randomUUID(), "product-hat-2", "offer-hat-2", "Wool winter hat");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(messageId, cartId, createdAt, List.of(first, second)),
+                        cartLineSnapshot(messageId, 2, cartId, createdAt, first),
+                        cartLineSnapshot(messageId, 3, cartId, createdAt, second)
+                ));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the hat from my cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, first.cartLineId())
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the hat from my cart."),
+                "remove_cart_line",
+                removeLineArguments(cartId, second.cartLineId())
+        )).isFalse();
     }
 
     @Test
@@ -894,6 +1017,33 @@ class AgentMutationTargetPolicyTest {
                 .canonicalProductKey(productKey)
                 .offerKey(offerKey)
                 .payloadJson("{}")
+                .createdAt(Instant.parse("2026-07-18T12:00:00Z"))
+                .build();
+    }
+
+    private AgentArtifactReference productWithMetadata(
+            UUID messageId,
+            int ordinal,
+            String productKey,
+            String offerKey,
+            String label,
+            String description,
+            String productType
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(messageId)
+                .artifactType(AgentArtifactType.PRODUCT)
+                .ordinal(ordinal)
+                .stableKey(productKey)
+                .label(label)
+                .canonicalProductKey(productKey)
+                .offerKey(offerKey)
+                .payloadJson("""
+                        {"key":"%s","title":"%s","description":"%s",\
+                        "attributes":[{"group":"apparel","name":"Product type","value":"%s"}],\
+                        "offers":[{"key":"%s"}]}
+                        """.formatted(productKey, label, description, productType, offerKey))
                 .createdAt(Instant.parse("2026-07-18T12:00:00Z"))
                 .build();
     }
