@@ -58,8 +58,7 @@ public class CompareProductsAgentTool implements AgentTool {
                 .mapToObj(index -> resultService.reference(details.get(index).product(), index + 1))
                 .toList();
         List<AgentArtifact> artifacts = new ArrayList<>(IntStream.range(0, details.size())
-                .mapToObj(index -> resultService.artifacts(
-                        details.get(index).product(), index + 1, details.get(index)))
+                .mapToObj(index -> resultService.detailArtifacts(details.get(index), index + 1))
                 .flatMap(List::stream)
                 .toList());
         AgentProductListResult output = new AgentProductListResult(
@@ -70,7 +69,7 @@ public class CompareProductsAgentTool implements AgentTool {
                 "comparison:" + String.join("|", keys),
                 "Product comparison",
                 null, null, null, null, null, null,
-                json.write(output)
+                json.writeArtifact(output)
         ));
         return AgentToolExecutionResult.read(
                 json.write(output),

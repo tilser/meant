@@ -27,6 +27,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -134,14 +135,16 @@ public class AgentConversationController {
     public SubmitAgentTurnResponse submitTurn(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID conversationId,
-            @Valid @RequestBody SubmitAgentTurnRequest request
+            @Valid @RequestBody SubmitAgentTurnRequest request,
+            HttpServletRequest httpRequest
     ) {
         UUID userId = AuthenticatedUser.fromJwt(jwt).id();
         var accepted = turnService.submit(new SubmitAgentTurnCommand(
                 userId,
                 conversationId,
                 request.message(),
-                request.clientTurnId()
+                request.clientTurnId(),
+                httpRequest.getRemoteAddr()
         ));
         runCoordinator.schedule(accepted.runId());
         return SubmitAgentTurnResponse.from(accepted);
@@ -155,7 +158,8 @@ public class AgentConversationController {
     public AgentUserActionResponse performAction(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID conversationId,
-            @Valid @RequestBody AgentUserActionRequest request
+            @Valid @RequestBody AgentUserActionRequest request,
+            HttpServletRequest httpRequest
     ) {
         UUID userId = AuthenticatedUser.fromJwt(jwt).id();
         return AgentUserActionResponse.from(userActionService.perform(new RecordAgentUserActionCommand(
@@ -164,7 +168,8 @@ public class AgentConversationController {
                 request.toolName(),
                 request.argumentsJson(),
                 request.idempotencyKey(),
-                request.summary()
+                request.summary(),
+                httpRequest.getRemoteAddr()
         )));
     }
 }

@@ -55,7 +55,7 @@ public class GetInventoryItemAgentTool implements AgentTool {
                 commerce == null ? null : commerce.canonicalProductKey(),
                 commerce == null ? null : commerce.offerKey(),
                 result.inventoryItemId(), null, null, null,
-                json.write(result)
+                json.writeArtifact(result)
         );
         return AgentToolExecutionResult.read(
                 json.write(result),

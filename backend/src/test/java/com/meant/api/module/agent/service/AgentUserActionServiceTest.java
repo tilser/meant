@@ -21,6 +21,7 @@ import com.meant.api.module.agent.service.dto.AgentUserActionReservation;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -34,6 +35,7 @@ class AgentUserActionServiceTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentToolSchemaValidator schema = mock(AgentToolSchemaValidator.class);
         CountDownLatch blocked = new CountDownLatch(1);
+        AtomicReference<String> observedBuyerIp = new AtomicReference<>();
         AgentTool tool = new AgentTool() {
             @Override
             public AgentToolDescriptor descriptor() {
@@ -48,6 +50,7 @@ class AgentUserActionServiceTest {
 
             @Override
             public AgentToolExecutionResult execute(AgentToolExecutionContext context, String argumentsJson) {
+                observedBuyerIp.set(context.buyerIp());
                 try {
                     blocked.await();
                 } catch (InterruptedException exception) {
@@ -60,7 +63,8 @@ class AgentUserActionServiceTest {
         when(registry.required("prepare_carts")).thenReturn(tool);
         when(json.validateArguments("{}")).thenReturn("{}");
         RecordAgentUserActionCommand command = new RecordAgentUserActionCommand(
-                UUID.randomUUID(), UUID.randomUUID(), "prepare_carts", "{}", "stable-key", "Prepare cart"
+                UUID.randomUUID(), UUID.randomUUID(), "prepare_carts", "{}", "stable-key", "Prepare cart",
+                "203.0.113.42"
         );
         when(persistence.reserve(command, "{}", "v1"))
                 .thenReturn(new AgentUserActionReservation(actionId, true, null));
@@ -84,6 +88,7 @@ class AgentUserActionServiceTest {
                     eq(AgentUserActionStatus.UNCERTAIN),
                     any(String.class)
             );
+            assertThat(observedBuyerIp.get()).isEqualTo("203.0.113.42");
         } finally {
             service.shutdown();
             blocked.countDown();

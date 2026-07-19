@@ -32,7 +32,11 @@ import type {
 } from '../types'
 import { bestOffer, cartLines, productPriceFrom, resolveAsk } from '../utils'
 import { resolveCartableOffer } from '../cart/cartOfferResolver'
-import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
+import type {
+  ActiveCheckoutSession,
+  CheckoutAssistantHandler,
+  CheckoutReleaseHandler,
+} from '../cart/checkoutTypes'
 import { canResolveCartOffer, offerCartable } from '../cart/utils'
 import { AskComposer } from '../ask/AskComposer'
 import type { AskReplyDraft } from '../ask/types'
@@ -164,7 +168,7 @@ function activeAndArchivedDiscoverThreads(restoredThreads: readonly DiscoverChat
   }
 }
 
-function ChatHero({
+export function DiscoverHomeHero({
   profile,
   greeting,
   prompts,
@@ -657,6 +661,7 @@ export function ChatDiscoverView({
   checkoutError,
   onCheckoutAssistant,
   onRefreshCheckout,
+  onReleaseCheckout,
   onOpenSaved,
   onOpenOrders,
   onOpenPrefs,
@@ -713,6 +718,7 @@ export function ChatDiscoverView({
   checkoutError: string | null
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
+  onReleaseCheckout: CheckoutReleaseHandler
   onOpenSaved: () => void
   onOpenOrders: () => void
   onOpenPrefs: () => void
@@ -2848,6 +2854,7 @@ export function ChatDiscoverView({
     checkoutError,
     onCheckoutAssistant,
     onRefreshCheckout,
+    onReleaseCheckout,
     onCheckoutHere: showCheckoutHere,
     newsletter,
     newsletterPending,
@@ -2874,7 +2881,7 @@ export function ChatDiscoverView({
       <>
         <Workbench />
         <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
-          <ChatHero
+          <DiscoverHomeHero
             profile={profile}
             greeting={greeting}
             prompts={prompts}
@@ -2985,6 +2992,7 @@ export function ChatDiscoverView({
                   checkoutError={checkoutError}
                   onCheckoutAssistant={onCheckoutAssistant}
                   onRefreshCheckout={onRefreshCheckout}
+                  onReleaseCheckout={onReleaseCheckout}
                   onOpenCart={onOpenCart}
                   onOpenOrders={onOpenOrders}
                 />

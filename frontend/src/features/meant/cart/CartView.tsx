@@ -225,6 +225,7 @@ export function CartView({
   onDeliveryAddress,
   onDeliveryOption,
   onCheckout,
+  agentBusy,
   checkoutMerchantKey,
   checkoutError,
 }: Readonly<{
@@ -240,6 +241,7 @@ export function CartView({
   onDeliveryAddress: (payload: DeliveryAddressPayload) => Promise<boolean> | boolean
   onDeliveryOption: (payload: DeliveryOptionPayload) => Promise<boolean> | boolean
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  agentBusy: boolean
   checkoutMerchantKey: string | null
   checkoutError: { merchant: string; merchantKey: string; message: string } | null
 }>) {
@@ -316,6 +318,7 @@ export function CartView({
     cartId: string | null | undefined,
     type: AppliedCartCodeType,
   ) => {
+    if (agentBusy) return
     if (!cartId) {
       setCodeErrors((current) => ({
         ...current,
@@ -351,6 +354,7 @@ export function CartView({
     cartId: string | null | undefined,
     code: AppliedCartCode,
   ) => {
+    if (agentBusy) return
     if (!cartId) {
       return
     }
@@ -416,6 +420,7 @@ export function CartView({
     cartId: string | null | undefined,
     draft: DeliveryAddressDraft,
   ) => {
+    if (agentBusy) return
     if (!cartId) {
       setDeliveryErrorForMerchant(merchantKey, 'Merchant cart is still syncing.')
       return
@@ -441,6 +446,7 @@ export function CartView({
     group: CartDeliveryGroup,
     option: CartDeliveryOption,
   ) => {
+    if (agentBusy) return
     if (!cartId) {
       setDeliveryErrorForMerchant(merchantKey, 'Merchant cart is still syncing.')
       return
@@ -496,6 +502,7 @@ export function CartView({
                   <button
                     className="mt-alert-fix"
                     type="button"
+                    disabled={agentBusy}
                     onClick={() => onRemove(line.id, line.merchant, cartItemIdentity(line))}
                   >
                     Remove item
@@ -514,6 +521,7 @@ export function CartView({
                     <button
                       className="mt-alert-fix"
                       type="button"
+                      disabled={agentBusy}
                       onClick={() =>
                         onAdd(alert.fix?.id ?? 'adapter', alert.fix?.merchant ?? 'Lumen Store')
                       }
@@ -548,7 +556,7 @@ export function CartView({
               const entry = codeEntries[merchantKey] ?? { discount: '', giftCard: '' }
               const busy = codeBusy[merchantKey] ?? null
               const codeError = codeErrors[merchantKey]
-              const codeControlsDisabled = groupSyncing || !cartId || Boolean(busy)
+              const codeControlsDisabled = agentBusy || groupSyncing || !cartId || Boolean(busy)
               const groupCheckoutable = group.items.every((item) =>
                 Boolean(
                   item.cartId &&
@@ -563,8 +571,13 @@ export function CartView({
                 ? 'Choose delivery option'
                 : deliverySummary
               const checkoutBlocked =
-                scanning || groupSyncing || !groupCheckoutable || Boolean(checkoutMerchantKey)
+                agentBusy ||
+                scanning ||
+                groupSyncing ||
+                !groupCheckoutable ||
+                Boolean(checkoutMerchantKey)
               const checkoutSub =
+                (agentBusy ? 'The merchant cart is updating' : null) ??
                 groupLineError ??
                 groupCheckoutError ??
                 (groupSyncing
@@ -618,7 +631,7 @@ export function CartView({
                               onQty(line.id, line.merchant, line.qty - 1, cartItemIdentity(line))
                             }
                             aria-label="Decrease"
-                            disabled={line.syncing}
+                            disabled={agentBusy || line.syncing}
                           >
                             -
                           </button>
@@ -629,7 +642,7 @@ export function CartView({
                               onQty(line.id, line.merchant, line.qty + 1, cartItemIdentity(line))
                             }
                             aria-label="Increase"
-                            disabled={line.syncing}
+                            disabled={agentBusy || line.syncing}
                           >
                             +
                           </button>
@@ -640,7 +653,7 @@ export function CartView({
                           type="button"
                           onClick={() => onRemove(line.id, line.merchant, cartItemIdentity(line))}
                           aria-label="Remove"
-                          disabled={line.syncing}
+                          disabled={agentBusy || line.syncing}
                         >
                           <CloseIcon size={13} />
                         </button>
@@ -654,7 +667,7 @@ export function CartView({
                     deliveryGroups={group.deliveryGroups}
                     currency={groupCurrency}
                     draft={groupDraft}
-                    busy={groupDeliveryBusy}
+                    busy={agentBusy || groupDeliveryBusy}
                     error={groupDeliveryError}
                     onDraft={(patch) => updateAddressDraft(merchantKey, patch)}
                     onSubmitAddress={() => {
@@ -742,7 +755,7 @@ export function CartView({
                               <button
                                 className="mt-code-remove"
                                 type="button"
-                                disabled={!cartId || Boolean(busy) || !code.code}
+                                disabled={agentBusy || !cartId || Boolean(busy) || !code.code}
                                 onClick={() =>
                                   void removeCode(merchantKey, group.merchant, cartId, code)
                                 }

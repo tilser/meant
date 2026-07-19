@@ -48,7 +48,7 @@ public class AgentMissionUpdateTool implements AgentTool {
         return new AgentToolExecutionResult(
                 resultJson,
                 "Updated shopping mission " + mission.missionId() + ".",
-                List.of(support.artifact(mission, resultJson)),
+                List.of(support.artifact(mission)),
                 null
         );
     }

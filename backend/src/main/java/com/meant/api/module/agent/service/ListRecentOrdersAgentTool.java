@@ -59,6 +59,6 @@ public class ListRecentOrdersAgentTool implements AgentTool {
     private AgentArtifact artifact(OrderSummaryResult order, int ordinal) {
         return new AgentArtifact(
                 AgentArtifactType.ORDER, ordinal, "order:" + order.id(), order.displayId(),
-                null, null, null, null, null, null, json.write(order));
+                null, null, null, null, null, null, json.writeArtifact(order));
     }
 }

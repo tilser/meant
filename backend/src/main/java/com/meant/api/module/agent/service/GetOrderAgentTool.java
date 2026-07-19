@@ -45,7 +45,7 @@ public class GetOrderAgentTool implements AgentTool {
                 input.orderId(), context.userId(), Boolean.TRUE.equals(input.refresh())));
         AgentArtifact artifact = new AgentArtifact(
                 AgentArtifactType.ORDER, 1, "order:" + order.id(), order.displayId(),
-                null, null, null, null, null, null, json.write(order));
+                null, null, null, null, null, null, json.writeArtifact(order));
         return AgentToolExecutionResult.read(
                 json.write(order), "Loaded order " + order.displayId() + ".", List.of(artifact));
     }

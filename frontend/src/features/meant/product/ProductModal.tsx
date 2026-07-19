@@ -191,6 +191,7 @@ export function ProductModal({
   savePending,
   savedOfferRefreshPending = false,
   inCompare,
+  cartMutationBlocked = false,
   onClose,
   onToggleSave,
   onUpdateSavedChoice,
@@ -213,6 +214,7 @@ export function ProductModal({
   savePending: boolean
   savedOfferRefreshPending?: boolean
   inCompare: boolean
+  cartMutationBlocked?: boolean
   onClose: () => void
   onToggleSave: (product: Product) => void
   onUpdateSavedChoice?: (product: Product, offerKey: string) => void
@@ -555,6 +557,7 @@ export function ProductModal({
     : selectedOffer?.offerKey?.trim() || null
   const saveDisabled = savePending || (!saved && hasVariantSelector && !selectedServerOfferKey)
   const canAddToCart =
+    !cartMutationBlocked &&
     !refreshingSavedOffers &&
     (hasVariantSelector
       ? Boolean(purchaseSelection?.canAdd && selectedServerOfferKey && onAddOfferKey)
@@ -577,17 +580,19 @@ export function ProductModal({
     ? 'Added to cart'
     : adding
       ? 'Adding...'
-      : refreshingSavedOffers
-        ? 'Loading offers…'
-        : hasVariantSelector && purchaseSelection?.loading !== false
+      : cartMutationBlocked
+        ? 'Cart is updating…'
+        : refreshingSavedOffers
           ? 'Loading offers…'
-          : hasVariantSelector && !canAddToCart
-            ? 'Unavailable'
-            : !selectedOffer || selectedOffer.available === false
+          : hasVariantSelector && purchaseSelection?.loading !== false
+            ? 'Loading offers…'
+            : hasVariantSelector && !canAddToCart
               ? 'Unavailable'
-              : canAddToCart
-                ? 'Add to cart'
-                : 'Checkout unavailable'
+              : !selectedOffer || selectedOffer.available === false
+                ? 'Unavailable'
+                : canAddToCart
+                  ? 'Add to cart'
+                  : 'Checkout unavailable'
   const fallbackPriceAmount = productPriceFrom(actionProduct, deliveryLocations)
   const fallbackPrice =
     fallbackPriceAmount === null

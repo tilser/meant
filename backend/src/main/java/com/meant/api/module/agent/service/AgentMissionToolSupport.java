@@ -249,7 +249,7 @@ class AgentMissionToolSupport {
         return jsonSupport.write(value);
     }
 
-    AgentArtifact artifact(AgentMissionDetails details, String payloadJson) {
+    AgentArtifact artifact(AgentMissionDetails details) {
         return new AgentArtifact(
                 AgentArtifactType.MISSION,
                 1,
@@ -261,7 +261,7 @@ class AgentMissionToolSupport {
                 null,
                 null,
                 null,
-                payloadJson
+                jsonSupport.writeArtifact(details)
         );
     }
 

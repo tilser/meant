@@ -13,7 +13,10 @@ import com.meant.api.module.agent.service.dto.AgentCartToolArguments;
 import com.meant.api.module.agent.service.dto.AgentCheckoutToolArguments;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.cart.service.CartService;
+import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
+import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
+import com.meant.api.module.cart.service.dto.CartOfferPartitionResult;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -65,6 +68,45 @@ class AgentCommerceToolContractTest {
     }
 
     @Test
+    void prepareCartPropagatesTheTrustedBuyerIpToTheShopifyTransportCommand() {
+        AgentConversationRepository conversations = ownedConversationRepository();
+        CartService cartService = mock(CartService.class);
+        AgentProductReadReferenceService references = mock(AgentProductReadReferenceService.class);
+        CartResult result = mock(CartResult.class);
+        UUID cartId = UUID.randomUUID();
+        when(result.cartId()).thenReturn(cartId);
+        when(cartService.partitionSelectedOffers(any())).thenReturn(List.of(new CartOfferPartitionResult(
+                "shopify:merchant-1",
+                "SHOPIFY",
+                null,
+                "merchant-1",
+                null,
+                "running.example",
+                List.of(new CartOfferPartitionResult.Item("offer-1", 1))
+        )));
+        when(cartService.create(any(), any())).thenReturn(result);
+        AgentCartToolSupport support = new AgentCartToolSupport(
+                conversations,
+                references,
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+
+        support.prepare(
+                context().withBuyerIp("203.0.113.42"),
+                new AgentCartToolArguments.Prepare(List.of(
+                        new AgentCartToolArguments.ExactOffer("offer-1", 1)))
+        );
+
+        ArgumentCaptor<CreateCartCommand> command = ArgumentCaptor.forClass(CreateCartCommand.class);
+        verify(cartService).create(command.capture(), any());
+        assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
     void cartMutationInjectsTheContextOwnerAndUsesOnlyLocalCartLineIdentifiers() {
         AgentConversationRepository conversations = ownedConversationRepository();
         CartService cartService = mock(CartService.class);
@@ -85,7 +127,7 @@ class AgentCommerceToolContractTest {
         UUID lineId = UUID.randomUUID();
 
         assertThat(support.updateLine(
-                context().withIdempotencyKey(idempotencyKey),
+                context().withIdempotencyKey(idempotencyKey).withBuyerIp("203.0.113.42"),
                 new AgentCartToolArguments.UpdateLine(cartId, lineId, 3)
         )).isSameAs(result);
 
@@ -95,6 +137,7 @@ class AgentCommerceToolContractTest {
                 org.mockito.ArgumentMatchers.eq(lineId));
         assertThat(command.getValue().userId()).isEqualTo(USER_ID);
         assertThat(command.getValue().cartId()).isEqualTo(cartId);
+        assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
         assertThat(command.getValue().updateItems()).singleElement().satisfies(item -> {
             assertThat(item.cartLineId()).isEqualTo(lineId);
             assertThat(item.remoteCartLineId()).isNull();
@@ -120,7 +163,10 @@ class AgentCommerceToolContractTest {
         );
         UUID cartId = UUID.randomUUID();
 
-        assertThat(support.get(context(), new AgentCheckoutToolArguments.Get(cartId, true))).isSameAs(result);
+        assertThat(support.get(
+                context().withBuyerIp("203.0.113.42"),
+                new AgentCheckoutToolArguments.Get(cartId, true)
+        )).isSameAs(result);
 
         ArgumentCaptor<GetCheckoutQuery> query = ArgumentCaptor.forClass(GetCheckoutQuery.class);
         verify(cartService).getCheckout(query.capture());
@@ -129,6 +175,50 @@ class AgentCommerceToolContractTest {
         assertThat(query.getValue().userId()).isEqualTo(USER_ID);
         assertThat(query.getValue().cartId()).isEqualTo(cartId);
         assertThat(query.getValue().refresh()).isTrue();
+        assertThat(query.getValue().buyerIp()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
+    void prepareAndUpdateCheckoutPropagateTheTrustedBuyerIp() {
+        AgentConversationRepository conversations = ownedConversationRepository();
+        CartService cartService = mock(CartService.class);
+        AgentProductReadReferenceService references = mock(AgentProductReadReferenceService.class);
+        UUID cartId = UUID.randomUUID();
+        CheckoutResult result = mock(CheckoutResult.class);
+        when(result.cartId()).thenReturn(cartId);
+        when(result.messages()).thenReturn(List.of());
+        when(cartService.checkout(any(GetCheckoutQuery.class), any())).thenReturn(result);
+        when(cartService.updateCheckout(any(UpdateCheckoutCommand.class), any())).thenReturn(result);
+        AgentCheckoutToolSupport support = new AgentCheckoutToolSupport(
+                conversations,
+                references,
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+        AgentToolExecutionContext context = context()
+                .withBuyerIp("203.0.113.42")
+                .withIdempotencyKey(UUID.randomUUID());
+
+        support.prepare(context, new AgentCheckoutToolArguments.Prepare(List.of(cartId)));
+        support.update(context, new AgentCheckoutToolArguments.Update(
+                cartId,
+                new AgentCheckoutToolArguments.Buyer(
+                        "buyer@example.test", "David", "Tilser", "+420123456789"),
+                new AgentCheckoutToolArguments.PostalAddress(
+                        "Main Street 1", null, "Prague", "Prague", "11000", "CZ"),
+                List.of("RUN10")
+        ));
+
+        ArgumentCaptor<GetCheckoutQuery> prepareQuery = ArgumentCaptor.forClass(GetCheckoutQuery.class);
+        ArgumentCaptor<UpdateCheckoutCommand> updateCommand =
+                ArgumentCaptor.forClass(UpdateCheckoutCommand.class);
+        verify(cartService).checkout(prepareQuery.capture(), any());
+        verify(cartService).updateCheckout(updateCommand.capture(), any());
+        assertThat(prepareQuery.getValue().buyerIp()).isEqualTo("203.0.113.42");
+        assertThat(updateCommand.getValue().buyerIp()).isEqualTo("203.0.113.42");
     }
 
     private AgentConversationRepository ownedConversationRepository() {

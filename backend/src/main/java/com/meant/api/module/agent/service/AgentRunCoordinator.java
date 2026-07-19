@@ -196,7 +196,7 @@ public class AgentRunCoordinator {
                 runId,
                 run.getTriggeringMessageId(),
                 context.triggeringUserText()
-        ).withExecutionOwner(executionOwner);
+        ).withExecutionOwner(executionOwner).withBuyerIp(run.getBuyerIp());
         Map<String, Integer> perToolCounts = new HashMap<>();
         Map<String, Integer> repeatedCalls = new HashMap<>();
         int totalToolCalls = 0;

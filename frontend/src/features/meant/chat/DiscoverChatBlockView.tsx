@@ -8,7 +8,11 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
-import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
+import type {
+  ActiveCheckoutSession,
+  CheckoutAssistantHandler,
+  CheckoutReleaseHandler,
+} from '../cart/checkoutTypes'
 import { bestOffer, formatOrderDate, money, productPriceFrom } from '../utils'
 import { productCuratedTake } from '../product/productCuration'
 import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
@@ -78,6 +82,7 @@ export function DiscoverChatBlockView({
   checkoutError,
   onCheckoutAssistant,
   onRefreshCheckout,
+  onReleaseCheckout,
   onCheckoutHere,
   newsletter,
   newsletterPending,
@@ -125,12 +130,15 @@ export function DiscoverChatBlockView({
     qty: number,
     nextCart: readonly CartItem[],
     identity?: string,
+    quantityDelta?: number,
+    sourceItem?: CartItem,
   ) => void
   onCartRemove: (
     id: ProductId,
     merchant: string,
     nextCart: readonly CartItem[],
     identity?: string,
+    sourceItem?: CartItem,
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
@@ -138,6 +146,7 @@ export function DiscoverChatBlockView({
   checkoutError: string | null
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
+  onReleaseCheckout?: CheckoutReleaseHandler
   onCheckoutHere: () => void
   newsletter: boolean
   newsletterPending: boolean
@@ -697,12 +706,15 @@ export function DiscoverChatBlockView({
         threadId={threadId}
         cart={block.lines ?? cart}
         products={productsWithFallback(block.products, cartProducts)}
+        actionCart={block.lines ? cart : undefined}
+        actionProducts={block.lines ? cartProducts : undefined}
         onCheckout={onCheckout}
         activeCheckout={activeCheckout}
         checkoutBusy={checkoutBusy}
         checkoutError={checkoutError}
         onCheckoutAssistant={onCheckoutAssistant}
         onRefreshCheckout={onRefreshCheckout}
+        onReleaseCheckout={onReleaseCheckout}
         onOpenCart={onOpenCart}
         onOpenOrders={onOpenOrders}
       />

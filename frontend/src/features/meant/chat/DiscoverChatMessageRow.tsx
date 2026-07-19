@@ -17,7 +17,11 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
-import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
+import type {
+  ActiveCheckoutSession,
+  CheckoutAssistantHandler,
+  CheckoutReleaseHandler,
+} from '../cart/checkoutTypes'
 import { DiscoverChatBlockView } from './DiscoverChatBlockView'
 import type { DiscoverChatMessage } from './types'
 import {
@@ -252,6 +256,7 @@ export function DiscoverChatMessageRow({
   checkoutError,
   onCheckoutAssistant,
   onRefreshCheckout,
+  onReleaseCheckout,
   onCheckoutHere,
   newsletter,
   newsletterPending,
@@ -306,6 +311,8 @@ export function DiscoverChatMessageRow({
     qty: number,
     nextCart: readonly CartItem[],
     identity?: string,
+    quantityDelta?: number,
+    sourceItem?: CartItem,
   ) => void
   onCartRemove: (
     messageId: string,
@@ -314,6 +321,7 @@ export function DiscoverChatMessageRow({
     merchant: string,
     nextCart: readonly CartItem[],
     identity?: string,
+    sourceItem?: CartItem,
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
@@ -321,6 +329,7 @@ export function DiscoverChatMessageRow({
   checkoutError: string | null
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
+  onReleaseCheckout?: CheckoutReleaseHandler
   onCheckoutHere: () => void
   newsletter: boolean
   newsletterPending: boolean
@@ -421,11 +430,21 @@ export function DiscoverChatMessageRow({
                 onOpenCart={onOpenCart}
                 onReviewCartHere={onReviewCartHere}
                 onRestoreCartLine={onRestoreCartLine}
-                onCartQty={(id, merchant, qty, nextCart, identity) =>
-                  onCartQty(message.id, index, id, merchant, qty, nextCart, identity)
+                onCartQty={(id, merchant, qty, nextCart, identity, quantityDelta, sourceItem) =>
+                  onCartQty(
+                    message.id,
+                    index,
+                    id,
+                    merchant,
+                    qty,
+                    nextCart,
+                    identity,
+                    quantityDelta,
+                    sourceItem,
+                  )
                 }
-                onCartRemove={(id, merchant, nextCart, identity) =>
-                  onCartRemove(message.id, index, id, merchant, nextCart, identity)
+                onCartRemove={(id, merchant, nextCart, identity, sourceItem) =>
+                  onCartRemove(message.id, index, id, merchant, nextCart, identity, sourceItem)
                 }
                 onCheckout={onCheckout}
                 activeCheckout={activeCheckout}
@@ -433,6 +452,7 @@ export function DiscoverChatMessageRow({
                 checkoutError={checkoutError}
                 onCheckoutAssistant={onCheckoutAssistant}
                 onRefreshCheckout={onRefreshCheckout}
+                onReleaseCheckout={onReleaseCheckout}
                 onCheckoutHere={onCheckoutHere}
                 newsletter={newsletter}
                 newsletterPending={newsletterPending}

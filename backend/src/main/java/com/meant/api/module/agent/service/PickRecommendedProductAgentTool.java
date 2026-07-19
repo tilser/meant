@@ -65,7 +65,7 @@ public class PickRecommendedProductAgentTool implements AgentTool {
         return AgentToolExecutionResult.read(
                 json.write(output),
                 "Picked the highest-ranked currently available candidate.",
-                resultService.artifacts(picked.product(), 1, picked)
+                resultService.detailArtifacts(picked, 1)
         );
     }
 

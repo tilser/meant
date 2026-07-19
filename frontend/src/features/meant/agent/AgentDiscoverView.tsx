@@ -22,8 +22,13 @@ import {
   type AgentRunSnapshotProfile,
 } from '../../../lib/apiClient'
 import { AskComposer } from '../ask/AskComposer'
-import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../cart/checkoutTypes'
+import type {
+  ActiveCheckoutSession,
+  CheckoutAssistantHandler,
+  CheckoutReleaseHandler,
+} from '../cart/checkoutTypes'
 import { AgentActivityPanel } from '../chat/AgentActivityPanel'
+import { DiscoverHomeHero } from '../chat/ChatDiscoverView'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
 import type {
@@ -44,6 +49,7 @@ import type {
 } from '../shelf/types'
 import { SHELF_DRAG_MIME } from '../shelf/types'
 import { ProductArtwork, SparkMark } from '../shared/ui'
+import { Workbench } from '../chat/workbench/Workbench'
 import type {
   CartItem,
   CheckoutPayload,
@@ -53,13 +59,22 @@ import type {
   UserLocation,
 } from '../types'
 import { cartItemIdentity } from '../utils'
+import { resolveLiveCartItem } from '../cart/cartPartition'
 import {
-  cartItemsFromAgentArtifacts,
+  cartStateReplacementsFromAgentArtifacts,
+  currentAgentProductSnapshots,
   discoverMessagesFromAgentConversation,
-  latestCartSnapshotArtifacts,
+  plainAgentText,
   productInteractionState,
   productsFromAgentArtifacts,
+  type AgentProductSnapshot,
 } from './artifactMapping'
+import type { MerchantCartStateReplacement } from '../cart/types'
+import {
+  isTerminalAgentRunStatus,
+  liveCartQuantityAfterDelta,
+  type AgentCartPartitionFingerprints,
+} from './cartSync'
 import {
   createAgentEventReducerState,
   reduceAgentEvent,
@@ -69,11 +84,19 @@ import {
 } from './eventReducer'
 import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
 import { AgentActionRequestIdentityStore } from './requestIdentity'
+import { agentActionQueueFor } from './actionQueue'
 
-const TERMINAL_RUNS = new Set(['WAITING_FOR_USER', 'COMPLETED', 'FAILED', 'CANCELLED'])
+const MUTATING_AGENT_ACTIONS = new Set([
+  'prepare_carts',
+  'add_cart_line',
+  'update_cart_line',
+  'remove_cart_line',
+  'prepare_checkout',
+  'update_checkout',
+])
 
 function isTerminalRun(run: AgentRunSnapshotProfile | null | undefined): boolean {
-  return Boolean(run && TERMINAL_RUNS.has(run.status))
+  return Boolean(run && isTerminalAgentRunStatus(run.status))
 }
 
 function uniqueRequestId(prefix: string): string {
@@ -98,6 +121,19 @@ function threadFromSummary(
     createdAt: Date.parse(summary.createdAt),
     updatedAt: Date.parse(summary.updatedAt),
     named: summary.title !== 'New conversation',
+  }
+}
+
+function emptyConversationFromSummary(
+  summary: AgentConversationSummaryProfile,
+): AgentConversationDetailProfile {
+  return {
+    ...summary,
+    rollingSummary: null,
+    summaryVersion: 0,
+    latestCursor: 0,
+    messages: [],
+    artifacts: [],
   }
 }
 
@@ -209,6 +245,7 @@ export interface AgentDiscoverViewProps {
   checkoutError: string | null
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
+  onReleaseCheckout: CheckoutReleaseHandler
   onOpenSaved: () => void
   onOpenOrders: () => void
   onOpenPrefs: () => void
@@ -217,7 +254,24 @@ export interface AgentDiscoverViewProps {
   onNewsletterChange: (newsletter: boolean) => Promise<void> | void
   onShelfAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
   onShelfAddProduct: (snapshot: ShelfProductSnapshot) => void
-  onAgentCartSnapshot?: (lines: readonly CartItem[], cartIds: ReadonlySet<string>) => void
+  onAgentProductsSnapshot?: (snapshots: readonly AgentProductSnapshot[]) => void
+  onReadAgentCart: () => readonly CartItem[]
+  onCaptureAgentCartRevision: () => AgentCartPartitionFingerprints | undefined
+  onAgentCartSnapshot: (
+    replacements: readonly MerchantCartStateReplacement[],
+    submittedCartRevision: AgentCartPartitionFingerprints | undefined,
+  ) => readonly CartItem[]
+  agentMutationBlocked: boolean
+  isAgentMutationBlocked: () => boolean
+  onAgentMutationStarted: () => string
+  onAgentMutationFinished: (mutationToken: string) => void
+  onAgentRunSubmissionStarted: () => string
+  onAgentRunSubmissionFinished: (submissionToken: string) => void
+  onAgentRunSubmitted?: (
+    runId: string,
+    conversationId: string,
+    submittedCartRevision: AgentCartPartitionFingerprints | undefined,
+  ) => void
   onProductDetailChatRequestHandled: (requestId: string) => void
   onFlashMessage: (messageId: string) => void
 }
@@ -248,6 +302,7 @@ export function AgentDiscoverView({
   checkoutError,
   onCheckoutAssistant,
   onRefreshCheckout,
+  onReleaseCheckout,
   onOpenSaved,
   onOpenOrders,
   onOpenPrefs,
@@ -256,7 +311,17 @@ export function AgentDiscoverView({
   onNewsletterChange,
   onShelfAddMessage,
   onShelfAddProduct,
+  onAgentProductsSnapshot,
+  onReadAgentCart,
+  onCaptureAgentCartRevision,
   onAgentCartSnapshot,
+  agentMutationBlocked,
+  isAgentMutationBlocked,
+  onAgentMutationStarted,
+  onAgentMutationFinished,
+  onAgentRunSubmissionStarted,
+  onAgentRunSubmissionFinished,
+  onAgentRunSubmitted,
   onProductDetailChatRequestHandled,
   onFlashMessage,
 }: Readonly<AgentDiscoverViewProps>) {
@@ -279,9 +344,17 @@ export function AgentDiscoverView({
   const streamAbortRef = useRef<AbortController | null>(null)
   const eventStateRef = useRef(eventState)
   const activeConversationIdRef = useRef(activeConversationId)
+  const activeRunIdRef = useRef(activeRunId)
+  const conversationRef = useRef<AgentConversationDetailProfile | null>(conversation)
+  const conversationSnapshotRequestRef = useRef(new Map<string, number>())
+  const committedConversationSnapshotRef = useRef(new Map<string, AgentConversationDetailProfile>())
   const recoveryInFlightRef = useRef(new Set<string>())
+  const refreshListsRequestRef = useRef(0)
   const actionPendingRef = useRef(new Set<string>())
   const actionIdempotencyRef = useRef(new AgentActionRequestIdentityStore())
+  const submissionInFlightRef = useRef(false)
+  const actionQueue = useMemo(() => agentActionQueueFor(expectedUserId), [expectedUserId])
+  const visibleCartRef = useRef(cart)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const handledHomeRequestRef = useRef(homeRequestId)
   const handledFindRequestRef = useRef<string | null>(null)
@@ -289,32 +362,107 @@ export function AgentDiscoverView({
   eventStateRef.current = eventState
   activeConversationIdRef.current = activeConversationId
 
+  useEffect(() => {
+    visibleCartRef.current = cart
+  }, [cart])
+
+  const updateConversationState = useCallback(
+    (
+      updater: (
+        current: AgentConversationDetailProfile | null,
+      ) => AgentConversationDetailProfile | null,
+    ) => {
+      const next = updater(conversationRef.current)
+      conversationRef.current = next
+      setConversation(next)
+    },
+    [],
+  )
+
+  const updateActiveConversationId = useCallback((next: string | null) => {
+    activeConversationIdRef.current = next
+    setActiveConversationId(next)
+  }, [])
+
+  const updateActiveRunId = useCallback(
+    (nextValue: string | null | ((current: string | null) => string | null)) => {
+      const next = typeof nextValue === 'function' ? nextValue(activeRunIdRef.current) : nextValue
+      activeRunIdRef.current = next
+      setActiveRunId(next)
+    },
+    [],
+  )
+
+  const invalidateConversationSnapshotRequests = useCallback((conversationId: string) => {
+    const requestId = (conversationSnapshotRequestRef.current.get(conversationId) ?? 0) + 1
+    conversationSnapshotRequestRef.current.set(conversationId, requestId)
+    committedConversationSnapshotRef.current.delete(conversationId)
+  }, [])
+
+  const beginConversationSnapshotRequest = useCallback((conversationId: string) => {
+    const requestId = (conversationSnapshotRequestRef.current.get(conversationId) ?? 0) + 1
+    conversationSnapshotRequestRef.current.set(conversationId, requestId)
+    return requestId
+  }, [])
+
+  const commitConversationSnapshot = useCallback(
+    (
+      conversationId: string,
+      requestId: number,
+      snapshot: AgentConversationDetailProfile,
+    ): boolean => {
+      if (
+        activeConversationIdRef.current !== conversationId ||
+        conversationSnapshotRequestRef.current.get(conversationId) !== requestId
+      ) {
+        return false
+      }
+      const current = conversationRef.current
+      if (
+        current?.conversationId === conversationId &&
+        current.latestSequence > snapshot.latestSequence
+      ) {
+        return false
+      }
+      committedConversationSnapshotRef.current.set(conversationId, snapshot)
+      updateConversationState(() => snapshot)
+      return true
+    },
+    [updateConversationState],
+  )
+
   const refreshLists = useCallback(async () => {
+    const requestId = refreshListsRequestRef.current + 1
+    refreshListsRequestRef.current = requestId
     const [active, archived] = await Promise.all([
       getAgentConversations({ expectedUserId, archived: false, limit: 50 }),
       getAgentConversations({ expectedUserId, archived: true, limit: 50 }),
     ])
-    setConversations(active)
-    setArchivedConversations(archived)
+    if (refreshListsRequestRef.current === requestId) {
+      setConversations(active)
+      setArchivedConversations(archived)
+    }
     return active
   }, [expectedUserId])
 
   const refreshConversation = useCallback(
     async (conversationId: string): Promise<AgentConversationDetailProfile> => {
+      const requestId = beginConversationSnapshotRequest(conversationId)
       const snapshot = await getCompleteAgentConversation(conversationId, {
         expectedUserId,
         pageSize: 200,
       })
-      if (activeConversationId === conversationId || !activeConversationId) {
-        setConversation(snapshot)
-      }
+      commitConversationSnapshot(conversationId, requestId, snapshot)
       return snapshot
     },
-    [activeConversationId, expectedUserId],
+    [beginConversationSnapshotRequest, commitConversationSnapshot, expectedUserId],
   )
 
   const discoverLatestRun = useCallback(
     async (snapshot: AgentConversationDetailProfile) => {
+      if (committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot) {
+        return
+      }
       const runIds = [
         ...new Set(
           [...snapshot.messages]
@@ -325,6 +473,12 @@ export function AgentDiscoverView({
       for (const runId of runIds.slice(0, 3)) {
         try {
           const run = await getAgentRun(runId, { expectedUserId })
+          if (
+            activeConversationIdRef.current !== snapshot.conversationId ||
+            committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot
+          ) {
+            return
+          }
           setRunSnapshot(run)
           setEventState((current) => {
             const next = restoreAgentRunSnapshot(current, run)
@@ -332,17 +486,38 @@ export function AgentDiscoverView({
             return next
           })
           if (!isTerminalRun(run)) {
-            setActiveRunId(run.runId)
+            onAgentRunSubmitted?.(run.runId, snapshot.conversationId, undefined)
+            updateActiveRunId(run.runId)
           }
           return
         } catch {
           // An old/pruned run does not prevent the durable conversation from rendering.
         }
       }
+      if (
+        activeConversationIdRef.current !== snapshot.conversationId ||
+        committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot
+      ) {
+        return
+      }
       setRunSnapshot(null)
-      setActiveRunId(null)
+      updateActiveRunId(null)
     },
-    [expectedUserId],
+    [expectedUserId, onAgentRunSubmitted, updateActiveRunId],
+  )
+
+  useEffect(
+    () =>
+      actionQueue.subscribeToSettled(() => {
+        void refreshLists().catch(() => undefined)
+        const conversationId = activeConversationIdRef.current
+        if (conversationId) {
+          void refreshConversation(conversationId)
+            .then(discoverLatestRun)
+            .catch(() => undefined)
+        }
+      }),
+    [actionQueue, discoverLatestRun, refreshConversation, refreshLists],
   )
 
   useEffect(() => {
@@ -351,18 +526,8 @@ export function AgentDiscoverView({
     setError(null)
     void (async () => {
       try {
-        let active = await refreshLists()
+        await refreshLists()
         if (controller.signal.aborted) return
-        if (active.length === 0) {
-          const created = await createAgentConversation({
-            expectedUserId,
-            signal: controller.signal,
-          })
-          active = [created]
-          setConversations(active)
-        }
-        const firstId = active[0]?.conversationId
-        if (firstId) setActiveConversationId(firstId)
       } catch (caught) {
         if (!controller.signal.aborted) {
           setError(caught instanceof Error ? caught.message : 'Could not load agent conversations.')
@@ -377,9 +542,11 @@ export function AgentDiscoverView({
   useEffect(() => {
     if (!activeConversationId) return
     const controller = new AbortController()
+    const requestId = beginConversationSnapshotRequest(activeConversationId)
     setLoading(true)
     setError(null)
-    setActiveRunId(null)
+    updateActiveRunId(null)
+    updateConversationState(() => null)
     streamAbortRef.current?.abort()
     void getCompleteAgentConversation(activeConversationId, {
       expectedUserId,
@@ -388,7 +555,7 @@ export function AgentDiscoverView({
     })
       .then(async (snapshot) => {
         if (controller.signal.aborted) return
-        setConversation(snapshot)
+        if (!commitConversationSnapshot(activeConversationId, requestId, snapshot)) return
         await discoverLatestRun(snapshot)
       })
       .catch((caught) => {
@@ -400,30 +567,54 @@ export function AgentDiscoverView({
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [activeConversationId, discoverLatestRun, expectedUserId])
+  }, [
+    activeConversationId,
+    beginConversationSnapshotRequest,
+    commitConversationSnapshot,
+    discoverLatestRun,
+    expectedUserId,
+    updateActiveRunId,
+    updateConversationState,
+  ])
 
   const recoverSnapshots = useCallback(
     async (runId: string) => {
       if (!activeConversationId || recoveryInFlightRef.current.has(runId)) return
+      const targetConversationId = activeConversationId
+      const requestId = beginConversationSnapshotRequest(targetConversationId)
       recoveryInFlightRef.current.add(runId)
       try {
         const [run, nextConversation] = await Promise.all([
           getAgentRun(runId, { expectedUserId }),
-          getCompleteAgentConversation(activeConversationId, { expectedUserId, pageSize: 200 }),
+          getCompleteAgentConversation(targetConversationId, { expectedUserId, pageSize: 200 }),
         ])
+        if (
+          activeRunIdRef.current !== runId ||
+          activeConversationIdRef.current !== targetConversationId
+        ) {
+          return
+        }
+        if (!commitConversationSnapshot(targetConversationId, requestId, nextConversation)) return
         setRunSnapshot(run)
-        setConversation(nextConversation)
         setEventState((current) => {
           const next = restoreAgentRunSnapshot(current, run)
           eventStateRef.current = next
           return next
         })
-        if (isTerminalRun(run)) setActiveRunId(null)
+        if (isTerminalRun(run)) {
+          updateActiveRunId((current) => (current === runId ? null : current))
+        }
       } finally {
         recoveryInFlightRef.current.delete(runId)
       }
     },
-    [activeConversationId, expectedUserId],
+    [
+      activeConversationId,
+      beginConversationSnapshotRequest,
+      commitConversationSnapshot,
+      expectedUserId,
+      updateActiveRunId,
+    ],
   )
 
   useEffect(() => {
@@ -454,10 +645,24 @@ export function AgentDiscoverView({
           }
           if (controller.signal.aborted) return
           const run = await getAgentRun(activeRunId, { expectedUserId, signal: controller.signal })
+          if (
+            controller.signal.aborted ||
+            activeRunIdRef.current !== activeRunId ||
+            activeConversationIdRef.current !== activeConversationId
+          ) {
+            return
+          }
           setRunSnapshot(run)
           if (isTerminalRun(run)) {
             await refreshConversation(activeConversationId)
-            setActiveRunId(null)
+            if (
+              controller.signal.aborted ||
+              activeRunIdRef.current !== activeRunId ||
+              activeConversationIdRef.current !== activeConversationId
+            ) {
+              return
+            }
+            updateActiveRunId((current) => (current === activeRunId ? null : current))
             void refreshLists()
             return
           }
@@ -482,6 +687,7 @@ export function AgentDiscoverView({
     recoverSnapshots,
     refreshConversation,
     refreshLists,
+    updateActiveRunId,
   ])
 
   const streamArtifacts = useMemo(() => {
@@ -495,10 +701,14 @@ export function AgentDiscoverView({
       : []
   }, [activeRunId, eventState.runs])
 
+  const selectedConversation =
+    conversation?.conversationId === activeConversationId ? conversation : null
   const combinedConversation = useMemo(() => {
-    if (!conversation) return null
-    const knownIds = new Set(conversation.artifacts.map((artifact) => artifact.artifactId))
-    const knownMessageIds = new Set(conversation.messages.map((message) => message.messageId))
+    if (!selectedConversation) return null
+    const knownIds = new Set(selectedConversation.artifacts.map((artifact) => artifact.artifactId))
+    const knownMessageIds = new Set(
+      selectedConversation.messages.map((message) => message.messageId),
+    )
     const transientMessageIds = [
       ...new Set(
         streamArtifacts.flatMap((artifact) =>
@@ -513,13 +723,13 @@ export function AgentDiscoverView({
           .at(-1)
       : undefined
     return {
-      ...conversation,
+      ...selectedConversation,
       messages: [
-        ...conversation.messages,
+        ...selectedConversation.messages,
         ...transientMessageIds.map((messageId, index) => ({
           messageId,
           runId: activeRunId,
-          sequenceNumber: conversation.latestSequence + index + 1,
+          sequenceNumber: selectedConversation.latestSequence + index + 1,
           role: 'TOOL' as const,
           contentKind: 'TOOL_RESULT' as const,
           textContent: null,
@@ -531,16 +741,25 @@ export function AgentDiscoverView({
         })),
       ],
       artifacts: [
-        ...conversation.artifacts,
+        ...selectedConversation.artifacts,
         ...streamArtifacts.filter((artifact) => !knownIds.has(artifact.artifactId)),
       ],
     }
-  }, [activeRunId, conversation, eventState.runs, streamArtifacts])
+  }, [activeRunId, eventState.runs, selectedConversation, streamArtifacts])
 
   const products = useMemo(
     () => productsFromAgentArtifacts(combinedConversation?.artifacts ?? []),
     [combinedConversation?.artifacts],
   )
+  const currentProductSnapshots = useMemo(
+    () => currentAgentProductSnapshots(combinedConversation?.artifacts ?? []),
+    [combinedConversation?.artifacts],
+  )
+  useEffect(() => {
+    if (currentProductSnapshots.length > 0) {
+      onAgentProductsSnapshot?.(currentProductSnapshots)
+    }
+  }, [currentProductSnapshots, onAgentProductsSnapshot])
   const allProducts = useMemo(() => {
     const byId = new Map(cartProducts.map((product) => [product.id, product]))
     products.forEach((product) => byId.set(product.id, product))
@@ -550,15 +769,7 @@ export function AgentDiscoverView({
     () => productInteractionState(combinedConversation?.artifacts ?? []),
     [combinedConversation?.artifacts],
   )
-  const latestCart = useMemo(
-    () =>
-      cartItemsFromAgentArtifacts(
-        latestCartSnapshotArtifacts(combinedConversation?.artifacts ?? []),
-        allProducts,
-      ),
-    [allProducts, combinedConversation?.artifacts],
-  )
-  const visibleCart = latestCart.length > 0 ? latestCart : cart
+  const visibleCart = cart
 
   const messages = useMemo(() => {
     if (!combinedConversation) return []
@@ -580,7 +791,7 @@ export function AgentDiscoverView({
               {
                 id: message.messageId ?? `${activeRunId}:assistant:${index}`,
                 role: 'ai' as const,
-                blocks: [{ type: 'text' as const, text: message.text }],
+                blocks: [{ type: 'text' as const, text: plainAgentText(message.text) }],
               },
             ],
     )
@@ -588,7 +799,7 @@ export function AgentDiscoverView({
       transient.push({
         id: `${activeRunId}:streaming`,
         role: 'ai',
-        blocks: [{ type: 'text', text: projection.streamingAssistantText }],
+        blocks: [{ type: 'text', text: plainAgentText(projection.streamingAssistantText) }],
         pending: true,
         pendingText: 'Meant is still working…',
       })
@@ -619,13 +830,26 @@ export function AgentDiscoverView({
 
   const activeThreads = useMemo(
     () =>
-      conversations.map((summary) =>
-        threadFromSummary(summary, summary.conversationId === activeConversationId ? messages : []),
-      ),
+      conversations
+        .filter(
+          (summary) =>
+            summary.latestSequence > 0 || summary.conversationId === activeConversationId,
+        )
+        .map((summary) =>
+          threadFromSummary(
+            summary,
+            summary.conversationId === activeConversationId ? messages : [],
+          ),
+        ),
     [activeConversationId, conversations, messages],
   )
   const historyThreads = useMemo(
-    () => [...activeThreads, ...archivedConversations.map((summary) => threadFromSummary(summary))],
+    () => [
+      ...activeThreads,
+      ...archivedConversations
+        .filter((summary) => summary.latestSequence > 0)
+        .map((summary) => threadFromSummary(summary)),
+    ],
     [activeThreads, archivedConversations],
   )
   const shelfMessageSet = useMemo(
@@ -636,20 +860,52 @@ export function AgentDiscoverView({
     () => new Set(shelf.flatMap((item) => (item.kind === 'product' ? [item.productId] : []))),
     [shelf],
   )
+  const currentStatus =
+    eventState.runs[activeRunId ?? '']?.status ??
+    (runSnapshot?.runId === activeRunId ? runSnapshot.status : undefined)
+  const isRunning = Boolean(activeRunId && !isTerminalAgentRunStatus(currentStatus ?? 'QUEUED'))
 
   const submit = useCallback(
     async (text: string) => {
-      if (!activeConversationId || submitting) return
-      const targetConversationId = activeConversationId
+      if (loading || submitting || submissionInFlightRef.current) {
+        return
+      }
+      if (isRunning || agentMutationBlocked || isAgentMutationBlocked()) {
+        setError('Wait for the current cart operation or agent run to finish.')
+        return
+      }
+      if (actionQueue.hasPending()) {
+        setError('Wait for the current commerce action to finish before sending a new request.')
+        return
+      }
+      submissionInFlightRef.current = true
+      const submissionToken = onAgentRunSubmissionStarted()
       setSubmitting(true)
       setError(null)
       try {
+        let targetConversationId = activeConversationId
+        let targetConversation = selectedConversation
+        if (!targetConversationId || !targetConversation) {
+          const created = await createAgentConversation({ expectedUserId })
+          targetConversationId = created.conversationId
+          targetConversation = emptyConversationFromSummary(created)
+          setConversations((current) => [
+            created,
+            ...current.filter((item) => item.conversationId !== created.conversationId),
+          ])
+          updateActiveConversationId(targetConversationId)
+          updateConversationState(() => targetConversation)
+        }
+        invalidateConversationSnapshotRequests(targetConversationId)
         if (activeRunId) {
           await cancelAgentRun(activeRunId, { expectedUserId }).catch(() => null)
         }
-        if (conversation?.latestSequence === 0 && conversation.title === 'New conversation') {
+        if (
+          targetConversation.latestSequence === 0 &&
+          targetConversation.title === 'New conversation'
+        ) {
           const renamed = await updateAgentConversation({
-            conversationId: activeConversationId,
+            conversationId: targetConversationId,
             title: derivedTitle(text),
             expectedUserId,
           })
@@ -659,62 +915,82 @@ export function AgentDiscoverView({
             ),
           )
         }
+        const submittedCartRevision = onCaptureAgentCartRevision()
         const turn = await submitAgentTurn({
-          conversationId: activeConversationId,
+          conversationId: targetConversationId,
           message: text,
           clientTurnId: uniqueRequestId('turn'),
           expectedUserId,
         })
+        onAgentRunSubmitted?.(turn.runId, targetConversationId, submittedCartRevision)
         if (activeConversationIdRef.current === targetConversationId) {
-          setConversation((current) =>
-            current
-              ? {
-                  ...current,
-                  latestSequence: Math.max(current.latestSequence, turn.userMessage.sequenceNumber),
-                  messages: current.messages.some(
-                    (message) => message.messageId === turn.userMessage.messageId,
-                  )
-                    ? current.messages
-                    : [...current.messages, turn.userMessage],
-                }
-              : current,
-          )
+          updateConversationState((current) => {
+            const base =
+              current?.conversationId === targetConversationId ? current : targetConversation
+            return {
+              ...base,
+              latestSequence: Math.max(base.latestSequence, turn.userMessage.sequenceNumber),
+              messages: base.messages.some(
+                (message) => message.messageId === turn.userMessage.messageId,
+              )
+                ? base.messages
+                : [...base.messages, turn.userMessage],
+            }
+          })
           setRunSnapshot(null)
-          setActiveRunId(turn.runId)
+          updateActiveRunId(turn.runId)
         }
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not submit this message.')
       } finally {
+        submissionInFlightRef.current = false
+        onAgentRunSubmissionFinished(submissionToken)
         setSubmitting(false)
       }
     },
     [
       activeConversationId,
       activeRunId,
-      conversation?.latestSequence,
-      conversation?.title,
+      actionQueue,
+      agentMutationBlocked,
       expectedUserId,
+      invalidateConversationSnapshotRequests,
+      isAgentMutationBlocked,
+      isRunning,
+      loading,
+      onAgentRunSubmissionFinished,
+      onAgentRunSubmissionStarted,
+      onCaptureAgentCartRevision,
+      onAgentRunSubmitted,
+      selectedConversation,
       submitting,
+      updateActiveConversationId,
+      updateActiveRunId,
+      updateConversationState,
     ],
   )
 
   const stop = useCallback(async () => {
     if (!activeRunId) return
+    const targetRunId = activeRunId
     setError(null)
     try {
-      const cancelled = await cancelAgentRun(activeRunId, { expectedUserId })
-      if (cancelled) setRunSnapshot(cancelled)
+      const cancelled = await cancelAgentRun(targetRunId, { expectedUserId })
+      if (cancelled && activeRunIdRef.current === targetRunId) setRunSnapshot(cancelled)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not stop this run.')
     }
   }, [activeRunId, expectedUserId])
 
-  const performAction = useCallback(
-    async (toolName: string, argumentsValue: unknown, summary: string) => {
-      if (!activeConversationId) return null
-      const targetConversationId = activeConversationId
+  const executeAction = useCallback(
+    async (
+      targetConversationId: string,
+      toolName: string,
+      argumentsValue: unknown,
+      summary: string,
+    ) => {
       const argumentsJson = JSON.stringify(argumentsValue)
-      const pendingKey = `${expectedUserId}:${activeConversationId}:${toolName}:${argumentsJson}`
+      const pendingKey = `${expectedUserId}:${targetConversationId}:${toolName}:${argumentsJson}`
       if (actionPendingRef.current.has(pendingKey)) return null
       const idempotencyKey = actionIdempotencyRef.current.keyFor(pendingKey, () =>
         uniqueRequestId('action'),
@@ -723,34 +999,39 @@ export function AgentDiscoverView({
       setActionPending((current) => new Set(current).add(pendingKey))
       setError(null)
       try {
-        const result = await recordAgentDirectAction({
-          conversationId: activeConversationId,
-          toolName,
-          argumentsJson,
-          idempotencyKey,
-          summary,
-          expectedUserId,
-        })
-        if (activeConversationIdRef.current === targetConversationId) {
-          setConversation((current) => (current ? mergeAction(current, result) : current))
-        }
-        const cartSnapshotArtifacts = latestCartSnapshotArtifacts(result.artifacts)
-        const cartIds = new Set(
-          cartSnapshotArtifacts.flatMap((artifact) => (artifact.cartId ? [artifact.cartId] : [])),
-        )
-        if (cartIds.size > 0) {
-          onAgentCartSnapshot?.(
-            cartItemsFromAgentArtifacts(cartSnapshotArtifacts, allProducts),
-            cartIds,
-          )
+        const submittedCartRevision = onCaptureAgentCartRevision()
+        let result: AgentDirectActionProfile
+        try {
+          result = await recordAgentDirectAction({
+            conversationId: targetConversationId,
+            toolName,
+            argumentsJson,
+            idempotencyKey,
+            summary,
+            expectedUserId,
+          })
+        } catch (caught) {
+          actionIdempotencyRef.current.failed(pendingKey, caught)
+          setError(caught instanceof Error ? caught.message : 'That action could not be completed.')
+          return null
         }
         actionIdempotencyRef.current.completed(pendingKey)
-        void refreshLists()
+        try {
+          if (activeConversationIdRef.current === targetConversationId) {
+            invalidateConversationSnapshotRequests(targetConversationId)
+            updateConversationState((current) => (current ? mergeAction(current, result) : current))
+          }
+          const cartReplacements = cartStateReplacementsFromAgentArtifacts(
+            result.artifacts,
+            allProducts,
+          )
+          if (cartReplacements.length > 0) {
+            visibleCartRef.current = onAgentCartSnapshot(cartReplacements, submittedCartRevision)
+          }
+        } catch {
+          setError('The action completed, but its latest result could not be displayed.')
+        }
         return result
-      } catch (caught) {
-        actionIdempotencyRef.current.failed(pendingKey, caught)
-        setError(caught instanceof Error ? caught.message : 'That action could not be completed.')
-        return null
       } finally {
         actionPendingRef.current.delete(pendingKey)
         setActionPending((current) => {
@@ -760,7 +1041,53 @@ export function AgentDiscoverView({
         })
       }
     },
-    [activeConversationId, allProducts, expectedUserId, onAgentCartSnapshot, refreshLists],
+    [
+      allProducts,
+      expectedUserId,
+      invalidateConversationSnapshotRequests,
+      onAgentCartSnapshot,
+      onCaptureAgentCartRevision,
+      updateConversationState,
+    ],
+  )
+
+  const performAction = useCallback(
+    (toolName: string, argumentsValue: unknown, summary: string) => {
+      const targetConversationId = activeConversationId
+      if (!targetConversationId) return Promise.resolve(null)
+      if (
+        MUTATING_AGENT_ACTIONS.has(toolName) &&
+        (isRunning ||
+          submitting ||
+          submissionInFlightRef.current ||
+          agentMutationBlocked ||
+          isAgentMutationBlocked())
+      ) {
+        setError('Wait for the current cart operation or agent run to finish.')
+        return Promise.resolve(null)
+      }
+      const pendingKey = `${expectedUserId}:${targetConversationId}:${toolName}:${JSON.stringify(argumentsValue)}`
+      const mutationToken = MUTATING_AGENT_ACTIONS.has(toolName) ? onAgentMutationStarted() : null
+      return actionQueue
+        .enqueueUnique(pendingKey, () =>
+          executeAction(targetConversationId, toolName, argumentsValue, summary),
+        )
+        .finally(() => {
+          if (mutationToken) onAgentMutationFinished(mutationToken)
+        })
+    },
+    [
+      actionQueue,
+      activeConversationId,
+      agentMutationBlocked,
+      executeAction,
+      expectedUserId,
+      isRunning,
+      isAgentMutationBlocked,
+      onAgentMutationFinished,
+      onAgentMutationStarted,
+      submitting,
+    ],
   )
 
   const exactOfferKey = (product: Product): string | null =>
@@ -839,12 +1166,23 @@ export function AgentDiscoverView({
     )
   }
 
-  const latestArtifactCartLine = (id: ProductId, merchant: string, identity?: string) =>
-    visibleCart.find((line) =>
+  const latestArtifactCartLine = (
+    id: ProductId,
+    merchant: string,
+    identity?: string,
+    sourceItem?: CartItem,
+  ) => {
+    const liveCart = onReadAgentCart()
+    if (sourceItem) {
+      return resolveLiveCartItem(liveCart, sourceItem, identity)
+    }
+    const candidates = liveCart.filter((line) =>
       identity
         ? cartItemIdentity(line) === identity
-        : line.id === id && (line.merchant === merchant || visibleCart.length === 1),
+        : line.id === id && (line.merchant === merchant || liveCart.length === 1),
     )
+    return candidates.length === 1 ? candidates[0]! : null
+  }
   const updateCartQuantity = (
     _messageId: string,
     _blockIndex: number,
@@ -853,16 +1191,45 @@ export function AgentDiscoverView({
     quantity: number,
     _nextCart: readonly CartItem[],
     identity?: string,
+    quantityDelta?: number,
+    sourceItem?: CartItem,
   ) => {
-    const line = latestArtifactCartLine(id, merchant, identity)
-    if (!line?.cartId || !line.cartLineId) return
-    void performAction(
-      quantity <= 0 ? 'remove_cart_line' : 'update_cart_line',
-      quantity <= 0
-        ? { cartId: line.cartId, cartLineId: line.cartLineId }
-        : { cartId: line.cartId, cartLineId: line.cartLineId, quantity },
-      quantity <= 0 ? `Removed ${line.productTitle ?? id} from cart` : 'Updated cart quantity',
-    )
+    const targetConversationId = activeConversationId
+    if (!targetConversationId) return
+    if (
+      isRunning ||
+      submitting ||
+      submissionInFlightRef.current ||
+      agentMutationBlocked ||
+      isAgentMutationBlocked()
+    ) {
+      setError('Wait for the current cart operation or agent run to finish.')
+      return
+    }
+    const mutationToken = onAgentMutationStarted()
+    void actionQueue
+      .enqueue(async () => {
+        const line = latestArtifactCartLine(id, merchant, identity, sourceItem)
+        if (!line?.cartId || !line.cartLineId) {
+          setError('This cart changed. Open the full cart to review its current items.')
+          return null
+        }
+        const liveQuantity =
+          quantityDelta === undefined
+            ? quantity
+            : liveCartQuantityAfterDelta(line.qty, quantityDelta)
+        return executeAction(
+          targetConversationId,
+          liveQuantity <= 0 ? 'remove_cart_line' : 'update_cart_line',
+          liveQuantity <= 0
+            ? { cartId: line.cartId, cartLineId: line.cartLineId }
+            : { cartId: line.cartId, cartLineId: line.cartLineId, quantity: liveQuantity },
+          liveQuantity <= 0
+            ? `Removed ${line.productTitle ?? id} from cart`
+            : 'Updated cart quantity',
+        )
+      })
+      .finally(() => onAgentMutationFinished(mutationToken))
   }
   const removeCartLine = (
     messageId: string,
@@ -871,31 +1238,82 @@ export function AgentDiscoverView({
     merchant: string,
     nextCart: readonly CartItem[],
     identity?: string,
-  ) => updateCartQuantity(messageId, blockIndex, id, merchant, 0, nextCart, identity)
-  const prepareCheckout = () => {
-    const cartIds = [...new Set(visibleCart.flatMap((line) => (line.cartId ? [line.cartId] : [])))]
-    if (cartIds.length === 0) {
-      setError('Your merchant cart must be ready before checkout can start.')
+    sourceItem?: CartItem,
+  ) =>
+    updateCartQuantity(
+      messageId,
+      blockIndex,
+      id,
+      merchant,
+      0,
+      nextCart,
+      identity,
+      undefined,
+      sourceItem,
+    )
+  const prepareCheckout = async () => {
+    const targetConversationId = activeConversationId
+    if (!targetConversationId) return
+    if (
+      isRunning ||
+      submitting ||
+      submissionInFlightRef.current ||
+      agentMutationBlocked ||
+      isAgentMutationBlocked()
+    ) {
+      setError('Wait for the current cart operation or agent run to finish.')
       return
     }
-    void performAction('prepare_checkout', { cartIds }, 'Prepared checkout')
+    const mutationToken = onAgentMutationStarted()
+    await actionQueue
+      .enqueueUnique(
+        `${expectedUserId}:${targetConversationId}:prepare-checkout-workflow`,
+        async () => {
+          const activeCarts = await executeAction(
+            targetConversationId,
+            'get_active_carts',
+            { limit: 10 },
+            'Refreshed up to 10 active carts for checkout',
+          )
+          if (!activeCarts) return
+          const cartIds = [
+            ...new Set(
+              onReadAgentCart().flatMap((item) => (item.cartId?.trim() ? [item.cartId] : [])),
+            ),
+          ].slice(0, 10)
+          if (cartIds.length === 0) {
+            setError('Your merchant cart must be ready before checkout can start.')
+            return
+          }
+          await executeAction(
+            targetConversationId,
+            'prepare_checkout',
+            { cartIds },
+            'Prepared checkout',
+          )
+        },
+      )
+      .finally(() => onAgentMutationFinished(mutationToken))
   }
 
-  const newConversation = useCallback(async () => {
-    try {
-      const created = await createAgentConversation({ expectedUserId })
-      setConversations((current) => [created, ...current])
-      setActiveConversationId(created.conversationId)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not create a conversation.')
-    }
-  }, [expectedUserId])
+  const returnHome = useCallback(() => {
+    streamAbortRef.current?.abort()
+    streamAbortRef.current = null
+    updateActiveConversationId(null)
+    updateActiveRunId(null)
+    updateConversationState(() => null)
+    setRunSnapshot(null)
+    setLoading(false)
+    setError(null)
+    setShareNotice(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [updateActiveConversationId, updateActiveRunId, updateConversationState])
 
   useEffect(() => {
     if (handledHomeRequestRef.current === homeRequestId) return
     handledHomeRequestRef.current = homeRequestId
-    void newConversation()
-  }, [homeRequestId, newConversation])
+    returnHome()
+  }, [homeRequestId, returnHome])
 
   useEffect(() => {
     if (
@@ -947,7 +1365,7 @@ export function AgentDiscoverView({
         return
       }
     }
-    setActiveConversationId(conversationId)
+    updateActiveConversationId(conversationId)
   }
   const archiveConversation = async (conversationId: string) => {
     if (!conversations.some((item) => item.conversationId === conversationId)) {
@@ -963,8 +1381,9 @@ export function AgentDiscoverView({
       setConversations(remaining)
       setArchivedConversations((current) => [archived, ...current])
       if (conversationId === activeConversationId) {
-        if (remaining[0]) setActiveConversationId(remaining[0].conversationId)
-        else await newConversation()
+        const nextConversation = remaining.find((item) => item.latestSequence > 0)
+        if (nextConversation) updateActiveConversationId(nextConversation.conversationId)
+        else returnHome()
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not archive this conversation.')
@@ -1024,12 +1443,49 @@ export function AgentDiscoverView({
     onOpenShelf()
   }
 
-  const currentStatus = eventState.runs[activeRunId ?? '']?.status ?? runSnapshot?.status
-  const isRunning = Boolean(activeRunId && !TERMINAL_RUNS.has(currentStatus ?? 'QUEUED'))
   const checkoutHostMessageId =
     [...messages]
       .reverse()
       .find((message) => message.blocks?.some((block) => block.type === 'checkout'))?.id ?? null
+  const conversationCheckout =
+    activeCheckout?.threadId === activeConversationId ? activeCheckout : null
+
+  if (!activeConversationId) {
+    return (
+      <>
+        <Workbench />
+        <main className="mt-feed mt-ct-feed mt-ct-feed-hero">
+          <DiscoverHomeHero
+            profile={profile}
+            greeting={greeting}
+            prompts={prompts}
+            onSubmit={(text) => void submit(text)}
+            loading={loading || submitting}
+            historyThreads={historyThreads}
+            activeThreadId=""
+            onHistorySelect={(id) => void selectConversation(id)}
+            onHistoryDelete={(id) => void archiveConversation(id)}
+            replyDraft={null}
+            onClearReply={() => undefined}
+          />
+          {error || shareNotice ? (
+            <div className="mt-ct-history-error" role={error ? 'alert' : 'status'}>
+              <span>{error ?? shareNotice}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null)
+                  setShareNotice(null)
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+        </main>
+      </>
+    )
+  }
 
   return (
     <main className="mt-feed mt-ct-feed">
@@ -1039,7 +1495,7 @@ export function AgentDiscoverView({
           activeId={activeConversationId}
           onSelect={(id) => void selectConversation(id)}
           onDelete={(id) => void archiveConversation(id)}
-          onNew={() => void newConversation()}
+          onNew={returnHome}
           onRename={(id, title) => void renameConversation(id, title)}
           onShare={() => {
             void navigator.clipboard?.writeText(window.location.href)
@@ -1133,12 +1589,13 @@ export function AgentDiscoverView({
             onCartQty={updateCartQuantity}
             onCartRemove={removeCartLine}
             onCheckout={onCheckout}
-            activeCheckout={message.id === checkoutHostMessageId ? activeCheckout : null}
+            activeCheckout={message.id === checkoutHostMessageId ? conversationCheckout : null}
             checkoutBusy={checkoutBusy}
             checkoutError={checkoutError}
             onCheckoutAssistant={onCheckoutAssistant}
             onRefreshCheckout={onRefreshCheckout}
-            onCheckoutHere={prepareCheckout}
+            onReleaseCheckout={onReleaseCheckout}
+            onCheckoutHere={() => void prepareCheckout()}
             newsletter={newsletter}
             newsletterPending={false}
             onNewsletterSignup={() => void onNewsletterChange(true)}

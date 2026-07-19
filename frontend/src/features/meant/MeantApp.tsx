@@ -26,10 +26,25 @@ import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
 import { CartView } from './cart/CartView'
 import type { ActiveCheckoutSession } from './cart/checkoutTypes'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
-import type { MerchantCartSnapshot } from './cart/types'
+import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
 import { useCartController } from './cart/useCartController'
 import { ChatDiscoverView } from './chat/ChatDiscoverView'
 import { AgentDiscoverView } from './agent/AgentDiscoverView'
+import {
+  cartStateReplacementsFromAgentArtifacts,
+  currentAgentProductSnapshots,
+  latestCartSnapshotArtifacts,
+  mergeAgentProductSnapshots,
+  type AgentProductSnapshot,
+} from './agent/artifactMapping'
+import {
+  agentCartPartitionFingerprints,
+  agentCartReplacementUnchangedSinceSubmission,
+  agentCartStateFingerprint,
+  isTerminalAgentRunStatus,
+  registerPendingAgentCartRun,
+  type PendingAgentCartRun,
+} from './agent/cartSync'
 import { isAgenticDiscoverEnabled } from './agent/featureFlag'
 import { CompareView } from './compare/CompareView'
 import { InventoryView } from './inventory/InventoryView'
@@ -89,7 +104,9 @@ import {
   deleteUserProductSearchPreference,
   exportUserInventory,
   getCartCheckout,
+  getCompleteAgentConversation,
   getCurrentUser,
+  getAgentRun,
   getMerchantIdentityLinks,
   getMerchants,
   getOrders,
@@ -125,6 +142,7 @@ import {
   updateNewsletterSubscription,
   updateUserTasteSignal,
   updateUserSettings,
+  ApiError,
   type UserSettingsProfile,
 } from '../../lib/apiClient'
 import type {
@@ -348,6 +366,7 @@ function TopBar({
   cart,
   products,
   cartSnapshots,
+  cartMutationBlocked,
   cartPeek,
   accountMenu,
   onNav,
@@ -365,6 +384,7 @@ function TopBar({
   cart: readonly CartItem[]
   products: readonly Product[]
   cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
+  cartMutationBlocked: boolean
   cartPeek: boolean
   accountMenu: boolean
   onNav: (view: View, options?: NavOptions) => void
@@ -448,6 +468,7 @@ function TopBar({
               cart={cart}
               products={products}
               cartSnapshots={cartSnapshots}
+              mutationBlocked={cartMutationBlocked}
               onViewFull={() => onNav('cart')}
               onClose={onToggleCart}
               onRemove={onRemoveFromCart}
@@ -620,7 +641,18 @@ export function MeantApp() {
   const userEmail = session?.user?.email
   const [theme, setTheme] = useStoredState<Theme>('meant.theme', 'light')
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
+  const [agentProductSnapshots, setAgentProductSnapshots] = useState<AgentProductSnapshot[]>([])
+  const [pendingAgentCartRuns, setPendingAgentCartRuns] = useSessionStoredState<
+    Record<string, PendingAgentCartRun>
+  >(accountSessionStorageKey('meant.agentPendingCartRuns', userId), {})
+  const [agentTurnSubmissionCount, setAgentTurnSubmissionCount] = useState(0)
+  const [agentDirectMutationCount, setAgentDirectMutationCount] = useState(0)
+  const agentCommerceMutationBlocked =
+    agentTurnSubmissionCount > 0 ||
+    agentDirectMutationCount > 0 ||
+    Object.keys(pendingAgentCartRuns).length > 0
   const [accountStateOwnerId, setAccountStateOwnerId] = useState<string | null>(userId ?? null)
+  const [accountStateVersion, setAccountStateVersion] = useState(0)
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
   const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>(
@@ -707,6 +739,12 @@ export function MeantApp() {
   )
   const activeUserIdRef = useRef(userId)
   activeUserIdRef.current = userId
+  const pendingAgentCartRunsRef = useRef(pendingAgentCartRuns)
+  pendingAgentCartRunsRef.current = pendingAgentCartRuns
+  const agentCommerceMutationBlockedRef = useRef(agentCommerceMutationBlocked)
+  agentCommerceMutationBlockedRef.current = agentCommerceMutationBlocked
+  const agentTurnSubmissionTokensRef = useRef(new Set<string>())
+  const agentDirectMutationTokensRef = useRef(new Set<string>())
   const productSearchPreferencesQueueRef = useRef<Promise<void>>(Promise.resolve())
   const productSearchPreferencesPendingOperationsRef = useRef(0)
   const productSearchPreferencesRefreshPendingRef = useRef(false)
@@ -719,6 +757,11 @@ export function MeantApp() {
   const searchSuggestionsRequestRef = useRef(0)
   const inventoryRequestRef = useRef(0)
   const ordersRequestRef = useRef(0)
+  const checkoutOperationSequenceRef = useRef(0)
+  const checkoutOperationRef = useRef<{ token: number; ownerId: string } | null>(null)
+  const activeCheckoutRef = useRef(activeCheckout)
+  activeCheckoutRef.current = activeCheckout
+  const activeCheckoutSequenceRef = useRef(0)
   const compareIdsRef = useRef<readonly ProductId[]>(compareIds)
   const savePendingRef = useRef(new Map<ProductId, AccountOwnedOperation<ProductId>>())
   const allPreferencesRef = useRef<readonly Preference[]>(availablePrefs)
@@ -727,17 +770,76 @@ export function MeantApp() {
     setAccountMenu(false)
   }, [])
 
+  const updateActiveCheckoutState = useCallback(
+    (update: SetStateAction<ActiveCheckoutSession | null>) => {
+      const current = activeCheckoutRef.current
+      const next =
+        typeof update === 'function'
+          ? (update as (value: ActiveCheckoutSession | null) => ActiveCheckoutSession | null)(
+              current,
+            )
+          : update
+      if (next !== current) activeCheckoutSequenceRef.current += 1
+      activeCheckoutRef.current = next
+      setActiveCheckout(next)
+    },
+    [],
+  )
+
+  const updatePendingAgentCartRuns = useCallback(
+    (update: SetStateAction<Record<string, PendingAgentCartRun>>) => {
+      const current = pendingAgentCartRunsRef.current
+      const next =
+        typeof update === 'function'
+          ? (
+              update as (
+                value: Record<string, PendingAgentCartRun>,
+              ) => Record<string, PendingAgentCartRun>
+            )(current)
+          : update
+      pendingAgentCartRunsRef.current = next
+      setPendingAgentCartRuns(next)
+      agentCommerceMutationBlockedRef.current =
+        agentTurnSubmissionTokensRef.current.size > 0 ||
+        agentDirectMutationTokensRef.current.size > 0 ||
+        Object.keys(next).length > 0
+    },
+    [setPendingAgentCartRuns],
+  )
+
+  const beginCommerceMutation = useCallback(() => {
+    const token = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random()}`
+    agentDirectMutationTokensRef.current.add(token)
+    agentCommerceMutationBlockedRef.current = true
+    setAgentDirectMutationCount(agentDirectMutationTokensRef.current.size)
+    return token
+  }, [])
+
+  const finishCommerceMutation = useCallback((token: string) => {
+    if (!agentDirectMutationTokensRef.current.delete(token)) return
+    agentCommerceMutationBlockedRef.current =
+      agentTurnSubmissionTokensRef.current.size > 0 ||
+      agentDirectMutationTokensRef.current.size > 0 ||
+      Object.keys(pendingAgentCartRunsRef.current).length > 0
+    setAgentDirectMutationCount(agentDirectMutationTokensRef.current.size)
+  }, [])
+
+  const isCommerceMutationBlocked = useCallback(() => agentCommerceMutationBlockedRef.current, [])
+
   useEffect(() => {
     searchRequestsRef.current.forEach(({ controller }) => controller.abort())
     searchRequestsRef.current.clear()
     searchSuggestionsRequestRef.current += 1
     inventoryRequestRef.current += 1
     ordersRequestRef.current += 1
+    checkoutOperationSequenceRef.current += 1
+    checkoutOperationRef.current = null
     productSearchPreferencesSessionRef.current += 1
     savedProductDetailRequestRef.current?.controller.abort()
     savedProductDetailRequestRef.current = null
     setSavedProductDetailLoadingId(null)
     setRemoteProducts([])
+    setAgentProductSnapshots([])
     setSavedIds([])
     setSavedProducts([])
     setActiveProduct(null)
@@ -759,16 +861,21 @@ export function MeantApp() {
     setTasteProfile(EMPTY_TASTE_PROFILE)
     setProductSearchPreferences([])
     setProductSearchPreferencesError(null)
-    setActiveCheckout(null)
+    updateActiveCheckoutState(null)
     setCheckoutMerchantKey(null)
     setCheckoutError(null)
     setCheckoutFlowBusy(false)
     setCheckoutFlowError(null)
     setCartPeek(false)
+    agentTurnSubmissionTokensRef.current.clear()
+    agentDirectMutationTokensRef.current.clear()
+    setAgentTurnSubmissionCount(0)
+    setAgentDirectMutationCount(0)
     savePendingRef.current.clear()
     setSavePendingIds([])
     setAccountStateOwnerId(userId ?? null)
-  }, [userId])
+    setAccountStateVersion((current) => current + 1)
+  }, [updateActiveCheckoutState, userId])
 
   const enqueueProductSearchPreferencesOperation = useCallback((operation: () => Promise<void>) => {
     productSearchPreferencesPendingOperationsRef.current += 1
@@ -840,6 +947,10 @@ export function MeantApp() {
     () => (accountStateCurrent ? remoteProducts : []),
     [accountStateCurrent, remoteProducts],
   )
+  const currentAgentProducts = useMemo(
+    () => (accountStateCurrent ? agentProductSnapshots.map((snapshot) => snapshot.product) : []),
+    [accountStateCurrent, agentProductSnapshots],
+  )
   const currentSavedIds = useMemo(
     () => (accountStateCurrent ? savedIds : []),
     [accountStateCurrent, savedIds],
@@ -862,10 +973,11 @@ export function MeantApp() {
       uniqueProductSnapshotsByPriority(
         currentSavedProducts,
         currentRemoteProducts,
+        currentAgentProducts,
         PRODUCTS,
         compareProducts,
       ),
-    [compareProducts, currentRemoteProducts, currentSavedProducts],
+    [compareProducts, currentAgentProducts, currentRemoteProducts, currentSavedProducts],
   )
   const allKnownProductsMap = useMemo(
     () =>
@@ -874,10 +986,15 @@ export function MeantApp() {
       ),
     [allKnownProducts],
   )
+  const allKnownProductsRef = useRef(allKnownProducts)
+  allKnownProductsRef.current = allKnownProducts
   const {
     cart,
     cartSnapshots,
+    getCurrentCart,
+    getCurrentCartSnapshots,
     setCart,
+    replaceMerchantCartStates,
     updateStoredCart,
     addProductOfferToCart,
     addSelectedOfferToCart,
@@ -889,32 +1006,112 @@ export function MeantApp() {
     updateDeliveryAddress,
     updateDeliveryOption,
   } = useCartController(allKnownProducts, userId)
-  const addProductOfferToCartResolved = useCallback(
-    async (product: Product, offer: Offer): Promise<boolean> => {
-      const requestedUserId = userId
-      if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
-        return false
-      }
-      const exactOfferKey = offer.offerKey?.trim()
-      if (exactOfferKey) {
-        return addSelectedOfferToCart(product, exactOfferKey)
-      }
+  const replaceMerchantCartStatesRef = useRef(replaceMerchantCartStates)
+  replaceMerchantCartStatesRef.current = replaceMerchantCartStates
+
+  const runCommerceMutation = useCallback(
+    async <T,>(operation: () => Promise<T>, blockedResult: T): Promise<T> => {
+      if (agentCommerceMutationBlockedRef.current) return blockedResult
+      const token = beginCommerceMutation()
       try {
-        const resolved = await resolveCartableOffer({
-          product,
-          offer,
-          location: deliveryLocations[0],
-          expectedUserId: requestedUserId,
-        })
-        if (!resolved.ok || activeUserIdRef.current !== requestedUserId) {
-          return false
-        }
-        return addProductOfferToCart(resolved.product, resolved.offer)
-      } catch {
-        return false
+        return await operation()
+      } finally {
+        finishCommerceMutation(token)
       }
     },
-    [addProductOfferToCart, addSelectedOfferToCart, deliveryLocations, userId],
+    [beginCommerceMutation, finishCommerceMutation],
+  )
+
+  const addSelectedOfferToCartGuarded = useCallback(
+    async (...args: Parameters<typeof addSelectedOfferToCart>) => {
+      return runCommerceMutation(() => addSelectedOfferToCart(...args), false)
+    },
+    [addSelectedOfferToCart, runCommerceMutation],
+  )
+
+  const addToCartGuarded = useCallback(
+    async (...args: Parameters<typeof addToCart>) => {
+      return runCommerceMutation(() => addToCart(...args), undefined)
+    },
+    [addToCart, runCommerceMutation],
+  )
+
+  const removeFromCartGuarded = useCallback(
+    async (...args: Parameters<typeof removeFromCart>) => {
+      return runCommerceMutation(() => removeFromCart(...args), undefined)
+    },
+    [removeFromCart, runCommerceMutation],
+  )
+
+  const updateQtyGuarded = useCallback(
+    async (...args: Parameters<typeof updateQty>) => {
+      return runCommerceMutation(() => updateQty(...args), undefined)
+    },
+    [runCommerceMutation, updateQty],
+  )
+
+  const applyCartCodeGuarded = useCallback(
+    (...args: Parameters<typeof applyCartCode>) => {
+      return runCommerceMutation(() => applyCartCode(...args), {
+        ok: false,
+        message: 'Wait for the current cart operation or agent run to finish.',
+      })
+    },
+    [applyCartCode, runCommerceMutation],
+  )
+
+  const removeCartCodeGuarded = useCallback(
+    (...args: Parameters<typeof removeCartCode>) => {
+      return runCommerceMutation(() => removeCartCode(...args), {
+        ok: false,
+        message: 'Wait for the current cart operation or agent run to finish.',
+      })
+    },
+    [removeCartCode, runCommerceMutation],
+  )
+
+  const updateDeliveryAddressGuarded = useCallback(
+    (...args: Parameters<typeof updateDeliveryAddress>) => {
+      return runCommerceMutation(() => updateDeliveryAddress(...args), false)
+    },
+    [runCommerceMutation, updateDeliveryAddress],
+  )
+
+  const updateDeliveryOptionGuarded = useCallback(
+    (...args: Parameters<typeof updateDeliveryOption>) => {
+      return runCommerceMutation(() => updateDeliveryOption(...args), false)
+    },
+    [runCommerceMutation, updateDeliveryOption],
+  )
+
+  const addProductOfferToCartResolved = useCallback(
+    async (product: Product, offer: Offer): Promise<boolean> => {
+      return runCommerceMutation(async () => {
+        const requestedUserId = userId
+        if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
+          return false
+        }
+        const exactOfferKey = offer.offerKey?.trim()
+        if (exactOfferKey) {
+          return addSelectedOfferToCart(product, exactOfferKey)
+        }
+        try {
+          const resolved = await resolveCartableOffer({
+            product,
+            offer,
+            location: deliveryLocations[0],
+            expectedUserId: requestedUserId,
+          })
+          if (!resolved.ok || activeUserIdRef.current !== requestedUserId) {
+            return false
+          }
+          return addProductOfferToCart(resolved.product, resolved.offer)
+        } catch {
+          return false
+        }
+      }, false)
+    },
+    [addProductOfferToCart, addSelectedOfferToCart, deliveryLocations, runCommerceMutation, userId],
   )
   const savedListProducts = useMemo(
     () =>
@@ -1532,6 +1729,194 @@ export function MeantApp() {
     },
     [setShelf],
   )
+
+  const registerAgentProducts = useCallback(
+    (snapshots: readonly AgentProductSnapshot[]) => {
+      if (
+        !accountStateCurrent ||
+        accountStateVersion === 0 ||
+        !userId ||
+        activeUserIdRef.current !== userId ||
+        snapshots.length === 0
+      ) {
+        return
+      }
+      setAgentProductSnapshots((current) => mergeAgentProductSnapshots(current, snapshots))
+    },
+    [accountStateCurrent, accountStateVersion, userId],
+  )
+
+  const captureAgentCartRevision = useCallback(() => {
+    if (!userId || activeUserIdRef.current !== userId) return undefined
+    return agentCartPartitionFingerprints(getCurrentCart(), getCurrentCartSnapshots())
+  }, [getCurrentCart, getCurrentCartSnapshots, userId])
+
+  const registerAgentCartSnapshot = useCallback(
+    (
+      replacements: readonly MerchantCartStateReplacement[],
+      submittedCartRevision: ReturnType<typeof agentCartPartitionFingerprints> | undefined,
+    ): readonly CartItem[] => {
+      if (!userId || activeUserIdRef.current !== userId) return getCurrentCart()
+      const currentRevision = agentCartPartitionFingerprints(
+        getCurrentCart(),
+        getCurrentCartSnapshots(),
+      )
+      const safeReplacements = submittedCartRevision
+        ? replacements.filter((replacement) =>
+            agentCartReplacementUnchangedSinceSubmission(
+              replacement,
+              submittedCartRevision,
+              currentRevision,
+            ),
+          )
+        : []
+      if (safeReplacements.length > 0) {
+        replaceMerchantCartStatesRef.current(safeReplacements)
+      }
+      return getCurrentCart()
+    },
+    [getCurrentCart, getCurrentCartSnapshots, userId],
+  )
+
+  const registerAgentCartRun = useCallback(
+    (
+      runId: string,
+      conversationId: string,
+      submittedCartRevision: ReturnType<typeof agentCartPartitionFingerprints> | undefined,
+    ) => {
+      if (!userId || activeUserIdRef.current !== userId) return
+      updatePendingAgentCartRuns((current) =>
+        registerPendingAgentCartRun(current, runId, conversationId, submittedCartRevision),
+      )
+    },
+    [updatePendingAgentCartRuns, userId],
+  )
+
+  const beginAgentRunSubmission = useCallback(() => {
+    const token = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random()}`
+    agentTurnSubmissionTokensRef.current.add(token)
+    agentCommerceMutationBlockedRef.current = true
+    setAgentTurnSubmissionCount(agentTurnSubmissionTokensRef.current.size)
+    return token
+  }, [])
+
+  const finishAgentRunSubmission = useCallback((token: string) => {
+    if (!agentTurnSubmissionTokensRef.current.delete(token)) return
+    agentCommerceMutationBlockedRef.current =
+      agentTurnSubmissionTokensRef.current.size > 0 ||
+      agentDirectMutationTokensRef.current.size > 0 ||
+      Object.keys(pendingAgentCartRunsRef.current).length > 0
+    setAgentTurnSubmissionCount(agentTurnSubmissionTokensRef.current.size)
+  }, [])
+
+  useEffect(() => {
+    if (!accountStateCurrent || !userId || Object.keys(pendingAgentCartRuns).length === 0) {
+      return
+    }
+    const controller = new AbortController()
+    let retryTimer: number | null = null
+    let retryDelay = 750
+    const removePendingRun = (runId: string, expected: unknown) => {
+      updatePendingAgentCartRuns((current) => {
+        if (current[runId] !== expected) return current
+        const next = { ...current }
+        delete next[runId]
+        return next
+      })
+    }
+    const synchronize = async () => {
+      let retryNeeded = false
+      for (const [runId, pendingRun] of Object.entries(pendingAgentCartRuns)) {
+        if (controller.signal.aborted || activeUserIdRef.current !== userId) return
+        if (
+          !pendingRun ||
+          typeof pendingRun !== 'object' ||
+          typeof pendingRun.conversationId !== 'string' ||
+          !pendingRun.conversationId.trim()
+        ) {
+          removePendingRun(runId, pendingRun)
+          continue
+        }
+        const { conversationId } = pendingRun
+        try {
+          const run = await getAgentRun(runId, {
+            expectedUserId: userId,
+            signal: controller.signal,
+          })
+          if (!isTerminalAgentRunStatus(run.status)) {
+            retryNeeded = true
+            continue
+          }
+          const conversation = await getCompleteAgentConversation(conversationId, {
+            expectedUserId: userId,
+            signal: controller.signal,
+            pageSize: 200,
+          })
+          if (controller.signal.aborted || activeUserIdRef.current !== userId) return
+          const productSnapshots = currentAgentProductSnapshots(conversation.artifacts)
+          registerAgentProducts(productSnapshots)
+          const runArtifacts = conversation.artifacts.filter((artifact) => artifact.runId === runId)
+          const currentCartArtifacts = latestCartSnapshotArtifacts(runArtifacts)
+          const replacementProducts = [
+            ...allKnownProductsRef.current,
+            ...productSnapshots.map((snapshot) => snapshot.product),
+          ]
+          const replacements = cartStateReplacementsFromAgentArtifacts(
+            currentCartArtifacts,
+            replacementProducts,
+          )
+          const liveCart = getCurrentCart()
+          const liveSnapshots = getCurrentCartSnapshots()
+          const currentCartRevision = agentCartPartitionFingerprints(liveCart, liveSnapshots)
+          const safeReplacements = pendingRun.cartFingerprints
+            ? replacements.filter((replacement) =>
+                agentCartReplacementUnchangedSinceSubmission(
+                  replacement,
+                  pendingRun.cartFingerprints,
+                  currentCartRevision,
+                ),
+              )
+            : pendingRun.cartFingerprint === agentCartStateFingerprint(liveCart, liveSnapshots)
+              ? replacements
+              : []
+          if (safeReplacements.length > 0) {
+            replaceMerchantCartStatesRef.current(safeReplacements)
+          }
+          updatePendingAgentCartRuns((current) => {
+            if (current[runId]?.conversationId !== conversationId) return current
+            const next = { ...current }
+            delete next[runId]
+            return next
+          })
+          if (safeReplacements.length > 0) return
+        } catch (error) {
+          if (controller.signal.aborted) return
+          if (error instanceof ApiError && [400, 403, 404].includes(error.status)) {
+            removePendingRun(runId, pendingRun)
+          } else {
+            retryNeeded = true
+          }
+        }
+      }
+      if (retryNeeded && !controller.signal.aborted) {
+        retryTimer = window.setTimeout(() => void synchronize(), retryDelay)
+        retryDelay = Math.min(retryDelay * 2, 10_000)
+      }
+    }
+    void synchronize()
+    return () => {
+      controller.abort()
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+    }
+  }, [
+    accountStateCurrent,
+    getCurrentCart,
+    getCurrentCartSnapshots,
+    pendingAgentCartRuns,
+    registerAgentProducts,
+    updatePendingAgentCartRuns,
+    userId,
+  ])
 
   const removeShelfItem = useCallback(
     (uid: string) => {
@@ -2321,6 +2706,12 @@ export function MeantApp() {
     const merchantKey =
       payload.merchantKey ??
       (payload.items[0] ? cartMerchantKey(payload.items[0]) : normalizedMerchantName(merchant))
+    if (agentCommerceMutationBlockedRef.current) {
+      const message = 'Wait for the current cart operation or agent run to finish.'
+      setCheckoutError({ merchant, merchantKey, message })
+      setCheckoutFlowError(message)
+      return message
+    }
     const cartId = payload.items.find((item) => item.cartId)?.cartId
     if (!cartId) {
       const message = 'Checkout is not available until this merchant cart syncs.'
@@ -2331,8 +2722,27 @@ export function MeantApp() {
       })
       return message
     }
+    const currentCheckout = activeCheckoutRef.current
+    if (currentCheckout?.ownerId === requestedUserId && currentCheckout.cartId !== cartId) {
+      const message = `Finish or close the active checkout for ${currentCheckout.merchant} before starting another.`
+      setCheckoutError({ merchant, merchantKey, message })
+      return message
+    }
+    if (checkoutOperationRef.current) {
+      const message = 'Another checkout operation is already in progress.'
+      setCheckoutError({ merchant, merchantKey, message })
+      return message
+    }
+    const checkoutOperationToken = checkoutOperationSequenceRef.current + 1
+    checkoutOperationSequenceRef.current = checkoutOperationToken
+    checkoutOperationRef.current = {
+      token: checkoutOperationToken,
+      ownerId: requestedUserId,
+    }
+    const commerceMutationToken = beginCommerceMutation()
     setCheckoutMerchantKey(merchantKey)
     setCheckoutError(null)
+    setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
       const checkoutProfile = await getCartCheckout({
@@ -2340,11 +2750,14 @@ export function MeantApp() {
         refresh: true,
         expectedUserId: requestedUserId,
       })
-      if (activeUserIdRef.current !== requestedUserId) {
+      if (
+        activeUserIdRef.current !== requestedUserId ||
+        checkoutOperationRef.current?.token !== checkoutOperationToken
+      ) {
         return 'Account changed during checkout.'
       }
       updateCartWithCheckoutProfile(payload, checkoutProfile)
-      setActiveCheckout({
+      updateActiveCheckoutState({
         ownerId: requestedUserId,
         cartId,
         threadId: payload.chatThreadId ?? null,
@@ -2359,7 +2772,10 @@ export function MeantApp() {
       return null
     } catch {
       const message = 'Could not start checkout. Try again.'
-      if (activeUserIdRef.current === requestedUserId) {
+      if (
+        activeUserIdRef.current === requestedUserId &&
+        checkoutOperationRef.current?.token === checkoutOperationToken
+      ) {
         setCheckoutError({
           merchant,
           merchantKey,
@@ -2368,9 +2784,15 @@ export function MeantApp() {
       }
       return message
     } finally {
-      if (activeUserIdRef.current === requestedUserId) {
+      if (
+        activeUserIdRef.current === requestedUserId &&
+        checkoutOperationRef.current?.token === checkoutOperationToken
+      ) {
+        checkoutOperationRef.current = null
         setCheckoutMerchantKey(null)
+        setCheckoutFlowBusy(false)
       }
+      finishCommerceMutation(commerceMutationToken)
     }
   }
 
@@ -2388,18 +2810,44 @@ export function MeantApp() {
     }
   }
 
+  const releaseChatCheckout = useCallback(
+    (cartId: string) => {
+      updateActiveCheckoutState((current) =>
+        current?.source === 'chat' && current.cartId === cartId ? null : current,
+      )
+      setCheckoutFlowError(null)
+    },
+    [updateActiveCheckoutState],
+  )
+
   const refreshActiveCheckout = async (verifiedCheckout?: CheckoutProfile) => {
     const inventoryRefresh = loadInventory({ silent: true })
-    if (!activeCheckout) {
+    if (agentCommerceMutationBlockedRef.current) {
+      await inventoryRefresh
+      return
+    }
+    const checkoutSession = activeCheckoutRef.current
+    if (!checkoutSession) {
       await inventoryRefresh
       return
     }
     const requestedUserId = requireCurrentAccountUser()
-    const checkoutSession = activeCheckout
     if (checkoutSession.ownerId !== requestedUserId) {
       await inventoryRefresh
       return
     }
+    if (checkoutOperationRef.current) {
+      await inventoryRefresh
+      return
+    }
+    const checkoutOperationToken = checkoutOperationSequenceRef.current + 1
+    checkoutOperationSequenceRef.current = checkoutOperationToken
+    checkoutOperationRef.current = {
+      token: checkoutOperationToken,
+      ownerId: requestedUserId,
+    }
+    const commerceMutationToken = beginCommerceMutation()
+    const checkoutSessionSequence = activeCheckoutSequenceRef.current
     setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
@@ -2410,9 +2858,16 @@ export function MeantApp() {
           refresh: true,
           expectedUserId: requestedUserId,
         }))
-      if (activeUserIdRef.current !== requestedUserId) return
+      if (
+        activeUserIdRef.current !== requestedUserId ||
+        checkoutOperationRef.current?.token !== checkoutOperationToken ||
+        activeCheckoutSequenceRef.current !== checkoutSessionSequence ||
+        activeCheckoutRef.current !== checkoutSession
+      ) {
+        return
+      }
       updateCartWithCheckoutProfile(checkoutSession, checkoutProfile)
-      setActiveCheckout((current) =>
+      updateActiveCheckoutState((current) =>
         current?.ownerId === requestedUserId && current.cartId === checkoutSession.cartId
           ? {
               ...current,
@@ -2422,14 +2877,22 @@ export function MeantApp() {
           : current,
       )
     } catch {
-      if (activeUserIdRef.current === requestedUserId) {
+      if (
+        activeUserIdRef.current === requestedUserId &&
+        checkoutOperationRef.current?.token === checkoutOperationToken
+      ) {
         setCheckoutFlowError('Could not refresh checkout.')
       }
     } finally {
-      await inventoryRefresh
-      if (activeUserIdRef.current === requestedUserId) {
+      await inventoryRefresh.catch(() => undefined)
+      if (
+        activeUserIdRef.current === requestedUserId &&
+        checkoutOperationRef.current?.token === checkoutOperationToken
+      ) {
+        checkoutOperationRef.current = null
         setCheckoutFlowBusy(false)
       }
+      finishCommerceMutation(commerceMutationToken)
     }
   }
 
@@ -2438,14 +2901,27 @@ export function MeantApp() {
     history: readonly CheckoutAssistantMessage[],
     context?: { merchantDeliveryHint?: string | null },
   ) => {
-    if (!activeCheckout) {
+    const checkoutSession = activeCheckoutRef.current
+    if (
+      !checkoutSession ||
+      checkoutOperationRef.current ||
+      agentCommerceMutationBlockedRef.current
+    ) {
       return null
     }
     const requestedUserId = requireCurrentAccountUser()
-    const checkoutSession = activeCheckout
     if (checkoutSession.ownerId !== requestedUserId) {
       return null
     }
+    const checkoutOperationToken = checkoutOperationSequenceRef.current + 1
+    checkoutOperationSequenceRef.current = checkoutOperationToken
+    checkoutOperationRef.current = {
+      token: checkoutOperationToken,
+      ownerId: requestedUserId,
+    }
+    const commerceMutationToken = beginCommerceMutation()
+    const checkoutSessionSequence = activeCheckoutSequenceRef.current
+    setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
       const result = await assistCartCheckout({
@@ -2455,9 +2931,16 @@ export function MeantApp() {
         history,
         expectedUserId: requestedUserId,
       })
-      if (activeUserIdRef.current !== requestedUserId) return null
+      if (
+        activeUserIdRef.current !== requestedUserId ||
+        checkoutOperationRef.current?.token !== checkoutOperationToken ||
+        activeCheckoutSequenceRef.current !== checkoutSessionSequence ||
+        activeCheckoutRef.current !== checkoutSession
+      ) {
+        return null
+      }
       updateCartWithCheckoutProfile(checkoutSession, result.checkout)
-      setActiveCheckout((current) =>
+      updateActiveCheckoutState((current) =>
         current?.ownerId === requestedUserId && current.cartId === checkoutSession.cartId
           ? {
               ...current,
@@ -2469,6 +2952,15 @@ export function MeantApp() {
       return result
     } catch {
       return null
+    } finally {
+      if (
+        activeUserIdRef.current === requestedUserId &&
+        checkoutOperationRef.current?.token === checkoutOperationToken
+      ) {
+        checkoutOperationRef.current = null
+        setCheckoutFlowBusy(false)
+      }
+      finishCommerceMutation(commerceMutationToken)
     }
   }
 
@@ -2572,14 +3064,15 @@ export function MeantApp() {
             products={allKnownProducts}
             cartSnapshots={cartSnapshots}
             deliveryLocations={deliveryLocations}
-            onRemove={removeFromCart}
-            onQty={updateQty}
-            onAdd={addToCart}
-            onApplyCode={applyCartCode}
-            onRemoveCode={removeCartCode}
-            onDeliveryAddress={updateDeliveryAddress}
-            onDeliveryOption={updateDeliveryOption}
+            onRemove={removeFromCartGuarded}
+            onQty={updateQtyGuarded}
+            onAdd={addToCartGuarded}
+            onApplyCode={applyCartCodeGuarded}
+            onRemoveCode={removeCartCodeGuarded}
+            onDeliveryAddress={updateDeliveryAddressGuarded}
+            onDeliveryOption={updateDeliveryOptionGuarded}
             onCheckout={checkout}
+            agentBusy={agentCommerceMutationBlocked}
             checkoutMerchantKey={checkoutMerchantKey}
             checkoutError={checkoutError}
           />
@@ -2651,10 +3144,11 @@ export function MeantApp() {
             onCompareProducts={compareChatProducts}
             onCheckout={checkoutInChat}
             activeCheckout={activeCheckout?.source === 'chat' ? activeCheckout : null}
-            checkoutBusy={checkoutFlowBusy}
+            checkoutBusy={checkoutFlowBusy || agentCommerceMutationBlocked}
             checkoutError={checkoutFlowError}
             onCheckoutAssistant={assistActiveCheckout}
             onRefreshCheckout={refreshActiveCheckout}
+            onReleaseCheckout={releaseChatCheckout}
             onOpenSaved={() => nav('saved')}
             onOpenOrders={() => nav('orders')}
             onOpenPrefs={() => nav('preferences')}
@@ -2663,12 +3157,17 @@ export function MeantApp() {
             onNewsletterChange={updateNewsletter}
             onShelfAddMessage={addMessageToShelf}
             onShelfAddProduct={addProductToShelf}
-            onAgentCartSnapshot={(lines, cartIds) =>
-              setCart((current) => [
-                ...current.filter((item) => !item.cartId || !cartIds.has(item.cartId)),
-                ...lines,
-              ])
-            }
+            onAgentProductsSnapshot={registerAgentProducts}
+            onReadAgentCart={getCurrentCart}
+            onCaptureAgentCartRevision={captureAgentCartRevision}
+            onAgentCartSnapshot={registerAgentCartSnapshot}
+            agentMutationBlocked={agentCommerceMutationBlocked}
+            isAgentMutationBlocked={isCommerceMutationBlocked}
+            onAgentMutationStarted={beginCommerceMutation}
+            onAgentMutationFinished={finishCommerceMutation}
+            onAgentRunSubmissionStarted={beginAgentRunSubmission}
+            onAgentRunSubmissionFinished={finishAgentRunSubmission}
+            onAgentRunSubmitted={registerAgentCartRun}
             onProductDetailChatRequestHandled={(requestId) => {
               setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
             }}
@@ -2705,17 +3204,18 @@ export function MeantApp() {
             savePendingSet={savePendingSet}
             onToggleSave={toggleSave}
             onAddProductToCart={addProductOfferToCartResolved}
-            onAddSelectedOfferToCart={addSelectedOfferToCart}
-            onFallbackAddToCart={(product, offer) => addToCart(product.id, offer.merchant)}
+            onAddSelectedOfferToCart={addSelectedOfferToCartGuarded}
+            onFallbackAddToCart={(product, offer) => addToCartGuarded(product.id, offer.merchant)}
             onCompareProducts={compareChatProducts}
-            onCartQty={updateQty}
-            onCartRemove={removeFromCart}
+            onCartQty={updateQtyGuarded}
+            onCartRemove={removeFromCartGuarded}
             onCheckout={checkoutInChat}
             activeCheckout={activeCheckout?.source === 'chat' ? activeCheckout : null}
-            checkoutBusy={checkoutFlowBusy}
+            checkoutBusy={checkoutFlowBusy || agentCommerceMutationBlocked}
             checkoutError={checkoutFlowError}
             onCheckoutAssistant={assistActiveCheckout}
             onRefreshCheckout={refreshActiveCheckout}
+            onReleaseCheckout={releaseChatCheckout}
             onOpenSaved={() => nav('saved')}
             onOpenOrders={() => nav('orders')}
             onOpenPrefs={() => nav('preferences')}
@@ -2747,6 +3247,7 @@ export function MeantApp() {
         cart={cart}
         products={allKnownProducts}
         cartSnapshots={cartSnapshots}
+        cartMutationBlocked={agentCommerceMutationBlocked}
         cartPeek={cartPeek}
         accountMenu={accountMenu}
         onNav={nav}
@@ -2760,7 +3261,7 @@ export function MeantApp() {
           setCartPeek(false)
         }}
         onCloseAccount={closeAccountMenu}
-        onRemoveFromCart={removeFromCart}
+        onRemoveFromCart={removeFromCartGuarded}
         onSignOut={handleSignOut}
       />
       <ProfileBar
@@ -2770,13 +3271,13 @@ export function MeantApp() {
         onEdit={() => nav('preferences')}
       />
       {content}
-      {activeCheckout?.source === 'cart' ? (
+      {activeCheckout && (activeCheckout.source === 'cart' || view === 'cart') ? (
         <CartCheckoutDialog
           session={activeCheckout}
-          busy={checkoutFlowBusy}
+          busy={checkoutFlowBusy || agentCommerceMutationBlocked}
           error={checkoutFlowError}
           onClose={() => {
-            setActiveCheckout(null)
+            updateActiveCheckoutState(null)
             setCheckoutFlowError(null)
           }}
           onRefresh={refreshActiveCheckout}
@@ -2794,6 +3295,7 @@ export function MeantApp() {
           currentActiveProduct ? savedProductDetailLoadingId === currentActiveProduct.id : false
         }
         inCompare={currentActiveProduct ? compareSet.has(currentActiveProduct.id) : false}
+        cartMutationBlocked={agentCommerceMutationBlocked}
         onClose={() => {
           setActiveProduct(null)
           setActiveProductResearchQuery(null)
@@ -2802,9 +3304,7 @@ export function MeantApp() {
         onUpdateSavedChoice={updateSavedChoice}
         onCompare={handleProductCompare}
         onAddToCart={addProductOfferToCartResolved}
-        onAddOfferKey={(selectedProduct, offerKey) =>
-          addSelectedOfferToCart(selectedProduct, offerKey)
-        }
+        onAddOfferKey={addSelectedOfferToCartGuarded}
         onRefreshProduct={refreshSavedProductForOpen}
         researchQuery={activeProductResearchQuery}
         onAskInChat={sendProductQuestionToDiscover}

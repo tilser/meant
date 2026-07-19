@@ -57,7 +57,7 @@ public class AgentUserActionService {
                         reservation.actionId(),
                         command.summary(),
                         reservation.actionId()
-                ),
+                ).withBuyerIp(command.buyerIp()),
                 arguments
         ));
         try {

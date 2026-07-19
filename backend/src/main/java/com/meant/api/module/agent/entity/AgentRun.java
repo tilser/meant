@@ -48,6 +48,8 @@ public class AgentRun {
     @Column(nullable = false, updatable = false)
     private String promptVersion;
 
+    private String buyerIp;
+
     @Column(nullable = false)
     private int iterationCount;
 
@@ -92,6 +94,18 @@ public class AgentRun {
             String promptVersion,
             Instant now
     ) {
+        return queued(conversationId, userId, triggeringMessageId, model, promptVersion, null, now);
+    }
+
+    public static AgentRun queued(
+            UUID conversationId,
+            UUID userId,
+            UUID triggeringMessageId,
+            String model,
+            String promptVersion,
+            String buyerIp,
+            Instant now
+    ) {
         return AgentRun.builder()
                 .conversationId(conversationId)
                 .userId(userId)
@@ -99,6 +113,7 @@ public class AgentRun {
                 .status(AgentRunStatus.QUEUED)
                 .model(model)
                 .promptVersion(promptVersion)
+                .buyerIp(buyerIp)
                 .createdAt(now)
                 .build();
     }

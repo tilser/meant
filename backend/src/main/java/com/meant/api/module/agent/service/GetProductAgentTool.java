@@ -51,7 +51,7 @@ public class GetProductAgentTool implements AgentTool {
         return AgentToolExecutionResult.read(
                 json.write(output),
                 "Loaded current product detail and " + detail.product().offers().size() + " offer(s).",
-                resultService.artifacts(detail.product(), 1, detail)
+                resultService.detailArtifacts(detail, 1)
         );
     }
 }

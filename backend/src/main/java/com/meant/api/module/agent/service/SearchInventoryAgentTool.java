@@ -116,7 +116,7 @@ public class SearchInventoryAgentTool implements AgentTool {
                 item.commerceReference() == null ? null : item.commerceReference().canonicalProductKey(),
                 item.commerceReference() == null ? null : item.commerceReference().offerKey(),
                 item.id(), null, null, null,
-                json.write(item)
+                json.writeArtifact(item)
         );
     }
 

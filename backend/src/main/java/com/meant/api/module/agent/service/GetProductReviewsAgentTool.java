@@ -63,7 +63,7 @@ public class GetProductReviewsAgentTool implements AgentTool {
                 selection.detail().product().key(),
                 selection.offer().key(),
                 null, null, null, null,
-                json.write(reviews)
+                json.writeArtifact(reviews)
         );
         return AgentToolExecutionResult.read(
                 json.write(reviews),

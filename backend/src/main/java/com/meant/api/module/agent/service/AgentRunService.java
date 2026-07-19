@@ -339,7 +339,7 @@ public class AgentRunService {
                 .cursor(run.nextEventCursor())
                 .eventType(type)
                 .schemaVersion(EVENT_SCHEMA_VERSION)
-                .payloadJson(jsonSupport.write(payload))
+                .payloadJson(jsonSupport.writeArtifact(payload))
                 .occurredAt(now)
                 .build();
         AgentRunEvent stored = eventRepository.save(event);

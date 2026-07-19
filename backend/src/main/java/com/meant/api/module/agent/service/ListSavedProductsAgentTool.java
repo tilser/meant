@@ -73,6 +73,6 @@ public class ListSavedProductsAgentTool implements AgentTool {
         String offerKey = product.offers().isEmpty() ? null : product.offers().getFirst().offerKey();
         return new AgentArtifact(
                 AgentArtifactType.SAVED_PRODUCT, ordinal, product.id(), product.name(), product.id(), offerKey,
-                null, null, null, null, json.write(product));
+                null, null, null, null, json.writeArtifact(product));
     }
 }

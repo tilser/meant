@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AgentTurnServiceTest {
 
@@ -71,7 +72,8 @@ class AgentTurnServiceTest {
                 userId,
                 conversationId,
                 "Find shoes like mine",
-                "client-turn-1"
+                "client-turn-1",
+                "203.0.113.42"
         ));
 
         verify(runService).requestCancellation(new CancelAgentRunCommand(userId, runningId));
@@ -80,6 +82,9 @@ class AgentTurnServiceTest {
         assertThat(accepted.userMessage().sequenceNumber()).isEqualTo(1);
         assertThat(accepted.userMessage().correlationId()).isEqualTo("client-turn-1");
         assertThat(conversation.getTitle()).isEqualTo("Find shoes like mine");
+        ArgumentCaptor<AgentRun> savedRun = ArgumentCaptor.forClass(AgentRun.class);
+        verify(runs).saveAndFlush(savedRun.capture());
+        assertThat(savedRun.getValue().getBuyerIp()).isEqualTo("203.0.113.42");
     }
 
     @Test

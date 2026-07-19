@@ -20,12 +20,15 @@ export function InlineCartBlock({
     qty: number,
     nextCart: readonly CartItem[],
     identity?: string,
+    quantityDelta?: number,
+    sourceItem?: CartItem,
   ) => void
   onRemove: (
     id: ProductId,
     merchant: string,
     nextCart: readonly CartItem[],
     identity?: string,
+    sourceItem?: CartItem,
   ) => void
   onAddCart: (product: Product) => void
   onOpenCart: () => void
@@ -106,6 +109,8 @@ export function InlineCartBlock({
                         line.qty - 1,
                         cartAfterQty(line, line.qty - 1),
                         cartItemIdentity(line),
+                        -1,
+                        line,
                       )
                     }
                   >
@@ -122,6 +127,8 @@ export function InlineCartBlock({
                         line.qty + 1,
                         cartAfterQty(line, line.qty + 1),
                         cartItemIdentity(line),
+                        1,
+                        line,
                       )
                     }
                   >
@@ -134,7 +141,13 @@ export function InlineCartBlock({
                   type="button"
                   aria-label={`Remove ${line.product.name}`}
                   onClick={() =>
-                    onRemove(line.id, line.merchant, cartAfterRemove(line), cartItemIdentity(line))
+                    onRemove(
+                      line.id,
+                      line.merchant,
+                      cartAfterRemove(line),
+                      cartItemIdentity(line),
+                      line,
+                    )
                   }
                 >
                   <CloseIcon size={12} />

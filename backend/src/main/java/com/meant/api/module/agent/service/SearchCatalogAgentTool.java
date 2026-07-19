@@ -66,7 +66,13 @@ public class SearchCatalogAgentTool implements AgentTool {
                 .mapToObj(index -> resultService.reference(products.get(index), index + 1))
                 .toList();
         List<AgentArtifact> artifacts = IntStream.range(0, products.size())
-                .mapToObj(index -> resultService.artifacts(products.get(index), index + 1, products.get(index)))
+                .mapToObj(index -> resultService.discoveryArtifacts(
+                        products.get(index),
+                        index + 1,
+                        result.productRankingExplanations().get(products.get(index).key()),
+                        result.productPersonalizations().get(products.get(index).key()),
+                        result.offerRankingExplanations()
+                ))
                 .flatMap(List::stream)
                 .toList();
         AgentProductListResult output = new AgentProductListResult(

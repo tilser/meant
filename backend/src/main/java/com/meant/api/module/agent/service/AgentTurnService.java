@@ -104,6 +104,7 @@ public class AgentTurnService {
                 userMessage.getId(),
                 properties.model(),
                 properties.promptVersion(),
+                command.buyerIp(),
                 now
         ));
         userMessage.linkRun(run.getId());

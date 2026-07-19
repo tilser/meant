@@ -40,3 +40,6 @@ export type CheckoutAssistantHandler = (
   history: readonly CheckoutAssistantMessage[],
   context?: CheckoutAssistantContext,
 ) => Promise<CheckoutAssistantResult | null>
+
+export type CheckoutReleaseOutcome = 'completed' | 'cancelled' | 'handoff' | 'dismissed'
+export type CheckoutReleaseHandler = (cartId: string, outcome: CheckoutReleaseOutcome) => void

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="051-preserve-agent-run-buyer-ip" author="meant">
+        <addColumn tableName="agent_run">
+            <column name="buyer_ip" type="text"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

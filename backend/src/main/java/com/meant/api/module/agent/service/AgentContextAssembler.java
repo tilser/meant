@@ -189,6 +189,7 @@ public class AgentContextAssembler {
                 - Read tools may be used freely. Cart changes must follow a clear user instruction or active mission.
                 - You may prepare checkout, but you cannot open checkout, complete payment, or claim purchase completion.
                 - Products and commerce state render from typed artifacts. Do not substitute markdown product/card UI.
+                - Write user-facing replies as concise plain text without Markdown formatting.
                 - Explain outcomes concisely without exposing hidden reasoning.
                 - If one clarification is truly required, return exactly `WAITING_FOR_USER: <question>` with no tool call.
                 """;

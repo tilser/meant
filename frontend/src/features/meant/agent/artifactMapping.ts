@@ -13,8 +13,15 @@ import type {
   ShoppingMissionRequirement,
 } from '../chat/types'
 import { productFromCanonical } from '../product/groupedProductMapping'
-import type { CartItem, Product, UserLocation } from '../types'
-import { minorUnitsToMajor } from '../utils'
+import type { AppliedCartCode, MerchantCartStateReplacement } from '../cart/types'
+import type {
+  CartDeliveryGroup,
+  CartDeliveryOption,
+  CartItem,
+  Product,
+  UserLocation,
+} from '../types'
+import { cartMerchantKey, minorUnitsToMajor } from '../utils'
 
 type JsonRecord = Record<string, unknown>
 
@@ -39,6 +46,84 @@ function numberValue(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function decimalValue(value: unknown): number | null {
+  const amount = stringValue(value)
+  if (!amount) return null
+  const parsed = Number(amount)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function unitAmount(value: unknown, quantity: number): string | null {
+  const amount = stringValue(value)
+  if (!amount || quantity <= 0) return null
+  const parsed = Number(amount)
+  return Number.isFinite(parsed) ? String(parsed / quantity) : null
+}
+
+function looksLikeGiftCardSuffix(value: string | null): boolean {
+  return Boolean(value && /^[a-z0-9]{1,4}$/i.test(value))
+}
+
+function parsedAppliedCodes(value: unknown, fallbackCurrency: string | null): AppliedCartCode[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).flatMap((item) => {
+    const type = stringValue(item.type) === 'GIFT_CARD' ? 'GIFT_CARD' : 'DISCOUNT'
+    const displayCode = stringValue(item.code)?.trim() || null
+    const code = type === 'GIFT_CARD' && looksLikeGiftCardSuffix(displayCode) ? null : displayCode
+    const label = stringValue(item.label)
+    const amount = decimalValue(item.amount)
+    if (!displayCode && !label && amount === null) return []
+    return [
+      {
+        type,
+        code,
+        displayCode,
+        label,
+        applicable: typeof item.applicable === 'boolean' ? item.applicable : null,
+        amount,
+        currency: stringValue(item.currency) ?? fallbackCurrency,
+      },
+    ]
+  })
+}
+
+function parsedDeliveryOption(value: unknown): CartDeliveryOption | null {
+  if (!isRecord(value)) return null
+  const cost = isRecord(value.cost)
+    ? {
+        amount: stringValue(value.cost.amount),
+        currency: stringValue(value.cost.currency),
+      }
+    : null
+  return {
+    handle: stringValue(value.handle),
+    title: stringValue(value.title),
+    description: stringValue(value.description),
+    code: stringValue(value.code),
+    cost,
+    deliveryMethodType: stringValue(value.deliveryMethodType),
+    deliveryEstimate: stringValue(value.deliveryEstimate),
+    estimatedDeliveryTime: stringValue(value.estimatedDeliveryTime),
+    estimatedDeliveryAt: stringValue(value.estimatedDeliveryAt),
+    selected: typeof value.selected === 'boolean' ? value.selected : null,
+  }
+}
+
+function parsedDeliveryGroups(value: unknown): CartDeliveryGroup[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((group) => ({
+    id: stringValue(group.id),
+    handle: stringValue(group.handle),
+    deliveryOptions: Array.isArray(group.deliveryOptions)
+      ? group.deliveryOptions.flatMap((option) => {
+          const parsed = parsedDeliveryOption(option)
+          return parsed ? [parsed] : []
+        })
+      : [],
+    selectedDeliveryOption: parsedDeliveryOption(group.selectedDeliveryOption),
+  }))
+}
+
 function canonicalProductCandidate(value: JsonRecord): JsonRecord {
   return isRecord(value.product) ? value.product : value
 }
@@ -54,8 +139,199 @@ function looksCanonical(value: JsonRecord): boolean {
   )
 }
 
+/** Keeps agent prose inside the established plain-text chat treatment, including old messages. */
+export function plainAgentText(value: string): string {
+  return value
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/(^|\n)\s{0,3}#{1,6}\s+/g, '$1')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/(^|\s)\*\s+(?=\S)/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .trim()
+}
+
+function providerValue(value: unknown): string | null {
+  if (typeof value === 'string') return stringValue(value)
+  return isRecord(value) ? stringValue(value.value) : null
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+function normalizedLegacyProvenance(value: unknown): JsonRecord | null {
+  if (!isRecord(value)) return null
+  const provider = providerValue(value.provider)
+  const discoverySource = isRecord(value.discoverySource) ? value.discoverySource : null
+  const discoveryProvider = providerValue(discoverySource?.provider) ?? provider
+  if (!provider || !discoverySource || !discoveryProvider) return null
+  const localRouting = isRecord(value.localRouting) ? value.localRouting : null
+  return {
+    ...value,
+    provider,
+    merchantIntegrationId: stringValue(localRouting?.merchantIntegrationId),
+    discoverySource: { ...discoverySource, provider: discoveryProvider },
+  }
+}
+
+function normalizedLegacyIdentity(value: unknown): JsonRecord | null {
+  if (!isRecord(value)) return null
+  const provider = providerValue(value.provider)
+  const merchantScope = isRecord(value.merchantScope) ? value.merchantScope : null
+  const externalMerchantIdentity = isRecord(merchantScope?.externalMerchantIdentity)
+    ? merchantScope.externalMerchantIdentity
+    : null
+  const merchantIntegrationFallbackId = stringValue(merchantScope?.merchantIntegrationFallbackId)
+  if (!provider || !merchantScope || !isRecord(value.externalProductIdentity)) return null
+  if (!externalMerchantIdentity && !merchantIntegrationFallbackId) return null
+  return {
+    provider,
+    merchantIntegrationId: merchantIntegrationFallbackId,
+    externalMerchantIdentity,
+    merchantScope: {
+      ...merchantScope,
+      type: externalMerchantIdentity ? 'EXTERNAL_MERCHANT' : 'LOCAL_MERCHANT_INTEGRATION_FALLBACK',
+    },
+    externalProductIdentity: value.externalProductIdentity,
+    externalVariantIdentity: value.externalVariantIdentity,
+    components: Array.isArray(value.components) ? value.components : [],
+    sellingPlanIdentity: value.sellingPlanIdentity,
+  }
+}
+
+function legacyOfferArtifacts(
+  artifact: AgentArtifactProfile,
+  artifacts: readonly AgentArtifactProfile[],
+): AgentArtifactProfile[] {
+  const sameProduct = artifacts.filter(
+    (candidate) =>
+      candidate.type === 'OFFER' &&
+      candidate.canonicalProductKey === artifact.canonicalProductKey &&
+      Boolean(candidate.offerKey),
+  )
+  const sameMessage = sameProduct.filter((candidate) => candidate.messageId === artifact.messageId)
+  return sameMessage.length > 0 ? sameMessage : sameProduct
+}
+
+function normalizedLegacyCanonicalProduct(
+  payload: JsonRecord,
+  artifact: AgentArtifactProfile,
+  artifacts: readonly AgentArtifactProfile[],
+): JsonRecord | null {
+  const product = canonicalProductCandidate(payload)
+  if (!looksCanonical(product)) return null
+  const offerKeysByIdentity = new Map<string, string>()
+  for (const candidate of legacyOfferArtifacts(artifact, artifacts)) {
+    const offer = parseRecord(candidate.payloadJson)
+    if (offer?.identity && candidate.offerKey) {
+      offerKeysByIdentity.set(stableJson(offer.identity), candidate.offerKey)
+    }
+  }
+  const commercialStates = isRecord(payload.commercialStates) ? payload.commercialStates : null
+  const offerRankingExplanations = isRecord(payload.offerRankingExplanations)
+    ? payload.offerRankingExplanations
+    : null
+  const normalizedOffers = (product.offers as unknown[]).flatMap((value, index) => {
+    if (!isRecord(value) || !isRecord(value.identity)) return []
+    const identity = normalizedLegacyIdentity(value.identity)
+    const key =
+      offerKeysByIdentity.get(stableJson(value.identity)) ??
+      (index === 0 ? artifact.offerKey : null)
+    if (!identity || !key) return []
+    const provenance = Array.isArray(value.provenance)
+      ? value.provenance.flatMap((item) => {
+          const normalized = normalizedLegacyProvenance(item)
+          return normalized ? [normalized] : []
+        })
+      : []
+    const rankingEvidence = isRecord(value.rankingEvidence) ? value.rankingEvidence : null
+    const checkoutExperience = provenance.some((item) => isRecord(item.localRouting))
+      ? rankingEvidence?.checkoutCapable === true
+        ? 'MEANT_MANAGED'
+        : stringValue(value.checkoutUrl)
+          ? 'PROVIDER_HANDOFF'
+          : 'UNKNOWN'
+      : stringValue(value.checkoutUrl)
+        ? 'PROVIDER_HANDOFF'
+        : 'UNKNOWN'
+    return [
+      {
+        key,
+        identity,
+        merchantName: value.merchantName,
+        variantTitle: value.variantTitle,
+        price: value.price,
+        listPrice: value.listPrice,
+        availability: value.availability,
+        delivery: Array.isArray(value.delivery) ? value.delivery : [],
+        checkoutUrl: value.checkoutUrl,
+        selectedOptions: Array.isArray(value.identity.selectedOptions)
+          ? value.identity.selectedOptions
+          : [],
+        checkoutExperience,
+        commercialState: isRecord(commercialStates?.[key])
+          ? commercialStates[key]
+          : { authority: 'DISCOVERY_OBSERVATION' },
+        rankingExplanation: isRecord(offerRankingExplanations?.[key])
+          ? offerRankingExplanations[key]
+          : undefined,
+        provenance,
+      },
+    ]
+  })
+  if (normalizedOffers.length === 0) return null
+  const normalizedOfferKeys = new Set(
+    normalizedOffers.flatMap((offer) => stringValue(offer.key) ?? []),
+  )
+  const wrappedRecommendedOfferKey = stringValue(payload.recommendedOfferKey)
+  const recommendedOfferKey =
+    (wrappedRecommendedOfferKey && normalizedOfferKeys.has(wrappedRecommendedOfferKey)
+      ? wrappedRecommendedOfferKey
+      : null) ??
+    (artifact.offerKey && normalizedOfferKeys.has(artifact.offerKey) ? artifact.offerKey : null) ??
+    stringValue(normalizedOffers[0]?.key)
+  if (!recommendedOfferKey) return null
+  const provenance = Array.isArray(product.provenance)
+    ? product.provenance.flatMap((item) => {
+        const normalized = normalizedLegacyProvenance(item)
+        return normalized ? [normalized] : []
+      })
+    : []
+  return {
+    ...product,
+    provenance,
+    rankingExplanation: isRecord(payload.productRankingExplanation)
+      ? payload.productRankingExplanation
+      : undefined,
+    personalization: isRecord(payload.personalization)
+      ? payload.personalization
+      : {
+          whyMeantForYou:
+            'This looks relevant to your search based on the available product details.',
+          matchedFilterIds: [],
+          missedFilterIds: [],
+        },
+    recommendedOfferKey,
+    offers: normalizedOffers,
+  }
+}
+
 /** Maps the durable PRODUCT artifact, tolerating detail tools that wrap it in `{ product }`. */
-export function productFromAgentArtifact(artifact: AgentArtifactProfile): Product | null {
+export function productFromAgentArtifact(
+  artifact: AgentArtifactProfile,
+  siblingArtifacts: readonly AgentArtifactProfile[] = [artifact],
+): Product | null {
   if (artifact.type === 'SAVED_PRODUCT') {
     return savedProductFromArtifact(artifact)
   }
@@ -73,7 +349,13 @@ export function productFromAgentArtifact(artifact: AgentArtifactProfile): Produc
   try {
     return productFromCanonical(candidate as unknown as CanonicalProductProfile)
   } catch {
-    return null
+    const legacy = normalizedLegacyCanonicalProduct(payload, artifact, siblingArtifacts)
+    if (!legacy) return null
+    try {
+      return productFromCanonical(legacy as unknown as CanonicalProductProfile)
+    } catch {
+      return null
+    }
   }
 }
 
@@ -148,15 +430,117 @@ function savedProductFromArtifact(artifact: AgentArtifactProfile): Product | nul
   }
 }
 
-export function productsFromAgentArtifacts(artifacts: readonly AgentArtifactProfile[]): Product[] {
-  const byId = new Map<string, Product>()
+export interface AgentProductSnapshot {
+  product: Product
+  createdAt: string
+}
+
+const ISO_INSTANT_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/
+
+function instantNanoseconds(value: string): bigint | null {
+  const match = ISO_INSTANT_PATTERN.exec(value)
+  const base = match?.[1]
+  const zone = match?.[3]
+  if (!base || !zone) return null
+  const milliseconds = Date.parse(`${base}${zone}`)
+  if (!Number.isFinite(milliseconds)) return null
+  const fraction = (match?.[2] ?? '').slice(0, 9).padEnd(9, '0')
+  return BigInt(milliseconds) * 1_000_000n + BigInt(fraction || '0')
+}
+
+function compareArtifactTimestamps(left: string, right: string): number {
+  const leftNanoseconds = instantNanoseconds(left)
+  const rightNanoseconds = instantNanoseconds(right)
+  if (leftNanoseconds !== null && rightNanoseconds !== null) {
+    return leftNanoseconds < rightNanoseconds ? -1 : leftNanoseconds > rightNanoseconds ? 1 : 0
+  }
+  const leftMilliseconds = Date.parse(left)
+  const rightMilliseconds = Date.parse(right)
+  if (Number.isFinite(leftMilliseconds) && Number.isFinite(rightMilliseconds)) {
+    return leftMilliseconds - rightMilliseconds
+  }
+  if (Number.isFinite(leftMilliseconds) !== Number.isFinite(rightMilliseconds)) {
+    return Number.isFinite(leftMilliseconds) ? 1 : -1
+  }
+  return left.localeCompare(right)
+}
+
+function selectedAgentProductSnapshots(
+  artifacts: readonly AgentArtifactProfile[],
+): AgentProductSnapshot[] {
+  const byId = new Map<string, AgentProductSnapshot>()
   for (const artifact of artifacts) {
-    const product = productFromAgentArtifact(artifact)
+    const product = productFromAgentArtifact(artifact, artifacts)
     if (product) {
-      byId.set(product.id, product)
+      const existing = byId.get(product.id)
+      if (!existing || compareArtifactTimestamps(existing.createdAt, artifact.createdAt) <= 0) {
+        byId.set(product.id, { product, createdAt: artifact.createdAt })
+      }
     }
   }
+  for (const artifact of artifacts) {
+    const product = cartLineProductFromArtifact(artifact, artifacts)
+    const selectedProducts = [...byId.values()].map((snapshot) => snapshot.product)
+    if (!product || productForOffer(selectedProducts, product.offers[0]?.offerKey ?? null)) {
+      continue
+    }
+    const existing = byId.get(product.id)
+    byId.set(product.id, {
+      product: existing
+        ? {
+            ...existing.product,
+            offers: [
+              ...existing.product.offers,
+              ...product.offers.filter(
+                (offer) =>
+                  !existing.product.offers.some(
+                    (candidate) => candidate.offerKey && candidate.offerKey === offer.offerKey,
+                  ),
+              ),
+            ],
+          }
+        : product,
+      createdAt:
+        existing && compareArtifactTimestamps(existing.createdAt, artifact.createdAt) > 0
+          ? existing.createdAt
+          : artifact.createdAt,
+    })
+  }
   return [...byId.values()]
+}
+
+export function productsFromAgentArtifacts(artifacts: readonly AgentArtifactProfile[]): Product[] {
+  return selectedAgentProductSnapshots(artifacts).map((snapshot) => snapshot.product)
+}
+
+export function mergeAgentProductSnapshots(
+  current: readonly AgentProductSnapshot[],
+  incoming: readonly AgentProductSnapshot[],
+): AgentProductSnapshot[] {
+  const byId = new Map(current.map((snapshot) => [snapshot.product.id, snapshot]))
+  incoming.forEach((snapshot) => {
+    const existing = byId.get(snapshot.product.id)
+    if (!existing || compareArtifactTimestamps(existing.createdAt, snapshot.createdAt) <= 0) {
+      byId.set(snapshot.product.id, snapshot)
+    }
+  })
+  return [...byId.values()]
+}
+
+/** Product state safe to promote outside one transcript: typed products plus current carts only. */
+export function currentAgentProductSnapshots(
+  artifacts: readonly AgentArtifactProfile[],
+): AgentProductSnapshot[] {
+  const currentArtifacts = [
+    ...artifacts.filter(
+      (artifact) =>
+        artifact.type === 'PRODUCT' ||
+        artifact.type === 'OFFER' ||
+        artifact.type === 'SAVED_PRODUCT',
+    ),
+    ...latestCartSnapshotArtifacts(artifacts),
+  ]
+  return selectedAgentProductSnapshots(currentArtifacts)
 }
 
 export function latestAgentArtifacts(
@@ -165,13 +549,42 @@ export function latestAgentArtifacts(
   const latest = new Map<string, AgentArtifactProfile>()
   for (const artifact of artifacts) {
     const current = latest.get(artifact.stableKey)
-    if (!current || current.createdAt <= artifact.createdAt) {
+    if (!current || compareArtifactTimestamps(current.createdAt, artifact.createdAt) <= 0) {
       latest.set(artifact.stableKey, artifact)
     }
   }
   return [...latest.values()].sort(
-    (left, right) => left.createdAt.localeCompare(right.createdAt) || left.ordinal - right.ordinal,
+    (left, right) =>
+      compareArtifactTimestamps(left.createdAt, right.createdAt) || left.ordinal - right.ordinal,
   )
+}
+
+function cartSnapshotKey(artifact: AgentArtifactProfile): string {
+  return `${artifact.messageId}\u0000${artifact.cartId ?? ''}`
+}
+
+function isNewerArtifact(candidate: AgentArtifactProfile, current: AgentArtifactProfile): boolean {
+  return (
+    compareArtifactTimestamps(candidate.createdAt, current.createdAt) > 0 ||
+    (compareArtifactTimestamps(candidate.createdAt, current.createdAt) === 0 &&
+      candidate.ordinal >= current.ordinal)
+  )
+}
+
+function cartPartitionKey(cart: ParsedCartArtifact): string {
+  const provider = cart.provider?.trim().toLowerCase() ?? ''
+  if (cart.routingScopeKey) return `routing:${cart.routingScopeKey.trim().toLowerCase()}`
+  if (cart.merchantIntegrationId) {
+    return `integration:${cart.merchantIntegrationId.trim().toLowerCase()}`
+  }
+  if (cart.merchantId) return `merchant:${cart.merchantId.trim().toLowerCase()}`
+  if (cart.externalMerchantId) {
+    return `external:${provider}:${cart.externalMerchantId.trim().toLowerCase()}`
+  }
+  if (cart.merchantDomain) {
+    return `domain:${provider}:${cart.merchantDomain.trim().toLowerCase()}`
+  }
+  return `cart:${cart.cartId}`
 }
 
 /** Chooses complete cart snapshots (CART plus its sibling CART_LINE rows), not stale lines. */
@@ -184,25 +597,26 @@ export function latestCartSnapshotArtifacts(
     if (
       artifact.type !== 'CART' ||
       !artifact.cartId ||
-      (beforeOrAt && artifact.createdAt > beforeOrAt)
+      (beforeOrAt && compareArtifactTimestamps(artifact.createdAt, beforeOrAt) > 0)
     ) {
       continue
     }
-    const current = selectedCarts.get(artifact.cartId)
-    if (!current || current.createdAt <= artifact.createdAt) {
-      selectedCarts.set(artifact.cartId, artifact)
+    const cart = parsedCartArtifact(artifact)
+    if (!cart) continue
+    const partitionKey = cartPartitionKey(cart)
+    const current = selectedCarts.get(partitionKey)
+    if (!current || isNewerArtifact(artifact, current)) {
+      selectedCarts.set(partitionKey, artifact)
     }
   }
-  const selectedMessageIds = new Set(
-    [...selectedCarts.values()].map((artifact) => artifact.messageId),
+  const selectedArtifactIds = new Set(
+    [...selectedCarts.values()].map((artifact) => artifact.artifactId),
   )
+  const selectedSnapshots = new Set([...selectedCarts.values()].map(cartSnapshotKey))
   return artifacts.filter(
     (artifact) =>
-      (artifact.type === 'CART' &&
-        Boolean(
-          artifact.cartId && selectedCarts.get(artifact.cartId)?.artifactId === artifact.artifactId,
-        )) ||
-      (artifact.type === 'CART_LINE' && selectedMessageIds.has(artifact.messageId)),
+      (artifact.type === 'CART' && selectedArtifactIds.has(artifact.artifactId)) ||
+      (artifact.type === 'CART_LINE' && selectedSnapshots.has(cartSnapshotKey(artifact))),
   )
 }
 
@@ -221,7 +635,10 @@ export function productInteractionState(
     }
     const value = parseRecord(artifact.payloadJson)
     const current = latest.get(artifact.canonicalProductKey)
-    if (value && (!current || current.createdAt <= artifact.createdAt)) {
+    if (
+      value &&
+      (!current || compareArtifactTimestamps(current.createdAt, artifact.createdAt) <= 0)
+    ) {
       latest.set(artifact.canonicalProductKey, { createdAt: artifact.createdAt, value })
     }
   }
@@ -248,6 +665,7 @@ function productForOffer(products: readonly Product[], offerKey: string | null):
 interface ParsedCartArtifact {
   cartId: string
   merchant: string
+  merchantKey: string
   merchantId: string | null
   merchantDomain: string | null
   provider: string | null
@@ -260,30 +678,130 @@ interface ParsedCartArtifact {
   totalAmount: string | null
   subtotalAmount: string | null
   currency: string | null
+  appliedCodes: AppliedCartCode[]
+  deliveryGroups: CartDeliveryGroup[]
 }
 
 function parsedCartArtifact(artifact: AgentArtifactProfile): ParsedCartArtifact | null {
   if (artifact.type !== 'CART' || !artifact.cartId) return null
   const value = parseRecord(artifact.payloadJson)
+  const merchant =
+    stringValue(value?.merchantDomain) ??
+    stringValue(value?.provider) ??
+    artifact.label ??
+    'Merchant'
+  const merchantId = stringValue(value?.merchantId)
+  const merchantDomain = stringValue(value?.merchantDomain)
+  const routingScopeKey = stringValue(value?.routingScopeKey)
+  const currency = stringValue(value?.currency)
   return {
     cartId: artifact.cartId,
-    merchant:
-      stringValue(value?.merchantDomain) ??
-      stringValue(value?.provider) ??
-      artifact.label ??
-      'Merchant',
-    merchantId: stringValue(value?.merchantId),
-    merchantDomain: stringValue(value?.merchantDomain),
+    merchant,
+    merchantKey: cartMerchantKey({
+      merchant,
+      merchantId,
+      merchantDomain,
+      merchantScopeKey: routingScopeKey,
+    }),
+    merchantId,
+    merchantDomain,
     provider: stringValue(value?.provider),
     merchantIntegrationId: stringValue(value?.merchantIntegrationId),
     externalMerchantId: stringValue(value?.externalMerchantId),
-    routingScopeKey: stringValue(value?.routingScopeKey),
+    routingScopeKey,
     remoteCartId: stringValue(value?.remoteCartId),
     checkoutUrl: stringValue(value?.checkoutUrl),
     continueUrl: stringValue(value?.continueUrl),
     totalAmount: stringValue(value?.totalAmount),
     subtotalAmount: stringValue(value?.subtotalAmount),
-    currency: stringValue(value?.currency),
+    currency,
+    appliedCodes: parsedAppliedCodes(value?.appliedCodes, currency),
+    deliveryGroups: parsedDeliveryGroups(value?.deliveryGroups),
+  }
+}
+
+function cartLineProductFromArtifact(
+  artifact: AgentArtifactProfile,
+  artifacts: readonly AgentArtifactProfile[],
+): Product | null {
+  if (artifact.type !== 'CART_LINE' || !artifact.cartId) return null
+  const line = parseRecord(artifact.payloadJson)
+  const offerKey = stringValue(line?.offerKey) ?? artifact.offerKey
+  const name = stringValue(line?.productTitle) ?? stringValue(artifact.label)
+  if (!line || !offerKey || !name) return null
+
+  const cartArtifacts = artifacts.filter(
+    (candidate) => candidate.type === 'CART' && candidate.cartId === artifact.cartId,
+  )
+  const siblingCarts = cartArtifacts.filter(
+    (candidate) => candidate.messageId === artifact.messageId,
+  )
+  const cartArtifact = (siblingCarts.length > 0 ? siblingCarts : cartArtifacts).reduce<
+    AgentArtifactProfile | undefined
+  >(
+    (current, candidate) => (!current || isNewerArtifact(candidate, current) ? candidate : current),
+    undefined,
+  )
+  const cart = cartArtifact ? parsedCartArtifact(cartArtifact) : null
+  const quantity = Math.max(1, numberValue(line.quantity) ?? 1)
+  const unitPriceAmount =
+    unitAmount(line.subtotalAmount, quantity) ?? unitAmount(line.totalAmount, quantity)
+  const price = decimalValue(unitPriceAmount)
+  const currency = stringValue(line.currency) ?? cart?.currency ?? null
+  const provider = stringValue(line.provider) ?? cart?.provider ?? null
+  const merchant = cart?.merchant ?? provider ?? 'Merchant'
+  const merchantIntegrationId =
+    stringValue(line.merchantIntegrationId) ?? cart?.merchantIntegrationId ?? null
+  const externalMerchantId =
+    stringValue(line.externalMerchantId) ?? cart?.externalMerchantId ?? null
+
+  return {
+    id: stringValue(line.productId) ?? artifact.canonicalProductKey ?? `agent-cart:${offerKey}`,
+    merchantId: cart?.merchantId ?? null,
+    merchantDomain: cart?.merchantDomain ?? null,
+    name,
+    brand: merchant,
+    category: 'Product',
+    tone: '#e7ebef',
+    imageUrl: stringValue(line.imageUrl),
+    productUrl: stringValue(line.productUrl),
+    remote: true,
+    match: 0,
+    rankingUnavailable: true,
+    priceFrom: price,
+    priceFromMinorUnits: null,
+    priceCurrency: currency,
+    listPrice: null,
+    merchants: 1,
+    satisfies: [],
+    misses: [],
+    note: 'Current cart item.',
+    pros: [],
+    cons: [],
+    review: {
+      score: null,
+      count: 0,
+      insight: 'Review data varies by merchant.',
+    },
+    offers: [
+      {
+        offerKey,
+        merchant,
+        price: price ?? 0,
+        priceMinorUnits: null,
+        priceCurrency: currency,
+        delivery: 'Delivery calculated by merchant',
+        merchantId: cart?.merchantId ?? null,
+        merchantDomain: cart?.merchantDomain ?? null,
+        provider,
+        merchantIntegrationId,
+        externalMerchantId,
+        merchantScopeKey: cart?.routingScopeKey ?? cart?.merchantKey ?? null,
+        productVariantId: stringValue(line.productVariantId),
+        variantTitle: stringValue(line.variantTitle),
+        available: null,
+      },
+    ],
   }
 }
 
@@ -292,6 +810,28 @@ export function cartItemsFromAgentArtifacts(
   artifacts: readonly AgentArtifactProfile[],
   products: readonly Product[],
 ): CartItem[] {
+  const resolvedProducts = new Map(products.map((product) => [product.id, product]))
+  for (const product of productsFromAgentArtifacts(artifacts)) {
+    const existing = resolvedProducts.get(product.id)
+    resolvedProducts.set(
+      product.id,
+      existing
+        ? {
+            ...existing,
+            offers: [
+              ...existing.offers,
+              ...product.offers.filter(
+                (offer) =>
+                  !existing.offers.some(
+                    (candidate) => candidate.offerKey && candidate.offerKey === offer.offerKey,
+                  ),
+              ),
+            ],
+          }
+        : product,
+    )
+  }
+  const availableProducts = [...resolvedProducts.values()]
   const carts = new Map<string, ParsedCartArtifact>()
   for (const artifact of artifacts) {
     const parsed = parsedCartArtifact(artifact)
@@ -301,7 +841,7 @@ export function cartItemsFromAgentArtifacts(
     if (artifact.type !== 'CART_LINE' || !artifact.cartId || !artifact.cartLineId) return []
     const line = parseRecord(artifact.payloadJson)
     const offerKey = stringValue(line?.offerKey) ?? artifact.offerKey
-    const product = productForOffer(products, offerKey)
+    const product = productForOffer(availableProducts, offerKey)
     const quantity = numberValue(line?.quantity) ?? 1
     const cart = carts.get(artifact.cartId)
     if (!product || !offerKey) return []
@@ -317,6 +857,7 @@ export function cartItemsFromAgentArtifacts(
           stringValue(line?.merchantIntegrationId) ?? cart?.merchantIntegrationId,
         externalMerchantId: stringValue(line?.externalMerchantId) ?? cart?.externalMerchantId,
         routingScopeKey: cart?.routingScopeKey,
+        merchantScopeKey: cart?.merchantKey,
         productVariantId: stringValue(line?.productVariantId),
         cartId: artifact.cartId,
         remoteCartId: cart?.remoteCartId,
@@ -328,11 +869,59 @@ export function cartItemsFromAgentArtifacts(
         cartTotalAmount: cart?.totalAmount,
         cartSubtotalAmount: cart?.subtotalAmount,
         cartCurrency: cart?.currency,
+        deliveryGroups: cart?.deliveryGroups ?? [],
         productTitle: stringValue(line?.productTitle) ?? product.name,
         variantTitle: stringValue(line?.variantTitle),
-        unitPriceAmount: stringValue(line?.subtotalAmount),
+        unitPriceAmount:
+          unitAmount(line?.subtotalAmount, Math.max(1, quantity)) ??
+          unitAmount(line?.totalAmount, Math.max(1, quantity)),
         lineTotalAmount: stringValue(line?.totalAmount),
         orderCurrency: stringValue(line?.currency),
+      },
+    ]
+  })
+}
+
+/** Projects complete agent cart artifacts into the shared cart controller's replacement seam. */
+export function cartStateReplacementsFromAgentArtifacts(
+  artifacts: readonly AgentArtifactProfile[],
+  products: readonly Product[],
+): MerchantCartStateReplacement[] {
+  const snapshotArtifacts = latestCartSnapshotArtifacts(artifacts)
+  const lines = cartItemsFromAgentArtifacts(snapshotArtifacts, products)
+  return snapshotArtifacts.flatMap((artifact) => {
+    const cart = parsedCartArtifact(artifact)
+    if (!cart) return []
+    const rawLines = snapshotArtifacts.filter(
+      (candidate) =>
+        candidate.type === 'CART_LINE' &&
+        candidate.messageId === artifact.messageId &&
+        candidate.cartId === cart.cartId,
+    )
+    const cartLines = lines.filter((line) => line.cartId === cart.cartId)
+    if (cartLines.length !== rawLines.length) return []
+    return [
+      {
+        merchantKey: cart.merchantKey,
+        merchantId: cart.merchantId,
+        merchantDomain: cart.merchantDomain,
+        provider: cart.provider,
+        merchantIntegrationId: cart.merchantIntegrationId,
+        externalMerchantId: cart.externalMerchantId,
+        routingScopeKey: cart.routingScopeKey,
+        snapshot: {
+          merchantKey: cart.merchantKey,
+          merchant: cart.merchant,
+          cartId: cart.cartId,
+          remoteCartId: cart.remoteCartId,
+          checkoutUrl: cart.checkoutUrl,
+          continueUrl: cart.continueUrl,
+          subtotalAmount: decimalValue(cart.subtotalAmount),
+          totalAmount: decimalValue(cart.totalAmount),
+          currency: cart.currency,
+          appliedCodes: cart.appliedCodes,
+        },
+        lines: cartLines,
       },
     ]
   })
@@ -441,7 +1030,14 @@ export function blocksForAgentMessage(
   deliveryLocations: readonly UserLocation[],
 ): DiscoverChatBlock[] {
   const allProducts = productsFromAgentArtifacts(allArtifacts)
-  const products = productsFromAgentArtifacts(messageArtifacts)
+  const products = productsFromAgentArtifacts(
+    messageArtifacts.filter(
+      (artifact) =>
+        artifact.type === 'PRODUCT' ||
+        artifact.type === 'OFFER' ||
+        artifact.type === 'SAVED_PRODUCT',
+    ),
+  )
   const blocks: DiscoverChatBlock[] = []
   const toolName = message.correlationId?.split(':').at(-1) ?? ''
   const comparison = messageArtifacts.find((artifact) => artifact.type === 'COMPARISON')
@@ -485,8 +1081,10 @@ export function blocksForAgentMessage(
     }
   }
 
-  const cartArtifacts = messageArtifacts.filter(
-    (artifact) => artifact.type === 'CART' || artifact.type === 'CART_LINE',
+  const cartArtifacts = latestCartSnapshotArtifacts(
+    messageArtifacts.filter(
+      (artifact) => artifact.type === 'CART' || artifact.type === 'CART_LINE',
+    ),
   )
   const lines = cartItemsFromAgentArtifacts(cartArtifacts, allProducts)
   if (cartArtifacts.length > 0) {
@@ -502,12 +1100,15 @@ export function blocksForAgentMessage(
       messageArtifacts
         .filter((artifact) => artifact.type === 'CHECKOUT')
         .map((artifact) => artifact.createdAt)
-        .sort()
+        .sort(compareArtifactTimestamps)
         .at(-1),
     )
+    const historicalCartCount = historicalCartArtifacts.filter(
+      (artifact) => artifact.type === 'CART',
+    ).length
     blocks.push({
       type: 'checkout',
-      merchantCount: checkoutCount,
+      merchantCount: historicalCartCount || checkoutCount,
       lines: cartItemsFromAgentArtifacts(historicalCartArtifacts, allProducts),
       products: allProducts,
     })
@@ -525,6 +1126,26 @@ export function discoverMessagesFromAgentConversation(
     const existing = artifactsByMessage.get(artifact.messageId) ?? []
     existing.push(artifact)
     artifactsByMessage.set(artifact.messageId, existing)
+  }
+  const artifactHostMessageByRun = new Map<string, string>()
+  for (const message of conversation.messages) {
+    if (message.role === 'ASSISTANT' && message.runId) {
+      artifactHostMessageByRun.set(message.runId, message.messageId)
+    }
+  }
+  const toolBlocksByRun = new Map<string, DiscoverChatBlock[]>()
+  for (const message of conversation.messages) {
+    if (message.role !== 'TOOL' || !message.runId) continue
+    const blocks = blocksForAgentMessage(
+      message,
+      artifactsByMessage.get(message.messageId) ?? [],
+      conversation.artifacts,
+      deliveryLocations,
+    )
+    if (blocks.length === 0) continue
+    const existing = toolBlocksByRun.get(message.runId) ?? []
+    existing.push(...blocks)
+    toolBlocksByRun.set(message.runId, existing)
   }
   const messages: DiscoverChatMessage[] = []
   for (const message of conversation.messages) {
@@ -548,14 +1169,24 @@ export function discoverMessagesFromAgentConversation(
       continue
     }
     if (message.role === 'ASSISTANT') {
+      const toolBlocks =
+        message.runId && artifactHostMessageByRun.get(message.runId) === message.messageId
+          ? (toolBlocksByRun.get(message.runId) ?? [])
+          : []
       messages.push({
         id: message.messageId,
         role: 'ai',
-        blocks: message.textContent ? [{ type: 'text', text: message.textContent }] : [],
+        blocks: [
+          ...(message.textContent
+            ? [{ type: 'text' as const, text: plainAgentText(message.textContent) }]
+            : []),
+          ...toolBlocks,
+        ],
       })
       continue
     }
     if (message.role === 'TOOL') {
+      if (message.runId && artifactHostMessageByRun.has(message.runId)) continue
       const blocks = blocksForAgentMessage(
         message,
         artifacts,

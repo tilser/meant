@@ -9,8 +9,13 @@ public record AgentToolExecutionContext(
         UUID triggeringMessageId,
         String triggeringUserText,
         UUID idempotencyKey,
-        UUID executionOwner
+        UUID executionOwner,
+        String buyerIp
 ) {
+
+    public AgentToolExecutionContext {
+        buyerIp = buyerIp == null || buyerIp.isBlank() ? null : buyerIp.trim();
+    }
 
     public AgentToolExecutionContext(
             UUID userId,
@@ -19,7 +24,7 @@ public record AgentToolExecutionContext(
             UUID triggeringMessageId,
             String triggeringUserText
     ) {
-        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText, null, null);
+        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -30,7 +35,19 @@ public record AgentToolExecutionContext(
             String triggeringUserText,
             UUID idempotencyKey
     ) {
-        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText, idempotencyKey, null);
+        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText, idempotencyKey, null, null);
+    }
+
+    public AgentToolExecutionContext(
+            UUID userId,
+            UUID conversationId,
+            UUID runId,
+            UUID triggeringMessageId,
+            String triggeringUserText,
+            UUID idempotencyKey,
+            UUID executionOwner
+    ) {
+        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText, idempotencyKey, executionOwner, null);
     }
 
     public AgentToolExecutionContext withIdempotencyKey(UUID value) {
@@ -41,7 +58,8 @@ public record AgentToolExecutionContext(
                 triggeringMessageId,
                 triggeringUserText,
                 value,
-                executionOwner
+                executionOwner,
+                buyerIp
         );
     }
 
@@ -53,6 +71,20 @@ public record AgentToolExecutionContext(
                 triggeringMessageId,
                 triggeringUserText,
                 idempotencyKey,
+                value,
+                buyerIp
+        );
+    }
+
+    public AgentToolExecutionContext withBuyerIp(String value) {
+        return new AgentToolExecutionContext(
+                userId,
+                conversationId,
+                runId,
+                triggeringMessageId,
+                triggeringUserText,
+                idempotencyKey,
+                executionOwner,
                 value
         );
     }

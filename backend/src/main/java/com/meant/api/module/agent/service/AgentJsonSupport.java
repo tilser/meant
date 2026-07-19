@@ -67,6 +67,20 @@ public class AgentJsonSupport {
         }
     }
 
+    /** Serializes server-owned durable UI state without replacing its contract with a preview. */
+    public String writeArtifact(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JacksonException exception) {
+            throw new AgentException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    ApiErrorCode.INTERNAL_ERROR,
+                    "Agent artifact could not be serialized.",
+                    exception
+            );
+        }
+    }
+
     public String bounded(String value) {
         if (value == null) {
             return null;

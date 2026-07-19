@@ -51,7 +51,7 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
                 null,
                 null,
                 null,
-                resultJson
+                json.writeArtifact(state)
         );
         return new AgentToolExecutionResult(
                 resultJson,

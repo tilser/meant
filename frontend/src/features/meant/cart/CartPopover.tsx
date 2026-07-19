@@ -10,6 +10,7 @@ export function CartPopover({
   cart,
   products,
   cartSnapshots,
+  mutationBlocked,
   onViewFull,
   onClose,
   onRemove,
@@ -17,6 +18,7 @@ export function CartPopover({
   cart: readonly CartItem[]
   products: readonly Product[]
   cartSnapshots: Readonly<Record<string, MerchantCartSnapshot>>
+  mutationBlocked: boolean
   onViewFull: () => void
   onClose: () => void
   onRemove: (id: ProductId, merchant: string, identity?: string) => void
@@ -135,8 +137,10 @@ export function CartPopover({
             <button
               className="mt-cart-pop-x"
               type="button"
+              disabled={mutationBlocked}
               onClick={() => onRemove(line.id, line.merchant, cartItemIdentity(line))}
-              aria-label="Remove"
+              aria-label={mutationBlocked ? 'Cart is updating' : 'Remove'}
+              title={mutationBlocked ? 'Wait for the current cart update to finish' : undefined}
             >
               <CloseIcon size={12} />
             </button>

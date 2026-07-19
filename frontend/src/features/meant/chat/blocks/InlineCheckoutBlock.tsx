@@ -1,7 +1,13 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage } from '../../../../lib/apiClient'
-import type { ActiveCheckoutSession, CheckoutAssistantHandler } from '../../cart/checkoutTypes'
+import type {
+  ActiveCheckoutSession,
+  CheckoutAssistantHandler,
+  CheckoutReleaseHandler,
+  CheckoutReleaseOutcome,
+} from '../../cart/checkoutTypes'
+import { liveCheckoutGroupFor } from '../../cart/checkoutGroupResolution'
 import { EmbeddedCheckout } from '../../cart/EmbeddedCheckout'
 import {
   checkoutAssistantPrompt,
@@ -22,6 +28,7 @@ import {
   firstUrl,
   merchantDeliveryCoverageSummary,
   money,
+  type CartGroup,
 } from '../../utils'
 
 function cartItemReadyForCheckout(item: CartItem): boolean {
@@ -29,6 +36,7 @@ function cartItemReadyForCheckout(item: CartItem): boolean {
     item.cartId &&
     item.productVariantId &&
     (item.cartLineId || item.remoteCartLineId) &&
+    item.syncing !== true &&
     !item.syncError,
   )
 }
@@ -37,24 +45,30 @@ export function InlineCheckoutBlock({
   threadId,
   cart,
   products,
+  actionCart,
+  actionProducts,
   onCheckout,
   activeCheckout,
   checkoutBusy,
   checkoutError,
   onCheckoutAssistant,
   onRefreshCheckout,
+  onReleaseCheckout,
   onOpenCart,
   onOpenOrders,
 }: Readonly<{
   threadId: string
   cart: readonly CartItem[]
   products: readonly Product[]
+  actionCart?: readonly CartItem[]
+  actionProducts?: readonly Product[]
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
   checkoutBusy: boolean
   checkoutError: string | null
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
+  onReleaseCheckout?: CheckoutReleaseHandler
   onOpenCart: () => void
   onOpenOrders: () => void
 }>) {
@@ -67,13 +81,16 @@ export function InlineCheckoutBlock({
   const [assistantInput, setAssistantInput] = useState('')
   const [assistantBusy, setAssistantBusy] = useState(false)
   const [releasedCheckouts, setReleasedCheckouts] = useState<
-    ReadonlyMap<string, 'completed' | 'cancelled' | 'handoff' | 'dismissed'>
+    ReadonlyMap<string, CheckoutReleaseOutcome>
   >(new Map())
   const promptedPhaseRef = useRef<string | null>(null)
   const activeCartIdRef = useRef<string | null>(null)
   const assistantLogRef = useRef<HTMLDivElement | null>(null)
   const lines = cartLines(cart, products)
   const groups = cartGroups(lines)
+  const liveGroups = actionCart
+    ? cartGroups(cartLines(actionCart, actionProducts ?? products))
+    : groups
   const alerts = computeSmartAlerts(lines, products)
   const total = groups.reduce((sum, group) => sum + group.total, 0)
 
@@ -106,8 +123,9 @@ export function InlineCheckoutBlock({
     assistantLogRef.current?.scrollTo({ top: assistantLogRef.current.scrollHeight })
   }, [assistantMessages, assistantBusy])
 
-  const payGroup = async (group: (typeof groups)[number]) => {
-    const groupCartId = group.items.find((item) => item.cartId)?.cartId
+  const payGroup = async (displayGroup: CartGroup, actionGroup: CartGroup) => {
+    if (checkoutBusy) return
+    const groupCartId = actionGroup.items.find((item) => item.cartId)?.cartId
     if (groupCartId) {
       setReleasedCheckouts((current) => {
         if (!current.has(groupCartId)) return current
@@ -116,23 +134,23 @@ export function InlineCheckoutBlock({
         return next
       })
     }
-    setPayingMerchant(group.merchantKey)
+    setPayingMerchant(displayGroup.merchantKey)
     setCheckoutStartError(null)
     try {
-      const saved = Math.max(0, group.subtotal + group.delivery - group.total)
+      const saved = Math.max(0, actionGroup.subtotal + actionGroup.delivery - actionGroup.total)
       await onCheckout({
-        merchant: group.merchant,
-        merchantKey: group.merchantKey,
+        merchant: actionGroup.merchant,
+        merchantKey: actionGroup.merchantKey,
         chatThreadId: threadId,
-        items: group.items,
+        items: actionGroup.items,
         saved,
         savedNote: saved > 0 ? 'Merchant-applied savings' : 'Chat checkout',
-        checkoutUrl: firstUrl(...group.items.map((item) => item.checkoutUrl)),
-        continueUrl: firstUrl(...group.items.map((item) => item.continueUrl)),
+        checkoutUrl: firstUrl(...actionGroup.items.map((item) => item.checkoutUrl)),
+        continueUrl: firstUrl(...actionGroup.items.map((item) => item.continueUrl)),
       })
     } catch (error) {
       setCheckoutStartError({
-        merchantKey: group.merchantKey,
+        merchantKey: displayGroup.merchantKey,
         message:
           error instanceof Error && error.message.trim()
             ? error.message
@@ -143,14 +161,12 @@ export function InlineCheckoutBlock({
     }
   }
 
-  const releaseCheckout = (
-    cartId: string,
-    outcome: 'completed' | 'cancelled' | 'handoff' | 'dismissed',
-  ) => {
+  const releaseCheckout = (cartId: string, outcome: CheckoutReleaseOutcome) => {
     setReleasedCheckouts((current) => {
       if (current.get(cartId) === outcome) return current
       return new Map(current).set(cartId, outcome)
     })
+    onReleaseCheckout?.(cartId, outcome)
   }
 
   const submitAssistant = async (event: FormEvent<HTMLFormElement>) => {
@@ -301,18 +317,23 @@ export function InlineCheckoutBlock({
           ) : null}
           <div className="mt-ct-checkout-groups">
             {groups.map((group) => {
-              const groupCartId = group.items.find((item) => item.cartId)?.cartId
+              const actionGroup = actionCart ? liveCheckoutGroupFor(group, liveGroups) : group
+              const groupCartId = actionGroup?.items.find((item) => item.cartId)?.cartId
               const releasedOutcome = groupCartId ? releasedCheckouts.get(groupCartId) : undefined
               const groupIsActive =
                 !releasedOutcome &&
                 (Boolean(activeCheckout && groupCartId && activeCheckout.cartId === groupCartId) ||
                   Boolean(
-                    activeCheckout && !groupCartId && activeCheckout.merchant === group.merchant,
+                    activeCheckout &&
+                    !groupCartId &&
+                    activeCheckout.merchant === actionGroup?.merchant,
                   ))
-              const groupReady = group.items.every(cartItemReadyForCheckout)
+              const groupReady = Boolean(
+                actionGroup && actionGroup.items.every(cartItemReadyForCheckout),
+              )
               const groupSyncIssues = Array.from(
                 new Set(
-                  group.items
+                  (actionGroup?.items ?? [])
                     .map((item) => item.syncError?.trim())
                     .filter((message): message is string => Boolean(message)),
                 ),
@@ -324,19 +345,23 @@ export function InlineCheckoutBlock({
                 releasedCartIds: new Set(releasedCheckouts.keys()),
                 targetCartId: groupCartId ?? null,
               })
-              const checkoutLabel = !groupReady
-                ? groupSyncIssues.length > 0
-                  ? 'Resolve cart issues to continue'
-                  : 'Merchant cart is syncing...'
-                : payingMerchant === group.merchantKey
-                  ? 'Starting checkout...'
-                  : payingMerchant
-                    ? 'Checkout is starting...'
-                    : releasedOutcome === 'cancelled' || releasedOutcome === 'dismissed'
-                      ? 'Return to checkout'
-                      : releasedOutcome === 'handoff'
-                        ? 'Open merchant checkout again'
-                        : 'Start checkout in chat'
+              const checkoutLabel = !actionGroup
+                ? 'Cart changed — open full cart'
+                : checkoutBusy
+                  ? 'Checkout is starting...'
+                  : !groupReady
+                    ? groupSyncIssues.length > 0
+                      ? 'Resolve cart issues to continue'
+                      : 'Merchant cart is syncing...'
+                    : payingMerchant === group.merchantKey
+                      ? 'Starting checkout...'
+                      : payingMerchant
+                        ? 'Checkout is starting...'
+                        : releasedOutcome === 'cancelled' || releasedOutcome === 'dismissed'
+                          ? 'Return to checkout'
+                          : releasedOutcome === 'handoff'
+                            ? 'Open merchant checkout again'
+                            : 'Start checkout in chat'
               return (
                 <div className="mt-ct-cogroup" key={group.merchantKey}>
                   <div className="mt-ct-cogroup-head">
@@ -354,7 +379,12 @@ export function InlineCheckoutBlock({
                     <div className="mt-cart-inline-error">{checkoutStartError.message}</div>
                   ) : null}
                   {!groupReady ? (
-                    groupSyncIssues.length > 0 ? (
+                    !actionGroup ? (
+                      <div className="mt-cart-inline-error">
+                        This merchant cart changed since this message. Open the full cart to review
+                        the current items.
+                      </div>
+                    ) : groupSyncIssues.length > 0 ? (
                       <div className="mt-cart-inline-error">
                         {groupSyncIssues.map((message) => (
                           <div key={message}>{message}</div>
@@ -378,8 +408,10 @@ export function InlineCheckoutBlock({
                     <button
                       className="mt-ct-cobtn"
                       type="button"
-                      disabled={checkoutBlocked}
-                      onClick={() => void payGroup(group)}
+                      disabled={checkoutBusy || checkoutBlocked || !actionGroup}
+                      onClick={() => {
+                        if (actionGroup) void payGroup(group, actionGroup)
+                      }}
                     >
                       {checkoutLabel}
                     </button>

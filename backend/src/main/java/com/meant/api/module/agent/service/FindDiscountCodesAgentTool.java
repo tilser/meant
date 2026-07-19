@@ -76,7 +76,7 @@ public class FindDiscountCodesAgentTool implements AgentTool {
                 selection.detail().product().key(),
                 selection.offer().key(),
                 null, null, null, null,
-                json.write(result)
+                json.writeArtifact(result)
         );
         return AgentToolExecutionResult.read(
                 json.write(result),

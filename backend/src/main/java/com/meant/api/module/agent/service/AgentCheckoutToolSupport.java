@@ -84,7 +84,7 @@ class AgentCheckoutToolSupport {
             }
             try {
                 CheckoutResult prepared = cartService.checkout(
-                        new GetCheckoutQuery(cartId, context.userId(), false),
+                        new GetCheckoutQuery(cartId, context.userId(), false, context.buyerIp()),
                         scopedIdempotencyKey(context, cartId)
                 );
                 checkouts.add(AgentCheckoutResult.Checkout.from(prepared));
@@ -112,7 +112,7 @@ class AgentCheckoutToolSupport {
         ownedContext(context);
         referenceService.requireCart(context, arguments.cartId());
         return cartService.getCheckout(new GetCheckoutQuery(
-                arguments.cartId(), context.userId(), Boolean.TRUE.equals(arguments.refresh())));
+                arguments.cartId(), context.userId(), Boolean.TRUE.equals(arguments.refresh()), context.buyerIp()));
     }
 
     CheckoutResult update(AgentToolExecutionContext context, AgentCheckoutToolArguments.Update arguments) {
@@ -136,7 +136,7 @@ class AgentCheckoutToolSupport {
                         arguments.shippingAddress().addressCountry()
                 ),
                 arguments.discountCodes() == null ? List.of() : arguments.discountCodes(),
-                null
+                context.buyerIp()
         ), context.idempotencyKey());
     }
 
@@ -162,7 +162,7 @@ class AgentCheckoutToolSupport {
                     checkout.cartId(),
                     null,
                     checkout.checkoutAttemptId(),
-                    json(checkout)
+                    jsonSupport.writeArtifact(checkout)
             ));
         }
         return List.copyOf(artifacts);

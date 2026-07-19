@@ -69,7 +69,7 @@ public class ListProductInteractionsAgentTool implements AgentTool {
                 null,
                 null,
                 null,
-                json.write(state)
+                json.writeArtifact(state)
         );
     }
 }

@@ -35,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AgentRunCoordinatorTest {
 
@@ -76,7 +77,12 @@ class AgentRunCoordinatorTest {
                 "Here are two grounded choices.",
                 false
         );
-        verify(fixture.toolExecutor(), timeout(3000).times(2)).execute(any(), any());
+        ArgumentCaptor<AgentToolExecutionContext> executionContexts =
+                ArgumentCaptor.forClass(AgentToolExecutionContext.class);
+        verify(fixture.toolExecutor(), timeout(3000).times(2)).execute(executionContexts.capture(), any());
+        assertThat(executionContexts.getAllValues())
+                .extracting(AgentToolExecutionContext::buyerIp)
+                .containsOnly("203.0.113.42");
         assertThat(model.requests()).hasSize(3);
         assertThat(model.requests().get(1).messages().getLast().toolResults())
                 .singleElement()
@@ -251,6 +257,7 @@ class AgentRunCoordinatorTest {
                 .status(AgentRunStatus.RUNNING)
                 .model("primary-model")
                 .promptVersion("test-v1")
+                .buyerIp("203.0.113.42")
                 .createdAt(Instant.now())
                 .build();
         when(runs.findById(runId)).thenReturn(Optional.of(run));

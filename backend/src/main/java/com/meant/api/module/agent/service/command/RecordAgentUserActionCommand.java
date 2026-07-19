@@ -11,6 +11,18 @@ public record RecordAgentUserActionCommand(
         @NotBlank @Size(max = 80) String toolName,
         @NotBlank @Size(max = 24000) String argumentsJson,
         @NotBlank @Size(max = 160) String idempotencyKey,
-        @NotBlank @Size(max = 500) String summary
+        @NotBlank @Size(max = 500) String summary,
+        @Size(max = 128) String buyerIp
 ) {
+
+    public RecordAgentUserActionCommand(
+            UUID userId,
+            UUID conversationId,
+            String toolName,
+            String argumentsJson,
+            String idempotencyKey,
+            String summary
+    ) {
+        this(userId, conversationId, toolName, argumentsJson, idempotencyKey, summary, null);
+    }
 }

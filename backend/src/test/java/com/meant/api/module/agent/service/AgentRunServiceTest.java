@@ -3,9 +3,11 @@ package com.meant.api.module.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.constant.AgentRunEventType;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.entity.AgentRun;
@@ -13,6 +15,8 @@ import com.meant.api.module.agent.entity.AgentRunEvent;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.repository.AgentRunEventRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
+import com.meant.api.module.agent.service.dto.AgentArtifactResult;
+import com.meant.api.module.agent.service.dto.AgentEventPayload;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,6 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import tools.jackson.databind.ObjectMapper;
 
 class AgentRunServiceTest {
 
@@ -135,7 +140,7 @@ class AgentRunServiceTest {
         ArgumentCaptor<AgentRunEvent> event = ArgumentCaptor.forClass(AgentRunEvent.class);
         verify(fixture.events()).save(event.capture());
         assertThat(event.getValue().getEventType()).isEqualTo(AgentRunEventType.RUN_STARTED);
-        verify(fixture.json()).write(org.mockito.ArgumentMatchers.argThat(payload ->
+        verify(fixture.json()).writeArtifact(org.mockito.ArgumentMatchers.argThat(payload ->
                 payload.toString().contains("restarted after worker recovery")));
         assertThat(run.getId()).isEqualTo(runId);
     }
@@ -194,15 +199,54 @@ class AgentRunServiceTest {
         assertThat(run.getExecutionOwner()).isNull();
     }
 
+    @Test
+    void oversizedArtifactEventRetainsItsDeclaredEnvelope() throws Exception {
+        UUID runId = UUID.randomUUID();
+        AgentRun run = queued(runId);
+        ObjectMapper objectMapper = new ObjectMapper();
+        Fixture fixture = fixture(
+                run,
+                new AgentJsonSupport(objectMapper, properties(256))
+        );
+        UUID executionOwner = fixture.service().claim(runId).orElseThrow();
+        String artifactPayload = "{\"description\":\"" + "event".repeat(500) + "\"}";
+        AgentArtifactResult artifact = new AgentArtifactResult(
+                UUID.randomUUID(), UUID.randomUUID(), runId, AgentArtifactType.PRODUCT,
+                1, "product:large", "Large product", "product:large", null,
+                null, null, null, null, artifactPayload, NOW
+        );
+
+        fixture.service().append(
+                runId,
+                executionOwner,
+                AgentRunEventType.ARTIFACT_UPSERTED,
+                AgentEventPayload.artifact(artifact)
+        );
+
+        ArgumentCaptor<AgentRunEvent> events = ArgumentCaptor.forClass(AgentRunEvent.class);
+        verify(fixture.events(), times(2)).save(events.capture());
+        String payloadJson = events.getAllValues().getLast().getPayloadJson();
+        assertThat(payloadJson).hasSizeGreaterThan(256);
+        assertThat(objectMapper.readTree(payloadJson).at("/artifact/type").asText())
+                .isEqualTo("PRODUCT");
+        assertThat(objectMapper.readTree(payloadJson).at("/artifact/payloadJson").asText())
+                .isEqualTo(artifactPayload);
+        assertThat(objectMapper.readTree(payloadJson).has("truncated")).isFalse();
+    }
+
     private Fixture fixture(AgentRun run) {
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        when(json.writeArtifact(any())).thenReturn("{}");
+        return fixture(run, json);
+    }
+
+    private Fixture fixture(AgentRun run, AgentJsonSupport json) {
         AgentRunRepository runs = mock(AgentRunRepository.class);
         AgentRunEventRepository events = mock(AgentRunEventRepository.class);
-        AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentRunEventNotifier eventNotifier = mock(AgentRunEventNotifier.class);
         when(runs.findForUpdate(run.getId())).thenReturn(Optional.of(run));
         when(runs.findById(run.getId())).thenReturn(Optional.of(run));
         when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(json.write(any())).thenReturn("{}");
         AgentRunService service = new AgentRunService(
                 runs,
                 events,
@@ -229,6 +273,10 @@ class AgentRunServiceTest {
     }
 
     private AgentProperties properties() {
+        return properties(24000);
+    }
+
+    private AgentProperties properties(int maximumResultCharacters) {
         return new AgentProperties(
                 true,
                 "test-model",
@@ -247,7 +295,7 @@ class AgentRunServiceTest {
                 4,
                 40,
                 64000,
-                24000,
+                maximumResultCharacters,
                 2,
                 Duration.ofSeconds(10),
                 Duration.ofSeconds(2),

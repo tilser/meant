@@ -43,7 +43,7 @@ public class AgentMissionEvaluateCoverageTool implements AgentTool {
         return new AgentToolExecutionResult(
                 resultJson,
                 "Evaluated coverage for shopping mission " + mission.missionId() + ".",
-                List.of(support.artifact(mission, resultJson)),
+                List.of(support.artifact(mission)),
                 null
         );
     }

@@ -81,7 +81,7 @@ class AgentCartToolSupport {
         ownedContext(context);
         referenceService.requireCart(context, arguments.cartId());
         return cartService.get(new GetCartQuery(
-                arguments.cartId(), context.userId(), Boolean.TRUE.equals(arguments.refresh())));
+                arguments.cartId(), context.userId(), Boolean.TRUE.equals(arguments.refresh()), context.buyerIp()));
     }
 
     AgentCartResult prepare(AgentToolExecutionContext context, AgentCartToolArguments.Prepare arguments) {
@@ -116,7 +116,7 @@ class AgentCartToolSupport {
                         List.of(),
                         List.of(),
                         null,
-                        null
+                        context.buyerIp()
                 ), scopedIdempotencyKey(context, partition.routingScopeKey()));
                 carts.add(AgentCartResult.Cart.from(created));
                 cartIds.add(created.cartId());
@@ -146,7 +146,8 @@ class AgentCartToolSupport {
                 context.userId(),
                 List.of(new UpdateCartCommand.AddItem(arguments.offerKey(), arguments.quantity())),
                 List.of(),
-                List.of()
+                List.of(),
+                context.buyerIp()
         ), context.idempotencyKey());
     }
 
@@ -158,7 +159,8 @@ class AgentCartToolSupport {
                 context.userId(),
                 List.of(),
                 List.of(new UpdateCartCommand.UpdateItem(arguments.cartLineId(), null, arguments.quantity())),
-                List.of()
+                List.of(),
+                context.buyerIp()
         ), context.idempotencyKey());
     }
 
@@ -170,7 +172,8 @@ class AgentCartToolSupport {
                 context.userId(),
                 List.of(),
                 List.of(),
-                List.of(arguments.cartLineId())
+                List.of(arguments.cartLineId()),
+                context.buyerIp()
         ), context.idempotencyKey());
     }
 
@@ -178,11 +181,15 @@ class AgentCartToolSupport {
         return jsonSupport.write(value);
     }
 
+    private String artifactJson(Object value) {
+        return jsonSupport.writeArtifact(value);
+    }
+
     List<AgentArtifact> artifacts(AgentCartResult result) {
         List<AgentArtifact> artifacts = new ArrayList<>();
         int ordinal = 1;
         for (AgentCartResult.Cart cart : result.carts()) {
-            String cartJson = json(cart);
+            String cartJson = artifactJson(cart);
             artifacts.add(new AgentArtifact(
                     AgentArtifactType.CART,
                     ordinal++,
@@ -208,7 +215,7 @@ class AgentCartToolSupport {
                         cart.cartId(),
                         line.cartLineId(),
                         null,
-                        json(line)
+                        artifactJson(line)
                 ));
             }
         }
@@ -220,7 +227,8 @@ class AgentCartToolSupport {
             UUID userId,
             List<UpdateCartCommand.AddItem> additions,
             List<UpdateCartCommand.UpdateItem> updates,
-            List<UUID> removals
+            List<UUID> removals,
+            String buyerIp
     ) {
         return new UpdateCartCommand(
                 cartId,
@@ -236,7 +244,7 @@ class AgentCartToolSupport {
                 null,
                 null,
                 null,
-                null
+                buyerIp
         );
     }
 

@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useRef } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useRef } from 'react'
 
 import {
   bindSelectedOfferToCart as bindSelectedOfferToRemoteCart,
@@ -23,6 +23,7 @@ import type {
   DeliveryAddressPayload,
   DeliveryOptionPayload,
   MerchantCartSnapshot,
+  MerchantCartStateReplacement,
   RemoveCartCodeInput,
 } from './types'
 import {
@@ -41,9 +42,60 @@ import {
   mergeInitialSelectedOfferSnapshot,
   settleUnconfirmedSelectedOfferAddition,
 } from './selectedOfferCartBinding'
+import { cartItemsShareMerchantPartition } from './cartPartition'
 
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
   return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
+}
+
+function sameMerchantPartition(item: CartItem, replacement: MerchantCartStateReplacement): boolean {
+  const representative = replacement.lines[0]
+  return cartItemsShareMerchantPartition(item, {
+    id: representative?.id ?? item.id,
+    merchant: replacement.snapshot.merchant,
+    qty: representative?.qty ?? 0,
+    merchantId: replacement.merchantId ?? representative?.merchantId,
+    merchantDomain: replacement.merchantDomain ?? representative?.merchantDomain,
+    provider: replacement.provider ?? representative?.provider,
+    merchantIntegrationId:
+      replacement.merchantIntegrationId ?? representative?.merchantIntegrationId,
+    externalMerchantId: replacement.externalMerchantId ?? representative?.externalMerchantId,
+    routingScopeKey: replacement.routingScopeKey ?? representative?.routingScopeKey,
+    merchantScopeKey:
+      replacement.routingScopeKey ??
+      representative?.merchantScopeKey ??
+      (!item.routingScopeKey && !item.merchantScopeKey ? replacement.merchantKey : null),
+    cartId: replacement.snapshot.cartId,
+    remoteCartId: replacement.snapshot.remoteCartId,
+  })
+}
+
+export function reconcileMerchantCartStates(
+  cart: readonly CartItem[],
+  snapshots: Readonly<Record<string, MerchantCartSnapshot>>,
+  replacements: readonly MerchantCartStateReplacement[],
+): { cart: CartItem[]; snapshots: Record<string, MerchantCartSnapshot> } {
+  const replacedMerchantKeys = new Set(
+    cart.flatMap((item) =>
+      replacements.some((replacement) => sameMerchantPartition(item, replacement))
+        ? [cartMerchantKey(item)]
+        : [],
+    ),
+  )
+  const nextSnapshots = { ...snapshots }
+  replacedMerchantKeys.forEach((merchantKey) => delete nextSnapshots[merchantKey])
+  replacements.forEach((replacement) => {
+    nextSnapshots[replacement.merchantKey] = replacement.snapshot
+  })
+  return {
+    cart: [
+      ...cart.filter(
+        (item) => !replacements.some((replacement) => sameMerchantPartition(item, replacement)),
+      ),
+      ...replacements.flatMap((replacement) => replacement.lines),
+    ],
+    snapshots: nextSnapshots,
+  }
 }
 
 export function useCartController(products: readonly Product[], ownerId: string | undefined) {
@@ -60,6 +112,8 @@ export function useCartController(products: readonly Product[], ownerId: string 
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
   cartRef.current = cart
   cartSnapshotsRef.current = cartSnapshots
+  const getCurrentCart = useCallback(() => cartRef.current, [])
+  const getCurrentCartSnapshots = useCallback(() => cartSnapshotsRef.current, [])
 
   const isAccountCurrent = () => Boolean(ownerId && activeOwnerIdRef.current === ownerId)
   const requireCurrentOwner = (): string => {
@@ -114,6 +168,17 @@ export function useCartController(products: readonly Product[], ownerId: string 
     const next = resolveSetStateAction(action, cartSnapshotsRef.current)
     cartSnapshotsRef.current = next
     setStoredCartSnapshots(next)
+  }
+
+  const replaceMerchantCartStates = (replacements: readonly MerchantCartStateReplacement[]) => {
+    if (!isAccountCurrent() || replacements.length === 0) return
+    const reconciled = reconcileMerchantCartStates(
+      cartRef.current,
+      cartSnapshotsRef.current,
+      replacements,
+    )
+    setCart(reconciled.cart)
+    setCartSnapshots(reconciled.snapshots)
   }
 
   const updateStoredCart = (updater: (current: CartItem[]) => CartItem[]) => {
@@ -515,14 +580,14 @@ export function useCartController(products: readonly Product[], ownerId: string 
     }
   }
 
-  const addToCart = (id: ProductId, merchant: string) => {
+  const addToCart = async (id: ProductId, merchant: string): Promise<void> => {
     if (!isAccountCurrent()) {
       return
     }
     const product = products.find((candidate) => candidate.id === id)
     const offer = product?.offers.find((candidate) => candidate.merchant === merchant)
     if (product && offer && offerCartable(offer)) {
-      void addProductOfferToCart(product, offer)
+      await addProductOfferToCart(product, offer)
       return
     }
 
@@ -537,7 +602,11 @@ export function useCartController(products: readonly Product[], ownerId: string 
     })
   }
 
-  const removeFromCart = (id: ProductId, merchant: string, identity?: string) => {
+  const removeFromCart = async (
+    id: ProductId,
+    merchant: string,
+    identity?: string,
+  ): Promise<void> => {
     if (!isAccountCurrent()) {
       return
     }
@@ -556,53 +625,57 @@ export function useCartController(products: readonly Product[], ownerId: string 
       return
     }
 
-    void updateCart({
-      cartId: item.cartId,
-      removeCartLineIds: item.remoteCartLineId
-        ? undefined
-        : item.cartLineId
-          ? [item.cartLineId]
-          : undefined,
-      removeRemoteCartLineIds: item.remoteCartLineId ? [item.remoteCartLineId] : undefined,
-    })
-      .then((snapshot) => {
-        updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
-        storeCartSnapshot(merchantKey, item.merchant, snapshot)
+    try {
+      const snapshot = await updateCart({
+        cartId: item.cartId,
+        removeCartLineIds: item.remoteCartLineId
+          ? undefined
+          : item.cartLineId
+            ? [item.cartLineId]
+            : undefined,
+        removeRemoteCartLineIds: item.remoteCartLineId ? [item.remoteCartLineId] : undefined,
       })
-      .catch((error) => {
-        if (isCartNotFoundError(error)) {
-          clearMerchantCartState(merchantKey)
-          return
-        }
-        updateStoredCart((current) => {
-          const exists = current.some((candidate) =>
-            cartItemMatches(candidate, id, merchant, identity),
+      updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+      storeCartSnapshot(merchantKey, item.merchant, snapshot)
+    } catch (error) {
+      if (isCartNotFoundError(error)) {
+        clearMerchantCartState(merchantKey)
+        return
+      }
+      updateStoredCart((current) => {
+        const exists = current.some((candidate) =>
+          cartItemMatches(candidate, id, merchant, identity),
+        )
+        if (exists) {
+          return current.map((candidate) =>
+            cartItemMatches(candidate, id, merchant, identity)
+              ? { ...candidate, syncError: 'Could not remove this item from the merchant cart.' }
+              : candidate,
           )
-          if (exists) {
-            return current.map((candidate) =>
-              cartItemMatches(candidate, id, merchant, identity)
-                ? { ...candidate, syncError: 'Could not remove this item from the merchant cart.' }
-                : candidate,
-            )
-          }
-          return [
-            ...current,
-            {
-              ...item,
-              syncing: false,
-              syncError: 'Could not remove this item from the merchant cart.',
-            },
-          ]
-        })
+        }
+        return [
+          ...current,
+          {
+            ...item,
+            syncing: false,
+            syncError: 'Could not remove this item from the merchant cart.',
+          },
+        ]
       })
+    }
   }
 
-  const updateQty = (id: ProductId, merchant: string, qty: number, identity?: string) => {
+  const updateQty = async (
+    id: ProductId,
+    merchant: string,
+    qty: number,
+    identity?: string,
+  ): Promise<void> => {
     if (!isAccountCurrent()) {
       return
     }
     if (qty <= 0) {
-      removeFromCart(id, merchant, identity)
+      await removeFromCart(id, merchant, identity)
       return
     }
 
@@ -626,40 +699,39 @@ export function useCartController(products: readonly Product[], ownerId: string 
       return
     }
 
-    void updateCart({
-      cartId: item.cartId,
-      updateItems: [
-        {
-          cartLineId: item.cartLineId,
-          remoteCartLineId: item.remoteCartLineId,
-          quantity: qty,
-        },
-      ],
-    })
-      .then((snapshot) => {
-        updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
-        storeCartSnapshot(merchantKey, item.merchant, snapshot)
+    try {
+      const snapshot = await updateCart({
+        cartId: item.cartId,
+        updateItems: [
+          {
+            cartLineId: item.cartLineId,
+            remoteCartLineId: item.remoteCartLineId,
+            quantity: qty,
+          },
+        ],
       })
-      .catch(async (error) => {
-        if (isCartNotFoundError(error)) {
-          // The local qty is already applied, so rebuilding the cart from
-          // current items carries the new quantity onto the fresh cart.
-          await recreateMerchantCart(merchantKey).catch(() => undefined)
-          return
-        }
-        updateStoredCart((current) =>
-          current.map((candidate) =>
-            cartItemMatches(candidate, id, merchant, identity) && candidate.qty === qty
-              ? {
-                  ...candidate,
-                  qty: item.qty,
-                  syncing: false,
-                  syncError: 'Could not update this item in the merchant cart.',
-                }
-              : candidate,
-          ),
-        )
-      })
+      updateStoredCart((current) => mergeCartSnapshot(current, merchantKey, snapshot))
+      storeCartSnapshot(merchantKey, item.merchant, snapshot)
+    } catch (error) {
+      if (isCartNotFoundError(error)) {
+        // The local qty is already applied, so rebuilding the cart from
+        // current items carries the new quantity onto the fresh cart.
+        await recreateMerchantCart(merchantKey).catch(() => undefined)
+        return
+      }
+      updateStoredCart((current) =>
+        current.map((candidate) =>
+          cartItemMatches(candidate, id, merchant, identity) && candidate.qty === qty
+            ? {
+                ...candidate,
+                qty: item.qty,
+                syncing: false,
+                syncError: 'Could not update this item in the merchant cart.',
+              }
+            : candidate,
+        ),
+      )
+    }
   }
 
   const appliedCodesForType = (
@@ -876,7 +948,10 @@ export function useCartController(products: readonly Product[], ownerId: string 
   return {
     cart,
     cartSnapshots,
+    getCurrentCart,
+    getCurrentCartSnapshots,
     setCart,
+    replaceMerchantCartStates,
     updateStoredCart,
     addProductOfferToCart,
     addSelectedOfferToCart,

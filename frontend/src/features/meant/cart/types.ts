@@ -1,4 +1,4 @@
-import type { CartDeliveryGroup, CartDeliveryOption } from '../types'
+import type { CartDeliveryGroup, CartDeliveryOption, CartItem } from '../types'
 
 export type AppliedCartCodeType = 'DISCOUNT' | 'GIFT_CARD'
 
@@ -23,6 +23,19 @@ export interface MerchantCartSnapshot {
   totalAmount: number | null
   currency: string | null
   appliedCodes: AppliedCartCode[]
+}
+
+/** A complete server-owned merchant partition replacing any older local cart for that scope. */
+export interface MerchantCartStateReplacement {
+  merchantKey: string
+  merchantId: string | null
+  merchantDomain: string | null
+  provider: string | null
+  merchantIntegrationId: string | null
+  externalMerchantId: string | null
+  routingScopeKey: string | null
+  snapshot: MerchantCartSnapshot
+  lines: readonly CartItem[]
 }
 
 export interface ApplyCartCodeInput {

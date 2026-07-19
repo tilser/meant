@@ -2,12 +2,18 @@ package com.meant.api.module.agent.service;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
+import com.meant.api.module.agent.service.dto.AgentCanonicalProductArtifact;
 import com.meant.api.module.agent.service.dto.AgentOfferReferenceResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
+import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
+import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
+import com.meant.api.module.user.service.dto.UserProductDetailResult;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -36,19 +42,46 @@ public class AgentProductReadResultService {
         );
     }
 
-    public List<AgentArtifact> artifacts(CanonicalProduct product, int ordinal, Object payload) {
+    public List<AgentArtifact> discoveryArtifacts(
+            CanonicalProduct product,
+            int ordinal,
+            ProductRankingExplanation rankingExplanation,
+            UserCanonicalProductPersonalizationResult personalization,
+            Map<String, OfferRankingExplanation> offerRankingExplanations
+    ) {
+        return artifacts(
+                product,
+                ordinal,
+                AgentCanonicalProductArtifact.discovery(
+                        product,
+                        rankingExplanation,
+                        personalization,
+                        offerRankingExplanations
+                )
+        );
+    }
+
+    public List<AgentArtifact> detailArtifacts(UserProductDetailResult detail, int ordinal) {
+        return artifacts(detail.product(), ordinal, AgentCanonicalProductArtifact.detail(detail));
+    }
+
+    private List<AgentArtifact> artifacts(
+            CanonicalProduct product,
+            int ordinal,
+            AgentCanonicalProductArtifact payload
+    ) {
         AgentArtifact productArtifact = new AgentArtifact(
                 AgentArtifactType.PRODUCT,
                 ordinal,
                 product.key(),
                 product.title(),
                 product.key(),
-                product.offers().getFirst().key(),
+                payload.recommendedOfferKey(),
                 null,
                 null,
                 null,
                 null,
-                json.write(payload)
+                json.writeArtifact(payload)
         );
         List<AgentArtifact> offerArtifacts = product.offers().stream()
                 .map(offer -> new AgentArtifact(
@@ -62,7 +95,7 @@ public class AgentProductReadResultService {
                         null,
                         null,
                         null,
-                        json.write(offer)
+                        json.writeArtifact(offer)
                 ))
                 .toList();
         return java.util.stream.Stream.concat(
