@@ -619,6 +619,104 @@ describe('agent artifact mapping', () => {
     }
   })
 
+  test('keeps cart snapshot ordering total when legacy artifacts omit comparator fields', () => {
+    const selectedCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:complete-ordering',
+      artifactId: '00000000-0000-0000-0000-000000000021',
+      messageId: '00000000-0000-0000-0000-000000000011',
+      ordinal: 1,
+      cartId: 'complete-ordering',
+      payloadJson: JSON.stringify({
+        cartId: 'complete-ordering',
+        routingScopeKey: 'shopify:external:nullish-ordering-merchant',
+      }),
+    })
+    const legacyCarts = [
+      artifact({
+        type: 'CART',
+        stableKey: 'cart:missing-message',
+        artifactId: '00000000-0000-0000-0000-000000000022',
+        messageId: undefined,
+        ordinal: 1,
+        cartId: 'missing-message',
+        payloadJson: JSON.stringify({
+          cartId: 'missing-message',
+          routingScopeKey: 'shopify:external:nullish-ordering-merchant',
+        }),
+      }),
+      artifact({
+        type: 'CART',
+        stableKey: 'cart:missing-ordinal',
+        artifactId: '00000000-0000-0000-0000-000000000023',
+        messageId: selectedCart.messageId,
+        ordinal: undefined,
+        cartId: 'missing-ordinal',
+        payloadJson: JSON.stringify({
+          cartId: 'missing-ordinal',
+          routingScopeKey: 'shopify:external:nullish-ordering-merchant',
+        }),
+      }),
+      artifact({
+        type: 'CART',
+        stableKey: 'cart:missing-artifact-id',
+        artifactId: undefined,
+        messageId: selectedCart.messageId,
+        ordinal: selectedCart.ordinal,
+        cartId: 'missing-artifact-id',
+        payloadJson: JSON.stringify({
+          cartId: 'missing-artifact-id',
+          routingScopeKey: 'shopify:external:nullish-ordering-merchant',
+        }),
+      }),
+    ]
+
+    for (const legacyCart of legacyCarts) {
+      for (const input of [
+        [selectedCart, legacyCart],
+        [legacyCart, selectedCart],
+      ]) {
+        expect(latestCartSnapshotArtifacts(input).map((item) => item.artifactId)).toEqual([
+          selectedCart.artifactId,
+        ])
+      }
+    }
+
+    const nullMessageCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:null-message',
+      artifactId: '00000000-0000-0000-0000-000000000031',
+      messageId: null as unknown as string,
+      ordinal: 1,
+      cartId: 'null-message',
+      payloadJson: JSON.stringify({
+        cartId: 'null-message',
+        routingScopeKey: 'shopify:external:missing-message-merchant',
+      }),
+    })
+    const undefinedMessageCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:undefined-message',
+      artifactId: '00000000-0000-0000-0000-000000000032',
+      messageId: undefined,
+      ordinal: 1,
+      cartId: 'undefined-message',
+      payloadJson: JSON.stringify({
+        cartId: 'undefined-message',
+        routingScopeKey: 'shopify:external:missing-message-merchant',
+      }),
+    })
+
+    for (const input of [
+      [nullMessageCart, undefinedMessageCart],
+      [undefinedMessageCart, nullMessageCart],
+    ]) {
+      expect(latestCartSnapshotArtifacts(input).map((item) => item.artifactId)).toEqual([
+        nullMessageCart.artifactId,
+      ])
+    }
+  })
+
   test('selects the nanosecond-later cart snapshot when instant precision differs', () => {
     const exactSecondCart = artifact({
       type: 'CART',

@@ -635,9 +635,39 @@ function compareCartSnapshotPreference(
 ): number {
   const timestampComparison = compareArtifactTimestamps(left.createdAt, right.createdAt)
   if (timestampComparison !== 0) return -timestampComparison
-  if (left.messageId !== right.messageId) return left.messageId < right.messageId ? -1 : 1
-  if (left.ordinal !== right.ordinal) return left.ordinal - right.ordinal
-  return left.artifactId < right.artifactId ? -1 : left.artifactId > right.artifactId ? 1 : 0
+  const messageComparison = compareNullableStrings(left.messageId, right.messageId)
+  if (messageComparison !== 0) return messageComparison
+  const ordinalComparison = compareNullableNumbers(left.ordinal, right.ordinal)
+  if (ordinalComparison !== 0) return ordinalComparison
+  return compareNullableStrings(left.artifactId, right.artifactId)
+}
+
+function compareNullableStrings(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): number {
+  if (left === right) return 0
+  const leftMissing = left === null || left === undefined
+  const rightMissing = right === null || right === undefined
+  if (leftMissing || rightMissing) {
+    if (leftMissing && rightMissing) return 0
+    return leftMissing ? 1 : -1
+  }
+  return left < right ? -1 : 1
+}
+
+function compareNullableNumbers(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): number {
+  if (left === right) return 0
+  const leftMissing = left === null || left === undefined
+  const rightMissing = right === null || right === undefined
+  if (leftMissing || rightMissing) {
+    if (leftMissing && rightMissing) return 0
+    return leftMissing ? 1 : -1
+  }
+  return left - right
 }
 
 function isPreferredCartSnapshot(

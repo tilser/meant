@@ -525,8 +525,7 @@ public class AgentMutationTargetPolicy {
         if (cartsWithLines.size() != 1) {
             return Optional.empty();
         }
-        List<CartLineReference> lines = cartsWithLines.getFirst().lines();
-        return ordinal <= lines.size() ? Optional.of(lines.get(ordinal - 1)) : Optional.empty();
+        return atOrdinal(cartsWithLines.getFirst().lines(), ordinal);
     }
 
     private Optional<AgentArtifactReference> expectedCheckout(
@@ -547,10 +546,9 @@ public class AgentMutationTargetPolicy {
             List<AgentArtifactReference> carts = currentCartSnapshots(evidence).stream()
                     .map(CartSnapshot::artifact)
                     .toList();
-            return ordinal <= carts.size() ? Optional.of(carts.get(ordinal - 1)) : Optional.empty();
+            return atOrdinal(carts, ordinal);
         }
-        List<AgentArtifactReference> compatible = latestArtifactSet(evidence, type);
-        return ordinal <= compatible.size() ? Optional.of(compatible.get(ordinal - 1)) : Optional.empty();
+        return atOrdinal(latestArtifactSet(evidence, type), ordinal);
     }
 
     private boolean matchesLatestCartSet(JsonNode arguments, List<AgentArtifactReference> evidence) {
@@ -603,7 +601,13 @@ public class AgentMutationTargetPolicy {
                 .filter(reference -> sameResultSet(anchor, reference))
                 .sorted(java.util.Comparator.comparingInt(AgentArtifactReference::getOrdinal))
                 .toList();
-        return ordinal <= items.size() ? Optional.of(items.get(ordinal - 1)) : Optional.empty();
+        return atOrdinal(items, ordinal);
+    }
+
+    private <T> Optional<T> atOrdinal(List<T> items, int ordinal) {
+        return ordinal > 0 && ordinal <= items.size()
+                ? Optional.of(items.get(ordinal - 1))
+                : Optional.empty();
     }
 
     private Optional<AgentArtifactReference> soleLatestProduct(List<AgentArtifactReference> evidence) {
