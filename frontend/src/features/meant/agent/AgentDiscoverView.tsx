@@ -30,6 +30,7 @@ import type {
 } from '../cart/checkoutTypes'
 import { AgentActivityPanel } from '../chat/AgentActivityPanel'
 import { DiscoverHomeHero } from '../chat/ChatDiscoverView'
+import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
 import type {
@@ -101,6 +102,9 @@ const MUTATING_AGENT_ACTIONS = new Set([
   'prepare_checkout',
   'update_checkout',
 ])
+
+const NEWSLETTER_SUBSCRIBED_MESSAGE =
+  'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
 
 function isTerminalRun(run: AgentRunSnapshotProfile | null | undefined): boolean {
   return Boolean(run && isTerminalAgentRunStatus(run.status))
@@ -347,8 +351,12 @@ export function AgentDiscoverView({
   const [submitting, setSubmitting] = useState(false)
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
   const [trayClearing, setTrayClearing] = useState(false)
+  const [newsletterPending, setNewsletterPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shareNotice, setShareNotice] = useState<string | null>(null)
+  const [localMessagesByConversationId, setLocalMessagesByConversationId] = useState<
+    Record<string, DiscoverChatMessage[]>
+  >({})
   const [dismissedMessageIds, setDismissedMessageIds] = useStoredState<Record<string, string[]>>(
     accountStorageKey('meant.agentDismissedMessages', expectedUserId),
     {},
@@ -786,17 +794,21 @@ export function AgentDiscoverView({
     () => products.filter((product) => interactionState.pinned.has(product.id)),
     [interactionState.pinned, products],
   )
+  const watchedSet = useMemo(() => new Set<ProductId>(), [])
   const visibleCart = cart
 
   const allMessages = useMemo(() => {
-    if (!combinedConversation) return []
+    const localMessages = activeConversationId
+      ? (localMessagesByConversationId[activeConversationId] ?? [])
+      : []
+    if (!combinedConversation) return localMessages
     const authoritative = discoverMessagesFromAgentConversation(
       combinedConversation,
       deliveryLocations,
     )
-    if (!activeRunId) return authoritative
+    if (!activeRunId) return [...authoritative, ...localMessages]
     const projection = eventState.runs[activeRunId]
-    if (!projection) return authoritative
+    if (!projection) return [...authoritative, ...localMessages]
     const knownMessageIds = new Set(
       combinedConversation.messages.map((message) => message.messageId),
     )
@@ -824,8 +836,15 @@ export function AgentDiscoverView({
         pendingText: 'Meant is still working…',
       })
     }
-    return [...authoritative, ...transient]
-  }, [activeRunId, combinedConversation, deliveryLocations, eventState.runs])
+    return [...authoritative, ...transient, ...localMessages]
+  }, [
+    activeConversationId,
+    activeRunId,
+    combinedConversation,
+    deliveryLocations,
+    eventState.runs,
+    localMessagesByConversationId,
+  ])
 
   const messages = useMemo(() => {
     if (!activeConversationId) return allMessages
@@ -846,6 +865,55 @@ export function AgentDiscoverView({
     },
     [activeConversationId, setDismissedMessageIds],
   )
+
+  const appendLocalMessage = useCallback(
+    (message: DiscoverChatMessage, conversationId = activeConversationIdRef.current) => {
+      if (!conversationId) return
+      setLocalMessagesByConversationId((current) => ({
+        ...current,
+        [conversationId]: [...(current[conversationId] ?? []), message],
+      }))
+    },
+    [],
+  )
+
+  const appendUnavailableFeatureMessage = useCallback(() => {
+    appendLocalMessage(comingSoonMessage(uniqueRequestId('coming-soon')))
+  }, [appendLocalMessage])
+
+  const subscribeToNewsletter = useCallback(async () => {
+    if (newsletter || newsletterPending) return
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId) return
+    setNewsletterPending(true)
+    try {
+      await onNewsletterChange(true)
+      appendLocalMessage(
+        {
+          id: uniqueRequestId('newsletter'),
+          role: 'ai',
+          blocks: [{ type: 'system', text: NEWSLETTER_SUBSCRIBED_MESSAGE }],
+        },
+        conversationId,
+      )
+    } catch {
+      appendLocalMessage(
+        {
+          id: uniqueRequestId('newsletter'),
+          role: 'ai',
+          blocks: [
+            {
+              type: 'system',
+              text: 'Could not update newsletter settings. Please try again.',
+            },
+          ],
+        },
+        conversationId,
+      )
+    } finally {
+      setNewsletterPending(false)
+    }
+  }, [appendLocalMessage, newsletter, newsletterPending, onNewsletterChange])
 
   useEffect(() => {
     if (!combinedConversation) return
@@ -1188,13 +1256,8 @@ export function AgentDiscoverView({
       setTrayClearing(false)
     }
   }
-  const toggleWatch = (product: Product) => {
-    const watched = interactionState.watched.has(product.id)
-    void performAction(
-      watched ? 'unwatch_product' : 'watch_product',
-      { canonicalProductKey: product.id, offerKey: exactOfferKey(product) ?? undefined },
-      `${watched ? 'Stopped watching' : 'Watching'} ${product.name}`,
-    )
+  const toggleWatch = () => {
+    appendUnavailableFeatureMessage()
   }
   const addToCart = (product: Product) => {
     const offerKey = exactOfferKey(product)
@@ -1678,7 +1741,7 @@ export function AgentDiscoverView({
             savedSet={savedSet}
             savePendingSet={savePendingSet}
             pinnedSet={interactionState.pinned}
-            watchedSet={interactionState.watched}
+            watchedSet={watchedSet}
             shelfMessageSet={shelfMessageSet}
             shelfProductSet={shelfProductSet}
             flash={shelfFlashMessageId === message.id}
@@ -1711,8 +1774,8 @@ export function AgentDiscoverView({
             onReleaseCheckout={onReleaseCheckout}
             onCheckoutHere={() => void prepareCheckout()}
             newsletter={newsletter}
-            newsletterPending={false}
-            onNewsletterSignup={() => void onNewsletterChange(true)}
+            newsletterPending={newsletterPending}
+            onNewsletterSignup={() => void subscribeToNewsletter()}
             onDelete={removeMessage}
             onShelfAddMessage={(item) => addMessageToShelf(item)}
             onShelfAddProduct={(product) => addProductToShelf(product)}

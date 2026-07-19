@@ -58,6 +58,7 @@ import type {
 import { SHELF_DRAG_MIME } from '../shelf/types'
 import { AgentActivityPanel } from './AgentActivityPanel'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
+import { comingSoonMessage } from './comingSoon'
 import { createConversationPersistenceCoordinator } from './conversationPersistence'
 import { DiscoverChatMessageRow } from './DiscoverChatMessageRow'
 import { DiscoverShareSheet } from './DiscoverShareSheet'
@@ -1469,13 +1470,7 @@ export function ChatDiscoverView({
 
   const appendUnavailableFeatureMessage = (product?: Product) => {
     appendMessagesToActiveThread(
-      [
-        {
-          id: nextDiscoverChatMessageId(),
-          role: 'ai',
-          blocks: [{ type: 'newsletter' }],
-        },
-      ],
+      [comingSoonMessage(nextDiscoverChatMessageId())],
       product ? { focusProductId: product.id } : undefined,
     )
     scrollChatToBottom()
