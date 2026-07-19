@@ -3,9 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AgentMessageProfile } from '../../../lib/apiClient'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
 
-function message(
-  overrides: Partial<AgentMessageProfile> = {},
-): AgentMessageProfile {
+function message(overrides: Partial<AgentMessageProfile> = {}): AgentMessageProfile {
   return {
     messageId: 'message-1',
     runId: null,

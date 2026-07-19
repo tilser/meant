@@ -89,10 +89,7 @@ import {
 import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
 import { AgentActionRequestIdentityStore } from './requestIdentity'
 import { agentActionQueueFor } from './actionQueue'
-import {
-  PRODUCT_PIN_NOTICE_LIFETIME_MS,
-  isProductPinNotice,
-} from './autoDismissNotices'
+import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
 
 const MUTATING_AGENT_ACTIONS = new Set([
   'prepare_carts',
