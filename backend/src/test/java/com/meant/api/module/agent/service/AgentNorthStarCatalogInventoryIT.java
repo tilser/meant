@@ -2,18 +2,23 @@ package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
+import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
+import com.meant.api.module.agent.service.command.VisibleProductContextCommand;
 import com.meant.api.module.agent.service.dto.AgentModelResponse;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelUsage;
@@ -84,6 +89,8 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
             UUID.fromString("00000000-0000-0000-0000-000000000912");
     private static final UUID INVENTORY_ITEM_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000913");
+    private static final UUID CLARIFICATION_USER_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000914");
     private static final ProviderIdentity PROVIDER = new ProviderIdentity("SHOPIFY");
 
     @Autowired private UserRepository userRepository;
@@ -93,6 +100,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
     @Autowired private AgentRunRepository runRepository;
     @Autowired private AgentToolInvocationRepository invocationRepository;
     @Autowired private AgentArtifactReferenceRepository artifactRepository;
+    @Autowired private AgentMessageRepository messageRepository;
 
     @MockitoBean private AgentModelGateway modelGateway;
     @MockitoBean private UserGroupedProductSearchService catalogSearchService;
@@ -104,22 +112,29 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
     @MockitoBean private CartService cartService;
 
     @Test
-    void broadClothingSearchPersistsRealProductArtifactsAndAddsTheExactSecondOffer() throws Exception {
+    void broadClothingSearchAddsTheThirdVisibleProductFromTheSecondPageAfterAConversationalLeadIn()
+            throws Exception {
         persistUser(CLOTHING_USER_ID, "north-star-clothing@example.test");
         List<CanonicalProduct> products = List.of(
                 product("linen-shirt", "Linen shirt", "M"),
                 product("straight-jeans", "Straight jeans", "M"),
-                product("cotton-jacket", "Cotton jacket", "M")
+                product("cotton-jacket", "Cotton jacket", "M"),
+                product("camo-hat", "Camo trucker hat", "M"),
+                product("canvas-cap", "Canvas cap", "M"),
+                product("mesh-cap", "Mesh cap", "M"),
+                product("duck-camo-cap", "Duck camo cap", "M"),
+                product("embroidered-cap", "Embroidered cap", "M")
         );
-        String secondOfferKey = products.get(1).offers().getFirst().key();
+        String thirdVisibleOfferKey = products.get(6).offers().getFirst().key();
         when(catalogSearchService.search(any(), any(SearchUserProductsCommand.class)))
                 .thenReturn(searchResult("versatile new clothing", products));
-        stubCart(secondOfferKey, CLOTHING_USER_ID);
+        stubCart(thirdVisibleOfferKey, CLOTHING_USER_ID);
         scriptModel(
-                tool("a-search", "search_catalog", "{\"query\":\"versatile new clothing\",\"limit\":3}"),
+                tool("a-search", "search_catalog", "{\"query\":\"versatile new clothing\",\"limit\":8}"),
                 text("Here is a useful starting set."),
                 tool("a-cart", "prepare_carts",
-                        "{\"offers\":[{\"offerKey\":\"" + secondOfferKey + "\",\"quantity\":1}]}"),
+                        "{\"offers\":[{\"offerKey\":\"" + thirdVisibleOfferKey
+                                + "\",\"quantity\":1}]}"),
                 text("The selected item is in your cart.")
         );
 
@@ -127,8 +142,21 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 CLOTHING_USER_ID, "North-star clothing")).conversationId();
         UUID searchRunId = runTurn(
                 CLOTHING_USER_ID, conversationId, "I wanna buy new clothes.", "north-star-a-search");
+        List<com.meant.api.module.agent.entity.AgentArtifactReference> searchProducts =
+                artifactRepository.findByRunIdOrderByCreatedAtAscOrdinalAsc(searchRunId).stream()
+                        .filter(artifact -> artifact.getArtifactType() == AgentArtifactType.PRODUCT)
+                        .toList();
+        VisibleProductContextCommand secondPage = new VisibleProductContextCommand(
+                searchProducts.getFirst().getMessageId(),
+                products.subList(4, 8).stream().map(CanonicalProduct::key).toList()
+        );
         UUID cartRunId = runTurn(
-                CLOTHING_USER_ID, conversationId, "Add the second one to my cart.", "north-star-a-cart");
+                CLOTHING_USER_ID,
+                conversationId,
+                "ok looks good, add the third one into cart",
+                "north-star-a-cart",
+                secondPage
+        );
 
         assertThat(invocations(searchRunId))
                 .singleElement()
@@ -136,23 +164,17 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                     assertThat(invocation.getToolName()).isEqualTo("search_catalog");
                     assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
                 });
-        assertThat(artifactRepository.findByRunIdOrderByCreatedAtAscOrdinalAsc(searchRunId))
-                .filteredOn(artifact -> artifact.getArtifactType() == AgentArtifactType.PRODUCT)
-                .extracting(
-                        artifact -> artifact.getOrdinal(),
-                        artifact -> artifact.getCanonicalProductKey(),
-                        artifact -> artifact.getOfferKey())
-                .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(1, products.get(0).key(), products.get(0).offers().getFirst().key()),
-                        org.assertj.core.groups.Tuple.tuple(2, products.get(1).key(), secondOfferKey),
-                        org.assertj.core.groups.Tuple.tuple(3, products.get(2).key(), products.get(2).offers().getFirst().key())
-                );
+        assertThat(searchProducts).extracting(com.meant.api.module.agent.entity.AgentArtifactReference::getOrdinal)
+                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8);
+        assertThat(searchProducts)
+                .extracting(com.meant.api.module.agent.entity.AgentArtifactReference::getCanonicalProductKey)
+                .containsExactlyElementsOf(products.stream().map(CanonicalProduct::key).toList());
         assertThat(invocations(cartRunId))
                 .singleElement()
                 .satisfies(invocation -> {
                     assertThat(invocation.getToolName()).isEqualTo("prepare_carts");
                     assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
-                    assertThat(invocation.getArgumentsJson()).contains(secondOfferKey);
+                    assertThat(invocation.getArgumentsJson()).contains(thirdVisibleOfferKey);
                 });
 
         ArgumentCaptor<PartitionSelectedOffersQuery> partition =
@@ -162,7 +184,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         assertThat(partition.getValue().items())
                 .singleElement()
                 .satisfies(item -> {
-                    assertThat(item.offerKey()).isEqualTo(secondOfferKey);
+                    assertThat(item.offerKey()).isEqualTo(thirdVisibleOfferKey);
                     assertThat(item.quantity()).isEqualTo(1);
                 });
         ArgumentCaptor<CreateCartCommand> create = ArgumentCaptor.forClass(CreateCartCommand.class);
@@ -170,10 +192,112 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         assertThat(create.getValue().addItems())
                 .singleElement()
                 .extracting(CreateCartCommand.AddItem::offerKey)
-                .isEqualTo(secondOfferKey);
+                .isEqualTo(thirdVisibleOfferKey);
         assertThat(artifactRepository.findByRunIdOrderByCreatedAtAscOrdinalAsc(cartRunId))
                 .extracting(artifact -> artifact.getArtifactType())
                 .contains(AgentArtifactType.CART, AgentArtifactType.CART_LINE);
+    }
+
+    @Test
+    void conflictingVisibleOrdinalAndDescriptionWaitsForAChoiceThenCartsTheExactNumericReply()
+            throws Exception {
+        persistUser(CLARIFICATION_USER_ID, "north-star-clarification@example.test");
+        List<CanonicalProduct> products = List.of(
+                product("blue-linen-cap", "Blue linen cap", "M"),
+                product("blue-mesh-cap", "Blue mesh cap", "M"),
+                product("red-wool-cap", "Red wool cap", "M"),
+                product("green-canvas-cap", "Green canvas cap", "M")
+        );
+        String thirdOfferKey = products.get(2).offers().getFirst().key();
+        when(catalogSearchService.search(any(), any(SearchUserProductsCommand.class)))
+                .thenReturn(searchResult("caps", products));
+        stubCart(thirdOfferKey, CLARIFICATION_USER_ID);
+        scriptModel(
+                tool("clarify-search", "search_catalog", "{\"query\":\"caps\",\"limit\":4}"),
+                text("Here are four cap options:"),
+                tool("clarify-cart", "prepare_carts",
+                        "{\"offers\":[{\"offerKey\":\"" + thirdOfferKey
+                                + "\",\"quantity\":1}]}"),
+                text("The red wool cap is in your cart.")
+        );
+
+        UUID conversationId = conversationService.create(new CreateAgentConversationCommand(
+                CLARIFICATION_USER_ID, "North-star product clarification")).conversationId();
+        UUID searchRunId = runTurn(
+                CLARIFICATION_USER_ID,
+                conversationId,
+                "Show me some caps.",
+                "north-star-clarification-search"
+        );
+        List<com.meant.api.module.agent.entity.AgentArtifactReference> searchProducts =
+                artifactRepository.findByRunIdOrderByCreatedAtAscOrdinalAsc(searchRunId).stream()
+                        .filter(artifact -> artifact.getArtifactType() == AgentArtifactType.PRODUCT)
+                        .toList();
+        VisibleProductContextCommand visibleProducts = new VisibleProductContextCommand(
+                searchProducts.getFirst().getMessageId(),
+                products.stream().map(CanonicalProduct::key).toList()
+        );
+
+        UUID clarificationRunId = runTurnExpecting(
+                CLARIFICATION_USER_ID,
+                conversationId,
+                "Add the third blue one to my cart.",
+                "north-star-clarification-conflict",
+                visibleProducts,
+                AgentRunStatus.WAITING_FOR_USER
+        );
+
+        assertThat(invocations(clarificationRunId)).isEmpty();
+        verify(cartService, never()).partitionSelectedOffers(any(PartitionSelectedOffersQuery.class));
+        verify(cartService, never()).create(any(CreateCartCommand.class), any(UUID.class));
+        verify(modelGateway, times(2)).turn(any(), any(), any());
+        assertThat(messageRepository.findByRunIdOrderBySequenceNumberAsc(clarificationRunId))
+                .filteredOn(message -> message.getRole() == AgentMessageRole.ASSISTANT)
+                .singleElement()
+                .satisfies(message -> {
+                    assertThat(message.getTextContent())
+                            .startsWith("Which product should I add to your cart?")
+                            .contains("Reply with a number or product name")
+                            .containsSubsequence(
+                                    "1. Blue linen cap",
+                                    "2. Blue mesh cap",
+                                    "3. Red wool cap",
+                                    "4. Green canvas cap")
+                            .doesNotContain("I'm sorry");
+                    assertThat(message.getContentJson())
+                            .contains("pendingProductClarification", "prepare_carts", thirdOfferKey);
+                });
+
+        UUID cartRunId = runTurn(
+                CLARIFICATION_USER_ID,
+                conversationId,
+                "3.",
+                "north-star-clarification-answer"
+        );
+
+        assertThat(invocations(cartRunId))
+                .singleElement()
+                .satisfies(invocation -> {
+                    assertThat(invocation.getToolName()).isEqualTo("prepare_carts");
+                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
+                    assertThat(invocation.getArgumentsJson()).contains(thirdOfferKey);
+                });
+        ArgumentCaptor<PartitionSelectedOffersQuery> partition =
+                ArgumentCaptor.forClass(PartitionSelectedOffersQuery.class);
+        verify(cartService).partitionSelectedOffers(partition.capture());
+        assertThat(partition.getValue().items())
+                .singleElement()
+                .extracting(PartitionSelectedOffersQuery.Item::offerKey)
+                .isEqualTo(thirdOfferKey);
+        ArgumentCaptor<CreateCartCommand> create = ArgumentCaptor.forClass(CreateCartCommand.class);
+        verify(cartService).create(create.capture(), any(UUID.class));
+        assertThat(create.getValue().addItems())
+                .singleElement()
+                .extracting(CreateCartCommand.AddItem::offerKey)
+                .isEqualTo(thirdOfferKey);
+        assertThat(runRepository.findById(cartRunId).orElseThrow().getStatus())
+                .isEqualTo(AgentRunStatus.COMPLETED);
+        verify(modelGateway, times(4)).turn(any(), any(), any());
     }
 
     @Test
@@ -311,12 +435,40 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
     }
 
     private UUID runTurn(UUID userId, UUID conversationId, String message, String clientTurnId) throws Exception {
+        return runTurn(userId, conversationId, message, clientTurnId, null);
+    }
+
+    private UUID runTurn(
+            UUID userId,
+            UUID conversationId,
+            String message,
+            String clientTurnId,
+            VisibleProductContextCommand visibleProductContext
+    ) throws Exception {
+        return runTurnExpecting(
+                userId,
+                conversationId,
+                message,
+                clientTurnId,
+                visibleProductContext,
+                AgentRunStatus.COMPLETED
+        );
+    }
+
+    private UUID runTurnExpecting(
+            UUID userId,
+            UUID conversationId,
+            String message,
+            String clientTurnId,
+            VisibleProductContextCommand visibleProductContext,
+            AgentRunStatus expectedStatus
+    ) throws Exception {
         var accepted = turnService.submit(new SubmitAgentTurnCommand(
-                userId, conversationId, message, clientTurnId));
+                userId, conversationId, message, clientTurnId, visibleProductContext, null));
         coordinator.schedule(accepted.runId());
         awaitTerminalRun(accepted.runId());
         assertThat(runRepository.findById(accepted.runId()).orElseThrow().getStatus())
-                .isEqualTo(AgentRunStatus.COMPLETED);
+                .isEqualTo(expectedStatus);
         return accepted.runId();
     }
 

@@ -1285,6 +1285,52 @@ describe('agent artifact mapping', () => {
     })
   })
 
+  test('projects trusted product clarification choices as clickable numbered replies', () => {
+    const assistant: AgentMessageProfile = {
+      messageId: 'message-clarification',
+      runId: 'run-clarification',
+      sequenceNumber: 1,
+      role: 'ASSISTANT',
+      contentKind: 'TEXT',
+      textContent: 'Which product should I add to your cart?',
+      contentJson: JSON.stringify({
+        pendingProductClarification: {
+          toolName: 'prepare_carts',
+          originalUserText: 'Add the third blue one.',
+          products: [
+            { visibleOrdinal: 1, title: 'Green cap' },
+            { visibleOrdinal: 2, title: 'Brown cap' },
+            { visibleOrdinal: 3, title: 'Red wool cap' },
+          ],
+        },
+      }),
+      correlationId: null,
+      createdAt,
+    }
+    const conversation: AgentConversationDetailProfile = {
+      conversationId: 'conversation-clarification',
+      title: 'Caps',
+      status: 'ACTIVE',
+      activeMissionId: null,
+      latestSequence: 1,
+      createdAt,
+      updatedAt: createdAt,
+      rollingSummary: null,
+      summaryVersion: 0,
+      latestCursor: 2,
+      messages: [assistant],
+      artifacts: [],
+    }
+
+    expect(discoverMessagesFromAgentConversation(conversation, [])).toEqual([
+      expect.objectContaining({
+        role: 'ai',
+        suggestedReplies: ['1. Green cap', '2. Brown cap', '3. Red wool cap'],
+        suggestedReplySubmissions: ['1', '2', '3'],
+      }),
+    ])
+  })
+
   test('replaces enumerated catalog prose with one concise lead-in and product cards', () => {
     const user: AgentMessageProfile = {
       messageId: 'message-user',
@@ -1354,6 +1400,7 @@ describe('agent artifact mapping', () => {
         {
           type: 'products',
           query: 'I am looking for some cool sunglasses',
+          sourceMessageId: 'message-tool',
           products: [{ id: 'product-1' }],
         },
       ],
@@ -1361,6 +1408,57 @@ describe('agent artifact mapping', () => {
     expect(messages[1]?.blocks?.[0]).not.toMatchObject({ text: expect.stringContaining('$') })
     expect(messages[1]?.blocks?.[0]).not.toMatchObject({
       text: expect.stringContaining('Fashion Square'),
+    })
+  })
+
+  test('orders product cards by artifact ordinal and retains their tool message', () => {
+    const tool: AgentMessageProfile = {
+      messageId: 'message-tool-ranked',
+      runId: 'run-ranked',
+      sequenceNumber: 1,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: '{}',
+      correlationId: 'call-ranked:search_catalog',
+      createdAt,
+    }
+    const first = canonicalProduct('product-first', 'offer-first', 'First ranked product')
+    const second = canonicalProduct('product-second', 'offer-second', 'Second ranked product')
+    const third = canonicalProduct('product-third', 'offer-third', 'Third ranked product')
+    const rankedArtifacts = [
+      artifact({
+        type: 'PRODUCT',
+        stableKey: third.key,
+        messageId: tool.messageId,
+        canonicalProductKey: third.key,
+        ordinal: 3,
+        payloadJson: JSON.stringify(third),
+      }),
+      artifact({
+        type: 'PRODUCT',
+        stableKey: first.key,
+        messageId: tool.messageId,
+        canonicalProductKey: first.key,
+        ordinal: 1,
+        payloadJson: JSON.stringify(first),
+      }),
+      artifact({
+        type: 'PRODUCT',
+        stableKey: second.key,
+        messageId: tool.messageId,
+        canonicalProductKey: second.key,
+        ordinal: 2,
+        payloadJson: JSON.stringify(second),
+      }),
+    ]
+
+    const block = blocksForAgentMessage(tool, rankedArtifacts, rankedArtifacts, [])[0]
+
+    expect(block).toMatchObject({
+      type: 'products',
+      sourceMessageId: 'message-tool-ranked',
+      products: [{ id: 'product-first' }, { id: 'product-second' }, { id: 'product-third' }],
     })
   })
 

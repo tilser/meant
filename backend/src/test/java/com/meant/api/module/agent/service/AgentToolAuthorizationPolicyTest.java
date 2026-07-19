@@ -15,8 +15,11 @@ import com.meant.api.module.agent.entity.AgentMessage;
 import com.meant.api.module.agent.entity.ShoppingMission;
 import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
+import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -381,6 +384,105 @@ class AgentToolAuthorizationPolicyTest {
                 context("Never add the second one."),
                 descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION)
         )).isFalse();
+    }
+
+    @Test
+    void aBareClarificationAnswerReusesIntentOnlyForTheRecordedTool() {
+        AgentToolDescriptor prepareCarts = descriptor(
+                "prepare_carts",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        AgentProductClarification pending = new AgentProductClarification(
+                "prepare_carts",
+                "Please add the blue hat to my cart.",
+                List.of(new AgentVisibleProductReference(
+                        2,
+                        6,
+                        "product-6",
+                        "offer-6",
+                        "Sky blue hat"
+                ))
+        );
+        AgentToolExecutionContext answer = context("2.")
+                .withPendingProductClarification(pending);
+        when(targetPolicy.isPendingProductSelectionAnswer(answer, "prepare_carts"))
+                .thenReturn(true);
+        when(targetPolicy.matchesMutationTarget(
+                answer,
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).thenReturn(true);
+
+        assertThat(policy.authorized(answer, prepareCarts)).isTrue();
+        assertThat(policy.authorizedInvocation(
+                answer,
+                prepareCarts,
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isTrue();
+        assertThat(policy.authorized(
+                answer,
+                descriptor("pin_product", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("2."),
+                prepareCarts
+        )).isFalse();
+    }
+
+    @Test
+    void aNewOrCancelledRequestCannotReusePendingMutationConsent() {
+        AgentToolDescriptor prepareCarts = descriptor(
+                "prepare_carts",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        AgentProductClarification pending = new AgentProductClarification(
+                "prepare_carts",
+                "Please add the blue hat to my cart.",
+                List.of(new AgentVisibleProductReference(
+                        1,
+                        1,
+                        "product-blue",
+                        "offer-blue",
+                        "Blue hat"
+                ))
+        );
+
+        assertThat(policy.authorized(
+                context("Show me the blue hat.").withPendingProductClarification(pending),
+                prepareCarts
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("Never mind.").withPendingProductClarification(pending),
+                prepareCarts
+        )).isFalse();
+        assertThat(policy.authorized(
+                context("Don't add it; show me details.").withPendingProductClarification(pending),
+                prepareCarts
+        )).isFalse();
+    }
+
+    @Test
+    void pendingCartAdditionConsentCanContinueWithAnExistingCartTool() {
+        AgentProductClarification pending = new AgentProductClarification(
+                "prepare_carts",
+                "Please add the blue hat to my cart.",
+                List.of(new AgentVisibleProductReference(
+                        2,
+                        6,
+                        "product-6",
+                        "offer-6",
+                        "Sky blue hat"
+                ))
+        );
+        AgentToolExecutionContext answer = context("2. Sky blue hat")
+                .withPendingProductClarification(pending);
+        when(targetPolicy.isPendingProductSelectionAnswer(answer, "add_cart_line"))
+                .thenReturn(true);
+
+        assertThat(policy.authorized(
+                answer,
+                descriptor("add_cart_line", AgentToolRisk.REVERSIBLE_MUTATION)
+        )).isTrue();
     }
 
     private AgentToolDescriptor descriptor(String name, AgentToolRisk risk) {

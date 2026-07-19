@@ -22,7 +22,7 @@ import { DiscoverProductBatch } from './DiscoverProductBatch'
 import { InlineCartBlock } from './blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
-import type { DiscoverChatBlock } from './types'
+import type { DiscoverChatBlock, VisibleProductContextChange } from './types'
 import {
   cartItemsForChatBlock,
   cartLineForAddedBlock,
@@ -129,6 +129,7 @@ export function DiscoverChatBlockView({
   onShelfAddProduct,
   onDragProduct,
   onRetryProductResultSet,
+  onVisibleProductContextChange,
   immutable,
 }: Readonly<{
   threadId: string
@@ -193,6 +194,7 @@ export function DiscoverChatBlockView({
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
+  onVisibleProductContextChange?: VisibleProductContextChange
   immutable: boolean
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
@@ -278,6 +280,8 @@ export function DiscoverChatBlockView({
           onCompareHere={onCompareHere}
           onShelfAddProduct={onShelfAddProduct}
           onDragProduct={onDragProduct}
+          sourceMessageId={block.sourceMessageId}
+          onVisibleProductContextChange={onVisibleProductContextChange}
         />
         {block.historyHydration === 'loaded' && unavailableCount > 0 ? (
           <div className="mt-ct-system">
@@ -406,6 +410,8 @@ export function DiscoverChatBlockView({
           onCompareHere={onCompareHere}
           onShelfAddProduct={onShelfAddProduct}
           onDragProduct={onDragProduct}
+          sourceMessageId={block.sourceMessageId}
+          onVisibleProductContextChange={onVisibleProductContextChange}
         />
       </div>
     )

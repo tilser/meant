@@ -2361,6 +2361,10 @@ export async function submitAgentTurn(input: {
   conversationId: string
   message: string
   clientTurnId?: string
+  visibleProductContext?: {
+    sourceMessageId: string
+    orderedCanonicalProductKeys: readonly string[]
+  }
   expectedUserId?: string
   signal?: AbortSignal
 }): Promise<AgentTurnProfile> {
@@ -2373,6 +2377,9 @@ export async function submitAgentTurn(input: {
     body: JSON.stringify({
       message: input.message,
       ...(input.clientTurnId === undefined ? {} : { clientTurnId: input.clientTurnId }),
+      ...(input.visibleProductContext === undefined
+        ? {}
+        : { visibleProductContext: input.visibleProductContext }),
     }),
     signal: input.signal,
   })

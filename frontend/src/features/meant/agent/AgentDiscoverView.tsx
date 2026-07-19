@@ -39,6 +39,8 @@ import type {
   DiscoverChatThread,
   DiscoverFindRequest,
   ProductDetailChatRequest,
+  VisibleProductContext,
+  VisibleProductContextChange,
 } from '../chat/types'
 import { PROFILE } from '../data'
 import { productImageUrl } from '../product/productSnapshots'
@@ -54,6 +56,10 @@ import { ProductArtwork, SparkMark } from '../shared/ui'
 import { accountStorageKey } from '../shared/accountStorage'
 import { useStoredState } from '../shared/storage'
 import { Workbench } from '../chat/workbench/Workbench'
+import {
+  updateVisibleProductContextRegistry,
+  type VisibleProductContextRegistry,
+} from '../chat/visibleProductContext'
 import type {
   CartItem,
   CheckoutPayload,
@@ -68,7 +74,6 @@ import {
   cartStateReplacementsFromAgentArtifacts,
   currentAgentProductSnapshots,
   discoverMessagesFromAgentConversation,
-  plainAgentText,
   productInteractionState,
   productsFromAgentArtifacts,
   type AgentProductSnapshot,
@@ -90,6 +95,7 @@ import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
 import { AgentActionRequestIdentityStore } from './requestIdentity'
 import { agentActionQueueFor } from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
+import { withProjectedAgentMessages } from './messageProjection'
 
 const MUTATING_AGENT_ACTIONS = new Set([
   'prepare_carts',
@@ -370,6 +376,11 @@ export function AgentDiscoverView({
   const actionPendingRef = useRef(new Set<string>())
   const actionIdempotencyRef = useRef(new AgentActionRequestIdentityStore())
   const submissionInFlightRef = useRef(false)
+  const visibleProductContextRef = useRef<{
+    conversationId: string
+    context: VisibleProductContext
+  } | null>(null)
+  const visibleProductContextsRef = useRef<VisibleProductContextRegistry>(new Map())
   const actionQueue = useMemo(() => agentActionQueueFor(expectedUserId), [expectedUserId])
   const autoDismissTimeoutsRef = useRef(new Map<string, number>())
   const visibleCartRef = useRef(cart)
@@ -398,9 +409,30 @@ export function AgentDiscoverView({
   )
 
   const updateActiveConversationId = useCallback((next: string | null) => {
+    if (activeConversationIdRef.current !== next) {
+      visibleProductContextRef.current = null
+      visibleProductContextsRef.current.clear()
+    }
     activeConversationIdRef.current = next
     setActiveConversationId(next)
   }, [])
+
+  const captureVisibleProductContext = useCallback<VisibleProductContextChange>(
+    (sourceMessageId, context) => {
+      const conversationId = activeConversationIdRef.current
+      const normalizedSourceMessageId = sourceMessageId.trim()
+      if (!conversationId || !normalizedSourceMessageId) return
+
+      const latest = updateVisibleProductContextRegistry(
+        visibleProductContextsRef.current,
+        conversationId,
+        normalizedSourceMessageId,
+        context,
+      )
+      visibleProductContextRef.current = latest ? { conversationId, context: latest } : null
+    },
+    [],
+  )
 
   const updateActiveRunId = useCallback(
     (nextValue: string | null | ((current: string | null) => string | null)) => {
@@ -805,35 +837,24 @@ export function AgentDiscoverView({
     )
     if (!activeRunId) return [...authoritative, ...localMessages]
     const projection = eventState.runs[activeRunId]
-    if (!projection) return [...authoritative, ...localMessages]
     const knownMessageIds = new Set(
       combinedConversation.messages.map((message) => message.messageId),
     )
-    const hasRenderedCatalogResult = authoritative.some((message) =>
-      message.blocks?.some((block) => block.type === 'products' && Boolean(block.query)),
+    const activeRunMessageIds = new Set(
+      combinedConversation.messages.flatMap((message) =>
+        message.runId === activeRunId ? [message.messageId] : [],
+      ),
     )
-    const transient: DiscoverChatMessage[] = projection.assistantMessages.flatMap(
-      (message, index) =>
-        hasRenderedCatalogResult || (message.messageId && knownMessageIds.has(message.messageId))
-          ? []
-          : [
-              {
-                id: message.messageId ?? `${activeRunId}:assistant:${index}`,
-                role: 'ai' as const,
-                blocks: [{ type: 'text' as const, text: plainAgentText(message.text) }],
-              },
-            ],
-    )
-    if (projection.streamingAssistantText && !hasRenderedCatalogResult) {
-      transient.push({
-        id: `${activeRunId}:streaming`,
-        role: 'ai',
-        blocks: [{ type: 'text', text: plainAgentText(projection.streamingAssistantText) }],
-        pending: true,
-        pendingText: 'Meant is still working…',
-      })
-    }
-    return [...authoritative, ...transient, ...localMessages]
+    return [
+      ...withProjectedAgentMessages(
+        authoritative,
+        knownMessageIds,
+        activeRunMessageIds,
+        activeRunId,
+        projection,
+      ),
+      ...localMessages,
+    ]
   }, [
     activeConversationId,
     activeRunId,
@@ -997,19 +1018,27 @@ export function AgentDiscoverView({
     eventState.runs[activeRunId ?? '']?.status ??
     (runSnapshot?.runId === activeRunId ? runSnapshot.status : undefined)
   const isRunning = Boolean(activeRunId && !isTerminalAgentRunStatus(currentStatus ?? 'QUEUED'))
+  const suggestedReplies = useMemo(() => {
+    const latest = messages.at(-1)
+    return latest?.role === 'ai' ? (latest.suggestedReplies ?? []) : []
+  }, [messages])
+  const suggestedReplySubmissions = useMemo(() => {
+    const latest = messages.at(-1)
+    return latest?.role === 'ai' ? (latest.suggestedReplySubmissions ?? []) : []
+  }, [messages])
 
   const submit = useCallback(
-    async (text: string) => {
+    async (text: string): Promise<boolean> => {
       if (loading || submitting || submissionInFlightRef.current) {
-        return
+        return false
       }
       if (isRunning || agentMutationBlocked || isAgentMutationBlocked()) {
         setError('Wait for the current cart operation or agent run to finish.')
-        return
+        return false
       }
       if (actionQueue.hasPending()) {
         setError('Wait for the current commerce action to finish before sending a new request.')
-        return
+        return false
       }
       submissionInFlightRef.current = true
       const submissionToken = onAgentRunSubmissionStarted()
@@ -1049,10 +1078,15 @@ export function AgentDiscoverView({
           )
         }
         const submittedCartRevision = onCaptureAgentCartRevision()
+        const visibleProductContext =
+          visibleProductContextRef.current?.conversationId === targetConversationId
+            ? visibleProductContextRef.current.context
+            : undefined
         const turn = await submitAgentTurn({
           conversationId: targetConversationId,
           message: text,
           clientTurnId: uniqueRequestId('turn'),
+          visibleProductContext,
           expectedUserId,
         })
         onAgentRunSubmitted?.(turn.runId, targetConversationId, submittedCartRevision)
@@ -1073,8 +1107,10 @@ export function AgentDiscoverView({
           setRunSnapshot(null)
           updateActiveRunId(turn.runId)
         }
+        return true
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not submit this message.')
+        return false
       } finally {
         submissionInFlightRef.current = false
         onAgentRunSubmissionFinished(submissionToken)
@@ -1779,6 +1815,7 @@ export function AgentDiscoverView({
             onDragMessage={dragMessage}
             onDragProduct={dragProduct}
             onRetryProductResultSet={() => undefined}
+            onVisibleProductContextChange={captureVisibleProductContext}
           />
         ))}
         {toolActivities.length > 0 && isRunning ? (
@@ -1855,9 +1892,10 @@ export function AgentDiscoverView({
           ) : null}
           <AskComposer
             placeholder="Ask Meant to search, compare, inspect inventory, or build your cart…"
-            suggestions={[]}
-            showChips={false}
-            onAsk={(text) => void submit(text)}
+            suggestions={suggestedReplies}
+            suggestionValues={suggestedReplySubmissions}
+            showChips={suggestedReplies.length > 0}
+            onAsk={submit}
             disabled={loading || submitting || !activeConversationId}
           />
         </div>

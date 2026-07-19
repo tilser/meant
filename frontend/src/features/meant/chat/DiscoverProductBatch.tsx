@@ -5,6 +5,8 @@ import { BookmarkIcon, ChevronIcon } from '../shared/icons'
 import { CartIcon } from '../shared/ui'
 import { useMediaQuery } from '../shared/useMediaQuery'
 import type { Preference, Product, ProductId, UserLocation } from '../types'
+import type { VisibleProductContextChange } from './types'
+import { DESKTOP_PRODUCT_PAGE_SIZE, visibleProductContextForBatch } from './visibleProductContext'
 
 function DiscoverChatProduct({
   product,
@@ -171,6 +173,8 @@ export function DiscoverProductBatch({
   onCompareHere,
   onShelfAddProduct,
   onDragProduct,
+  sourceMessageId,
+  onVisibleProductContextChange,
 }: Readonly<{
   products: readonly Product[]
   query?: string
@@ -197,6 +201,8 @@ export function DiscoverProductBatch({
   onCompareHere: (products: readonly Product[]) => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
+  sourceMessageId?: string
+  onVisibleProductContextChange?: VisibleProductContextChange
 }>) {
   const isPhone = useMediaQuery('(max-width: 720px)')
   const [page, setPage] = useState(0)
@@ -204,7 +210,7 @@ export function DiscoverProductBatch({
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const phoneScrollFrameRef = useRef<number | null>(null)
   const phoneStrideRef = useRef(0)
-  const pageSize = isPhone ? Math.max(products.length, 1) : 4
+  const pageSize = isPhone ? Math.max(products.length, 1) : DESKTOP_PRODUCT_PAGE_SIZE
   const pageCount = Math.max(1, Math.ceil(products.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
   const pageProducts = isPhone
@@ -292,6 +298,20 @@ export function DiscoverProductBatch({
     setPhoneIndex(0)
     carouselRef.current?.scrollTo({ left: 0 })
   }, [isPhone, query, products])
+
+  useEffect(() => {
+    const contextSourceMessageId = sourceMessageId?.trim()
+    if (!contextSourceMessageId) return
+    const context = visibleProductContextForBatch({
+      products,
+      sourceMessageId: contextSourceMessageId,
+      isPhone,
+      page: currentPage,
+      phoneIndex,
+    })
+    onVisibleProductContextChange?.(contextSourceMessageId, context)
+    return () => onVisibleProductContextChange?.(contextSourceMessageId, undefined)
+  }, [currentPage, isPhone, onVisibleProductContextChange, phoneIndex, products, sourceMessageId])
 
   useEffect(() => {
     if (!isPhone) {

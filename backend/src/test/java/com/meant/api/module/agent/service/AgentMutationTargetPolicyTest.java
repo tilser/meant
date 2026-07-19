@@ -13,7 +13,10 @@ import com.meant.api.module.agent.constant.ShoppingMissionStatus;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
 import com.meant.api.module.agent.entity.ShoppingMission;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
+import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -74,6 +77,398 @@ class AgentMutationTargetPolicyTest {
                 context("Add the second one."),
                 "prepare_carts",
                 "{\"offers\":[{\"offerKey\":\"offer-2\"},{\"offerKey\":\"offer-1\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void conversationalLeadInDoesNotOverrideTheExplicitThirdOrdinal() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference first = productWithLabel(
+                messageId, 1, "product-1", "offer-1", "Duck camo trucker hat");
+        AgentArtifactReference second = productWithLabel(
+                messageId, 2, "product-2", "offer-2", "Coastland camo trucker hat");
+        AgentArtifactReference third = productWithLabel(
+                messageId, 3, "product-3", "offer-3", "Mesh printed five panel hat");
+        AgentArtifactReference fourth = productWithLabel(
+                messageId, 4, "product-4", "offer-4", "Embroidered trucker hat");
+        AgentArtifactReference firstOffer = offer(messageId, 1, "product-1", "offer-1");
+        AgentArtifactReference secondOffer = offer(messageId, 2, "product-2", "offer-2");
+        AgentArtifactReference thirdOffer = offer(messageId, 3, "product-3", "offer-3");
+        AgentArtifactReference fourthOffer = offer(messageId, 4, "product-4", "offer-4");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(first, firstOffer, second, secondOffer, third, thirdOffer, fourth, fourthOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-1"))
+                .thenReturn(Optional.of(firstOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-2"))
+                .thenReturn(Optional.of(secondOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-3"))
+                .thenReturn(Optional.of(thirdOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-4"))
+                .thenReturn(Optional.of(fourthOffer));
+
+        String turn = "ok looks good, add the third one into cart";
+        assertThat(policy.matchesMutationTarget(
+                context(turn),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-3\"}]}"
+        )).isTrue();
+        for (String wrongOffer : List.of("offer-1", "offer-2", "offer-4")) {
+            assertThat(policy.matchesMutationTarget(
+                    context(turn),
+                    "prepare_carts",
+                    "{\"offers\":[{\"offerKey\":\"" + wrongOffer + "\"}]}"
+            )).isFalse();
+        }
+    }
+
+    @Test
+    void visibleThirdProductOverridesTheGlobalThirdProductOnALaterCarouselPage() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference globalThirdOffer = offer(messageId, 3, "product-3", "offer-3");
+        AgentArtifactReference visibleThirdOffer = offer(messageId, 7, "product-7", "offer-7");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        product(messageId, 1, "product-1", "offer-1"),
+                        product(messageId, 2, "product-2", "offer-2"),
+                        product(messageId, 3, "product-3", "offer-3"),
+                        product(messageId, 5, "product-5", "offer-5"),
+                        product(messageId, 6, "product-6", "offer-6"),
+                        product(messageId, 7, "product-7", "offer-7"),
+                        product(messageId, 8, "product-8", "offer-8")
+                ));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-3"))
+                .thenReturn(Optional.of(globalThirdOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-7"))
+                .thenReturn(Optional.of(visibleThirdOffer));
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                visibleProduct(1, 5),
+                visibleProduct(2, 6),
+                visibleProduct(3, 7),
+                visibleProduct(4, 8)
+        ));
+
+        String turn = "ok looks good, add the third one into cart";
+        assertThat(policy.matchesMutationTarget(
+                context(turn, visible),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-7\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context(turn, visible),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-3\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void unmatchedVisibleDescriptionCannotAuthorizeAnOrdinalMutation() {
+        UUID messageId = UUID.randomUUID();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                new AgentVisibleProductReference(1, 5, "product-5", "offer-5", "Green cap"),
+                new AgentVisibleProductReference(2, 6, "product-6", "offer-6", "Brown cap"),
+                new AgentVisibleProductReference(3, 7, "product-7", "offer-7", "Red wool cap"),
+                new AgentVisibleProductReference(4, 8, "product-8", "offer-8", "Black cap")
+        ));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        assertThat(policy.matchesMutationTarget(
+                context("Add the third blue one to my cart.", visible),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-7\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void conflictingVisibleOrdinalAndDescriptionRequiresAUserClarification() {
+        UUID messageId = UUID.randomUUID();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                new AgentVisibleProductReference(1, 5, "product-5", "offer-5", "Green cap"),
+                new AgentVisibleProductReference(2, 6, "product-6", "offer-6", "Blue cap"),
+                new AgentVisibleProductReference(3, 7, "product-7", "offer-7", "Red wool cap"),
+                new AgentVisibleProductReference(4, 8, "product-8", "offer-8", "Black cap")
+        ));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        assertThat(policy.requiresProductClarification(
+                context("Add the third blue one to my cart.", visible),
+                "prepare_carts"
+        )).isTrue();
+        assertThat(policy.requiresProductClarification(
+                context("Add the third one to my cart.", visible),
+                "prepare_carts"
+        )).isFalse();
+    }
+
+    @Test
+    void anAmbiguousNameRequiresClarificationButAUniqueVisibleNameDoesNot() {
+        UUID messageId = UUID.randomUUID();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                new AgentVisibleProductReference(1, 1, "product-1", "offer-1", "Blue cotton cap"),
+                new AgentVisibleProductReference(2, 2, "product-2", "offer-2", "Blue wool cap"),
+                new AgentVisibleProductReference(3, 3, "product-3", "offer-3", "Red trail hat")
+        ));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        assertThat(policy.requiresProductClarification(
+                context("Add the blue cap to my cart.", visible),
+                "prepare_carts"
+        )).isTrue();
+        assertThat(policy.requiresProductClarification(
+                context("Add the red trail hat to my cart.", visible),
+                "prepare_carts"
+        )).isFalse();
+    }
+
+    @Test
+    void currentRunChoicesTakePrecedenceInAClarificationQuestion() {
+        UUID currentMessageId = UUID.randomUUID();
+        UUID visibleMessageId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        AgentArtifactReference currentFirst = withRunId(productWithLabel(
+                currentMessageId, 1, "current-1", "current-offer-1", "Current blue cap"), runId);
+        AgentArtifactReference currentSecond = withRunId(productWithLabel(
+                currentMessageId, 2, "current-2", "current-offer-2", "Current red cap"), runId);
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(currentFirst, currentSecond));
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(visibleMessageId, List.of(
+                new AgentVisibleProductReference(1, 5, "visible-5", "visible-offer-5", "Visible green cap"),
+                new AgentVisibleProductReference(2, 6, "visible-6", "visible-offer-6", "Visible black cap")
+        ));
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(),
+                CONVERSATION_ID,
+                runId,
+                UUID.randomUUID(),
+                "Add a cap to my cart.",
+                null,
+                null,
+                null,
+                visible
+        );
+
+        assertThat(policy.productClarificationCandidates(context, "prepare_carts"))
+                .extracting(AgentVisibleProductReference::canonicalProductKey)
+                .containsExactly("current-1", "current-2");
+    }
+
+    @Test
+    void anExactClarificationReplyDoesNotAskAgainButAConflictingReplyDoes() {
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        assertThat(policy.requiresProductClarification(
+                context("2", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("the second green one", clarification()),
+                "prepare_carts"
+        )).isTrue();
+    }
+
+    @Test
+    void cancellingOrChangingAClarificationDoesNotTrapTheUserInAReaskLoop() {
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        assertThat(policy.requiresProductClarification(
+                context("Never mind", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("No.", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("Neither", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("Find running shoes instead", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("Show me the brown cap", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("blue", clarification()),
+                "prepare_carts"
+        )).isTrue();
+        assertThat(policy.requiresProductClarification(
+                context("Add a cap to my cart", clarification()),
+                "prepare_carts"
+        )).isTrue();
+    }
+
+    @Test
+    void aBareNumberSelectsExactlyOnePersistedClarificationCandidate() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference brownOffer = offer(messageId, 6, "product-6", "offer-6");
+        AgentArtifactReference redOffer = offer(messageId, 7, "product-7", "offer-7");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(brownOffer, redOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-6")).thenReturn(Optional.of(brownOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-7")).thenReturn(Optional.of(redOffer));
+        AgentProductClarification pending = clarification();
+
+        assertThat(policy.matchesMutationTarget(
+                context("2. Brown cap", pending),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context("2. Green cap", pending),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("2 and 3", pending),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("2 3", pending),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("2.", pending),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-7\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("2."),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void conflictingOrdinalAndDescriptionInAClarificationAnswerFailsClosed() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference brownOffer = offer(messageId, 6, "product-6", "offer-6");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(brownOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-6")).thenReturn(Optional.of(brownOffer));
+
+        assertThat(policy.matchesMutationTarget(
+                context("the second green one", clarification()),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-6\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void namedProductReadsOnlyAcceptTheUniquelyIdentifiedProduct() {
+        UUID messageId = UUID.randomUUID();
+        AgentArtifactReference red = productWithLabel(
+                messageId, 1, "product-red", "offer-red", "Red trail hat");
+        AgentArtifactReference blue = productWithLabel(
+                messageId, 2, "product-blue", "offer-blue", "Blue mesh hat");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(red, blue));
+
+        AgentToolExecutionContext context = context("Show reviews for the Red trail hat");
+
+        assertThat(policy.matchesExplicitOrdinal(
+                context,
+                "get_product_reviews",
+                "{\"canonicalProductKey\":\"product-red\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                context,
+                "get_product_reviews",
+                "{\"canonicalProductKey\":\"product-blue\"}"
+        )).isFalse();
+    }
+
+    @Test
+    void onlySelectionAnswersMayReusePendingActionConsent() {
+        assertThat(policy.isPendingProductSelectionAnswer(
+                context("2. Brown cap", clarification()),
+                "prepare_carts"
+        )).isTrue();
+        assertThat(policy.isPendingProductSelectionAnswer(
+                context("Brown cap", clarification()),
+                "add_cart_line"
+        )).isTrue();
+        assertThat(policy.isPendingProductSelectionAnswer(
+                context("Show me the brown cap", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isPendingProductSelectionAnswer(
+                context("Never mind", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isPendingProductSelectionAnswer(
+                context("None", clarification()),
+                "prepare_carts"
+        )).isFalse();
+        assertThat(policy.isPendingProductSelectionAnswer(
+                context("Add the brown cap", clarification()),
+                "prepare_carts"
+        )).isFalse();
+    }
+
+    @Test
+    void aProductSetIssuedByTheCurrentRunSupersedesTheSubmittedViewport() {
+        UUID priorMessageId = UUID.randomUUID();
+        UUID currentMessageId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        AgentArtifactReference currentProduct = withRunId(
+                productWithLabel(
+                        currentMessageId,
+                        3,
+                        "product-current-3",
+                        "offer-current-3",
+                        "Cotton jacket"
+                ),
+                runId
+        );
+        AgentArtifactReference currentOffer = offer(
+                currentMessageId, 3, "product-current-3", "offer-current-3");
+        AgentArtifactReference priorOffer = offer(
+                priorMessageId, 7, "product-7", "offer-7");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(currentProduct));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-current-3")).thenReturn(Optional.of(currentOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-7")).thenReturn(Optional.of(priorOffer));
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(priorMessageId, List.of(
+                visibleProduct(1, 5),
+                visibleProduct(2, 6),
+                visibleProduct(3, 7),
+                visibleProduct(4, 8)
+        ));
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(),
+                CONVERSATION_ID,
+                runId,
+                UUID.randomUUID(),
+                "Add the third result.",
+                null,
+                null,
+                null,
+                visible
+        );
+
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-current-3\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-7\"}]}"
         )).isFalse();
     }
 
@@ -1036,6 +1431,46 @@ class AgentMutationTargetPolicyTest {
                 UUID.randomUUID(), CONVERSATION_ID, UUID.randomUUID(), UUID.randomUUID(), text);
     }
 
+    private AgentToolExecutionContext context(String text, AgentVisibleProductContext visibleProductContext) {
+        return new AgentToolExecutionContext(
+                UUID.randomUUID(),
+                CONVERSATION_ID,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                text,
+                null,
+                null,
+                null,
+                visibleProductContext
+        );
+    }
+
+    private AgentToolExecutionContext context(String text, AgentProductClarification clarification) {
+        return context(text).withPendingProductClarification(clarification);
+    }
+
+    private AgentProductClarification clarification() {
+        return new AgentProductClarification(
+                "prepare_carts",
+                "Add the hat I meant to my cart.",
+                List.of(
+                        new AgentVisibleProductReference(1, 5, "product-5", "offer-5", "Green cap"),
+                        new AgentVisibleProductReference(2, 6, "product-6", "offer-6", "Brown cap"),
+                        new AgentVisibleProductReference(3, 7, "product-7", "offer-7", "Red wool cap")
+                )
+        );
+    }
+
+    private AgentVisibleProductReference visibleProduct(int visibleOrdinal, int resultOrdinal) {
+        return new AgentVisibleProductReference(
+                visibleOrdinal,
+                resultOrdinal,
+                "product-" + resultOrdinal,
+                "offer-" + resultOrdinal,
+                "Product " + resultOrdinal
+        );
+    }
+
     private AgentArtifactReference product(
             UUID messageId,
             int ordinal,
@@ -1212,6 +1647,26 @@ class AgentMutationTargetPolicyTest {
                 .checkoutAttemptId(source.getCheckoutAttemptId())
                 .payloadJson(source.getPayloadJson())
                 .createdAt(createdAt)
+                .build();
+    }
+
+    private AgentArtifactReference withRunId(AgentArtifactReference source, UUID runId) {
+        return AgentArtifactReference.builder()
+                .conversationId(source.getConversationId())
+                .messageId(source.getMessageId())
+                .runId(runId)
+                .artifactType(source.getArtifactType())
+                .ordinal(source.getOrdinal())
+                .stableKey(source.getStableKey())
+                .label(source.getLabel())
+                .canonicalProductKey(source.getCanonicalProductKey())
+                .offerKey(source.getOfferKey())
+                .inventoryItemId(source.getInventoryItemId())
+                .cartId(source.getCartId())
+                .cartLineId(source.getCartLineId())
+                .checkoutAttemptId(source.getCheckoutAttemptId())
+                .payloadJson(source.getPayloadJson())
+                .createdAt(source.getCreatedAt())
                 .build();
     }
 

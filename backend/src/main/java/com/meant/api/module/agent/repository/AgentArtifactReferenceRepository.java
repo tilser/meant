@@ -22,6 +22,11 @@ public interface AgentArtifactReferenceRepository extends JpaRepository<AgentArt
 
     List<AgentArtifactReference> findByMessageIdOrderByOrdinalAsc(UUID messageId);
 
+    List<AgentArtifactReference> findByConversationIdAndMessageIdOrderByOrdinalAsc(
+            UUID conversationId,
+            UUID messageId
+    );
+
     List<AgentArtifactReference> findByMessageIdInOrderByCreatedAtAscOrdinalAsc(List<UUID> messageIds);
 
     List<AgentArtifactReference> findByRunIdOrderByCreatedAtAscOrdinalAsc(UUID runId);

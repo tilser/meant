@@ -142,17 +142,27 @@ describe('agent conversation API', () => {
     expect(await requests[3]?.json()).toEqual({ title: 'Running shoes', archived: false })
   })
 
-  test('returns the persisted user message with the accepted run', async () => {
+  test('submits the visible product order with the natural-language turn', async () => {
     const turn = await submitAgentTurn({
       conversationId: 'conversation-1',
-      message: 'Find trail shoes',
+      message: 'Add the third one',
+      visibleProductContext: {
+        sourceMessageId: 'message-tool-search',
+        orderedCanonicalProductKeys: ['product-5', 'product-6', 'product-7', 'product-8'],
+      },
       expectedUserId: 'user-a',
     })
 
     expect(turn).toEqual({ runId: 'run-1', firstEventCursor: 1, userMessage: message })
     expect(requests[0]?.method).toBe('POST')
     expect(requests[0]?.url).toEndWith('/api/v1/users/me/agent/conversations/conversation-1/turns')
-    expect(await requests[0]?.json()).toEqual({ message: 'Find trail shoes' })
+    expect(await requests[0]?.json()).toEqual({
+      message: 'Add the third one',
+      visibleProductContext: {
+        sourceMessageId: 'message-tool-search',
+        orderedCanonicalProductKeys: ['product-5', 'product-6', 'product-7', 'product-8'],
+      },
+    })
   })
 
   test('treats an already deleted conversation as removed from history', async () => {

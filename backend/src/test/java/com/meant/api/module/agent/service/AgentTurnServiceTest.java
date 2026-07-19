@@ -18,6 +18,9 @@ import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.service.command.CancelAgentRunCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
+import com.meant.api.module.agent.service.command.VisibleProductContextCommand;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -40,7 +43,23 @@ class AgentTurnServiceTest {
         AgentMessageRepository messages = mock(AgentMessageRepository.class);
         AgentRunRepository runs = mock(AgentRunRepository.class);
         AgentRunService runService = mock(AgentRunService.class);
+        AgentVisibleProductContextService visibleContexts = mock(AgentVisibleProductContextService.class);
         Instant now = Instant.parse("2026-07-18T12:00:00Z");
+        UUID sourceMessageId = UUID.randomUUID();
+        VisibleProductContextCommand visibleCommand = new VisibleProductContextCommand(
+                sourceMessageId,
+                List.of("product-5", "product-6", "product-7", "product-8")
+        );
+        AgentVisibleProductContext visibleContext = new AgentVisibleProductContext(
+                sourceMessageId,
+                List.of(
+                        new AgentVisibleProductReference(1, 5, "product-5", "offer-5", "First visible hat"),
+                        new AgentVisibleProductReference(2, 6, "product-6", "offer-6", "Second visible hat"),
+                        new AgentVisibleProductReference(3, 7, "product-7", "offer-7", "Third visible hat"),
+                        new AgentVisibleProductReference(4, 8, "product-8", "offer-8", "Fourth visible hat")
+                )
+        );
+        String turnContextJson = "{\"visibleProducts\":{\"sourceMessageId\":\"" + sourceMessageId + "\"}}";
         AgentConversation conversation = AgentConversation.builder()
                 .id(conversationId)
                 .userId(userId)
@@ -59,11 +78,14 @@ class AgentTurnServiceTest {
         when(messages.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(messages.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(runs.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(visibleContexts.resolve(conversationId, visibleCommand)).thenReturn(visibleContext);
+        when(visibleContexts.serialize(visibleContext)).thenReturn(turnContextJson);
         AgentTurnService service = new AgentTurnService(
                 conversations,
                 messages,
                 runs,
                 runService,
+                visibleContexts,
                 properties(),
                 Clock.fixed(now, ZoneOffset.UTC)
         );
@@ -73,6 +95,7 @@ class AgentTurnServiceTest {
                 conversationId,
                 "Find shoes like mine",
                 "client-turn-1",
+                visibleCommand,
                 "203.0.113.42"
         ));
 
@@ -81,6 +104,7 @@ class AgentTurnServiceTest {
         assertThat(accepted.userMessage().runId()).isEqualTo(accepted.runId());
         assertThat(accepted.userMessage().sequenceNumber()).isEqualTo(1);
         assertThat(accepted.userMessage().correlationId()).isEqualTo("client-turn-1");
+        assertThat(accepted.userMessage().contentJson()).isEqualTo(turnContextJson);
         assertThat(conversation.getTitle()).isEqualTo("Find shoes like mine");
         ArgumentCaptor<AgentRun> savedRun = ArgumentCaptor.forClass(AgentRun.class);
         verify(runs).saveAndFlush(savedRun.capture());
@@ -131,6 +155,7 @@ class AgentTurnServiceTest {
                 messages,
                 runs,
                 runService,
+                mock(AgentVisibleProductContextService.class),
                 properties(),
                 Clock.fixed(now, ZoneOffset.UTC)
         );

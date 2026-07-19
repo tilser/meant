@@ -33,17 +33,17 @@ public class AgentMessageLedgerService {
 
     @Transactional
     public AgentMessageResult appendAssistant(UUID runId, String text) {
-        return appendAssistantLocked(runId, null, text);
+        return appendAssistantLocked(runId, null, text, null);
     }
 
     @Transactional
     public AgentMessageResult appendAssistant(UUID runId, UUID executionOwner, String text) {
-        return appendAssistantLocked(runId, executionOwner, text);
+        return appendAssistantLocked(runId, executionOwner, text, null);
     }
 
     @Transactional
     public AgentMessageResult appendTerminalAssistant(UUID runId, String text, boolean waitingForUser) {
-        AgentMessageResult result = appendAssistantLocked(runId, null, text);
+        AgentMessageResult result = appendAssistantLocked(runId, null, text, null);
         if (waitingForUser) {
             runService.waitForUser(runId, text);
         } else {
@@ -60,7 +60,18 @@ public class AgentMessageLedgerService {
             String text,
             boolean waitingForUser
     ) {
-        AgentMessageResult result = appendAssistantLocked(runId, executionOwner, text);
+        return appendTerminalAssistant(runId, executionOwner, text, null, waitingForUser);
+    }
+
+    @Transactional
+    public AgentMessageResult appendTerminalAssistant(
+            UUID runId,
+            UUID executionOwner,
+            String text,
+            String contentJson,
+            boolean waitingForUser
+    ) {
+        AgentMessageResult result = appendAssistantLocked(runId, executionOwner, text, contentJson);
         if (waitingForUser) {
             runService.waitForUser(runId, executionOwner, text);
         } else {
@@ -70,7 +81,12 @@ public class AgentMessageLedgerService {
         return result;
     }
 
-    private AgentMessageResult appendAssistantLocked(UUID runId, UUID executionOwner, String text) {
+    private AgentMessageResult appendAssistantLocked(
+            UUID runId,
+            UUID executionOwner,
+            String text,
+            String contentJson
+    ) {
         AgentRun initial = runRepository.findById(runId).orElseThrow(AgentException::notFound);
         AgentConversation conversation = conversationRepository.findOwnedForUpdate(
                         initial.getConversationId(),
@@ -89,6 +105,7 @@ public class AgentMessageLedgerService {
                 .contentKind(AgentContentKind.TEXT)
                 .sequenceNumber(conversation.nextSequence(now))
                 .textContent(text)
+                .contentJson(contentJson)
                 .createdAt(now)
                 .build());
         AgentMessageResult result = AgentResultMapper.message(message);

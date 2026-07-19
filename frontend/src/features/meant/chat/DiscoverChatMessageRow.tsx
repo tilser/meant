@@ -23,7 +23,7 @@ import type {
   CheckoutReleaseHandler,
 } from '../cart/checkoutTypes'
 import { DiscoverChatBlockView } from './DiscoverChatBlockView'
-import type { DiscoverChatMessage } from './types'
+import type { DiscoverChatMessage, VisibleProductContextChange } from './types'
 import {
   copyTextToClipboard,
   discoverChatMessageCopyText,
@@ -267,6 +267,7 @@ export function DiscoverChatMessageRow({
   onDragMessage,
   onDragProduct,
   onRetryProductResultSet,
+  onVisibleProductContextChange,
   immutable = false,
   deletable,
 }: Readonly<{
@@ -341,6 +342,7 @@ export function DiscoverChatMessageRow({
   onDragMessage: (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
+  onVisibleProductContextChange?: VisibleProductContextChange
   immutable?: boolean
   deletable?: boolean
 }>) {
@@ -462,6 +464,7 @@ export function DiscoverChatMessageRow({
                 onShelfAddProduct={onShelfAddProduct}
                 onDragProduct={onDragProduct}
                 onRetryProductResultSet={onRetryProductResultSet}
+                onVisibleProductContextChange={onVisibleProductContextChange}
                 immutable={immutable}
               />
             ))}

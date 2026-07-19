@@ -15,6 +15,7 @@ import com.meant.api.module.agent.service.dto.AgentModelRequest;
 import com.meant.api.module.agent.service.dto.AgentModelResponse;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
+import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
@@ -28,6 +29,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -60,6 +62,8 @@ public class AgentRunCoordinator {
     private final AgentToolRegistry toolRegistry;
     private final AgentToolAuthorizationPolicy authorizationPolicy;
     private final AgentToolCallExecutor toolCallExecutor;
+    private final AgentProductClarificationService productClarificationService;
+    private final AgentProductClarificationContextService productClarificationContextService;
     private final AgentMessageLedgerService messageLedgerService;
     private final AgentModelGateway modelGateway;
     private final AgentMetrics metrics;
@@ -197,13 +201,22 @@ public class AgentRunCoordinator {
                 runId,
                 run.getTriggeringMessageId(),
                 context.triggeringUserText()
-        ).withExecutionOwner(executionOwner).withBuyerIp(run.getBuyerIp());
+        ).withVisibleProductContext(context.visibleProductContext())
+                .withPendingProductClarification(context.pendingProductClarification())
+                .withExecutionOwner(executionOwner)
+                .withBuyerIp(run.getBuyerIp());
         Map<String, Integer> perToolCounts = new HashMap<>();
         Map<String, Integer> repeatedCalls = new HashMap<>();
         int totalToolCalls = 0;
 
         for (int iteration = 0; iteration < properties.maximumModelIterations(); iteration++) {
             requireActive(runId, executionOwner, deadline);
+            Optional<AgentProductClarification> unresolvedIntent =
+                    productClarificationService.unresolvedIntent(toolContext);
+            if (unresolvedIntent.isPresent()) {
+                waitForProductClarification(runId, executionOwner, unresolvedIntent.get());
+                return;
+            }
             List<AgentToolDescriptor> descriptors = authorizationPolicy.available(
                     toolContext,
                     toolRegistry.descriptors()
@@ -247,6 +260,14 @@ public class AgentRunCoordinator {
                     );
                     return;
                 }
+            }
+
+            Optional<AgentProductClarification> clarification =
+                    productClarificationService.preflight(toolContext, calls);
+            if (clarification.isPresent()) {
+                requireActive(runId, executionOwner, deadline);
+                waitForProductClarification(runId, executionOwner, clarification.get());
+                return;
             }
 
             List<AgentModelToolResult> results = executeTools(toolContext, calls, executionOwner, deadline);
@@ -414,6 +435,22 @@ public class AgentRunCoordinator {
             text = RECOVERY_MESSAGE;
         }
         messageLedgerService.appendTerminalAssistant(runId, executionOwner, text, waiting);
+    }
+
+    private void waitForProductClarification(
+            UUID runId,
+            UUID executionOwner,
+            AgentProductClarification clarification
+    ) {
+        String question = productClarificationService.question(clarification);
+        String contentJson = productClarificationContextService.serialize(clarification);
+        messageLedgerService.appendTerminalAssistant(
+                runId,
+                executionOwner,
+                question,
+                contentJson,
+                true
+        );
     }
 
     private void terminateForLimit(UUID runId, UUID executionOwner, String code, String message) {

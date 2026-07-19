@@ -1,11 +1,17 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 
 import { SparkMark } from '../shared/ui'
+import {
+  askComposerSubmissionAccepted,
+  askComposerSuggestionValue,
+  type AskComposerSubmitHandler,
+} from './askSubmission'
 import type { AskReplyDraft } from './types'
 
 export function AskComposer({
   placeholder,
   suggestions,
+  suggestionValues = [],
   showChips,
   onAsk,
   autoFocus = false,
@@ -15,8 +21,9 @@ export function AskComposer({
 }: Readonly<{
   placeholder: string
   suggestions: readonly string[]
+  suggestionValues?: readonly string[]
   showChips: boolean
-  onAsk: (question: string) => void
+  onAsk: AskComposerSubmitHandler
   autoFocus?: boolean
   disabled?: boolean
   replyDraft?: AskReplyDraft | null
@@ -24,6 +31,7 @@ export function AskComposer({
 }>) {
   const [value, setValue] = useState('')
   const [sentPulse, setSentPulse] = useState(false)
+  const [sending, setSending] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const sentPulseTimeoutRef = useRef<number | null>(null)
 
@@ -50,12 +58,19 @@ export function AskComposer({
     [],
   )
 
-  const send = (text?: string) => {
-    if (disabled) {
+  const send = async (text?: string) => {
+    if (disabled || sending) {
       return
     }
     const question = (text ?? value).trim()
     if (!question) {
+      return
+    }
+    setSending(true)
+    const accepted = await askComposerSubmissionAccepted(onAsk, question)
+    setSending(false)
+    if (!accepted) {
+      inputRef.current?.focus()
       return
     }
     setSentPulse(true)
@@ -68,14 +83,14 @@ export function AskComposer({
     }, 520)
     setValue('')
     onClearReply?.()
-    onAsk(question)
   }
 
   const hasValue = value.trim().length > 0
-  const canSend = hasValue && !disabled
+  const busy = disabled || sending
+  const canSend = hasValue && !busy
 
   return (
-    <div className={`mt-ask-composer ${disabled ? 'mt-ask-composer-disabled' : ''}`}>
+    <div className={`mt-ask-composer ${busy ? 'mt-ask-composer-disabled' : ''}`}>
       {showChips && suggestions.length > 0 ? (
         <div className="mt-ask-chips">
           {suggestions.map((suggestion, index) => (
@@ -83,8 +98,10 @@ export function AskComposer({
               key={suggestion}
               className="mt-ask-chip"
               type="button"
-              onClick={() => send(suggestion)}
-              disabled={disabled}
+              onClick={() =>
+                void send(askComposerSuggestionValue(suggestion, index, suggestionValues))
+              }
+              disabled={busy}
               style={{ '--mt-chip-index': index } as CSSProperties}
             >
               {suggestion}
@@ -118,10 +135,10 @@ export function AskComposer({
         </div>
       ) : null}
       <form
-        className={`mt-ask-bar ${hasValue ? 'mt-ask-writing' : ''} ${sentPulse ? 'mt-ask-sent' : ''} ${disabled ? 'mt-ask-busy' : ''}`}
+        className={`mt-ask-bar ${hasValue ? 'mt-ask-writing' : ''} ${sentPulse ? 'mt-ask-sent' : ''} ${busy ? 'mt-ask-busy' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
-          send()
+          void send()
         }}
       >
         <span className="mt-ask-spark">
@@ -133,7 +150,7 @@ export function AskComposer({
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder={placeholder}
-          disabled={disabled}
+          disabled={busy}
           aria-label="Message Meant"
         />
         <button type="submit" className="mt-ask-go" aria-label="Ask" disabled={!canSend}>

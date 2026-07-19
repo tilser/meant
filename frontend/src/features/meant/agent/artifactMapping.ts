@@ -1147,9 +1147,12 @@ export function blocksForAgentMessage(
   allArtifacts: readonly AgentArtifactProfile[],
   deliveryLocations: readonly UserLocation[],
 ): DiscoverChatBlock[] {
+  const orderedMessageArtifacts = [...messageArtifacts].sort(
+    (left, right) => left.ordinal - right.ordinal,
+  )
   const allProducts = productsFromAgentArtifacts(allArtifacts)
   const products = productsFromAgentArtifacts(
-    messageArtifacts.filter(
+    orderedMessageArtifacts.filter(
       (artifact) =>
         artifact.type === 'PRODUCT' ||
         artifact.type === 'OFFER' ||
@@ -1158,8 +1161,8 @@ export function blocksForAgentMessage(
   )
   const blocks: DiscoverChatBlock[] = []
   const toolName = message.correlationId?.split(':').at(-1) ?? ''
-  const comparison = messageArtifacts.find((artifact) => artifact.type === 'COMPARISON')
-  const mission = messageArtifacts.find((artifact) => artifact.type === 'MISSION')
+  const comparison = orderedMessageArtifacts.find((artifact) => artifact.type === 'COMPARISON')
+  const mission = orderedMessageArtifacts.find((artifact) => artifact.type === 'MISSION')
   if (mission) {
     const block = missionBlock(mission)
     if (block) blocks.push(block)
@@ -1169,17 +1172,17 @@ export function blocksForAgentMessage(
     if (block) blocks.push(block)
   } else if (products.length > 0) {
     if (toolName === 'find_similar_products') {
-      blocks.push({ type: 'similar', products })
+      blocks.push({ type: 'similar', products, sourceMessageId: message.messageId })
     } else if (toolName === 'pick_recommended_product' && products[0]) {
       blocks.push({ type: 'decision', product: products[0], runnerUp: products[1] ?? null })
-    } else if (messageArtifacts.some((artifact) => artifact.type === 'SAVED_PRODUCT')) {
+    } else if (orderedMessageArtifacts.some((artifact) => artifact.type === 'SAVED_PRODUCT')) {
       blocks.push({ type: 'saved', products })
     } else {
-      blocks.push({ type: 'products', products })
+      blocks.push({ type: 'products', products, sourceMessageId: message.messageId })
     }
   }
 
-  for (const artifact of messageArtifacts) {
+  for (const artifact of orderedMessageArtifacts) {
     const product = productByCanonicalKey(allProducts, artifact.canonicalProductKey)
     if (artifact.type === 'REVIEWS' && product) {
       blocks.push({ type: 'reviews', product, snapshot: productReviewsSnapshot(artifact) })
@@ -1200,7 +1203,7 @@ export function blocksForAgentMessage(
   }
 
   const cartArtifacts = latestCartSnapshotArtifacts(
-    messageArtifacts.filter(
+    orderedMessageArtifacts.filter(
       (artifact) => artifact.type === 'CART' || artifact.type === 'CART_LINE',
     ),
   )
@@ -1208,14 +1211,16 @@ export function blocksForAgentMessage(
   if (cartArtifacts.length > 0) {
     blocks.push({ type: 'cart', lines, products: allProducts })
   }
-  const checkoutCount = messageArtifacts.filter((artifact) => artifact.type === 'CHECKOUT').length
+  const checkoutCount = orderedMessageArtifacts.filter(
+    (artifact) => artifact.type === 'CHECKOUT',
+  ).length
   if (checkoutCount > 0) {
     const cartIds = new Set(
-      messageArtifacts.flatMap((artifact) => (artifact.cartId ? [artifact.cartId] : [])),
+      orderedMessageArtifacts.flatMap((artifact) => (artifact.cartId ? [artifact.cartId] : [])),
     )
     const historicalCartArtifacts = latestCartSnapshotArtifacts(
       allArtifacts.filter((artifact) => artifact.cartId && cartIds.has(artifact.cartId)),
-      messageArtifacts
+      orderedMessageArtifacts
         .filter((artifact) => artifact.type === 'CHECKOUT')
         .map((artifact) => artifact.createdAt)
         .sort(compareArtifactTimestamps)
@@ -1232,6 +1237,52 @@ export function blocksForAgentMessage(
     })
   }
   return blocks
+}
+
+function jsonObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function productClarificationReplies(
+  contentJson: string | null,
+): { labels: readonly string[]; submissions: readonly string[] } | undefined {
+  if (!contentJson) return undefined
+  try {
+    const envelope = jsonObject(JSON.parse(contentJson))
+    const clarification = jsonObject(envelope?.pendingProductClarification)
+    if (!Array.isArray(clarification?.products)) return undefined
+
+    const seenOrdinals = new Set<number>()
+    const replies = clarification.products.flatMap((candidate) => {
+      const product = jsonObject(candidate)
+      const ordinal = product?.visibleOrdinal
+      const title =
+        typeof product?.title === 'string' ? product.title.replace(/\s+/g, ' ').trim() : ''
+      if (
+        typeof ordinal !== 'number' ||
+        !Number.isInteger(ordinal) ||
+        ordinal < 1 ||
+        ordinal > 10 ||
+        !title ||
+        seenOrdinals.has(ordinal)
+      ) {
+        return []
+      }
+      seenOrdinals.add(ordinal)
+      const clippedTitle = title.length <= 80 ? title : `${title.slice(0, 79).trimEnd()}…`
+      return [{ label: `${ordinal}. ${clippedTitle}`, submission: String(ordinal) }]
+    })
+    if (replies.length < 2) return undefined
+    const visibleReplies = replies.slice(0, 6)
+    return {
+      labels: visibleReplies.map((reply) => reply.label),
+      submissions: visibleReplies.map((reply) => reply.submission),
+    }
+  } catch {
+    return undefined
+  }
 }
 
 /** Converts only authoritative ledger rows; transient stream projection is appended by the view. */
@@ -1328,10 +1379,13 @@ export function discoverMessagesFromAgentConversation(
         : message.textContent
           ? plainAgentText(message.textContent)
           : null
+      const clarificationReplies = productClarificationReplies(message.contentJson)
       messages.push({
         id: message.messageId,
         role: 'ai',
         blocks: [...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks],
+        suggestedReplies: clarificationReplies?.labels,
+        suggestedReplySubmissions: clarificationReplies?.submissions,
       })
       continue
     }

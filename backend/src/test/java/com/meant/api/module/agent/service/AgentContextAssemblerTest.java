@@ -23,6 +23,9 @@ import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.dto.AgentModelContext;
 import com.meant.api.module.agent.service.dto.AgentModelMessage;
+import com.meant.api.module.agent.service.dto.AgentProductClarification;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -48,6 +51,10 @@ class AgentContextAssemblerTest {
     private final AgentMessageRepository messages = mock(AgentMessageRepository.class);
     private final AgentArtifactReferenceRepository artifacts = mock(AgentArtifactReferenceRepository.class);
     private final ShoppingMissionRepository missions = mock(ShoppingMissionRepository.class);
+    private final AgentVisibleProductContextService visibleProductContexts =
+            mock(AgentVisibleProductContextService.class);
+    private final AgentProductClarificationContextService productClarifications =
+            mock(AgentProductClarificationContextService.class);
     private final AgentContextAssembler assembler = new AgentContextAssembler(
             conversations,
             runs,
@@ -55,7 +62,9 @@ class AgentContextAssemblerTest {
             artifacts,
             missions,
             properties(),
-            new AgentCartSnapshotSupport(new ObjectMapper())
+            new AgentCartSnapshotSupport(new ObjectMapper()),
+            visibleProductContexts,
+            productClarifications
     );
 
     @Test
@@ -110,10 +119,13 @@ class AgentContextAssemblerTest {
 
         String systemPrompt = context.messages().getFirst().text();
         assertThat(systemPrompt)
-                .contains("Resolve ordinals against the newest compatible numbered product set.")
                 .contains("Before asking which cart item the user means, inspect the authoritative current commerce state.")
                 .contains("1. <label>")
                 .contains("WAITING_FOR_USER: Which cart item should I remove?")
+                .contains("Resolve ordinals first against a product set issued during the current run")
+                .contains("authoritative visible product order submitted with the turn")
+                .contains("newest compatible")
+                .contains("prior numbered product set")
                 .contains("Reuse an existing compatible cart with add_cart_line instead of prepare_carts.")
                 .contains("most recently removed offer reference")
                 .contains("A request for one product or category is catalog discovery")
@@ -125,14 +137,75 @@ class AgentContextAssemblerTest {
 
         String grounding = context.messages().get(1).text();
         assertThat(grounding)
-                .contains("item=1 key=product-jacket-1 [PRODUCT] Canvas field jacket")
-                .contains("item=2 key=product-jacket-2 [PRODUCT] Black cotton jacket")
+                .contains("item=1 product=product-jacket-1 recommendedOffer=offer-jacket-1 "
+                        + "title=Canvas field jacket")
+                .contains("item=2 product=product-jacket-2 recommendedOffer=offer-jacket-2 "
+                        + "title=Black cotton jacket")
                 .contains("cartId=" + currentCartId)
                 .contains("cartLineId=" + currentLineId + " offerKey=offer-jacket-2 label=Black cotton jacket")
                 .contains("productContext=Black cotton jacket | Weatherproof outerwear for rainy commutes")
                 .doesNotContain("cartLineId=" + removedLineId)
                 .contains("priorCartLineId=" + removedLineId + " offerKey=offer-jacket-1")
                 .doesNotContain("[CART_LINE]");
+    }
+
+    @Test
+    void currentTurnGroundingMakesTheVisiblePageOrderAuthoritative() {
+        givenRunAndMessages();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(SEARCH_MESSAGE_ID, List.of(
+                visibleProduct(1, 5),
+                visibleProduct(2, 6),
+                visibleProduct(3, 7),
+                visibleProduct(4, 8)
+        ));
+        when(visibleProductContexts.deserialize(null)).thenReturn(Optional.of(visible));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(any(), any()))
+                .thenReturn(List.of(
+                        product(SEARCH_MESSAGE_ID, 5, "product-5", "offer-5", "Fifth product"),
+                        product(SEARCH_MESSAGE_ID, 6, "product-6", "offer-6", "Sixth product"),
+                        product(SEARCH_MESSAGE_ID, 7, "product-7", "offer-7", "Seventh product"),
+                        product(SEARCH_MESSAGE_ID, 8, "product-8", "offer-8", "Eighth product")
+                ));
+
+        AgentModelContext context = assembler.assemble(RUN_ID);
+
+        assertThat(context.visibleProductContext()).isEqualTo(visible);
+        assertThat(context.messages().get(1).text())
+                .contains("Use this screen order unless this run issues a newer product set.")
+                .contains("- 1 product=product-5 offer=offer-5")
+                .contains("- 3 product=product-7 offer=offer-7")
+                .containsSubsequence(
+                        "- 1 product=product-5 offer=offer-5",
+                        "- 2 product=product-6 offer=offer-6",
+                        "- 3 product=product-7 offer=offer-7",
+                        "- 4 product=product-8 offer=offer-8"
+                );
+    }
+
+    @Test
+    void immediatelyPrecedingClarificationIsCarriedIntoTheNextModelTurn() {
+        givenRunAndMessages();
+        AgentProductClarification clarification = new AgentProductClarification(
+                "prepare_carts",
+                "Add the blue hat to my cart.",
+                List.of(
+                        new AgentVisibleProductReference(1, 5, "product-5", "offer-5", "Navy hat"),
+                        new AgentVisibleProductReference(2, 6, "product-6", "offer-6", "Sky blue hat")
+                )
+        );
+        when(productClarifications.deserialize(null)).thenReturn(Optional.of(clarification));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(any(), any()))
+                .thenReturn(List.of());
+
+        AgentModelContext context = assembler.assemble(RUN_ID);
+
+        assertThat(context.pendingProductClarification()).isEqualTo(clarification);
+        assertThat(context.messages().get(1).text())
+                .contains("Continue only the recorded product action from tool=prepare_carts")
+                .contains("Original request=Add the blue hat to my cart.")
+                .contains("- 2 product=product-6 offer=offer-6 title=Sky blue hat");
+        assertThat(context.messages().getFirst().text())
+                .contains("a bare number refers to that candidate list");
     }
 
     @Test
@@ -355,6 +428,16 @@ class AgentContextAssemblerTest {
                 .payloadJson("{}")
                 .createdAt(BASE)
                 .build();
+    }
+
+    private AgentVisibleProductReference visibleProduct(int visibleOrdinal, int resultOrdinal) {
+        return new AgentVisibleProductReference(
+                visibleOrdinal,
+                resultOrdinal,
+                "product-" + resultOrdinal,
+                "offer-" + resultOrdinal,
+                "Product " + resultOrdinal
+        );
     }
 
     private AgentArtifactReference offer(

@@ -154,7 +154,7 @@ public class AgentToolAuthorizationPolicy {
             return true;
         }
         String name = descriptor.name();
-        String turn = normalize(context.triggeringUserText());
+        String turn = authorizationTurn(context, name);
         if (name.startsWith("create_shopping_mission")) {
             return missionCreationAuthorized(turn) && activeMission(context).isEmpty();
         }
@@ -200,7 +200,10 @@ public class AgentToolAuthorizationPolicy {
             return mutationTargetPolicy.matchesExplicitOrdinal(
                     context, descriptor.name(), canonicalArgumentsJson);
         }
-        Optional<ShoppingMission> delegated = delegatedMission(context, normalize(context.triggeringUserText()));
+        Optional<ShoppingMission> delegated = delegatedMission(
+                context,
+                authorizationTurn(context, descriptor.name())
+        );
         if (delegated.isPresent()
                 && (CART_ADDITIONS.contains(descriptor.name())
                 || CART_UPDATES.contains(descriptor.name())
@@ -269,6 +272,15 @@ public class AgentToolAuthorizationPolicy {
                         context.conversationId(), context.userId())
                 .filter(mission -> mission.getStatus() != ShoppingMissionStatus.CANCELLED
                         && mission.getStatus() != ShoppingMissionStatus.COMPLETED);
+    }
+
+    private String authorizationTurn(AgentToolExecutionContext context, String toolName) {
+        if (context.pendingProductClarification() != null
+                && context.pendingProductClarification().continuesWith(toolName)
+                && mutationTargetPolicy.isPendingProductSelectionAnswer(context, toolName)) {
+            return normalize(context.pendingProductClarification().originalUserText());
+        }
+        return normalize(context.triggeringUserText());
     }
 
     private String normalize(String value) {

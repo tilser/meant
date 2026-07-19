@@ -28,6 +28,17 @@ export interface ShoppingMissionRequirement {
   optional: boolean
 }
 
+export interface VisibleProductContext {
+  sourceMessageId: string
+  orderedCanonicalProductKeys: readonly string[]
+}
+
+/** `null` keeps an unbindable visible batch authoritative; `undefined` unregisters an unmounted batch. */
+export type VisibleProductContextChange = (
+  sourceMessageId: string,
+  context: VisibleProductContext | null | undefined,
+) => void
+
 export type SimilarReferenceStatus = 'idle' | 'loading' | 'error'
 export type SimilarMessageRole = 'request' | 'response'
 export type SimilarSearchStatus = 'requested' | 'pending' | 'success' | 'empty' | 'error'
@@ -46,6 +57,8 @@ export type DiscoverChatBlock =
       query?: string
       qualificationId?: string
       productResultSetId?: string
+      /** Durable TOOL message whose ordered artifacts produced these cards. */
+      sourceMessageId?: string
       unavailableCount?: number
       historyHydration?: 'loading' | 'loaded' | 'failed'
     }
@@ -67,6 +80,8 @@ export type DiscoverChatBlock =
       products: readonly Product[]
       query?: string
       qualificationId?: string
+      /** Durable TOOL message whose ordered artifacts produced these cards. */
+      sourceMessageId?: string
       anchorCanonicalProductKey?: string
       resultCanonicalProductKeys?: readonly string[]
     }
@@ -126,6 +141,8 @@ export interface DiscoverChatMessage {
   pendingText?: string
   pendingOperation?: 'similar-product-search'
   suggestedReplies?: readonly string[]
+  /** Values submitted by suggestion chips when their display labels include extra context. */
+  suggestedReplySubmissions?: readonly string[]
   query?: string
   productContext?: Product
   similarMessageRole?: SimilarMessageRole

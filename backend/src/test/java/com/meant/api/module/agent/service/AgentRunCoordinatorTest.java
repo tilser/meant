@@ -24,8 +24,10 @@ import com.meant.api.module.agent.service.dto.AgentModelResponse;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
 import com.meant.api.module.agent.service.dto.AgentModelUsage;
+import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import com.meant.api.module.agent.support.ScriptedAgentModelGateway;
 import java.time.Duration;
 import java.time.Instant;
@@ -241,6 +243,70 @@ class AgentRunCoordinatorTest {
         verify(fixture.toolExecutor(), never()).execute(any(), any());
     }
 
+    @Test
+    void unresolvedProductIntentWaitsBeforeTheModelOrAnyToolStarts() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("This model response must not be needed.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentProductClarification clarification = clarification();
+        when(fixture.productClarificationService().unresolvedIntent(any()))
+                .thenReturn(Optional.of(clarification));
+        when(fixture.productClarificationService().question(clarification))
+                .thenReturn("Which product should I add to your cart?\n1. Blue cap\n2. Red cap");
+        when(fixture.productClarificationContextService().serialize(clarification))
+                .thenReturn("{\"pendingProductClarification\":true}");
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Which product should I add to your cart?\n1. Blue cap\n2. Red cap",
+                "{\"pendingProductClarification\":true}",
+                true
+        );
+        assertThat(model.requests()).isEmpty();
+        verify(fixture.toolExecutor(), never()).execute(any(), any());
+    }
+
+    @Test
+    void productPreflightStopsEveryCallInTheResponseBeforeExecution() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall read = new AgentModelToolCall(
+                "call-1", "search_catalog", "{\"query\":\"caps\"}");
+        AgentModelToolCall mutation = new AgentModelToolCall(
+                "call-2", "prepare_carts", "{\"offers\":[{\"offerKey\":\"offer-red\"}]}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(read, mutation)))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentProductClarification clarification = clarification();
+        when(fixture.productClarificationService().preflight(
+                any(AgentToolExecutionContext.class), any()))
+                .thenReturn(Optional.of(clarification));
+        when(fixture.productClarificationService().question(clarification))
+                .thenReturn("Which product should I add to your cart?\n1. Blue cap\n2. Red cap");
+        when(fixture.productClarificationContextService().serialize(clarification))
+                .thenReturn("{\"pendingProductClarification\":true}");
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Which product should I add to your cart?\n1. Blue cap\n2. Red cap",
+                "{\"pendingProductClarification\":true}",
+                true
+        );
+        verify(fixture.toolExecutor(), never()).execute(any(), any());
+        assertThat(model.requests()).hasSize(1);
+    }
+
     private Fixture fixture(
             UUID runId,
             UUID conversationId,
@@ -254,6 +320,10 @@ class AgentRunCoordinatorTest {
         AgentToolRegistry registry = mock(AgentToolRegistry.class);
         AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
         AgentToolCallExecutor toolExecutor = mock(AgentToolCallExecutor.class);
+        AgentProductClarificationService productClarificationService =
+                mock(AgentProductClarificationService.class);
+        AgentProductClarificationContextService productClarificationContextService =
+                mock(AgentProductClarificationContextService.class);
         AgentMessageLedgerService messageLedger = mock(AgentMessageLedgerService.class);
         AgentJsonSupport jsonSupport = mock(AgentJsonSupport.class);
         AgentTool tool = mock(AgentTool.class);
@@ -310,13 +380,33 @@ class AgentRunCoordinatorTest {
                 registry,
                 authorizationPolicy,
                 toolExecutor,
+                productClarificationService,
+                productClarificationContextService,
                 messageLedger,
                 model,
                 mock(AgentMetrics.class),
                 jsonSupport,
                 properties()
         );
-        return new Fixture(runService, toolExecutor, messageLedger, executionOwner);
+        return new Fixture(
+                runService,
+                toolExecutor,
+                productClarificationService,
+                productClarificationContextService,
+                messageLedger,
+                executionOwner
+        );
+    }
+
+    private AgentProductClarification clarification() {
+        return new AgentProductClarification(
+                "prepare_carts",
+                "Add the third blue one to my cart",
+                List.of(
+                        new AgentVisibleProductReference(1, 1, "blue-cap", "offer-blue", "Blue cap"),
+                        new AgentVisibleProductReference(2, 2, "red-cap", "offer-red", "Red cap")
+                )
+        );
     }
 
     private AgentModelResponse model(String text, List<AgentModelToolCall> calls) {
@@ -364,6 +454,8 @@ class AgentRunCoordinatorTest {
     private record Fixture(
             AgentRunService runService,
             AgentToolCallExecutor toolExecutor,
+            AgentProductClarificationService productClarificationService,
+            AgentProductClarificationContextService productClarificationContextService,
             AgentMessageLedgerService messageLedger,
             UUID executionOwner
     ) {

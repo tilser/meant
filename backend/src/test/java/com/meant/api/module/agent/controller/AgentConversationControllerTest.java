@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.meant.api.module.agent.constant.AgentContentKind;
 import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.controller.request.AgentUserActionRequest;
+import com.meant.api.module.agent.controller.request.AgentVisibleProductContextRequest;
 import com.meant.api.module.agent.controller.request.SubmitAgentTurnRequest;
 import com.meant.api.module.agent.service.AgentConversationService;
 import com.meant.api.module.agent.service.AgentRunCoordinator;
@@ -56,6 +57,7 @@ class AgentConversationControllerTest {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
+        UUID productMessageId = UUID.randomUUID();
         AgentTurnService turnService = mock(AgentTurnService.class);
         AgentUserActionService userActionService = mock(AgentUserActionService.class);
         AgentRunCoordinator runCoordinator = mock(AgentRunCoordinator.class);
@@ -84,7 +86,14 @@ class AgentConversationControllerTest {
         controller.submitTurn(
                 jwt(userId),
                 conversationId,
-                new SubmitAgentTurnRequest("Add this to my cart", "client-turn-1"),
+                new SubmitAgentTurnRequest(
+                        "Add this to my cart",
+                        "client-turn-1",
+                        new AgentVisibleProductContextRequest(
+                                productMessageId,
+                                List.of("product-5", "product-6", "product-7", "product-8")
+                        )
+                ),
                 request
         );
         controller.performAction(
@@ -107,6 +116,9 @@ class AgentConversationControllerTest {
         verify(userActionService).perform(actionCommand.capture());
         verify(runCoordinator).schedule(runId);
         assertThat(turnCommand.getValue().buyerIp()).isEqualTo("203.0.113.42");
+        assertThat(turnCommand.getValue().visibleProductContext().sourceMessageId()).isEqualTo(productMessageId);
+        assertThat(turnCommand.getValue().visibleProductContext().orderedCanonicalProductKeys())
+                .containsExactly("product-5", "product-6", "product-7", "product-8");
         assertThat(actionCommand.getValue().buyerIp()).isEqualTo("203.0.113.42");
     }
 

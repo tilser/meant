@@ -1,6 +1,7 @@
 package com.meant.api.module.agent.controller.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -19,6 +20,17 @@ public record SubmitAgentTurnRequest(
                 requiredMode = Schema.RequiredMode.NOT_REQUIRED
         )
         @Size(max = 120)
-        String clientTurnId
+        String clientTurnId,
+
+        @Schema(
+                description = "Optional authoritative order of the product cards visible for this turn.",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        @Valid
+        AgentVisibleProductContextRequest visibleProductContext
 ) {
+
+    public SubmitAgentTurnRequest(String message, String clientTurnId) {
+        this(message, clientTurnId, null);
+    }
 }

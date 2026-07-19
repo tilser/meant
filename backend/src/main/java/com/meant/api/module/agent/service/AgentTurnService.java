@@ -33,6 +33,7 @@ public class AgentTurnService {
     private final AgentMessageRepository messageRepository;
     private final AgentRunRepository runRepository;
     private final AgentRunService runService;
+    private final AgentVisibleProductContextService visibleProductContextService;
     private final AgentProperties properties;
     private final Clock clock;
 
@@ -49,6 +50,9 @@ public class AgentTurnService {
         if (conversation.getStatus() == AgentConversationStatus.ARCHIVED) {
             throw AgentException.conflict("Archived conversations cannot accept new turns.");
         }
+        var visibleProductContext = visibleProductContextService.resolve(
+                conversation.getId(), command.visibleProductContext());
+        String turnContextJson = visibleProductContextService.serialize(visibleProductContext);
 
         String clientTurnId = blankToNull(command.clientTurnId());
         if (clientTurnId != null) {
@@ -56,7 +60,8 @@ public class AgentTurnService {
                     conversation.getId(), AgentMessageRole.USER, clientTurnId);
             if (existing.isPresent()) {
                 AgentMessage message = existing.get();
-                if (!command.message().trim().equals(message.getTextContent())) {
+                if (!command.message().trim().equals(message.getTextContent())
+                        || !java.util.Objects.equals(turnContextJson, message.getContentJson())) {
                     throw AgentException.conflict("This client turn identifier was already used.");
                 }
                 AgentRun run = runRepository.findByTriggeringMessageId(message.getId())
@@ -95,6 +100,7 @@ public class AgentTurnService {
                 .contentKind(AgentContentKind.TEXT)
                 .sequenceNumber(conversation.nextSequence(now))
                 .textContent(text)
+                .contentJson(turnContextJson)
                 .correlationId(clientTurnId)
                 .createdAt(now)
                 .build());
