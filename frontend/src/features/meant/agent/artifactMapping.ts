@@ -1071,9 +1071,11 @@ function productByCanonicalKey(products: readonly Product[], key: string | null)
 
 function productReviewsSnapshot(artifact: AgentArtifactProfile): ProductReviewsProfile | undefined {
   const value = parseRecord(artifact.payloadJson)
+  const supported = value?.supported === true
+  const merchantId = stringValue(value?.merchantId)
   if (
     !value ||
-    !stringValue(value.merchantId) ||
+    (supported && !merchantId) ||
     !stringValue(value.productId) ||
     !stringValue(value.provider) ||
     !Array.isArray(value.reviews) ||
@@ -1083,7 +1085,7 @@ function productReviewsSnapshot(artifact: AgentArtifactProfile): ProductReviewsP
   ) {
     return undefined
   }
-  return value as unknown as ProductReviewsProfile
+  return { ...value, merchantId: merchantId ?? '' } as unknown as ProductReviewsProfile
 }
 
 function missionBlock(artifact: AgentArtifactProfile): DiscoverChatBlock | null {

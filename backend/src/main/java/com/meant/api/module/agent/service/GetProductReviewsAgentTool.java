@@ -3,13 +3,13 @@ package com.meant.api.module.agent.service;
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
+import com.meant.api.module.agent.service.dto.AgentProductReviewsResult;
 import com.meant.api.module.agent.service.dto.AgentProductReadSelection;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.GetProductReviewsAgentToolInput;
 import com.meant.api.module.review.service.ReviewService;
-import com.meant.api.module.review.service.dto.ProductReviewsResult;
 import com.meant.api.module.review.service.query.GetProductReviewsQuery;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -21,11 +21,11 @@ public class GetProductReviewsAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "get_product_reviews",
-            "Load real merchant review-provider results for a previously shown exact product offer.",
+            "Load real merchant review-provider results for a previously shown exact product offer, or report why reviews are unavailable.",
             """
             {"type":"object","properties":{"canonicalProductKey":{"type":"string","minLength":1,"maxLength":200},"selectedOfferKey":{"type":"string","minLength":1,"maxLength":200},"limit":{"type":"integer","minimum":1,"maximum":20},"offset":{"type":"integer","minimum":0,"maximum":1000}},"required":["canonicalProductKey"],"additionalProperties":false}
             """,
-            "1",
+            "2",
             AgentToolRisk.READ
     );
 
@@ -48,13 +48,19 @@ public class GetProductReviewsAgentTool implements AgentTool {
             throw AgentProductReadToolException.invalid("Review limit or offset is outside the allowed range.");
         }
         AgentProductReadSelection selection = selectionService.select(
-                context, input.canonicalProductKey(), input.selectedOfferKey(), true);
-        ProductReviewsResult reviews = reviewService.getProductReviews(new GetProductReviewsQuery(
-                selection.merchantIntegration().merchantId(),
-                selection.offer().identity().externalProductIdentity().value(),
-                limit,
-                offset
-        ));
+                context, input.canonicalProductKey(), input.selectedOfferKey(), false);
+        String externalProductId = selection.offer().identity().externalProductIdentity().value();
+        AgentProductReviewsResult reviews = selection.merchantIntegration() == null
+                ? AgentProductReviewsResult.unavailable(
+                        externalProductId,
+                        "Reviews are unavailable because this merchant does not have a connected review provider."
+                )
+                : AgentProductReviewsResult.from(reviewService.getProductReviews(new GetProductReviewsQuery(
+                        selection.merchantIntegration().merchantId(),
+                        externalProductId,
+                        limit,
+                        offset
+                )));
         AgentArtifact artifact = new AgentArtifact(
                 AgentArtifactType.REVIEWS,
                 1,

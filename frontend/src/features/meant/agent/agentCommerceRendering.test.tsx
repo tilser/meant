@@ -10,6 +10,7 @@ import type { DiscoverChatBlock } from '../chat/types'
 import type { MerchantCartStateReplacement } from '../cart/types'
 import { liveCheckoutGroupFor } from '../cart/checkoutGroupResolution'
 import { resolveLiveCartItem } from '../cart/cartPartition'
+import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
 import type { CartItem, Product } from '../types'
 import { cartGroups, cartLines } from '../utils'
 import { agentActionQueueFor, SerializedAgentActionQueue } from './actionQueue'
@@ -522,6 +523,34 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(markup).toContain('>Similar<')
     expect(markup).toContain('Compare here')
     expect(markup).toContain('Just pick one')
+  })
+
+  test('renders an explicit review result when a catalog merchant has no review integration', () => {
+    const markup = renderToStaticMarkup(
+      <ProductReviewsPanel
+        product={{ ...first, review: { score: null, count: 0, insight: '' } }}
+        mode="chat"
+        initialResponse={{
+          merchantId: '',
+          productId: 'external-product-1',
+          provider: 'UNKNOWN',
+          rating: null,
+          reviewCount: 0,
+          hasMore: false,
+          reviews: [],
+          cached: false,
+          supported: false,
+          message:
+            'Reviews are unavailable because this merchant does not have a connected review provider.',
+        }}
+      />,
+    )
+
+    expect(markup).toContain('Reviews · Grounded trail shoe')
+    expect(markup).toContain('No review data')
+    expect(markup).toContain(
+      'Reviews are unavailable because this merchant does not have a connected review provider.',
+    )
   })
 
   test('renders comparison, cart, and checkout artifacts through their existing blocks', () => {

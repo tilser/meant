@@ -162,6 +162,65 @@ function artifact(
 }
 
 describe('agent artifact mapping', () => {
+  test('renders an unavailable review artifact for a catalog-only merchant', () => {
+    const product = artifact({
+      type: 'PRODUCT',
+      stableKey: 'product-review',
+      messageId: 'message-search',
+      canonicalProductKey: 'product-review',
+      offerKey: 'offer-review',
+      payloadJson: JSON.stringify(
+        canonicalProduct('product-review', 'offer-review', 'Catalog-only jacket'),
+      ),
+    })
+    const action: AgentMessageProfile = {
+      messageId: 'message-reviews',
+      runId: null,
+      sequenceNumber: 2,
+      role: 'USER_ACTION',
+      contentKind: 'ACTION',
+      textContent: 'Reviews are unavailable for this merchant.',
+      contentJson: null,
+      correlationId: 'action:reviews',
+      createdAt,
+    }
+    const reviews = artifact({
+      type: 'REVIEWS',
+      stableKey: 'reviews:product-review:offer-review',
+      messageId: action.messageId,
+      runId: null,
+      canonicalProductKey: 'product-review',
+      offerKey: 'offer-review',
+      payloadJson: JSON.stringify({
+        merchantId: null,
+        productId: 'external-product-1',
+        provider: 'UNKNOWN',
+        rating: null,
+        reviewCount: 0,
+        hasMore: false,
+        reviews: [],
+        cached: false,
+        supported: false,
+        message:
+          'Reviews are unavailable because this merchant does not have a connected review provider.',
+      }),
+    })
+
+    expect(blocksForAgentMessage(action, [reviews], [product, reviews], [])).toMatchObject([
+      {
+        type: 'reviews',
+        product: { id: 'product-review', name: 'Catalog-only jacket' },
+        snapshot: {
+          merchantId: '',
+          supported: false,
+          reviewCount: 0,
+          message:
+            'Reviews are unavailable because this merchant does not have a connected review provider.',
+        },
+      },
+    ])
+  })
+
   test('uses the model result subject when a follow-up query is context-only', () => {
     expect(
       conciseProductResultIntroduction(
