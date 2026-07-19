@@ -205,7 +205,12 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                         commerceReference,
                         null,
                         "Owned trail shoes",
-                        UserInventoryCategory.APPAREL
+                        UserInventoryCategory.APPAREL,
+                        null,
+                        "42",
+                        "Blue",
+                        "Mesh",
+                        null
                 ));
         List<CanonicalProduct> similarProducts = List.of(
                 product("similar-trail-shoe", "Similar trail shoe", "42"),
@@ -217,7 +222,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 .thenReturn(searchResult("similar shoes in the same size", similarProducts));
         stubCart(firstOfferKey, SHOES_USER_ID);
         scriptModel(
-                tool("b-inventory", "search_inventory", "{\"query\":\"shoes\",\"limit\":1}"),
+                tool("b-inventory", "search_inventory", "{\"query\":\"mesh\",\"limit\":1}"),
                 tool("b-similar", "find_similar_products",
                         "{\"inventoryItemId\":\"" + INVENTORY_ITEM_ID
                                 + "\",\"query\":\"similar shoes in the same size\"}"),
@@ -519,15 +524,20 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 null,
                 null,
                 null,
+                SHOES_USER_ID + "/owned-trail-shoes.jpg",
                 1,
                 "pair",
                 "closet",
                 null,
+                "42",
+                "Blue",
+                "Mesh",
                 List.of("shoes", "size 42"),
                 false,
                 false,
                 null,
                 now.minusSeconds(3600),
+                null,
                 commerceReference,
                 UUID.randomUUID(),
                 now,

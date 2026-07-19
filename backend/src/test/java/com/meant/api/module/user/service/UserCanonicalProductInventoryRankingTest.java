@@ -39,7 +39,7 @@ class UserCanonicalProductInventoryRankingTest {
                 }
         );
         UUID userId = UUID.fromString("10000000-0000-0000-0000-000000000001");
-        UserInventoryService service = new UserInventoryService(null, repository, null, null, null);
+        UserInventoryService service = new UserInventoryService(null, repository, null, null);
 
         var signals = service.canonicalRecommendationSignals(
                 userId,

@@ -25,9 +25,13 @@ const purchasedItem: UserInventoryItemProfile = {
   brand: 'Example',
   category: 'APPAREL',
   description: null,
+  photoPath: null,
   imageUrl: null,
   productUrl: null,
   photoUrl: null,
+  size: '42',
+  color: 'Blue',
+  material: null,
   quantity: 1,
   unit: null,
   location: null,
@@ -36,6 +40,7 @@ const purchasedItem: UserInventoryItemProfile = {
   consumable: false,
   restockEnabled: false,
   restockThreshold: null,
+  purchasedOn: null,
   purchasedAt: '2026-07-18T12:00:00Z',
   createdAt: '2026-07-18T12:00:00Z',
   updatedAt: '2026-07-18T12:00:00Z',
@@ -44,12 +49,12 @@ const purchasedItem: UserInventoryItemProfile = {
 function renderInventory(item: UserInventoryItemProfile): string {
   return renderToStaticMarkup(
     <InventoryView
+      userId="user-1"
       items={[item]}
       loading={false}
       error={null}
       onRefresh={() => undefined}
       onAddItem={async () => item}
-      onAddPhotoItem={async () => item}
       onUpdateItem={async () => item}
       onDeleteItem={async () => undefined}
       onExport={async () => undefined}
@@ -58,6 +63,20 @@ function renderInventory(item: UserInventoryItemProfile): string {
 }
 
 describe('InventoryView commerce identity', () => {
+  test('renders one add flow with required photo, name, and category', () => {
+    const markup = renderInventory(purchasedItem)
+
+    expect(markup).toContain('Add item')
+    expect(markup).toContain('Photo *')
+    expect(markup).toContain('accept="image/jpeg,image/png,image/webp"')
+    expect(markup).toContain('Name *')
+    expect(markup).toContain('Category *')
+    expect(markup).toContain('More details')
+    expect(markup).not.toContain('Manual add')
+    expect(markup).not.toContain('Photo add')
+    expect(markup).not.toContain('Image URL')
+  })
+
   test('renders purchased selected options as read-only chips', () => {
     const markup = renderInventory(purchasedItem)
 
@@ -82,5 +101,15 @@ describe('InventoryView commerce identity', () => {
 
     expect(markup).toContain('Old wool coat')
     expect(markup).not.toContain('aria-label="Purchased options"')
+  })
+
+  test('does not render unsafe legacy product links', () => {
+    const markup = renderInventory({
+      ...purchasedItem,
+      productUrl: 'javascript:alert(1)',
+    })
+
+    expect(markup).not.toContain('javascript:')
+    expect(markup).not.toContain('class="mt-inv-product-link"')
   })
 })

@@ -8,6 +8,10 @@ import { supabase } from './supabase'
 const API_URL = import.meta.env.VITE_MEANT_API_URL ?? 'http://localhost:8080'
 const PROFILE_PICTURE_BUCKET = 'profile-pictures'
 const PROFILE_PICTURE_SIGNED_URL_SECONDS = 60 * 60
+const INVENTORY_PHOTO_BUCKET = 'inventory-photos'
+const INVENTORY_PHOTO_SIGNED_URL_SECONDS = 60 * 60
+const INVENTORY_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+const INVENTORY_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 
 /** Profile shape served by the backend, sourced from the generated OpenAPI schema. */
 export type UserProfile = components['schemas']['UserResponse']
@@ -627,9 +631,13 @@ export interface UserInventoryItemProfile {
   brand: string | null
   category: UserInventoryCategory
   description: string | null
+  photoPath: string | null
   imageUrl: string | null
   productUrl: string | null
   photoUrl: string | null
+  size: string | null
+  color: string | null
+  material: string | null
   quantity: number
   unit: string | null
   location: string | null
@@ -638,6 +646,7 @@ export interface UserInventoryItemProfile {
   consumable: boolean
   restockEnabled: boolean
   restockThreshold: number | null
+  purchasedOn: string | null
   purchasedAt: string | null
   createdAt: string
   updatedAt: string
@@ -649,28 +658,16 @@ export interface UserInventoryExportProfile {
 }
 
 export interface UserInventoryItemInput {
+  photoPath: string
   name: string
   brand?: string | null
-  category?: UserInventoryCategory | null
+  category: UserInventoryCategory
   description?: string | null
-  imageUrl?: string | null
   productUrl?: string | null
-  quantity?: number | null
-  unit?: string | null
-  location?: string | null
-  notes?: string | null
-  attributes?: readonly string[]
-  consumable?: boolean | null
-  restockEnabled?: boolean | null
-  restockThreshold?: number | null
-}
-
-export interface UserInventoryPhotoInput {
-  photoUrl: string
-  name?: string | null
-  brand?: string | null
-  category?: UserInventoryCategory | null
-  description?: string | null
+  size?: string | null
+  color?: string | null
+  material?: string | null
+  purchasedOn?: string | null
   quantity?: number | null
   unit?: string | null
   location?: string | null
@@ -682,13 +679,16 @@ export interface UserInventoryPhotoInput {
 }
 
 export interface UserInventoryItemUpdateInput {
+  photoPath?: string | null
   name?: string | null
   brand?: string | null
   category?: UserInventoryCategory | null
   description?: string | null
-  imageUrl?: string | null
   productUrl?: string | null
-  photoUrl?: string | null
+  size?: string | null
+  color?: string | null
+  material?: string | null
+  purchasedOn?: string | null
   quantity?: number | null
   unit?: string | null
   location?: string | null
@@ -879,6 +879,89 @@ export async function deleteProfilePictureFile(
   }
   await authHeaders(options?.expectedUserId)
   await supabase.storage.from(PROFILE_PICTURE_BUCKET).remove([profilePicturePath])
+}
+
+export function validateInventoryPhotoFile(file: File): void {
+  if (
+    !INVENTORY_PHOTO_MIME_TYPES.includes(file.type as (typeof INVENTORY_PHOTO_MIME_TYPES)[number])
+  ) {
+    throw new Error('Choose a JPEG, PNG, or WebP photo')
+  }
+  if (file.size === 0) {
+    throw new Error('Choose a photo that is not empty')
+  }
+  if (file.size > INVENTORY_PHOTO_MAX_BYTES) {
+    throw new Error('Photo must be 5 MB or smaller')
+  }
+}
+
+export async function getInventoryPhotoUrl(
+  photoPath?: string | null,
+  options?: AccountBoundRequestOptions,
+): Promise<string | null> {
+  if (!photoPath) {
+    return null
+  }
+  await authHeaders(options?.expectedUserId)
+  assertInventoryPhotoOwner(photoPath, options?.expectedUserId)
+  const { data, error } = await supabase.storage
+    .from(INVENTORY_PHOTO_BUCKET)
+    .createSignedUrl(photoPath, INVENTORY_PHOTO_SIGNED_URL_SECONDS)
+  if (error) {
+    throw new Error('Failed to load inventory photo')
+  }
+  await authHeaders(options?.expectedUserId)
+  return data.signedUrl
+}
+
+export async function uploadInventoryPhotoFile(
+  userId: string,
+  file: File,
+): Promise<{ path: string }> {
+  await authHeaders(userId)
+  validateInventoryPhotoFile(file)
+  const path = `${userId}/${randomUuid()}.${inventoryPhotoExtension(file)}`
+  const { data, error } = await supabase.storage.from(INVENTORY_PHOTO_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type,
+    upsert: false,
+  })
+  if (error) {
+    throw new Error('Failed to upload inventory photo')
+  }
+  await authHeaders(userId)
+  return { path: data.path }
+}
+
+export async function deleteInventoryPhotoFile(
+  photoPath?: string | null,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
+  if (!photoPath) {
+    return
+  }
+  await authHeaders(options?.expectedUserId)
+  assertInventoryPhotoOwner(photoPath, options?.expectedUserId)
+  const { error } = await supabase.storage.from(INVENTORY_PHOTO_BUCKET).remove([photoPath])
+  if (error) {
+    throw new Error('Failed to delete inventory photo')
+  }
+}
+
+function assertInventoryPhotoOwner(photoPath: string, expectedUserId?: string): void {
+  if (expectedUserId && !photoPath.startsWith(`${expectedUserId}/`)) {
+    throw new Error('Inventory photo belongs to another account')
+  }
+}
+
+function inventoryPhotoExtension(file: File): 'jpg' | 'png' | 'webp' {
+  if (file.type === 'image/png') {
+    return 'png'
+  }
+  if (file.type === 'image/webp') {
+    return 'webp'
+  }
+  return 'jpg'
 }
 
 function profilePictureExtension(file: File): 'jpg' | 'png' | 'webp' {
@@ -1348,22 +1431,6 @@ export async function createUserInventoryItem(
     signal: options?.signal,
   })
   return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to add inventory item')
-}
-
-export async function createUserInventoryPhotoItem(
-  input: UserInventoryPhotoInput,
-  options?: AccountBoundRequestOptions,
-): Promise<UserInventoryItemProfile> {
-  const response = await fetch(`${API_URL}/api/users/me/inventory/photos`, {
-    method: 'POST',
-    headers: {
-      ...(await authHeaders(options?.expectedUserId)),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-    signal: options?.signal,
-  })
-  return parseJsonResponse<UserInventoryItemProfile>(response, 'Failed to add photo inventory item')
 }
 
 export async function updateUserInventoryItem(input: {

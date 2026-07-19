@@ -74,7 +74,8 @@ public class SearchInventoryAgentTool implements AgentTool {
     private AgentInventoryReferenceResult reference(UserInventoryItemResult item, int ordinal) {
         return new AgentInventoryReferenceResult(
                 ordinal, item.id(), item.name(), item.brand(), item.category(), item.quantity(), item.unit(),
-                item.location(), item.attributes(), item.commerceReference());
+                item.location(), item.photoPath(), item.size(), item.color(), item.material(), item.purchasedOn(),
+                item.attributes(), item.commerceReference());
     }
 
     private List<UserInventoryItemResult> matchingInventory(
@@ -127,6 +128,7 @@ public class SearchInventoryAgentTool implements AgentTool {
         String needle = query.trim().toLowerCase(Locale.ROOT);
         String text = String.join(" ", List.of(
                 value(item.name()), value(item.brand()), value(item.description()), value(item.notes()),
+                value(item.size()), value(item.color()), value(item.material()),
                 String.join(" ", item.attributes() == null ? List.of() : item.attributes())))
                 .toLowerCase(Locale.ROOT);
         return text.contains(needle);

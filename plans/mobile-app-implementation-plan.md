@@ -284,7 +284,6 @@ Primary mobile endpoint groups (verified against current backend controllers):
 - Inventory (Phase 4):
   - `GET /api/users/me/inventory`
   - `POST /api/users/me/inventory`
-  - `POST /api/users/me/inventory/photos`
   - `PATCH /api/users/me/inventory/{itemId}`
   - `DELETE /api/users/me/inventory/{itemId}`
 - Taste profile / preferences (Phase 4 — "preference editing" is backed by these, not by `/me/settings` alone):
@@ -449,8 +448,8 @@ Deliverables:
 - Profile/settings screen (including newsletter and profile picture endpoints).
 - Preference editing backed by the taste-profile endpoint group, not only `/me/settings`.
 - Inventory list.
-- Inventory item create/edit/delete.
-- Inventory photo upload if backend/Supabase storage flow is ready for mobile.
+- Inventory item create/edit/delete through the unified inventory endpoint.
+- Required inventory photo upload to the private Supabase `inventory-photos` bucket.
 
 Acceptance:
 

@@ -38,6 +38,7 @@ const {
   updateUserSettings,
   updateUserTasteSignal,
   updateCart,
+  validateInventoryPhotoFile,
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
 let requests: Request[] = []
@@ -301,7 +302,10 @@ describe('account-bound mutation APIs', () => {
       'Authenticated user changed before request',
     )
     await expect(
-      createUserInventoryItem({ name: 'Shoes' }, { expectedUserId: 'user-a' }),
+      createUserInventoryItem(
+        { photoPath: 'user-a/shoes.jpg', name: 'Shoes', category: 'APPAREL' },
+        { expectedUserId: 'user-a' },
+      ),
     ).rejects.toThrow('Authenticated user changed before request')
     await expect(
       updateUserTasteSignal({
@@ -332,6 +336,34 @@ describe('account-bound mutation APIs', () => {
     ).rejects.toThrow('Authenticated user changed before request')
 
     expect(requests).toHaveLength(0)
+  })
+})
+
+describe('inventory photo validation', () => {
+  test('accepts JPEG, PNG, and WebP files up to 5 MiB', () => {
+    expect(() =>
+      validateInventoryPhotoFile(new File(['jpeg'], 'item.jpg', { type: 'image/jpeg' })),
+    ).not.toThrow()
+    expect(() =>
+      validateInventoryPhotoFile(new File(['png'], 'item.png', { type: 'image/png' })),
+    ).not.toThrow()
+    expect(() =>
+      validateInventoryPhotoFile(new File(['webp'], 'item.webp', { type: 'image/webp' })),
+    ).not.toThrow()
+  })
+
+  test('rejects HEIC, empty, and files larger than 5 MiB', () => {
+    expect(() =>
+      validateInventoryPhotoFile(new File(['heic'], 'item.heic', { type: 'image/heic' })),
+    ).toThrow('Choose a JPEG, PNG, or WebP photo')
+    expect(() =>
+      validateInventoryPhotoFile(new File([], 'item.jpg', { type: 'image/jpeg' })),
+    ).toThrow('Choose a photo that is not empty')
+    expect(() =>
+      validateInventoryPhotoFile(
+        new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'item.jpg', { type: 'image/jpeg' }),
+      ),
+    ).toThrow('Photo must be 5 MB or smaller')
   })
 })
 

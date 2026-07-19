@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -65,6 +66,8 @@ public class UserInventoryItem {
 
     private String photoUrl;
 
+    private String photoPath;
+
     @Column(nullable = false)
     private Integer quantity;
 
@@ -73,6 +76,12 @@ public class UserInventoryItem {
     private String location;
 
     private String notes;
+
+    private String size;
+
+    private String color;
+
+    private String material;
 
     @Column(nullable = false)
     private String attributes;
@@ -86,6 +95,8 @@ public class UserInventoryItem {
     private Integer restockThreshold;
 
     private Instant purchasedAt;
+
+    private LocalDate purchasedOn;
 
     private String provider;
 
@@ -138,15 +149,20 @@ public class UserInventoryItem {
         this.imageUrl = snapshot.imageUrl();
         this.productUrl = snapshot.productUrl();
         this.photoUrl = snapshot.photoUrl();
+        this.photoPath = snapshot.photoPath();
         this.quantity = snapshot.quantity();
         this.unit = snapshot.unit();
         this.location = snapshot.location();
         this.notes = snapshot.notes();
+        this.size = snapshot.size();
+        this.color = snapshot.color();
+        this.material = snapshot.material();
         this.attributes = snapshot.attributes();
         this.consumable = snapshot.consumable();
         this.restockEnabled = snapshot.restockEnabled();
         this.restockThreshold = snapshot.restockThreshold();
         this.purchasedAt = snapshot.purchasedAt();
+        this.purchasedOn = snapshot.purchasedOn();
         this.provider = snapshot.provider();
         this.merchantIntegrationId = snapshot.merchantIntegrationId();
         this.externalMerchantId = snapshot.externalMerchantId();
@@ -163,6 +179,7 @@ public class UserInventoryItem {
         return this;
     }
 
+    @Builder
     public record Snapshot(
             UserInventorySource source,
             String sourceProductKey,
@@ -174,15 +191,20 @@ public class UserInventoryItem {
             String imageUrl,
             String productUrl,
             String photoUrl,
+            String photoPath,
             Integer quantity,
             String unit,
             String location,
             String notes,
+            String size,
+            String color,
+            String material,
             String attributes,
             boolean consumable,
             boolean restockEnabled,
             Integer restockThreshold,
             Instant purchasedAt,
+            LocalDate purchasedOn,
             String provider,
             UUID merchantIntegrationId,
             String externalMerchantId,

@@ -57,6 +57,7 @@ import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
 import com.meant.api.module.user.controller.response.UserTasteProfileResponse;
+import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.entity.UserProductRecommendationExplanation;
 import com.meant.api.module.user.entity.UserProductSearch;
 import com.meant.api.module.user.entity.UserProductSearchEvent;
@@ -80,6 +81,7 @@ import com.meant.api.module.user.service.query.ResolveUserSelectedOfferQuery;
 import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -1339,21 +1341,26 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void inventoryItemsCanBeAddedFromManualEntryAndPhotoListedExportedUpdatedAndDeleted() {
+    void inventoryItemsCanBeAddedWithPhotosListedExportedUpdatedAndDeleted() {
         UUID id = UUID.randomUUID();
         String email = id + "@example.com";
         String bearer = token(id, email, "Ada Lovelace");
 
-        UserInventoryItemResponse manual = client.post().uri("/api/users/me/inventory")
+        UserInventoryItemResponse oil = client.post().uri("/api/users/me/inventory")
                 .headers(headers -> {
                     headers.setBearerAuth(bearer);
                     headers.setContentType(MediaType.APPLICATION_JSON);
                 })
                 .body("""
                         {
+                          "photoPath": "%s/olive-oil.webp",
                           "name": "Cold-Pressed Extra Virgin Olive Oil",
                           "brand": "Casa Verde",
                           "category": "PANTRY",
+                          "purchasedOn": "2025-09-14",
+                          "size": "750 ml",
+                          "color": "Green",
+                          "material": "Glass",
                           "quantity": 1,
                           "unit": "bottle",
                           "location": "Pantry",
@@ -1362,40 +1369,45 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                           "restockEnabled": true,
                           "restockThreshold": 1
                         }
-                        """)
+                        """.formatted(id))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(UserInventoryItemResponse.class)
                 .returnResult()
                 .getResponseBody();
 
-        assertThat(manual).isNotNull();
-        assertThat(manual.name()).isEqualTo("Cold-Pressed Extra Virgin Olive Oil");
-        assertThat(manual.restockEnabled()).isTrue();
+        assertThat(oil).isNotNull();
+        assertThat(oil.name()).isEqualTo("Cold-Pressed Extra Virgin Olive Oil");
+        assertThat(oil.source()).isEqualTo(UserInventorySource.PHOTO);
+        assertThat(oil.photoPath()).isEqualTo(id + "/olive-oil.webp");
+        assertThat(oil.purchasedOn()).isEqualTo(LocalDate.parse("2025-09-14"));
+        assertThat(oil.size()).isEqualTo("750 ml");
+        assertThat(oil.color()).isEqualTo("Green");
+        assertThat(oil.material()).isEqualTo("Glass");
+        assertThat(oil.restockEnabled()).isTrue();
 
-        UserInventoryItemResponse photo = client.post().uri("/api/users/me/inventory/photos")
+        UserInventoryItemResponse shirt = client.post().uri("/api/users/me/inventory")
                 .headers(headers -> {
                     headers.setBearerAuth(bearer);
                     headers.setContentType(MediaType.APPLICATION_JSON);
                 })
                 .body("""
                         {
-                          "photoUrl": "data:image/jpeg;base64,abc",
+                          "photoPath": "%s/blue-shirt.jpg",
                           "name": "Blue Linen Shirt",
-                          "category": "APPAREL",
-                          "quantity": 1,
-                          "location": "Closet"
+                          "category": "APPAREL"
                         }
-                        """)
+                        """.formatted(id))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(UserInventoryItemResponse.class)
                 .returnResult()
                 .getResponseBody();
 
-        assertThat(photo).isNotNull();
-        assertThat(photo.name()).isEqualTo("Blue Linen Shirt");
-        assertThat(photo.photoUrl()).isEqualTo("data:image/jpeg;base64,abc");
+        assertThat(shirt).isNotNull();
+        assertThat(shirt.name()).isEqualTo("Blue Linen Shirt");
+        assertThat(shirt.photoPath()).isEqualTo(id + "/blue-shirt.jpg");
+        assertThat(shirt.quantity()).isEqualTo(1);
 
         UserInventoryItemResponse[] restocks = client.get()
                 .uri(uriBuilder -> uriBuilder
@@ -1412,19 +1424,21 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(restocks).isNotNull();
         assertThat(restocks).singleElement()
                 .extracting(UserInventoryItemResponse::id)
-                .isEqualTo(manual.id());
+                .isEqualTo(oil.id());
 
-        UserInventoryItemResponse updated = client.patch().uri("/api/users/me/inventory/{itemId}", manual.id())
+        UserInventoryItemResponse updated = client.patch().uri("/api/users/me/inventory/{itemId}", oil.id())
                 .headers(headers -> {
                     headers.setBearerAuth(bearer);
                     headers.setContentType(MediaType.APPLICATION_JSON);
                 })
                 .body("""
                         {
+                          "photoPath": "%s/olive-oil-replacement.png",
                           "quantity": 2,
-                          "restockEnabled": false
+                          "restockEnabled": false,
+                          "purchasedOn": ""
                         }
-                        """)
+                        """.formatted(id))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(UserInventoryItemResponse.class)
@@ -1434,6 +1448,8 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(updated).isNotNull();
         assertThat(updated.quantity()).isEqualTo(2);
         assertThat(updated.restockEnabled()).isFalse();
+        assertThat(updated.photoPath()).isEqualTo(id + "/olive-oil-replacement.png");
+        assertThat(updated.purchasedOn()).isNull();
 
         UserInventoryExportResponse export = client.get().uri("/api/users/me/inventory/export")
                 .headers(headers -> headers.setBearerAuth(bearer))
@@ -1446,7 +1462,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(export).isNotNull();
         assertThat(export.items()).hasSize(2);
 
-        client.delete().uri("/api/users/me/inventory/{itemId}", photo.id())
+        client.delete().uri("/api/users/me/inventory/{itemId}", shirt.id())
                 .headers(headers -> headers.setBearerAuth(bearer))
                 .exchange()
                 .expectStatus().isNoContent();
@@ -1462,7 +1478,37 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(listed).isNotNull();
         assertThat(listed).singleElement()
                 .extracting(UserInventoryItemResponse::id)
-                .isEqualTo(manual.id());
+                .isEqualTo(oil.id());
+    }
+
+    @Test
+    void inventoryCreateRequiresOwnedPhotoNameAndCategory() {
+        UUID id = UUID.randomUUID();
+        String bearer = token(id, id + "@example.com", "Ada Lovelace");
+
+        assertInvalidInventoryCreate(bearer, """
+                {"name":"Shirt","category":"APPAREL"}
+                """);
+        assertInvalidInventoryCreate(bearer, """
+                {"photoPath":"%s/shirt.jpg","category":"APPAREL"}
+                """.formatted(id));
+        assertInvalidInventoryCreate(bearer, """
+                {"photoPath":"%s/shirt.jpg","name":"Shirt"}
+                """.formatted(id));
+        assertInvalidInventoryCreate(bearer, """
+                {"photoPath":"%s/shirt.jpg","name":"Shirt","category":"APPAREL"}
+                """.formatted(UUID.randomUUID()));
+    }
+
+    private void assertInvalidInventoryCreate(String bearer, String body) {
+        client.post().uri("/api/users/me/inventory")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body(body)
+                .exchange()
+                .expectStatus().isBadRequest();
     }
 
     @Test

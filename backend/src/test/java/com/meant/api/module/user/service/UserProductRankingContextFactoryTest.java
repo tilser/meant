@@ -82,7 +82,7 @@ class UserProductRankingContextFactoryTest {
 
     private static final class StubInventoryService extends UserInventoryService {
         private StubInventoryService() {
-            super(null, null, null, null, null);
+            super(null, null, null, null);
         }
 
         @Override

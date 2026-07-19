@@ -307,7 +307,7 @@ test('embedded checkout bootstrap exposes only short-lived browser instructions'
   expect(fields as string[]).not.toContain('accessToken')
 })
 
-test('inventory exposes typed purchase identity without accepting it from browser forms', () => {
+test('inventory exposes uploaded photo details without legacy browser photo inputs', () => {
   type Inventory = components['schemas']['UserInventoryItemResponse']
   type CommerceReference = components['schemas']['UserInventoryCommerceReferenceResponse']
   type SelectedOption = components['schemas']['UserInventorySelectedOptionResponse']
@@ -315,8 +315,20 @@ test('inventory exposes typed purchase identity without accepting it from browse
   type UpdateInventory = components['schemas']['UpdateUserInventoryItemRequest']
   type HasCommerceReference<T> = 'commerceReference' extends keyof T ? true : false
   type HasCheckoutAttempt<T> = 'sourceCheckoutAttemptId' extends keyof T ? true : false
+  type HasLegacyImageInput<T> = 'imageUrl' extends keyof T ? true : false
+  type IsOptional<T, K extends keyof T> = object extends Pick<T, K> ? true : false
+  type AcceptsNull<T, K extends keyof T> = null extends T[K] ? true : false
+  type HasLegacyPhotoRoute = '/api/users/me/inventory/photos' extends keyof paths ? true : false
 
-  const inventoryFields: Array<keyof Inventory> = ['sourceCheckoutAttemptId', 'commerceReference']
+  const inventoryFields: Array<keyof Inventory> = [
+    'sourceCheckoutAttemptId',
+    'commerceReference',
+    'photoPath',
+    'purchasedOn',
+    'size',
+    'color',
+    'material',
+  ]
   const commerceReferenceFields: Array<keyof CommerceReference> = [
     'provider',
     'merchantIntegrationId',
@@ -335,12 +347,31 @@ test('inventory exposes typed purchase identity without accepting it from browse
   const addHasNoCheckoutAttempt: HasCheckoutAttempt<AddInventory> = false
   const updateHasNoCommerceReference: HasCommerceReference<UpdateInventory> = false
   const updateHasNoCheckoutAttempt: HasCheckoutAttempt<UpdateInventory> = false
+  const addHasNoLegacyImageInput: HasLegacyImageInput<AddInventory> = false
+  const updateHasNoLegacyImageInput: HasLegacyImageInput<UpdateInventory> = false
+  const addPhotoPathRequired: IsOptional<AddInventory, 'photoPath'> = false
+  const addCategoryRequired: IsOptional<AddInventory, 'category'> = false
+  const addAttributesOptional: IsOptional<AddInventory, 'attributes'> = true
+  const responsePhotoPathOptional: IsOptional<Inventory, 'photoPath'> = true
+  const responsePhotoPathNullable: AcceptsNull<Inventory, 'photoPath'> = true
+  const responsePurchasedOnNullable: AcceptsNull<Inventory, 'purchasedOn'> = true
+  const hasNoLegacyPhotoRoute: HasLegacyPhotoRoute = false
 
   expect(inventoryFields).toContain('commerceReference')
+  expect(inventoryFields).toContain('photoPath')
   expect(commerceReferenceFields).toContain('selectedOptions')
   expect(selectedOptionFields).toEqual(['group', 'name', 'value'])
   expect(addHasNoCommerceReference).toBeFalse()
   expect(addHasNoCheckoutAttempt).toBeFalse()
   expect(updateHasNoCommerceReference).toBeFalse()
   expect(updateHasNoCheckoutAttempt).toBeFalse()
+  expect(addHasNoLegacyImageInput).toBeFalse()
+  expect(updateHasNoLegacyImageInput).toBeFalse()
+  expect(addPhotoPathRequired).toBeFalse()
+  expect(addCategoryRequired).toBeFalse()
+  expect(addAttributesOptional).toBeTrue()
+  expect(responsePhotoPathOptional).toBeTrue()
+  expect(responsePhotoPathNullable).toBeTrue()
+  expect(responsePurchasedOnNullable).toBeTrue()
+  expect(hasNoLegacyPhotoRoute).toBeFalse()
 })

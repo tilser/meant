@@ -7,9 +7,11 @@ import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+@Schema(description = "An item owned by the authenticated user.")
 public record UserInventoryItemResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         UUID id,
@@ -33,6 +35,8 @@ public record UserInventoryItemResponse(
         String productUrl,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String photoUrl,
+        @Schema(types = {"string", "null"}, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String photoPath,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int quantity,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -41,6 +45,12 @@ public record UserInventoryItemResponse(
         String location,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String notes,
+        @Schema(types = {"string", "null"}, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String size,
+        @Schema(types = {"string", "null"}, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String color,
+        @Schema(types = {"string", "null"}, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        String material,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         List<String> attributes,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -51,6 +61,8 @@ public record UserInventoryItemResponse(
         Integer restockThreshold,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Instant purchasedAt,
+        @Schema(types = {"string", "null"}, format = "date", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        LocalDate purchasedOn,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         CommerceReference commerceReference,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -74,15 +86,20 @@ public record UserInventoryItemResponse(
                 result.imageUrl(),
                 result.productUrl(),
                 result.photoUrl(),
+                result.photoPath(),
                 result.quantity(),
                 result.unit(),
                 result.location(),
                 result.notes(),
+                result.size(),
+                result.color(),
+                result.material(),
                 result.attributes(),
                 result.consumable(),
                 result.restockEnabled(),
                 result.restockThreshold(),
                 result.purchasedAt(),
+                result.purchasedOn(),
                 CommerceReference.from(result.commerceReference()),
                 result.sourceCheckoutAttemptId(),
                 result.createdAt(),

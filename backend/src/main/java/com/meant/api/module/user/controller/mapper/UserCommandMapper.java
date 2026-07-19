@@ -1,9 +1,6 @@
 package com.meant.api.module.user.controller.mapper;
 
-import com.meant.api.module.user.constant.UserInventoryCategory;
-import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
-import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
 import com.meant.api.module.user.controller.request.RecordUserTasteBehaviorRequest;
 import com.meant.api.module.user.controller.request.UpdateUserSettingsRequest;
 import com.meant.api.module.user.controller.request.UpdateUserTasteSignalRequest;
@@ -13,7 +10,6 @@ import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequ
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
-import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.RecordUserTasteBehaviorCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
@@ -285,16 +281,12 @@ public final class UserCommandMapper {
     ) {
         return new CreateUserInventoryItemCommand(
                 userId,
-                UserInventorySource.MANUAL,
-                null,
-                null,
+                request.photoPath(),
                 request.name(),
                 request.brand(),
-                request.category() == null ? UserInventoryCategory.OTHER : request.category(),
+                request.category(),
                 request.description(),
-                request.imageUrl(),
                 request.productUrl(),
-                null,
                 request.quantity(),
                 request.unit(),
                 request.location(),
@@ -303,28 +295,10 @@ public final class UserCommandMapper {
                 request.consumable(),
                 request.restockEnabled(),
                 request.restockThreshold(),
-                null);
-    }
-
-    public static CreateUserInventoryPhotoItemCommand toCreateInventoryPhotoItemCommand(
-            UUID userId,
-            AddUserInventoryPhotoRequest request
-    ) {
-        return new CreateUserInventoryPhotoItemCommand(
-                userId,
-                request.photoUrl(),
-                request.name(),
-                request.brand(),
-                request.category(),
-                request.description(),
-                request.quantity(),
-                request.unit(),
-                request.location(),
-                request.notes(),
-                request.attributes(),
-                request.consumable(),
-                request.restockEnabled(),
-                request.restockThreshold());
+                request.purchasedOn(),
+                request.size(),
+                request.color(),
+                request.material());
     }
 
     public static UpdateUserInventoryItemCommand toUpdateInventoryItemCommand(
@@ -335,13 +309,12 @@ public final class UserCommandMapper {
         return new UpdateUserInventoryItemCommand(
                 userId,
                 itemId,
+                request.photoPath(),
                 request.name(),
                 request.brand(),
                 request.category(),
                 request.description(),
-                request.imageUrl(),
                 request.productUrl(),
-                request.photoUrl(),
                 request.quantity(),
                 request.unit(),
                 request.location(),
@@ -349,6 +322,10 @@ public final class UserCommandMapper {
                 request.attributes(),
                 request.consumable(),
                 request.restockEnabled(),
-                request.restockThreshold());
+                request.restockThreshold(),
+                request.purchasedOn(),
+                request.size(),
+                request.color(),
+                request.material());
     }
 }

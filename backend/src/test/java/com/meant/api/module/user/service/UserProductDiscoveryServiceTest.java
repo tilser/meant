@@ -229,7 +229,7 @@ class UserProductDiscoveryServiceTest {
         private final String inventoryProfileHash;
 
         FakeUserInventoryService(String inventoryProfileHash) {
-            super(null, null, null, null, null);
+            super(null, null, null, null);
             this.inventoryProfileHash = inventoryProfileHash;
         }
 

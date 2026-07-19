@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service.dto;
 
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,6 +15,11 @@ public record AgentInventoryReferenceResult(
         int quantity,
         String unit,
         String location,
+        String photoPath,
+        String size,
+        String color,
+        String material,
+        LocalDate purchasedOn,
         List<String> attributes,
         UserInventoryCommerceReference commerceReference
 ) {

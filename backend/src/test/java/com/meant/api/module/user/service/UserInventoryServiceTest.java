@@ -3,7 +3,6 @@ package com.meant.api.module.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventoryRecommendationRelationship;
@@ -14,14 +13,12 @@ import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserInventoryItemRepository;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
-import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
 import com.meant.api.module.user.service.command.DeleteUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
-import com.meant.api.module.user.service.dto.UserInventoryPhotoRecognitionResult;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
@@ -29,6 +26,7 @@ import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -51,37 +49,30 @@ class UserInventoryServiceTest {
 
     private FakeUserInventoryItemRepository repository;
     private FakeUserService userService;
-    private FakePhotoRecognitionService photoRecognitionService;
     private UserInventoryService service;
 
     @BeforeEach
     void setUp() {
         repository = new FakeUserInventoryItemRepository();
         userService = new FakeUserService();
-        photoRecognitionService = new FakePhotoRecognitionService();
         service = new UserInventoryService(
                 userService,
                 repository.proxy(),
-                photoRecognitionService,
                 collectionProperties(50),
                 new ObjectMapper()
         );
     }
 
     @Test
-    void createListsExportsAndDeletesManualInventoryItems() {
+    void createListsExportsAndDeletesUploadedInventoryItems() {
         UserInventoryItemResult item = service.create(profileCommand(), new CreateUserInventoryItemCommand(
                 USER_ID,
-                UserInventorySource.MANUAL,
-                null,
-                null,
+                USER_ID + "/cotton-tee.webp",
                 "Heavyweight Organic Cotton Tee",
                 "Field Loom",
                 UserInventoryCategory.APPAREL,
                 "White crewneck tee",
-                "https://example.test/tee.jpg",
-                null,
-                null,
+                "https://example.test/tee",
                 2,
                 "pcs",
                 "Wardrobe",
@@ -90,12 +81,22 @@ class UserInventoryServiceTest {
                 false,
                 false,
                 null,
-                null
+                LocalDate.parse("2025-04-12"),
+                "M",
+                "White",
+                "Organic cotton"
         ));
 
-        assertThat(item.source()).isEqualTo(UserInventorySource.MANUAL);
+        assertThat(item.source()).isEqualTo(UserInventorySource.PHOTO);
         assertThat(item.category()).isEqualTo(UserInventoryCategory.APPAREL);
         assertThat(item.quantity()).isEqualTo(2);
+        assertThat(item.photoPath()).isEqualTo(USER_ID + "/cotton-tee.webp");
+        assertThat(item.purchasedOn()).isEqualTo(LocalDate.parse("2025-04-12"));
+        assertThat(item.size()).isEqualTo("M");
+        assertThat(item.color()).isEqualTo("White");
+        assertThat(item.material()).isEqualTo("Organic cotton");
+        assertThat(item.imageUrl()).isNull();
+        assertThat(item.photoUrl()).isNull();
         assertThat(item.commerceReference()).isNull();
         assertThat(item.sourceCheckoutAttemptId()).isNull();
 
@@ -117,60 +118,30 @@ class UserInventoryServiceTest {
     }
 
     @Test
-    void createFromPhotoMergesRecognitionWithFallbackFields() {
-        photoRecognitionService.nextResult = Optional.of(new UserInventoryPhotoRecognitionResult(
-                "Blue Linen Shirt",
-                "Northbound",
-                UserInventoryCategory.APPAREL,
-                "Button-down shirt on a hanger",
-                List.of("linen", "blue"),
-                false
-        ));
+    void createRejectsUnownedAndUnsupportedPhotoPaths() {
+        CreateUserInventoryItemCommand unowned = uploadedItem(
+                "Blue Linen Shirt", UserInventoryCategory.APPAREL, false, UUID.randomUUID() + "/shirt.jpg");
+        CreateUserInventoryItemCommand unsupported = uploadedItem(
+                "Blue Linen Shirt", UserInventoryCategory.APPAREL, false, USER_ID + "/shirt.heic");
 
-        UserInventoryItemResult item = service.createFromPhoto(
-                profileCommand(),
-                new CreateUserInventoryPhotoItemCommand(
-                        USER_ID,
-                        "data:image/jpeg;base64,abc",
-                        null,
-                        null,
-                        null,
-                        null,
-                        1,
-                        null,
-                        "Closet",
-                        "Recognized from closet photo",
-                        List.of("summer"),
-                        null,
-                        false,
-                        null
-                )
-        );
-
-        assertThat(item.source()).isEqualTo(UserInventorySource.PHOTO);
-        assertThat(item.name()).isEqualTo("Blue Linen Shirt");
-        assertThat(item.brand()).isEqualTo("Northbound");
-        assertThat(item.category()).isEqualTo(UserInventoryCategory.APPAREL);
-        assertThat(item.imageUrl()).isEqualTo("data:image/jpeg;base64,abc");
-        assertThat(item.attributes()).containsExactly("summer", "linen", "blue");
-        assertThat(item.commerceReference()).isNull();
-        assertThat(item.sourceCheckoutAttemptId()).isNull();
+        assertThatThrownBy(() -> service.create(profileCommand(), unowned))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("Inventory photo path");
+        assertThatThrownBy(() -> service.create(profileCommand(), unsupported))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("Inventory photo path");
     }
 
     @Test
     void updateCanClearOptionalTextFields() {
         UserInventoryItemResult created = service.create(profileCommand(), new CreateUserInventoryItemCommand(
                 USER_ID,
-                UserInventorySource.MANUAL,
-                null,
-                null,
+                USER_ID + "/brewer.jpg",
                 "Countertop Coffee Brewer",
                 "Brew Works",
                 UserInventoryCategory.HOME,
                 "Daily coffee setup",
-                "https://example.test/brewer.jpg",
                 "https://example.test/brewer",
-                "https://example.test/photo.jpg",
                 1,
                 "piece",
                 "Kitchen",
@@ -179,27 +150,33 @@ class UserInventoryServiceTest {
                 false,
                 false,
                 null,
-                null
+                LocalDate.parse("2024-11-03"),
+                "1.2 L",
+                "Black",
+                "Glass"
         ));
 
         UserInventoryItemResult updated = service.update(profileCommand(), new UpdateUserInventoryItemCommand(
                 USER_ID,
                 created.id(),
+                USER_ID + "/brewer-replacement.png",
+                " ",
+                " ",
+                null,
                 " ",
                 " ",
                 null,
                 " ",
                 " ",
                 " ",
-                " ",
-                null,
-                " ",
-                " ",
-                " ",
                 null,
                 null,
                 null,
-                null
+                null,
+                "",
+                " ",
+                " ",
+                " "
         ));
 
         assertThat(updated.name()).isEqualTo("Countertop Coffee Brewer");
@@ -210,15 +187,59 @@ class UserInventoryServiceTest {
         assertThat(updated.imageUrl()).isNull();
         assertThat(updated.productUrl()).isNull();
         assertThat(updated.photoUrl()).isNull();
+        assertThat(updated.photoPath()).isEqualTo(USER_ID + "/brewer-replacement.png");
         assertThat(updated.unit()).isNull();
         assertThat(updated.location()).isNull();
         assertThat(updated.notes()).isNull();
+        assertThat(updated.purchasedOn()).isNull();
+        assertThat(updated.size()).isNull();
+        assertThat(updated.color()).isNull();
+        assertThat(updated.material()).isNull();
+    }
+
+    @Test
+    void photoReplacementDropsLegacyPayloadAndPreservesDistinctCatalogImage() {
+        String legacyPayload = "data:image/jpeg;base64,abc";
+        UserInventoryItem legacyPhoto = repository.save(UserInventoryItem.create(
+                USER_ID,
+                UserInventoryItem.Snapshot.builder()
+                        .source(UserInventorySource.PHOTO)
+                        .name("Legacy photo item")
+                        .category(UserInventoryCategory.OTHER)
+                        .imageUrl(legacyPayload)
+                        .photoUrl(legacyPayload)
+                        .quantity(1)
+                        .attributes("[]")
+                        .build(),
+                NOW));
+        UserInventoryItem checkoutItem = repository.save(UserInventoryItem.create(
+                USER_ID,
+                UserInventoryItem.Snapshot.builder()
+                        .source(UserInventorySource.MEANT_PURCHASE)
+                        .name("Purchased item")
+                        .category(UserInventoryCategory.OTHER)
+                        .imageUrl("https://merchant.example/item.jpg")
+                        .photoUrl(legacyPayload)
+                        .quantity(1)
+                        .attributes("[]")
+                        .build(),
+                NOW));
+
+        UserInventoryItemResult updatedLegacy = service.update(
+                profileCommand(), replacePhoto(legacyPhoto.getId(), USER_ID + "/legacy-replacement.jpg"));
+        UserInventoryItemResult updatedCheckout = service.update(
+                profileCommand(), replacePhoto(checkoutItem.getId(), USER_ID + "/checkout-photo.webp"));
+
+        assertThat(updatedLegacy.photoUrl()).isNull();
+        assertThat(updatedLegacy.imageUrl()).isNull();
+        assertThat(updatedCheckout.photoUrl()).isNull();
+        assertThat(updatedCheckout.imageUrl()).isEqualTo("https://merchant.example/item.jpg");
     }
 
     @Test
     void listCanFilterRestockEnabledPantryItems() {
-        service.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
-        service.create(profileCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
+        service.create(profileCommand(), uploadedItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(profileCommand(), uploadedItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
 
         List<UserInventoryItemResult> restocks = service.list(
                 profileCommand(),
@@ -349,7 +370,10 @@ class UserInventoryServiceTest {
         UserInventoryItemResult updated = service.update(profileCommand(), new UpdateUserInventoryItemCommand(
                 USER_ID,
                 imported.id(),
+                null,
                 "Trail Shoe (worn)",
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -381,7 +405,7 @@ class UserInventoryServiceTest {
     void inventoryProfileHashUsesRepositorySignature() {
         assertThat(service.inventoryProfileHash(USER_ID)).isEqualTo("inventory:none");
 
-        service.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(profileCommand(), uploadedItem("Olive Oil", UserInventoryCategory.PANTRY, true));
 
         assertThat(service.inventoryProfileHash(USER_ID))
                 .startsWith("inventory:1:")
@@ -390,9 +414,9 @@ class UserInventoryServiceTest {
 
     @Test
     void listAppliesPageAndLimitAtRepositoryBoundary() {
-        service.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
-        service.create(profileCommand(), manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
-        service.create(profileCommand(), manualItem("Countertop Brewer", UserInventoryCategory.HOME, false));
+        service.create(profileCommand(), uploadedItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        service.create(profileCommand(), uploadedItem("Merino Sweater", UserInventoryCategory.APPAREL, false));
+        service.create(profileCommand(), uploadedItem("Countertop Brewer", UserInventoryCategory.HOME, false));
 
         List<UserInventoryItemResult> firstPage = service.list(
                 profileCommand(),
@@ -412,28 +436,27 @@ class UserInventoryServiceTest {
         UserInventoryService quotaService = new UserInventoryService(
                 userService,
                 repository.proxy(),
-                photoRecognitionService,
                 collectionProperties(1),
                 new ObjectMapper()
         );
 
-        quotaService.create(profileCommand(), manualItem("Olive Oil", UserInventoryCategory.PANTRY, true));
+        quotaService.create(profileCommand(), uploadedItem("Olive Oil", UserInventoryCategory.PANTRY, true));
 
         assertThatThrownBy(() -> quotaService.create(
                         profileCommand(),
-                        manualItem("Merino Sweater", UserInventoryCategory.APPAREL, false)))
+                        uploadedItem("Merino Sweater", UserInventoryCategory.APPAREL, false)))
                 .isInstanceOf(UserException.class)
                 .hasMessageContaining("Inventory item quota exceeded");
     }
 
     @Test
     void recommendationSignalsClassifyRestocksDuplicatesComplementsAndNone() {
-        UserInventoryItemResult oil = service.create(profileCommand(), manualItem(
+        UserInventoryItemResult oil = service.create(profileCommand(), uploadedItem(
                 "Cold-Pressed Extra Virgin Olive Oil",
                 UserInventoryCategory.PANTRY,
                 true
         ));
-        service.create(profileCommand(), manualItem(
+        service.create(profileCommand(), uploadedItem(
                 "Heavyweight Organic Cotton Tee",
                 UserInventoryCategory.APPAREL,
                 false
@@ -487,21 +510,30 @@ class UserInventoryServiceTest {
         );
     }
 
-    private CreateUserInventoryItemCommand manualItem(
+    private CreateUserInventoryItemCommand uploadedItem(
             String name,
             UserInventoryCategory category,
             boolean restockEnabled
     ) {
+        return uploadedItem(
+                name,
+                category,
+                restockEnabled,
+                USER_ID + "/" + name.replaceAll("[^A-Za-z0-9]+", "-") + ".jpg");
+    }
+
+    private CreateUserInventoryItemCommand uploadedItem(
+            String name,
+            UserInventoryCategory category,
+            boolean restockEnabled,
+            String photoPath
+    ) {
         return new CreateUserInventoryItemCommand(
                 USER_ID,
-                UserInventorySource.MANUAL,
-                null,
-                null,
+                photoPath,
                 name,
                 null,
                 category,
-                null,
-                null,
                 null,
                 null,
                 1,
@@ -512,6 +544,34 @@ class UserInventoryServiceTest {
                 category == UserInventoryCategory.PANTRY,
                 restockEnabled,
                 restockEnabled ? 1 : null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private UpdateUserInventoryItemCommand replacePhoto(UUID itemId, String photoPath) {
+        return new UpdateUserInventoryItemCommand(
+                USER_ID,
+                itemId,
+                photoPath,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null
         );
     }
@@ -595,29 +655,6 @@ class UserInventoryServiceTest {
         @Override
         public User ensureProfile(EnsureUserProfileCommand command) {
             return null;
-        }
-    }
-
-    static class FakePhotoRecognitionService extends UserInventoryPhotoRecognitionService {
-
-        private Optional<UserInventoryPhotoRecognitionResult> nextResult = Optional.empty();
-
-        FakePhotoRecognitionService() {
-            super(null, openRouterProperties(), new ObjectMapper());
-        }
-
-        @Override
-        public Optional<UserInventoryPhotoRecognitionResult> recognize(CreateUserInventoryPhotoItemCommand command) {
-            return nextResult;
-        }
-
-        private static OpenRouterProperties openRouterProperties() {
-            return new OpenRouterProperties(
-                    "https://openrouter.test/api/v1",
-                    "",
-                    "Meant",
-                    new OpenRouterProperties.Models("test", "test", "test", "test")
-            );
         }
     }
 

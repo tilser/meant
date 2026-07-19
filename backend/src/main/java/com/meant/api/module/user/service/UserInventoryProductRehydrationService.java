@@ -64,7 +64,12 @@ public class UserInventoryProductRehydrationService {
                         new CatalogRehydrationContext(query.countryCode(), null)
                 ),
                 item.getName(),
-                item.getCategory()
+                item.getCategory(),
+                item.getPhotoPath(),
+                item.getSize(),
+                item.getColor(),
+                item.getMaterial(),
+                item.getPurchasedOn()
         );
     }
 
@@ -73,7 +78,8 @@ public class UserInventoryProductRehydrationService {
             UserInventoryCommerceReference commerceReference
     ) {
         return new UserInventoryProductRehydrationResult(
-                item.getId(), commerceReference, null, item.getName(), item.getCategory());
+                item.getId(), commerceReference, null, item.getName(), item.getCategory(),
+                item.getPhotoPath(), item.getSize(), item.getColor(), item.getMaterial(), item.getPurchasedOn());
     }
 
     private CatalogProductReference catalogReference(

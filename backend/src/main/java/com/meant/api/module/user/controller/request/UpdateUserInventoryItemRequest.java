@@ -4,10 +4,15 @@ import com.meant.api.module.user.constant.UserInventoryCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
+@Schema(description = "Editable fields for an owned inventory item.")
 public record UpdateUserInventoryItemRequest(
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Size(max = 1024)
+        String photoPath,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Size(max = 500)
         String name,
@@ -21,13 +26,7 @@ public record UpdateUserInventoryItemRequest(
         String description,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Size(max = 2048)
-        String imageUrl,
-        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        @Size(max = 2048)
         String productUrl,
-        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        @Size(max = 2048)
-        String photoUrl,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Positive
         Integer quantity,
@@ -48,6 +47,23 @@ public record UpdateUserInventoryItemRequest(
         Boolean restockEnabled,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @PositiveOrZero
-        Integer restockThreshold
+        Integer restockThreshold,
+        @Schema(
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                type = "string",
+                format = "date",
+                description = "Purchase date in YYYY-MM-DD form. Send an empty string to remove it."
+        )
+        @Pattern(regexp = "^$|\\d{4}-\\d{2}-\\d{2}$")
+        String purchasedOn,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Size(max = 200)
+        String size,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Size(max = 200)
+        String color,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Size(max = 200)
+        String material
 ) {
 }

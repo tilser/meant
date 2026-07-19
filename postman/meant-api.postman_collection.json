@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "9e35b34f-40a4-4d47-8f09-2e25d704c12f",
     "name": "Meant API",
-    "description": "Importable Postman collection for the Meant backend API. Set baseUrl and authToken for authenticated user/cart flows. Set merchantId or merchantDomain and productVariantId before exercising cart flows.",
+    "description": "Importable Postman collection for the Meant backend API. Set baseUrl and authToken for authenticated user/cart flows. Set inventoryPhotoPath to an authenticated user's pre-uploaded inventory-photos object path before creating an inventory item. Set merchantId or merchantDomain and productVariantId before exercising cart flows.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -53,6 +53,11 @@
     },
     {
       "key": "inventoryItemId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "inventoryPhotoPath",
       "value": "",
       "type": "string"
     },
@@ -441,7 +446,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Linen Shirt\",\n  \"brand\": \"Everlane\",\n  \"category\": \"APPAREL\",\n  \"description\": \"White linen button-down shirt\",\n  \"imageUrl\": \"https://example.com/linen-shirt.jpg\",\n  \"productUrl\": \"https://example.com/products/linen-shirt\",\n  \"quantity\": 1,\n  \"unit\": \"item\",\n  \"location\": \"Closet\",\n  \"notes\": \"Use for summer outfit recommendations\",\n  \"attributes\": [\n    \"linen\",\n    \"white\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
+              "raw": "{\n  \"photoPath\": \"{{inventoryPhotoPath}}\",\n  \"name\": \"Linen Shirt\",\n  \"brand\": \"Everlane\",\n  \"category\": \"APPAREL\",\n  \"description\": \"White linen button-down shirt\",\n  \"productUrl\": \"https://example.com/products/linen-shirt\",\n  \"purchasedOn\": \"2026-07-01\",\n  \"size\": \"M\",\n  \"color\": \"White\",\n  \"material\": \"Linen\",\n  \"quantity\": 1,\n  \"unit\": \"item\",\n  \"location\": \"Closet\",\n  \"notes\": \"Use for summer outfit recommendations\",\n  \"attributes\": [\n    \"summer\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/users/me/inventory",
@@ -458,47 +463,6 @@
           }
         },
         {
-          "name": "Add Inventory Item From Photo",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.id) pm.collectionVariables.set('inventoryItemId', body.id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"photoUrl\": \"https://example.com/inventory/photo.jpg\",\n  \"name\": \"Fallback Item Name\",\n  \"brand\": \"Unknown\",\n  \"category\": \"HOME\",\n  \"description\": \"Fallback description if recognition is unavailable\",\n  \"quantity\": 1,\n  \"unit\": \"item\",\n  \"location\": \"Kitchen\",\n  \"notes\": \"Created from Postman photo flow\",\n  \"attributes\": [\n    \"photo-import\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/users/me/inventory/photos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "me",
-                "inventory",
-                "photos"
-              ]
-            }
-          }
-        },
-        {
           "name": "Update Owned Inventory Item",
           "request": {
             "method": "PATCH",
@@ -510,7 +474,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Updated Linen Shirt\",\n  \"brand\": \"Everlane\",\n  \"category\": \"APPAREL\",\n  \"description\": \"Updated from Postman\",\n  \"imageUrl\": \"https://example.com/linen-shirt-updated.jpg\",\n  \"productUrl\": \"https://example.com/products/linen-shirt\",\n  \"photoUrl\": null,\n  \"quantity\": 2,\n  \"unit\": \"item\",\n  \"location\": \"Closet\",\n  \"notes\": \"Updated inventory notes\",\n  \"attributes\": [\n    \"linen\",\n    \"white\",\n    \"summer\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
+              "raw": "{\n  \"name\": \"Updated Linen Shirt\",\n  \"brand\": \"Everlane\",\n  \"category\": \"APPAREL\",\n  \"description\": \"Updated from Postman\",\n  \"productUrl\": \"https://example.com/products/linen-shirt\",\n  \"purchasedOn\": \"2026-07-02\",\n  \"size\": \"M\",\n  \"color\": \"Ivory\",\n  \"material\": \"Linen\",\n  \"quantity\": 2,\n  \"unit\": \"item\",\n  \"location\": \"Closet\",\n  \"notes\": \"Updated inventory notes\",\n  \"attributes\": [\n    \"summer\"\n  ],\n  \"consumable\": false,\n  \"restockEnabled\": false,\n  \"restockThreshold\": null\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/users/me/inventory/{{inventoryItemId}}",

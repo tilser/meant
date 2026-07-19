@@ -48,9 +48,17 @@ import {
 import { isAgenticDiscoverEnabled } from './agent/featureFlag'
 import { CompareView } from './compare/CompareView'
 import { InventoryView } from './inventory/InventoryView'
+import {
+  createInventoryItemWithPhoto,
+  deleteInventoryItemWithPhoto,
+  updateInventoryItemWithPhoto,
+} from './inventory/inventoryMutations'
 import { PreferencesView } from './preferences/PreferencesView'
 import { DEFAULT_BUDGET, clothingFitLabel } from './preferences/preferencesUtils'
-import { upsertInventorySnapshot } from './inventory/inventoryUtils'
+import {
+  type UserInventoryItemDraftInput,
+  upsertInventorySnapshot,
+} from './inventory/inventoryUtils'
 import { ProductCard } from './product/ProductCard'
 import { ProductModal } from './product/ProductModal'
 import { productFromCanonical } from './product/groupedProductMapping'
@@ -98,9 +106,6 @@ import {
   acceptUserTasteSuggestion,
   assistCartCheckout,
   completeMerchantIdentityAuthorization,
-  createUserInventoryItem,
-  createUserInventoryPhotoItem,
-  deleteUserInventoryItem,
   deleteUserProductSearchPreference,
   exportUserInventory,
   getCartCheckout,
@@ -132,13 +137,10 @@ import {
   type MerchantIdentityLinkProfile,
   type MerchantProfile,
   type ShoppingFilterProfile,
-  type UserInventoryItemInput,
   type UserInventoryItemProfile,
   type UserInventoryItemUpdateInput,
-  type UserInventoryPhotoInput,
   type UserProductSearchPreferenceProfile,
   type UserTasteProfile,
-  updateUserInventoryItem,
   updateNewsletterSubscription,
   updateUserTasteSignal,
   updateUserSettings,
@@ -2424,35 +2426,40 @@ export function MeantApp() {
     })
   }
 
-  const addInventoryItem = async (input: UserInventoryItemInput) => {
+  const addInventoryItem = async (input: UserInventoryItemDraftInput, photo: File) => {
     const requestedUserId = requireCurrentAccountUser()
-    const item = await createUserInventoryItem(input, { expectedUserId: requestedUserId })
+    const item = await createInventoryItemWithPhoto({
+      userId: requestedUserId,
+      item: input,
+      photo,
+    })
     if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
     setInventoryItems((current) => upsertInventorySnapshot(current, item))
     return item
   }
 
-  const addInventoryPhotoItem = async (input: UserInventoryPhotoInput) => {
+  const editInventoryItem = async (
+    existing: UserInventoryItemProfile,
+    item: UserInventoryItemUpdateInput,
+    replacementPhoto?: File,
+  ) => {
     const requestedUserId = requireCurrentAccountUser()
-    const item = await createUserInventoryPhotoItem(input, { expectedUserId: requestedUserId })
-    if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
-    setInventoryItems((current) => upsertInventorySnapshot(current, item))
-    return item
-  }
-
-  const editInventoryItem = async (itemId: string, item: UserInventoryItemUpdateInput) => {
-    const requestedUserId = requireCurrentAccountUser()
-    const updated = await updateUserInventoryItem({ itemId, item, expectedUserId: requestedUserId })
+    const updated = await updateInventoryItemWithPhoto({
+      userId: requestedUserId,
+      existing,
+      item,
+      replacementPhoto,
+    })
     if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
     setInventoryItems((current) => upsertInventorySnapshot(current, updated))
     return updated
   }
 
-  const removeInventoryItem = async (itemId: string) => {
+  const removeInventoryItem = async (item: UserInventoryItemProfile) => {
     const requestedUserId = requireCurrentAccountUser()
-    await deleteUserInventoryItem(itemId, { expectedUserId: requestedUserId })
+    await deleteInventoryItemWithPhoto({ userId: requestedUserId, item })
     if (activeUserIdRef.current !== requestedUserId) throw new Error('Account changed')
-    setInventoryItems((current) => current.filter((item) => item.id !== itemId))
+    setInventoryItems((current) => current.filter((candidate) => candidate.id !== item.id))
   }
 
   const downloadInventory = async () => {
@@ -3001,12 +3008,13 @@ export function MeantApp() {
       case 'inventory':
         return (
           <InventoryView
+            key={userId}
+            userId={requireCurrentAccountUser()}
             items={currentInventoryItems}
             loading={currentInventoryLoading}
             error={currentInventoryError}
             onRefresh={() => void loadInventory()}
             onAddItem={addInventoryItem}
-            onAddPhotoItem={addInventoryPhotoItem}
             onUpdateItem={editInventoryItem}
             onDeleteItem={removeInventoryItem}
             onExport={downloadInventory}

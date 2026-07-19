@@ -3,7 +3,6 @@ package com.meant.api.module.user.controller;
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
-import com.meant.api.module.user.controller.request.AddUserInventoryPhotoRequest;
 import com.meant.api.module.user.controller.request.UpdateUserInventoryItemRequest;
 import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
 import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
@@ -104,7 +103,7 @@ public class UserInventoryController {
     @PostMapping("/me/inventory")
     @Operation(
             summary = "Add an owned inventory item",
-            description = "Adds a manual wardrobe, pantry, home, or other owned item for the current user."
+            description = "Adds a wardrobe, pantry, home, or other owned item with its uploaded photo."
     )
     @ApiResponse(
             responseCode = "200",
@@ -119,27 +118,6 @@ public class UserInventoryController {
         return UserInventoryItemResponse.from(userInventoryService.create(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 UserCommandMapper.toCreateInventoryItemCommand(authenticatedUser.id(), request)));
-    }
-
-    @PostMapping("/me/inventory/photos")
-    @Operation(
-            summary = "Add an inventory item from a photo",
-            description = "Adds an owned item from a photo URL or data URL. When AI recognition is available, "
-                    + "recognized fields are merged with user-provided fallback fields."
-    )
-    @ApiResponse(
-            responseCode = "200",
-            description = "Created inventory item",
-            content = @Content(schema = @Schema(implementation = UserInventoryItemResponse.class))
-    )
-    public UserInventoryItemResponse addInventoryPhoto(
-            @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody AddUserInventoryPhotoRequest request
-    ) {
-        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        return UserInventoryItemResponse.from(userInventoryService.createFromPhoto(
-                UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
-                UserCommandMapper.toCreateInventoryPhotoItemCommand(authenticatedUser.id(), request)));
     }
 
     @PatchMapping("/me/inventory/{itemId}")

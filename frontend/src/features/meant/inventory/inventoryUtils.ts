@@ -3,18 +3,21 @@ import type {
   UserInventoryItemInput,
   UserInventoryItemProfile,
   UserInventoryItemUpdateInput,
-  UserInventoryPhotoInput,
   UserInventorySelectedOptionProfile,
 } from '../../../lib/apiClient'
+
+export type UserInventoryItemDraftInput = Omit<UserInventoryItemInput, 'photoPath'>
 
 export interface InventoryFormState {
   name: string
   brand: string
   category: UserInventoryCategory
   description: string
-  imageUrl: string
   productUrl: string
-  photoUrl: string
+  purchasedOn: string
+  size: string
+  color: string
+  material: string
   quantity: string
   unit: string
   location: string
@@ -45,8 +48,6 @@ const INVENTORY_SOURCE_LABELS: Readonly<Record<UserInventoryItemProfile['source'
   MEANT_PURCHASE: 'Meant purchase',
 }
 
-const INVENTORY_PHOTO_DATA_URL_LIMIT = 1_900_000
-
 export function inventoryCategoryLabel(category: UserInventoryCategory): string {
   return INVENTORY_CATEGORY_LABELS[category] ?? INVENTORY_CATEGORY_LABELS.OTHER
 }
@@ -55,8 +56,26 @@ export function inventorySourceLabel(source: UserInventoryItemProfile['source'])
   return INVENTORY_SOURCE_LABELS[source] ?? source
 }
 
-export function inventoryItemImage(item: UserInventoryItemProfile): string | null {
-  return item.imageUrl || item.photoUrl
+export function inventoryItemImage(
+  item: UserInventoryItemProfile,
+  signedPhotoUrl?: string | null,
+): string | null {
+  return signedPhotoUrl || item.imageUrl || item.photoUrl
+}
+
+export function safeInventoryProductUrl(value?: string | null): string | null {
+  if (!value) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      return null
+    }
+    return url.toString()
+  } catch {
+    return null
+  }
 }
 
 export function inventorySelectedOptionLabel(
@@ -116,7 +135,10 @@ export function inventoryDateLabel(value?: string | null): string | null {
   if (!value) {
     return null
   }
-  const date = new Date(value)
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value)
   if (Number.isNaN(date.getTime())) {
     return null
   }
@@ -127,69 +149,6 @@ export function inventoryDateLabel(value?: string | null): string | null {
   }).format(date)
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-        return
-      }
-      reject(new Error('Unsupported image file'))
-    }
-    reader.onerror = () => reject(new Error('Could not read image file'))
-    reader.readAsDataURL(file)
-  })
-}
-
-export async function fileToInventoryPhotoUrl(file: File): Promise<string> {
-  const dataUrl = await readFileAsDataUrl(file)
-  if (dataUrl.length <= INVENTORY_PHOTO_DATA_URL_LIMIT) {
-    return dataUrl
-  }
-  return resizeInventoryPhotoDataUrl(dataUrl)
-}
-
-function loadImage(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Could not process image file'))
-    image.src = dataUrl
-  })
-}
-
-async function resizeInventoryPhotoDataUrl(dataUrl: string): Promise<string> {
-  const image = await loadImage(dataUrl)
-  const attempts = [
-    { max: 1280, quality: 0.78 },
-    { max: 1024, quality: 0.72 },
-    { max: 840, quality: 0.66 },
-  ]
-  let latest = dataUrl
-  for (const attempt of attempts) {
-    const ratio = Math.min(1, attempt.max / Math.max(image.width, image.height))
-    const width = Math.max(1, Math.round(image.width * ratio))
-    const height = Math.max(1, Math.round(image.height * ratio))
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d')
-    if (!context) {
-      break
-    }
-    context.drawImage(image, 0, 0, width, height)
-    latest = canvas.toDataURL('image/jpeg', attempt.quality)
-    if (latest.length <= INVENTORY_PHOTO_DATA_URL_LIMIT) {
-      return latest
-    }
-  }
-  if (latest.length > INVENTORY_PHOTO_DATA_URL_LIMIT) {
-    throw new Error('Photo is too large')
-  }
-  return latest
-}
-
 export function initialInventoryForm(
   category: UserInventoryCategory = 'APPAREL',
 ): InventoryFormState {
@@ -198,9 +157,11 @@ export function initialInventoryForm(
     brand: '',
     category,
     description: '',
-    imageUrl: '',
     productUrl: '',
-    photoUrl: '',
+    purchasedOn: '',
+    size: '',
+    color: '',
+    material: '',
     quantity: '1',
     unit: '',
     location: '',
@@ -218,9 +179,11 @@ export function inventoryFormFromItem(item: UserInventoryItemProfile): Inventory
     brand: item.brand ?? '',
     category: item.category,
     description: item.description ?? '',
-    imageUrl: item.imageUrl ?? '',
     productUrl: item.productUrl ?? '',
-    photoUrl: item.photoUrl ?? '',
+    purchasedOn: item.purchasedOn ?? '',
+    size: item.size ?? '',
+    color: item.color ?? '',
+    material: item.material ?? '',
     quantity: String(item.quantity),
     unit: item.unit ?? '',
     location: item.location ?? '',
@@ -232,32 +195,17 @@ export function inventoryFormFromItem(item: UserInventoryItemProfile): Inventory
   }
 }
 
-export function inventoryItemInputFromForm(form: InventoryFormState): UserInventoryItemInput {
+export function inventoryItemInputFromForm(form: InventoryFormState): UserInventoryItemDraftInput {
   return {
     name: form.name.trim(),
     brand: optionalText(form.brand),
     category: form.category,
     description: optionalText(form.description),
-    imageUrl: optionalText(form.imageUrl),
     productUrl: optionalText(form.productUrl),
-    quantity: positiveInteger(form.quantity, 1),
-    unit: optionalText(form.unit),
-    location: optionalText(form.location),
-    notes: optionalText(form.notes),
-    attributes: attributeList(form.attributes),
-    consumable: form.consumable,
-    restockEnabled: form.restockEnabled,
-    restockThreshold: form.restockEnabled ? nonNegativeInteger(form.restockThreshold) : undefined,
-  }
-}
-
-export function inventoryPhotoInputFromForm(form: InventoryFormState): UserInventoryPhotoInput {
-  return {
-    photoUrl: form.photoUrl,
-    name: optionalText(form.name),
-    brand: optionalText(form.brand),
-    category: form.category,
-    description: optionalText(form.description),
+    purchasedOn: optionalText(form.purchasedOn),
+    size: optionalText(form.size),
+    color: optionalText(form.color),
+    material: optionalText(form.material),
     quantity: positiveInteger(form.quantity, 1),
     unit: optionalText(form.unit),
     location: optionalText(form.location),
@@ -273,20 +221,24 @@ export function inventoryUpdateInputFromForm(
   form: InventoryFormState,
 ): UserInventoryItemUpdateInput {
   return {
-    name: optionalText(form.name),
-    brand: optionalText(form.brand),
+    name: form.name.trim(),
+    brand: form.brand.trim(),
     category: form.category,
-    description: optionalText(form.description),
-    imageUrl: optionalText(form.imageUrl),
-    productUrl: optionalText(form.productUrl),
-    photoUrl: optionalText(form.photoUrl),
+    description: form.description.trim(),
+    productUrl: form.productUrl.trim(),
+    purchasedOn: form.purchasedOn.trim(),
+    size: form.size.trim(),
+    color: form.color.trim(),
+    material: form.material.trim(),
     quantity: positiveInteger(form.quantity, 1),
-    unit: optionalText(form.unit),
-    location: optionalText(form.location),
-    notes: optionalText(form.notes),
+    unit: form.unit.trim(),
+    location: form.location.trim(),
+    notes: form.notes.trim(),
     attributes: attributeList(form.attributes),
     consumable: form.consumable,
     restockEnabled: form.restockEnabled,
-    restockThreshold: form.restockEnabled ? nonNegativeInteger(form.restockThreshold) : undefined,
+    restockThreshold: form.restockEnabled
+      ? (nonNegativeInteger(form.restockThreshold) ?? null)
+      : null,
   }
 }

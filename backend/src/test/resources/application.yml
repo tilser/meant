@@ -50,8 +50,6 @@ app:
         - method: GET
           path: /api/users/me/product-search-suggestions
         - method: POST
-          path: /api/users/me/inventory/photos
-        - method: POST
           path: /api/merchants/semantic-search
         - method: POST
           path: /api/merchants/semantic-product-search

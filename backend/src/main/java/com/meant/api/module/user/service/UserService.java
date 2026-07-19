@@ -11,9 +11,7 @@ import com.meant.api.module.user.service.query.GetUserQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,8 +22,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @RequiredArgsConstructor
 public class UserService {
-
-    private static final Set<String> PROFILE_PICTURE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     private final UserRepository userRepository;
 
@@ -81,7 +77,8 @@ public class UserService {
         }
         Instant now = Instant.now();
         User user = ensureProfileInternal(profileCommand, now);
-        String profilePicturePath = normalizeProfilePicturePath(updateCommand.id(), updateCommand.profilePicturePath());
+        String profilePicturePath = UserOwnedImagePathValidator.normalize(
+                updateCommand.id(), updateCommand.profilePicturePath(), "Profile picture path");
         user.updateProfilePicture(profilePicturePath, now);
         return user;
     }
@@ -127,28 +124,4 @@ public class UserService {
                 .orElseThrow(() -> UserException.notFound("User not found: " + id));
     }
 
-    private String normalizeProfilePicturePath(UUID userId, String profilePicturePath) {
-        String normalized = profilePicturePath == null ? "" : profilePicturePath.trim();
-        String expectedPrefix = userId + "/";
-        String fileName = normalized.startsWith(expectedPrefix)
-                ? normalized.substring(expectedPrefix.length())
-                : "";
-        if (!isAllowedProfilePictureFileName(fileName)) {
-            throw new UserException("Profile picture path must point to the authenticated user's image object");
-        }
-        return normalized;
-    }
-
-    private boolean isAllowedProfilePictureFileName(String fileName) {
-        if (fileName.isBlank() || fileName.contains("/") || fileName.contains("..")) {
-            return false;
-        }
-        int extensionStart = fileName.lastIndexOf('.');
-        if (extensionStart <= 0 || extensionStart == fileName.length() - 1) {
-            return false;
-        }
-        String baseName = fileName.substring(0, extensionStart);
-        String extension = fileName.substring(extensionStart + 1).toLowerCase(Locale.ROOT);
-        return baseName.matches("[A-Za-z0-9._-]+") && PROFILE_PICTURE_EXTENSIONS.contains(extension);
-    }
 }

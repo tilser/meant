@@ -169,6 +169,10 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         JsonNode embeddedProperties = schemas.path("EmbeddedCheckoutBootstrapResponse").path("properties");
         JsonNode checkoutProperties = schemas.path("CheckoutResponse").path("properties");
         JsonNode inventoryProperties = schemas.path("UserInventoryItemResponse").path("properties");
+        JsonNode inventoryRequired = schemas.path("UserInventoryItemResponse").path("required");
+        JsonNode inventoryCreateProperties = schemas.path("AddUserInventoryItemRequest").path("properties");
+        JsonNode inventoryCreateRequired = schemas.path("AddUserInventoryItemRequest").path("required");
+        JsonNode inventoryUpdateProperties = schemas.path("UpdateUserInventoryItemRequest").path("properties");
         JsonNode commerceReferenceProperties = schemas.path("UserInventoryCommerceReferenceResponse")
                 .path("properties");
         JsonNode selectedOptionProperties = schemas.path("UserInventorySelectedOptionResponse").path("properties");
@@ -212,6 +216,25 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         assertThat(checkoutProperties.has("checkoutAttemptId")).isTrue();
         assertThat(inventoryProperties.has("commerceReference")).isTrue();
         assertThat(inventoryProperties.has("sourceCheckoutAttemptId")).isTrue();
+        assertThat(inventoryProperties.has("photoPath")).isTrue();
+        assertThat(inventoryProperties.has("purchasedOn")).isTrue();
+        assertThat(inventoryProperties.has("size")).isTrue();
+        assertThat(inventoryProperties.has("color")).isTrue();
+        assertThat(inventoryProperties.has("material")).isTrue();
+        assertThat(inventoryCreateRequired.toString()).contains("photoPath", "name", "category");
+        assertThat(inventoryCreateRequired.toString()).doesNotContain("attributes");
+        assertThat(inventoryRequired.toString()).doesNotContain(
+                "photoPath", "purchasedOn", "size", "color", "material");
+        assertThat(inventoryProperties.path("photoPath").path("type").toString()).contains("\"null\"");
+        assertThat(inventoryProperties.path("purchasedOn").path("type").toString()).contains("\"null\"");
+        assertThat(inventoryProperties.path("size").path("type").toString()).contains("\"null\"");
+        assertThat(inventoryProperties.path("color").path("type").toString()).contains("\"null\"");
+        assertThat(inventoryProperties.path("material").path("type").toString()).contains("\"null\"");
+        assertThat(inventoryCreateProperties.has("imageUrl")).isFalse();
+        assertThat(inventoryCreateProperties.has("photoUrl")).isFalse();
+        assertThat(inventoryUpdateProperties.has("imageUrl")).isFalse();
+        assertThat(inventoryUpdateProperties.has("photoUrl")).isFalse();
+        assertThat(openApi.path("paths").has("/api/users/me/inventory/photos")).isFalse();
         assertThat(inventoryProperties.path("commerceReference").path("$ref").asText())
                 .endsWith("/UserInventoryCommerceReferenceResponse");
         assertThat(commerceReferenceProperties.has("provider")).isTrue();

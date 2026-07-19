@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="051-add-user-inventory-uploaded-photo-details" author="codex">
+        <addColumn tableName="user_inventory_items">
+            <column name="photo_path" type="text"/>
+            <column name="size" type="text"/>
+            <column name="color" type="text"/>
+            <column name="material" type="text"/>
+            <column name="purchased_on" type="date"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

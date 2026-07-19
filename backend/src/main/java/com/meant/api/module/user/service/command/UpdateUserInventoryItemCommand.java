@@ -2,6 +2,7 @@ package com.meant.api.module.user.service.command;
 
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -15,6 +16,9 @@ public record UpdateUserInventoryItemCommand(
         @NotNull
         UUID itemId,
 
+        @Size(max = 1024)
+        String photoPath,
+
         @Size(max = 500)
         String name,
 
@@ -27,13 +31,7 @@ public record UpdateUserInventoryItemCommand(
         String description,
 
         @Size(max = 2048)
-        String imageUrl,
-
-        @Size(max = 2048)
         String productUrl,
-
-        @Size(max = 2048)
-        String photoUrl,
 
         @Positive
         Integer quantity,
@@ -54,6 +52,18 @@ public record UpdateUserInventoryItemCommand(
         Boolean restockEnabled,
 
         @PositiveOrZero
-        Integer restockThreshold
+        Integer restockThreshold,
+
+        @Pattern(regexp = "^$|\\d{4}-\\d{2}-\\d{2}$")
+        String purchasedOn,
+
+        @Size(max = 200)
+        String size,
+
+        @Size(max = 200)
+        String color,
+
+        @Size(max = 200)
+        String material
 ) {
 }

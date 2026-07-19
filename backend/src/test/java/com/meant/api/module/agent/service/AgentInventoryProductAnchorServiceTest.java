@@ -46,7 +46,8 @@ class AgentInventoryProductAnchorServiceTest {
                 List.of(new UserInventorySelectedOption("variant", "Size", "42"))
         );
         when(rehydration.rehydrate(any())).thenReturn(new UserInventoryProductRehydrationResult(
-                inventoryItemId, commerce, null, "Trail Shoes", UserInventoryCategory.APPAREL));
+                inventoryItemId, commerce, null, "Trail Shoes", UserInventoryCategory.APPAREL,
+                null, null, null, null, null));
         AgentInventoryProductAnchorService service = new AgentInventoryProductAnchorService(
                 contexts, rehydration, persistence);
 

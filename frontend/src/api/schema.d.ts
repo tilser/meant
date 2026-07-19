@@ -314,26 +314,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users/me/inventory/photos": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add an inventory item from a photo
-         * @description Adds an owned item from a photo URL or data URL. When AI recognition is available, recognized fields are merged with user-provided fallback fields.
-         */
-        post: operations["addInventoryPhoto"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/merchants/{merchantId}/identity-link/authorization": {
         parameters: {
             query?: never;
@@ -2353,19 +2333,24 @@ export interface components {
             timeout?: number;
         };
         AddUserInventoryItemRequest: {
+            photoPath: string;
             name: string;
             brand?: string;
             /** @enum {string} */
-            category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
+            category: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
             description?: string;
-            imageUrl?: string;
             productUrl?: string;
+            /** Format: date */
+            purchasedOn?: string;
+            size?: string;
+            color?: string;
+            material?: string;
             /** Format: int32 */
             quantity?: number;
             unit?: string;
             location?: string;
             notes?: string;
-            attributes: string[];
+            attributes?: string[];
             consumable?: boolean;
             restockEnabled?: boolean;
             /** Format: int32 */
@@ -2386,9 +2371,13 @@ export interface components {
             /** @enum {string} */
             category: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
             description: string;
+            photoPath?: string | null;
             imageUrl: string;
             productUrl: string;
             photoUrl: string;
+            size?: string | null;
+            color?: string | null;
+            material?: string | null;
             /** Format: int32 */
             quantity: number;
             unit: string;
@@ -2399,6 +2388,8 @@ export interface components {
             restockEnabled: boolean;
             /** Format: int32 */
             restockThreshold: number;
+            /** Format: date */
+            purchasedOn?: string | null;
             /** Format: date-time */
             purchasedAt: string;
             /** Format: date-time */
@@ -2425,24 +2416,6 @@ export interface components {
             group?: string;
             name: string;
             value: string;
-        };
-        AddUserInventoryPhotoRequest: {
-            photoUrl: string;
-            name?: string;
-            brand?: string;
-            /** @enum {string} */
-            category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
-            description?: string;
-            /** Format: int32 */
-            quantity?: number;
-            unit?: string;
-            location?: string;
-            notes?: string;
-            attributes: string[];
-            consumable?: boolean;
-            restockEnabled?: boolean;
-            /** Format: int32 */
-            restockThreshold?: number;
         };
         MerchantIdentityAuthorizationResponse: {
             /** Format: uuid */
@@ -3336,14 +3309,17 @@ export interface components {
             newsletter: boolean;
         };
         UpdateUserInventoryItemRequest: {
+            photoPath?: string;
             name?: string;
             brand?: string;
             /** @enum {string} */
             category?: "APPAREL" | "PANTRY" | "HOME" | "OTHER";
             description?: string;
-            imageUrl?: string;
             productUrl?: string;
-            photoUrl?: string;
+            purchasedOn?: string;
+            size?: string;
+            color?: string;
+            material?: string;
             /** Format: int32 */
             quantity?: number;
             unit?: string;
@@ -4179,30 +4155,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AddUserInventoryItemRequest"];
-            };
-        };
-        responses: {
-            /** @description Created inventory item */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserInventoryItemResponse"];
-                };
-            };
-        };
-    };
-    addInventoryPhoto: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AddUserInventoryPhotoRequest"];
             };
         };
         responses: {

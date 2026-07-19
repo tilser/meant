@@ -11,7 +11,6 @@ import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.properties.UserCollectionProperties;
 import com.meant.api.module.user.repository.UserInventoryItemRepository;
 import com.meant.api.module.user.service.command.CreateUserInventoryItemCommand;
-import com.meant.api.module.user.service.command.CreateUserInventoryPhotoItemCommand;
 import com.meant.api.module.user.service.command.DeleteUserInventoryItemCommand;
 import com.meant.api.module.user.service.command.ImportPurchasedInventoryItemsCommand;
 import com.meant.api.module.user.service.command.UpdateUserInventoryItemCommand;
@@ -19,7 +18,6 @@ import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryExportResult;
 import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
-import com.meant.api.module.user.service.dto.UserInventoryPhotoRecognitionResult;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
@@ -30,6 +28,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.text.Normalizer;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,7 +45,6 @@ import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
@@ -76,7 +75,6 @@ public class UserInventoryService {
 
     private final UserService userService;
     private final UserInventoryItemRepository userInventoryItemRepository;
-    private final UserInventoryPhotoRecognitionService userInventoryPhotoRecognitionService;
     private final UserCollectionProperties userCollectionProperties;
     private final ObjectMapper objectMapper;
 
@@ -115,23 +113,10 @@ public class UserInventoryService {
         validateUser(profileCommand, command.userId(), "Inventory item user does not match authenticated user");
         userService.ensureProfile(profileCommand);
         validateInventoryQuota(command.userId());
+        String photoPath = UserOwnedImagePathValidator.normalize(
+                command.userId(), command.photoPath(), "Inventory photo path");
         Instant now = Instant.now();
-        UserInventoryItem item = UserInventoryItem.create(command.userId(), snapshot(command), now);
-        return toResult(userInventoryItemRepository.save(item));
-    }
-
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public UserInventoryItemResult createFromPhoto(
-            @NotNull @Valid EnsureUserProfileCommand profileCommand,
-            @NotNull @Valid CreateUserInventoryPhotoItemCommand command
-    ) {
-        validateUser(profileCommand, command.userId(), "Inventory photo user does not match authenticated user");
-        userService.ensureProfile(profileCommand);
-        validateInventoryQuota(command.userId());
-        Optional<UserInventoryPhotoRecognitionResult> recognition =
-                userInventoryPhotoRecognitionService.recognize(command);
-        Instant now = Instant.now();
-        UserInventoryItem item = UserInventoryItem.create(command.userId(), photoSnapshot(command, recognition), now);
+        UserInventoryItem item = UserInventoryItem.create(command.userId(), snapshot(command, photoPath), now);
         return toResult(userInventoryItemRepository.save(item));
     }
 
@@ -145,8 +130,12 @@ public class UserInventoryService {
         UserInventoryItem item = userInventoryItemRepository
                 .findByIdAndUserId(command.itemId(), command.userId())
                 .orElseThrow(() -> UserException.notFound("Inventory item not found: " + command.itemId()));
+        String replacementPhotoPath = command.photoPath() == null
+                ? null
+                : UserOwnedImagePathValidator.normalize(
+                        command.userId(), command.photoPath(), "Inventory photo path");
         Instant now = Instant.now();
-        item.replaceSnapshot(snapshot(item, command), now);
+        item.replaceSnapshot(snapshot(item, command, replacementPhotoPath), now);
         return toResult(userInventoryItemRepository.save(item));
     }
 
@@ -307,126 +296,81 @@ public class UserInventoryService {
         return Math.min(limit, maxLimit);
     }
 
-    private UserInventoryItem.Snapshot snapshot(CreateUserInventoryItemCommand command) {
-        return new UserInventoryItem.Snapshot(
-                command.source(),
-                blankToNull(command.sourceProductKey()),
-                blankToNull(command.productHash()),
-                command.name().trim(),
-                blankToNull(command.brand()),
-                command.category(),
-                blankToNull(command.description()),
-                blankToNull(command.imageUrl()),
-                blankToNull(command.productUrl()),
-                blankToNull(command.photoUrl()),
-                command.quantity(),
-                blankToNull(command.unit()),
-                blankToNull(command.location()),
-                blankToNull(command.notes()),
-                toJson(command.attributes()),
-                command.consumable(),
-                command.restockEnabled(),
-                command.restockThreshold(),
-                command.purchasedAt(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-        );
+    private UserInventoryItem.Snapshot snapshot(CreateUserInventoryItemCommand command, String photoPath) {
+        return UserInventoryItem.Snapshot.builder()
+                .source(UserInventorySource.PHOTO)
+                .name(command.name().trim())
+                .brand(blankToNull(command.brand()))
+                .category(command.category())
+                .description(blankToNull(command.description()))
+                .productUrl(blankToNull(command.productUrl()))
+                .photoPath(photoPath)
+                .quantity(command.quantity())
+                .unit(blankToNull(command.unit()))
+                .location(blankToNull(command.location()))
+                .notes(blankToNull(command.notes()))
+                .size(blankToNull(command.size()))
+                .color(blankToNull(command.color()))
+                .material(blankToNull(command.material()))
+                .attributes(toJson(command.attributes()))
+                .consumable(command.consumable())
+                .restockEnabled(command.restockEnabled())
+                .restockThreshold(command.restockThreshold())
+                .purchasedOn(command.purchasedOn())
+                .build();
     }
 
-    private UserInventoryItem.Snapshot photoSnapshot(
-            CreateUserInventoryPhotoItemCommand command,
-            Optional<UserInventoryPhotoRecognitionResult> recognition
+    private UserInventoryItem.Snapshot snapshot(
+            UserInventoryItem item,
+            UpdateUserInventoryItemCommand command,
+            String replacementPhotoPath
     ) {
-        UserInventoryPhotoRecognitionResult recognized = recognition.orElse(null);
-        UserInventoryCategory category = firstPresent(command.category(), recognized == null ? null : recognized.category());
-        boolean consumable = command.consumable() == null
-                ? Boolean.TRUE.equals(recognized == null ? null : recognized.consumable())
-                : command.consumable();
-        return new UserInventoryItem.Snapshot(
-                UserInventorySource.PHOTO,
-                null,
-                null,
-                firstPresent(blankToNull(command.name()), recognized == null ? null : recognized.name(), "Photo inventory item"),
-                firstPresent(blankToNull(command.brand()), recognized == null ? null : recognized.brand()),
-                category == null ? UserInventoryCategory.OTHER : category,
-                firstPresent(blankToNull(command.description()), recognized == null ? null : recognized.description()),
-                command.photoUrl(),
-                null,
-                command.photoUrl(),
-                command.quantity(),
-                blankToNull(command.unit()),
-                blankToNull(command.location()),
-                blankToNull(command.notes()),
-                toJson(mergedAttributes(command.attributes(), recognized)),
-                consumable,
-                command.restockEnabled(),
-                command.restockThreshold(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-        );
-    }
-
-    private UserInventoryItem.Snapshot snapshot(UserInventoryItem item, UpdateUserInventoryItemCommand command) {
         List<String> attributes = command.attributes() == null
                 ? fromJson(item.getAttributes())
                 : safeList(command.attributes()).stream()
                         .filter(attribute -> attribute != null && !attribute.isBlank())
                         .map(String::trim)
                         .toList();
-        return new UserInventoryItem.Snapshot(
-                item.getSource(),
-                item.getSourceProductKey(),
-                item.getProductHash(),
-                patchRequiredText(command.name(), item.getName()),
-                patchOptionalText(command.brand(), item.getBrand()),
-                firstPresent(command.category(), item.getCategory()),
-                patchOptionalText(command.description(), item.getDescription()),
-                patchOptionalText(command.imageUrl(), item.getImageUrl()),
-                patchOptionalText(command.productUrl(), item.getProductUrl()),
-                patchOptionalText(command.photoUrl(), item.getPhotoUrl()),
-                firstPresent(command.quantity(), item.getQuantity()),
-                patchOptionalText(command.unit(), item.getUnit()),
-                patchOptionalText(command.location(), item.getLocation()),
-                patchOptionalText(command.notes(), item.getNotes()),
-                toJson(attributes),
-                firstPresent(command.consumable(), item.isConsumable()),
-                firstPresent(command.restockEnabled(), item.isRestockEnabled()),
-                command.restockThreshold() == null ? item.getRestockThreshold() : command.restockThreshold(),
-                item.getPurchasedAt(),
-                item.getProvider(),
-                item.getMerchantIntegrationId(),
-                item.getExternalMerchantId(),
-                item.getExternalMerchantDomain(),
-                item.getCanonicalProductKey(),
-                item.getOfferKey(),
-                item.getSourceType(),
-                item.getSourceIdentity(),
-                item.getExternalProductId(),
-                item.getExternalVariantId(),
-                item.getSelectedOptionsJson(),
-                item.getSourceCheckoutAttemptId()
-        );
+        return UserInventoryItem.Snapshot.builder()
+                .source(item.getSource())
+                .sourceProductKey(item.getSourceProductKey())
+                .productHash(item.getProductHash())
+                .name(patchRequiredText(command.name(), item.getName()))
+                .brand(patchOptionalText(command.brand(), item.getBrand()))
+                .category(firstPresent(command.category(), item.getCategory()))
+                .description(patchOptionalText(command.description(), item.getDescription()))
+                .imageUrl(replacementPhotoPath != null && Objects.equals(item.getImageUrl(), item.getPhotoUrl())
+                        ? null : item.getImageUrl())
+                .productUrl(patchOptionalText(command.productUrl(), item.getProductUrl()))
+                .photoUrl(replacementPhotoPath == null ? item.getPhotoUrl() : null)
+                .photoPath(replacementPhotoPath == null ? item.getPhotoPath() : replacementPhotoPath)
+                .quantity(firstPresent(command.quantity(), item.getQuantity()))
+                .unit(patchOptionalText(command.unit(), item.getUnit()))
+                .location(patchOptionalText(command.location(), item.getLocation()))
+                .notes(patchOptionalText(command.notes(), item.getNotes()))
+                .size(patchOptionalText(command.size(), item.getSize()))
+                .color(patchOptionalText(command.color(), item.getColor()))
+                .material(patchOptionalText(command.material(), item.getMaterial()))
+                .attributes(toJson(attributes))
+                .consumable(firstPresent(command.consumable(), item.isConsumable()))
+                .restockEnabled(firstPresent(command.restockEnabled(), item.isRestockEnabled()))
+                .restockThreshold(command.restockThreshold() == null
+                        ? item.getRestockThreshold() : command.restockThreshold())
+                .purchasedAt(item.getPurchasedAt())
+                .purchasedOn(patchOptionalDate(command.purchasedOn(), item.getPurchasedOn()))
+                .provider(item.getProvider())
+                .merchantIntegrationId(item.getMerchantIntegrationId())
+                .externalMerchantId(item.getExternalMerchantId())
+                .externalMerchantDomain(item.getExternalMerchantDomain())
+                .canonicalProductKey(item.getCanonicalProductKey())
+                .offerKey(item.getOfferKey())
+                .sourceType(item.getSourceType())
+                .sourceIdentity(item.getSourceIdentity())
+                .externalProductId(item.getExternalProductId())
+                .externalVariantId(item.getExternalVariantId())
+                .selectedOptionsJson(item.getSelectedOptionsJson())
+                .sourceCheckoutAttemptId(item.getSourceCheckoutAttemptId())
+                .build();
     }
 
     private UserInventoryItem.Snapshot purchasedSnapshot(
@@ -442,57 +386,60 @@ public class UserInventoryService {
         boolean consumable = existing == null
                 ? category == UserInventoryCategory.PANTRY
                 : existing.isConsumable();
-        return new UserInventoryItem.Snapshot(
-                UserInventorySource.MEANT_PURCHASE,
-                purchasedItem.productKey(),
-                blankToNull(purchasedItem.productHash()),
-                purchasedItem.name().trim(),
-                blankToNull(purchasedItem.brand()),
-                category,
-                null,
-                blankToNull(purchasedItem.imageUrl()),
-                blankToNull(purchasedItem.productUrl()),
-                null,
-                quantity,
-                existing == null ? null : existing.getUnit(),
-                existing == null ? null : existing.getLocation(),
-                existing == null ? null : existing.getNotes(),
-                existing == null ? "[]" : existing.getAttributes(),
-                consumable,
-                existing != null && existing.isRestockEnabled(),
-                existing == null ? null : existing.getRestockThreshold(),
-                command.purchasedAt(),
-                reference == null ? existingValue(existing, UserInventoryItem::getProvider) : reference.provider(),
-                reference == null
+        return UserInventoryItem.Snapshot.builder()
+                .source(UserInventorySource.MEANT_PURCHASE)
+                .sourceProductKey(purchasedItem.productKey())
+                .productHash(blankToNull(purchasedItem.productHash()))
+                .name(purchasedItem.name().trim())
+                .brand(blankToNull(purchasedItem.brand()))
+                .category(category)
+                .imageUrl(blankToNull(purchasedItem.imageUrl()))
+                .productUrl(blankToNull(purchasedItem.productUrl()))
+                .photoPath(existingValue(existing, UserInventoryItem::getPhotoPath))
+                .quantity(quantity)
+                .unit(existingValue(existing, UserInventoryItem::getUnit))
+                .location(existingValue(existing, UserInventoryItem::getLocation))
+                .notes(existingValue(existing, UserInventoryItem::getNotes))
+                .size(existingValue(existing, UserInventoryItem::getSize))
+                .color(existingValue(existing, UserInventoryItem::getColor))
+                .material(existingValue(existing, UserInventoryItem::getMaterial))
+                .attributes(existing == null ? "[]" : existing.getAttributes())
+                .consumable(consumable)
+                .restockEnabled(existing != null && existing.isRestockEnabled())
+                .restockThreshold(existingValue(existing, UserInventoryItem::getRestockThreshold))
+                .purchasedAt(command.purchasedAt())
+                .purchasedOn(existingValue(existing, UserInventoryItem::getPurchasedOn))
+                .provider(reference == null
+                        ? existingValue(existing, UserInventoryItem::getProvider) : reference.provider())
+                .merchantIntegrationId(reference == null
                         ? existingValue(existing, UserInventoryItem::getMerchantIntegrationId)
-                        : reference.merchantIntegrationId(),
-                reference == null
+                        : reference.merchantIntegrationId())
+                .externalMerchantId(reference == null
                         ? existingValue(existing, UserInventoryItem::getExternalMerchantId)
-                        : reference.externalMerchantId(),
-                reference == null
+                        : reference.externalMerchantId())
+                .externalMerchantDomain(reference == null
                         ? existingValue(existing, UserInventoryItem::getExternalMerchantDomain)
-                        : reference.externalMerchantDomain(),
-                reference == null
+                        : reference.externalMerchantDomain())
+                .canonicalProductKey(reference == null
                         ? existingValue(existing, UserInventoryItem::getCanonicalProductKey)
-                        : reference.canonicalProductKey(),
-                reference == null ? existingValue(existing, UserInventoryItem::getOfferKey) : reference.offerKey(),
-                reference == null
-                        ? existingValue(existing, UserInventoryItem::getSourceType)
-                        : reference.sourceType(),
-                reference == null
-                        ? existingValue(existing, UserInventoryItem::getSourceIdentity)
-                        : reference.sourceIdentity(),
-                reference == null
+                        : reference.canonicalProductKey())
+                .offerKey(reference == null
+                        ? existingValue(existing, UserInventoryItem::getOfferKey) : reference.offerKey())
+                .sourceType(reference == null
+                        ? existingValue(existing, UserInventoryItem::getSourceType) : reference.sourceType())
+                .sourceIdentity(reference == null
+                        ? existingValue(existing, UserInventoryItem::getSourceIdentity) : reference.sourceIdentity())
+                .externalProductId(reference == null
                         ? existingValue(existing, UserInventoryItem::getExternalProductId)
-                        : reference.externalProductId(),
-                reference == null
+                        : reference.externalProductId())
+                .externalVariantId(reference == null
                         ? existingValue(existing, UserInventoryItem::getExternalVariantId)
-                        : reference.externalVariantId(),
-                reference == null
+                        : reference.externalVariantId())
+                .selectedOptionsJson(reference == null
                         ? existingValue(existing, UserInventoryItem::getSelectedOptionsJson)
-                        : toJson(reference.selectedOptions()),
-                command.checkoutAttemptId()
-        );
+                        : toJson(reference.selectedOptions()))
+                .sourceCheckoutAttemptId(command.checkoutAttemptId())
+                .build();
     }
 
     private UserInventoryRecommendationSignal signal(InventoryCandidate candidate, List<UserInventoryItem> items) {
@@ -631,15 +578,20 @@ public class UserInventoryService {
                 entity.getImageUrl(),
                 entity.getProductUrl(),
                 entity.getPhotoUrl(),
+                entity.getPhotoPath(),
                 entity.getQuantity(),
                 entity.getUnit(),
                 entity.getLocation(),
                 entity.getNotes(),
+                entity.getSize(),
+                entity.getColor(),
+                entity.getMaterial(),
                 fromJson(entity.getAttributes()),
                 entity.isConsumable(),
                 entity.isRestockEnabled(),
                 entity.getRestockThreshold(),
                 entity.getPurchasedAt(),
+                entity.getPurchasedOn(),
                 commerceReference(entity),
                 entity.getSourceCheckoutAttemptId(),
                 entity.getCreatedAt(),
@@ -679,24 +631,6 @@ public class UserInventoryService {
                 && !entity.getSourceIdentity().isBlank()
                 && entity.getExternalProductId() != null
                 && !entity.getExternalProductId().isBlank();
-    }
-
-    private List<String> mergedAttributes(
-            List<String> commandAttributes,
-            UserInventoryPhotoRecognitionResult recognized
-    ) {
-        LinkedHashSet<String> attributes = new LinkedHashSet<>();
-        safeList(commandAttributes).stream()
-                .filter(attribute -> attribute != null && !attribute.isBlank())
-                .map(String::trim)
-                .forEach(attributes::add);
-        if (recognized != null) {
-            safeList(recognized.attributes()).stream()
-                    .filter(attribute -> attribute != null && !attribute.isBlank())
-                    .map(String::trim)
-                    .forEach(attributes::add);
-        }
-        return List.copyOf(attributes);
     }
 
     private void validateUser(EnsureUserProfileCommand profileCommand, UUID userId, String message) {
@@ -780,18 +714,22 @@ public class UserInventoryService {
         return blankToNull(value);
     }
 
-    private <T> T firstPresent(T first, T second) {
-        return first != null ? first : second;
+    private LocalDate patchOptionalDate(String value, LocalDate currentValue) {
+        if (value == null) {
+            return currentValue;
+        }
+        if (value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new UserException("Inventory purchase date must use YYYY-MM-DD form", exception);
+        }
     }
 
-    @SafeVarargs
-    private <T> T firstPresent(T... values) {
-        for (T value : values) {
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
+    private <T> T firstPresent(T first, T second) {
+        return first != null ? first : second;
     }
 
     private String value(Object value) {
