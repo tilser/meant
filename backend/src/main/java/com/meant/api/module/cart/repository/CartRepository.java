@@ -20,10 +20,25 @@ public interface CartRepository extends JpaRepository<Cart, UUID> {
             where cart.userId = :userId
               and cart.active = true
               and (cart.expiresAt is null or cart.expiresAt > :now)
-            order by cart.updatedAt desc
+            order by cart.updatedAt desc, cart.id asc
             """)
     List<Cart> findActiveForUser(
             @Param("userId") UUID userId,
+            @Param("now") Instant now,
+            Pageable pageable
+    );
+
+    @Query("""
+            select cart from Cart cart
+            where cart.userId = :userId
+              and cart.routingScopeKey = :routingScopeKey
+              and cart.active = true
+              and (cart.expiresAt is null or cart.expiresAt > :now)
+            order by cart.updatedAt desc, cart.id asc
+            """)
+    List<Cart> findActiveForRoutingScope(
+            @Param("userId") UUID userId,
+            @Param("routingScopeKey") String routingScopeKey,
             @Param("now") Instant now,
             Pageable pageable
     );

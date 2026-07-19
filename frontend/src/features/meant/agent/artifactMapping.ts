@@ -629,14 +629,22 @@ function isNewerArtifact(candidate: AgentArtifactProfile, current: AgentArtifact
   )
 }
 
+function compareCartSnapshotPreference(
+  left: AgentArtifactProfile,
+  right: AgentArtifactProfile,
+): number {
+  const timestampComparison = compareArtifactTimestamps(left.createdAt, right.createdAt)
+  if (timestampComparison !== 0) return -timestampComparison
+  if (left.messageId !== right.messageId) return left.messageId < right.messageId ? -1 : 1
+  if (left.ordinal !== right.ordinal) return left.ordinal - right.ordinal
+  return left.artifactId < right.artifactId ? -1 : left.artifactId > right.artifactId ? 1 : 0
+}
+
 function isPreferredCartSnapshot(
   candidate: AgentArtifactProfile,
   current: AgentArtifactProfile,
 ): boolean {
-  const timestampComparison = compareArtifactTimestamps(candidate.createdAt, current.createdAt)
-  if (timestampComparison !== 0) return timestampComparison > 0
-  if (candidate.messageId === current.messageId) return candidate.ordinal < current.ordinal
-  return candidate.ordinal >= current.ordinal
+  return compareCartSnapshotPreference(candidate, current) < 0
 }
 
 function cartPartitionKey(cart: ParsedCartArtifact): string {

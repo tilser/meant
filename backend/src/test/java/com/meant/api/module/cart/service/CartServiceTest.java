@@ -36,6 +36,7 @@ import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.cart.service.query.ListActiveCartsQuery;
 import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
 import com.meant.api.module.user.service.UserCommerceContextService;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
@@ -69,6 +70,7 @@ import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,6 +83,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -282,6 +285,27 @@ class CartServiceTest {
             assertThat(item.quantity()).isEqualTo(2);
         });
         assertThat(cartDispatchService.createCount).isZero();
+    }
+
+    @Test
+    void listActivePaginatesUntilItFindsTheRequestedNumberOfDistinctRoutes() {
+        Instant base = Instant.parse("2026-07-19T10:00:00Z");
+        UUID newestDuplicateId = UUID.fromString("00000000-0000-0000-0000-000000000100");
+        for (int index = 0; index < 20; index++) {
+            UUID cartId = index == 0
+                    ? newestDuplicateId
+                    : UUID.fromString("00000000-0000-0000-0000-%012d".formatted(100 + index));
+            cartRepository.save(activeCart(cartId, "SHOPIFY:merchant-a", base.minusSeconds(index)));
+        }
+        UUID secondRouteId = UUID.fromString("00000000-0000-0000-0000-000000000200");
+        cartRepository.save(activeCart(secondRouteId, "SHOPIFY:merchant-b", base.minusSeconds(20)));
+
+        List<CartResult> active = cartService.listActive(new ListActiveCartsQuery(USER_ID, 2));
+
+        assertThat(active).extracting(CartResult::cartId)
+                .containsExactly(newestDuplicateId, secondRouteId);
+        assertThat(active).extracting(CartResult::routingScopeKey)
+                .containsExactly("SHOPIFY:merchant-a", "SHOPIFY:merchant-b");
     }
 
     @Test
@@ -1242,6 +1266,23 @@ class CartServiceTest {
                 .build();
     }
 
+    private Cart activeCart(UUID cartId, String routingScopeKey, Instant updatedAt) {
+        return Cart.builder()
+                .id(cartId)
+                .userId(USER_ID)
+                .routingScopeKey(routingScopeKey)
+                .endpoint("https://merchant.example/api/mcp")
+                .remoteCartId("remote-" + cartId)
+                .remoteCartIdHash("hash-" + cartId)
+                .rawCartResponse("")
+                .totalQuantity(0)
+                .active(true)
+                .createdAt(updatedAt)
+                .updatedAt(updatedAt)
+                .refreshedAt(updatedAt)
+                .build();
+    }
+
     private String storedCheckoutResponse() {
         return """
                 {
@@ -1828,6 +1869,23 @@ class CartServiceTest {
                         case "findForRemoteIdentityReconciliation" -> carts.values().stream()
                                 .filter(cart -> cart.getRemoteCartIdHash().equals(args[0]))
                                 .findFirst();
+                        case "findActiveForUser" -> {
+                            UUID userId = (UUID) args[0];
+                            Instant now = (Instant) args[1];
+                            Pageable page = (Pageable) args[2];
+                            yield carts.values().stream()
+                                    .filter(cart -> cart.getUserId().equals(userId))
+                                    .filter(Cart::isActive)
+                                    .filter(cart -> cart.getExpiresAt() == null || cart.getExpiresAt().isAfter(now))
+                                    .sorted(Comparator.comparing(
+                                                    Cart::getUpdatedAt,
+                                                    Comparator.nullsLast(Comparator.reverseOrder())
+                                            )
+                                            .thenComparing(Cart::getId))
+                                    .skip(page.getOffset())
+                                    .limit(page.getPageSize())
+                                    .toList();
+                        }
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
             );

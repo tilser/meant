@@ -572,6 +572,53 @@ describe('agent artifact mapping', () => {
     ])
   })
 
+  test('selects the lower canonical message id for equal-timestamp cart snapshots regardless of input order', () => {
+    const selectedCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:message-tie-selected',
+      messageId: '00000000-0000-0000-0000-000000000011',
+      cartId: 'message-tie-selected',
+      payloadJson: JSON.stringify({
+        cartId: 'message-tie-selected',
+        routingScopeKey: 'shopify:external:message-tie-merchant',
+      }),
+    })
+    const staleCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:message-tie-stale',
+      messageId: '00000000-0000-0000-0000-000000000012',
+      cartId: 'message-tie-stale',
+      payloadJson: JSON.stringify({
+        cartId: 'message-tie-stale',
+        routingScopeKey: 'shopify:external:message-tie-merchant',
+      }),
+    })
+    const staleLine = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:message-tie-stale',
+      messageId: staleCart.messageId,
+      cartId: staleCart.cartId,
+      cartLineId: 'message-tie-stale-line',
+      offerKey: 'offer-message-tie-stale',
+      ordinal: 2,
+      payloadJson: JSON.stringify({
+        cartLineId: 'message-tie-stale-line',
+        productTitle: 'Stale product',
+        quantity: 1,
+        offerKey: 'offer-message-tie-stale',
+      }),
+    })
+
+    for (const input of [
+      [selectedCart, staleCart, staleLine],
+      [staleLine, staleCart, selectedCart],
+    ]) {
+      expect(latestCartSnapshotArtifacts(input).map((item) => item.artifactId)).toEqual([
+        selectedCart.artifactId,
+      ])
+    }
+  })
+
   test('selects the nanosecond-later cart snapshot when instant precision differs', () => {
     const exactSecondCart = artifact({
       type: 'CART',

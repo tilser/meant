@@ -207,7 +207,7 @@ public class AgentContextAssembler {
                 - Resolve ordinals against the newest compatible numbered product set.
                 - Resolve it or that only from the authoritative current cart or focused item when the target is unique.
                 - Reuse an existing compatible cart with add_cart_line instead of prepare_carts.
-                - For an explicit again or back request, use the most recently removed offer reference.
+                - For explicit re-add intent such as "add it again", "put it back", or "re-add", use the most recently removed offer reference.
                 - If any contextual target is ambiguous, ask one clarification instead of guessing.
                 - Write user-facing replies as concise plain text without Markdown formatting.
                 - Explain outcomes concisely without exposing hidden reasoning.
@@ -312,15 +312,25 @@ public class AgentContextAssembler {
     }
 
     private int compareNewestCartSnapshots(CartSnapshot left, CartSnapshot right) {
-        int createdAt = Comparator.nullsLast(Comparator.<java.time.Instant>naturalOrder().reversed())
-                .compare(left.artifact().getCreatedAt(), right.artifact().getCreatedAt());
-        if (createdAt != 0) {
-            return createdAt;
-        }
-        if (Objects.equals(left.artifact().getMessageId(), right.artifact().getMessageId())) {
-            return Integer.compare(left.artifact().getOrdinal(), right.artifact().getOrdinal());
-        }
-        return 0;
+        return Comparator
+                .comparing(
+                        (CartSnapshot snapshot) -> snapshot.artifact().getCreatedAt(),
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                )
+                .thenComparing(
+                        snapshot -> identifier(snapshot.artifact().getMessageId()),
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                )
+                .thenComparingInt(snapshot -> snapshot.artifact().getOrdinal())
+                .thenComparing(
+                        snapshot -> identifier(snapshot.artifact().getId()),
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                )
+                .compare(left, right);
+    }
+
+    private String identifier(UUID value) {
+        return value == null ? null : value.toString();
     }
 
     private String routingScopeKey(AgentArtifactReference artifact, JsonNode payload) {

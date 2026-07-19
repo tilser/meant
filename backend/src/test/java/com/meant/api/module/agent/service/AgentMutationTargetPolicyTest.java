@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
@@ -406,6 +408,46 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void ordinalCartAdditionLoadsTheRecentArtifactWindowOnlyOnce() {
+        UUID productMessageId = UUID.randomUUID();
+        UUID cartMessageId = UUID.randomUUID();
+        UUID cartId = UUID.randomUUID();
+        Instant productAt = Instant.parse("2026-07-19T09:59:00Z");
+        Instant cartAt = Instant.parse("2026-07-19T10:00:00Z");
+        AgentArtifactReference secondOffer = offer(
+                productMessageId, 2, "product-jacket-2", "offer-jacket-2");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(cartMessageId, cartId, cartAt, List.of()),
+                        withCreatedAt(productWithLabel(
+                                productMessageId,
+                                1,
+                                "product-jacket-1",
+                                "offer-jacket-1",
+                                "Canvas field jacket"
+                        ), productAt),
+                        withCreatedAt(productWithLabel(
+                                productMessageId,
+                                2,
+                                "product-jacket-2",
+                                "offer-jacket-2",
+                                "Black cotton jacket"
+                        ), productAt),
+                        withCreatedAt(secondOffer, productAt)
+                ));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-jacket-2")).thenReturn(Optional.of(secondOffer));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Put the second jacket into the cart."),
+                "add_cart_line",
+                addLineArguments(cartId, "offer-jacket-2")
+        )).isTrue();
+        verify(artifacts, times(1))
+                .findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any());
+    }
+
+    @Test
     void addItAgainBindsOnlyTheUniquelyMostRecentlyRemovedOfferAndItsCurrentCart() {
         UUID productMessageId = UUID.randomUUID();
         UUID firstPopulatedMessageId = UUID.randomUUID();
@@ -468,6 +510,11 @@ class AgentMutationTargetPolicyTest {
                 addLineArguments(cartId, "offer-jacket-2")
         )).isTrue();
         assertThat(policy.matchesMutationTarget(
+                context("Again, please."),
+                "add_cart_line",
+                addLineArguments(cartId, "offer-jacket-2")
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
                 context("Add it again."),
                 "add_cart_line",
                 addLineArguments(cartId, "offer-jacket-1")
@@ -493,9 +540,169 @@ class AgentMutationTargetPolicyTest {
                 "{\"offers\":[{\"offerKey\":\"offer-jacket-2\"}]}"
         )).isFalse();
         assertThat(policy.matchesMutationTarget(
+                context("Again, please."),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-jacket-2\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
                 context("Add the second jacket back."),
                 "prepare_carts",
                 "{\"offers\":[{\"offerKey\":\"offer-jacket-2\"}]}"
+        )).isFalse();
+    }
+
+    @Test
+    void readdSkipsStaleAndAlreadyRestoredRemovalsBeforeAnOlderEligibleRemoval() {
+        Instant base = Instant.parse("2026-07-19T10:00:00Z");
+        UUID staleCartId = UUID.randomUUID();
+        UUID replacementCartId = UUID.randomUUID();
+        UUID restoredCartId = UUID.randomUUID();
+        UUID eligibleCartId = UUID.randomUUID();
+        CartSnapshotLine staleRemoval = new CartSnapshotLine(
+                UUID.randomUUID(), "product-stale", "offer-stale", "Stale jacket");
+        CartSnapshotLine restoredRemoval = new CartSnapshotLine(
+                UUID.randomUUID(), "product-restored", "offer-restored", "Restored jacket");
+        CartSnapshotLine eligibleRemoval = new CartSnapshotLine(
+                UUID.randomUUID(), "product-eligible", "offer-eligible", "Eligible jacket");
+
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(
+                                UUID.randomUUID(), replacementCartId, base.plusSeconds(9), List.of(),
+                                "SHOPIFY:replaced-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), staleCartId, base.plusSeconds(8), List.of(),
+                                "SHOPIFY:replaced-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), staleCartId, base.plusSeconds(7), List.of(staleRemoval),
+                                "SHOPIFY:replaced-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), restoredCartId, base.plusSeconds(6), List.of(restoredRemoval),
+                                "SHOPIFY:restored-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), restoredCartId, base.plusSeconds(5), List.of(),
+                                "SHOPIFY:restored-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), restoredCartId, base.plusSeconds(4), List.of(restoredRemoval),
+                                "SHOPIFY:restored-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), eligibleCartId, base.plusSeconds(3), List.of(),
+                                "SHOPIFY:eligible-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), eligibleCartId, base.plusSeconds(2), List.of(eligibleRemoval),
+                                "SHOPIFY:eligible-route")
+                ));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Add it again."),
+                "add_cart_line",
+                addLineArguments(eligibleCartId, "offer-eligible")
+        )).isTrue();
+    }
+
+    @Test
+    void cartLineOrdinalFailsClosedWhenSeveralCurrentCartsContainLines() {
+        Instant createdAt = Instant.parse("2026-07-19T10:00:00Z");
+        UUID firstCartId = UUID.randomUUID();
+        UUID secondCartId = UUID.randomUUID();
+        CartSnapshotLine firstLine = new CartSnapshotLine(
+                UUID.randomUUID(), "product-1", "offer-1", "Canvas field jacket");
+        CartSnapshotLine secondLine = new CartSnapshotLine(
+                UUID.randomUUID(), "product-2", "offer-2", "Black cotton jacket");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        cartSnapshot(
+                                UUID.randomUUID(), firstCartId, createdAt.plusSeconds(1), List.of(firstLine),
+                                "SHOPIFY:first-route"),
+                        cartSnapshot(
+                                UUID.randomUUID(), secondCartId, createdAt, List.of(secondLine),
+                                "SHOPIFY:second-route")
+                ));
+
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the first line."),
+                "remove_cart_line",
+                removeLineArguments(firstCartId, firstLine.cartLineId())
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context("Remove the second line."),
+                "remove_cart_line",
+                removeLineArguments(secondCartId, secondLine.cartLineId())
+        )).isFalse();
+    }
+
+    @Test
+    void equalTimestampCartSnapshotsUseCanonicalMessageIdRegardlessOfInputOrder() {
+        Instant createdAt = Instant.parse("2026-07-19T10:00:00Z");
+        UUID preferredMessageId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID otherMessageId = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        UUID preferredCartId = UUID.randomUUID();
+        UUID otherCartId = UUID.randomUUID();
+        CartSnapshotLine preferredLine = new CartSnapshotLine(
+                UUID.randomUUID(), "product-preferred", "offer-preferred", "Preferred jacket");
+        CartSnapshotLine otherLine = new CartSnapshotLine(
+                UUID.randomUUID(), "product-other", "offer-other", "Other jacket");
+        AgentArtifactReference preferred = cartSnapshot(
+                preferredMessageId, preferredCartId, createdAt, List.of(preferredLine));
+        AgentArtifactReference other = cartSnapshot(
+                otherMessageId, otherCartId, createdAt, List.of(otherLine));
+
+        for (List<AgentArtifactReference> input : List.of(List.of(preferred, other), List.of(other, preferred))) {
+            when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                    .thenReturn(input);
+
+            assertThat(policy.matchesMutationTarget(
+                    context("Remove it from the cart."),
+                    "remove_cart_line",
+                    removeLineArguments(preferredCartId, preferredLine.cartLineId())
+            )).isTrue();
+            assertThat(policy.matchesMutationTarget(
+                    context("Remove it from the cart."),
+                    "remove_cart_line",
+                    removeLineArguments(otherCartId, otherLine.cartLineId())
+            )).isFalse();
+        }
+    }
+
+    @Test
+    void backInAnOrdinalPhraseDoesNotMasqueradeAsAReaddWithoutRemovalHistory() {
+        UUID productMessageId = UUID.randomUUID();
+        AgentArtifactReference firstOffer = offer(
+                productMessageId, 1, "product-jacket-1", "offer-jacket-1");
+        AgentArtifactReference secondOffer = offer(
+                productMessageId, 2, "product-jacket-2", "offer-jacket-2");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(
+                        productWithLabel(
+                                productMessageId,
+                                1,
+                                "product-jacket-1",
+                                "offer-jacket-1",
+                                "Canvas field jacket"),
+                        productWithLabel(
+                                productMessageId,
+                                2,
+                                "product-jacket-2",
+                                "offer-jacket-2",
+                                "Black cotton jacket"),
+                        firstOffer,
+                        secondOffer
+                ));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-jacket-1")).thenReturn(Optional.of(firstOffer));
+        when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-jacket-2")).thenReturn(Optional.of(secondOffer));
+
+        String turn = "Go back to the second jacket and put it in the cart.";
+        assertThat(policy.matchesMutationTarget(
+                context(turn),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-jacket-2\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context(turn),
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-jacket-1\"}]}"
         )).isFalse();
     }
 
@@ -720,6 +927,16 @@ class AgentMutationTargetPolicyTest {
             Instant createdAt,
             List<CartSnapshotLine> lines
     ) {
+        return cartSnapshot(messageId, cartId, createdAt, lines, "SHOPIFY:merchant-jackets");
+    }
+
+    private AgentArtifactReference cartSnapshot(
+            UUID messageId,
+            UUID cartId,
+            Instant createdAt,
+            List<CartSnapshotLine> lines,
+            String routingScopeKey
+    ) {
         int totalQuantity = lines.size();
         String amount = lines.isEmpty() ? "0.00" : totalQuantity == 1 ? "89.95" : "179.90";
         String linePayloads = String.join(",", lines.stream().map(this::cartLineJson).toList());
@@ -733,10 +950,10 @@ class AgentMutationTargetPolicyTest {
                 .cartId(cartId)
                 .payloadJson("""
                         {"cartId":"%s","merchantDomain":"jackets.example","provider":"SHOPIFY",\
-                        "merchantId":"merchant-jackets","routingScopeKey":"SHOPIFY:merchant-jackets",\
+                        "merchantId":"merchant-jackets","routingScopeKey":"%s",\
                         "totalQuantity":%d,"totalAmount":"%s","subtotalAmount":"%s","currency":"USD",\
                         "lines":[%s],"appliedCodes":[],"deliveryGroups":[],"messages":[]}
-                        """.formatted(cartId, totalQuantity, amount, amount, linePayloads))
+                        """.formatted(cartId, routingScopeKey, totalQuantity, amount, amount, linePayloads))
                 .createdAt(createdAt)
                 .build();
     }

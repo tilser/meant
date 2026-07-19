@@ -145,6 +145,53 @@ class AgentContextAssemblerTest {
     }
 
     @Test
+    void lowerCanonicalMessageIdWinsForEqualTimestampCartSnapshotsRegardlessOfInputOrder() {
+        UUID selectedCartId = UUID.fromString("00000000-0000-0000-0000-000000000311");
+        UUID staleCartId = UUID.fromString("00000000-0000-0000-0000-000000000312");
+        UUID staleLineId = UUID.fromString("00000000-0000-0000-0000-000000000313");
+        CartLine staleLine = new CartLine(staleLineId, "offer-stale", "Stale jacket");
+        AgentArtifactReference selectedCart = cart(
+                CART_MESSAGE_ID,
+                1,
+                selectedCartId,
+                BASE.plusSeconds(3),
+                List.of()
+        );
+        AgentArtifactReference staleCart = cart(
+                OLD_CART_MESSAGE_ID,
+                1,
+                staleCartId,
+                BASE.plusSeconds(3),
+                List.of(staleLine)
+        );
+        AgentArtifactReference staleCartLine = cartLine(
+                OLD_CART_MESSAGE_ID,
+                2,
+                staleCartId,
+                BASE.plusSeconds(3),
+                staleLine
+        );
+        givenRunAndMessages();
+
+        for (List<AgentArtifactReference> input : List.of(
+                List.of(selectedCart, staleCart, staleCartLine),
+                List.of(staleCartLine, staleCart, selectedCart)
+        )) {
+            when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(any(), any()))
+                    .thenReturn(input);
+
+            String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
+
+            assertThat(grounding)
+                    .contains("cartId=" + selectedCartId + " routingScopeKey=" + ROUTING_SCOPE)
+                    .contains("lines=none")
+                    .doesNotContain("cartId=" + staleCartId)
+                    .doesNotContain("cartLineId=" + staleLineId)
+                    .doesNotContain("priorCartLineId=" + staleLineId);
+        }
+    }
+
+    @Test
     void fallbackIdentityUsesMerchantBeforeExternalIdentityWhenRoutingScopeIsMissing() {
         UUID currentCartId = UUID.fromString("00000000-0000-0000-0000-000000000401");
         UUID staleCartId = UUID.fromString("00000000-0000-0000-0000-000000000402");

@@ -60,18 +60,34 @@ public class CartPersistenceService {
     }
 
     @Transactional(readOnly = true)
-    public List<Cart> findActiveCarts(UUID userId, int limit) {
+    public List<Cart> findActiveCarts(UUID userId, int page, int pageSize) {
         Instant now = Instant.now();
         List<Cart> carts = cartRepository.findActiveForUser(
                 userId,
                 now,
-                PageRequest.of(0, limit)
+                PageRequest.of(page, pageSize)
         );
         carts.forEach(cart -> {
             Hibernate.initialize(cart.getLines());
             Hibernate.initialize(cart.getAppliedCodes());
         });
         return List.copyOf(carts);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Cart> findActiveCartByRoutingScope(UUID userId, String routingScopeKey) {
+        return cartRepository.findActiveForRoutingScope(
+                        userId,
+                        routingScopeKey,
+                        Instant.now(),
+                        PageRequest.of(0, 1)
+                ).stream()
+                .findFirst()
+                .map(cart -> {
+                    Hibernate.initialize(cart.getLines());
+                    Hibernate.initialize(cart.getAppliedCodes());
+                    return cart;
+                });
     }
 
     @Transactional

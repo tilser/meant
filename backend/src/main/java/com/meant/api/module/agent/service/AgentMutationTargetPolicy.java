@@ -44,7 +44,7 @@ public class AgentMutationTargetPolicy {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern READD_REFERENCE = Pattern.compile(
-            "\\b(?:again|back|re-?add)\\b",
+            "\\bre-?add\\b",
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
@@ -82,7 +82,12 @@ public class AgentMutationTargetPolicy {
         if (ordinals.isEmpty()) {
             return true;
         }
-        return matchesOrdinals(context, toolName, canonicalArgumentsJson, ordinals);
+        try {
+            List<AgentArtifactReference> evidence = recent(context.conversationId());
+            return matchesOrdinals(context, toolName, canonicalArgumentsJson, ordinals, evidence);
+        } catch (RuntimeException exception) {
+            return false;
+        }
     }
 
     /**
@@ -97,11 +102,16 @@ public class AgentMutationTargetPolicy {
         if (context == null || context.runId() == null) {
             return true;
         }
-        List<Integer> ordinals = ordinals(context.triggeringUserText());
-        if (!ordinals.isEmpty()) {
-            return matchesOrdinals(context, toolName, canonicalArgumentsJson, ordinals);
+        try {
+            List<Integer> ordinals = ordinals(context.triggeringUserText());
+            List<AgentArtifactReference> evidence = recent(context.conversationId());
+            if (!ordinals.isEmpty()) {
+                return matchesOrdinals(context, toolName, canonicalArgumentsJson, ordinals, evidence);
+            }
+            return matchesLiteralReference(context, toolName, canonicalArgumentsJson, evidence);
+        } catch (RuntimeException exception) {
+            return false;
         }
-        return matchesLiteralReference(context, toolName, canonicalArgumentsJson);
     }
 
     /** Limits broad READY-mission delegation to the selections and carts persisted on that owned mission. */
@@ -140,46 +150,48 @@ public class AgentMutationTargetPolicy {
             AgentToolExecutionContext context,
             String toolName,
             String canonicalArgumentsJson,
-            List<Integer> ordinals
+            List<Integer> ordinals,
+            List<AgentArtifactReference> evidence
     ) {
         try {
             JsonNode arguments = objectMapper.readTree(canonicalArgumentsJson);
             return switch (toolName) {
                 case "pin_product", "unpin_product", "watch_product", "unwatch_product" ->
-                        single(ordinals) && expectedProduct(context, ordinals.getFirst())
+                        single(ordinals) && expectedProduct(context, evidence, ordinals.getFirst())
                                 .map(expected -> expected.getCanonicalProductKey()
                                         .equals(text(arguments, "canonicalProductKey")))
                                 .orElse(false);
-                case "prepare_carts" -> !READD_REFERENCE.matcher(
-                                Optional.ofNullable(context.triggeringUserText()).orElse("")).find()
-                        && matchesPreparedOffers(context, ordinals, arguments);
-                case "add_cart_line" -> single(ordinals) && expectedProduct(context, ordinals.getFirst())
+                case "prepare_carts" -> !mustUseCurrentCartForReadd(context, evidence)
+                        && matchesPreparedOffers(context, ordinals, arguments, evidence);
+                case "add_cart_line" -> single(ordinals)
+                        && expectedProduct(context, evidence, ordinals.getFirst())
                         .map(expected -> offerBelongsToProduct(
                                 context.conversationId(),
                                 text(arguments, "offerKey"),
                                 expected.getCanonicalProductKey()
                         ))
                         .orElse(false)
-                        && currentCart(context, text(arguments, "cartId")).isPresent();
+                        && currentCart(evidence, text(arguments, "cartId")).isPresent();
                 case "update_cart_line", "remove_cart_line" -> single(ordinals)
-                        && expectedCartLine(context, ordinals.getFirst())
+                        && expectedCartLine(evidence, ordinals.getFirst())
                         .map(expected -> expected.cartLineId().toString().equals(text(arguments, "cartLineId"))
                                 && expected.cartId().toString().equals(text(arguments, "cartId")))
                         .orElse(false);
-                case "prepare_checkout" -> matchesCartIds(context, ordinals, arguments);
+                case "prepare_checkout" -> matchesCartIds(context, ordinals, arguments, evidence);
                 case "update_checkout" -> single(ordinals)
-                        && expectedCheckout(context, ordinals.getFirst())
+                        && expectedCheckout(context, evidence, ordinals.getFirst())
                         .map(expected -> expected.getCartId().toString().equals(text(arguments, "cartId")))
                         .orElse(false);
-                case "compare_products" -> matchesProductKeys(context, ordinals, arguments, "canonicalProductKeys");
+                case "compare_products" ->
+                        matchesProductKeys(context, ordinals, arguments, "canonicalProductKeys", evidence);
                 case "pick_recommended_product" ->
-                        matchesProductKeys(context, ordinals, arguments, "canonicalProductKeys");
+                        matchesProductKeys(context, ordinals, arguments, "canonicalProductKeys", evidence);
                 case "get_product", "get_product_reviews", "find_discount_codes" ->
-                        single(ordinals) && expectedProduct(context, ordinals.getFirst())
+                        single(ordinals) && expectedProduct(context, evidence, ordinals.getFirst())
                                 .map(expected -> expected.getCanonicalProductKey()
                                         .equals(text(arguments, "canonicalProductKey")))
                                 .orElse(false);
-                case "find_similar_products" -> matchesSimilarAnchor(context, ordinals, arguments);
+                case "find_similar_products" -> matchesSimilarAnchor(context, ordinals, arguments, evidence);
                 default -> true;
             };
         } catch (RuntimeException exception) {
@@ -190,7 +202,8 @@ public class AgentMutationTargetPolicy {
     private boolean matchesLiteralReference(
             AgentToolExecutionContext context,
             String toolName,
-            String canonicalArgumentsJson
+            String canonicalArgumentsJson,
+            List<AgentArtifactReference> evidence
     ) {
         try {
             JsonNode arguments = objectMapper.readTree(canonicalArgumentsJson);
@@ -198,16 +211,16 @@ public class AgentMutationTargetPolicy {
             return switch (toolName) {
                 case "pin_product", "unpin_product", "watch_product", "unwatch_product" ->
                         literalReference(turn, text(arguments, "canonicalProductKey"))
-                                || matchesNamedProduct(context, text(arguments, "canonicalProductKey"));
-                case "prepare_carts" -> !READD_REFERENCE.matcher(turn).find()
+                                || matchesNamedProduct(context, text(arguments, "canonicalProductKey"), evidence);
+                case "prepare_carts" -> !mustUseCurrentCartForReadd(context, evidence)
                         && (allLiteral(turn, arrayField(arguments, "offers", "offerKey"))
-                        || matchesNamedPreparedOffer(context, arguments)
-                        || matchesContextualPreparedOffer(context, arguments));
-                case "add_cart_line" -> matchesContextualCartAddition(context, arguments);
+                        || matchesNamedPreparedOffer(context, arguments, evidence)
+                        || matchesContextualPreparedOffer(context, arguments, evidence));
+                case "add_cart_line" -> matchesContextualCartAddition(context, arguments, evidence);
                 case "update_cart_line", "remove_cart_line" ->
-                        matchesContextualCartLine(context, arguments);
-                case "prepare_checkout" -> matchesLatestCartSet(context, arguments);
-                case "update_checkout" -> matchesSingleLatestCheckout(context, arguments);
+                        matchesContextualCartLine(context, arguments, evidence);
+                case "prepare_checkout" -> matchesLatestCartSet(arguments, evidence);
+                case "update_checkout" -> matchesSingleLatestCheckout(arguments, evidence);
                 default -> true;
             };
         } catch (RuntimeException exception) {
@@ -215,13 +228,21 @@ public class AgentMutationTargetPolicy {
         }
     }
 
-    private boolean matchesNamedProduct(AgentToolExecutionContext context, String canonicalProductKey) {
-        return uniquelyMentionedProduct(context)
+    private boolean matchesNamedProduct(
+            AgentToolExecutionContext context,
+            String canonicalProductKey,
+            List<AgentArtifactReference> evidence
+    ) {
+        return uniquelyMentionedProduct(context, evidence)
                 .map(reference -> reference.getCanonicalProductKey().equals(canonicalProductKey))
                 .orElse(false);
     }
 
-    private boolean matchesNamedPreparedOffer(AgentToolExecutionContext context, JsonNode arguments) {
+    private boolean matchesNamedPreparedOffer(
+            AgentToolExecutionContext context,
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
+    ) {
         JsonNode offers = arguments == null ? null : arguments.get("offers");
         if (offers == null || !offers.isArray() || offers.size() != 1) {
             return false;
@@ -230,13 +251,17 @@ public class AgentMutationTargetPolicy {
         if (offerKey == null || offerKey.isBlank()) {
             return false;
         }
-        return uniquelyMentionedProduct(context)
+        return uniquelyMentionedProduct(context, evidence)
                 .map(reference -> offerBelongsToProduct(
                         context.conversationId(), offerKey, reference.getCanonicalProductKey()))
                 .orElse(false);
     }
 
-    private boolean matchesContextualPreparedOffer(AgentToolExecutionContext context, JsonNode arguments) {
+    private boolean matchesContextualPreparedOffer(
+            AgentToolExecutionContext context,
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
+    ) {
         JsonNode offers = arguments == null ? null : arguments.get("offers");
         String turn = Optional.ofNullable(context.triggeringUserText()).orElse("");
         if (offers == null || !offers.isArray() || offers.size() != 1
@@ -244,21 +269,25 @@ public class AgentMutationTargetPolicy {
             return false;
         }
         String offerKey = text(offers.get(0), "offerKey");
-        return soleLatestProduct(context)
+        return soleLatestProduct(evidence)
                 .map(reference -> offerBelongsToProduct(
                         context.conversationId(), offerKey, reference.getCanonicalProductKey()))
                 .orElse(false);
     }
 
-    private boolean matchesContextualCartAddition(AgentToolExecutionContext context, JsonNode arguments) {
+    private boolean matchesContextualCartAddition(
+            AgentToolExecutionContext context,
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
+    ) {
         String cartId = text(arguments, "cartId");
         String offerKey = text(arguments, "offerKey");
-        if (currentCart(context, cartId).isEmpty() || offerKey == null || offerKey.isBlank()) {
+        if (currentCart(evidence, cartId).isEmpty() || offerKey == null || offerKey.isBlank()) {
             return false;
         }
         String turn = Optional.ofNullable(context.triggeringUserText()).orElse("");
-        if (READD_REFERENCE.matcher(turn).find()) {
-            return mostRecentlyRemovedLine(context)
+        if (isReaddReference(turn)) {
+            return mostRecentlyRemovedLine(evidence)
                     .filter(removed -> removed.cartId().toString().equals(cartId))
                     .map(RemovedCartLine::line)
                     .map(CartLineReference::offerKey)
@@ -269,14 +298,14 @@ public class AgentMutationTargetPolicy {
         if (literalReference(turn, offerKey)) {
             return true;
         }
-        if (uniquelyMentionedProduct(context)
+        if (uniquelyMentionedProduct(context, evidence)
                 .map(reference -> offerBelongsToProduct(
                         context.conversationId(), offerKey, reference.getCanonicalProductKey()))
                 .orElse(false)) {
             return true;
         }
         if (CONTEXTUAL_REFERENCE.matcher(turn).find()
-                && soleLatestProduct(context)
+                && soleLatestProduct(evidence)
                 .map(reference -> offerBelongsToProduct(
                         context.conversationId(), offerKey, reference.getCanonicalProductKey()))
                 .orElse(false)) {
@@ -285,10 +314,14 @@ public class AgentMutationTargetPolicy {
         return false;
     }
 
-    private boolean matchesContextualCartLine(AgentToolExecutionContext context, JsonNode arguments) {
+    private boolean matchesContextualCartLine(
+            AgentToolExecutionContext context,
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
+    ) {
         String cartId = text(arguments, "cartId");
         String cartLineId = text(arguments, "cartLineId");
-        List<CartLineReference> currentLines = currentCartLines(context);
+        List<CartLineReference> currentLines = currentCartLines(evidence);
         Optional<CartLineReference> proposed = currentLines.stream()
                 .filter(line -> line.cartId().toString().equals(cartId))
                 .filter(line -> line.cartLineId().toString().equals(cartLineId))
@@ -311,12 +344,15 @@ public class AgentMutationTargetPolicy {
     }
 
     /** Resolves descriptive follow-ups to one exact label match in the newest compatible result set. */
-    private Optional<AgentArtifactReference> uniquelyMentionedProduct(AgentToolExecutionContext context) {
+    private Optional<AgentArtifactReference> uniquelyMentionedProduct(
+            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence
+    ) {
         Set<String> turnTokens = descriptiveTokens(context.triggeringUserText());
         if (turnTokens.isEmpty()) {
             return Optional.empty();
         }
-        for (List<AgentArtifactReference> productSet : productSets(recent(context.conversationId()))) {
+        for (List<AgentArtifactReference> productSet : productSets(evidence)) {
             List<AgentArtifactReference> matches = productSet.stream()
                     .filter(reference -> descriptiveTokens(reference.getLabel()).containsAll(turnTokens))
                     .toList();
@@ -368,7 +404,8 @@ public class AgentMutationTargetPolicy {
     private boolean matchesPreparedOffers(
             AgentToolExecutionContext context,
             List<Integer> ordinals,
-            JsonNode arguments
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
     ) {
         JsonNode offers = arguments.get("offers");
         if (offers == null || !offers.isArray() || offers.size() != ordinals.size()) {
@@ -376,7 +413,7 @@ public class AgentMutationTargetPolicy {
         }
         for (int index = 0; index < ordinals.size(); index++) {
             String offerKey = text(offers.get(index), "offerKey");
-            boolean matches = expectedProduct(context, ordinals.get(index))
+            boolean matches = expectedProduct(context, evidence, ordinals.get(index))
                     .map(expected -> offerBelongsToProduct(
                             context.conversationId(), offerKey, expected.getCanonicalProductKey()))
                     .orElse(false);
@@ -390,7 +427,8 @@ public class AgentMutationTargetPolicy {
     private boolean matchesCartIds(
             AgentToolExecutionContext context,
             List<Integer> ordinals,
-            JsonNode arguments
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
     ) {
         JsonNode cartIds = arguments.get("cartIds");
         if (cartIds == null || !cartIds.isArray() || cartIds.size() != ordinals.size()) {
@@ -398,7 +436,7 @@ public class AgentMutationTargetPolicy {
         }
         for (int index = 0; index < ordinals.size(); index++) {
             String cartId = cartIds.get(index).isTextual() ? cartIds.get(index).asText() : null;
-            boolean matches = expectedArtifact(context, ordinals.get(index), AgentArtifactType.CART)
+            boolean matches = expectedArtifact(context, evidence, ordinals.get(index), AgentArtifactType.CART)
                     .map(reference -> reference.getCartId() != null
                             && reference.getCartId().toString().equals(cartId))
                     .orElse(false);
@@ -413,7 +451,8 @@ public class AgentMutationTargetPolicy {
             AgentToolExecutionContext context,
             List<Integer> ordinals,
             JsonNode arguments,
-            String field
+            String field,
+            List<AgentArtifactReference> evidence
     ) {
         JsonNode values = arguments.get(field);
         if (values == null || !values.isArray() || values.size() != ordinals.size()) {
@@ -421,7 +460,7 @@ public class AgentMutationTargetPolicy {
         }
         for (int index = 0; index < ordinals.size(); index++) {
             String actual = values.get(index).isTextual() ? values.get(index).asText() : null;
-            boolean matches = expectedProduct(context, ordinals.get(index))
+            boolean matches = expectedProduct(context, evidence, ordinals.get(index))
                     .map(reference -> reference.getCanonicalProductKey().equals(actual))
                     .orElse(false);
             if (!matches) {
@@ -434,29 +473,33 @@ public class AgentMutationTargetPolicy {
     private boolean matchesSimilarAnchor(
             AgentToolExecutionContext context,
             List<Integer> ordinals,
-            JsonNode arguments
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
     ) {
         if (!single(ordinals)) {
             return false;
         }
         String productKey = text(arguments, "canonicalProductKey");
         if (productKey != null) {
-            return expectedProduct(context, ordinals.getFirst())
+            return expectedProduct(context, evidence, ordinals.getFirst())
                     .map(reference -> reference.getCanonicalProductKey().equals(productKey))
                     .orElse(false);
         }
         String inventoryItemId = text(arguments, "inventoryItemId");
-        return expectedInventoryItem(context, ordinals.getFirst())
+        return expectedInventoryItem(evidence, ordinals.getFirst())
                 .map(reference -> reference.getInventoryItemId().toString().equals(inventoryItemId))
                 .orElse(false);
     }
 
-    private Optional<AgentArtifactReference> expectedProduct(AgentToolExecutionContext context, int ordinal) {
-        List<AgentArtifactReference> recent = recent(context.conversationId());
+    private Optional<AgentArtifactReference> expectedProduct(
+            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence,
+            int ordinal
+    ) {
         Set<String> turnTokens = descriptiveTokens(context.triggeringUserText());
         AgentArtifactReference selected = null;
         int selectedScore = 0;
-        for (List<AgentArtifactReference> productSet : productSets(recent)) {
+        for (List<AgentArtifactReference> productSet : productSets(evidence)) {
             Optional<AgentArtifactReference> candidate = productSet.stream()
                     .filter(reference -> reference.getOrdinal() == ordinal)
                     .findFirst();
@@ -475,59 +518,69 @@ public class AgentMutationTargetPolicy {
         return Optional.ofNullable(selected);
     }
 
-    private Optional<CartLineReference> expectedCartLine(AgentToolExecutionContext context, int ordinal) {
-        List<CartLineReference> lines = currentCartLines(context);
+    private Optional<CartLineReference> expectedCartLine(List<AgentArtifactReference> evidence, int ordinal) {
+        List<CartSnapshot> cartsWithLines = currentCartSnapshots(evidence).stream()
+                .filter(snapshot -> !snapshot.lines().isEmpty())
+                .toList();
+        if (cartsWithLines.size() != 1) {
+            return Optional.empty();
+        }
+        List<CartLineReference> lines = cartsWithLines.getFirst().lines();
         return ordinal <= lines.size() ? Optional.of(lines.get(ordinal - 1)) : Optional.empty();
     }
 
-    private Optional<AgentArtifactReference> expectedCheckout(AgentToolExecutionContext context, int ordinal) {
-        return expectedArtifact(context, ordinal, AgentArtifactType.CHECKOUT);
+    private Optional<AgentArtifactReference> expectedCheckout(
+            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence,
+            int ordinal
+    ) {
+        return expectedArtifact(context, evidence, ordinal, AgentArtifactType.CHECKOUT);
     }
 
     private Optional<AgentArtifactReference> expectedArtifact(
             AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence,
             int ordinal,
             AgentArtifactType type
     ) {
         if (type == AgentArtifactType.CART) {
-            List<AgentArtifactReference> carts = currentCartSnapshots(recent(context.conversationId())).stream()
+            List<AgentArtifactReference> carts = currentCartSnapshots(evidence).stream()
                     .map(CartSnapshot::artifact)
                     .toList();
             return ordinal <= carts.size() ? Optional.of(carts.get(ordinal - 1)) : Optional.empty();
         }
-        List<AgentArtifactReference> compatible = latestArtifactSet(context, type);
+        List<AgentArtifactReference> compatible = latestArtifactSet(evidence, type);
         return ordinal <= compatible.size() ? Optional.of(compatible.get(ordinal - 1)) : Optional.empty();
     }
 
-    private boolean matchesLatestCartSet(AgentToolExecutionContext context, JsonNode arguments) {
+    private boolean matchesLatestCartSet(JsonNode arguments, List<AgentArtifactReference> evidence) {
         Set<String> requested = arrayValues(arguments, "cartIds");
-        Set<String> latest = currentCartSnapshots(recent(context.conversationId())).stream()
+        Set<String> latest = currentCartSnapshots(evidence).stream()
                 .map(CartSnapshot::cartId)
                 .map(UUID::toString)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         return !requested.isEmpty() && requested.equals(latest);
     }
 
-    private boolean matchesSingleLatestCheckout(AgentToolExecutionContext context, JsonNode arguments) {
-        List<AgentArtifactReference> latest = latestArtifactSet(context, AgentArtifactType.CHECKOUT);
+    private boolean matchesSingleLatestCheckout(JsonNode arguments, List<AgentArtifactReference> evidence) {
+        List<AgentArtifactReference> latest = latestArtifactSet(evidence, AgentArtifactType.CHECKOUT);
         return latest.size() == 1
                 && latest.getFirst().getCartId() != null
                 && latest.getFirst().getCartId().toString().equals(text(arguments, "cartId"));
     }
 
     private List<AgentArtifactReference> latestArtifactSet(
-            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence,
             AgentArtifactType type
     ) {
-        List<AgentArtifactReference> recent = recent(context.conversationId());
-        Optional<AgentArtifactReference> newest = recent.stream()
+        Optional<AgentArtifactReference> newest = evidence.stream()
                 .filter(reference -> reference.getArtifactType() == type)
                 .findFirst();
         if (newest.isEmpty()) {
             return List.of();
         }
         AgentArtifactReference anchor = newest.get();
-        return recent.stream()
+        return evidence.stream()
                 .filter(reference -> reference.getArtifactType() == type)
                 .filter(reference -> sameResultSet(anchor, reference))
                 .sorted(java.util.Comparator.comparingInt(AgentArtifactReference::getOrdinal))
@@ -535,18 +588,17 @@ public class AgentMutationTargetPolicy {
     }
 
     private Optional<AgentArtifactReference> expectedInventoryItem(
-            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence,
             int ordinal
     ) {
-        List<AgentArtifactReference> recent = recent(context.conversationId());
-        Optional<AgentArtifactReference> newest = recent.stream()
+        Optional<AgentArtifactReference> newest = evidence.stream()
                 .filter(reference -> reference.getArtifactType() == AgentArtifactType.INVENTORY_ITEM)
                 .findFirst();
         if (newest.isEmpty()) {
             return Optional.empty();
         }
         AgentArtifactReference anchor = newest.get();
-        List<AgentArtifactReference> items = recent.stream()
+        List<AgentArtifactReference> items = evidence.stream()
                 .filter(reference -> reference.getArtifactType() == AgentArtifactType.INVENTORY_ITEM)
                 .filter(reference -> sameResultSet(anchor, reference))
                 .sorted(java.util.Comparator.comparingInt(AgentArtifactReference::getOrdinal))
@@ -554,8 +606,8 @@ public class AgentMutationTargetPolicy {
         return ordinal <= items.size() ? Optional.of(items.get(ordinal - 1)) : Optional.empty();
     }
 
-    private Optional<AgentArtifactReference> soleLatestProduct(AgentToolExecutionContext context) {
-        List<List<AgentArtifactReference>> sets = productSets(recent(context.conversationId()));
+    private Optional<AgentArtifactReference> soleLatestProduct(List<AgentArtifactReference> evidence) {
+        List<List<AgentArtifactReference>> sets = productSets(evidence);
         return sets.isEmpty() || sets.getFirst().size() != 1
                 ? Optional.empty()
                 : Optional.of(sets.getFirst().getFirst());
@@ -581,19 +633,18 @@ public class AgentMutationTargetPolicy {
         return sets;
     }
 
-    private Optional<CartSnapshot> currentCart(AgentToolExecutionContext context, String cartId) {
+    private Optional<CartSnapshot> currentCart(List<AgentArtifactReference> evidence, String cartId) {
         if (cartId == null || cartId.isBlank()) {
             return Optional.empty();
         }
-        return currentCartSnapshots(recent(context.conversationId())).stream()
+        return currentCartSnapshots(evidence).stream()
                 .filter(snapshot -> snapshot.cartId().toString().equals(cartId))
                 .findFirst();
     }
 
-    private List<CartLineReference> currentCartLines(AgentToolExecutionContext context) {
-        return currentCartSnapshots(recent(context.conversationId())).stream()
-                .sorted(Comparator.comparing((CartSnapshot snapshot) -> snapshot.artifact().getCreatedAt()).reversed()
-                        .thenComparingInt(snapshot -> snapshot.artifact().getOrdinal()))
+    private List<CartLineReference> currentCartLines(List<AgentArtifactReference> evidence) {
+        return currentCartSnapshots(evidence).stream()
+                .sorted(this::compareNewestCartSnapshots)
                 .flatMap(snapshot -> snapshot.lines().stream())
                 .toList();
     }
@@ -623,21 +674,34 @@ public class AgentMutationTargetPolicy {
                     cartLines(artifact, payload, recent)
             ));
         }
-        snapshots.sort(Comparator
-                .comparing((CartSnapshot snapshot) -> snapshot.artifact().getCreatedAt()).reversed()
-                .thenComparingInt(snapshot -> snapshot.artifact().getOrdinal()));
+        snapshots.sort(this::compareNewestCartSnapshots);
         return snapshots;
     }
 
     private boolean newerCartSnapshot(CartSnapshot candidate, CartSnapshot current) {
-        int created = candidate.artifact().getCreatedAt().compareTo(current.artifact().getCreatedAt());
-        if (created != 0) {
-            return created > 0;
-        }
-        if (Objects.equals(candidate.artifact().getMessageId(), current.artifact().getMessageId())) {
-            return candidate.artifact().getOrdinal() < current.artifact().getOrdinal();
-        }
-        return false;
+        return compareNewestCartSnapshots(candidate, current) < 0;
+    }
+
+    private int compareNewestCartSnapshots(CartSnapshot left, CartSnapshot right) {
+        return Comparator
+                .comparing(
+                        (CartSnapshot snapshot) -> snapshot.artifact().getCreatedAt(),
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                )
+                .thenComparing(
+                        snapshot -> identifier(snapshot.artifact().getMessageId()),
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                )
+                .thenComparingInt(snapshot -> snapshot.artifact().getOrdinal())
+                .thenComparing(
+                        snapshot -> identifier(snapshot.artifact().getId()),
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                )
+                .compare(left, right);
+    }
+
+    private String identifier(UUID value) {
+        return value == null ? null : value.toString();
     }
 
     private String cartPartitionKey(AgentArtifactReference artifact, JsonNode payload) {
@@ -701,10 +765,9 @@ public class AgentMutationTargetPolicy {
                 .toList();
     }
 
-    private Optional<RemovedCartLine> mostRecentlyRemovedLine(AgentToolExecutionContext context) {
-        List<AgentArtifactReference> artifacts = recent(context.conversationId());
-        List<CartSnapshot> history = cartSnapshots(artifacts);
-        Map<UUID, CartSnapshot> current = currentCartSnapshots(artifacts).stream()
+    private Optional<RemovedCartLine> mostRecentlyRemovedLine(List<AgentArtifactReference> evidence) {
+        List<CartSnapshot> history = cartSnapshots(evidence);
+        Map<UUID, CartSnapshot> current = currentCartSnapshots(evidence).stream()
                 .collect(java.util.stream.Collectors.toMap(
                         CartSnapshot::cartId,
                         snapshot -> snapshot,
@@ -736,16 +799,63 @@ public class AgentMutationTargetPolicy {
             CartLineReference line = removed.getFirst();
             CartSnapshot currentSnapshot = current.get(newer.cartId());
             if (currentSnapshot == null) {
-                return Optional.empty();
+                continue;
             }
             boolean alreadyPresent = currentSnapshot.lines().stream()
                     .map(CartLineReference::offerKey)
                     .anyMatch(line.offerKey()::equals);
-            return alreadyPresent
-                    ? Optional.empty()
-                    : Optional.of(new RemovedCartLine(newer.cartId(), line));
+            if (!alreadyPresent) {
+                return Optional.of(new RemovedCartLine(newer.cartId(), line));
+            }
         }
         return Optional.empty();
+    }
+
+    private boolean mustUseCurrentCartForReadd(
+            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence
+    ) {
+        String turn = Optional.ofNullable(context.triggeringUserText()).orElse("");
+        return isReaddReference(turn) && mostRecentlyRemovedLine(evidence).isPresent();
+    }
+
+    private boolean isReaddReference(String turn) {
+        if (turn == null || turn.isBlank()) {
+            return false;
+        }
+        if (READD_REFERENCE.matcher(turn).find()) {
+            return true;
+        }
+        List<String> tokens = new ArrayList<>();
+        Matcher matcher = TOKEN.matcher(turn.toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            tokens.add(matcher.group());
+        }
+        boolean hasAgainOrBack = false;
+        for (int actionIndex = 0; actionIndex < tokens.size(); actionIndex++) {
+            String action = tokens.get(actionIndex);
+            if (action.equals("again") || action.equals("back")) {
+                hasAgainOrBack = true;
+            }
+            if (!action.equals("add") && !action.equals("put")) {
+                continue;
+            }
+            int markerLimit = Math.min(tokens.size(), actionIndex + 8);
+            for (int markerIndex = actionIndex + 1; markerIndex < markerLimit; markerIndex++) {
+                String marker = tokens.get(markerIndex);
+                if (marker.equals("again") || marker.equals("back")) {
+                    return true;
+                }
+            }
+        }
+        if (!hasAgainOrBack || !descriptiveTokens(turn).isEmpty()) {
+            return false;
+        }
+        if (CONTEXTUAL_REFERENCE.matcher(turn).find()) {
+            return true;
+        }
+        return tokens.size() == 1
+                || (tokens.size() == 2 && tokens.contains("please"));
     }
 
     private JsonNode readPayload(AgentArtifactReference artifact) {

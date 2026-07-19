@@ -19,6 +19,7 @@ import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartOfferPartitionResult;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.cart.service.query.FindActiveCartByRoutingScopeQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -84,7 +85,7 @@ class AgentCommerceToolContractTest {
                 "running.example",
                 List.of(new CartOfferPartitionResult.Item("offer-1", 1))
         )));
-        when(cartService.listActive(any())).thenReturn(List.of());
+        when(cartService.findActiveByRoutingScope(any())).thenReturn(Optional.empty());
         when(cartService.create(any(), any())).thenReturn(result);
         AgentCartToolSupport support = new AgentCartToolSupport(
                 conversations,
@@ -108,7 +109,7 @@ class AgentCommerceToolContractTest {
     }
 
     @Test
-    void prepareCartReusesTheNewestCompatibleActiveCartInsteadOfCreatingADuplicate() {
+    void prepareCartFindsTheExactCompatibleCartWithoutDependingOnTheBoundedActiveCartList() {
         AgentConversationRepository conversations = ownedConversationRepository();
         CartService cartService = mock(CartService.class);
         AgentProductReadReferenceService references = mock(AgentProductReadReferenceService.class);
@@ -128,7 +129,7 @@ class AgentCommerceToolContractTest {
                 "running.example",
                 List.of(new CartOfferPartitionResult.Item("offer-1", 2))
         )));
-        when(cartService.listActive(any())).thenReturn(List.of(active));
+        when(cartService.findActiveByRoutingScope(any())).thenReturn(Optional.of(active));
         when(cartService.update(any(), any())).thenReturn(updated);
         AgentCartToolSupport support = new AgentCartToolSupport(
                 conversations,
@@ -147,8 +148,14 @@ class AgentCommerceToolContractTest {
         );
 
         ArgumentCaptor<UpdateCartCommand> command = ArgumentCaptor.forClass(UpdateCartCommand.class);
+        ArgumentCaptor<FindActiveCartByRoutingScopeQuery> lookup =
+                ArgumentCaptor.forClass(FindActiveCartByRoutingScopeQuery.class);
+        verify(cartService).findActiveByRoutingScope(lookup.capture());
         verify(cartService).update(command.capture(), any());
         verify(cartService, never()).create(any(), any());
+        verify(cartService, never()).listActive(any());
+        assertThat(lookup.getValue().userId()).isEqualTo(USER_ID);
+        assertThat(lookup.getValue().routingScopeKey()).isEqualTo("shopify:merchant-1");
         assertThat(command.getValue().cartId()).isEqualTo(cartId);
         assertThat(command.getValue().userId()).isEqualTo(USER_ID);
         assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
@@ -180,7 +187,7 @@ class AgentCommerceToolContractTest {
                 "running.example",
                 List.of(new CartOfferPartitionResult.Item("offer-1", 1))
         )));
-        when(cartService.listActive(any())).thenReturn(List.of(legacy));
+        when(cartService.findActiveByRoutingScope(any())).thenReturn(Optional.empty());
         when(cartService.create(any(), any())).thenReturn(created);
         AgentCartToolSupport support = new AgentCartToolSupport(
                 ownedConversationRepository(),

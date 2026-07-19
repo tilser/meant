@@ -26,6 +26,7 @@ import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.cart.service.dto.CheckoutConsentResult;
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.cart.service.query.FindActiveCartByRoutingScopeQuery;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.cart.service.query.ListActiveCartsQuery;
@@ -88,6 +89,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -104,6 +106,8 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor(onConstructor_ = @org.springframework.beans.factory.annotation.Autowired)
 @Slf4j
 public class CartService {
+
+    private static final int ACTIVE_CART_PAGE_SIZE = 20;
 
     private final MerchantCartProviderLookupService merchantCartProviderLookupService;
     private final CartBuyerContextService cartBuyerContextService;
@@ -180,9 +184,27 @@ public class CartService {
     }
 
     public List<CartResult> listActive(@NotNull @Valid ListActiveCartsQuery query) {
-        return cartPersistenceService.findActiveCarts(query.userId(), query.limit()).stream()
+        Map<String, Cart> currentByRoute = new LinkedHashMap<>();
+        int page = 0;
+        while (currentByRoute.size() < query.limit()) {
+            List<Cart> candidates = cartPersistenceService.findActiveCarts(
+                    query.userId(), page++, ACTIVE_CART_PAGE_SIZE);
+            candidates.forEach(cart -> currentByRoute.putIfAbsent(CartRouteKey.from(cart), cart));
+            if (candidates.size() < ACTIVE_CART_PAGE_SIZE) {
+                break;
+            }
+        }
+        return currentByRoute.values().stream()
+                .limit(query.limit())
                 .map(cartResultMapper::from)
                 .toList();
+    }
+
+    public Optional<CartResult> findActiveByRoutingScope(
+            @NotNull @Valid FindActiveCartByRoutingScopeQuery query
+    ) {
+        return cartPersistenceService.findActiveCartByRoutingScope(query.userId(), query.routingScopeKey())
+                .map(cartResultMapper::from);
     }
 
     /**
