@@ -8,11 +8,9 @@ import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -65,6 +63,7 @@ public class AgentMutationTargetPolicy {
 
     private final AgentArtifactReferenceRepository artifactRepository;
     private final ObjectMapper objectMapper;
+    private final AgentCartSnapshotSupport cartSnapshotSupport;
 
     /**
      * Binds an explicit ordinal in the user's current turn to the latest compatible result set.
@@ -288,9 +287,9 @@ public class AgentMutationTargetPolicy {
         String turn = Optional.ofNullable(context.triggeringUserText()).orElse("");
         if (isReaddReference(turn)) {
             return mostRecentlyRemovedLine(evidence)
-                    .filter(removed -> removed.cartId().toString().equals(cartId))
-                    .map(RemovedCartLine::line)
-                    .map(CartLineReference::offerKey)
+                    .filter(removed -> removed.currentCartId().toString().equals(cartId))
+                    .map(AgentCartSnapshotSupport.RemovedCartLine::line)
+                    .map(AgentCartSnapshotSupport.CartLine::offerKey)
                     .filter(Objects::nonNull)
                     .filter(offerKey::equals)
                     .isPresent();
@@ -321,8 +320,8 @@ public class AgentMutationTargetPolicy {
     ) {
         String cartId = text(arguments, "cartId");
         String cartLineId = text(arguments, "cartLineId");
-        List<CartLineReference> currentLines = currentCartLines(evidence);
-        Optional<CartLineReference> proposed = currentLines.stream()
+        List<AgentCartSnapshotSupport.CartLine> currentLines = currentCartLines(evidence);
+        Optional<AgentCartSnapshotSupport.CartLine> proposed = currentLines.stream()
                 .filter(line -> line.cartId().toString().equals(cartId))
                 .filter(line -> line.cartLineId().toString().equals(cartLineId))
                 .findFirst();
@@ -332,7 +331,7 @@ public class AgentMutationTargetPolicy {
         if (literalReference(context.triggeringUserText(), cartLineId)) {
             return true;
         }
-        Optional<CartLineReference> named = uniquelyMentionedCartLine(context, currentLines);
+        Optional<AgentCartSnapshotSupport.CartLine> named = uniquelyMentionedCartLine(context, currentLines);
         if (named.isPresent()) {
             return named.get().equals(proposed.get());
         }
@@ -364,15 +363,15 @@ public class AgentMutationTargetPolicy {
         return Optional.empty();
     }
 
-    private Optional<CartLineReference> uniquelyMentionedCartLine(
+    private Optional<AgentCartSnapshotSupport.CartLine> uniquelyMentionedCartLine(
             AgentToolExecutionContext context,
-            List<CartLineReference> candidates
+            List<AgentCartSnapshotSupport.CartLine> candidates
     ) {
         Set<String> turnTokens = descriptiveTokens(context.triggeringUserText());
         if (turnTokens.isEmpty()) {
             return Optional.empty();
         }
-        List<CartLineReference> matches = candidates.stream()
+        List<AgentCartSnapshotSupport.CartLine> matches = candidates.stream()
                 .filter(line -> descriptiveTokens(line.label()).containsAll(turnTokens))
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
@@ -518,8 +517,11 @@ public class AgentMutationTargetPolicy {
         return Optional.ofNullable(selected);
     }
 
-    private Optional<CartLineReference> expectedCartLine(List<AgentArtifactReference> evidence, int ordinal) {
-        List<CartSnapshot> cartsWithLines = currentCartSnapshots(evidence).stream()
+    private Optional<AgentCartSnapshotSupport.CartLine> expectedCartLine(
+            List<AgentArtifactReference> evidence,
+            int ordinal
+    ) {
+        List<AgentCartSnapshotSupport.CartSnapshot> cartsWithLines = currentCartSnapshots(evidence).stream()
                 .filter(snapshot -> !snapshot.lines().isEmpty())
                 .toList();
         if (cartsWithLines.size() != 1) {
@@ -544,7 +546,7 @@ public class AgentMutationTargetPolicy {
     ) {
         if (type == AgentArtifactType.CART) {
             List<AgentArtifactReference> carts = currentCartSnapshots(evidence).stream()
-                    .map(CartSnapshot::artifact)
+                    .map(AgentCartSnapshotSupport.CartSnapshot::artifact)
                     .toList();
             return atOrdinal(carts, ordinal);
         }
@@ -554,7 +556,7 @@ public class AgentMutationTargetPolicy {
     private boolean matchesLatestCartSet(JsonNode arguments, List<AgentArtifactReference> evidence) {
         Set<String> requested = arrayValues(arguments, "cartIds");
         Set<String> latest = currentCartSnapshots(evidence).stream()
-                .map(CartSnapshot::cartId)
+                .map(AgentCartSnapshotSupport.CartSnapshot::cartId)
                 .map(UUID::toString)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         return !requested.isEmpty() && requested.equals(latest);
@@ -637,7 +639,10 @@ public class AgentMutationTargetPolicy {
         return sets;
     }
 
-    private Optional<CartSnapshot> currentCart(List<AgentArtifactReference> evidence, String cartId) {
+    private Optional<AgentCartSnapshotSupport.CartSnapshot> currentCart(
+            List<AgentArtifactReference> evidence,
+            String cartId
+    ) {
         if (cartId == null || cartId.isBlank()) {
             return Optional.empty();
         }
@@ -646,173 +651,22 @@ public class AgentMutationTargetPolicy {
                 .findFirst();
     }
 
-    private List<CartLineReference> currentCartLines(List<AgentArtifactReference> evidence) {
+    private List<AgentCartSnapshotSupport.CartLine> currentCartLines(List<AgentArtifactReference> evidence) {
         return currentCartSnapshots(evidence).stream()
-                .sorted(this::compareNewestCartSnapshots)
                 .flatMap(snapshot -> snapshot.lines().stream())
                 .toList();
     }
 
-    private List<CartSnapshot> currentCartSnapshots(List<AgentArtifactReference> recent) {
-        Map<String, CartSnapshot> snapshots = new LinkedHashMap<>();
-        Set<UUID> currentCartIds = new HashSet<>();
-        for (CartSnapshot candidate : cartSnapshots(recent)) {
-            if (currentCartIds.add(candidate.cartId())) {
-                snapshots.putIfAbsent(candidate.partitionKey(), candidate);
-            }
-        }
-        return List.copyOf(snapshots.values());
-    }
-
-    private List<CartSnapshot> cartSnapshots(List<AgentArtifactReference> recent) {
-        List<CartSnapshot> snapshots = new ArrayList<>();
-        for (AgentArtifactReference artifact : recent) {
-            if (artifact.getArtifactType() != AgentArtifactType.CART || artifact.getCartId() == null) {
-                continue;
-            }
-            JsonNode payload = readPayload(artifact);
-            snapshots.add(new CartSnapshot(
-                    artifact,
-                    artifact.getCartId(),
-                    cartPartitionKey(artifact, payload),
-                    cartLines(artifact, payload, recent)
-            ));
-        }
-        snapshots.sort(this::compareNewestCartSnapshots);
-        return snapshots;
-    }
-
-    private boolean newerCartSnapshot(CartSnapshot candidate, CartSnapshot current) {
-        return compareNewestCartSnapshots(candidate, current) < 0;
-    }
-
-    private int compareNewestCartSnapshots(CartSnapshot left, CartSnapshot right) {
-        return Comparator
-                .comparing(
-                        (CartSnapshot snapshot) -> snapshot.artifact().getCreatedAt(),
-                        Comparator.nullsLast(Comparator.reverseOrder())
-                )
-                .thenComparing(
-                        snapshot -> identifier(snapshot.artifact().getMessageId()),
-                        Comparator.nullsLast(Comparator.naturalOrder())
-                )
-                .thenComparingInt(snapshot -> snapshot.artifact().getOrdinal())
-                .thenComparing(
-                        snapshot -> identifier(snapshot.artifact().getId()),
-                        Comparator.nullsLast(Comparator.naturalOrder())
-                )
-                .compare(left, right);
-    }
-
-    private String identifier(UUID value) {
-        return value == null ? null : value.toString();
-    }
-
-    private String cartPartitionKey(AgentArtifactReference artifact, JsonNode payload) {
-        String routing = text(payload, "routingScopeKey");
-        if (present(routing)) {
-            return "routing:" + routing.toLowerCase(Locale.ROOT);
-        }
-        String integration = text(payload, "merchantIntegrationId");
-        if (present(integration)) {
-            return "integration:" + integration.toLowerCase(Locale.ROOT);
-        }
-        String merchant = text(payload, "merchantId");
-        if (present(merchant)) {
-            return "merchant:" + merchant.toLowerCase(Locale.ROOT);
-        }
-        String provider = Optional.ofNullable(text(payload, "provider")).orElse("").toLowerCase(Locale.ROOT);
-        String external = text(payload, "externalMerchantId");
-        if (present(external)) {
-            return "external:" + provider + ":" + external.toLowerCase(Locale.ROOT);
-        }
-        String domain = text(payload, "merchantDomain");
-        if (present(domain)) {
-            return "domain:" + provider + ":" + domain.toLowerCase(Locale.ROOT);
-        }
-        return "cart:" + artifact.getCartId();
-    }
-
-    private List<CartLineReference> cartLines(
-            AgentArtifactReference cart,
-            JsonNode payload,
-            List<AgentArtifactReference> recent
+    private List<AgentCartSnapshotSupport.CartSnapshot> currentCartSnapshots(
+            List<AgentArtifactReference> evidence
     ) {
-        JsonNode lines = payload == null ? null : payload.get("lines");
-        if (lines != null && lines.isArray()) {
-            List<CartLineReference> parsed = new ArrayList<>();
-            for (JsonNode line : lines) {
-                UUID cartLineId = uuid(text(line, "cartLineId"));
-                if (cartLineId != null) {
-                    parsed.add(new CartLineReference(
-                            cart.getCartId(),
-                            cartLineId,
-                            text(line, "offerKey"),
-                            Optional.ofNullable(text(line, "productTitle")).orElse("Cart item")
-                    ));
-                }
-            }
-            return List.copyOf(parsed);
-        }
-        return recent.stream()
-                .filter(reference -> reference.getArtifactType() == AgentArtifactType.CART_LINE)
-                .filter(reference -> Objects.equals(reference.getCartId(), cart.getCartId()))
-                .filter(reference -> sameResultSet(cart, reference))
-                .filter(reference -> reference.getCartLineId() != null)
-                .sorted(Comparator.comparingInt(AgentArtifactReference::getOrdinal))
-                .map(reference -> new CartLineReference(
-                        cart.getCartId(),
-                        reference.getCartLineId(),
-                        reference.getOfferKey(),
-                        Optional.ofNullable(reference.getLabel()).orElse("Cart item")
-                ))
-                .toList();
+        return cartSnapshotSupport.project(evidence).current();
     }
 
-    private Optional<RemovedCartLine> mostRecentlyRemovedLine(List<AgentArtifactReference> evidence) {
-        List<CartSnapshot> history = cartSnapshots(evidence);
-        Map<UUID, CartSnapshot> current = currentCartSnapshots(evidence).stream()
-                .collect(java.util.stream.Collectors.toMap(
-                        CartSnapshot::cartId,
-                        snapshot -> snapshot,
-                        (existing, candidate) -> newerCartSnapshot(candidate, existing) ? candidate : existing,
-                        LinkedHashMap::new
-                ));
-        for (int newerIndex = 0; newerIndex < history.size(); newerIndex++) {
-            CartSnapshot newer = history.get(newerIndex);
-            CartSnapshot older = null;
-            for (int olderIndex = newerIndex + 1; olderIndex < history.size(); olderIndex++) {
-                if (history.get(olderIndex).cartId().equals(newer.cartId())) {
-                    older = history.get(olderIndex);
-                    break;
-                }
-            }
-            if (older == null) {
-                continue;
-            }
-            Set<String> newerOffers = newer.lines().stream()
-                    .map(CartLineReference::offerKey)
-                    .filter(Objects::nonNull)
-                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
-            List<CartLineReference> removed = older.lines().stream()
-                    .filter(line -> line.offerKey() != null && !newerOffers.contains(line.offerKey()))
-                    .toList();
-            if (removed.size() != 1) {
-                continue;
-            }
-            CartLineReference line = removed.getFirst();
-            CartSnapshot currentSnapshot = current.get(newer.cartId());
-            if (currentSnapshot == null) {
-                continue;
-            }
-            boolean alreadyPresent = currentSnapshot.lines().stream()
-                    .map(CartLineReference::offerKey)
-                    .anyMatch(line.offerKey()::equals);
-            if (!alreadyPresent) {
-                return Optional.of(new RemovedCartLine(newer.cartId(), line));
-            }
-        }
-        return Optional.empty();
+    private Optional<AgentCartSnapshotSupport.RemovedCartLine> mostRecentlyRemovedLine(
+            List<AgentArtifactReference> evidence
+    ) {
+        return cartSnapshotSupport.project(evidence).mostRecentlyRemovedLine();
     }
 
     private boolean mustUseCurrentCartForReadd(
@@ -860,26 +714,6 @@ public class AgentMutationTargetPolicy {
         }
         return tokens.size() == 1
                 || (tokens.size() == 2 && tokens.contains("please"));
-    }
-
-    private JsonNode readPayload(AgentArtifactReference artifact) {
-        try {
-            return objectMapper.readTree(artifact.getPayloadJson());
-        } catch (RuntimeException exception) {
-            return null;
-        }
-    }
-
-    private UUID uuid(String value) {
-        try {
-            return value == null ? null : UUID.fromString(value);
-        } catch (IllegalArgumentException exception) {
-            return null;
-        }
-    }
-
-    private boolean present(String value) {
-        return value != null && !value.isBlank();
     }
 
     private Set<String> selectedOfferKeys(ShoppingMission mission) {
@@ -1043,17 +877,4 @@ public class AgentMutationTargetPolicy {
         return value == null || !value.isTextual() ? null : value.asText();
     }
 
-    private record CartSnapshot(
-            AgentArtifactReference artifact,
-            UUID cartId,
-            String partitionKey,
-            List<CartLineReference> lines
-    ) {
-    }
-
-    private record CartLineReference(UUID cartId, UUID cartLineId, String offerKey, String label) {
-    }
-
-    private record RemovedCartLine(UUID cartId, CartLineReference line) {
-    }
 }

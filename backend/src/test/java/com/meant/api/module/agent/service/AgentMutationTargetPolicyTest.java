@@ -25,7 +25,12 @@ class AgentMutationTargetPolicyTest {
 
     private static final UUID CONVERSATION_ID = UUID.randomUUID();
     private final AgentArtifactReferenceRepository artifacts = mock(AgentArtifactReferenceRepository.class);
-    private final AgentMutationTargetPolicy policy = new AgentMutationTargetPolicy(artifacts, new ObjectMapper());
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AgentMutationTargetPolicy policy = new AgentMutationTargetPolicy(
+            artifacts,
+            objectMapper,
+            new AgentCartSnapshotSupport(objectMapper)
+    );
 
     @Test
     void secondProductOnlyAcceptsAnOfferFromTheSecondProductInTheLatestResultSet() {

@@ -55,7 +55,7 @@ class AgentContextAssemblerTest {
             artifacts,
             missions,
             properties(),
-            new ObjectMapper()
+            new AgentCartSnapshotSupport(new ObjectMapper())
     );
 
     @Test
