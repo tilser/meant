@@ -62,7 +62,7 @@ public class ListProductInteractionsAgentTool implements AgentTool {
                 AgentArtifactType.PRODUCT_STATE,
                 ordinal,
                 AgentProductInteractionReferenceService.STATE_STABLE_KEY_PREFIX + state.canonicalProductKey(),
-                state.canonicalProductKey(),
+                state.displayLabel(),
                 state.canonicalProductKey(),
                 state.offerKey(),
                 null,

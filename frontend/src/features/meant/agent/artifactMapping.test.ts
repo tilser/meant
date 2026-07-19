@@ -10,6 +10,7 @@ import {
   blocksForAgentMessage,
   cartItemsFromAgentArtifacts,
   cartStateReplacementsFromAgentArtifacts,
+  conciseProductResultIntroduction,
   currentAgentProductSnapshots,
   discoverMessagesFromAgentConversation,
   latestCartSnapshotArtifacts,
@@ -161,6 +162,15 @@ function artifact(
 }
 
 describe('agent artifact mapping', () => {
+  test('uses the model result subject when a follow-up query is context-only', () => {
+    expect(
+      conciseProductResultIntroduction(
+        'I found many running shoes. Here are a few options: Grounded trail shoe for $129.',
+        "I don't see any",
+      ),
+    ).toBe('I found these running shoes:')
+  })
+
   test('does not let an older conversation replace a fresher same-id product snapshot', () => {
     const olderArtifact = artifact({
       type: 'PRODUCT',
@@ -925,20 +935,25 @@ describe('agent artifact mapping', () => {
     const messages = discoverMessagesFromAgentConversation(conversation, [])
 
     expect(messages[0]).toMatchObject({ role: 'you', text: 'Find trail shoes' })
-    expect(messages[1]?.blocks?.[0]).toMatchObject({
+    expect(messages[1]?.blocks?.[0]).toEqual({
+      type: 'text',
+      text: 'I found these trail shoes:',
+    })
+    expect(messages[1]?.blocks?.[1]).toMatchObject({
       type: 'products',
+      query: 'Find trail shoes',
       products: [{ id: 'product-1' }],
     })
   })
 
-  test('keeps assistant copy and product cards in one established chat row', () => {
+  test('replaces enumerated catalog prose with one concise lead-in and product cards', () => {
     const user: AgentMessageProfile = {
       messageId: 'message-user',
       runId: 'run-1',
       sequenceNumber: 1,
       role: 'USER',
       contentKind: 'TEXT',
-      textContent: 'Find running shoes',
+      textContent: 'I am looking for some cool sunglasses',
       contentJson: null,
       correlationId: null,
       createdAt,
@@ -960,7 +975,8 @@ describe('agent artifact mapping', () => {
       sequenceNumber: 3,
       role: 'ASSISTANT',
       contentKind: 'TEXT',
-      textContent: 'I found **a few grounded options**. * **Best match:** Legacy runner.',
+      textContent:
+        'I found these sunglasses: Fashion Square Vintage Polarized Sunglasses for $9.00 Classic Original for $59.00. Do any of these look interesting?',
       contentJson: null,
       correlationId: null,
       createdAt,
@@ -968,7 +984,7 @@ describe('agent artifact mapping', () => {
     const product = canonicalProduct('product-1')
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-1',
-      title: 'Running shoes',
+      title: 'Sunglasses',
       status: 'ACTIVE',
       activeMissionId: null,
       latestSequence: 3,
@@ -995,10 +1011,72 @@ describe('agent artifact mapping', () => {
       id: 'message-assistant',
       role: 'ai',
       blocks: [
-        { type: 'text', text: 'I found a few grounded options. Best match: Legacy runner.' },
-        { type: 'products', products: [{ id: 'product-1' }] },
+        { type: 'text', text: 'I found these sunglasses:' },
+        {
+          type: 'products',
+          query: 'I am looking for some cool sunglasses',
+          products: [{ id: 'product-1' }],
+        },
       ],
     })
+    expect(messages[1]?.blocks?.[0]).not.toMatchObject({ text: expect.stringContaining('$') })
+    expect(messages[1]?.blocks?.[0]).not.toMatchObject({
+      text: expect.stringContaining('Fashion Square'),
+    })
+  })
+
+  test('replaces legacy canonical keys in product action messages with trusted product names', () => {
+    const canonicalKey = 'product_v3_eb3f7d21b2460038c961b236c41b69fb5817cee1c87113ee'
+    const action: AgentMessageProfile = {
+      messageId: 'message-action',
+      runId: null,
+      sequenceNumber: 1,
+      role: 'USER_ACTION',
+      contentKind: 'TEXT',
+      textContent: `Pinned product ${canonicalKey}.`,
+      contentJson: null,
+      correlationId: 'direct:pin_product',
+      createdAt,
+    }
+    const product = canonicalProduct(canonicalKey, 'offer-1', 'Fashion Square Vintage Sunglasses')
+    const conversation: AgentConversationDetailProfile = {
+      conversationId: 'conversation-action',
+      title: 'Sunglasses',
+      status: 'ACTIVE',
+      activeMissionId: null,
+      latestSequence: 1,
+      createdAt,
+      updatedAt: createdAt,
+      rollingSummary: null,
+      summaryVersion: 0,
+      latestCursor: 1,
+      messages: [action],
+      artifacts: [
+        artifact({
+          messageId: action.messageId,
+          type: 'PRODUCT',
+          stableKey: canonicalKey,
+          canonicalProductKey: canonicalKey,
+          payloadJson: JSON.stringify(product),
+        }),
+        artifact({
+          messageId: action.messageId,
+          type: 'PRODUCT_STATE',
+          stableKey: `product-state:${canonicalKey}`,
+          canonicalProductKey: canonicalKey,
+          label: canonicalKey,
+          payloadJson: JSON.stringify({ canonicalProductKey: canonicalKey, pinned: true }),
+        }),
+      ],
+    }
+
+    const messages = discoverMessagesFromAgentConversation(conversation, [])
+
+    expect(messages[0]).toMatchObject({
+      role: 'you',
+      text: 'Pinned product Fashion Square Vintage Sunglasses.',
+    })
+    expect(messages[0]?.text).not.toContain('product_v3_')
   })
 
   test('maps the same exact product contract through comparison, cart, and checkout blocks', () => {

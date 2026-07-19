@@ -4,6 +4,7 @@ import java.time.Instant;
 
 public record AgentProductInteractionResult(
         String canonicalProductKey,
+        String label,
         String offerKey,
         boolean pinned,
         String pinnedOfferKey,
@@ -13,4 +14,7 @@ public record AgentProductInteractionResult(
         Instant watchedAt,
         Instant updatedAt
 ) {
+    public String displayLabel() {
+        return label == null || label.isBlank() ? canonicalProductKey : label.trim();
+    }
 }

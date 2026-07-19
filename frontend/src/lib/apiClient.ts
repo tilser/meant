@@ -2343,6 +2343,20 @@ export async function updateAgentConversation(input: {
   )
 }
 
+export async function deleteAgentConversation(
+  conversationId: string,
+  options?: AccountBoundRequestOptions,
+): Promise<void> {
+  const response = await fetch(agentConversationUrl(conversationId), {
+    method: 'DELETE',
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
+  })
+  if (!response.ok && response.status !== 404) {
+    throw await parseErrorResponse(response, 'Failed to delete agent conversation')
+  }
+}
+
 export async function submitAgentTurn(input: {
   conversationId: string
   message: string

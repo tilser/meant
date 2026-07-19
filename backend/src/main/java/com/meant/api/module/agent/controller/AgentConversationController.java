@@ -13,6 +13,7 @@ import com.meant.api.module.agent.service.AgentRunCoordinator;
 import com.meant.api.module.agent.service.AgentTurnService;
 import com.meant.api.module.agent.service.AgentUserActionService;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
+import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand;
 import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.command.UpdateAgentConversationCommand;
@@ -34,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -124,6 +126,17 @@ public class AgentConversationController {
         return AgentConversationSummaryResponse.from(conversationService.update(
                 new UpdateAgentConversationCommand(userId, conversationId, request.title(), request.archived())
         ));
+    }
+
+    @DeleteMapping("/{conversationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete an agent conversation permanently")
+    public void delete(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID conversationId
+    ) {
+        UUID userId = AuthenticatedUser.fromJwt(jwt).id();
+        conversationService.delete(new DeleteAgentConversationCommand(userId, conversationId));
     }
 
     @PostMapping("/{conversationId}/turns")

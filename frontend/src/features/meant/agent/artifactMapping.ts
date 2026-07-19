@@ -152,6 +152,64 @@ export function plainAgentText(value: string): string {
     .trim()
 }
 
+function catalogSearchSubject(query: string | null | undefined): string {
+  let subject = plainAgentText(query ?? '')
+    .replace(/[?!.,:;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const requestPrefixes = [
+    /^(?:please\s+)?(?:i\s+am|i'm|im)\s+(?:looking|searching)\s+for\s+/i,
+    /^(?:please\s+)?(?:looking|searching)\s+for\s+/i,
+    /^(?:please\s+)?(?:can|could|would)\s+you\s+(?:find|show me|search for|look for)\s+/i,
+    /^(?:please\s+)?(?:help me\s+)?(?:find|show me|search for|look for)\s+/i,
+  ]
+  for (const prefix of requestPrefixes) {
+    subject = subject.replace(prefix, '')
+  }
+  subject = subject
+    .replace(/^(?:(?:some|any|a|an)\s+)+/i, '')
+    .replace(/^(?:(?:cool|good|nice|great|best|new)\s+)+/i, '')
+    .replace(/\s+(?:under|below|for less than)\s+[$€£]?\d.*$/i, '')
+    .trim()
+
+  if (!subject || subject.length > 72) return 'products'
+  return `${subject.charAt(0).toLowerCase()}${subject.slice(1)}`
+}
+
+/** Replaces model-generated product enumeration with the short lead-in used by product cards. */
+export function conciseProductResultIntroduction(
+  value: string | null | undefined,
+  query: string | null | undefined,
+  products: readonly Pick<Product, 'name' | 'category'>[] = [],
+): string {
+  const text = plainAgentText(value ?? '')
+  const existing =
+    text.match(/^I found these\s+([^:\n]{1,72}):/i)?.[1]?.trim() ??
+    text.match(/^I found (?:(?:many|several|some|a few)\s+)([^:.\n]{1,72})[.:]/i)?.[1]?.trim()
+  const genericSubject = existing
+    ? /^(?:grounded\s+)?(?:products|options|items|matches|results)$/i.test(existing)
+    : true
+  const repeatsProductName = existing
+    ? products.some((product) => existing.toLowerCase().includes(product.name.toLowerCase()))
+    : false
+  const querySubject = catalogSearchSubject(query)
+  const contextlessQuery =
+    /^(?:i (?:do not|don't|dont) see any|more|try again|show me (?:more|others)|other ones)$/i.test(
+      querySubject,
+    )
+  const category = products[0]?.category?.trim()
+  const subject =
+    existing && !genericSubject && !repeatsProductName
+      ? existing
+      : !contextlessQuery && querySubject !== 'products'
+        ? querySubject
+        : category && !/^(?:product|products)$/i.test(category)
+          ? `${category.charAt(0).toLowerCase()}${category.slice(1)}`
+          : 'products'
+  return `I found these ${subject}:`
+}
+
 function providerValue(value: unknown): string | null {
   if (typeof value === 'string') return stringValue(value)
   return isRecord(value) ? stringValue(value.value) : null
@@ -1128,7 +1186,11 @@ export function discoverMessagesFromAgentConversation(
     artifactsByMessage.set(artifact.messageId, existing)
   }
   const artifactHostMessageByRun = new Map<string, string>()
+  const userQueryByRun = new Map<string, string>()
   for (const message of conversation.messages) {
+    if (message.role === 'USER' && message.runId && message.textContent) {
+      userQueryByRun.set(message.runId, message.textContent)
+    }
     if (message.role === 'ASSISTANT' && message.runId) {
       artifactHostMessageByRun.set(message.runId, message.messageId)
     }
@@ -1136,12 +1198,18 @@ export function discoverMessagesFromAgentConversation(
   const toolBlocksByRun = new Map<string, DiscoverChatBlock[]>()
   for (const message of conversation.messages) {
     if (message.role !== 'TOOL' || !message.runId) continue
-    const blocks = blocksForAgentMessage(
+    let blocks = blocksForAgentMessage(
       message,
       artifactsByMessage.get(message.messageId) ?? [],
       conversation.artifacts,
       deliveryLocations,
     )
+    if (message.correlationId?.split(':').at(-1) === 'search_catalog') {
+      const query = userQueryByRun.get(message.runId)
+      if (query) {
+        blocks = blocks.map((block) => (block.type === 'products' ? { ...block, query } : block))
+      }
+    }
     if (blocks.length === 0) continue
     const existing = toolBlocksByRun.get(message.runId) ?? []
     existing.push(...blocks)
@@ -1152,10 +1220,24 @@ export function discoverMessagesFromAgentConversation(
     if (message.role === 'SYSTEM_SUMMARY') continue
     const artifacts = artifactsByMessage.get(message.messageId) ?? []
     if (message.role === 'USER' || message.role === 'USER_ACTION') {
+      let text = message.textContent ?? (message.role === 'USER_ACTION' ? 'Completed action' : '')
+      if (
+        message.role === 'USER_ACTION' &&
+        /^(?:Pinned|Unpinned|Watching|Stopped watching)\b/i.test(text)
+      ) {
+        const products = productsFromAgentArtifacts(conversation.artifacts)
+        for (const artifact of artifacts) {
+          const key = artifact.canonicalProductKey
+          if (!key || !text.includes(key)) continue
+          const product = productByCanonicalKey(products, key)
+          const label = product?.name ?? (artifact.label !== key ? artifact.label : null)
+          if (label) text = text.replaceAll(key, label)
+        }
+      }
       messages.push({
         id: message.messageId,
         role: 'you',
-        text: message.textContent ?? (message.role === 'USER_ACTION' ? 'Completed action' : ''),
+        text,
       })
       const blocks = blocksForAgentMessage(
         message,
@@ -1173,15 +1255,23 @@ export function discoverMessagesFromAgentConversation(
         message.runId && artifactHostMessageByRun.get(message.runId) === message.messageId
           ? (toolBlocksByRun.get(message.runId) ?? [])
           : []
+      const searchProducts = toolBlocks.find(
+        (block): block is Extract<DiscoverChatBlock, { type: 'products' }> =>
+          block.type === 'products' && Boolean(block.query),
+      )
+      const text = searchProducts
+        ? conciseProductResultIntroduction(
+            message.textContent,
+            searchProducts.query,
+            searchProducts.products,
+          )
+        : message.textContent
+          ? plainAgentText(message.textContent)
+          : null
       messages.push({
         id: message.messageId,
         role: 'ai',
-        blocks: [
-          ...(message.textContent
-            ? [{ type: 'text' as const, text: plainAgentText(message.textContent) }]
-            : []),
-          ...toolBlocks,
-        ],
+        blocks: [...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks],
       })
       continue
     }
@@ -1193,7 +1283,24 @@ export function discoverMessagesFromAgentConversation(
         conversation.artifacts,
         deliveryLocations,
       )
-      if (blocks.length > 0) messages.push({ id: message.messageId, role: 'ai', blocks })
+      const searchQuery = message.runId ? userQueryByRun.get(message.runId) : undefined
+      const displayBlocks: DiscoverChatBlock[] =
+        message.correlationId?.split(':').at(-1) === 'search_catalog' && searchQuery
+          ? blocks.flatMap<DiscoverChatBlock>((block) =>
+              block.type === 'products'
+                ? [
+                    {
+                      type: 'text' as const,
+                      text: conciseProductResultIntroduction(null, searchQuery, block.products),
+                    },
+                    { ...block, query: searchQuery },
+                  ]
+                : [block],
+            )
+          : blocks
+      if (displayBlocks.length > 0) {
+        messages.push({ id: message.messageId, role: 'ai', blocks: displayBlocks })
+      }
     }
   }
   return messages

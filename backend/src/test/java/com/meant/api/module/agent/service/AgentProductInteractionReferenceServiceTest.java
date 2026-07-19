@@ -36,6 +36,7 @@ class AgentProductInteractionReferenceServiceTest {
 
         assertThat(result.canonicalProductKey()).isEqualTo("product:boot");
         assertThat(result.offerKey()).isEqualTo("offer:42");
+        assertThat(result.label()).isEqualTo("Boot");
     }
 
     @Test

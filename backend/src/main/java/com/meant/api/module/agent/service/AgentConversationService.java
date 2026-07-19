@@ -8,6 +8,7 @@ import com.meant.api.module.agent.repository.AgentConversationRepository;
 import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
+import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand;
 import com.meant.api.module.agent.service.command.UpdateAgentConversationCommand;
 import com.meant.api.module.agent.service.dto.AgentConversationResult;
 import com.meant.api.module.agent.service.dto.AgentConversationSummaryResult;
@@ -135,6 +136,16 @@ public class AgentConversationService {
             conversation.archive(command.archived(), now);
         }
         return AgentResultMapper.conversation(conversation);
+    }
+
+    @Transactional
+    public void delete(@Valid DeleteAgentConversationCommand command) {
+        AgentConversation conversation = conversationRepository.findOwnedForUpdate(
+                        command.conversationId(),
+                        command.userId()
+                )
+                .orElseThrow(AgentException::notFound);
+        conversationRepository.delete(conversation);
     }
 
     private String normalizeTitle(String title) {

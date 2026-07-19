@@ -19,6 +19,7 @@ mock.module('./supabase', () => ({
 const {
   cancelAgentRun,
   createAgentConversation,
+  deleteAgentConversation,
   getCompleteAgentConversation,
   getAgentConversation,
   getAgentConversations,
@@ -90,6 +91,9 @@ beforeEach(() => {
         artifacts: [],
       })
     }
+    if (request.method === 'DELETE') {
+      return new Response(null, { status: 204 })
+    }
     return Response.json({
       conversationId: 'conversation-1',
       title: 'Trail shoes',
@@ -122,12 +126,14 @@ describe('agent conversation API', () => {
       archived: false,
       expectedUserId: 'user-a',
     })
+    await deleteAgentConversation('conversation/1', { expectedUserId: 'user-a' })
 
     expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
       'POST http://localhost:8080/api/v1/users/me/agent/conversations',
       'GET http://localhost:8080/api/v1/users/me/agent/conversations',
       'GET http://localhost:8080/api/v1/users/me/agent/conversations/conversation%2F1',
       'PATCH http://localhost:8080/api/v1/users/me/agent/conversations/conversation%2F1',
+      'DELETE http://localhost:8080/api/v1/users/me/agent/conversations/conversation%2F1',
     ])
     expect(
       requests.every((request) => request.headers.get('Authorization') === 'Bearer agent-token'),
@@ -147,6 +153,16 @@ describe('agent conversation API', () => {
     expect(requests[0]?.method).toBe('POST')
     expect(requests[0]?.url).toEndWith('/api/v1/users/me/agent/conversations/conversation-1/turns')
     expect(await requests[0]?.json()).toEqual({ message: 'Find trail shoes' })
+  })
+
+  test('treats an already deleted conversation as removed from history', async () => {
+    globalThis.fetch = mock(
+      async () => new Response(null, { status: 404 }),
+    ) as unknown as typeof fetch
+
+    await expect(
+      deleteAgentConversation('conversation-1', { expectedUserId: 'user-a' }),
+    ).resolves.toBeUndefined()
   })
 
   test('loads every transcript page and deduplicates the latest artifact projection', async () => {

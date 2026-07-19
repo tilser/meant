@@ -38,7 +38,7 @@ public class AgentProductInteractionService {
         if (interaction.pin(reference.offerKey(), now)) {
             interactionRepository.save(interaction);
         }
-        return result(interaction, reference.offerKey());
+        return result(interaction, reference.offerKey(), reference.label());
     }
 
     @Transactional
@@ -53,7 +53,7 @@ public class AgentProductInteractionService {
                     if (interaction.unpin(clock.instant())) {
                         interactionRepository.save(interaction);
                     }
-                    return result(interaction, reference.offerKey());
+                    return result(interaction, reference.offerKey(), reference.label());
                 })
                 .orElseGet(() -> inactive(reference));
     }
@@ -70,7 +70,7 @@ public class AgentProductInteractionService {
         if (interaction.watch(reference.offerKey(), now)) {
             interactionRepository.save(interaction);
         }
-        return result(interaction, reference.offerKey());
+        return result(interaction, reference.offerKey(), reference.label());
     }
 
     @Transactional
@@ -85,7 +85,7 @@ public class AgentProductInteractionService {
                     if (interaction.unwatch(clock.instant())) {
                         interactionRepository.save(interaction);
                     }
-                    return result(interaction, reference.offerKey());
+                    return result(interaction, reference.offerKey(), reference.label());
                 })
                 .orElseGet(() -> inactive(reference));
     }
@@ -94,7 +94,7 @@ public class AgentProductInteractionService {
     public List<AgentProductInteractionResult> list(AgentToolExecutionContext context, int limit) {
         requireOwnedConversation(context, false);
         return interactionRepository.findActiveByUserId(context.userId(), PageRequest.of(0, limit)).stream()
-                .map(interaction -> result(interaction, preferredOffer(interaction)))
+                .map(interaction -> result(interaction, preferredOffer(interaction), null))
                 .toList();
     }
 
@@ -134,13 +134,18 @@ public class AgentProductInteractionService {
 
     private AgentProductInteractionResult inactive(AgentProductInteractionReference reference) {
         return new AgentProductInteractionResult(
-                reference.canonicalProductKey(), reference.offerKey(), false, null, null,
+                reference.canonicalProductKey(), reference.label(), reference.offerKey(), false, null, null,
                 false, null, null, null);
     }
 
-    private AgentProductInteractionResult result(AgentProductInteraction interaction, String offerKey) {
+    private AgentProductInteractionResult result(
+            AgentProductInteraction interaction,
+            String offerKey,
+            String label
+    ) {
         return new AgentProductInteractionResult(
                 interaction.getCanonicalProductKey(),
+                label,
                 offerKey,
                 interaction.isPinned(),
                 interaction.getPinnedOfferKey(),

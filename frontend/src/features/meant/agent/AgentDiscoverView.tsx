@@ -10,6 +10,7 @@ import {
 import {
   cancelAgentRun,
   createAgentConversation,
+  deleteAgentConversation,
   getCompleteAgentConversation,
   getAgentConversations,
   getAgentRun,
@@ -49,6 +50,8 @@ import type {
 } from '../shelf/types'
 import { SHELF_DRAG_MIME } from '../shelf/types'
 import { ProductArtwork, SparkMark } from '../shared/ui'
+import { accountStorageKey } from '../shared/accountStorage'
+import { useStoredState } from '../shared/storage'
 import { Workbench } from '../chat/workbench/Workbench'
 import type {
   CartItem,
@@ -341,6 +344,10 @@ export function AgentDiscoverView({
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [shareNotice, setShareNotice] = useState<string | null>(null)
+  const [dismissedMessageIds, setDismissedMessageIds] = useStoredState<Record<string, string[]>>(
+    accountStorageKey('meant.agentDismissedMessages', expectedUserId),
+    {},
+  )
   const streamAbortRef = useRef<AbortController | null>(null)
   const eventStateRef = useRef(eventState)
   const activeConversationIdRef = useRef(activeConversationId)
@@ -771,7 +778,7 @@ export function AgentDiscoverView({
   )
   const visibleCart = cart
 
-  const messages = useMemo(() => {
+  const allMessages = useMemo(() => {
     if (!combinedConversation) return []
     const authoritative = discoverMessagesFromAgentConversation(
       combinedConversation,
@@ -783,9 +790,12 @@ export function AgentDiscoverView({
     const knownMessageIds = new Set(
       combinedConversation.messages.map((message) => message.messageId),
     )
+    const hasRenderedCatalogResult = authoritative.some((message) =>
+      message.blocks?.some((block) => block.type === 'products' && Boolean(block.query)),
+    )
     const transient: DiscoverChatMessage[] = projection.assistantMessages.flatMap(
       (message, index) =>
-        message.messageId && knownMessageIds.has(message.messageId)
+        hasRenderedCatalogResult || (message.messageId && knownMessageIds.has(message.messageId))
           ? []
           : [
               {
@@ -795,7 +805,7 @@ export function AgentDiscoverView({
               },
             ],
     )
-    if (projection.streamingAssistantText) {
+    if (projection.streamingAssistantText && !hasRenderedCatalogResult) {
       transient.push({
         id: `${activeRunId}:streaming`,
         role: 'ai',
@@ -806,6 +816,26 @@ export function AgentDiscoverView({
     }
     return [...authoritative, ...transient]
   }, [activeRunId, combinedConversation, deliveryLocations, eventState.runs])
+
+  const messages = useMemo(() => {
+    if (!activeConversationId) return allMessages
+    const dismissed = new Set(dismissedMessageIds[activeConversationId] ?? [])
+    return dismissed.size > 0
+      ? allMessages.filter((message) => !dismissed.has(message.id))
+      : allMessages
+  }, [activeConversationId, allMessages, dismissedMessageIds])
+
+  const removeMessage = useCallback(
+    (messageId: string) => {
+      if (!activeConversationId) return
+      setDismissedMessageIds((current) => {
+        const existing = current[activeConversationId] ?? []
+        if (existing.includes(messageId)) return current
+        return { ...current, [activeConversationId]: [...existing, messageId] }
+      })
+    },
+    [activeConversationId, setDismissedMessageIds],
+  )
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -1389,6 +1419,29 @@ export function AgentDiscoverView({
       setError(caught instanceof Error ? caught.message : 'Could not archive this conversation.')
     }
   }
+  const deleteConversation = async (conversationId: string) => {
+    try {
+      await deleteAgentConversation(conversationId, { expectedUserId })
+      const remaining = conversations.filter((item) => item.conversationId !== conversationId)
+      setConversations(remaining)
+      setArchivedConversations((current) =>
+        current.filter((item) => item.conversationId !== conversationId),
+      )
+      setDismissedMessageIds((current) => {
+        if (!(conversationId in current)) return current
+        const next = { ...current }
+        delete next[conversationId]
+        return next
+      })
+      if (conversationId === activeConversationId) {
+        const nextConversation = remaining.find((item) => item.latestSequence > 0)
+        if (nextConversation) updateActiveConversationId(nextConversation.conversationId)
+        else returnHome()
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not delete this conversation.')
+    }
+  }
   const renameConversation = async (conversationId: string, title: string) => {
     try {
       const renamed = await updateAgentConversation({
@@ -1464,7 +1517,7 @@ export function AgentDiscoverView({
             historyThreads={historyThreads}
             activeThreadId=""
             onHistorySelect={(id) => void selectConversation(id)}
-            onHistoryDelete={(id) => void archiveConversation(id)}
+            onHistoryDelete={(id) => void deleteConversation(id)}
             replyDraft={null}
             onClearReply={() => undefined}
           />
@@ -1509,7 +1562,7 @@ export function AgentDiscoverView({
               return next
             })
           }
-          onDeleteHistory={(id) => void archiveConversation(id)}
+          onDeleteHistory={(id) => void deleteConversation(id)}
           historyThreads={historyThreads}
         />
       ) : null}
@@ -1571,6 +1624,7 @@ export function AgentDiscoverView({
             flash={shelfFlashMessageId === message.id}
             celebrateArrival={false}
             immutable
+            deletable
             onOpen={onOpen}
             onToggleSave={onToggleSave}
             onAddCart={addToCart}
@@ -1599,7 +1653,7 @@ export function AgentDiscoverView({
             newsletter={newsletter}
             newsletterPending={false}
             onNewsletterSignup={() => void onNewsletterChange(true)}
-            onDelete={() => undefined}
+            onDelete={removeMessage}
             onShelfAddMessage={(item) => addMessageToShelf(item)}
             onShelfAddProduct={(product) => addProductToShelf(product)}
             onDragMessage={dragMessage}

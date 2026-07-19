@@ -25,7 +25,7 @@ class AgentProductInteractionToolTest {
         when(json.readArguments("{}", AgentProductInteractionToolInput.class))
                 .thenReturn(new AgentProductInteractionToolInput("product:boot", "offer:42"));
         AgentProductInteractionResult state = new AgentProductInteractionResult(
-                "product:boot", "offer:42", true, "offer:42", Instant.now(),
+                "product:boot", "Trail Boot", "offer:42", true, "offer:42", Instant.now(),
                 false, null, null, Instant.now());
         when(service.pin(context, "product:boot", "offer:42")).thenReturn(state);
         when(json.write(state)).thenReturn("{\"pinned\":true}");
@@ -42,8 +42,10 @@ class AgentProductInteractionToolTest {
         assertThat(result.artifacts()).singleElement().satisfies(artifact -> {
             assertThat(artifact.type()).isEqualTo(AgentArtifactType.PRODUCT_STATE);
             assertThat(artifact.stableKey()).isEqualTo("product-state:product:boot");
+            assertThat(artifact.label()).isEqualTo("Trail Boot");
             assertThat(artifact.offerKey()).isEqualTo("offer:42");
         });
+        assertThat(result.safeSummary()).isEqualTo("Pinned product Trail Boot.");
         assertThat(tools).extracting(tool -> tool.descriptor().name())
                 .containsExactly("pin_product", "unpin_product", "watch_product", "unwatch_product");
         assertThat(tools).allSatisfy(tool -> {
@@ -52,6 +54,27 @@ class AgentProductInteractionToolTest {
                     .contains("\"additionalProperties\":false")
                     .doesNotContain("userId", "ownerId");
         });
+    }
+
+    @Test
+    void mutationSummaryFallsBackToCanonicalKeyWhenTheResolvedLabelIsBlank() {
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AgentProductInteractionService service = mock(AgentProductInteractionService.class);
+        AgentToolExecutionContext context = context();
+        when(json.readArguments("{}", AgentProductInteractionToolInput.class))
+                .thenReturn(new AgentProductInteractionToolInput("product:boot", "offer:42"));
+        AgentProductInteractionResult state = new AgentProductInteractionResult(
+                "product:boot", "  ", "offer:42", true, "offer:42", Instant.now(),
+                false, null, null, Instant.now());
+        when(service.pin(context, "product:boot", "offer:42")).thenReturn(state);
+        when(json.write(state)).thenReturn("{\"pinned\":true}");
+
+        var result = new PinProductAgentTool(json, service).execute(context, "{}");
+
+        assertThat(result.safeSummary()).isEqualTo("Pinned product product:boot.");
+        assertThat(result.artifacts()).singleElement()
+                .extracting(artifact -> artifact.label())
+                .isEqualTo("product:boot");
     }
 
     private AgentToolExecutionContext context() {

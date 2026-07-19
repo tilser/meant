@@ -14,6 +14,7 @@ import com.meant.api.module.agent.service.AgentConversationService;
 import com.meant.api.module.agent.service.AgentRunCoordinator;
 import com.meant.api.module.agent.service.AgentTurnService;
 import com.meant.api.module.agent.service.AgentUserActionService;
+import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand;
 import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.AgentMessageResult;
@@ -28,6 +29,27 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 class AgentConversationControllerTest {
+
+    @Test
+    void deletesTheAuthenticatedUsersConversation() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentConversationService conversationService = mock(AgentConversationService.class);
+        AgentConversationController controller = new AgentConversationController(
+                conversationService,
+                mock(AgentTurnService.class),
+                mock(AgentRunCoordinator.class),
+                mock(AgentUserActionService.class)
+        );
+
+        controller.delete(jwt(userId), conversationId);
+
+        ArgumentCaptor<DeleteAgentConversationCommand> commandCaptor =
+                ArgumentCaptor.forClass(DeleteAgentConversationCommand.class);
+        verify(conversationService).delete(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().userId()).isEqualTo(userId);
+        assertThat(commandCaptor.getValue().conversationId()).isEqualTo(conversationId);
+    }
 
     @Test
     void forwardsTheTrustedRequestAddressToTurnsAndDirectActions() {

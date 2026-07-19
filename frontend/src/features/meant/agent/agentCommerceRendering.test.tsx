@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { InlineCartBlock } from '../chat/blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from '../chat/blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from '../chat/blocks/InlineMiniCompareBlock'
+import { DustWrap } from '../chat/DiscoverChatMessageRow'
 import { DiscoverProductBatch } from '../chat/DiscoverProductBatch'
 import type { DiscoverChatBlock } from '../chat/types'
 import type { MerchantCartStateReplacement } from '../cart/types'
@@ -72,6 +73,17 @@ const cart: CartItem[] = [
 ]
 
 describe('agent commerce artifacts reuse the established components', () => {
+  test('keeps the existing small remove-message cross available when agent rows opt in', () => {
+    const markup = renderToStaticMarkup(
+      <DustWrap side="meant" saved={false} deletable onGone={() => undefined}>
+        <span>Agent message</span>
+      </DustWrap>,
+    )
+
+    expect(markup).toContain('aria-label="Delete message"')
+    expect(markup).toContain('mt-tool-del')
+  })
+
   test('treats cancelled and failed cart runs as terminal synchronization outcomes', () => {
     expect(isTerminalAgentRunStatus('CANCELLED')).toBe(true)
     expect(isTerminalAgentRunStatus('FAILED')).toBe(true)

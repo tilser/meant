@@ -82,6 +82,7 @@ class AgentProductInteractionServiceTest {
         assertThat(saved.getValue().isPinned()).isTrue();
         assertThat(saved.getValue().getPinnedOfferKey()).isEqualTo("offer:42");
         assertThat(result.offerKey()).isEqualTo("offer:42");
+        assertThat(result.label()).isEqualTo("Boot");
         assertThat(result.pinnedAt()).isEqualTo(NOW);
         assertThat(result.watched()).isFalse();
     }

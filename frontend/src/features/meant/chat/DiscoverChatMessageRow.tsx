@@ -34,7 +34,7 @@ function stableDustSeed(value: string): number {
   return Array.from(value).reduce((seed, character) => seed + character.charCodeAt(0), 0) || 1
 }
 
-function DustWrap({
+export function DustWrap({
   children,
   side,
   onGone,
@@ -268,6 +268,7 @@ export function DiscoverChatMessageRow({
   onDragProduct,
   onRetryProductResultSet,
   immutable = false,
+  deletable,
 }: Readonly<{
   threadId: string
   message: DiscoverChatMessage
@@ -341,6 +342,7 @@ export function DiscoverChatMessageRow({
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
   immutable?: boolean
+  deletable?: boolean
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
@@ -363,7 +365,7 @@ export function DiscoverChatMessageRow({
           onShelfDragStart={(event) => onDragMessage(event, message)}
           onCopy={copyMessage}
           saved={onShelf}
-          deletable={!immutable}
+          deletable={deletable ?? !immutable}
         >
           <div className="mt-ct-you-bubble">
             {message.productContext ? (
@@ -393,7 +395,7 @@ export function DiscoverChatMessageRow({
         onShelfDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
         onCopy={copyMessage}
         saved={onShelf}
-        deletable={!immutable}
+        deletable={deletable ?? !immutable}
       >
         <div className="mt-ct-meant-inner">
           <span className="mt-ct-av">

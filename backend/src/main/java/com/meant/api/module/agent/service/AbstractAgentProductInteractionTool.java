@@ -40,11 +40,12 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
         AgentProductInteractionResult state = operation.execute(
                 interactionService, context, input.canonicalProductKey(), input.offerKey());
         String resultJson = json.write(state);
+        String displayLabel = state.displayLabel();
         AgentArtifact artifact = new AgentArtifact(
                 AgentArtifactType.PRODUCT_STATE,
                 1,
                 AgentProductInteractionReferenceService.STATE_STABLE_KEY_PREFIX + state.canonicalProductKey(),
-                state.canonicalProductKey(),
+                displayLabel,
                 state.canonicalProductKey(),
                 state.offerKey(),
                 null,
@@ -55,7 +56,7 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
         );
         return new AgentToolExecutionResult(
                 resultJson,
-                operation.summary(state),
+                operation.summary(displayLabel),
                 List.of(artifact),
                 null
         );
@@ -74,8 +75,8 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
             }
 
             @Override
-            String summary(AgentProductInteractionResult state) {
-                return "Pinned product " + state.canonicalProductKey() + ".";
+            String summary(String displayLabel) {
+                return "Pinned product " + displayLabel + ".";
             }
         },
         UNPIN {
@@ -90,8 +91,8 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
             }
 
             @Override
-            String summary(AgentProductInteractionResult state) {
-                return "Unpinned product " + state.canonicalProductKey() + ".";
+            String summary(String displayLabel) {
+                return "Unpinned product " + displayLabel + ".";
             }
         },
         WATCH {
@@ -106,8 +107,8 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
             }
 
             @Override
-            String summary(AgentProductInteractionResult state) {
-                return "Watching product " + state.canonicalProductKey() + ".";
+            String summary(String displayLabel) {
+                return "Watching product " + displayLabel + ".";
             }
         },
         UNWATCH {
@@ -122,8 +123,8 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
             }
 
             @Override
-            String summary(AgentProductInteractionResult state) {
-                return "Stopped watching product " + state.canonicalProductKey() + ".";
+            String summary(String displayLabel) {
+                return "Stopped watching product " + displayLabel + ".";
             }
         };
 
@@ -134,6 +135,6 @@ abstract class AbstractAgentProductInteractionTool implements AgentTool {
                 String offerKey
         );
 
-        abstract String summary(AgentProductInteractionResult state);
+        abstract String summary(String displayLabel);
     }
 }
