@@ -26,7 +26,7 @@ public class CompareProductsAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "compare_products",
-            "Rehydrate and compare two to four products previously shown in this conversation.",
+            "Rehydrate and compare two to four products previously shown in this conversation. Always use this tool for an explicit product-comparison request so typed inline comparison UI can render; do not answer with prose alone.",
             """
             {"type":"object","properties":{"canonicalProductKeys":{"type":"array","minItems":2,"maxItems":4,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":200}}},"required":["canonicalProductKeys"],"additionalProperties":false}
             """,

@@ -137,6 +137,9 @@ class AgentContextAssemblerTest {
                 .contains("Missing color, size")
                 .contains("Use create_shopping_mission only for explicit multi-item")
                 .contains("use pick_recommended_product to ground one exact purchasable choice")
+                .contains("call compare_products")
+                .contains("never answer a")
+                .contains("product-comparison request with prose alone")
                 .contains("Wait for each")
                 .contains("tool result before calling a dependent tool");
 

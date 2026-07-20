@@ -18,6 +18,7 @@ import com.meant.api.module.agent.service.dto.AgentModelToolResult;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
 import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
@@ -41,6 +42,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -54,6 +56,10 @@ public class AgentRunCoordinator {
     private static final String WAITING_PREFIX = "WAITING_FOR_USER:";
     private static final String RECOVERY_MESSAGE =
             "I couldn't finish the remaining steps safely. Review the completed actions above; no further actions were started.";
+    private static final String COMPARE_PRODUCTS_TOOL = "compare_products";
+    private static final Pattern DIRECT_COMPARISON_REQUEST = Pattern.compile(
+            "(?iu)^\\s*(?:please\\s+)?(?:(?:can|could|would|will)\\s+you\\s+)?compare\\b"
+    );
     private static final int QUEUED_RUN_PAGE_SIZE = 100;
 
     private final AgentRunRepository runRepository;
@@ -209,6 +215,7 @@ public class AgentRunCoordinator {
         Map<String, Integer> repeatedCalls = new HashMap<>();
         int totalToolCalls = 0;
         boolean mutationAttempted = false;
+        boolean comparisonToolRequired = requiresComparisonArtifact(context);
 
         for (int iteration = 0; iteration < properties.maximumModelIterations(); iteration++) {
             requireActive(runId, executionOwner, deadline);
@@ -224,13 +231,24 @@ public class AgentRunCoordinator {
                     toolContext,
                     toolRegistry.descriptors()
             );
+            String requiredToolName = comparisonToolRequired && descriptors.stream()
+                    .anyMatch(descriptor -> COMPARE_PRODUCTS_TOOL.equals(descriptor.name()))
+                    ? COMPARE_PRODUCTS_TOOL
+                    : null;
             DeltaWriter deltaWriter = new DeltaWriter(runId, executionOwner);
-            AgentModelResponse response = modelTurnWithFallback(modelMessages, descriptors, deltaWriter);
+            AgentModelResponse response = modelTurnWithFallback(
+                    modelMessages,
+                    descriptors,
+                    requiredToolName,
+                    deltaWriter
+            );
             requireActive(runId, executionOwner, deadline);
             deltaWriter.flush();
             runService.recordIteration(runId, executionOwner, response.usage());
 
             List<AgentModelToolCall> calls = normalizeCalls(runId, iteration, response.toolCalls());
+            comparisonToolRequired = comparisonToolRequired
+                    && calls.stream().noneMatch(call -> COMPARE_PRODUCTS_TOOL.equals(call.name()));
             if (calls.isEmpty()) {
                 finish(runId, executionOwner, response.text());
                 return;
@@ -289,13 +307,14 @@ public class AgentRunCoordinator {
     private AgentModelResponse modelTurnWithFallback(
             List<AgentModelMessage> messages,
             List<AgentToolDescriptor> descriptors,
+            String requiredToolName,
             DeltaWriter deltaWriter
     ) {
         AtomicBoolean emitted = new AtomicBoolean();
         long primaryStarted = System.nanoTime();
         try {
             AgentModelResponse response = modelGateway.turn(
-                    request(properties.model(), messages, descriptors),
+                    request(properties.model(), messages, descriptors, requiredToolName),
                     delta -> {
                         if (delta != null && !delta.isBlank()) {
                             emitted.set(true);
@@ -318,7 +337,7 @@ public class AgentRunCoordinator {
             long fallbackStarted = System.nanoTime();
             try {
                 AgentModelResponse response = modelGateway.turn(
-                        request(properties.fallbackModel(), messages, descriptors),
+                        request(properties.fallbackModel(), messages, descriptors, requiredToolName),
                         deltaWriter::accept,
                         deltaWriter::cancelled
                 );
@@ -356,15 +375,31 @@ public class AgentRunCoordinator {
     private AgentModelRequest request(
             String model,
             List<AgentModelMessage> messages,
-            List<AgentToolDescriptor> descriptors
+            List<AgentToolDescriptor> descriptors,
+            String requiredToolName
     ) {
         return new AgentModelRequest(
                 model,
                 List.copyOf(messages),
                 descriptors.stream().map(AgentToolDescriptor::modelDefinition).toList(),
                 properties.temperature(),
-                properties.maximumOutputTokens()
+                properties.maximumOutputTokens(),
+                requiredToolName
         );
+    }
+
+    private boolean requiresComparisonArtifact(AgentModelContext context) {
+        if (context.triggeringUserText() == null
+                || !DIRECT_COMPARISON_REQUEST.matcher(context.triggeringUserText()).find()
+                || context.visibleProductContext() == null) {
+            return false;
+        }
+        return context.visibleProductContext().products().stream()
+                .map(AgentVisibleProductReference::canonicalProductKey)
+                .filter(key -> key != null && !key.isBlank())
+                .distinct()
+                .limit(2)
+                .count() == 2;
     }
 
     private List<AgentModelToolResult> executeTools(

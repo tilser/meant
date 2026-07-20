@@ -1642,6 +1642,33 @@ describe('agent artifact mapping', () => {
       [],
     )
     const checkout = blocksForAgentMessage(checkoutMessage, [checkoutArtifact], allArtifacts, [])
+    const comparisonAssistant: AgentMessageProfile = {
+      ...comparisonMessage,
+      messageId: 'message-comparison-assistant',
+      sequenceNumber: 4,
+      role: 'ASSISTANT',
+      contentKind: 'TEXT',
+      textContent: 'The grounded details favor the first product.',
+      contentJson: null,
+      correlationId: null,
+    }
+    const comparisonTranscript = discoverMessagesFromAgentConversation(
+      {
+        conversationId: 'conversation-comparison',
+        title: 'Comparison',
+        status: 'ACTIVE',
+        activeMissionId: null,
+        latestSequence: comparisonAssistant.sequenceNumber,
+        createdAt,
+        updatedAt: createdAt,
+        rollingSummary: null,
+        summaryVersion: 0,
+        latestCursor: 4,
+        messages: [comparisonMessage, comparisonAssistant],
+        artifacts: [...productArtifacts, comparisonArtifact],
+      },
+      [],
+    )
     const replacements = cartStateReplacementsFromAgentArtifacts(
       [cartArtifact, cartLineArtifact],
       productArtifacts.flatMap((item) => {
@@ -1654,6 +1681,14 @@ describe('agent artifact mapping', () => {
       type: 'minicompare',
       products: [{ id: 'product-1' }, { id: 'product-2' }],
     })
+    expect(comparisonTranscript).toHaveLength(1)
+    expect(comparisonTranscript[0]?.blocks).toMatchObject([
+      { type: 'text', text: 'The grounded details favor the first product.' },
+      {
+        type: 'minicompare',
+        products: [{ id: 'product-1' }, { id: 'product-2' }],
+      },
+    ])
     expect(cart[0]).toMatchObject({
       type: 'cart',
       lines: [

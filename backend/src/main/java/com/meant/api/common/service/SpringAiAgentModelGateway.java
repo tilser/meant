@@ -10,6 +10,8 @@ import com.meant.api.module.agent.service.dto.AgentModelToolDefinition;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
 import com.meant.api.module.agent.service.dto.AgentModelUsage;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
+import com.openai.models.chat.completions.ChatCompletionNamedToolChoice;
+import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -59,15 +61,23 @@ public final class SpringAiAgentModelGateway implements AgentModelGateway {
                 .map(SchemaOnlyToolCallback::new)
                 .map(ToolCallback.class::cast)
                 .toList();
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
+        OpenAiChatOptions.Builder optionsBuilder = OpenAiChatOptions.builder()
                 .model(request.model())
                 .temperature(request.temperature())
                 .maxTokens(request.maximumOutputTokens())
                 .timeout(properties.modelTimeout())
                 .streamUsage(true)
                 .parallelToolCalls(true)
-                .toolCallbacks(callbacks)
-                .build();
+                .toolCallbacks(callbacks);
+        if (request.requiredToolName() != null) {
+            ChatCompletionNamedToolChoice namedTool = ChatCompletionNamedToolChoice.builder()
+                    .function(ChatCompletionNamedToolChoice.Function.builder()
+                            .name(request.requiredToolName())
+                            .build())
+                    .build();
+            optionsBuilder.toolChoice(ChatCompletionToolChoiceOption.ofNamedToolChoice(namedTool));
+        }
+        OpenAiChatOptions options = optionsBuilder.build();
         Prompt prompt = new Prompt(request.messages().stream().map(this::toSpringMessage).toList(), options);
 
         StringBuilder text = new StringBuilder();

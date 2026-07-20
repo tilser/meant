@@ -27,6 +27,7 @@ import com.meant.api.module.agent.service.dto.AgentModelUsage;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import com.meant.api.module.agent.support.ScriptedAgentModelGateway;
 import java.time.Duration;
@@ -90,6 +91,50 @@ class AgentRunCoordinatorTest {
                 .singleElement()
                 .extracting(AgentModelToolResult::toolCallId)
                 .isEqualTo("call-1");
+    }
+
+    @Test
+    void explicitVisibleProductComparisonRequiresTheTypedComparisonToolBeforeProse() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall comparison = new AgentModelToolCall(
+                "call-compare",
+                "compare_products",
+                "{\"canonicalProductKeys\":[\"product-1\",\"product-2\"]}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(comparison))),
+                response(model("The first product is the stronger match.", List.of()))
+        ));
+        AgentModelContext context = new AgentModelContext(
+                List.of(AgentModelMessage.user("compare first two products")),
+                "compare first two products",
+                new AgentVisibleProductContext(UUID.randomUUID(), List.of(
+                        new AgentVisibleProductReference(1, 1, "product-1", "offer-1", "First product"),
+                        new AgentVisibleProductReference(2, 2, "product-2", "offer-2", "Second product")
+                ))
+        );
+        Fixture fixture = fixture(runId, conversationId, model, false, context);
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenReturn(new AgentExecutedToolCall(
+                        new AgentModelToolResult("call-compare", "compare_products", "{\"products\":[]}"),
+                        true
+                ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.toolExecutor(), timeout(3000)).execute(
+                any(),
+                org.mockito.ArgumentMatchers.argThat(call -> "compare_products".equals(call.name()))
+        );
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "The first product is the stronger match.",
+                false
+        );
+        assertThat(model.requests()).extracting(request -> request.requiredToolName())
+                .containsExactly("compare_products", null);
     }
 
     @Test
@@ -386,6 +431,22 @@ class AgentRunCoordinatorTest {
             ScriptedAgentModelGateway model,
             boolean cancelled
     ) {
+        return fixture(
+                runId,
+                conversationId,
+                model,
+                cancelled,
+                new AgentModelContext(List.of(AgentModelMessage.user("Find shoes")), "Find shoes")
+        );
+    }
+
+    private Fixture fixture(
+            UUID runId,
+            UUID conversationId,
+            ScriptedAgentModelGateway model,
+            boolean cancelled,
+            AgentModelContext modelContext
+    ) {
         AgentRunRepository runs = mock(AgentRunRepository.class);
         UUID executionOwner = UUID.randomUUID();
         AgentRunService runService = mock(AgentRunService.class);
@@ -414,6 +475,13 @@ class AgentRunCoordinatorTest {
                 "1",
                 AgentToolRisk.REVERSIBLE_MUTATION
         );
+        AgentToolDescriptor comparisonDescriptor = new AgentToolDescriptor(
+                "compare_products",
+                "Compare products",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.READ
+        );
         AgentRun run = AgentRun.builder()
                 .id(runId)
                 .conversationId(conversationId)
@@ -430,20 +498,19 @@ class AgentRunCoordinatorTest {
                 .thenReturn(Optional.empty());
         when(runService.claim(runId)).thenReturn(Optional.of(executionOwner));
         when(runService.cancellationRequested(runId, executionOwner)).thenReturn(cancelled);
-        when(contextAssembler.assemble(runId)).thenReturn(new AgentModelContext(
-                List.of(AgentModelMessage.user("Find shoes")),
-                "Find shoes"
-        ));
-        when(registry.descriptors()).thenReturn(List.of(descriptor, mutationDescriptor));
+        when(contextAssembler.assemble(runId)).thenReturn(modelContext);
+        when(registry.descriptors()).thenReturn(List.of(descriptor, mutationDescriptor, comparisonDescriptor));
         when(authorizationPolicy.available(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(jsonSupport.canonicalizeOrOriginal(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
         when(tool.descriptor()).thenReturn(descriptor);
         when(registry.required(anyString())).thenAnswer(invocation -> {
             String name = invocation.getArgument(0);
             AgentTool selected = mock(AgentTool.class);
-            when(selected.descriptor()).thenReturn(
-                    "prepare_carts".equals(name) ? mutationDescriptor : descriptor
-            );
+            when(selected.descriptor()).thenReturn(switch (name) {
+                case "prepare_carts" -> mutationDescriptor;
+                case "compare_products" -> comparisonDescriptor;
+                default -> descriptor;
+            });
             return selected;
         });
         coordinator = new AgentRunCoordinator(

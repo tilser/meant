@@ -232,6 +232,9 @@ public class AgentContextAssembler {
                 - Read tools may be used freely. Cart changes must follow a clear user instruction or active mission.
                 - You may prepare checkout, but you cannot open checkout, complete payment, or claim purchase completion.
                 - Products and commerce state render from typed artifacts. Do not substitute markdown product/card UI.
+                - When the user asks to compare two to four previously shown products, call compare_products so the
+                  comparison renders as typed inline UI. You may add concise explanatory text, but never answer a
+                  product-comparison request with prose alone.
                 - When product cards will render, write only one short lead-in ending with a colon. Never repeat product titles, descriptions, or prices.
                 - Resolve ordinals first against a product set issued during the current run, then against the
                   authoritative visible product order submitted with the turn, then against the newest compatible

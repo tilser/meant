@@ -15,6 +15,7 @@ import com.meant.api.module.agent.service.dto.AgentModelMessage;
 import com.meant.api.module.agent.service.dto.AgentModelRequest;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolDefinition;
+import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -151,7 +152,7 @@ class SpringAiAgentModelGatewayTest {
                 "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}}}"
         );
 
-        gateway.turn(request(List.of(definition)), ignored -> { }, () -> false);
+        gateway.turn(request(List.of(definition), "search_catalog"), ignored -> { }, () -> false);
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).stream(promptCaptor.capture());
@@ -163,6 +164,13 @@ class SpringAiAgentModelGatewayTest {
         assertThat(options.getTimeout()).isEqualTo(Duration.ofSeconds(3));
         assertThat(options.getParallelToolCalls()).isTrue();
         assertThat(options.getStreamOptions().includeUsage()).isTrue();
+        assertThat(options.getToolChoice())
+                .isInstanceOf(ChatCompletionToolChoiceOption.class)
+                .extracting(choice -> ((ChatCompletionToolChoiceOption) choice)
+                        .asNamedToolChoice()
+                        .function()
+                        .name())
+                .isEqualTo("search_catalog");
         assertThat(options.getToolCallbacks()).singleElement().satisfies(callback -> {
             assertThat(callback.getToolDefinition().name()).isEqualTo("search_catalog");
             assertThat(callback.getToolDefinition().description()).isEqualTo("Search the catalog");
@@ -184,12 +192,17 @@ class SpringAiAgentModelGatewayTest {
     }
 
     private AgentModelRequest request(List<AgentModelToolDefinition> tools) {
+        return request(tools, null);
+    }
+
+    private AgentModelRequest request(List<AgentModelToolDefinition> tools, String requiredToolName) {
         return new AgentModelRequest(
                 "requested/model",
                 List.of(AgentModelMessage.system("system"), AgentModelMessage.user("user")),
                 tools,
                 0.25,
-                321
+                321,
+                requiredToolName
         );
     }
 
