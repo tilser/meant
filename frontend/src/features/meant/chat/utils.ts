@@ -747,9 +747,7 @@ export function cartItemsForChatBlock(
 }
 
 /** Keeps one current cart card connected while older agent cart cards remain historical snapshots. */
-export function latestCartBlockMessageId(
-  messages: readonly DiscoverChatMessage[],
-): string | null {
+export function latestCartBlockMessageId(messages: readonly DiscoverChatMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (message?.blocks?.some((block) => block.type === 'cart')) {
