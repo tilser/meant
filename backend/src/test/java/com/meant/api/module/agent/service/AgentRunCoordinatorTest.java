@@ -5,6 +5,7 @@ import static com.meant.api.module.agent.support.ScriptedAgentModelGateway.respo
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.after;
@@ -25,6 +26,7 @@ import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
 import com.meant.api.module.agent.service.dto.AgentModelUsage;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
+import com.meant.api.module.agent.service.dto.AgentResolvedReadIntent;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
@@ -179,6 +181,105 @@ class AgentRunCoordinatorTest {
         );
         assertThat(model.requests()).extracting(request -> request.model())
                 .containsExactly("primary-model", "fallback-model");
+    }
+
+    @Test
+    void explicitOrdinalSimilarityRunsTheVerifiedToolWithoutWaitingForAModelResponse() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID sourceMessageId = UUID.randomUUID();
+        String turn = "I like the third one, can you find some similar like those?";
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(sourceMessageId, List.of(
+                new AgentVisibleProductReference(1, 1, "product-1", "offer-1", "140 Frooty Swim Shorts"),
+                new AgentVisibleProductReference(2, 2, "product-2", "offer-2", "1056 - Striped Swim Shorts"),
+                new AgentVisibleProductReference(
+                        3,
+                        3,
+                        "swim-shorts-packing-pouch",
+                        "offer-3",
+                        "Swim Shorts with Packing Pouch"
+                ),
+                new AgentVisibleProductReference(4, 4, "product-4", "offer-4", "Black Cat Swim Short")
+        ));
+        AgentModelToolCall similarCall = new AgentModelToolCall(
+                null,
+                "find_similar_products",
+                "{\"canonicalProductKey\":\"swim-shorts-packing-pouch\","
+                        + "\"query\":\"products similar to Swim Shorts with Packing Pouch\"}"
+        );
+        AgentResolvedReadIntent resolved = new AgentResolvedReadIntent(
+                similarCall,
+                "Swim Shorts with Packing Pouch"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("This model response must not be needed.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user(turn)),
+                turn,
+                visible
+        ));
+        when(fixture.readIntentResolver().resolve(any())).thenReturn(Optional.of(resolved));
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult(
+                        runId + "-0-0",
+                        "find_similar_products",
+                        "{\"products\":[{\"reference\":1}],\"hasMore\":false}"
+                ),
+                true
+        ));
+        when(fixture.readIntentResolver().completionMessage(eq(resolved), anyString()))
+                .thenReturn("I found these products similar to Swim Shorts with Packing Pouch:");
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I found these products similar to Swim Shorts with Packing Pouch:",
+                false
+        );
+        ArgumentCaptor<AgentToolExecutionContext> contextCaptor =
+                ArgumentCaptor.forClass(AgentToolExecutionContext.class);
+        ArgumentCaptor<AgentModelToolCall> callCaptor = ArgumentCaptor.forClass(AgentModelToolCall.class);
+        verify(fixture.toolExecutor(), timeout(3000)).execute(contextCaptor.capture(), callCaptor.capture());
+        assertThat(contextCaptor.getValue().triggeringUserText()).isEqualTo(turn);
+        assertThat(contextCaptor.getValue().visibleProductContext()).isEqualTo(visible);
+        assertThat(callCaptor.getValue()).isEqualTo(new AgentModelToolCall(
+                runId + "-0-0",
+                "find_similar_products",
+                similarCall.argumentsJson()
+        ));
+        assertThat(model.requests()).isEmpty();
+    }
+
+    @Test
+    void emptyResponseRetriesOnceWhenFallbackModelMatchesPrimary() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of())),
+                response(model("Recovered on the bounded retry.", List.of()))
+        ));
+        Fixture fixture = fixture(
+                runId,
+                conversationId,
+                model,
+                false,
+                properties("primary-model")
+        );
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Recovered on the bounded retry.",
+                false
+        );
+        assertThat(model.requests()).extracting(request -> request.model())
+                .containsExactly("primary-model", "primary-model");
     }
 
     @Test
@@ -436,7 +537,8 @@ class AgentRunCoordinatorTest {
                 conversationId,
                 model,
                 cancelled,
-                new AgentModelContext(List.of(AgentModelMessage.user("Find shoes")), "Find shoes")
+                defaultModelContext(),
+                properties()
         );
     }
 
@@ -446,6 +548,27 @@ class AgentRunCoordinatorTest {
             ScriptedAgentModelGateway model,
             boolean cancelled,
             AgentModelContext modelContext
+    ) {
+        return fixture(runId, conversationId, model, cancelled, modelContext, properties());
+    }
+
+    private Fixture fixture(
+            UUID runId,
+            UUID conversationId,
+            ScriptedAgentModelGateway model,
+            boolean cancelled,
+            AgentProperties testProperties
+    ) {
+        return fixture(runId, conversationId, model, cancelled, defaultModelContext(), testProperties);
+    }
+
+    private Fixture fixture(
+            UUID runId,
+            UUID conversationId,
+            ScriptedAgentModelGateway model,
+            boolean cancelled,
+            AgentModelContext modelContext,
+            AgentProperties testProperties
     ) {
         AgentRunRepository runs = mock(AgentRunRepository.class);
         UUID executionOwner = UUID.randomUUID();
@@ -458,6 +581,7 @@ class AgentRunCoordinatorTest {
                 mock(AgentProductClarificationService.class);
         AgentProductClarificationContextService productClarificationContextService =
                 mock(AgentProductClarificationContextService.class);
+        AgentReadIntentResolver readIntentResolver = mock(AgentReadIntentResolver.class);
         AgentMessageLedgerService messageLedger = mock(AgentMessageLedgerService.class);
         AgentJsonSupport jsonSupport = mock(AgentJsonSupport.class);
         AgentTool tool = mock(AgentTool.class);
@@ -499,6 +623,7 @@ class AgentRunCoordinatorTest {
         when(runService.claim(runId)).thenReturn(Optional.of(executionOwner));
         when(runService.cancellationRequested(runId, executionOwner)).thenReturn(cancelled);
         when(contextAssembler.assemble(runId)).thenReturn(modelContext);
+        when(readIntentResolver.resolve(any())).thenReturn(Optional.empty());
         when(registry.descriptors()).thenReturn(List.of(descriptor, mutationDescriptor, comparisonDescriptor));
         when(authorizationPolicy.available(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         when(jsonSupport.canonicalizeOrOriginal(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -522,20 +647,27 @@ class AgentRunCoordinatorTest {
                 toolExecutor,
                 productClarificationService,
                 productClarificationContextService,
+                readIntentResolver,
                 messageLedger,
                 model,
                 mock(AgentMetrics.class),
                 jsonSupport,
-                properties()
+                testProperties
         );
         return new Fixture(
                 runService,
+                contextAssembler,
                 toolExecutor,
                 productClarificationService,
                 productClarificationContextService,
+                readIntentResolver,
                 messageLedger,
                 executionOwner
         );
+    }
+
+    private AgentModelContext defaultModelContext() {
+        return new AgentModelContext(List.of(AgentModelMessage.user("Find shoes")), "Find shoes");
     }
 
     private AgentProductClarification clarification() {
@@ -560,10 +692,14 @@ class AgentRunCoordinatorTest {
     }
 
     private AgentProperties properties() {
+        return properties("fallback-model");
+    }
+
+    private AgentProperties properties(String fallbackModel) {
         return new AgentProperties(
                 true,
                 "primary-model",
-                "fallback-model",
+                fallbackModel,
                 "https://example.test/v1",
                 "test-key",
                 "Meant Test",
@@ -593,9 +729,11 @@ class AgentRunCoordinatorTest {
 
     private record Fixture(
             AgentRunService runService,
+            AgentContextAssembler contextAssembler,
             AgentToolCallExecutor toolExecutor,
             AgentProductClarificationService productClarificationService,
             AgentProductClarificationContextService productClarificationContextService,
+            AgentReadIntentResolver readIntentResolver,
             AgentMessageLedgerService messageLedger,
             UUID executionOwner
     ) {

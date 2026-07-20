@@ -16,6 +16,7 @@ import com.meant.api.module.agent.service.dto.AgentModelResponse;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
+import com.meant.api.module.agent.service.dto.AgentResolvedReadIntent;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
@@ -40,7 +41,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -70,6 +70,7 @@ public class AgentRunCoordinator {
     private final AgentToolCallExecutor toolCallExecutor;
     private final AgentProductClarificationService productClarificationService;
     private final AgentProductClarificationContextService productClarificationContextService;
+    private final AgentReadIntentResolver readIntentResolver;
     private final AgentMessageLedgerService messageLedgerService;
     private final AgentModelGateway modelGateway;
     private final AgentMetrics metrics;
@@ -227,6 +228,18 @@ public class AgentRunCoordinator {
                     return;
                 }
             }
+            if (iteration == 0) {
+                Optional<AgentResolvedReadIntent> resolvedReadIntent = readIntentResolver.resolve(toolContext);
+                if (resolvedReadIntent.isPresent()) {
+                    executeResolvedReadIntent(
+                            toolContext,
+                            resolvedReadIntent.get(),
+                            executionOwner,
+                            deadline
+                    );
+                    return;
+                }
+            }
             List<AgentToolDescriptor> descriptors = authorizationPolicy.available(
                     toolContext,
                     toolRegistry.descriptors()
@@ -310,17 +323,11 @@ public class AgentRunCoordinator {
             String requiredToolName,
             DeltaWriter deltaWriter
     ) {
-        AtomicBoolean emitted = new AtomicBoolean();
         long primaryStarted = System.nanoTime();
         try {
             AgentModelResponse response = modelGateway.turn(
                     request(properties.model(), messages, descriptors, requiredToolName),
-                    delta -> {
-                        if (delta != null && !delta.isBlank()) {
-                            emitted.set(true);
-                        }
-                        deltaWriter.accept(delta);
-                    },
+                    deltaWriter::accept,
                     deltaWriter::cancelled
             );
             requireUsableModelResponse(response);
@@ -331,9 +338,12 @@ public class AgentRunCoordinator {
             throw cancellation;
         } catch (RuntimeException primaryFailure) {
             metrics.modelTurn(properties.model(), "failure", System.nanoTime() - primaryStarted);
-            if (emitted.get() || properties.fallbackModel().equals(properties.model())) {
+            boolean retryableEmptyResponse = primaryFailure instanceof UnusableModelResponseException;
+            if (deltaWriter.published()
+                    || (properties.fallbackModel().equals(properties.model()) && !retryableEmptyResponse)) {
                 throw primaryFailure;
             }
+            deltaWriter.discard();
             long fallbackStarted = System.nanoTime();
             try {
                 AgentModelResponse response = modelGateway.turn(
@@ -368,8 +378,34 @@ public class AgentRunCoordinator {
 
     private void requireUsableModelResponse(AgentModelResponse response) {
         if (response == null || (response.text().isBlank() && response.toolCalls().isEmpty())) {
-            throw new IllegalStateException("Agent model returned neither text nor tool calls");
+            log.warn(
+                    "Agent model returned no usable content. resolvedModel={}, finishReason={}, outputTokens={}",
+                    response == null ? null : response.resolvedModel(),
+                    response == null ? null : response.finishReason(),
+                    response == null ? null : response.usage().outputTokens()
+            );
+            throw new UnusableModelResponseException();
         }
+    }
+
+    private void executeResolvedReadIntent(
+            AgentToolExecutionContext context,
+            AgentResolvedReadIntent intent,
+            UUID executionOwner,
+            long deadline
+    ) {
+        requireActive(context.runId(), executionOwner, deadline);
+        AgentModelToolCall call = normalizeCalls(
+                context.runId(),
+                0,
+                List.of(intent.toolCall())
+        ).getFirst();
+        AgentExecutedToolCall executed = toolCallExecutor.execute(context, call);
+        requireActive(context.runId(), executionOwner, deadline);
+        String message = executed.successful()
+                ? readIntentResolver.completionMessage(intent, executed.modelResult().resultJson())
+                : readIntentResolver.failureMessage(intent);
+        finish(context.runId(), executionOwner, message);
     }
 
     private AgentModelRequest request(
@@ -551,6 +587,13 @@ public class AgentRunCoordinator {
         }
     }
 
+    private static final class UnusableModelResponseException extends IllegalStateException {
+
+        private UnusableModelResponseException() {
+            super("Agent model returned neither text nor tool calls");
+        }
+    }
+
     @PreDestroy
     void shutdown() {
         runExecutor.shutdownNow();
@@ -564,6 +607,7 @@ public class AgentRunCoordinator {
         private final UUID runId;
         private final UUID executionOwner;
         private final StringBuilder buffer = new StringBuilder();
+        private boolean published;
 
         private DeltaWriter(UUID runId, UUID executionOwner) {
             this.runId = runId;
@@ -592,6 +636,15 @@ public class AgentRunCoordinator {
                     AgentRunEventType.ASSISTANT_DELTA,
                     AgentEventPayload.text(delta)
             );
+            published = true;
+        }
+
+        private void discard() {
+            buffer.setLength(0);
+        }
+
+        private boolean published() {
+            return published;
         }
 
         private boolean cancelled() {

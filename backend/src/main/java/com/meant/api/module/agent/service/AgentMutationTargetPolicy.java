@@ -102,18 +102,18 @@ public class AgentMutationTargetPolicy {
             "prepare", "price", "prices", "pricing", "promo", "promos", "remove", "pick", "really", "recommend",
             "recommended", "result", "results", "review", "reviews", "same",
             "save", "search", "second", "set",
-            "select", "selected", "seventh", "should", "show", "similar", "sixth", "size", "sounds", "take", "tell",
+            "select", "selected", "seventh", "should", "show", "similar", "sixth", "size", "some", "sounds", "take", "tell",
             "tenth", "that", "the", "them", "then", "these", "third", "this", "those", "three", "two",
             "view", "want", "watch", "what", "which", "will", "with", "would", "you", "your"
     );
     private static final Set<String> PRODUCT_SELECTION_TOOLS = Set.of(
             "pin_product", "unpin_product", "watch_product", "unwatch_product",
             "prepare_carts", "add_cart_line",
-            "get_product", "get_product_reviews", "find_discount_codes"
+            "get_product", "get_product_reviews", "find_discount_codes", "find_similar_products"
     );
     private static final Set<String> SINGLE_PRODUCT_SELECTION_TOOLS = Set.of(
             "pin_product", "unpin_product", "watch_product", "unwatch_product", "add_cart_line",
-            "get_product", "get_product_reviews", "find_discount_codes"
+            "get_product", "get_product_reviews", "find_discount_codes", "find_similar_products"
     );
     private static final Set<String> SINGLE_PRODUCT_READ_TOOLS = Set.of(
             "get_product", "get_product_reviews", "find_discount_codes"
@@ -264,6 +264,33 @@ public class AgentMutationTargetPolicy {
             return productClarificationCandidates(context, recent(context.conversationId()));
         } catch (RuntimeException exception) {
             return List.of();
+        }
+    }
+
+    /** Resolves one explicit ordinal using the same trusted precedence and title checks as tool authorization. */
+    public Optional<AgentVisibleProductReference> explicitProductTarget(AgentToolExecutionContext context) {
+        if (context == null || context.conversationId() == null || context.runId() == null) {
+            return Optional.empty();
+        }
+        try {
+            List<AgentArtifactReference> evidence = recent(context.conversationId());
+            List<Integer> requestedOrdinals = ordinals(context.triggeringUserText());
+            if (!single(requestedOrdinals)) {
+                return Optional.empty();
+            }
+            String expectedProductKey = expectedProductKey(
+                    context,
+                    evidence,
+                    requestedOrdinals.getFirst()
+            ).orElse(null);
+            if (expectedProductKey == null) {
+                return Optional.empty();
+            }
+            return productClarificationCandidates(context, evidence).stream()
+                    .filter(product -> expectedProductKey.equals(product.canonicalProductKey()))
+                    .findFirst();
+        } catch (RuntimeException exception) {
+            return Optional.empty();
         }
     }
 

@@ -33,7 +33,7 @@ public class AgentProductClarificationService {
     private static final Set<String> PRODUCT_SELECTION_TOOLS = Set.of(
             "unpin_product", "unwatch_product", "pin_product", "watch_product",
             "prepare_carts", "add_cart_line",
-            "get_product", "get_product_reviews", "find_discount_codes"
+            "get_product", "get_product_reviews", "find_discount_codes", "find_similar_products"
     );
     private static final Pattern PRODUCT_DETAIL_INTENT = Pattern.compile(
             "\\b(?:about|detail|details|inspect|show|tell|what)\\b",
@@ -45,6 +45,10 @@ public class AgentProductClarificationService {
     );
     private static final Pattern DISCOUNT_CODE_INTENT = Pattern.compile(
             "\\b(?:code|codes|coupon|coupons|discount|discounts|promo|promos)\\b",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SIMILAR_PRODUCT_INTENT = Pattern.compile(
+            "\\bsimilar\\b",
             Pattern.CASE_INSENSITIVE
     );
     private static final int MAXIMUM_TITLE_LENGTH = 120;
@@ -189,6 +193,7 @@ public class AgentProductClarificationService {
             case "get_product" -> PRODUCT_DETAIL_INTENT.matcher(turn).find();
             case "get_product_reviews" -> PRODUCT_REVIEW_INTENT.matcher(turn).find();
             case "find_discount_codes" -> DISCOUNT_CODE_INTENT.matcher(turn).find();
+            case "find_similar_products" -> SIMILAR_PRODUCT_INTENT.matcher(turn).find();
             default -> false;
         };
     }
@@ -203,6 +208,7 @@ public class AgentProductClarificationService {
             case "get_product" -> "Which product would you like details for?";
             case "get_product_reviews" -> "Which product would you like reviews for?";
             case "find_discount_codes" -> "Which product should I find discount codes for?";
+            case "find_similar_products" -> "Which product should I find similar products for?";
             default -> "Which product did you mean?";
         };
     }

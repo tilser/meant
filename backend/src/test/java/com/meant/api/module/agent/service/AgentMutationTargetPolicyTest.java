@@ -161,6 +161,49 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void conversationalSimilarityRequestBindsTheThirdVisibleProduct() {
+        UUID messageId = UUID.randomUUID();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                new AgentVisibleProductReference(1, 1, "frooty-swim-shorts", "offer-1", "140 Frooty Swim Shorts"),
+                new AgentVisibleProductReference(2, 2, "striped-swim-shorts", "offer-2", "1056 - Striped Swim Shorts"),
+                new AgentVisibleProductReference(
+                        3,
+                        3,
+                        "swim-shorts-packing-pouch",
+                        "offer-3",
+                        "Swim Shorts with Packing Pouch"
+                ),
+                new AgentVisibleProductReference(4, 4, "black-cat-swim-short", "offer-4", "Black Cat Swim Short")
+        ));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+        AgentToolExecutionContext context = context(
+                "I like the third one, can you find some similar like those?",
+                visible
+        );
+        String query = "products similar to Swim Shorts with Packing Pouch";
+
+        assertThat(policy.explicitProductTarget(context))
+                .contains(visible.products().get(2));
+        assertThat(policy.matchesExplicitOrdinal(
+                context,
+                "find_similar_products",
+                "{\"canonicalProductKey\":\"swim-shorts-packing-pouch\",\"query\":\"" + query + "\"}"
+        )).isTrue();
+        for (String wrongKey : List.of(
+                "frooty-swim-shorts",
+                "striped-swim-shorts",
+                "black-cat-swim-short"
+        )) {
+            assertThat(policy.matchesExplicitOrdinal(
+                    context,
+                    "find_similar_products",
+                    "{\"canonicalProductKey\":\"" + wrongKey + "\",\"query\":\"" + query + "\"}"
+            )).isFalse();
+        }
+    }
+
+    @Test
     void unmatchedVisibleDescriptionCannotAuthorizeAnOrdinalMutation() {
         UUID messageId = UUID.randomUUID();
         AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(

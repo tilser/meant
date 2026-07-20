@@ -140,6 +140,36 @@ class AgentProductClarificationServiceTest {
     }
 
     @Test
+    void anUnresolvedSimilarityRequestProducesTheSameOrderedProductChoices() {
+        AgentToolExecutionContext context = context("Find similar products to the blue one");
+        List<AgentVisibleProductReference> products = products();
+        AgentToolDescriptor descriptor = descriptor("find_similar_products");
+        when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
+        when(mutationTargetPolicy.requiresProductClarification(context, "find_similar_products"))
+                .thenReturn(true);
+        when(mutationTargetPolicy.productClarificationCandidates(context, "find_similar_products"))
+                .thenReturn(products);
+
+        assertThat(service.preflight(
+                context,
+                List.of(new AgentModelToolCall(
+                        "call-1",
+                        "find_similar_products",
+                        "{\"canonicalProductKey\":\"product-red\"}"
+                ))
+        )).contains(new AgentProductClarification(
+                "find_similar_products",
+                "Find similar products to the blue one",
+                products
+        ));
+        assertThat(service.question(new AgentProductClarification(
+                "find_similar_products",
+                context.triggeringUserText(),
+                products
+        ))).startsWith("Which product should I find similar products for?");
+    }
+
+    @Test
     void unresolvedIntentDoesNotDependOnTheModelCallingATool() {
         AgentToolExecutionContext context = context("Add the blue cap to my cart");
         List<AgentVisibleProductReference> products = products();
