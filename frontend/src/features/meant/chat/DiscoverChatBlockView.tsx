@@ -131,6 +131,7 @@ export function DiscoverChatBlockView({
   onRetryProductResultSet,
   onVisibleProductContextChange,
   immutable,
+  useLiveCart,
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -196,6 +197,7 @@ export function DiscoverChatBlockView({
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable: boolean
+  useLiveCart: boolean
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
@@ -714,7 +716,7 @@ export function DiscoverChatBlockView({
   if (block.type === 'cart') {
     return (
       <InlineCartBlock
-        cart={cartItemsForChatBlock(cart, block.lines, immutable)}
+        cart={cartItemsForChatBlock(cart, block.lines, immutable, useLiveCart)}
         products={productsWithFallback(block.products, cartProducts)}
         onQty={onCartQty}
         onRemove={onCartRemove}

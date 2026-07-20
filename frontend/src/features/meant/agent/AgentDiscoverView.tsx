@@ -33,6 +33,7 @@ import { DiscoverHomeHero } from '../chat/ChatDiscoverView'
 import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
+import { latestCartBlockMessageId } from '../chat/utils'
 import type {
   AgentActivity,
   DiscoverChatMessage,
@@ -876,6 +877,7 @@ export function AgentDiscoverView({
       ? allMessages.filter((message) => !dismissed.has(message.id))
       : allMessages
   }, [activeConversationId, allMessages, dismissedMessageIds])
+  const liveCartMessageId = useMemo(() => latestCartBlockMessageId(messages), [messages])
 
   const removeMessage = useCallback(
     (messageId: string) => {
@@ -1814,6 +1816,7 @@ export function AgentDiscoverView({
             flash={shelfFlashMessageId === message.id}
             celebrateArrival={false}
             immutable
+            useLiveCart={message.id === liveCartMessageId}
             deletable
             removing={autoRemovingMessageKeys.has(
               `${activeConversationId ?? 'agent'}:${message.id}`,

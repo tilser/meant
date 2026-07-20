@@ -735,11 +735,28 @@ export function cartItemsForChatBlock(
   liveCart: readonly CartItem[],
   artifactCart: readonly CartItem[] | undefined,
   immutable: boolean,
+  useLiveCart = false,
 ): readonly CartItem[] {
+  if (useLiveCart) {
+    return liveCart
+  }
   if (immutable && artifactCart !== undefined) {
     return artifactCart
   }
   return cartItemsWithFallback(liveCart, artifactCart ?? [])
+}
+
+/** Keeps one current cart card connected while older agent cart cards remain historical snapshots. */
+export function latestCartBlockMessageId(
+  messages: readonly DiscoverChatMessage[],
+): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.blocks?.some((block) => block.type === 'cart')) {
+      return message.id
+    }
+  }
+  return null
 }
 
 export function cartLineForAddedBlock(
