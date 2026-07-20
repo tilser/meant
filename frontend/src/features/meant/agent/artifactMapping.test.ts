@@ -547,6 +547,85 @@ describe('agent artifact mapping', () => {
     expect(cartItemsFromAgentArtifacts(snapshot, products)).toEqual([])
   })
 
+  test('maps an authoritative empty cart after removal to an empty block and replacement', () => {
+    const originalCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:removed-last-line',
+      messageId: 'message-cart-before-removal',
+      cartId: 'cart-removed-last-line',
+      payloadJson: JSON.stringify({
+        cartId: 'cart-removed-last-line',
+        merchantDomain: 'trail.example',
+        provider: 'SHOPIFY',
+        routingScopeKey: 'shopify:external:merchant-1',
+      }),
+    })
+    const originalLine = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:removed-last-line',
+      messageId: originalCart.messageId,
+      cartId: originalCart.cartId,
+      cartLineId: 'line-removed-last-line',
+      offerKey: 'offer-removed-last-line',
+      ordinal: 2,
+      payloadJson: JSON.stringify({
+        cartLineId: 'line-removed-last-line',
+        productId: 'product-removed-last-line',
+        productTitle: 'Removed trail shoe',
+        quantity: 1,
+        offerKey: 'offer-removed-last-line',
+      }),
+    })
+    const removalMessage: AgentMessageProfile = {
+      messageId: 'message-cart-after-removal',
+      runId: 'run-remove-last-line',
+      sequenceNumber: 4,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: '{}',
+      correlationId: 'call-remove-last-line:remove_cart_line',
+      createdAt: '2026-07-18T12:02:00Z',
+    }
+    const emptyCart = artifact({
+      type: 'CART',
+      stableKey: originalCart.stableKey,
+      messageId: removalMessage.messageId,
+      runId: removalMessage.runId,
+      cartId: originalCart.cartId,
+      createdAt: removalMessage.createdAt,
+      payloadJson: JSON.stringify({
+        cartId: originalCart.cartId,
+        merchantDomain: 'trail.example',
+        provider: 'SHOPIFY',
+        routingScopeKey: 'shopify:external:merchant-1',
+        totalQuantity: 0,
+        totalAmount: '0.00',
+        subtotalAmount: '0.00',
+        currency: 'USD',
+        lines: [],
+      }),
+    })
+    const artifacts = [originalCart, originalLine, emptyCart]
+
+    const blocks = blocksForAgentMessage(removalMessage, [emptyCart], artifacts, [])
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({ type: 'cart', lines: [] })
+    expect(cartStateReplacementsFromAgentArtifacts(artifacts, [])).toMatchObject([
+      {
+        merchantKey: 'shopify:external:merchant-1',
+        snapshot: {
+          cartId: 'cart-removed-last-line',
+          subtotalAmount: 0,
+          totalAmount: 0,
+          currency: 'USD',
+        },
+        lines: [],
+      },
+    ])
+  })
+
   test('keeps the first active cart and all of its lines for a timestamp-tied merchant route', () => {
     const newestCart = artifact({
       type: 'CART',

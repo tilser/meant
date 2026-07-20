@@ -290,6 +290,17 @@ public class CartService {
             }
             result = reconciled;
         }
+        if (!cartUpdateApplied(request, result.response())) {
+            UcpCartToolResult reconciled = merchantCartPluginDispatchService.getCart(
+                    target, new GetCartRequest(cart.getRemoteCartId()), session, callContext);
+            if (!cartUpdateApplied(request, reconciled.response())) {
+                cartBindingMetrics.record(CartException.BindingFailure.IDENTITY_MISMATCH);
+                throw CartException.binding(
+                        CartException.BindingFailure.IDENTITY_MISMATCH,
+                        "Cart provider did not apply the requested cart update");
+            }
+            result = reconciled;
+        }
         return cartResultMapper.from(cartPersistenceService.saveSnapshot(
                 cart,
                 command.userId(),
@@ -299,6 +310,24 @@ public class CartService {
                 resolved.offers(),
                 CartSnapshotPurpose.CART_MUTATION
         ), result.response());
+    }
+
+    private boolean cartUpdateApplied(UpdateCartRequest request, UcpCartResponse response) {
+        if (request.replacementState() != null) {
+            return cartReplacementService.proves(response, request.replacementState());
+        }
+        Set<String> removedLineIds = new HashSet<>(safeList(request.removeLineIds()).stream()
+                .filter(this::hasText)
+                .map(String::trim)
+                .toList());
+        if (removedLineIds.isEmpty()) {
+            return true;
+        }
+        if (response == null || response.cart() == null || response.cart().lines() == null
+                || response.cart().lines().stream().anyMatch(line -> line == null || !hasText(line.id()))) {
+            return false;
+        }
+        return response.cart().lines().stream().noneMatch(line -> removedLineIds.contains(line.id().trim()));
     }
 
     private boolean providerBound(Cart cart) {

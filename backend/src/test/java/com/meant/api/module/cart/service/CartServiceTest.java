@@ -68,9 +68,11 @@ import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -137,6 +139,7 @@ class CartServiceTest {
                 "LEGACY:merchant:" + merchant.getId(),
                 com.meant.api.module.merchant.constant.MerchantIntegrationProvider.GENERIC_UCP,
                 null, null, providerLookup.findById(merchant.getId()).orElseThrow()));
+        when(routing.resolvePersistedExternal(any())).thenAnswer(invocation -> invocation.getArgument(0));
         CartOfferRevalidationService revalidation = mock(CartOfferRevalidationService.class);
         CartBindingMetrics metrics = new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         cartService = new CartService(
@@ -558,6 +561,7 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         UUID cartLineId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout", cartLineId));
+        cartDispatchService.cartToolResult = cartToolResult(List.of(), 0);
 
         cartService.update(new UpdateCartCommand(
                 cartId,
@@ -583,6 +587,113 @@ class CartServiceTest {
                 .isEqualTo("gid://shopify/ProductVariant/1");
         assertThat(cartDispatchService.lastUpdateRequest.removeItems().getFirst().quantity()).isZero();
         assertThat(cartRepository.findWithLinesCount).isEqualTo(2);
+    }
+
+    @Test
+    void legacyRemovalRejectsAnErrorFreeNoOpAfterReconciliation() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout", cartLineId));
+        cartDispatchService.getCartResults.addLast(cartToolResult());
+
+        assertThatThrownBy(() -> cartService.update(removeLineCommand(cartId, cartLineId)))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart provider did not apply the requested cart update")
+                .satisfies(exception -> assertThat(((CartException) exception).getBindingFailure())
+                        .isEqualTo(CartException.BindingFailure.IDENTITY_MISMATCH));
+
+        assertThat(cartDispatchService.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
+        assertThat(cartRepository.saveCount).isZero();
+        assertThat(cartRepository.carts.get(cartId).getLines())
+                .singleElement()
+                .satisfies(line -> assertThat(line.getId()).isEqualTo(cartLineId));
+    }
+
+    @Test
+    void legacyRemovalPersistsAReconciledPostconditionAfterAnErrorFreeNoOp() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout", cartLineId));
+        cartDispatchService.getCartResults.addLast(cartToolResult(List.of(), 0));
+
+        CartResult result = cartService.update(removeLineCommand(cartId, cartLineId));
+
+        assertThat(result.lines()).isEmpty();
+        assertThat(cartDispatchService.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
+        assertThat(cartRepository.saveCount).isEqualTo(1);
+        assertThat(cartRepository.carts.get(cartId).getLines()).isEmpty();
+    }
+
+    @Test
+    void legacyRemovalRejectsMissingOrNullRemoteLineEvidence() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout", cartLineId));
+        cartDispatchService.cartToolResult = cartToolResult((List<UcpCartResponse.Line>) null, null);
+        cartDispatchService.getCartResults.addLast(cartToolResult(Arrays.asList((UcpCartResponse.Line) null), null));
+
+        assertThatThrownBy(() -> cartService.update(removeLineCommand(cartId, cartLineId)))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart provider did not apply the requested cart update");
+
+        assertThat(cartRepository.saveCount).isZero();
+    }
+
+    @Test
+    void legacyRemovalRejectsBlankRemoteLineIdentityAsProof() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        UcpCartToolResult malformed = cartToolResult(List.of(cartLine("  ")), 1);
+        cartRepository.save(cart(cartId, "https://merchant.example/checkout", cartLineId));
+        cartDispatchService.cartToolResult = malformed;
+        cartDispatchService.getCartResults.addLast(malformed);
+
+        assertThatThrownBy(() -> cartService.update(removeLineCommand(cartId, cartLineId)))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart provider did not apply the requested cart update");
+
+        assertThat(cartRepository.saveCount).isZero();
+    }
+
+    @Test
+    void providerBoundUpdateRejectsAnErrorFreeNoOpAfterReconciliation() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(providerBoundCart(cartId, cartLineId));
+        cartDispatchService.getCartResults.addLast(cartToolResult());
+        cartDispatchService.getCartResults.addLast(cartToolResult());
+
+        assertThatThrownBy(() -> cartService.update(removeLineCommand(cartId, cartLineId)))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart provider did not apply the requested cart update")
+                .satisfies(exception -> assertThat(((CartException) exception).getBindingFailure())
+                        .isEqualTo(CartException.BindingFailure.IDENTITY_MISMATCH));
+
+        assertThat(cartDispatchService.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isEqualTo(2);
+        assertThat(cartRepository.saveCount).isZero();
+        assertThat(cartRepository.carts.get(cartId).getLines())
+                .singleElement()
+                .satisfies(line -> assertThat(line.getId()).isEqualTo(cartLineId));
+    }
+
+    @Test
+    void providerBoundUpdatePersistsAReconciledPostconditionAfterAnErrorFreeNoOp() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(providerBoundCart(cartId, cartLineId));
+        cartDispatchService.getCartResults.addLast(cartToolResult());
+        cartDispatchService.getCartResults.addLast(cartToolResult(List.of(), 0));
+
+        CartResult result = cartService.update(removeLineCommand(cartId, cartLineId));
+
+        assertThat(result.lines()).isEmpty();
+        assertThat(cartDispatchService.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isEqualTo(2);
+        assertThat(cartRepository.saveCount).isEqualTo(1);
+        assertThat(cartRepository.carts.get(cartId).getLines()).isEmpty();
     }
 
     @Test
@@ -613,6 +724,7 @@ class CartServiceTest {
         UUID cartId = UUID.randomUUID();
         UUID staleCartLineId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout", UUID.randomUUID()));
+        cartDispatchService.cartToolResult = cartToolResult(List.of(), 0);
 
         cartService.update(new UpdateCartCommand(
                 cartId,
@@ -1204,6 +1316,58 @@ class CartServiceTest {
                 .build();
     }
 
+    private UpdateCartCommand removeLineCommand(UUID cartId, UUID cartLineId) {
+        return new UpdateCartCommand(
+                cartId, USER_ID, List.of(), List.of(), List.of(cartLineId), List.of(), null,
+                List.of(), List.of(), List.of(), null, null, null);
+    }
+
+    private Cart providerBoundCart(UUID cartId, UUID cartLineId) {
+        Instant now = Instant.parse("2026-06-16T11:05:00Z");
+        String externalMerchantId = "gid://shopify/Shop/1";
+        String routingScopeKey = "SHOPIFY:merchant:" + externalMerchantId;
+        CartLine line = CartLine.builder()
+                .id(cartLineId)
+                .remoteCartLineId("gid://shopify/CartLine/1")
+                .productId("gid://shopify/Product/1")
+                .productTitle("Candle")
+                .productVariantId("gid://shopify/ProductVariant/1")
+                .variantTitle("3x6")
+                .quantity(1)
+                .provider("SHOPIFY")
+                .externalMerchantId(externalMerchantId)
+                .externalProductId("gid://shopify/Product/1")
+                .externalVariantId("gid://shopify/ProductVariant/1")
+                .offerKey("offer-candle")
+                .canonicalProductKey("canonical-candle")
+                .selectedOptionsJson("[]")
+                .componentsJson("[]")
+                .rawLineResponse("{}")
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        return Cart.builder()
+                .id(cartId)
+                .userId(USER_ID)
+                .provider("SHOPIFY")
+                .externalMerchantId(externalMerchantId)
+                .routingScopeKey(routingScopeKey)
+                .merchantDomain("merchant.example")
+                .endpoint("https://merchant.example/api/mcp")
+                .remoteCartId("gid://shopify/Cart/1")
+                .remoteCartIdHash("hash")
+                .rawCartResponse("{}")
+                .totalQuantity(1)
+                .active(true)
+                .remoteCreatedAt(CART_REMOTE_CREATED_AT)
+                .remoteUpdatedAt(CART_REMOTE_UPDATED_AT)
+                .createdAt(now)
+                .updatedAt(now)
+                .refreshedAt(now)
+                .lines(new ArrayList<>(List.of(line)))
+                .build();
+    }
+
     private Cart cart(UUID cartId, String checkoutUrl) {
         return cart(cartId, checkoutUrl, (String) null);
     }
@@ -1406,8 +1570,12 @@ class CartServiceTest {
     }
 
     private UcpCartResponse.Line cartLine() {
+        return cartLine("gid://shopify/CartLine/1");
+    }
+
+    private UcpCartResponse.Line cartLine(String id) {
         return new UcpCartResponse.Line(
-                "gid://shopify/CartLine/1",
+                id,
                 1,
                 new UcpCartResponse.Cost(
                         new UcpCartResponse.Money("14.95", "USD"),
@@ -1462,6 +1630,7 @@ class CartServiceTest {
     static class FakeCartDispatchService extends MerchantCartPluginDispatchService {
 
         private UcpCartToolResult cartToolResult;
+        private final Deque<UcpCartToolResult> getCartResults = new ArrayDeque<>();
         private CreateCartRequest lastCreateRequest;
         private CartToolCallContext lastCallContext;
         private UpdateCartRequest lastUpdateRequest;
@@ -1588,7 +1757,7 @@ class CartServiceTest {
         ) {
             getCount++;
             lastRemoteCartId = request.cartId();
-            return cartToolResult;
+            return getCartResults.isEmpty() ? cartToolResult : getCartResults.removeFirst();
         }
 
         @Override

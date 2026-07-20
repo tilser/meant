@@ -454,6 +454,126 @@ class AgentRunCoordinatorTest {
     }
 
     @Test
+    void explicitCartRemovalCannotFinishWithAnUnexecutedSuccessClaim() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall remove = new AgentModelToolCall(
+                "call-remove",
+                "remove_cart_line",
+                "{\"cartId\":\"00000000-0000-0000-0000-000000000901\","
+                        + "\"cartLineId\":\"00000000-0000-0000-0000-000000000902\"}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("I've removed the shorts from your cart.", List.of())),
+                response(model("", List.of(remove))),
+                response(model("I removed the shorts from your cart.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentToolDescriptor removeDescriptor = new AgentToolDescriptor(
+                "remove_cart_line",
+                "Remove a cart line",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user("Remove it from my cart.")),
+                "Remove it from my cart."
+        ));
+        when(fixture.authorizationPolicy().available(any(), any())).thenReturn(List.of(removeDescriptor));
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult("call-remove", "remove_cart_line", "{\"carts\":[]}"),
+                true
+        ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.toolExecutor(), timeout(3000)).execute(
+                any(), org.mockito.ArgumentMatchers.argThat(call -> "remove_cart_line".equals(call.name())));
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I removed the shorts from your cart.",
+                false
+        );
+        verify(fixture.messageLedger(), never()).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I've removed the shorts from your cart.",
+                false
+        );
+        assertThat(model.requests()).hasSize(3);
+        assertThat(model.requests().get(1).messages().getLast().text())
+                .contains("no mutation tool has run")
+                .contains("remove_cart_line")
+                .contains("Do not claim that the action completed");
+    }
+
+    @Test
+    void failedCartRemovalCannotFinishWithASuccessClaim() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall remove = new AgentModelToolCall(
+                "call-remove",
+                "remove_cart_line",
+                "{\"cartId\":\"00000000-0000-0000-0000-000000000901\","
+                        + "\"cartLineId\":\"00000000-0000-0000-0000-000000000902\"}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(remove))),
+                response(model("I removed the shorts from your cart.", List.of())),
+                response(model("The shorts have been removed.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentToolDescriptor removeDescriptor = new AgentToolDescriptor(
+                "remove_cart_line",
+                "Remove a cart line",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user("Remove it from my cart.")),
+                "Remove it from my cart."
+        ));
+        when(fixture.authorizationPolicy().available(any(), any())).thenReturn(List.of(removeDescriptor));
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult(
+                        "call-remove",
+                        "remove_cart_line",
+                        "{\"success\":false,\"message\":\"The cart was unchanged.\"}"
+                ),
+                false
+        ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I couldn't confirm that requested change. Please check the current state before trying again.",
+                false
+        );
+        verify(fixture.messageLedger(), never()).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I removed the shorts from your cart.",
+                false
+        );
+        verify(fixture.messageLedger(), never()).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "The shorts have been removed.",
+                false
+        );
+        assertThat(model.requests()).hasSize(3);
+        assertThat(model.requests().get(2).messages().getLast().text())
+                .contains("has not completed successfully")
+                .contains("remove_cart_line")
+                .contains("Do not claim that it completed");
+    }
+
+    @Test
     void readOnlyRoundStillRechecksForAnUnresolvedProductIntent() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -625,14 +745,14 @@ class AgentRunCoordinatorTest {
         when(contextAssembler.assemble(runId)).thenReturn(modelContext);
         when(readIntentResolver.resolve(any())).thenReturn(Optional.empty());
         when(registry.descriptors()).thenReturn(List.of(descriptor, mutationDescriptor, comparisonDescriptor));
-        when(authorizationPolicy.available(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(authorizationPolicy.available(any(), any())).thenReturn(List.of(descriptor, comparisonDescriptor));
         when(jsonSupport.canonicalizeOrOriginal(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
         when(tool.descriptor()).thenReturn(descriptor);
         when(registry.required(anyString())).thenAnswer(invocation -> {
             String name = invocation.getArgument(0);
             AgentTool selected = mock(AgentTool.class);
             when(selected.descriptor()).thenReturn(switch (name) {
-                case "prepare_carts" -> mutationDescriptor;
+                case "prepare_carts", "remove_cart_line" -> mutationDescriptor;
                 case "compare_products" -> comparisonDescriptor;
                 default -> descriptor;
             });
@@ -655,8 +775,9 @@ class AgentRunCoordinatorTest {
                 testProperties
         );
         return new Fixture(
-                runService,
                 contextAssembler,
+                authorizationPolicy,
+                runService,
                 toolExecutor,
                 productClarificationService,
                 productClarificationContextService,
@@ -728,8 +849,9 @@ class AgentRunCoordinatorTest {
     }
 
     private record Fixture(
-            AgentRunService runService,
             AgentContextAssembler contextAssembler,
+            AgentToolAuthorizationPolicy authorizationPolicy,
+            AgentRunService runService,
             AgentToolCallExecutor toolExecutor,
             AgentProductClarificationService productClarificationService,
             AgentProductClarificationContextService productClarificationContextService,

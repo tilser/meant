@@ -78,6 +78,48 @@ describe('agent cart state reconciliation', () => {
     expect(result.snapshots['other.example']?.cartId).toBe('cart-other')
   })
 
+  test('removes the last live line when the authoritative merchant replacement is empty', () => {
+    const merchantKey = 'shopify:external:merchant-1'
+    const existingLine: CartItem = {
+      id: 'product-last',
+      merchant: 'trail.example',
+      qty: 1,
+      provider: 'SHOPIFY',
+      externalMerchantId: 'merchant-1',
+      merchantDomain: 'trail.example',
+      routingScopeKey: merchantKey,
+      merchantScopeKey: merchantKey,
+      cartId: 'cart-last-line',
+      cartLineId: 'line-last',
+      offerKey: 'offer-last',
+    }
+    const emptySnapshot = {
+      ...snapshot(merchantKey, 'cart-last-line'),
+      subtotalAmount: 0,
+      totalAmount: 0,
+    }
+    const replacement: MerchantCartStateReplacement = {
+      merchantKey,
+      merchantId: null,
+      merchantDomain: 'trail.example',
+      provider: 'SHOPIFY',
+      merchantIntegrationId: null,
+      externalMerchantId: 'merchant-1',
+      routingScopeKey: merchantKey,
+      snapshot: emptySnapshot,
+      lines: [],
+    }
+
+    const result = reconcileMerchantCartStates(
+      [existingLine],
+      { [merchantKey]: snapshot(merchantKey, 'cart-last-line') },
+      [replacement],
+    )
+
+    expect(result.cart).toEqual([])
+    expect(result.snapshots).toEqual({ [merchantKey]: emptySnapshot })
+  })
+
   test('does not collapse distinct strong merchant routes that share a provider and domain', () => {
     const integrationA: CartItem = {
       id: 'product-a',

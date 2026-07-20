@@ -60,6 +60,10 @@ public class AgentRunCoordinator {
     private static final Pattern DIRECT_COMPARISON_REQUEST = Pattern.compile(
             "(?iu)^\\s*(?:please\\s+)?(?:(?:can|could|would|will)\\s+you\\s+)?compare\\b"
     );
+    private static final String MUTATION_NOT_EXECUTED_MESSAGE =
+            "I couldn't complete that requested change, so I left it unchanged. Please try again.";
+    private static final String MUTATION_NOT_CONFIRMED_MESSAGE =
+            "I couldn't confirm that requested change. Please check the current state before trying again.";
     private static final int QUEUED_RUN_PAGE_SIZE = 100;
 
     private final AgentRunRepository runRepository;
@@ -217,6 +221,9 @@ public class AgentRunCoordinator {
         int totalToolCalls = 0;
         boolean mutationAttempted = false;
         boolean comparisonToolRequired = requiresComparisonArtifact(context);
+        boolean mutationSucceeded = false;
+        boolean outstandingMutationFailure = false;
+        boolean mutationCorrectionIssued = false;
 
         for (int iteration = 0; iteration < properties.maximumModelIterations(); iteration++) {
             requireActive(runId, executionOwner, deadline);
@@ -263,6 +270,27 @@ public class AgentRunCoordinator {
             comparisonToolRequired = comparisonToolRequired
                     && calls.stream().noneMatch(call -> COMPARE_PRODUCTS_TOOL.equals(call.name()));
             if (calls.isEmpty()) {
+                if (hasAvailableMutation(descriptors) && !waitingForUser(response.text())) {
+                    String correction = null;
+                    String safeMessage = null;
+                    if (!mutationAttempted) {
+                        correction = missingMutationCorrection(descriptors);
+                        safeMessage = MUTATION_NOT_EXECUTED_MESSAGE;
+                    } else if (!mutationSucceeded || outstandingMutationFailure) {
+                        correction = failedMutationCorrection(descriptors);
+                        safeMessage = MUTATION_NOT_CONFIRMED_MESSAGE;
+                    }
+                    if (correction != null && !mutationCorrectionIssued) {
+                        modelMessages.add(AgentModelMessage.assistant(response.text(), List.of()));
+                        modelMessages.add(AgentModelMessage.system(correction));
+                        mutationCorrectionIssued = true;
+                        continue;
+                    }
+                    if (safeMessage != null) {
+                        finish(runId, executionOwner, safeMessage);
+                        return;
+                    }
+                }
                 finish(runId, executionOwner, response.text());
                 return;
             }
@@ -304,10 +332,17 @@ public class AgentRunCoordinator {
                 return;
             }
 
-            List<AgentModelToolResult> results = executeTools(toolContext, calls, executionOwner, deadline);
-            mutationAttempted = mutationAttempted
-                    || calls.stream().anyMatch(call -> risk(call) != AgentToolRisk.READ);
-            modelMessages.add(AgentModelMessage.tools(results));
+            ToolBatchResult batchResult = executeTools(toolContext, calls, executionOwner, deadline);
+            if (batchResult.mutationAttempted()) {
+                mutationAttempted = true;
+                if (batchResult.allAttemptedMutationsSucceeded()) {
+                    mutationSucceeded = true;
+                    outstandingMutationFailure = false;
+                } else {
+                    outstandingMutationFailure = true;
+                }
+            }
+            modelMessages.add(AgentModelMessage.tools(batchResult.modelResults()));
         }
         terminateForLimit(
                 runId,
@@ -315,6 +350,38 @@ public class AgentRunCoordinator {
                 "iteration_limit",
                 "I reached the safe reasoning limit before finishing."
         );
+    }
+
+    private boolean hasAvailableMutation(List<AgentToolDescriptor> descriptors) {
+        return descriptors.stream().anyMatch(descriptor -> descriptor.riskClass() != AgentToolRisk.READ);
+    }
+
+    private boolean waitingForUser(String text) {
+        return text != null && text.trim().startsWith(WAITING_PREFIX);
+    }
+
+    private String missingMutationCorrection(List<AgentToolDescriptor> descriptors) {
+        String tools = String.join(", ", descriptors.stream()
+                .filter(descriptor -> descriptor.riskClass() != AgentToolRisk.READ)
+                .map(AgentToolDescriptor::name)
+                .sorted()
+                .toList());
+        return "The user explicitly requested a state-changing action, but no mutation tool has run. "
+                + "Do not claim that the action completed. Call one appropriate available mutation tool now ("
+                + tools + "). If an exact target cannot be resolved, return exactly `WAITING_FOR_USER: <question>` "
+                + "with no tool call.";
+    }
+
+    private String failedMutationCorrection(List<AgentToolDescriptor> descriptors) {
+        String tools = String.join(", ", descriptors.stream()
+                .filter(descriptor -> descriptor.riskClass() != AgentToolRisk.READ)
+                .map(AgentToolDescriptor::name)
+                .sorted()
+                .toList());
+        return "The requested state-changing action has not completed successfully. "
+                + "Do not claim that it completed. If another safe attempt can complete it, call one appropriate "
+                + "available mutation tool now (" + tools + "). Otherwise return exactly "
+                + "`WAITING_FOR_USER: <brief failure explanation>` with no tool call.";
     }
 
     private AgentModelResponse modelTurnWithFallback(
@@ -438,13 +505,13 @@ public class AgentRunCoordinator {
                 .count() == 2;
     }
 
-    private List<AgentModelToolResult> executeTools(
+    private ToolBatchResult executeTools(
             AgentToolExecutionContext context,
             List<AgentModelToolCall> calls,
             UUID executionOwner,
             long deadline
     ) {
-        Map<String, AgentModelToolResult> results = new LinkedHashMap<>();
+        Map<String, AgentExecutedToolCall> results = new LinkedHashMap<>();
         List<AgentModelToolCall> reads = calls.stream()
                 .filter(call -> risk(call) == AgentToolRisk.READ)
                 .toList();
@@ -466,7 +533,7 @@ public class AgentRunCoordinator {
                 long remainingNanos = Math.max(1, deadline - System.nanoTime());
                 try {
                     AgentExecutedToolCall executed = futures.get(index).get(remainingNanos, TimeUnit.NANOSECONDS);
-                    results.put(batch.get(index).id(), executed.modelResult());
+                    results.put(batch.get(index).id(), executed);
                 } catch (java.util.concurrent.TimeoutException exception) {
                     futures.forEach(future -> future.cancel(true));
                     throw new AgentException(
@@ -488,9 +555,13 @@ public class AgentRunCoordinator {
         for (AgentModelToolCall mutation : mutations) {
             requireActive(context.runId(), executionOwner, deadline);
             AgentExecutedToolCall executed = toolCallExecutor.execute(context, mutation);
-            results.put(mutation.id(), executed.modelResult());
+            results.put(mutation.id(), executed);
         }
-        return calls.stream().map(call -> results.get(call.id())).toList();
+        return new ToolBatchResult(
+                calls.stream().map(call -> results.get(call.id()).modelResult()).toList(),
+                !mutations.isEmpty(),
+                !mutations.isEmpty() && mutations.stream().allMatch(call -> results.get(call.id()).successful())
+        );
     }
 
     private AgentToolRisk risk(AgentModelToolCall call) {
@@ -599,6 +670,13 @@ public class AgentRunCoordinator {
         runExecutor.shutdownNow();
         parallelReadExecutor.shutdownNow();
         heartbeatExecutor.shutdownNow();
+    }
+
+    private record ToolBatchResult(
+            List<AgentModelToolResult> modelResults,
+            boolean mutationAttempted,
+            boolean allAttemptedMutationsSucceeded
+    ) {
     }
 
     private final class DeltaWriter {
