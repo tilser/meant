@@ -43,6 +43,7 @@ export function DustWrap({
   onCopy,
   saved,
   deletable = true,
+  removing = false,
 }: Readonly<{
   children: ReactNode
   side: 'you' | 'meant'
@@ -52,8 +53,9 @@ export function DustWrap({
   onCopy?: () => void
   saved: boolean
   deletable?: boolean
+  removing?: boolean
 }>) {
-  const [dusting, setDusting] = useState(false)
+  const [deleteRequested, setDeleteRequested] = useState(false)
   const [copied, setCopied] = useState(false)
   const uniqueId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const idRef = useRef<string>(`mtdust-${uniqueId}`)
@@ -61,6 +63,9 @@ export function DustWrap({
   const copiedTimerRef = useRef<number | null>(null)
   const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null)
   const blurRef = useRef<SVGFEGaussianBlurElement | null>(null)
+  const onGoneRef = useRef(onGone)
+  const dusting = deleteRequested || removing
+  onGoneRef.current = onGone
 
   useEffect(() => {
     if (!dusting) {
@@ -82,7 +87,7 @@ export function DustWrap({
         frame = window.requestAnimationFrame(step)
         return
       }
-      goneTimer = window.setTimeout(onGone, 20)
+      goneTimer = window.setTimeout(() => onGoneRef.current(), 20)
     }
     frame = window.requestAnimationFrame(step)
     return () => {
@@ -91,7 +96,7 @@ export function DustWrap({
         window.clearTimeout(goneTimer)
       }
     }
-  }, [dusting, onGone])
+  }, [dusting])
 
   useEffect(
     () => () => {
@@ -160,7 +165,7 @@ export function DustWrap({
             <button
               className="mt-msg-tool mt-tool-del"
               type="button"
-              onClick={() => setDusting(true)}
+              onClick={() => setDeleteRequested(true)}
               aria-label="Delete message"
               title="Delete message"
             >
@@ -270,6 +275,7 @@ export function DiscoverChatMessageRow({
   onVisibleProductContextChange,
   immutable = false,
   deletable,
+  removing = false,
 }: Readonly<{
   threadId: string
   message: DiscoverChatMessage
@@ -345,6 +351,7 @@ export function DiscoverChatMessageRow({
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable?: boolean
   deletable?: boolean
+  removing?: boolean
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
@@ -368,6 +375,7 @@ export function DiscoverChatMessageRow({
           onCopy={copyMessage}
           saved={onShelf}
           deletable={deletable ?? !immutable}
+          removing={removing}
         >
           <div className="mt-ct-you-bubble">
             {message.productContext ? (
@@ -398,6 +406,7 @@ export function DiscoverChatMessageRow({
         onCopy={copyMessage}
         saved={onShelf}
         deletable={deletable ?? !immutable}
+        removing={removing}
       >
         <div className="mt-ct-meant-inner">
           <span className="mt-ct-av">

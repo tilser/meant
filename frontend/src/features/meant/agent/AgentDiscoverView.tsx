@@ -353,6 +353,9 @@ export function AgentDiscoverView({
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
+  const [autoRemovingMessageKeys, setAutoRemovingMessageKeys] = useState<ReadonlySet<string>>(
+    new Set(),
+  )
   const [trayClearing, setTrayClearing] = useState(false)
   const [newsletterPending, setNewsletterPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -875,6 +878,18 @@ export function AgentDiscoverView({
   const removeMessage = useCallback(
     (messageId: string) => {
       if (!activeConversationId) return
+      const messageKey = `${activeConversationId}:${messageId}`
+      const timeout = autoDismissTimeoutsRef.current.get(messageKey)
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout)
+        autoDismissTimeoutsRef.current.delete(messageKey)
+      }
+      setAutoRemovingMessageKeys((current) => {
+        if (!current.has(messageKey)) return current
+        const next = new Set(current)
+        next.delete(messageKey)
+        return next
+      })
       setDismissedMessageIds((current) => {
         const existing = current[activeConversationId] ?? []
         if (existing.includes(messageId)) return current
@@ -942,10 +957,9 @@ export function AgentDiscoverView({
       const timeoutKey = `${conversationId}:${message.messageId}`
       if (autoDismissTimeoutsRef.current.has(timeoutKey)) continue
       const timeout = window.setTimeout(() => {
-        setDismissedMessageIds((current) => {
-          const existing = current[conversationId] ?? []
-          if (existing.includes(message.messageId)) return current
-          return { ...current, [conversationId]: [...existing, message.messageId] }
+        setAutoRemovingMessageKeys((current) => {
+          if (current.has(timeoutKey)) return current
+          return new Set(current).add(timeoutKey)
         })
         autoDismissTimeoutsRef.current.delete(timeoutKey)
       }, PRODUCT_PIN_NOTICE_LIFETIME_MS)
@@ -1781,6 +1795,9 @@ export function AgentDiscoverView({
             celebrateArrival={false}
             immutable
             deletable
+            removing={autoRemovingMessageKeys.has(
+              `${activeConversationId ?? 'agent'}:${message.id}`,
+            )}
             onOpen={onOpen}
             onToggleSave={onToggleSave}
             onAddCart={addToCart}

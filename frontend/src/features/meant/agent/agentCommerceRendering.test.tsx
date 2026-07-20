@@ -85,6 +85,18 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(markup).toContain('mt-tool-del')
   })
 
+  test('uses the existing dust effect for a controlled automatic removal', () => {
+    const markup = renderToStaticMarkup(
+      <DustWrap side="you" saved={false} deletable removing onGone={() => undefined}>
+        <span>Pin notice</span>
+      </DustWrap>,
+    )
+
+    expect(markup).toContain('mt-dustwrap side-you dusting')
+    expect(markup).toContain('mt-dust-svg')
+    expect(markup).not.toContain('aria-label="Delete message"')
+  })
+
   test('treats cancelled and failed cart runs as terminal synchronization outcomes', () => {
     expect(isTerminalAgentRunStatus('CANCELLED')).toBe(true)
     expect(isTerminalAgentRunStatus('FAILED')).toBe(true)
