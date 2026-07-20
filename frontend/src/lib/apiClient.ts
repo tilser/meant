@@ -2160,6 +2160,18 @@ export interface AgentTurnProfile {
   userMessage: AgentMessageProfile
 }
 
+export interface AgentShelfContextInput {
+  items: readonly AgentShelfItemContextInput[]
+}
+
+export interface AgentShelfItemContextInput {
+  kind: 'MESSAGE' | 'PRODUCT'
+  canonicalProductKey?: string
+  title: string
+  text?: string
+  relatedProductNames: readonly string[]
+}
+
 export interface AgentRunSnapshotProfile {
   runId: string
   conversationId: string
@@ -2365,6 +2377,7 @@ export async function submitAgentTurn(input: {
     sourceMessageId: string
     orderedCanonicalProductKeys: readonly string[]
   }
+  shelfContext?: AgentShelfContextInput
   expectedUserId?: string
   signal?: AbortSignal
 }): Promise<AgentTurnProfile> {
@@ -2380,6 +2393,7 @@ export async function submitAgentTurn(input: {
       ...(input.visibleProductContext === undefined
         ? {}
         : { visibleProductContext: input.visibleProductContext }),
+      ...(input.shelfContext === undefined ? {} : { shelfContext: input.shelfContext }),
     }),
     signal: input.signal,
   })

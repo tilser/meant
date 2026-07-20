@@ -33,6 +33,7 @@ import { DiscoverHomeHero } from '../chat/ChatDiscoverView'
 import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
+import { latestCartBlockMessageId } from '../chat/utils'
 import type {
   AgentActivity,
   DiscoverChatMessage,
@@ -52,6 +53,7 @@ import type {
   ShelfThumb,
 } from '../shelf/types'
 import { SHELF_DRAG_MIME } from '../shelf/types'
+import { agentShelfContext } from '../shelf/agentShelfContext'
 import { ProductArtwork, SparkMark } from '../shared/ui'
 import { accountStorageKey } from '../shared/accountStorage'
 import { useStoredState } from '../shared/storage'
@@ -876,6 +878,7 @@ export function AgentDiscoverView({
       ? allMessages.filter((message) => !dismissed.has(message.id))
       : allMessages
   }, [activeConversationId, allMessages, dismissedMessageIds])
+  const liveCartMessageId = useMemo(() => latestCartBlockMessageId(messages), [messages])
 
   const removeMessage = useCallback(
     (messageId: string) => {
@@ -1120,6 +1123,7 @@ export function AgentDiscoverView({
           message: text,
           clientTurnId: uniqueRequestId('turn'),
           visibleProductContext,
+          shelfContext: agentShelfContext(shelf),
           expectedUserId,
         })
         onAgentRunSubmitted?.(turn.runId, targetConversationId, submittedCartRevision)
@@ -1165,6 +1169,7 @@ export function AgentDiscoverView({
       onCaptureAgentCartRevision,
       onAgentRunSubmitted,
       selectedConversation,
+      shelf,
       submitting,
       updateActiveConversationId,
       updateActiveRunId,
@@ -1814,6 +1819,7 @@ export function AgentDiscoverView({
             flash={shelfFlashMessageId === message.id}
             celebrateArrival={false}
             immutable
+            useLiveCart={message.id === liveCartMessageId}
             deletable
             removing={autoRemovingMessageKeys.has(
               `${activeConversationId ?? 'agent'}:${message.id}`,

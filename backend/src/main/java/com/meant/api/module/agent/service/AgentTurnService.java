@@ -52,7 +52,8 @@ public class AgentTurnService {
         }
         var visibleProductContext = visibleProductContextService.resolve(
                 conversation.getId(), command.visibleProductContext());
-        String turnContextJson = visibleProductContextService.serialize(visibleProductContext);
+        var shelfContext = visibleProductContextService.resolveShelf(command.shelfContext());
+        String turnContextJson = visibleProductContextService.serialize(visibleProductContext, shelfContext);
 
         String clientTurnId = blankToNull(command.clientTurnId());
         if (clientTurnId != null) {

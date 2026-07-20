@@ -25,4 +25,16 @@ public interface AgentConversationRepository extends JpaRepository<AgentConversa
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select conversation from AgentConversation conversation where conversation.id = :id and conversation.userId = :userId")
     Optional<AgentConversation> findOwnedForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select conversation from AgentConversation conversation
+            where exists (
+                select run.id from AgentRun run
+                where run.id = :runId
+                  and run.conversationId = conversation.id
+                  and run.userId = conversation.userId
+            )
+            """)
+    Optional<AgentConversation> findOwnedForUpdateByRunId(@Param("runId") UUID runId);
 }

@@ -1,0 +1,63 @@
+import { describe, expect, test } from 'bun:test'
+
+import { agentShelfContext } from './agentShelfContext'
+import type { ShelfItem } from './types'
+
+describe('agentShelfContext', () => {
+  test('omits an empty Shelf', () => {
+    expect(agentShelfContext([])).toBeUndefined()
+  })
+
+  test('maps product and message display snapshots in Shelf order', () => {
+    const items: ShelfItem[] = [
+      {
+        uid: 'shelf-product',
+        kind: 'product',
+        productId: 'product-linen-shirt',
+        collapsed: false,
+        snapshot: {
+          productId: 'product-linen-shirt',
+          name: 'Linen shirt',
+          brand: 'Meant',
+          category: 'Clothing',
+          tone: '#fff',
+          priceFrom: 49,
+          merchants: 2,
+        },
+      },
+      {
+        uid: 'shelf-message',
+        kind: 'message',
+        messageId: 'message-1',
+        collapsed: false,
+        snapshot: {
+          side: 'meant',
+          title: 'Meant picks',
+          text: 'A few options worth comparing.',
+          thumbs: [
+            { name: 'Canvas cap', tone: '#eee' },
+            { name: 'Mesh cap', tone: '#ddd' },
+          ],
+        },
+      },
+    ]
+
+    expect(agentShelfContext(items)).toEqual({
+      items: [
+        {
+          kind: 'PRODUCT',
+          canonicalProductKey: 'product-linen-shirt',
+          title: 'Linen shirt',
+          text: 'Meant · Clothing',
+          relatedProductNames: [],
+        },
+        {
+          kind: 'MESSAGE',
+          title: 'Meant picks',
+          text: 'A few options worth comparing.',
+          relatedProductNames: ['Canvas cap', 'Mesh cap'],
+        },
+      ],
+    })
+  })
+})

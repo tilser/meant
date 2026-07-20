@@ -274,6 +274,7 @@ export function DiscoverChatMessageRow({
   onRetryProductResultSet,
   onVisibleProductContextChange,
   immutable = false,
+  useLiveCart = false,
   deletable,
   removing = false,
 }: Readonly<{
@@ -350,6 +351,7 @@ export function DiscoverChatMessageRow({
   onRetryProductResultSet: (threadId: string, resultSetId: string) => void
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable?: boolean
+  useLiveCart?: boolean
   deletable?: boolean
   removing?: boolean
 }>) {
@@ -475,6 +477,7 @@ export function DiscoverChatMessageRow({
                 onRetryProductResultSet={onRetryProductResultSet}
                 onVisibleProductContextChange={onVisibleProductContextChange}
                 immutable={immutable}
+                useLiveCart={useLiveCart}
               />
             ))}
             {message.pending ? (

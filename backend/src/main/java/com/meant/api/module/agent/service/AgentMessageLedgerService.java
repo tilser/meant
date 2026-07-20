@@ -87,13 +87,9 @@ public class AgentMessageLedgerService {
             String text,
             String contentJson
     ) {
-        AgentRun initial = runRepository.findById(runId).orElseThrow(AgentException::notFound);
-        AgentConversation conversation = conversationRepository.findOwnedForUpdate(
-                        initial.getConversationId(),
-                        initial.getUserId()
-                )
+        AgentConversation conversation = conversationRepository.findOwnedForUpdateByRunId(runId)
                 .orElseThrow(AgentException::notFound);
-        AgentRun run = runRepository.findForUpdate(runId).orElseThrow(AgentException::notFound);
+        AgentRun run = lockRun(runId, executionOwner);
         if (run.isCancellationRequested()) {
             throw new CancellationException("Agent run cancellation was requested");
         }
@@ -136,21 +132,13 @@ public class AgentMessageLedgerService {
             String toolName,
             String resultJson
     ) {
-        AgentRun run = runRepository.findById(runId).orElseThrow(AgentException::notFound);
-        AgentConversation conversation = conversationRepository.findOwnedForUpdate(
-                        run.getConversationId(),
-                        run.getUserId()
-                )
+        AgentConversation conversation = conversationRepository.findOwnedForUpdateByRunId(runId)
                 .orElseThrow(AgentException::notFound);
-        if (executionOwner == null) {
-            runRepository.findForUpdate(runId).orElseThrow(AgentException::notFound);
-        } else {
-            runService.requireOwnedExecution(runId, executionOwner);
-        }
+        lockRun(runId, executionOwner);
         Instant now = clock.instant();
         AgentMessage message = messageRepository.save(AgentMessage.builder()
                 .conversationId(conversation.getId())
-                .runId(run.getId())
+                .runId(runId)
                 .role(AgentMessageRole.TOOL)
                 .contentKind(AgentContentKind.TOOL_RESULT)
                 .sequenceNumber(conversation.nextSequence(now))
@@ -159,6 +147,14 @@ public class AgentMessageLedgerService {
                 .createdAt(now)
                 .build());
         return AgentResultMapper.message(message);
+    }
+
+    private AgentRun lockRun(UUID runId, UUID executionOwner) {
+        if (executionOwner == null) {
+            return runRepository.findForUpdate(runId).orElseThrow(AgentException::notFound);
+        }
+        runService.requireOwnedExecution(runId, executionOwner);
+        return runRepository.findById(runId).orElseThrow(AgentException::notFound);
     }
 
     private void appendEvent(

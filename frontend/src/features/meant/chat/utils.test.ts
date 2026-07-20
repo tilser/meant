@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import type { CartItem, Product } from '../types'
-import type { DiscoverChatBlock } from './types'
+import type { DiscoverChatBlock, DiscoverChatMessage } from './types'
 import {
   cartItemsForChatBlock,
   cartItemsWithFallback,
@@ -15,6 +15,7 @@ import {
   discoverThreadSearchContext,
   durableDiscoverChatThread,
   initialDiscoverChatThreads,
+  latestCartBlockMessageId,
   mergeDiscoverThreadSources,
   normalizeDiscoverChatThreads,
   normalizedSimilarReferenceBlock,
@@ -908,6 +909,25 @@ describe('chat cart snapshots', () => {
 
     expect(cartItemsForChatBlock([live], [historical], true)).toEqual([historical])
     expect(cartItemsForChatBlock([live], undefined, true)).toEqual([live])
+    expect(cartItemsForChatBlock([live], [historical], true, true)).toEqual([live])
+    expect(cartItemsForChatBlock([], [historical], true, true)).toEqual([])
+  })
+
+  test('selects only the newest cart message for live shared-cart rendering', () => {
+    const historical = {
+      id: 'product-old',
+      merchant: 'Historical Merchant',
+      qty: 1,
+    } satisfies CartItem
+    const messages = [
+      { id: 'cart-old', role: 'ai', blocks: [{ type: 'cart', lines: [historical] }] },
+      { id: 'text-newer', role: 'ai', blocks: [{ type: 'text', text: 'Still working.' }] },
+      { id: 'cart-current', role: 'ai', blocks: [{ type: 'cart', lines: [] }] },
+      { id: 'user-latest', role: 'you', text: 'Thanks' },
+    ] satisfies DiscoverChatMessage[]
+
+    expect(latestCartBlockMessageId(messages)).toBe('cart-current')
+    expect(latestCartBlockMessageId(messages.slice(1, 2))).toBeNull()
   })
 
   test('deduplicates a stale fallback by exact offer while retaining sibling variants', () => {

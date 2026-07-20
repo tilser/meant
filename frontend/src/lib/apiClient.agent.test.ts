@@ -142,13 +142,23 @@ describe('agent conversation API', () => {
     expect(await requests[3]?.json()).toEqual({ title: 'Running shoes', archived: false })
   })
 
-  test('submits the visible product order with the natural-language turn', async () => {
+  test('submits visible product and Shelf context with the natural-language turn', async () => {
     const turn = await submitAgentTurn({
       conversationId: 'conversation-1',
       message: 'Add the third one',
       visibleProductContext: {
         sourceMessageId: 'message-tool-search',
         orderedCanonicalProductKeys: ['product-5', 'product-6', 'product-7', 'product-8'],
+      },
+      shelfContext: {
+        items: [
+          {
+            kind: 'PRODUCT',
+            canonicalProductKey: 'product-5',
+            title: 'Linen shirt',
+            relatedProductNames: [],
+          },
+        ],
       },
       expectedUserId: 'user-a',
     })
@@ -161,6 +171,16 @@ describe('agent conversation API', () => {
       visibleProductContext: {
         sourceMessageId: 'message-tool-search',
         orderedCanonicalProductKeys: ['product-5', 'product-6', 'product-7', 'product-8'],
+      },
+      shelfContext: {
+        items: [
+          {
+            kind: 'PRODUCT',
+            canonicalProductKey: 'product-5',
+            title: 'Linen shirt',
+            relatedProductNames: [],
+          },
+        ],
       },
     })
   })

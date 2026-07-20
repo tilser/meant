@@ -27,10 +27,25 @@ public record SubmitAgentTurnRequest(
                 requiredMode = Schema.RequiredMode.NOT_REQUIRED
         )
         @Valid
-        AgentVisibleProductContextRequest visibleProductContext
+        AgentVisibleProductContextRequest visibleProductContext,
+
+        @Schema(
+                description = "Optional browser Shelf snapshot supplied as untrusted display context.",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        @Valid
+        AgentShelfContextRequest shelfContext
 ) {
 
     public SubmitAgentTurnRequest(String message, String clientTurnId) {
-        this(message, clientTurnId, null);
+        this(message, clientTurnId, null, null);
+    }
+
+    public SubmitAgentTurnRequest(
+            String message,
+            String clientTurnId,
+            AgentVisibleProductContextRequest visibleProductContext
+    ) {
+        this(message, clientTurnId, visibleProductContext, null);
     }
 }

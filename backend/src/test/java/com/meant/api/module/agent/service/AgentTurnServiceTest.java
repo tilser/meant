@@ -79,7 +79,7 @@ class AgentTurnServiceTest {
         when(messages.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(runs.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(visibleContexts.resolve(conversationId, visibleCommand)).thenReturn(visibleContext);
-        when(visibleContexts.serialize(visibleContext)).thenReturn(turnContextJson);
+        when(visibleContexts.serialize(visibleContext, null)).thenReturn(turnContextJson);
         AgentTurnService service = new AgentTurnService(
                 conversations,
                 messages,
