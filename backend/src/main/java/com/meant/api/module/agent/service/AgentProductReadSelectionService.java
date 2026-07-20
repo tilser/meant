@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.service.dto.AgentProductReadSelection;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.tool.AgentProductReadToolException;
 import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.merchant.service.MerchantIntegrationLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;

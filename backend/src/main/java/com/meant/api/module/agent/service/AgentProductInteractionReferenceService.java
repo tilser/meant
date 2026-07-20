@@ -6,6 +6,7 @@ import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
 import com.meant.api.module.agent.service.dto.AgentProductInteractionReference;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.tool.AgentProductReadToolException;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AgentProductInteractionReferenceService {
 
-    static final String STATE_STABLE_KEY_PREFIX = "product-state:";
+    public static final String STATE_STABLE_KEY_PREFIX = "product-state:";
 
     private final AgentArtifactReferenceRepository artifactRepository;
 

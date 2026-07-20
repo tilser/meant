@@ -11,7 +11,7 @@ import com.meant.api.module.agent.service.dto.AgentMessageResult;
 import com.meant.api.module.agent.service.dto.AgentRunEventResult;
 import com.meant.api.module.agent.service.dto.AgentRunResult;
 
-final class AgentResultMapper {
+public final class AgentResultMapper {
 
     private AgentResultMapper() {
     }
@@ -42,7 +42,7 @@ final class AgentResultMapper {
         );
     }
 
-    static AgentArtifactResult artifact(AgentArtifactReference source) {
+    public static AgentArtifactResult artifact(AgentArtifactReference source) {
         return new AgentArtifactResult(
                 source.getId(),
                 source.getMessageId(),

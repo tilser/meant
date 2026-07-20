@@ -1,6 +1,7 @@
 package com.meant.api.module.agent.service;
 
 import com.meant.api.module.agent.service.dto.AgentInventoryProductAnchor;
+import com.meant.api.module.agent.service.tool.AgentProductReadToolException;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;

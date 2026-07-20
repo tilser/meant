@@ -6,6 +6,8 @@ import com.meant.api.module.agent.service.dto.AgentProductClarification;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
+import com.meant.api.module.agent.service.tool.AgentToolAuthorizationPolicy;
+import com.meant.api.module.agent.service.tool.AgentToolRegistry;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;

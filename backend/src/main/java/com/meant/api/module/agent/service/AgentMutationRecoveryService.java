@@ -18,8 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AgentMutationRecoveryService {
 
     private static final Duration MINIMUM_RECOVERY_GRACE = Duration.ofSeconds(5);
-    static final String STALE_CLASSIFICATION = "stale_execution";
-    static final String STALE_MUTATION_MESSAGE =
+    public static final String STALE_CLASSIFICATION = "stale_execution";
+    public static final String STALE_MUTATION_MESSAGE =
             "The worker stopped before the mutation outcome could be confirmed.";
     private static final String STALE_READ_MESSAGE = "The worker stopped before the read completed.";
 
@@ -62,7 +62,7 @@ public class AgentMutationRecoveryService {
         );
     }
 
-    static Instant staleCutoff(Instant now, Duration toolDeadline) {
+    public static Instant staleCutoff(Instant now, Duration toolDeadline) {
         Duration grace = toolDeadline.compareTo(MINIMUM_RECOVERY_GRACE) >= 0
                 ? toolDeadline
                 : MINIMUM_RECOVERY_GRACE;

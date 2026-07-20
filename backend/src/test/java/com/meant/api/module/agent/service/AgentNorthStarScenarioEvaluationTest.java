@@ -14,6 +14,8 @@ import com.meant.api.module.agent.service.dto.AgentModelUsage;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
+import com.meant.api.module.agent.service.tool.AgentTool;
+import com.meant.api.module.agent.service.tool.AgentToolRegistry;
 import com.meant.api.module.agent.support.ScriptedAgentModelGateway;
 import java.io.IOException;
 import java.io.InputStream;
