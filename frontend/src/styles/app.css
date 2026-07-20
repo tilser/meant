@@ -1257,6 +1257,211 @@
   font-size: 12.5px;
 }
 
+.mt-agent-working {
+  --mt-heart-cyan: #16d3df;
+  --mt-heart-purple: #9847d6;
+  display: inline-flex;
+  width: fit-content;
+  max-width: min(100%, 430px);
+  align-items: center;
+  align-self: flex-start;
+  gap: 14px;
+  padding: 10px 17px 10px 11px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(
+        118deg,
+        color-mix(in srgb, var(--mt-heart-cyan) 42%, var(--line)) 0%,
+        color-mix(in srgb, var(--mt-heart-purple) 36%, var(--line)) 100%
+      )
+      border-box;
+  box-shadow: 0 14px 38px -30px color-mix(in srgb, var(--mt-heart-purple) 46%, transparent);
+  animation: mt-agent-working-in var(--motion-medium) var(--ease-out) both;
+}
+
+.mt-agent-working-mark {
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  flex: 0 0 46px;
+  border-radius: 15px;
+  background:
+    radial-gradient(
+      circle at 28% 22%,
+      color-mix(in srgb, var(--mt-heart-cyan) 24%, transparent),
+      transparent 48%
+    ),
+    radial-gradient(
+      circle at 76% 82%,
+      color-mix(in srgb, var(--mt-heart-purple) 18%, transparent),
+      transparent 52%
+    ),
+    color-mix(in srgb, var(--surface) 72%, var(--bg));
+  isolation: isolate;
+}
+
+.mt-agent-heart {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  width: 27px;
+  height: 25px;
+  place-items: center;
+  filter: drop-shadow(0 4px 7px color-mix(in srgb, var(--mt-heart-purple) 25%, transparent));
+  transform-origin: 50% 64%;
+  animation: mt-agent-heartbeat 1.85s cubic-bezier(0.2, 0.82, 0.26, 1) infinite;
+}
+
+.mt-agent-heart svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.mt-agent-heart-check {
+  stroke: #0b2b5c;
+}
+
+.mt-agent-heart-ripple {
+  position: absolute;
+  z-index: 1;
+  inset: 9px;
+  border: 1px solid color-mix(in srgb, var(--mt-heart-cyan) 48%, transparent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: mt-agent-heart-ripple 1.85s var(--ease-out) infinite;
+}
+
+.mt-agent-heart-ripple.second {
+  border-color: color-mix(in srgb, var(--mt-heart-purple) 40%, transparent);
+  animation-delay: 925ms;
+}
+
+.mt-agent-heart-orbit {
+  position: absolute;
+  z-index: 2;
+  inset: 3px;
+  animation: mt-agent-heart-orbit 5.4s linear infinite;
+}
+
+.mt-agent-heart-orbit i {
+  position: absolute;
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--mt-heart-cyan);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--mt-heart-cyan) 72%, transparent);
+}
+
+.mt-agent-heart-orbit i:nth-child(1) {
+  top: 2px;
+  left: 19px;
+}
+
+.mt-agent-heart-orbit i:nth-child(2) {
+  top: 26px;
+  right: 1px;
+  width: 2px;
+  height: 2px;
+  background: var(--mt-heart-purple);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--mt-heart-purple) 72%, transparent);
+}
+
+.mt-agent-heart-orbit i:nth-child(3) {
+  bottom: 3px;
+  left: 7px;
+  width: 2px;
+  height: 2px;
+  background: color-mix(in srgb, var(--mt-heart-cyan) 48%, var(--mt-heart-purple));
+}
+
+.mt-agent-working-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mt-agent-working-copy strong {
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.mt-agent-working-copy > span {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+@keyframes mt-agent-working-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mt-agent-heartbeat {
+  0%,
+  44%,
+  100% {
+    transform: scale(1);
+  }
+
+  10% {
+    transform: scale(1.11);
+  }
+
+  18% {
+    transform: scale(0.98);
+  }
+
+  27% {
+    transform: scale(1.065);
+  }
+
+  35% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-agent-heart-ripple {
+  0%,
+  17% {
+    opacity: 0;
+    transform: scale(0.64);
+  }
+
+  27% {
+    opacity: 0.42;
+  }
+
+  58%,
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+@keyframes mt-agent-heart-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .mt-ct-newsletter {
   display: flex;
   flex-direction: column;
@@ -10102,6 +10307,17 @@ button:disabled {
 
   .mt-msg-thinking span {
     opacity: 0.7;
+    transform: none;
+  }
+
+  .mt-agent-heart-ripple,
+  .mt-agent-heart-orbit {
+    display: none;
+  }
+
+  .mt-agent-heart,
+  .mt-agent-working {
+    animation: none !important;
     transform: none;
   }
 

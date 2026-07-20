@@ -96,6 +96,8 @@ import { AgentActionRequestIdentityStore } from './requestIdentity'
 import { agentActionQueueFor } from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
 import { withProjectedAgentMessages } from './messageProjection'
+import { AgentWorkingIndicator } from './AgentWorkingIndicator'
+import { agentWorkingStage } from './agentWorkingState'
 
 const MUTATING_AGENT_ACTIONS = new Set([
   'prepare_carts',
@@ -1032,6 +1034,23 @@ export function AgentDiscoverView({
     eventState.runs[activeRunId ?? '']?.status ??
     (runSnapshot?.runId === activeRunId ? runSnapshot.status : undefined)
   const isRunning = Boolean(activeRunId && !isTerminalAgentRunStatus(currentStatus ?? 'QUEUED'))
+  const activeRunProjection = activeRunId ? eventState.runs[activeRunId] : undefined
+  const activeRunHasVisibleOutput = Boolean(
+    activeRunId &&
+    (activeRunProjection?.streamingAssistantText.trim() ||
+      activeRunProjection?.assistantMessages.length ||
+      combinedConversation?.messages.some(
+        (message) => message.runId === activeRunId && message.role === 'ASSISTANT',
+      ) ||
+      combinedConversation?.artifacts.some((artifact) => artifact.runId === activeRunId)),
+  )
+  const workingStage = agentWorkingStage({
+    submitting,
+    isRunning,
+    status:
+      currentStatus === 'RUNNING' ? 'RUNNING' : currentStatus === 'QUEUED' ? 'QUEUED' : undefined,
+    hasVisibleOutput: activeRunHasVisibleOutput,
+  })
   const suggestedReplies = useMemo(() => {
     const latest = messages.at(-1)
     return latest?.role === 'ai' ? (latest.suggestedReplies ?? []) : []
@@ -1691,6 +1710,7 @@ export function AgentDiscoverView({
             replyDraft={null}
             onClearReply={() => undefined}
           />
+          {workingStage ? <AgentWorkingIndicator stage={workingStage} /> : null}
           {error || shareNotice ? (
             <div className="mt-ct-history-error" role={error ? 'alert' : 'status'}>
               <span>{error ?? shareNotice}</span>
@@ -1835,6 +1855,7 @@ export function AgentDiscoverView({
             onVisibleProductContextChange={captureVisibleProductContext}
           />
         ))}
+        {workingStage ? <AgentWorkingIndicator stage={workingStage} /> : null}
         {toolActivities.length > 0 && isRunning ? (
           <AgentActivityPanel activities={toolActivities} />
         ) : null}
