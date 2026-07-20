@@ -2892,7 +2892,7 @@ button:disabled {
   animation: mt-ask-spark-pop 520ms var(--ease-spring);
 }
 
-.mt-ask-sent .mt-ask-go svg {
+.mt-ask-sent .mt-ask-send svg {
   animation: mt-search-arrow-send 520ms var(--ease-out);
 }
 

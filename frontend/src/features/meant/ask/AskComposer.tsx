@@ -14,6 +14,8 @@ export function AskComposer({
   suggestionValues = [],
   showChips,
   onAsk,
+  running = false,
+  onStop,
   autoFocus = false,
   disabled = false,
   replyDraft = null,
@@ -24,6 +26,8 @@ export function AskComposer({
   suggestionValues?: readonly string[]
   showChips: boolean
   onAsk: AskComposerSubmitHandler
+  running?: boolean
+  onStop?: () => void | Promise<void>
   autoFocus?: boolean
   disabled?: boolean
   replyDraft?: AskReplyDraft | null
@@ -59,7 +63,7 @@ export function AskComposer({
   )
 
   const send = async (text?: string) => {
-    if (disabled || sending) {
+    if (disabled || sending || running) {
       return
     }
     const question = (text ?? value).trim()
@@ -87,7 +91,8 @@ export function AskComposer({
 
   const hasValue = value.trim().length > 0
   const busy = disabled || sending
-  const canSend = hasValue && !busy
+  const submissionBlocked = busy || running
+  const canSend = hasValue && !submissionBlocked
 
   return (
     <div className={`mt-ask-composer ${busy ? 'mt-ask-composer-disabled' : ''}`}>
@@ -101,7 +106,7 @@ export function AskComposer({
               onClick={() =>
                 void send(askComposerSuggestionValue(suggestion, index, suggestionValues))
               }
-              disabled={busy}
+              disabled={submissionBlocked}
               style={{ '--mt-chip-index': index } as CSSProperties}
             >
               {suggestion}
@@ -135,7 +140,7 @@ export function AskComposer({
         </div>
       ) : null}
       <form
-        className={`mt-ask-bar ${hasValue ? 'mt-ask-writing' : ''} ${sentPulse ? 'mt-ask-sent' : ''} ${busy ? 'mt-ask-busy' : ''}`}
+        className={`mt-ask-bar ${hasValue ? 'mt-ask-writing' : ''} ${sentPulse ? 'mt-ask-sent' : ''} ${submissionBlocked ? 'mt-ask-busy' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
           void send()
@@ -153,17 +158,36 @@ export function AskComposer({
           disabled={busy}
           aria-label="Message Meant"
         />
-        <button type="submit" className="mt-ask-go" aria-label="Ask" disabled={!canSend}>
-          <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden>
-            <path
-              d="M3.5 9h11M9.5 4l5 5-5 5"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {running ? (
+          <button
+            type="button"
+            className="mt-ask-go mt-ask-stop"
+            aria-label="Stop"
+            disabled={!onStop}
+            onClick={() => void onStop?.()}
+          >
+            <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden>
+              <rect x="5" y="5" width="8" height="8" rx="1.5" fill="currentColor" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="mt-ask-go mt-ask-send"
+            aria-label="Ask"
+            disabled={!canSend}
+          >
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden>
+              <path
+                d="M3.5 9h11M9.5 4l5 5-5 5"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
       </form>
     </div>
   )

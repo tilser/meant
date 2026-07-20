@@ -1885,17 +1885,14 @@ export function AgentDiscoverView({
 
       <div className="mt-ct-dock">
         <div className="mt-ct-dock-inner">
-          {isRunning ? (
-            <button className="mt-ct-cobtn" type="button" onClick={() => void stop()}>
-              Stop
-            </button>
-          ) : null}
           <AskComposer
             placeholder="Ask Meant to search, compare, inspect inventory, or build your cart…"
             suggestions={suggestedReplies}
             suggestionValues={suggestedReplySubmissions}
             showChips={suggestedReplies.length > 0}
             onAsk={submit}
+            running={isRunning}
+            onStop={stop}
             disabled={loading || submitting || !activeConversationId}
           />
         </div>

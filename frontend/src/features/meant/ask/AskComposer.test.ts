@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 
+import { AskComposer } from './AskComposer'
 import { askComposerSubmissionAccepted, askComposerSuggestionValue } from './askSubmission'
 
 describe('AskComposer submission acknowledgement', () => {
@@ -29,5 +32,24 @@ describe('AskComposer submission acknowledgement', () => {
         '2',
       ]),
     ).toBe('2')
+  })
+
+  test('replaces the send action with Stop in the same button slot while running', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AskComposer, {
+        placeholder: 'Ask Meant...',
+        suggestions: [],
+        showChips: false,
+        onAsk: () => undefined,
+        running: true,
+        onStop: () => undefined,
+      }),
+    )
+
+    expect(markup).toContain('class="mt-ask-go mt-ask-stop"')
+    expect(markup).toContain('type="button"')
+    expect(markup).toContain('aria-label="Stop"')
+    expect(markup).not.toContain('aria-label="Ask"')
+    expect(markup).not.toContain('mt-ct-cobtn')
   })
 })
