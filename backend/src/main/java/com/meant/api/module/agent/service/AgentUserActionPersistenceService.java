@@ -145,7 +145,7 @@ public class AgentUserActionPersistenceService {
                 .sequenceNumber(conversation.nextSequence(now))
                 .textContent(safeTranscriptSummary(executionResult.safeSummary()))
                 .contentJson(jsonSupport.bounded(executionResult.resultJson()))
-                .correlationId(command.idempotencyKey())
+                .correlationId(command.idempotencyKey() + ":" + command.toolName())
                 .createdAt(now)
                 .build());
         var artifacts = artifactService.persist(

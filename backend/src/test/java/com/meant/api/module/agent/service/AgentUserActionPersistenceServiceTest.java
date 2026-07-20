@@ -186,6 +186,7 @@ class AgentUserActionPersistenceServiceTest {
 
         assertThat(result.message().textContent()).isEqualTo("Pinned the verified product.");
         assertThat(result.message().textContent()).doesNotContain("CLIENT CONTROLLED");
+        assertThat(result.message().correlationId()).isEqualTo("client-key:pin_product");
         verify(memoryService).refresh(conversation);
     }
 
