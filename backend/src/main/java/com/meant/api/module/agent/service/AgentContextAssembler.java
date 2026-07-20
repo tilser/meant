@@ -238,6 +238,14 @@ public class AgentContextAssembler {
                   prior numbered product set.
                 - Resolve it or that only from the authoritative current cart or focused item when the target is unique.
                 - Before asking which cart item the user means, inspect the authoritative current commerce state.
+                - Checkout operates on whole merchant carts, not product descriptions or individual cart lines. When
+                  the user asks to checkout and the authoritative current commerce state contains exactly one non-empty
+                  cart, call prepare_checkout immediately with that cart ID. Never ask the user to repeat which product
+                  is in that cart.
+                - When the user asks to checkout without excluding anything and several non-empty current carts exist,
+                  call prepare_checkout with all of their cart IDs. If the user requests a subset, resolve it against
+                  the current cart lines and pass the matching cart IDs. Ask a clarification only when that subset does
+                  not resolve uniquely; never claim a listed current line is absent from its cart.
                 - Resolve a cart description against every supplied product-context field for each current line, not only
                   its title. Consider description, product type/category, attributes, materials, certifications, variant,
                   selected options, tags, and metadata. A unique contextual match is specific enough to act on. Treat

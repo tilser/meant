@@ -20,12 +20,15 @@ import com.meant.api.module.agent.service.dto.AgentModelResponse;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelUsage;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
+import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.service.CartService;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.dto.CartLineResult;
 import com.meant.api.module.cart.service.dto.CartOfferPartitionResult;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -43,6 +46,8 @@ import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.module.merchant.constant.CommerceExecutionRail;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
@@ -86,6 +91,73 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
     @MockitoBean private AgentModelGateway modelGateway;
     @MockitoBean private UserGroupedProductSearchService catalogSearchService;
     @MockitoBean private CartService cartService;
+
+    @Test
+    void cartReadFollowedByCheckoutUsesTheWholePersistedCartWithoutProductRestatement() throws Exception {
+        persistUser();
+        String offerKey = "offer:silk-wave-swim-shorts:navy-small";
+        CartResult activeCart = cartResult(List.of(line(
+                ORIGINAL_LINE_ID,
+                "remote-line-silk-wave",
+                offerKey,
+                "1082 - Silk Wave Swim Shorts",
+                "Navy / Small"
+        )));
+        when(cartService.listActive(any())).thenReturn(List.of(activeCart));
+        when(cartService.checkout(any(GetCheckoutQuery.class), any(UUID.class)))
+                .thenReturn(checkoutResult());
+
+        List<AgentModelRequest> modelRequests = new CopyOnWriteArrayList<>();
+        scriptModel(modelRequests,
+                tool("read-cart", "get_active_carts", "{}"),
+                text("Your cart contains 1 x 1082 - Silk Wave Swim Shorts - Navy / Small."),
+                tool("prepare-existing-cart", "prepare_checkout",
+                        "{\"cartIds\":[\"" + CART_ID + "\"]}"),
+                text("Your checkout is ready."));
+
+        UUID conversationId = conversationService.create(
+                new CreateAgentConversationCommand(USER_ID, "Swim shorts checkout")).conversationId();
+        UUID cartReadRunId = runTurn(conversationId, "what is inside my cart?", "cart-read-before-checkout");
+        UUID checkoutRunId = runTurn(conversationId, "lets do checkout", "checkout-existing-cart");
+
+        assertThat(invocations(cartReadRunId))
+                .singleElement()
+                .satisfies(invocation -> assertThat(invocation.getToolName()).isEqualTo("get_active_carts"));
+        assertThat(invocations(checkoutRunId))
+                .singleElement()
+                .satisfies(invocation -> {
+                    assertThat(invocation.getToolName()).isEqualTo("prepare_checkout");
+                    assertThat(invocation.getArgumentsJson())
+                            .isEqualTo("{\"cartIds\":[\"" + CART_ID + "\"]}");
+                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
+                });
+
+        AgentModelRequest checkoutRequest = modelRequests.stream()
+                .filter(request -> request.messages().stream()
+                        .anyMatch(message -> "lets do checkout".equals(message.text())))
+                .findFirst()
+                .orElseThrow();
+        assertThat(checkoutRequest.messages())
+                .filteredOn(message -> message.role() == AgentModelRole.USER)
+                .extracting(message -> message.text())
+                .anySatisfy(context -> assertThat(context)
+                        .contains("Authoritative current commerce state:")
+                        .contains("cartId=" + CART_ID)
+                        .contains("cartLineId=" + ORIGINAL_LINE_ID)
+                        .contains("label=1082 - Silk Wave Swim Shorts")
+                        .contains("productContext=1082 - Silk Wave Swim Shorts | Field Supply | Navy / Small"));
+        assertThat(checkoutRequest.tools())
+                .filteredOn(tool -> tool.name().equals("prepare_checkout"))
+                .singleElement()
+                .satisfies(tool -> assertThat(tool.description())
+                        .contains("Each cart is checked out as a whole")
+                        .contains("never ask for or pass product descriptions"));
+
+        ArgumentCaptor<GetCheckoutQuery> checkout = ArgumentCaptor.forClass(GetCheckoutQuery.class);
+        verify(cartService).checkout(checkout.capture(), any(UUID.class));
+        assertThat(checkout.getValue().cartId()).isEqualTo(CART_ID);
+        assertThat(checkout.getValue().userId()).isEqualTo(USER_ID);
+    }
 
     @Test
     void persistedConversationResolvesSecondJacketThenRemoveItAndAddItAgain() throws Exception {
@@ -377,15 +449,25 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
     }
 
     private CartLineResult line(UUID lineId, String remoteLineId, String offerKey) {
+        return line(lineId, remoteLineId, offerKey, "Survival cotton jacket", "Black");
+    }
+
+    private CartLineResult line(
+            UUID lineId,
+            String remoteLineId,
+            String offerKey,
+            String productTitle,
+            String variantTitle
+    ) {
         Instant now = Instant.now();
         return new CartLineResult(
                 lineId,
                 remoteLineId,
                 "product-cotton-field",
-                "Survival cotton jacket",
+                productTitle,
                 "Field Supply",
                 "variant-cotton-field-Black",
-                "Black",
+                variantTitle,
                 1,
                 "89.95",
                 "89.95",
@@ -400,6 +482,27 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
                 "merchant-jackets",
                 now,
                 now
+        );
+    }
+
+    private CheckoutResult checkoutResult() {
+        return new CheckoutResult(
+                CART_ID,
+                "remote-cart-jackets",
+                "checkout-swim-shorts",
+                UUID.fromString("00000000-0000-0000-0000-000000000955"),
+                "incomplete",
+                "https://jackets.example.test/checkout",
+                "https://jackets.example.test",
+                "2026-04-08",
+                8995L,
+                "USD",
+                List.of(),
+                CheckoutNextAction.HANDOFF,
+                CommerceExecutionRail.MERCHANT_HANDOFF,
+                List.of(),
+                MerchantExecutionPolicy.unavailable(),
+                null
         );
     }
 

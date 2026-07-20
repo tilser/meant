@@ -16,7 +16,11 @@ public class AgentCheckoutPrepareTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "prepare_checkout",
-            "Prepare one owned checkout per merchant cart and return explicit user-facing next actions. This tool never opens or completes checkout and never handles payment credentials.",
+            "Prepare one owned checkout per selected merchant cart and return explicit user-facing next actions. "
+                    + "Each cart is checked out as a whole, including all of its current lines. Use cart IDs from "
+                    + "the authoritative current commerce state or get_active_carts; never ask for or pass product "
+                    + "descriptions, offer keys, or cart-line IDs. This tool never opens or completes checkout and "
+                    + "never handles payment credentials.",
             """
                     {"type":"object","additionalProperties":false,"required":["cartIds"],"properties":{"cartIds":{"type":"array","minItems":1,"maxItems":10,"items":{"type":"string","format":"uuid"}}}}
                     """,

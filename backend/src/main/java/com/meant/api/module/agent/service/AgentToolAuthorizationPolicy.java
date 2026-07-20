@@ -50,7 +50,8 @@ public class AgentToolAuthorizationPolicy {
                     + "|(?:i\\s+(?:want|need)\\s+(?:you\\s+)?to|"
                     + "i(?:['’]d|\\s+would)\\s+like\\s+(?:you\\s+)?to)\\s+"
                     + MUTATION_ACTION + "\\b"
-                    + "|(?:let(?:['’]s|\\s+us)|go\\s+ahead(?:\\s+and)?)\\s+"
+                    + "|(?:let(?:['’]?s|\\s+us)|go\\s+ahead(?:\\s+and)?)\\s+"
+                    + "(?:(?:do|start)\\s+)?(?:(?:a|the)\\s+)?"
                     + MUTATION_ACTION + "\\b"
                     + "|(?:i(?:['’]m|\\s+am)\\s+)?ready\\s+to\\s+(?:order|pay)\\b)",
             Pattern.CASE_INSENSITIVE
@@ -491,7 +492,8 @@ public class AgentToolAuthorizationPolicy {
                         + "|(?:i\\s+(?:want|need)\\s+(?:you\\s+)?to|"
                         + "i(?:['’]d|\\s+would)\\s+like\\s+(?:you\\s+)?to)\\s+"
                         + action + "\\b"
-                        + "|(?:let(?:['’]s|\\s+us)|go\\s+ahead(?:\\s+and)?)\\s+"
+                        + "|(?:let(?:['’]?s|\\s+us)|go\\s+ahead(?:\\s+and)?)\\s+"
+                        + "(?:(?:do|start)\\s+)?(?:(?:a|the)\\s+)?"
                         + action + "\\b)",
                 Pattern.CASE_INSENSITIVE
         );

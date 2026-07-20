@@ -58,6 +58,13 @@ class AgentCommerceToolContractTest {
         );
 
         assertThat(tools).extracting(tool -> tool.descriptor().name()).doesNotHaveDuplicates();
+        assertThat(tools)
+                .filteredOn(tool -> tool.descriptor().name().equals("prepare_checkout"))
+                .singleElement()
+                .satisfies(tool -> assertThat(tool.descriptor().description())
+                        .contains("Each cart is checked out as a whole")
+                        .contains("authoritative current commerce state or get_active_carts")
+                        .contains("never ask for or pass product descriptions"));
         for (AgentTool tool : tools) {
             String schema = tool.descriptor().inputSchemaJson();
             assertThat(schema)

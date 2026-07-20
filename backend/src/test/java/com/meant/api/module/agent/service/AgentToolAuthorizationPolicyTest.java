@@ -297,6 +297,9 @@ class AgentToolAuthorizationPolicyTest {
 
         assertThat(policy.authorized(context("Continue explaining the sizing details."), checkout)).isFalse();
         assertThat(policy.authorized(context("Proceed."), checkout)).isTrue();
+        assertThat(policy.authorized(context("lets do checkout"), checkout)).isTrue();
+        assertThat(policy.authorized(context("Let's do the checkout."), checkout)).isTrue();
+        assertThat(policy.authorized(context("Let's talk about checkout."), checkout)).isFalse();
     }
 
     @Test
