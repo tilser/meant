@@ -49,6 +49,10 @@ public class UserProductSearchQueryUnderstandingService {
     private static final Pattern AMBIGUOUS_CONTEXT_PATTERN = Pattern.compile(
             "\\b(something|anything|recommend|suggest|gift|present|for my|for someone|similar to|like the one|what should)\\b"
     );
+    private static final List<Pattern> SIMILARITY_WRAPPER_PATTERNS = List.of(
+            Pattern.compile("^(?:products?\\s+)?similar\\s+to\\s+"),
+            Pattern.compile("^similar\\b(?:\\s+products?)?(?:\\s+to)?\\s*")
+    );
     private static final Pattern CATALOG_TOKEN_PATTERN = Pattern.compile("[a-z0-9]{3,}");
     private static final List<String> RESPONSE_KEYS = List.of(
             "searchQuery",
@@ -73,6 +77,18 @@ public class UserProductSearchQueryUnderstandingService {
             return deterministic;
         }
         return cachedOrGeneratedIntent(trimmedQuery, normalizedOriginalQuery);
+    }
+
+    public UserProductSearchQueryIntentResult understandSimilarity(String originalQuery) {
+        String trimmedQuery = originalQuery.trim();
+        String normalizedOriginalQuery = userProductSearchHashService.normalizeQuery(trimmedQuery);
+        String narrowedQuery = stripSimilarityWrappers(stripDeterministicWrappers(normalizedOriginalQuery));
+        return deterministicIntent(
+                trimmedQuery,
+                normalizedOriginalQuery,
+                narrowedQuery.isBlank() ? "products" : narrowedQuery,
+                "similarity-deterministic"
+        );
     }
 
     protected UserProductSearchQueryIntentResult cachedOrGeneratedIntent(
@@ -120,8 +136,21 @@ public class UserProductSearchQueryUnderstandingService {
             String normalizedOriginalQuery,
             String source
     ) {
-        String stripped = stripDeterministicWrappers(normalizedOriginalQuery);
-        String normalizedSearchQuery = userProductSearchHashService.normalizeQuery(stripped);
+        return deterministicIntent(
+                originalQuery,
+                normalizedOriginalQuery,
+                stripDeterministicWrappers(normalizedOriginalQuery),
+                source
+        );
+    }
+
+    private UserProductSearchQueryIntentResult deterministicIntent(
+            String originalQuery,
+            String normalizedOriginalQuery,
+            String searchQuery,
+            String source
+    ) {
+        String normalizedSearchQuery = userProductSearchHashService.normalizeQuery(searchQuery);
         String confidence = deterministicConfidence(normalizedOriginalQuery, normalizedSearchQuery);
         return new UserProductSearchQueryIntentResult(
                 originalQuery,
@@ -150,6 +179,14 @@ public class UserProductSearchQueryUnderstandingService {
         return userProductSearchHashService.normalizeQuery(stripped);
     }
 
+    private String stripSimilarityWrappers(String normalizedQuery) {
+        String stripped = normalizedQuery;
+        for (Pattern pattern : SIMILARITY_WRAPPER_PATTERNS) {
+            stripped = pattern.matcher(stripped).replaceFirst("");
+        }
+        return userProductSearchHashService.normalizeQuery(stripped);
+    }
+
     private String deterministicConfidence(String normalizedOriginalQuery, String normalizedSearchQuery) {
         if (normalizedSearchQuery.isBlank() || !CATALOG_TOKEN_PATTERN.matcher(normalizedSearchQuery).find()) {
             return LOW;
@@ -166,13 +203,20 @@ public class UserProductSearchQueryUnderstandingService {
             String normalizedOriginalQuery,
             String model
     ) {
-        String response = openRouterChatClient.completeJson(
-                model,
-                SYSTEM_PROMPT,
-                "Shopping request:\n" + originalQuery,
-                "product_search_query_intent",
-                responseSchema()
-        );
+        String response;
+        try {
+            response = openRouterChatClient.completeJson(
+                    model,
+                    SYSTEM_PROMPT,
+                    "Shopping request:\n" + originalQuery,
+                    "product_search_query_intent",
+                    responseSchema()
+            );
+        } catch (OpenRouterException exception) {
+            log.warn("Could not generate product search query intent; using deterministic fallback ({})",
+                    exception.getClass().getSimpleName());
+            return deterministicIntent(originalQuery, normalizedOriginalQuery, "llm-fallback");
+        }
         try {
             return sanitizeResponse(originalQuery, normalizedOriginalQuery, response);
         } catch (RuntimeException exception) {

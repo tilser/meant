@@ -2,6 +2,7 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
@@ -162,6 +163,34 @@ class UserProductSearchQueryUnderstandingServiceTest {
         assertThat(result.source()).isEqualTo("llm-fallback");
     }
 
+    @Test
+    void understandSimilarityUsesTheAnchorQueryWithoutCallingOpenRouter() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.failure = new OpenRouterException("OpenRouter is unavailable");
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understandSimilarity(
+                "products similar to Waterproof trail running shoes"
+        );
+
+        assertThat(result.searchQuery()).isEqualTo("waterproof trail running shoes");
+        assertThat(result.source()).isEqualTo("similarity-deterministic");
+        assertThat(openRouterChatClient.called).isFalse();
+    }
+
+    @Test
+    void understandFallsBackWhenOpenRouterRequestFails() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.failure = new OpenRouterException("OpenRouter is unavailable");
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understand("birthday gift candles for my mom");
+
+        assertThat(result.searchQuery()).isEqualTo("birthday gift candles for my mom");
+        assertThat(result.source()).isEqualTo("llm-fallback");
+        assertThat(openRouterChatClient.called).isTrue();
+    }
+
     private UserProductSearchQueryUnderstandingService service(
             FakeOpenRouterChatClient openRouterChatClient,
             UserProductSearchQueryIntentRepository repository
@@ -235,6 +264,7 @@ class UserProductSearchQueryUnderstandingServiceTest {
         private boolean called;
         private int calledCount;
         private String model;
+        private OpenRouterException failure;
 
         FakeOpenRouterChatClient() {
             super(RestClient.builder(), new OpenRouterProperties(
@@ -255,6 +285,9 @@ class UserProductSearchQueryUnderstandingServiceTest {
             called = true;
             calledCount++;
             this.model = model;
+            if (failure != null) {
+                throw failure;
+            }
             return response;
         }
     }

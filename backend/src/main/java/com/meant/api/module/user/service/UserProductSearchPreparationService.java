@@ -56,12 +56,32 @@ public class UserProductSearchPreparationService {
             CatalogDiscoveryFilters discoveryFilters,
             Consumer<Stage> stageConsumer
     ) {
+        return prepare(profileCommand, command, discoveryFilters, stageConsumer, false);
+    }
+
+    public UserProductSearchPreparation prepareSimilarity(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters
+    ) {
+        return prepare(profileCommand, command, discoveryFilters, ignored -> { }, true);
+    }
+
+    private UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Consumer<Stage> stageConsumer,
+            boolean similaritySearch
+    ) {
         if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product search user does not match authenticated user");
         }
         stageConsumer.accept(Stage.UNDERSTANDING_REQUEST);
         String query = command.query().trim();
-        UserProductSearchQueryIntentResult queryIntent = queryUnderstandingService.understand(query);
+        UserProductSearchQueryIntentResult queryIntent = similaritySearch
+                ? queryUnderstandingService.understandSimilarity(query)
+                : queryUnderstandingService.understand(query);
 
         stageConsumer.accept(Stage.LOADING_CONTEXT);
         UserSettingsResult settings = userSettingsService.get(profileCommand);

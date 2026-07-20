@@ -375,8 +375,9 @@ class UserGroupedProductSearchServiceTest {
                     }
                 };
         UserCanonicalProductSessionStore store = sessionStore();
+        PagingPreparationService preparationService = new PagingPreparationService();
         UserGroupedProductSearchService service = new UserGroupedProductSearchService(
-                new PagingPreparationService(),
+                preparationService,
                 discovery,
                 new ExactProductGroupingService(),
                 ProductRankingTestFactory.service(),
@@ -390,6 +391,7 @@ class UserGroupedProductSearchServiceTest {
 
         var result = service.searchSimilar(profile, command(profile.id()), anchor, reference);
 
+        assertThat(preparationService.similaritySearch).isTrue();
         assertThat(discovery.request.similarityReference()).isEqualTo(reference);
         assertThat(discovery.request.query()).isEqualTo("linen shirt");
         assertThat(result.products()).hasSize(20).allSatisfy(product -> {
@@ -664,6 +666,8 @@ class UserGroupedProductSearchServiceTest {
 
     private static final class PagingPreparationService extends UserProductSearchPreparationService {
 
+        private boolean similaritySearch;
+
         private PagingPreparationService() {
             super(null, null, null, null, null, null);
         }
@@ -695,6 +699,16 @@ class UserGroupedProductSearchServiceTest {
                 CatalogDiscoveryFilters discoveryFilters
         ) {
             return prepare(profileCommand, command);
+        }
+
+        @Override
+        public UserProductSearchPreparation prepareSimilarity(
+                EnsureUserProfileCommand profileCommand,
+                SearchUserProductsCommand command,
+                CatalogDiscoveryFilters discoveryFilters
+        ) {
+            similaritySearch = true;
+            return prepare(profileCommand, command, discoveryFilters);
         }
     }
 

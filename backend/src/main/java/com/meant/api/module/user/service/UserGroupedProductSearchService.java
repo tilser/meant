@@ -98,7 +98,7 @@ public class UserGroupedProductSearchService {
     ) {
         return search(
                 command,
-                preparationService.prepare(profileCommand, command, discoveryFilters),
+                preparationService.prepareSimilarity(profileCommand, command, discoveryFilters),
                 null,
                 anchor,
                 similarityReference
