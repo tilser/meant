@@ -53,6 +53,7 @@ import type {
   ShelfThumb,
 } from '../shelf/types'
 import { SHELF_DRAG_MIME } from '../shelf/types'
+import { agentShelfContext } from '../shelf/agentShelfContext'
 import { ProductArtwork, SparkMark } from '../shared/ui'
 import { accountStorageKey } from '../shared/accountStorage'
 import { useStoredState } from '../shared/storage'
@@ -1122,6 +1123,7 @@ export function AgentDiscoverView({
           message: text,
           clientTurnId: uniqueRequestId('turn'),
           visibleProductContext,
+          shelfContext: agentShelfContext(shelf),
           expectedUserId,
         })
         onAgentRunSubmitted?.(turn.runId, targetConversationId, submittedCartRevision)
@@ -1167,6 +1169,7 @@ export function AgentDiscoverView({
       onCaptureAgentCartRevision,
       onAgentRunSubmitted,
       selectedConversation,
+      shelf,
       submitting,
       updateActiveConversationId,
       updateActiveRunId,

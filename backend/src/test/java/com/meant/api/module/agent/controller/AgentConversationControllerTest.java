@@ -8,6 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.constant.AgentContentKind;
 import com.meant.api.module.agent.constant.AgentMessageRole;
+import com.meant.api.module.agent.constant.AgentShelfItemKind;
+import com.meant.api.module.agent.controller.request.AgentShelfContextRequest;
+import com.meant.api.module.agent.controller.request.AgentShelfItemRequest;
 import com.meant.api.module.agent.controller.request.AgentUserActionRequest;
 import com.meant.api.module.agent.controller.request.AgentVisibleProductContextRequest;
 import com.meant.api.module.agent.controller.request.SubmitAgentTurnRequest;
@@ -92,7 +95,14 @@ class AgentConversationControllerTest {
                         new AgentVisibleProductContextRequest(
                                 productMessageId,
                                 List.of("product-5", "product-6", "product-7", "product-8")
-                        )
+                        ),
+                        new AgentShelfContextRequest(List.of(new AgentShelfItemRequest(
+                                AgentShelfItemKind.PRODUCT,
+                                "product-5",
+                                "Linen shirt",
+                                "Meant · Clothing",
+                                List.of()
+                        )))
                 ),
                 request
         );
@@ -119,6 +129,13 @@ class AgentConversationControllerTest {
         assertThat(turnCommand.getValue().visibleProductContext().sourceMessageId()).isEqualTo(productMessageId);
         assertThat(turnCommand.getValue().visibleProductContext().orderedCanonicalProductKeys())
                 .containsExactly("product-5", "product-6", "product-7", "product-8");
+        assertThat(turnCommand.getValue().shelfContext().items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.kind()).isEqualTo(AgentShelfItemKind.PRODUCT);
+                    assertThat(item.canonicalProductKey()).isEqualTo("product-5");
+                    assertThat(item.title()).isEqualTo("Linen shirt");
+                });
         assertThat(actionCommand.getValue().buyerIp()).isEqualTo("203.0.113.42");
     }
 

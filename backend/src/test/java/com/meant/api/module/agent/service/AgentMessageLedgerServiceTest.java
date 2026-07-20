@@ -26,7 +26,7 @@ class AgentMessageLedgerServiceTest {
     private static final Instant NOW = Instant.parse("2026-07-19T08:00:00Z");
 
     @Test
-    void toolResultLocksConversationBeforeValidatingAndLockingTheRun() {
+    void toolResultLocksConversationBeforeLoadingAndValidatingTheRun() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -43,7 +43,7 @@ class AgentMessageLedgerServiceTest {
         when(conversation.getId()).thenReturn(conversationId);
         when(conversation.nextSequence(NOW)).thenReturn(1L);
         when(runs.findById(runId)).thenReturn(Optional.of(run));
-        when(conversations.findOwnedForUpdate(conversationId, userId)).thenReturn(Optional.of(conversation));
+        when(conversations.findOwnedForUpdateByRunId(runId)).thenReturn(Optional.of(conversation));
         when(messages.save(any(AgentMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         AgentMessageLedgerService service = new AgentMessageLedgerService(
                 conversations,
@@ -57,9 +57,9 @@ class AgentMessageLedgerServiceTest {
         service.appendToolResult(runId, executionOwner, "call-1", "prepare_carts", "{\"ok\":true}");
 
         var ordered = inOrder(runs, conversations, runService, messages);
-        ordered.verify(runs).findById(runId);
-        ordered.verify(conversations).findOwnedForUpdate(conversationId, userId);
+        ordered.verify(conversations).findOwnedForUpdateByRunId(runId);
         ordered.verify(runService).requireOwnedExecution(runId, executionOwner);
+        ordered.verify(runs).findById(runId);
         ordered.verify(messages).save(any(AgentMessage.class));
     }
 
@@ -83,7 +83,7 @@ class AgentMessageLedgerServiceTest {
         when(conversation.nextSequence(NOW)).thenReturn(3L);
         when(runs.findById(runId)).thenReturn(Optional.of(run));
         when(runs.findForUpdate(runId)).thenReturn(Optional.of(run));
-        when(conversations.findOwnedForUpdate(conversationId, userId)).thenReturn(Optional.of(conversation));
+        when(conversations.findOwnedForUpdateByRunId(runId)).thenReturn(Optional.of(conversation));
         when(messages.save(any(AgentMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         AgentMessageLedgerService service = new AgentMessageLedgerService(
                 conversations,

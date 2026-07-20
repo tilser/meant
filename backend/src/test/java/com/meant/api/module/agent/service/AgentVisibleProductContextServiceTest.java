@@ -6,9 +6,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.constant.AgentShelfItemKind;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
 import com.meant.api.module.agent.service.command.VisibleProductContextCommand;
+import com.meant.api.module.agent.service.command.ShelfContextCommand;
+import com.meant.api.module.agent.service.command.ShelfItemCommand;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -74,6 +77,36 @@ class AgentVisibleProductContextServiceTest {
                     new VisibleProductContextCommand(MESSAGE_ID, invalid)
             )).hasMessage("Visible product context does not match the current conversation.");
         }
+    }
+
+    @Test
+    void normalizesTypedShelfDisplayContext() {
+        var context = service.resolveShelf(new ShelfContextCommand(List.of(
+                new ShelfItemCommand(
+                        AgentShelfItemKind.PRODUCT,
+                        " product-linen-shirt ",
+                        " Linen shirt ",
+                        " Meant · Clothing ",
+                        List.of()
+                ),
+                new ShelfItemCommand(
+                        AgentShelfItemKind.MESSAGE,
+                        null,
+                        " Meant picks ",
+                        " Options worth comparing. ",
+                        List.of(" Canvas cap ", " Mesh cap ")
+                )
+        )));
+
+        assertThat(context.items())
+                .extracting(item -> item.kind(), item -> item.canonicalProductKey(), item -> item.title())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                AgentShelfItemKind.PRODUCT, "product-linen-shirt", "Linen shirt"),
+                        org.assertj.core.groups.Tuple.tuple(AgentShelfItemKind.MESSAGE, null, "Meant picks")
+                );
+        assertThat(context.items().get(1).relatedProductNames())
+                .containsExactly("Canvas cap", "Mesh cap");
     }
 
     private AgentArtifactReference product(int ordinal) {

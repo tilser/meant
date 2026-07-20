@@ -15,6 +15,8 @@ import com.meant.api.module.agent.service.AgentUserActionService;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
 import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand;
 import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
+import com.meant.api.module.agent.service.command.ShelfContextCommand;
+import com.meant.api.module.agent.service.command.ShelfItemCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.command.UpdateAgentConversationCommand;
 import com.meant.api.module.agent.service.command.VisibleProductContextCommand;
@@ -164,6 +166,17 @@ public class AgentConversationController {
                                 request.visibleProductContext().sourceMessageId(),
                                 request.visibleProductContext().orderedCanonicalProductKeys()
                         ),
+                request.shelfContext() == null
+                        ? null
+                        : new ShelfContextCommand(request.shelfContext().items().stream()
+                                .map(item -> new ShelfItemCommand(
+                                        item.kind(),
+                                        item.canonicalProductKey(),
+                                        item.title(),
+                                        item.text(),
+                                        item.relatedProductNames()
+                                ))
+                                .toList()),
                 httpRequest.getRemoteAddr()
         ));
         runCoordinator.schedule(accepted.runId());

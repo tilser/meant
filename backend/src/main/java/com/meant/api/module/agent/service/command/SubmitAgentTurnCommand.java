@@ -12,6 +12,7 @@ public record SubmitAgentTurnCommand(
         @NotBlank @Size(max = 8000) String message,
         @Size(max = 120) String clientTurnId,
         @Valid VisibleProductContextCommand visibleProductContext,
+        @Valid ShelfContextCommand shelfContext,
         @Size(max = 128) String buyerIp
 ) {
 
@@ -21,7 +22,7 @@ public record SubmitAgentTurnCommand(
             String message,
             String clientTurnId
     ) {
-        this(userId, conversationId, message, clientTurnId, null, null);
+        this(userId, conversationId, message, clientTurnId, null, null, null);
     }
 
     public SubmitAgentTurnCommand(
@@ -31,6 +32,17 @@ public record SubmitAgentTurnCommand(
             String clientTurnId,
             String buyerIp
     ) {
-        this(userId, conversationId, message, clientTurnId, null, buyerIp);
+        this(userId, conversationId, message, clientTurnId, null, null, buyerIp);
+    }
+
+    public SubmitAgentTurnCommand(
+            UUID userId,
+            UUID conversationId,
+            String message,
+            String clientTurnId,
+            VisibleProductContextCommand visibleProductContext,
+            String buyerIp
+    ) {
+        this(userId, conversationId, message, clientTurnId, visibleProductContext, null, buyerIp);
     }
 }
