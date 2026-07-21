@@ -168,7 +168,7 @@ public class AgentRunCoordinator {
 
     private ScheduledFuture<?> startHeartbeat(UUID runId, UUID executionOwner) {
         long leaseMillis = Math.max(1L, properties.staleRunAge().toMillis());
-        long intervalMillis = Math.max(25L, Math.min(30_000L, leaseMillis / 3L));
+        long intervalMillis = Math.clamp(leaseMillis / 3L, 25L, 30_000L);
         return heartbeatExecutor.scheduleWithFixedDelay(
                 () -> renewLeaseSafely(runId, executionOwner),
                 intervalMillis,

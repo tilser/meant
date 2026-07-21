@@ -16,9 +16,11 @@ import com.meant.api.module.agent.service.command.CancelAgentRunCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.SubmitAgentTurnResult;
 import jakarta.validation.Valid;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,7 +53,8 @@ public class AgentTurnService {
             throw AgentException.conflict("Archived conversations cannot accept new turns.");
         }
         var visibleProductContext = visibleProductContextService.resolve(
-                conversation.getId(), command.visibleProductContext());
+                conversation.getId(), command.visibleProductContext()
+        );
         var shelfContext = visibleProductContextService.resolveShelf(command.shelfContext());
         String turnContextJson = visibleProductContextService.serialize(visibleProductContext, shelfContext);
 
