@@ -105,6 +105,7 @@ class SecurityConfigurationIT extends PostgresIntegrationTestSupport {
         client.get().uri("/.well-known/ucp-agent.json")
                 .exchange()
                 .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "max-age=300, public")
                 .expectBody()
                 .jsonPath("$.ucp.version").isEqualTo("2026-04-08")
                 .jsonPath("$.ucp.services['dev.ucp.shopping'][0].transport").isEqualTo("mcp")
