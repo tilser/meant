@@ -99,6 +99,7 @@ import { agentActionQueueFor } from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
 import { prepareCheckoutFromCurrentCart } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
+import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
 import { threadFromAgentConversationSummary } from './conversationHistory'
@@ -359,7 +360,7 @@ export function AgentDiscoverView({
   const [error, setError] = useState<string | null>(null)
   const [shareNotice, setShareNotice] = useState<string | null>(null)
   const [localMessagesByConversationId, setLocalMessagesByConversationId] = useState<
-    Record<string, DiscoverChatMessage[]>
+    Record<string, AnchoredLocalMessage[]>
   >({})
   const [dismissedMessageIds, setDismissedMessageIds] = useStoredState<Record<string, string[]>>(
     accountStorageKey('meant.agentDismissedMessages', expectedUserId),
@@ -382,6 +383,7 @@ export function AgentDiscoverView({
     context: VisibleProductContext
   } | null>(null)
   const visibleProductContextsRef = useRef<VisibleProductContextRegistry>(new Map())
+  const visibleMessageIdsByConversationRef = useRef(new Map<string, readonly string[]>())
   const actionQueue = useMemo(() => agentActionQueueFor(expectedUserId), [expectedUserId])
   const autoDismissTimeoutsRef = useRef(new Map<string, number>())
   const visibleCartRef = useRef(cart)
@@ -831,12 +833,12 @@ export function AgentDiscoverView({
     const localMessages = activeConversationId
       ? (localMessagesByConversationId[activeConversationId] ?? [])
       : []
-    if (!combinedConversation) return localMessages
+    if (!combinedConversation) return localMessages.map(({ message }) => message)
     const authoritative = discoverMessagesFromAgentConversation(
       combinedConversation,
       deliveryLocations,
     )
-    if (!activeRunId) return [...authoritative, ...localMessages]
+    if (!activeRunId) return mergeAnchoredLocalMessages(authoritative, localMessages)
     const projection = eventState.runs[activeRunId]
     const knownMessageIds = new Set(
       combinedConversation.messages.map((message) => message.messageId),
@@ -846,16 +848,16 @@ export function AgentDiscoverView({
         message.runId === activeRunId ? [message.messageId] : [],
       ),
     )
-    return [
-      ...withProjectedAgentMessages(
+    return mergeAnchoredLocalMessages(
+      withProjectedAgentMessages(
         authoritative,
         knownMessageIds,
         activeRunMessageIds,
         activeRunId,
         projection,
       ),
-      ...localMessages,
-    ]
+      localMessages,
+    )
   }, [
     activeConversationId,
     activeRunId,
@@ -864,6 +866,12 @@ export function AgentDiscoverView({
     eventState.runs,
     localMessagesByConversationId,
   ])
+  if (activeConversationId) {
+    visibleMessageIdsByConversationRef.current.set(
+      activeConversationId,
+      allMessages.map(({ id }) => id),
+    )
+  }
 
   const messages = useMemo(() => {
     if (!activeConversationId) return allMessages
@@ -901,10 +909,18 @@ export function AgentDiscoverView({
   const appendLocalMessage = useCallback(
     (message: DiscoverChatMessage, conversationId = activeConversationIdRef.current) => {
       if (!conversationId) return
-      setLocalMessagesByConversationId((current) => ({
-        ...current,
-        [conversationId]: [...(current[conversationId] ?? []), message],
-      }))
+      setLocalMessagesByConversationId((current) => {
+        const precedingMessageIds =
+          visibleMessageIdsByConversationRef.current.get(conversationId) ?? []
+        visibleMessageIdsByConversationRef.current.set(conversationId, [
+          ...precedingMessageIds,
+          message.id,
+        ])
+        return {
+          ...current,
+          [conversationId]: [...(current[conversationId] ?? []), { message, precedingMessageIds }],
+        }
+      })
     },
     [],
   )
