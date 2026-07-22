@@ -1,6 +1,7 @@
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import type { AgentWorkingStage } from './agentWorkingState'
+import { SEARCH_STATUS_MESSAGES, SEARCH_STATUS_ROTATION_MS } from './searchStatus'
 
 const STAGE_COPY: Record<AgentWorkingStage, { title: string; detail: string }> = {
   submitting: {
@@ -12,9 +13,31 @@ const STAGE_COPY: Record<AgentWorkingStage, { title: string; detail: string }> =
     detail: 'Reading the thread and finding the next move.',
   },
   working: {
-    title: 'Meant is thinking with you',
+    title: '',
     detail: 'Following the thread and gathering what matters.',
   },
+}
+
+function RotatingSearchStatus() {
+  const [messageIndex, setMessageIndex] = useState(0)
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setMessageIndex((currentIndex) => (currentIndex + 1) % SEARCH_STATUS_MESSAGES.length)
+    }, SEARCH_STATUS_ROTATION_MS)
+
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  const message = SEARCH_STATUS_MESSAGES[messageIndex]
+
+  return (
+    <span className="mt-agent-working-title" key={messageIndex}>
+      {message.beforeMeant}
+      <em>Meant</em>
+      {message.afterMeant}
+    </span>
+  )
 }
 
 function MeantHeartMark() {
@@ -68,7 +91,7 @@ export function AgentWorkingIndicator({ stage }: Readonly<{ stage: AgentWorkingS
         </span>
       </span>
       <span className="mt-agent-working-copy">
-        <strong>{copy.title}</strong>
+        <strong>{stage === 'working' ? <RotatingSearchStatus /> : copy.title}</strong>
         <span>{copy.detail}</span>
       </span>
     </div>
