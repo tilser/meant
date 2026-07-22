@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.UcpToolResponse;
@@ -23,6 +24,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -30,6 +32,39 @@ import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(OutputCaptureExtension.class)
 class UcpMcpClientTest {
+
+    @Test
+    void upstream4xxLogsOnlySanitizedErrorCodeAndContent(CapturedOutput output) {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        UcpMcpClient client = new UcpMcpClient(identity(), new ObjectMapper());
+        String endpoint = "https://catalog.shopify.com/api/ucp/mcp?access_token=url-secret";
+        server.expect(requestTo(endpoint))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {
+                                  "code": "version_unsupported",
+                                  "content": "Unable to fetch agent profile: Missing ucp version; access_token=body-secret",
+                                  "credential": "unrelated-secret"
+                                }
+                                """));
+
+        assertThatThrownBy(() -> client.callTool(
+                restClientBuilder.build(),
+                URI.create(endpoint),
+                "search_catalog",
+                Map.of("catalog", Map.of("query", "jacket"))
+        )).isInstanceOf(org.springframework.web.client.HttpClientErrorException.UnprocessableEntity.class);
+
+        assertThat(output)
+                .contains("UCP MCP upstream client error")
+                .contains("status=422")
+                .contains("version_unsupported")
+                .contains("Missing ucp version")
+                .doesNotContain("url-secret", "body-secret", "unrelated-secret");
+        server.verify();
+    }
 
     @Test
     void jsonRpcErrorPayloadIsAbsentFromLogsAndException(CapturedOutput output) {

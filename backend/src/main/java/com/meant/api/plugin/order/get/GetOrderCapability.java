@@ -33,7 +33,7 @@ public class GetOrderCapability implements UcpCapability<GetOrderRequest, UcpOrd
 
     @Override
     public List<CapabilityAdvertisement> advertisements() {
-        return List.of(OrderCapabilityMetadata.required(ID, TOOL_NAME));
+        return List.of(OrderCapabilityMetadata.required(TOOL_NAME));
     }
 
     @Override

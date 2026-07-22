@@ -6,6 +6,7 @@ import com.meant.api.plugin.catalog.common.exception.UcpCatalogResponseException
 import com.meant.api.plugin.catalog.common.support.CatalogPluginJson;
 import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
 import com.meant.api.plugin.catalog.extension.CatalogTool;
+import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductArguments;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductRequest;
 import com.meant.api.plugin.catalog.getproduct.dto.CatalogGetProductResponse;
@@ -39,7 +40,7 @@ public class CatalogGetProductCapability implements UcpCapability<CatalogGetProd
 
     @Override
     public List<CapabilityAdvertisement> advertisements() {
-        return List.of(CatalogCapabilityMetadata.required(ID, TOOL_NAME));
+        return List.of(CatalogCapabilityMetadata.required(CatalogLookupCapability.ID, TOOL_NAME));
     }
 
     @Override

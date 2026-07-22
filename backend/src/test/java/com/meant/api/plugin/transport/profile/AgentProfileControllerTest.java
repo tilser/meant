@@ -31,9 +31,12 @@ class AgentProfileControllerTest {
     void servesGeneratedAgentProfile() throws Exception {
         mockMvc.perform(get("/.well-known/ucp-agent.json"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.profile_url").value("https://agent.example/.well-known/ucp-agent.json"))
-                .andExpect(jsonPath("$.protocol_version").value("2026-04-08"))
-                .andExpect(jsonPath("$.supported_versions['2026-04-08']").value("https://ucp.dev/2026-04-08"))
-                .andExpect(jsonPath("$.signing_key_id").value("agent-key-1"));
+                .andExpect(jsonPath("$.ucp.version").value("2026-04-08"))
+                .andExpect(jsonPath("$.ucp.services['dev.ucp.shopping'][0].version").value("2026-04-08"))
+                .andExpect(jsonPath("$.ucp.services['dev.ucp.shopping'][0].transport").value("mcp"))
+                .andExpect(jsonPath("$.ucp.payment_handlers").isMap())
+                .andExpect(jsonPath("$.profile_url").doesNotExist())
+                .andExpect(jsonPath("$.protocol_version").doesNotExist())
+                .andExpect(jsonPath("$.signing_key_id").doesNotExist());
     }
 }

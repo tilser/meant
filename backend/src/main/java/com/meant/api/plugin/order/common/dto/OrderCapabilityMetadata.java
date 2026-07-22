@@ -8,27 +8,28 @@ import java.util.List;
 public final class OrderCapabilityMetadata {
 
     public static final String PROTOCOL_VERSION = "2026-04-08";
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = PROTOCOL_VERSION;
+    public static final CapabilityId ORDER = CapabilityId.of("dev.ucp.shopping.order");
 
     private OrderCapabilityMetadata() {
     }
 
-    public static CapabilityAdvertisement required(CapabilityId id, String toolName) {
+    public static CapabilityAdvertisement required(String toolName) {
         return CapabilityAdvertisement.required(
-                id,
+                ORDER,
                 VERSION,
                 List.of(toolName),
                 PROTOCOL_VERSION,
-                spec(id),
-                schema(id)
+                spec(),
+                schema()
         );
     }
 
-    private static URI spec(CapabilityId id) {
-        return URI.create("https://ucp.dev/spec/" + id.value());
+    private static URI spec() {
+        return URI.create("https://ucp.dev/2026-04-08/specification/order");
     }
 
-    private static URI schema(CapabilityId id) {
-        return URI.create("https://ucp.dev/schema/" + id.value() + ".json");
+    private static URI schema() {
+        return URI.create("https://ucp.dev/2026-04-08/schemas/shopping/order.json");
     }
 }

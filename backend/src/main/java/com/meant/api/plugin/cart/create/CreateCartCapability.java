@@ -34,7 +34,7 @@ public class CreateCartCapability implements UcpCapability<CreateCartRequest, Uc
 
     @Override
     public List<CapabilityAdvertisement> advertisements() {
-        return List.of(CartCapabilityMetadata.required(ID, TOOL_NAME));
+        return List.of(CartCapabilityMetadata.required(TOOL_NAME));
     }
 
     @Override

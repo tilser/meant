@@ -106,8 +106,16 @@ class SecurityConfigurationIT extends PostgresIntegrationTestSupport {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.profile_url").isEqualTo("http://localhost:8080/.well-known/ucp-agent.json")
-                .jsonPath("$.protocol_version").isEqualTo("2026-04-08")
-                .jsonPath("$.signing_key_id").isEqualTo("meant-test");
+                .jsonPath("$.ucp.version").isEqualTo("2026-04-08")
+                .jsonPath("$.ucp.services['dev.ucp.shopping'][0].transport").isEqualTo("mcp")
+                .jsonPath("$.ucp.capabilities['dev.ucp.shopping.catalog.search'][0].version")
+                .isEqualTo("2026-04-08")
+                .jsonPath("$.ucp.capabilities['dev.ucp.shopping.catalog.lookup'][0].version")
+                .isEqualTo("2026-04-08")
+                .jsonPath("$.ucp.capabilities['dev.shopify.catalog.global'][0].version")
+                .isEqualTo("2026-04-08")
+                .jsonPath("$.ucp.payment_handlers").isMap()
+                .jsonPath("$.profile_url").doesNotExist()
+                .jsonPath("$.protocol_version").doesNotExist();
     }
 }

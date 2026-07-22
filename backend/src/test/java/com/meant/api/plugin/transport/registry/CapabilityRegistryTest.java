@@ -69,17 +69,16 @@ class CapabilityRegistryTest {
 
         AgentProfile profile = registry.agentProfile(identity());
 
-        assertThat(profile.profileUrl()).isEqualTo(URI.create("https://agent.example/.well-known/ucp-agent.json"));
-        assertThat(profile.protocolVersion()).isEqualTo(PROTOCOL_VERSION);
-        assertThat(profile.supportedVersions())
-                .containsExactlyEntriesOf(java.util.Map.of(PROTOCOL_VERSION, "https://ucp.dev/" + PROTOCOL_VERSION));
-        assertThat(profile.signingKeyId()).isEqualTo("agent-key-1");
-        assertThat(profile.capabilities())
-                .extracting(advertisement -> advertisement.id().value())
+        assertThat(profile.ucp().version()).isEqualTo(PROTOCOL_VERSION);
+        assertThat(profile.ucp().services())
+                .containsOnlyKeys("dev.ucp.shopping");
+        assertThat(profile.ucp().paymentHandlers()).isEmpty();
+        assertThat(profile.keys()).isEmpty();
+        assertThat(profile.ucp().capabilities().keySet())
                 .containsExactly("dev.ucp.shopping.catalog.search", "dev.ucp.shopping.checkout");
-        assertThat(profile.capabilities())
-                .extracting(CapabilityAdvertisement::required)
-                .containsExactly(true, false);
+        assertThat(profile.ucp().capabilities().values())
+                .allSatisfy(versions -> assertThat(versions).singleElement()
+                        .satisfies(version -> assertThat(version.version()).isEqualTo(PROTOCOL_VERSION)));
     }
 
     private static AgentIdentity identity() {
@@ -94,7 +93,7 @@ class CapabilityRegistryTest {
         CapabilityId capabilityId = CapabilityId.of(id);
         CapabilityAdvertisement advertisement = new CapabilityAdvertisement(
                 capabilityId,
-                "1.0.0",
+                PROTOCOL_VERSION,
                 List.of(toolName),
                 required,
                 CapabilityAdvertisement.ProtocolVersions.exact(PROTOCOL_VERSION),

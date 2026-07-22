@@ -38,7 +38,7 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
 
     @Override
     public List<CapabilityAdvertisement> advertisements() {
-        return List.of(CheckoutCapabilityMetadata.required(ID, TOOL_NAME));
+        return List.of(CheckoutCapabilityMetadata.required(TOOL_NAME));
     }
 
     @Override

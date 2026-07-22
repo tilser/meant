@@ -3,6 +3,12 @@ package com.meant.api.plugin.transport.profile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meant.api.plugin.catalog.extension.CatalogExtensionRegistry;
+import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionCapability;
+import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionProperties;
+import com.meant.api.plugin.catalog.getproduct.CatalogGetProductCapability;
+import com.meant.api.plugin.catalog.lookup.CatalogLookupCapability;
+import com.meant.api.plugin.catalog.search.CatalogSearchCapability;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -39,49 +45,68 @@ class AgentProfileProviderTest {
 
         assertThat(firstProfile).isSameAs(secondProfile);
         assertThat(registry.generationCount()).isEqualTo(1);
-        assertThatThrownBy(() -> firstProfile.capabilities().add(
-                capability("dev.ucp.shopping.checkout", "create_checkout", false).advertisements().getFirst()
-        )).isInstanceOf(UnsupportedOperationException.class);
-        assertThatThrownBy(() -> firstProfile.supportedVersions().put("2027-01-01", "https://ucp.dev/2027-01-01"))
+        assertThatThrownBy(() -> firstProfile.ucp().capabilities().put("dev.ucp.shopping.checkout", List.of()))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> firstProfile.ucp().services().get("dev.ucp.shopping").add(null))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
-    void generatedProfileSerializesToUcpAgentProfileShape() throws Exception {
+    void generatedProfileMatchesUcp20260408PlatformContract() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        CatalogExtensionRegistry extensionRegistry = new CatalogExtensionRegistry(List.of());
         AgentProfileProvider provider = new AgentProfileProvider(new CapabilityRegistry(List.of(
-                capability("dev.ucp.shopping.catalog.search", "search_catalog", true)
+                new CatalogSearchCapability(objectMapper, extensionRegistry),
+                new CatalogLookupCapability(objectMapper, extensionRegistry),
+                new CatalogGetProductCapability(objectMapper, extensionRegistry),
+                new ShopifyGlobalCatalogExtensionCapability(
+                        new ShopifyGlobalCatalogExtensionProperties(PROTOCOL_VERSION)
+                )
         )), identity(), new StaticSigningKeyProvider(List.of(publicSigningKey())));
         AgentProfile profile = provider.profile();
-        ObjectMapper objectMapper = new ObjectMapper();
 
         JsonNode root = objectMapper.readTree(objectMapper.writeValueAsString(profile));
 
-        assertThat(root.path("profile_url").asText())
-                .isEqualTo("https://agent.example/.well-known/ucp-agent.json");
-        assertThat(root.path("protocol_version").asText()).isEqualTo(PROTOCOL_VERSION);
-        assertThat(root.path("supported_versions").path(PROTOCOL_VERSION).asText())
-                .isEqualTo("https://ucp.dev/" + PROTOCOL_VERSION);
-        assertThat(root.path("signing_key_id").asText()).isEqualTo("agent-key-1");
-        assertThat(root.path("signing_keys").isArray()).isTrue();
-        assertThat(root.path("signing_keys").get(0).path("kid").asText()).isEqualTo("agent-key-1");
-        assertThat(root.path("signing_keys").get(0).path("purpose").asText()).isEqualTo("transport");
-        assertThat(root.path("signing_keys").get(0).path("status").asText()).isEqualTo("active");
-        assertThat(root.path("signing_keys").get(0).path("jwk").path("kty").asText()).isEqualTo("EC");
-        assertThat(root.path("signing_keys").get(0).path("jwk").path("d").isMissingNode()).isTrue();
-        assertThat(root.path("capabilities").isArray()).isTrue();
-        assertThat(root.path("capabilities").get(0).path("id").asText())
-                .isEqualTo("dev.ucp.shopping.catalog.search");
-        assertThat(root.path("capabilities").get(0).path("tools").get(0).asText())
-                .isEqualTo("search_catalog");
-        assertThat(root.path("capabilities").get(0).path("required").asBoolean()).isTrue();
-        assertThat(root.path("capabilities").get(0).path("protocol_versions").path("min").asText())
+        JsonNode ucp = root.path("ucp");
+        assertThat(ucp.path("version").asText()).isEqualTo(PROTOCOL_VERSION);
+        assertThat(ucp.path("services").path("dev.ucp.shopping").get(0).path("version").asText())
                 .isEqualTo(PROTOCOL_VERSION);
-        assertThat(root.path("capabilities").get(0).path("protocol_versions").path("max").asText())
+        assertThat(ucp.path("services").path("dev.ucp.shopping").get(0).path("transport").asText())
+                .isEqualTo("mcp");
+        assertThat(ucp.path("services").path("dev.ucp.shopping").get(0).path("schema").asText())
+                .isEqualTo("https://ucp.dev/2026-04-08/services/shopping/mcp.openrpc.json");
+        assertThat(ucp.path("payment_handlers").isObject()).isTrue();
+        assertThat(ucp.path("payment_handlers").size()).isZero();
+
+        JsonNode capabilities = ucp.path("capabilities");
+        assertThat(capabilities.properties().stream().map(Map.Entry::getKey).toList())
+                .containsExactly(
+                        "dev.shopify.catalog.global",
+                        "dev.ucp.shopping.catalog.lookup",
+                        "dev.ucp.shopping.catalog.search"
+                );
+        assertThat(capabilities.path("dev.ucp.shopping.catalog.lookup").size()).isEqualTo(1);
+        assertThat(capabilities.path("dev.ucp.shopping.catalog.lookup").get(0).path("version").asText())
                 .isEqualTo(PROTOCOL_VERSION);
-        assertThat(root.path("capabilities").get(0).path("requires").path("required_capabilities").isArray())
-                .isTrue();
-        assertThat(root.path("capabilities").get(0).path("requires").path("optional_capabilities").isArray())
-                .isTrue();
+        assertThat(capabilities.path("dev.ucp.shopping.catalog.search").get(0).path("version").asText())
+                .isEqualTo(PROTOCOL_VERSION);
+        assertThat(capabilities.path("dev.shopify.catalog.global").get(0).path("extends").values().stream()
+                .map(JsonNode::asText).toList())
+                .containsExactly(
+                        "dev.ucp.shopping.catalog.search",
+                        "dev.ucp.shopping.catalog.lookup"
+                );
+        assertThat(capabilities.has("dev.ucp.shopping.catalog.get_product")).isFalse();
+
+        assertThat(root.path("keys").isArray()).isTrue();
+        assertThat(root.path("keys").get(0).path("kid").asText()).isEqualTo("agent-key-1");
+        assertThat(root.path("keys").get(0).path("kty").asText()).isEqualTo("EC");
+        assertThat(root.path("keys").get(0).path("d").isMissingNode()).isTrue();
+        assertThat(root.has("profile_url")).isFalse();
+        assertThat(root.has("protocol_version")).isFalse();
+        assertThat(root.has("supported_versions")).isFalse();
+        assertThat(root.has("signing_key_id")).isFalse();
+        assertThat(root.has("signing_keys")).isFalse();
     }
 
     private static AgentIdentity identity() {
@@ -117,7 +142,7 @@ class AgentProfileProviderTest {
         CapabilityId capabilityId = CapabilityId.of(id);
         CapabilityAdvertisement advertisement = new CapabilityAdvertisement(
                 capabilityId,
-                "1.0.0",
+                PROTOCOL_VERSION,
                 List.of(toolName),
                 required,
                 CapabilityAdvertisement.ProtocolVersions.exact(PROTOCOL_VERSION),

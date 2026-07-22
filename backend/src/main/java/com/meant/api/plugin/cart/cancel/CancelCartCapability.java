@@ -33,7 +33,7 @@ public class CancelCartCapability implements UcpCapability<CancelCartRequest, Ca
 
     @Override
     public List<CapabilityAdvertisement> advertisements() {
-        return List.of(CartCapabilityMetadata.required(ID, TOOL_NAME));
+        return List.of(CartCapabilityMetadata.required(TOOL_NAME));
     }
 
     @Override

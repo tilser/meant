@@ -135,6 +135,7 @@ public class UcpMcpClient {
                     .retrieve()
                     .body(McpToolCallResponse.class);
         } catch (RestClientResponseException exception) {
+            wireLogger.logUpstreamHttpFailure(endpoint, toolName, exception);
             wireLogger.logHttpFailure(endpoint, toolName, exception);
             throw exception;
         }
