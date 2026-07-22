@@ -30,6 +30,7 @@ const PROFILE_PICTURE_MAX_BYTES = 5 * 1024 * 1024
 export function AccountView({
   user,
   userId,
+  providerAvatar,
   merchants,
   merchantIdentityLinks,
   merchantIdentityLinksLoading,
@@ -44,6 +45,7 @@ export function AccountView({
 }: Readonly<{
   user: UserAccount
   userId?: string
+  providerAvatar: string | null
   merchants: readonly MerchantProfile[]
   merchantIdentityLinks: readonly MerchantIdentityLinkProfile[]
   merchantIdentityLinksLoading: boolean
@@ -75,6 +77,7 @@ export function AccountView({
   const preview: UserAccount = { name, email: user.email, avatar, avatarPath, newsletter }
   const dirty = name !== user.name || avatarPath !== user.avatarPath || pendingFile !== null
   const hasProfilePicture = Boolean(avatar || avatarPath)
+  const hasCustomProfilePicture = pendingFile !== null || avatarPath !== null
   const identityLinksByMerchant = new Map(
     (merchantIdentityLinks ?? []).map((link) => [link.merchantId, link] as const),
   )
@@ -196,7 +199,7 @@ export function AccountView({
         const profile = await removeProfilePicture({ expectedUserId: requestUserId })
         ensureCurrentAccount()
         savedAvatarPath = profile.profilePicturePath ?? null
-        savedAvatar = null
+        savedAvatar = providerAvatar
         void deleteProfilePictureFile(user.avatarPath, { expectedUserId: requestUserId })
       }
 
@@ -265,14 +268,14 @@ export function AccountView({
             >
               {hasProfilePicture ? 'Change photo' : 'Upload photo'}
             </button>
-            {hasProfilePicture ? (
+            {hasCustomProfilePicture ? (
               <button
                 className="mt-acct-removebtn"
                 type="button"
                 onClick={() => {
                   setSaved(false)
                   setPendingFile(null)
-                  setAvatar(null)
+                  setAvatar(providerAvatar)
                   setAvatarPath(null)
                 }}
               >

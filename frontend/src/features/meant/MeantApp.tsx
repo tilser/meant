@@ -20,6 +20,7 @@ import {
 import { Avatar } from './account/Avatar'
 import { AccountView } from './account/AccountView'
 import { AuthScreen } from './auth/AuthScreen'
+import { authProviderAvatarUrl } from './auth/authProviderProfile'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
 import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
@@ -643,6 +644,7 @@ export function MeantApp() {
   const authed = Boolean(session)
   const userId = session?.user?.id
   const userEmail = session?.user?.email
+  const providerAvatar = authProviderAvatarUrl(session?.user)
   const [theme, setTheme] = useStoredState<Theme>('meant.theme', 'light')
   const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
   const [agentProductSnapshots, setAgentProductSnapshots] = useState<AgentProductSnapshot[]>([])
@@ -1486,23 +1488,27 @@ export function MeantApp() {
     getCurrentUser()
       .then(async (profile) => {
         if (!active || activeUserIdRef.current !== requestedUserId) return
-        const avatar = await getProfilePictureUrl(profile.profilePicturePath).catch(() => null)
+        const uploadedAvatar = await getProfilePictureUrl(profile.profilePicturePath).catch(
+          () => null,
+        )
         if (!active || activeUserIdRef.current !== requestedUserId) return
         const fullName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim()
         setUser((current) => ({
           ...current,
           name: fullName || DEFAULT_USER.name,
           email: profile.email || current.email,
-          avatar,
+          avatar: uploadedAvatar ?? providerAvatar,
           avatarPath: profile.profilePicturePath ?? null,
           newsletter: profile.newsletter ?? current.newsletter,
         }))
       })
       .catch(() => {
         if (!active || activeUserIdRef.current !== requestedUserId) return
-        if (userEmail) {
-          setUser((current) => ({ ...current, email: userEmail }))
-        }
+        setUser((current) => ({
+          ...current,
+          email: userEmail || current.email,
+          avatar: current.avatar ?? providerAvatar,
+        }))
       })
     void enqueueProductSearchPreferencesOperation(async () => {
       try {
@@ -1581,6 +1587,7 @@ export function MeantApp() {
     enqueueProductSearchPreferencesOperation,
     userId,
     userEmail,
+    providerAvatar,
     setUser,
     setPrefsOn,
     setBudget,
@@ -3120,6 +3127,7 @@ export function MeantApp() {
             key={userId ?? 'anonymous'}
             user={user}
             userId={userId}
+            providerAvatar={providerAvatar}
             merchants={currentMerchants}
             merchantIdentityLinks={currentMerchantIdentityLinks}
             merchantIdentityLinksLoading={currentMerchantIdentityLinksLoading}
