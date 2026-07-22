@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from 'react'
 
-import { ProductArtwork, SparkMark } from '../shared/ui'
+import { MeantHeartMark, ProductArtwork } from '../shared/ui'
 import type { Product } from '../types'
 import { money } from '../utils'
 import type { Message } from './types'
@@ -166,7 +166,7 @@ export function AskThread({
           >
             {message.role === 'ai' ? (
               <span className="mt-msg-av">
-                <SparkMark size={12} />
+                <MeantHeartMark size={15} />
               </span>
             ) : null}
             <div className="mt-msg-stack">

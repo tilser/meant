@@ -8,7 +8,7 @@ import {
 } from 'react'
 
 import { BookmarkIcon, CopyIcon } from '../shared/icons'
-import { CloseIcon, SparkMark } from '../shared/ui'
+import { CloseIcon, MeantHeartMark } from '../shared/ui'
 import type {
   CartItem,
   CheckoutPayload,
@@ -412,7 +412,7 @@ export function DiscoverChatMessageRow({
       >
         <div className="mt-ct-meant-inner">
           <span className="mt-ct-av">
-            <SparkMark size={13} />
+            <MeantHeartMark size={18} />
           </span>
           <div className="mt-ct-meant-body">
             {message.blocks?.map((block, index) => (

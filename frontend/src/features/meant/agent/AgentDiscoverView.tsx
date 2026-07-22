@@ -54,7 +54,7 @@ import type {
 } from '../shelf/types'
 import { SHELF_DRAG_MIME } from '../shelf/types'
 import { agentShelfContext } from '../shelf/agentShelfContext'
-import { ProductArtwork, SparkMark } from '../shared/ui'
+import { MeantHeartMark, ProductArtwork } from '../shared/ui'
 import { accountStorageKey } from '../shared/accountStorage'
 import { useStoredState } from '../shared/storage'
 import { Workbench } from '../chat/workbench/Workbench'
@@ -1782,7 +1782,7 @@ export function AgentDiscoverView({
         <div className="mt-ct-thread">
           <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
             <span className="mt-ct-av">
-              <SparkMark size={13} />
+              <MeantHeartMark size={18} />
             </span>
             <div className="mt-ct-meant-body">
               <p className="mt-ct-intro">

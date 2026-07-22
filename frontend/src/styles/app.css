@@ -487,68 +487,40 @@
 }
 
 .mt-ct-av::before,
-.mt-ct-av::after,
-.mt-msg-av::before,
-.mt-msg-av::after {
+.mt-msg-av::before {
   position: absolute;
   pointer-events: none;
   content: '';
-}
-
-.mt-ct-av::before,
-.mt-msg-av::before {
-  inset: -6px;
+  inset: -5px;
   border-radius: inherit;
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--accent) 18%, transparent) 0%,
-    color-mix(in srgb, var(--accent) 8%, transparent) 42%,
+    color-mix(in srgb, #4d99e8 19%, transparent) 0%,
+    color-mix(in srgb, #9847d6 9%, transparent) 44%,
     transparent 72%
   );
   opacity: 0;
-  transform: scale(0.62);
-}
-
-.mt-ct-av::after,
-.mt-msg-av::after {
-  top: 1px;
-  right: 1px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 62%, var(--surface));
-  box-shadow:
-    -18px 7px 0 -1px color-mix(in srgb, var(--accent) 36%, transparent),
-    -7px 22px 0 -1.5px color-mix(in srgb, var(--accent) 30%, transparent),
-    5px 15px 0 -1.5px color-mix(in srgb, var(--accent) 24%, transparent);
-  opacity: 0;
-  transform: translate(-5px, 7px) scale(0.58);
+  transform: scale(0.86);
 }
 
 .mt-ct-av svg,
 .mt-msg-av svg {
   position: relative;
   z-index: 1;
-  transform-origin: center;
+  filter: drop-shadow(0 2px 3px color-mix(in srgb, #4d99e8 20%, transparent));
+  transform-origin: 50% 64%;
 }
 
-.mt-ct-arrival .mt-ct-av {
-  animation: mt-message-star-badge 1120ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
+@media (hover: hover) and (pointer: fine) {
+  .mt-ct-av:hover::before,
+  .mt-msg-av:hover::before {
+    animation: mt-message-heart-hover-halo 760ms var(--ease-out) both;
+  }
 
-.mt-ct-arrival .mt-ct-av::before,
-.mt-msg-ai .mt-msg-av::before {
-  animation: mt-message-star-halo 960ms var(--ease-out) both;
-}
-
-.mt-ct-arrival .mt-ct-av::after,
-.mt-msg-ai .mt-msg-av::after {
-  animation: mt-message-star-sparkles 980ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.mt-ct-arrival .mt-ct-av svg,
-.mt-msg-ai .mt-msg-av svg {
-  animation: mt-message-star-spin 1120ms cubic-bezier(0.12, 0.88, 0.22, 1) both;
+  .mt-ct-av:hover svg,
+  .mt-msg-av:hover svg {
+    animation: mt-message-heart-hover 760ms cubic-bezier(0.2, 0.82, 0.26, 1) both;
+  }
 }
 
 .mt-ct-meant-body {
@@ -1359,10 +1331,6 @@
   width: 100%;
   height: 100%;
   overflow: visible;
-}
-
-.mt-agent-heart-check {
-  stroke: #0b2b5c;
 }
 
 .mt-agent-heart-ripple {
@@ -6791,13 +6759,6 @@ button:disabled {
   flex-shrink: 0;
   border-radius: 7px;
   transform-origin: center;
-  animation: mt-message-star-badge 1040ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.mt-msg-streaming .mt-msg-av {
-  animation:
-    mt-message-star-badge 1040ms cubic-bezier(0.16, 1, 0.3, 1) both,
-    mt-soft-glow 1.8s ease-in-out 1040ms infinite;
 }
 
 .mt-msg-stack {
@@ -10249,93 +10210,35 @@ button:disabled {
   }
 }
 
-@keyframes mt-message-star-badge {
-  0% {
-    opacity: 0.7;
-    transform: scale(0.9);
-  }
-
-  18% {
-    opacity: 1;
-    transform: scale(1.08);
-  }
-
-  42% {
-    transform: scale(0.98);
-  }
-
-  68% {
-    transform: scale(1.025);
-  }
-
+@keyframes mt-message-heart-hover {
+  0%,
   100% {
-    opacity: 1;
     transform: scale(1);
   }
-}
 
-@keyframes mt-message-star-spin {
-  0% {
-    transform: rotate(-26deg) scale(0.88);
-    filter: none;
+  22% {
+    transform: scale(1.065);
   }
 
-  18% {
-    transform: rotate(226deg) scale(1.16);
-    filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--accent) 18%, transparent));
+  43% {
+    transform: scale(0.99);
   }
 
-  42% {
-    transform: rotate(476deg) scale(1.06);
-  }
-
-  72% {
-    transform: rotate(652deg) scale(0.99);
-    filter: drop-shadow(0 3px 6px color-mix(in srgb, var(--accent) 10%, transparent));
-  }
-
-  100% {
-    transform: rotate(720deg) scale(1);
-    filter: none;
+  64% {
+    transform: scale(1.032);
   }
 }
 
-@keyframes mt-message-star-halo {
-  0% {
-    opacity: 0;
-    transform: scale(0.58);
-  }
-
-  24% {
-    opacity: 0.78;
-    transform: scale(0.96);
-  }
-
+@keyframes mt-message-heart-hover-halo {
+  0%,
   100% {
     opacity: 0;
-    transform: scale(1.34);
-  }
-}
-
-@keyframes mt-message-star-sparkles {
-  0% {
-    opacity: 0;
-    transform: translate(-5px, 7px) scale(0.52);
+    transform: scale(0.86);
   }
 
-  24% {
-    opacity: 0.95;
-    transform: translate(0, 0) scale(1);
-  }
-
-  58% {
-    opacity: 0.58;
-    transform: translate(-12px, 4px) scale(0.82);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate(-17px, 13px) scale(0.46);
+  38% {
+    opacity: 0.18;
+    transform: scale(1.08);
   }
 }
 

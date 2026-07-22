@@ -47,7 +47,7 @@ import { MerchantIcon } from '../shared/icons'
 import { deliveryLocationSummary } from '../shared/locations'
 import { accountSessionStorageKey } from '../shared/accountStorage'
 import { useSessionStoredState } from '../shared/storage'
-import { CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
+import { CloseIcon, MeantHeartMark, ProductArtwork, SparkMark } from '../shared/ui'
 import { productImageUrl } from '../product/productSnapshots'
 import type {
   ShelfDragPayload,
@@ -3126,7 +3126,7 @@ export function ChatDiscoverView({
         <div className="mt-ct-thread">
           <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
             <span className="mt-ct-av">
-              <SparkMark size={13} />
+              <MeantHeartMark size={18} />
             </span>
             <div className="mt-ct-meant-body">
               <p className="mt-ct-intro">
@@ -3171,7 +3171,7 @@ export function ChatDiscoverView({
           {visibleActiveCheckout && !threadHasCheckoutBlock ? (
             <div className="mt-ct-msg mt-ct-meant">
               <span className="mt-ct-av">
-                <SparkMark size={13} />
+                <MeantHeartMark size={18} />
               </span>
               <div className="mt-ct-meant-body">
                 <InlineCheckoutBlock
