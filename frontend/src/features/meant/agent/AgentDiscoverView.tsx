@@ -37,7 +37,6 @@ import { latestCartBlockMessageId } from '../chat/utils'
 import type {
   AgentActivity,
   DiscoverChatMessage,
-  DiscoverChatThread,
   DiscoverFindRequest,
   ProductDetailChatRequest,
   VisibleProductContext,
@@ -101,6 +100,7 @@ import { prepareCheckoutFromCurrentCart } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
+import { threadFromAgentConversationSummary } from './conversationHistory'
 
 const MUTATING_AGENT_ACTIONS = new Set([
   'prepare_carts',
@@ -126,21 +126,6 @@ function uniqueRequestId(prefix: string): string {
 function derivedTitle(text: string): string {
   const normalized = text.trim().replace(/\s+/g, ' ')
   return normalized.length <= 48 ? normalized : `${normalized.slice(0, 45)}...`
-}
-
-function threadFromSummary(
-  summary: AgentConversationSummaryProfile,
-  messages: readonly DiscoverChatMessage[] = [],
-): DiscoverChatThread {
-  return {
-    id: summary.conversationId,
-    title: summary.title,
-    messages,
-    archived: summary.status === 'ARCHIVED',
-    createdAt: Date.parse(summary.createdAt),
-    updatedAt: Date.parse(summary.updatedAt),
-    named: summary.title !== 'New conversation',
-  }
 }
 
 function emptyConversationFromSummary(
@@ -1010,9 +995,9 @@ export function AgentDiscoverView({
             summary.latestSequence > 0 || summary.conversationId === activeConversationId,
         )
         .map((summary) =>
-          threadFromSummary(
+          threadFromAgentConversationSummary(
             summary,
-            summary.conversationId === activeConversationId ? messages : [],
+            summary.conversationId === activeConversationId ? messages : undefined,
           ),
         ),
     [activeConversationId, conversations, messages],
@@ -1022,7 +1007,7 @@ export function AgentDiscoverView({
       ...activeThreads,
       ...archivedConversations
         .filter((summary) => summary.latestSequence > 0)
-        .map((summary) => threadFromSummary(summary)),
+        .map((summary) => threadFromAgentConversationSummary(summary)),
     ],
     [activeThreads, archivedConversations],
   )

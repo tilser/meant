@@ -165,6 +165,8 @@ export interface DiscoverChatThread {
   id: string
   title: string
   messages: readonly DiscoverChatMessage[]
+  /** Server-owned count used while a historical transcript has not been loaded yet. */
+  messageCount?: number
   qualificationId?: string
   named?: boolean
   archived?: boolean

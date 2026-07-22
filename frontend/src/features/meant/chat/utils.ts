@@ -1066,7 +1066,7 @@ export function discoverThreadPreview(thread: DiscoverChatThread): string {
       return preview
     }
   }
-  return 'No messages yet'
+  return discoverThreadMessageCountValue(thread) > 0 ? 'Open to view messages' : 'No messages yet'
 }
 
 export function discoverThreadTime(thread: DiscoverChatThread): number | null {
@@ -1092,6 +1092,13 @@ export function discoverThreadTimeLabel(thread: DiscoverChatThread): string {
 }
 
 export function discoverThreadMessageCount(thread: DiscoverChatThread): string {
-  const count = thread.messages.length
+  const count = discoverThreadMessageCountValue(thread)
   return `${count} ${count === 1 ? 'message' : 'messages'}`
+}
+
+function discoverThreadMessageCountValue(thread: DiscoverChatThread): number {
+  const serverCount = Number.isFinite(thread.messageCount)
+    ? Math.max(0, Math.trunc(thread.messageCount ?? 0))
+    : 0
+  return Math.max(thread.messages.length, serverCount)
 }
