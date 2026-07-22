@@ -97,6 +97,7 @@ import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
 import { AgentActionRequestIdentityStore } from './requestIdentity'
 import { agentActionQueueFor } from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
+import { prepareCheckoutFromCurrentCart } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
@@ -1487,28 +1488,14 @@ export function AgentDiscoverView({
       .enqueueUnique(
         `${expectedUserId}:${targetConversationId}:prepare-checkout-workflow`,
         async () => {
-          const activeCarts = await executeAction(
-            targetConversationId,
-            'get_active_carts',
-            { limit: 10 },
-            'Refreshed up to 10 active carts for checkout',
+          const outcome = await prepareCheckoutFromCurrentCart(
+            onReadAgentCart(),
+            (toolName, argumentsValue, summary) =>
+              executeAction(targetConversationId, toolName, argumentsValue, summary),
           )
-          if (!activeCarts) return
-          const cartIds = [
-            ...new Set(
-              onReadAgentCart().flatMap((item) => (item.cartId?.trim() ? [item.cartId] : [])),
-            ),
-          ].slice(0, 10)
-          if (cartIds.length === 0) {
+          if (outcome === 'missing-cart') {
             setError('Your merchant cart must be ready before checkout can start.')
-            return
           }
-          await executeAction(
-            targetConversationId,
-            'prepare_checkout',
-            { cartIds },
-            'Prepared checkout',
-          )
         },
       )
       .finally(() => onAgentMutationFinished(mutationToken))
