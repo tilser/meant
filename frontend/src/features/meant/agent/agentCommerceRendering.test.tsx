@@ -364,7 +364,7 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(events).toEqual(['first:start', 'first:2', 'failed', 'second:3'])
   })
 
-  test('keeps one direct-action queue per account across view remounts', () => {
+  test('keeps one commerce queue per account across view remounts', () => {
     expect(agentActionQueueFor('queue-test-account')).toBe(
       agentActionQueueFor('queue-test-account'),
     )

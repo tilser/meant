@@ -16,7 +16,6 @@ import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.repository.AgentConversationRepository;
 import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
-import com.meant.api.module.agent.service.command.CancelAgentRunCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.command.VisibleProductContextCommand;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
@@ -34,15 +33,12 @@ import org.mockito.ArgumentCaptor;
 class AgentTurnServiceTest {
 
     @Test
-    void cancelAndQueueLinksTheDurableUserMessageToItsNewRun() {
+    void queuesTheDurableUserMessageWithoutCancellingAcceptedRuns() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        UUID runningId = UUID.randomUUID();
-        UUID queuedId = UUID.randomUUID();
         AgentConversationRepository conversations = mock(AgentConversationRepository.class);
         AgentMessageRepository messages = mock(AgentMessageRepository.class);
         AgentRunRepository runs = mock(AgentRunRepository.class);
-        AgentRunService runService = mock(AgentRunService.class);
         AgentVisibleProductContextService visibleContexts = mock(AgentVisibleProductContextService.class);
         Instant now = Instant.parse("2026-07-18T12:00:00Z");
         UUID sourceMessageId = UUID.randomUUID();
@@ -68,13 +64,7 @@ class AgentTurnServiceTest {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        AgentRun running = run(runningId, conversationId, userId, AgentRunStatus.RUNNING, now);
-        AgentRun queued = run(queuedId, conversationId, userId, AgentRunStatus.QUEUED, now);
         when(conversations.findOwnedForUpdate(conversationId, userId)).thenReturn(Optional.of(conversation));
-        when(runs.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(
-                conversationId, List.of(AgentRunStatus.RUNNING))).thenReturn(Optional.of(running));
-        when(runs.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(
-                conversationId, List.of(AgentRunStatus.QUEUED))).thenReturn(Optional.of(queued));
         when(messages.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(messages.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(runs.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -84,7 +74,6 @@ class AgentTurnServiceTest {
                 conversations,
                 messages,
                 runs,
-                runService,
                 visibleContexts,
                 properties(),
                 Clock.fixed(now, ZoneOffset.UTC)
@@ -99,8 +88,7 @@ class AgentTurnServiceTest {
                 "203.0.113.42"
         ));
 
-        verify(runService).requestCancellation(new CancelAgentRunCommand(userId, runningId));
-        verify(runService).cancel(queuedId);
+        verify(runs, never()).findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any());
         assertThat(accepted.userMessage().runId()).isEqualTo(accepted.runId());
         assertThat(accepted.userMessage().sequenceNumber()).isEqualTo(1);
         assertThat(accepted.userMessage().correlationId()).isEqualTo("client-turn-1");
@@ -121,7 +109,6 @@ class AgentTurnServiceTest {
         AgentConversationRepository conversations = mock(AgentConversationRepository.class);
         AgentMessageRepository messages = mock(AgentMessageRepository.class);
         AgentRunRepository runs = mock(AgentRunRepository.class);
-        AgentRunService runService = mock(AgentRunService.class);
         AgentConversation conversation = AgentConversation.builder()
                 .id(conversationId)
                 .userId(userId)
@@ -154,7 +141,6 @@ class AgentTurnServiceTest {
                 conversations,
                 messages,
                 runs,
-                runService,
                 mock(AgentVisibleProductContextService.class),
                 properties(),
                 Clock.fixed(now, ZoneOffset.UTC)
@@ -169,7 +155,6 @@ class AgentTurnServiceTest {
 
         assertThat(accepted.runId()).isEqualTo(runId);
         assertThat(accepted.userMessage().messageId()).isEqualTo(messageId);
-        verify(runService, never()).requestCancellation(any());
         verify(messages, never()).saveAndFlush(any());
         verify(runs, never()).saveAndFlush(any());
     }

@@ -3,7 +3,6 @@ package com.meant.api.module.agent.service;
 import com.meant.api.module.agent.constant.AgentContentKind;
 import com.meant.api.module.agent.constant.AgentConversationStatus;
 import com.meant.api.module.agent.constant.AgentMessageRole;
-import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.entity.AgentConversation;
 import com.meant.api.module.agent.entity.AgentMessage;
 import com.meant.api.module.agent.entity.AgentRun;
@@ -12,15 +11,12 @@ import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.repository.AgentConversationRepository;
 import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
-import com.meant.api.module.agent.service.command.CancelAgentRunCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.SubmitAgentTurnResult;
 import jakarta.validation.Valid;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +30,6 @@ public class AgentTurnService {
     private final AgentConversationRepository conversationRepository;
     private final AgentMessageRepository messageRepository;
     private final AgentRunRepository runRepository;
-    private final AgentRunService runService;
     private final AgentVisibleProductContextService visibleProductContextService;
     private final AgentProperties properties;
     private final Clock clock;
@@ -77,21 +72,6 @@ public class AgentTurnService {
                 );
             }
         }
-
-        runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(
-                        conversation.getId(),
-                        List.of(AgentRunStatus.RUNNING)
-                )
-                .ifPresent(run -> runService.requestCancellation(new CancelAgentRunCommand(
-                        command.userId(),
-                        run.getId()
-                )));
-        runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(
-                        conversation.getId(),
-                        List.of(AgentRunStatus.QUEUED)
-                )
-                .ifPresent(run -> runService.cancel(run.getId()));
-        runRepository.flush();
 
         Instant now = clock.instant();
         String text = command.message().trim();

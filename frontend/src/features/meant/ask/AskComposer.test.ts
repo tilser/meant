@@ -52,4 +52,22 @@ describe('AskComposer submission acknowledgement', () => {
     expect(markup).not.toContain('aria-label="Ask"')
     expect(markup).not.toContain('mt-ct-cobtn')
   })
+
+  test('keeps the composer ready to queue another request while a run is active', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AskComposer, {
+        placeholder: 'Ask Meant...',
+        suggestions: ['Queue this next'],
+        showChips: true,
+        onAsk: () => undefined,
+        running: true,
+        queueWhileRunning: true,
+        onStop: () => undefined,
+      }),
+    )
+
+    expect(markup).not.toContain('mt-ask-busy')
+    expect(markup).not.toContain('disabled=""')
+    expect(markup).toContain('Queue this next')
+  })
 })

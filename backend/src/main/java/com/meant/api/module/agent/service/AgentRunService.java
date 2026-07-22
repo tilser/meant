@@ -48,8 +48,8 @@ public class AgentRunService {
         if (run.getStatus() != AgentRunStatus.QUEUED) {
             return Optional.empty();
         }
-        if (runRepository.existsByConversationIdAndStatusAndIdNot(
-                run.getConversationId(), AgentRunStatus.RUNNING, run.getId())) {
+        if (runRepository.existsByUserIdAndStatusAndIdNot(
+                run.getUserId(), AgentRunStatus.RUNNING, run.getId())) {
             return Optional.empty();
         }
         Instant now = clock.instant();

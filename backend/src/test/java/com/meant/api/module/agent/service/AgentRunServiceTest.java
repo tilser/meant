@@ -51,12 +51,12 @@ class AgentRunServiceTest {
     }
 
     @Test
-    void leavesTheRunQueuedWhenItsConversationIsAlreadyClaimed() {
+    void leavesTheRunQueuedWhenItsUserAlreadyHasAClaimedRun() {
         UUID runId = UUID.randomUUID();
         AgentRun run = queued(runId);
         Fixture fixture = fixture(run);
-        when(fixture.runs().existsByConversationIdAndStatusAndIdNot(
-                run.getConversationId(), AgentRunStatus.RUNNING, runId)).thenReturn(true);
+        when(fixture.runs().existsByUserIdAndStatusAndIdNot(
+                run.getUserId(), AgentRunStatus.RUNNING, runId)).thenReturn(true);
 
         var claim = fixture.service().claim(runId);
 

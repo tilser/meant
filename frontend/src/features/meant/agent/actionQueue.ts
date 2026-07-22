@@ -1,4 +1,4 @@
-/** A failure-safe FIFO lane for direct commerce actions and atomic workflows. */
+/** A failure-safe FIFO lane for one account's agent runs and commerce workflows. */
 export class SerializedAgentActionQueue {
   private tail: Promise<void> = Promise.resolve()
   private pendingActions = 0
@@ -43,7 +43,7 @@ export class SerializedAgentActionQueue {
 
 const accountQueues = new Map<string, SerializedAgentActionQueue>()
 
-/** Account-scoped queues survive discover-view navigation and remounts. */
+/** Account-scoped queues survive navigation and remounts. */
 export function agentActionQueueFor(accountId: string): SerializedAgentActionQueue {
   const existing = accountQueues.get(accountId)
   if (existing) return existing

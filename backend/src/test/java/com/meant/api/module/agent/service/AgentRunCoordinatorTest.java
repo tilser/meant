@@ -758,8 +758,8 @@ class AgentRunCoordinatorTest {
                 .createdAt(Instant.now())
                 .build();
         when(runs.findById(runId)).thenReturn(Optional.of(run));
-        when(runs.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(any(), any()))
-                .thenReturn(Optional.empty());
+        when(runs.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any()))
+                .thenReturn(Optional.of(run), Optional.empty(), Optional.empty());
         when(runService.claim(runId)).thenReturn(Optional.of(executionOwner));
         when(runService.cancellationRequested(runId, executionOwner)).thenReturn(cancelled);
         when(contextAssembler.assemble(runId)).thenReturn(modelContext);

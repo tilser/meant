@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -119,8 +120,10 @@ class AgentContextAssemblerTest {
                         "I found two jackets.",
                         "Put the second jacket into the cart.",
                         "The black jacket is in your cart.",
+                        "I finished the earlier queued request.",
                         "Please remove it from the cart."
-                );
+                )
+                .doesNotContain("This request is queued for later.");
 
         String systemPrompt = context.messages().getFirst().text();
         assertThat(systemPrompt)
@@ -450,24 +453,28 @@ class AgentContextAssemblerTest {
                 .promptVersion("v1")
                 .createdAt(BASE)
                 .build();
+        AgentMessage triggering = AgentMessage.builder()
+                .id(TRIGGER_MESSAGE_ID)
+                .conversationId(CONVERSATION_ID)
+                .role(AgentMessageRole.USER)
+                .contentKind(AgentContentKind.TEXT)
+                .sequenceNumber(5)
+                .textContent("Please remove it from the cart.")
+                .createdAt(BASE.plusSeconds(5))
+                .build();
         List<AgentMessage> chronological = List.of(
                 message(1, AgentMessageRole.USER, "Find me two jackets."),
                 message(2, AgentMessageRole.ASSISTANT, "I found two jackets."),
                 message(3, AgentMessageRole.USER, "Put the second jacket into the cart."),
                 message(4, AgentMessageRole.ASSISTANT, "The black jacket is in your cart."),
-                AgentMessage.builder()
-                        .id(TRIGGER_MESSAGE_ID)
-                        .conversationId(CONVERSATION_ID)
-                        .role(AgentMessageRole.USER)
-                        .contentKind(AgentContentKind.TEXT)
-                        .sequenceNumber(5)
-                        .textContent("Please remove it from the cart.")
-                        .createdAt(BASE.plusSeconds(5))
-                        .build()
+                triggering,
+                message(6, AgentMessageRole.USER, "This request is queued for later."),
+                message(7, AgentMessageRole.ASSISTANT, "I finished the earlier queued request.")
         );
         when(runs.findById(RUN_ID)).thenReturn(Optional.of(run));
         when(conversations.findByIdAndUserId(CONVERSATION_ID, USER_ID)).thenReturn(Optional.of(conversation));
-        when(messages.findByConversationIdOrderBySequenceNumberDesc(any(), any()))
+        when(messages.findById(TRIGGER_MESSAGE_ID)).thenReturn(Optional.of(triggering));
+        when(messages.findContextMessages(any(), any(), anyLong(), any()))
                 .thenReturn(chronological.reversed());
     }
 

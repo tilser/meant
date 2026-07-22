@@ -7,12 +7,25 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface AgentMessageRepository extends JpaRepository<AgentMessage, UUID> {
 
     List<AgentMessage> findByConversationIdOrderBySequenceNumberAsc(UUID conversationId, Pageable pageable);
 
-    List<AgentMessage> findByConversationIdOrderBySequenceNumberDesc(UUID conversationId, Pageable pageable);
+    @Query("""
+            select message from AgentMessage message
+            where message.conversationId = :conversationId
+              and (message.role <> :userRole or message.sequenceNumber <= :throughSequence)
+            order by message.sequenceNumber desc
+            """)
+    List<AgentMessage> findContextMessages(
+            @Param("conversationId") UUID conversationId,
+            @Param("userRole") AgentMessageRole userRole,
+            @Param("throughSequence") long throughSequence,
+            Pageable pageable
+    );
 
     List<AgentMessage> findByConversationIdAndSequenceNumberGreaterThanOrderBySequenceNumberAsc(
             UUID conversationId,

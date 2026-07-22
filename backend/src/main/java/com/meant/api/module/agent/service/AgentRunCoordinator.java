@@ -86,7 +86,7 @@ public class AgentRunCoordinator {
     private final ExecutorService runExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ExecutorService parallelReadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Map<UUID, ReentrantLock> conversationLocks = new ConcurrentHashMap<>();
+    private final Map<UUID, ReentrantLock> userLocks = new ConcurrentHashMap<>();
     private final java.util.Set<UUID> scheduledRuns = ConcurrentHashMap.newKeySet();
 
     public void schedule(UUID runId) {
@@ -121,18 +121,30 @@ public class AgentRunCoordinator {
     }
 
     private void executeScheduled(UUID runId) {
-        UUID conversationId = runRepository.findById(runId)
-                .map(AgentRun::getConversationId)
-                .orElse(null);
-        if (conversationId == null) {
+        AgentRun scheduledRun = runRepository.findById(runId).orElse(null);
+        if (scheduledRun == null) {
             scheduledRuns.remove(runId);
             return;
         }
-        ReentrantLock lock = conversationLocks.computeIfAbsent(conversationId, ignored -> new ReentrantLock());
+        UUID conversationId = scheduledRun.getConversationId();
+        UUID userId = scheduledRun.getUserId();
+        ReentrantLock lock = userLocks.computeIfAbsent(userId, ignored -> new ReentrantLock());
         lock.lock();
         UUID executionOwner = null;
         ScheduledFuture<?> heartbeat = null;
         try {
+            UUID nextQueuedRunId = runRepository.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
+                            userId,
+                            List.of(AgentRunStatus.QUEUED)
+                    )
+                    .map(AgentRun::getId)
+                    .orElse(null);
+            if (!runId.equals(nextQueuedRunId)) {
+                if (nextQueuedRunId != null) {
+                    schedule(nextQueuedRunId);
+                }
+                return;
+            }
             executionOwner = runService.claim(runId).orElse(null);
             if (executionOwner == null) {
                 return;
@@ -161,7 +173,7 @@ public class AgentRunCoordinator {
             lock.unlock();
             scheduledRuns.remove(runId);
             if (executionOwner != null) {
-                scheduleNextQueuedRun(conversationId);
+                scheduleNextQueuedRun(userId);
             }
         }
     }
@@ -189,15 +201,15 @@ public class AgentRunCoordinator {
         }
     }
 
-    private void scheduleNextQueuedRun(UUID conversationId) {
-        if (runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(
-                conversationId,
+    private void scheduleNextQueuedRun(UUID userId) {
+        if (runRepository.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
+                userId,
                 List.of(AgentRunStatus.RUNNING)
         ).isPresent()) {
             return;
         }
-        runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAsc(
-                        conversationId,
+        runRepository.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
+                        userId,
                         List.of(AgentRunStatus.QUEUED)
                 )
                 .map(AgentRun::getId)

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="055-use-user-scoped-agent-run-queue" author="codex">
+        <sql>DROP INDEX IF EXISTS uk_agent_run_queued_conversation</sql>
+        <sql>DROP INDEX IF EXISTS uk_agent_run_active_conversation</sql>
+        <sql>
+            WITH ranked_running AS (
+                SELECT id,
+                       row_number() OVER (PARTITION BY user_id ORDER BY created_at, id) AS queue_position
+                FROM agent_run
+                WHERE status = 'RUNNING'
+            )
+            UPDATE agent_run
+            SET status = 'QUEUED',
+                execution_owner = NULL,
+                lease_expires_at = NULL,
+                heartbeat_at = NULL
+            WHERE id IN (SELECT id FROM ranked_running WHERE queue_position &gt; 1)
+        </sql>
+        <sql>CREATE UNIQUE INDEX uk_agent_run_active_user ON agent_run (user_id)
+            WHERE status = 'RUNNING'</sql>
+        <createIndex tableName="agent_run" indexName="idx_agent_run_user_queue">
+            <column name="user_id"/>
+            <column name="status"/>
+            <column name="created_at"/>
+            <column name="id"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="agent_run" indexName="idx_agent_run_user_queue"/>
+            <sql>DROP INDEX IF EXISTS uk_agent_run_active_user</sql>
+            <sql>CREATE UNIQUE INDEX uk_agent_run_active_conversation ON agent_run (conversation_id)
+                WHERE status = 'RUNNING'</sql>
+            <sql>CREATE UNIQUE INDEX uk_agent_run_queued_conversation ON agent_run (conversation_id)
+                WHERE status = 'QUEUED'</sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

@@ -15,6 +15,7 @@ export function AskComposer({
   showChips,
   onAsk,
   running = false,
+  queueWhileRunning = false,
   onStop,
   autoFocus = false,
   disabled = false,
@@ -27,6 +28,7 @@ export function AskComposer({
   showChips: boolean
   onAsk: AskComposerSubmitHandler
   running?: boolean
+  queueWhileRunning?: boolean
   onStop?: () => void | Promise<void>
   autoFocus?: boolean
   disabled?: boolean
@@ -63,7 +65,7 @@ export function AskComposer({
   )
 
   const send = async (text?: string) => {
-    if (disabled || sending || running) {
+    if (disabled || sending || (running && !queueWhileRunning)) {
       return
     }
     const question = (text ?? value).trim()
@@ -91,7 +93,7 @@ export function AskComposer({
 
   const hasValue = value.trim().length > 0
   const busy = disabled || sending
-  const submissionBlocked = busy || running
+  const submissionBlocked = busy || (running && !queueWhileRunning)
   const canSend = hasValue && !submissionBlocked
 
   return (
@@ -158,7 +160,7 @@ export function AskComposer({
           disabled={busy}
           aria-label="Message Meant"
         />
-        {running ? (
+        {running && !(queueWhileRunning && hasValue) ? (
           <button
             type="button"
             className="mt-ask-go mt-ask-stop"

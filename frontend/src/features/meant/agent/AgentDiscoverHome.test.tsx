@@ -56,12 +56,6 @@ const props = {
   onReadAgentCart: () => [],
   onCaptureAgentCartRevision: () => undefined,
   onAgentCartSnapshot: () => [],
-  agentMutationBlocked: false,
-  isAgentMutationBlocked: () => false,
-  onAgentMutationStarted: () => 'mutation-1',
-  onAgentMutationFinished: () => undefined,
-  onAgentRunSubmissionStarted: () => 'submission-1',
-  onAgentRunSubmissionFinished: () => undefined,
   onProductDetailChatRequestHandled: () => undefined,
   onFlashMessage: () => undefined,
 } satisfies AgentDiscoverViewProps

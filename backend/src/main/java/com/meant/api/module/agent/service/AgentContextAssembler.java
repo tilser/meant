@@ -57,18 +57,22 @@ public class AgentContextAssembler {
                         run.getUserId()
                 )
                 .orElseThrow(AgentException::notFound);
+        AgentMessage triggering = messageRepository.findById(run.getTriggeringMessageId())
+                .filter(message -> message.getConversationId().equals(conversation.getId()))
+                .orElseThrow(AgentException::notFound);
         List<AgentMessage> recent = new ArrayList<>(
-                messageRepository.findByConversationIdOrderBySequenceNumberDesc(
+                messageRepository.findContextMessages(
                         conversation.getId(),
+                        AgentMessageRole.USER,
+                        triggering.getSequenceNumber(),
                         PageRequest.of(0, properties.contextMessageBudget())
                 )
         );
+        recent.removeIf(message -> message.getRole() == AgentMessageRole.USER
+                && message.getSequenceNumber() > triggering.getSequenceNumber());
         Collections.reverse(recent);
-        AgentMessage triggering = recent.stream()
-                .filter(message -> message.getId().equals(run.getTriggeringMessageId()))
-                .findFirst()
-                .orElseGet(() -> messageRepository.findById(run.getTriggeringMessageId())
-                        .orElseThrow(AgentException::notFound));
+        recent.removeIf(message -> message.getId().equals(triggering.getId()));
+        recent.add(triggering);
         AgentVisibleProductContext visibleProductContext = visibleProductContextService
                 .deserialize(triggering.getContentJson())
                 .orElse(null);
