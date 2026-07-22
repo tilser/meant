@@ -3209,8 +3209,11 @@ export function ChatDiscoverView({
         {shareOpen ? (
           <DiscoverShareSheet
             thread={activeThread}
+            newsletter={newsletter}
+            newsletterPending={newsletterPending}
             onClose={() => setShareOpen(false)}
             onSend={shareThread}
+            onNewsletterSignup={() => void subscribeToNewsletter()}
           />
         ) : null}
 

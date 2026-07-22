@@ -33,6 +33,7 @@ import { AgentActivityPanel } from '../chat/AgentActivityPanel'
 import { DiscoverHomeHero } from '../chat/ChatDiscoverView'
 import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
+import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
 import { latestCartBlockMessageId } from '../chat/utils'
 import type {
@@ -358,7 +359,7 @@ export function AgentDiscoverView({
   const [trayClearing, setTrayClearing] = useState(false)
   const [newsletterPending, setNewsletterPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [shareNotice, setShareNotice] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
   const [localMessagesByConversationId, setLocalMessagesByConversationId] = useState<
     Record<string, AnchoredLocalMessage[]>
   >({})
@@ -1519,7 +1520,7 @@ export function AgentDiscoverView({
     setRunSnapshot(null)
     setLoading(false)
     setError(null)
-    setShareNotice(null)
+    setShareOpen(false)
     setDraftMerchantId(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [updateActiveConversationId, updateActiveRunId, updateConversationState])
@@ -1718,14 +1719,13 @@ export function AgentDiscoverView({
             onClearReply={() => undefined}
           />
           {workingStage ? <AgentWorkingIndicator stage={workingStage} /> : null}
-          {error || shareNotice ? (
-            <div className="mt-ct-history-error" role={error ? 'alert' : 'status'}>
-              <span>{error ?? shareNotice}</span>
+          {error ? (
+            <div className="mt-ct-history-error" role="alert">
+              <span>{error}</span>
               <button
                 type="button"
                 onClick={() => {
                   setError(null)
-                  setShareNotice(null)
                 }}
               >
                 Dismiss
@@ -1749,10 +1749,7 @@ export function AgentDiscoverView({
             onDelete={(id) => void archiveConversation(id)}
             onNew={returnHome}
             onRename={(id, title) => void renameConversation(id, title)}
-            onShare={() => {
-              void navigator.clipboard?.writeText(window.location.href)
-              setShareNotice('Link copied. This private conversation still requires your account.')
-            }}
+            onShare={() => setShareOpen(true)}
             onReorder={(fromIndex, toIndex) =>
               setConversations((current) => {
                 const next = [...current]
@@ -1765,19 +1762,37 @@ export function AgentDiscoverView({
             historyThreads={historyThreads}
           />
         ) : null}
-        {error || shareNotice ? (
-          <div className="mt-ct-history-error" role={error ? 'alert' : 'status'}>
-            <span>{error ?? shareNotice}</span>
+        {error ? (
+          <div className="mt-ct-history-error" role="alert">
+            <span>{error}</span>
             <button
               type="button"
               onClick={() => {
                 setError(null)
-                setShareNotice(null)
               }}
             >
               Dismiss
             </button>
           </div>
+        ) : null}
+        {shareOpen ? (
+          <DiscoverShareSheet
+            thread={
+              activeThreads.find((thread) => thread.id === activeConversationId) ?? {
+                id: activeConversationId,
+                title: 'Shopping conversation',
+                messages: [],
+              }
+            }
+            newsletter={newsletter}
+            newsletterPending={newsletterPending}
+            onClose={() => setShareOpen(false)}
+            onSend={() => {
+              setShareOpen(false)
+              appendUnavailableFeatureMessage()
+            }}
+            onNewsletterSignup={() => void subscribeToNewsletter()}
+          />
         ) : null}
         <div className="mt-ct-thread">
           <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">

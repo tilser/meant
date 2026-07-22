@@ -1,32 +1,36 @@
 import { useState } from 'react'
 
 import { CloseIcon } from '../shared/ui'
+import { ComingSoonNewsletter } from './ComingSoonNewsletter'
 import type { DiscoverChatThread } from './types'
+
+const SHARE_LINK = 'app.meant.com/s/coming_soon'
+
+const SHARE_PEOPLE = [
+  { name: 'Mia', avatar: '/assets/share-mia.png' },
+  { name: 'Sofia', avatar: '/assets/share-sofia.png' },
+  { name: 'Olivia', avatar: '/assets/share-olivia.png' },
+] as const
 
 export function DiscoverShareSheet({
   thread,
+  newsletter,
+  newsletterPending,
   onClose,
   onSend,
+  onNewsletterSignup,
 }: Readonly<{
   thread: DiscoverChatThread
+  newsletter: boolean
+  newsletterPending: boolean
   onClose: () => void
   onSend: (person: string) => void
+  onNewsletterSignup: () => void
 }>) {
   const [copied, setCopied] = useState(false)
-  const slug = thread.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 14)
-  const link = `https://meant.app/s/${thread.id}-${slug || 'chat'}`
-  const people = [
-    { name: 'Alex', initial: 'A' },
-    { name: 'Sam', initial: 'S' },
-    { name: 'Jordan', initial: 'J' },
-  ]
   const copy = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      void navigator.clipboard.writeText(link).catch(() => undefined)
+      void navigator.clipboard.writeText(SHARE_LINK).catch(() => undefined)
     }
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1600)
@@ -46,7 +50,7 @@ export function DiscoverShareSheet({
           before you buy - no account, no sign-up.
         </p>
         <div className="mt-ct-share-linkrow">
-          <span className="mt-ct-share-link mt-mono">{link}</span>
+          <span className="mt-ct-share-link mt-mono">{SHARE_LINK}</span>
           <button
             className={`mt-ct-share-copy ${copied ? 'done' : ''}`}
             type="button"
@@ -59,18 +63,26 @@ export function DiscoverShareSheet({
           <span>or send straight to</span>
         </div>
         <div className="mt-ct-share-people">
-          {people.map((person) => (
+          {SHARE_PEOPLE.map((person) => (
             <button
               key={person.name}
               className="mt-ct-share-person"
               type="button"
               onClick={() => onSend(person.name)}
             >
-              <span className="mt-ct-share-person-av">{person.initial}</span>
+              <img className="mt-ct-share-person-av" src={person.avatar} alt="" />
               <span>{person.name}</span>
             </button>
           ))}
         </div>
+        <div className="mt-ct-share-or">
+          <span>Coming soon</span>
+        </div>
+        <ComingSoonNewsletter
+          newsletter={newsletter}
+          newsletterPending={newsletterPending}
+          onNewsletterSignup={onNewsletterSignup}
+        />
       </div>
     </div>
   )

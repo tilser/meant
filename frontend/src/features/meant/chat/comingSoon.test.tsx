@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { ComingSoonNewsletter } from './DiscoverChatBlockView'
+import { ComingSoonNewsletter } from './ComingSoonNewsletter'
 import { comingSoonMessage } from './comingSoon'
 
 describe('coming-soon product actions', () => {

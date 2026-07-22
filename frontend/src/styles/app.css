@@ -5580,6 +5580,8 @@ button:disabled {
   position: relative;
   z-index: 1;
   width: min(440px, 94vw);
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
   padding: 28px 26px 26px;
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -5706,15 +5708,15 @@ button:disabled {
 }
 
 .mt-ct-share-person-av {
-  display: grid;
-  place-items: center;
   width: 38px;
   height: 38px;
   border-radius: 50%;
   background: var(--ink);
-  color: var(--on-accent);
-  font-family: var(--serif);
-  font-size: 16px;
+  object-fit: cover;
+}
+
+.mt-ct-sharesheet .mt-ct-newsletter {
+  max-width: none;
 }
 
 .mt-modal-nav {
