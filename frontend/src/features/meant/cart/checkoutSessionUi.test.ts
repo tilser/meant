@@ -7,6 +7,7 @@ import {
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
   checkoutReadyForPayment,
+  checkoutShouldOfferSavedDetails,
   merchantHandoffReason,
 } from './checkoutSessionUi'
 
@@ -50,6 +51,44 @@ describe('checkout session UCP actions', () => {
 
     expect(checkoutNeedsAddress(checkout)).toBe(true)
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
+  })
+
+  test('offers saved details without asking the buyer to type them again', () => {
+    const checkout = session({
+      status: 'requires_escalation',
+      requiresEscalation: true,
+      nextAction: 'UPDATE_CHECKOUT',
+      messages: [
+        {
+          type: 'error',
+          code: 'delivery_address_required',
+          severity: 'recoverable',
+          content: 'A destination address is required in order to continue.',
+        },
+      ],
+      selectedRail: 'PROVIDER_CHECKOUT_SESSION',
+      ineligibilityReasons: [],
+      savedCheckoutDetails: {
+        buyer: {
+          email: 'ada@example.com',
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+        },
+        shippingAddress: {
+          streetAddress: '1 Market St',
+          addressLocality: 'San Francisco',
+          addressRegion: 'CA',
+          postalCode: '94105',
+          addressCountry: 'US',
+        },
+        updatedAt: '2026-07-22T10:00:00Z',
+      },
+    })
+
+    expect(checkoutAssistantPrompt(checkout)).toContain('reuse your saved details')
+    expect(checkoutAssistantPrompt(checkout)).not.toContain('Send them here in one message')
+    expect(checkoutShouldOfferSavedDetails(checkout, false)).toBe(true)
+    expect(checkoutShouldOfferSavedDetails(checkout, true)).toBe(false)
   })
 
   test('hands off after only the buyer interaction requirement remains', () => {

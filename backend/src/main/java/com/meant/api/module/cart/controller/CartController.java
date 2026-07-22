@@ -163,7 +163,7 @@ public class CartController {
             description = "Cart checkout session",
             content = @Content(schema = @Schema(implementation = CheckoutResponse.class))
     )
-    public CheckoutResponse checkout(
+    public ResponseEntity<CheckoutResponse> checkout(
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
@@ -172,10 +172,12 @@ public class CartController {
             HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        return CheckoutResponse.from(
-                cartService.checkout(new GetCheckoutQuery(
-                        cartId, authenticatedUser.id(), refresh, httpRequest.getRemoteAddr()))
-        );
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(CheckoutResponse.from(
+                        cartService.checkout(new GetCheckoutQuery(
+                                cartId, authenticatedUser.id(), refresh, httpRequest.getRemoteAddr()))
+                ));
     }
 
     @PostMapping("/{cartId}/checkout/embedded")
@@ -253,7 +255,7 @@ public class CartController {
             description = "Updated cart checkout session",
             content = @Content(schema = @Schema(implementation = CheckoutResponse.class))
     )
-    public CheckoutResponse updateCheckout(
+    public ResponseEntity<CheckoutResponse> updateCheckout(
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
@@ -261,10 +263,12 @@ public class CartController {
             HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        return CheckoutResponse.from(
-                cartService.updateCheckout(CartCommandMapper.toCommand(
-                        cartId, authenticatedUser.id(), request, httpRequest.getRemoteAddr()))
-        );
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(CheckoutResponse.from(
+                        cartService.updateCheckout(CartCommandMapper.toCommand(
+                                cartId, authenticatedUser.id(), request, httpRequest.getRemoteAddr()))
+                ));
     }
 
     @PostMapping("/{cartId}/checkout/assistant")
@@ -278,7 +282,7 @@ public class CartController {
             description = "Assistant reply with the current checkout session",
             content = @Content(schema = @Schema(implementation = CheckoutAssistResponse.class))
     )
-    public CheckoutAssistResponse assistCheckout(
+    public ResponseEntity<CheckoutAssistResponse> assistCheckout(
             @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Local cart UUID.", required = true)
             @PathVariable UUID cartId,
@@ -286,21 +290,23 @@ public class CartController {
             HttpServletRequest httpRequest
     ) {
         AuthenticatedUser authenticatedUser = authenticatedUser(jwt);
-        return CheckoutAssistResponse.from(checkoutAssistantService.assist(new AssistCheckoutCommand(
-                cartId,
-                authenticatedUser.id(),
-                request.message(),
-                request.merchantDeliveryHint(),
-                request.history() == null
-                        ? List.of()
-                        : request.history().stream()
-                                .map(message -> new AssistCheckoutCommand.HistoryMessage(
-                                        message.role(),
-                                        message.content()
-                                ))
-                                .toList(),
-                httpRequest.getRemoteAddr()
-        )));
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(CheckoutAssistResponse.from(checkoutAssistantService.assist(new AssistCheckoutCommand(
+                        cartId,
+                        authenticatedUser.id(),
+                        request.message(),
+                        request.merchantDeliveryHint(),
+                        request.history() == null
+                                ? List.of()
+                                : request.history().stream()
+                                        .map(message -> new AssistCheckoutCommand.HistoryMessage(
+                                                message.role(),
+                                                message.content()
+                                        ))
+                                        .toList(),
+                        httpRequest.getRemoteAddr()
+                ))));
     }
 
     @PostMapping("/{cartId}/checkout/consent")

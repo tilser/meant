@@ -425,7 +425,8 @@ class CheckoutAssistantServiceTest {
                     new CommerceMutationPolicy(
                             new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
                             new CartRetrySleeper()),
-                    new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy());
+                    new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy(),
+                    mock(com.meant.api.module.user.service.UserCheckoutDetailsService.class));
         }
 
         @Override

@@ -33,6 +33,7 @@ export interface UpdateCheckoutAddressInput {
 
 export interface CheckoutAssistantContext {
   merchantDeliveryHint?: string | null
+  savedCheckoutDetails?: UpdateCheckoutAddressInput
 }
 
 export type CheckoutAssistantHandler = (

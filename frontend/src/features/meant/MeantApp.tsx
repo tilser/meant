@@ -24,7 +24,7 @@ import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
 import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
 import { CartView } from './cart/CartView'
-import type { ActiveCheckoutSession } from './cart/checkoutTypes'
+import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/checkoutTypes'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
 import { useCartController } from './cart/useCartController'
@@ -133,6 +133,7 @@ import {
   searchGroupedProducts,
   searchSimilarGroupedProducts,
   type CheckoutAssistantMessage,
+  type CheckoutAssistantResult,
   type CheckoutProfile,
   type MerchantIdentityLinkProfile,
   type MerchantProfile,
@@ -142,6 +143,7 @@ import {
   type UserProductSearchPreferenceProfile,
   type UserTasteProfile,
   updateNewsletterSubscription,
+  updateCartCheckout,
   updateUserTasteSignal,
   updateUserSettings,
   ApiError,
@@ -2906,7 +2908,7 @@ export function MeantApp() {
   const assistActiveCheckout = async (
     message: string,
     history: readonly CheckoutAssistantMessage[],
-    context?: { merchantDeliveryHint?: string | null },
+    context?: CheckoutAssistantContext,
   ) => {
     const checkoutSession = activeCheckoutRef.current
     if (
@@ -2931,13 +2933,24 @@ export function MeantApp() {
     setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
-      const result = await assistCartCheckout({
-        cartId: checkoutSession.cartId,
-        message,
-        merchantDeliveryHint: context?.merchantDeliveryHint,
-        history,
-        expectedUserId: requestedUserId,
-      })
+      const result: CheckoutAssistantResult = context?.savedCheckoutDetails
+        ? {
+            reply: 'I applied your saved contact and delivery details to this checkout.',
+            checkoutUpdated: true,
+            checkout: await updateCartCheckout({
+              cartId: checkoutSession.cartId,
+              buyer: context.savedCheckoutDetails.buyer,
+              shippingAddress: context.savedCheckoutDetails.shippingAddress,
+              expectedUserId: requestedUserId,
+            }),
+          }
+        : await assistCartCheckout({
+            cartId: checkoutSession.cartId,
+            message,
+            merchantDeliveryHint: context?.merchantDeliveryHint,
+            history,
+            expectedUserId: requestedUserId,
+          })
       if (
         activeUserIdRef.current !== requestedUserId ||
         checkoutOperationRef.current?.token !== checkoutOperationToken ||

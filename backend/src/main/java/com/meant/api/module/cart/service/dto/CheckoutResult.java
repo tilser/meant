@@ -4,6 +4,7 @@ import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.merchant.constant.CapabilityIneligibilityReason;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.user.service.dto.UserCheckoutDetailsResult;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -24,13 +25,37 @@ public record CheckoutResult(
         CommerceExecutionRail selectedRail,
         List<CapabilityIneligibilityReason> ineligibilityReasons,
         MerchantExecutionPolicy executionPolicy,
-        EmbeddedCheckoutConfiguration embeddedCheckout
+        EmbeddedCheckoutConfiguration embeddedCheckout,
+        UserCheckoutDetailsResult savedCheckoutDetails
 ) {
 
     public CheckoutResult {
         messages = messages == null ? List.of() : List.copyOf(messages);
         ineligibilityReasons = ineligibilityReasons == null ? List.of() : List.copyOf(ineligibilityReasons);
         executionPolicy = executionPolicy == null ? MerchantExecutionPolicy.unavailable() : executionPolicy;
+    }
+
+    public CheckoutResult(
+            UUID cartId,
+            String remoteCartId,
+            String checkoutId,
+            UUID checkoutAttemptId,
+            String status,
+            String checkoutUrl,
+            String continueUrl,
+            String ucpVersion,
+            Long totalAmountMinor,
+            String currency,
+            List<Message> messages,
+            CheckoutNextAction nextAction,
+            CommerceExecutionRail selectedRail,
+            List<CapabilityIneligibilityReason> ineligibilityReasons,
+            MerchantExecutionPolicy executionPolicy,
+            EmbeddedCheckoutConfiguration embeddedCheckout
+    ) {
+        this(cartId, remoteCartId, checkoutId, checkoutAttemptId, status, checkoutUrl, continueUrl,
+                ucpVersion, totalAmountMinor, currency, messages, nextAction, selectedRail,
+                ineligibilityReasons, executionPolicy, embeddedCheckout, null);
     }
 
     public CheckoutResult(
@@ -51,7 +76,7 @@ public record CheckoutResult(
     ) {
         this(cartId, remoteCartId, checkoutId, null, status, checkoutUrl, continueUrl, ucpVersion,
                 totalAmountMinor, currency, messages, nextAction, selectedRail, ineligibilityReasons,
-                executionPolicy, null);
+                executionPolicy, null, null);
     }
 
     public CheckoutResult(
@@ -73,7 +98,7 @@ public record CheckoutResult(
     ) {
         this(cartId, remoteCartId, checkoutId, null, status, checkoutUrl, continueUrl, ucpVersion,
                 totalAmountMinor, currency, messages, nextAction, selectedRail, ineligibilityReasons,
-                executionPolicy, embeddedCheckout);
+                executionPolicy, embeddedCheckout, null);
     }
 
     public CheckoutResult(UUID cartId, String remoteCartId, String checkoutUrl, String continueUrl) {
@@ -93,7 +118,30 @@ public record CheckoutResult(
                 CommerceExecutionRail.NONE,
                 List.of(),
                 MerchantExecutionPolicy.unavailable(),
+                null,
                 null
+        );
+    }
+
+    public CheckoutResult withSavedCheckoutDetails(UserCheckoutDetailsResult details) {
+        return new CheckoutResult(
+                cartId,
+                remoteCartId,
+                checkoutId,
+                checkoutAttemptId,
+                status,
+                checkoutUrl,
+                continueUrl,
+                ucpVersion,
+                totalAmountMinor,
+                currency,
+                messages,
+                nextAction,
+                selectedRail,
+                ineligibilityReasons,
+                executionPolicy,
+                embeddedCheckout,
+                details
         );
     }
 

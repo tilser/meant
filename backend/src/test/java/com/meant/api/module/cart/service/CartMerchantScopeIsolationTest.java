@@ -61,7 +61,8 @@ class CartMerchantScopeIsolationTest {
                 new CommerceMutationPolicy(
                         new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
                         new CartRetrySleeper()),
-                new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy());
+                new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy(),
+                mock(com.meant.api.module.user.service.UserCheckoutDetailsService.class));
         CreateCartCommand command = new CreateCartCommand(
                 UUID.randomUUID(), null, null,
                 List.of(new CreateCartCommand.AddItem("shop-1", 1), new CreateCartCommand.AddItem("shop-2", 1)),

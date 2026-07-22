@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="052-add-user-checkout-details" author="codex">
+        <createTable tableName="user_checkout_details">
+            <column name="user_id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="email" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="phone_number" type="text"/>
+            <column name="street_address" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="extended_address" type="text"/>
+            <column name="address_locality" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="address_region" type="text"/>
+            <column name="postal_code" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="address_country" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint
+                baseTableName="user_checkout_details"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                constraintName="fk_user_checkout_details_user"
+                onDelete="CASCADE"/>
+    </changeSet>
+</databaseChangeLog>

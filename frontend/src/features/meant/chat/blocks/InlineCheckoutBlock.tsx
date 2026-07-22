@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 
-import type { CheckoutAssistantMessage } from '../../../../lib/apiClient'
+import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../../lib/apiClient'
 import type {
   ActiveCheckoutSession,
   CheckoutAssistantHandler,
@@ -14,10 +14,13 @@ import {
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
   checkoutPhase,
+  checkoutShouldOfferSavedDetails,
   merchantCheckoutUrl,
   merchantHandoffReason,
 } from '../../cart/checkoutSessionUi'
 import { MerchantCheckoutLink } from '../../cart/MerchantCheckoutLink'
+import { SavedCheckoutDetailsPrompt } from '../../cart/SavedCheckoutDetailsPrompt'
+import { savedCheckoutDetails } from '../../cart/savedCheckoutDetails'
 import { SparkMark } from '../../shared/ui'
 import type { CartItem, CheckoutPayload, Product } from '../../types'
 import { merchantCheckoutStartBlocked } from './checkoutActivationPolicy'
@@ -67,7 +70,7 @@ export function InlineCheckoutBlock({
   checkoutBusy: boolean
   checkoutError: string | null
   onCheckoutAssistant: CheckoutAssistantHandler
-  onRefreshCheckout: () => Promise<void> | void
+  onRefreshCheckout: (checkout?: CheckoutProfile) => Promise<void> | void
   onReleaseCheckout?: CheckoutReleaseHandler
   onOpenCart: () => void
   onOpenOrders: () => void
@@ -80,6 +83,7 @@ export function InlineCheckoutBlock({
   const [assistantMessages, setAssistantMessages] = useState<CheckoutAssistantMessage[]>([])
   const [assistantInput, setAssistantInput] = useState('')
   const [assistantBusy, setAssistantBusy] = useState(false)
+  const [savedDetailsDismissed, setSavedDetailsDismissed] = useState(false)
   const [releasedCheckouts, setReleasedCheckouts] = useState<
     ReadonlyMap<string, CheckoutReleaseOutcome>
   >(new Map())
@@ -100,6 +104,7 @@ export function InlineCheckoutBlock({
       activeCartIdRef.current = null
       setAssistantMessages([])
       setAssistantInput('')
+      setSavedDetailsDismissed(false)
       return
     }
     if (activeCartIdRef.current !== activeCheckout.cartId) {
@@ -107,6 +112,7 @@ export function InlineCheckoutBlock({
       promptedPhaseRef.current = null
       setAssistantMessages([])
       setAssistantInput('')
+      setSavedDetailsDismissed(false)
     }
     const nextPhase = `${activeCheckout.cartId}:${checkoutPhase(activeCheckout)}`
     if (promptedPhaseRef.current === nextPhase) {
@@ -176,6 +182,9 @@ export function InlineCheckoutBlock({
       return
     }
     const history = assistantMessages
+    if (checkoutNeedsAddress(activeCheckout)) {
+      setSavedDetailsDismissed(true)
+    }
     setAssistantMessages((current) => [...current, { role: 'user', content: message }])
     setAssistantInput('')
     setAssistantBusy(true)
@@ -211,6 +220,8 @@ export function InlineCheckoutBlock({
     const embedded = session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT'
     const merchantUrl = merchantCheckoutUrl(session)
     const needsAddress = checkoutNeedsAddress(session)
+    const savedDetails = savedCheckoutDetails(session.profile)
+    const offerSavedDetails = checkoutShouldOfferSavedDetails(session, savedDetailsDismissed)
     return (
       <div className="mt-ct-checkout-agent">
         <div className="mt-checkout-assistant-log" ref={assistantLogRef}>
@@ -262,6 +273,24 @@ export function InlineCheckoutBlock({
               Back to merchant checkouts
             </button>
           </div>
+        ) : offerSavedDetails && savedDetails ? (
+          <>
+            <SavedCheckoutDetailsPrompt
+              details={savedDetails}
+              busy={checkoutBusy || assistantBusy}
+              onUse={() => setSavedDetailsDismissed(true)}
+              onManual={() => setSavedDetailsDismissed(true)}
+              onCheckoutAssistant={onCheckoutAssistant}
+              onRefresh={onRefreshCheckout}
+            />
+            <button
+              className="mt-ct-cobtn"
+              type="button"
+              onClick={() => releaseCheckout(session.cartId, 'dismissed')}
+            >
+              Back to merchant checkouts
+            </button>
+          </>
         ) : (
           <>
             <form className="mt-checkout-assistant-input" onSubmit={submitAssistant}>

@@ -3080,6 +3080,42 @@ export interface components {
             /** @description Typed reasons explaining ineligibility or fallback selection. */
             ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
         };
+        /** @description Saved buyer contact details that can be reused during checkout. */
+        SavedCheckoutBuyerResponse: {
+            /** @description Checkout contact email address. */
+            email: string;
+            /** @description Recipient first name. */
+            firstName: string;
+            /** @description Recipient last name. */
+            lastName: string;
+            /** @description Checkout contact phone number when supplied. */
+            phoneNumber?: string | null;
+        };
+        /** @description Previously supplied contact and delivery details available for explicit reuse. */
+        SavedCheckoutDetailsResponse: {
+            buyer: components["schemas"]["SavedCheckoutBuyerResponse"];
+            shippingAddress: components["schemas"]["SavedCheckoutShippingAddressResponse"];
+            /**
+             * Format: date-time
+             * @description When these saved checkout details were last changed.
+             */
+            updatedAt: string;
+        };
+        /** @description Saved delivery address that can be reused during checkout. */
+        SavedCheckoutShippingAddressResponse: {
+            /** @description Primary street address line. */
+            streetAddress: string;
+            /** @description Apartment, suite, or secondary address line. */
+            extendedAddress?: string | null;
+            /** @description City or locality. */
+            addressLocality: string;
+            /** @description State, province, or region. */
+            addressRegion?: string | null;
+            /** @description Postal or ZIP code. */
+            postalCode: string;
+            /** @description Delivery country code. */
+            addressCountry: string;
+        };
         /** @description Status-aware UCP checkout session for an in-page checkout flow. */
         CheckoutResponse: {
             /**
@@ -3108,6 +3144,8 @@ export interface components {
             totalAmountMinor?: number;
             /** @description ISO 4217 checkout currency code. */
             currency?: string;
+            /** @description Saved contact and delivery details offered for explicit reuse by this user. */
+            savedCheckoutDetails?: components["schemas"]["SavedCheckoutDetailsResponse"] | null;
             /** @description Whether the provider checkout state requires merchant or buyer escalation. */
             requiresEscalation: boolean;
             /**

@@ -59,6 +59,8 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
+import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
+import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -66,6 +68,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,6 +80,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -168,6 +172,10 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         JsonNode lineRequired = schemas.path("CartLineResponse").path("required");
         JsonNode embeddedProperties = schemas.path("EmbeddedCheckoutBootstrapResponse").path("properties");
         JsonNode checkoutProperties = schemas.path("CheckoutResponse").path("properties");
+        JsonNode savedCheckoutBuyerProperties = schemas.path("SavedCheckoutBuyerResponse").path("properties");
+        JsonNode savedCheckoutAddressProperties = schemas.path("SavedCheckoutShippingAddressResponse")
+                .path("properties");
+        JsonNode savedCheckoutDetailsProperties = schemas.path("SavedCheckoutDetailsResponse").path("properties");
         JsonNode inventoryProperties = schemas.path("UserInventoryItemResponse").path("properties");
         JsonNode inventoryRequired = schemas.path("UserInventoryItemResponse").path("required");
         JsonNode inventoryCreateProperties = schemas.path("AddUserInventoryItemRequest").path("properties");
@@ -214,6 +222,22 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         assertThat(embeddedProperties.has("checkoutUrl")).isTrue();
         assertThat(embeddedProperties.has("checkoutAttemptId")).isTrue();
         assertThat(checkoutProperties.has("checkoutAttemptId")).isTrue();
+        assertThat(checkoutProperties.path("savedCheckoutDetails").path("$ref").asText())
+                .endsWith("/SavedCheckoutDetailsResponse");
+        assertThat(savedCheckoutDetailsProperties.path("buyer").path("$ref").asText())
+                .endsWith("/SavedCheckoutBuyerResponse");
+        assertThat(savedCheckoutDetailsProperties.path("shippingAddress").path("$ref").asText())
+                .endsWith("/SavedCheckoutShippingAddressResponse");
+        assertThat(savedCheckoutBuyerProperties.has("email")
+                && savedCheckoutBuyerProperties.has("firstName")
+                && savedCheckoutBuyerProperties.has("lastName")
+                && savedCheckoutBuyerProperties.has("phoneNumber")).isTrue();
+        assertThat(savedCheckoutAddressProperties.has("streetAddress")
+                && savedCheckoutAddressProperties.has("extendedAddress")
+                && savedCheckoutAddressProperties.has("addressLocality")
+                && savedCheckoutAddressProperties.has("addressRegion")
+                && savedCheckoutAddressProperties.has("postalCode")
+                && savedCheckoutAddressProperties.has("addressCountry")).isTrue();
         assertThat(inventoryProperties.has("commerceReference")).isTrue();
         assertThat(inventoryProperties.has("sourceCheckoutAttemptId")).isTrue();
         assertThat(inventoryProperties.has("photoPath")).isTrue();
@@ -497,6 +521,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 .headers(headers -> headers.setBearerAuth(token(userId)))
                 .exchange()
                 .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "no-store")
                 .expectBody(CheckoutResponse.class)
                 .returnResult()
                 .getResponseBody();
@@ -522,6 +547,59 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 .exchange()
                 .expectStatus().isNotFound();
         assertThat(cartDispatchService.cancelCount()).isEqualTo(1);
+    }
+
+    @Test
+    void ownerCheckoutDetailsPersistAndAreOfferedOnlyToThatOwnerOnLaterCarts() {
+        UUID ownerId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        Merchant merchant = saveMerchant();
+        CartResponse firstCart = createCart(ownerId, merchant.getId());
+        checkoutCart(ownerId, firstCart.cartId());
+
+        CheckoutResponse updated = client.patch()
+                .uri("/api/carts/{cartId}/checkout", firstCart.cartId())
+                .headers(headers -> {
+                    headers.setBearerAuth(token(ownerId));
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "buyer": {
+                            "email": "ada@example.com",
+                            "firstName": "Ada",
+                            "lastName": "Lovelace",
+                            "phoneNumber": "+44 20 7946 0958"
+                          },
+                          "shippingAddress": {
+                            "streetAddress": "12 St James Square",
+                            "extendedAddress": "Flat 3",
+                            "addressLocality": "London",
+                            "addressRegion": "Greater London",
+                            "postalCode": "SW1Y 4LB",
+                            "addressCountry": "GB"
+                          }
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "no-store")
+                .expectBody(CheckoutResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(updated).isNotNull();
+        assertThat(updated.savedCheckoutDetails()).isNotNull();
+        assertThat(updated.savedCheckoutDetails().buyer().email()).isEqualTo("ada@example.com");
+        assertThat(updated.savedCheckoutDetails().shippingAddress().postalCode()).isEqualTo("SW1Y 4LB");
+
+        CartResponse laterCart = createCart(ownerId, merchant.getId());
+        CheckoutResponse laterCheckout = checkoutCart(ownerId, laterCart.cartId());
+        assertThat(laterCheckout.savedCheckoutDetails()).isEqualTo(updated.savedCheckoutDetails());
+
+        CartResponse otherUsersCart = createCart(otherUserId, merchant.getId());
+        CheckoutResponse otherUsersCheckout = checkoutCart(otherUserId, otherUsersCart.cartId());
+        assertThat(otherUsersCheckout.savedCheckoutDetails()).isNull();
     }
 
     @Test
@@ -619,6 +697,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 .headers(headers -> headers.setBearerAuth(token(userId)))
                 .exchange()
                 .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.CACHE_CONTROL, "no-store")
                 .expectBody(CheckoutResponse.class)
                 .returnResult()
                 .getResponseBody();
@@ -1139,6 +1218,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
 
         private final AtomicInteger createCount = new AtomicInteger();
         private final AtomicReference<CheckoutToolCallContext> lastCallContext = new AtomicReference<>();
+        private final Map<String, String> checkoutCartIds = new ConcurrentHashMap<>();
 
         FakeCheckoutDispatchService() {
             super(org.mockito.Mockito.mock(com.meant.api.module.merchant.service.MerchantMcpToolClient.class),
@@ -1149,6 +1229,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         void reset() {
             createCount.set(0);
             lastCallContext.set(null);
+            checkoutCartIds.clear();
         }
 
         int createCount() {
@@ -1166,11 +1247,13 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
                 UcpSession session
         ) {
             createCount.incrementAndGet();
+            String checkoutId = "gid://shopify/Checkout/" + createCount.get();
+            checkoutCartIds.put(checkoutId, request.cartId());
             UcpCheckoutResponse response = new UcpCheckoutResponse(
                     null,
                     "Open checkout in browser",
                     new UcpCheckoutResponse.Checkout(
-                            "gid://shopify/Checkout/" + createCount.get(),
+                            checkoutId,
                             request.cartId(),
                             "open",
                             "https://merchant.example/checkout/" + createCount.get(),
@@ -1233,6 +1316,57 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
         ) {
             lastCallContext.set(context);
             return createCheckout(target.merchantProvider(), request, session);
+        }
+
+        @Override
+        public UcpCheckoutToolResult getCheckout(
+                CartRoutingTarget target,
+                GetCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            lastCallContext.set(context);
+            return checkoutToolResult(request.checkoutId());
+        }
+
+        @Override
+        public UcpCheckoutToolResult updateCheckout(
+                CartRoutingTarget target,
+                UpdateCheckoutRequest request,
+                UcpSession session,
+                CheckoutToolCallContext context
+        ) {
+            lastCallContext.set(context);
+            return checkoutToolResult(request.checkoutId());
+        }
+
+        private UcpCheckoutToolResult checkoutToolResult(String checkoutId) {
+            String payload = """
+                    {
+                      "checkout": {
+                        "id": "%s",
+                        "cart_id": "%s",
+                        "status": "incomplete",
+                        "checkout_url": "https://merchant.example/checkout/current",
+                        "continue_url": "https://merchant.example/continue/current",
+                        "line_items": [{
+                          "id": "gid://shopify/CheckoutLine/1",
+                          "product_variant_id": "gid://shopify/ProductVariant/1",
+                          "quantity": 1
+                        }]
+                      }
+                    }
+                    """.formatted(checkoutId, checkoutCartIds.get(checkoutId));
+            try {
+                UcpCheckoutResponse response = new ObjectMapper().readValue(payload, UcpCheckoutResponse.class);
+                return new UcpCheckoutToolResult(
+                        "https://merchant.example/api/mcp",
+                        payload,
+                        response
+                );
+            } catch (JacksonException exception) {
+                throw new AssertionError(exception);
+            }
         }
 
         private String raw(UcpCheckoutResponse response) {

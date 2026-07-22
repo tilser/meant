@@ -4,13 +4,16 @@ import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../lib/api
 import { CloseIcon, SparkMark } from '../shared/ui'
 import { MerchantCheckoutLink } from './MerchantCheckoutLink'
 import { EmbeddedCheckout } from './EmbeddedCheckout'
+import { SavedCheckoutDetailsPrompt } from './SavedCheckoutDetailsPrompt'
 import { merchantDeliveryCoverageSummary, money } from '../utils'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkoutTypes'
+import { savedCheckoutDetails } from './savedCheckoutDetails'
 import {
   checkoutAssistantPrompt,
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
   checkoutPhase,
+  checkoutShouldOfferSavedDetails,
   merchantCheckoutUrl,
   merchantHandoffReason,
 } from './checkoutSessionUi'
@@ -56,12 +59,15 @@ export function CartCheckoutDialog({
   const [messages, setMessages] = useState<CheckoutAssistantMessage[]>([])
   const [input, setInput] = useState('')
   const [assistantBusy, setAssistantBusy] = useState(false)
+  const [savedDetailsDismissed, setSavedDetailsDismissed] = useState(false)
   const promptedPhaseRef = useRef<string | null>(null)
   const sessionCartIdRef = useRef<string | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
   const merchantUrl = merchantCheckoutUrl(session)
   const handoff = checkoutNeedsHandoff(session)
   const needsAddress = checkoutNeedsAddress(session)
+  const savedDetails = savedCheckoutDetails(session.profile)
+  const offerSavedDetails = checkoutShouldOfferSavedDetails(session, savedDetailsDismissed)
   const embedded = session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT'
 
   const requestClose = useCallback(() => {
@@ -75,6 +81,7 @@ export function CartCheckoutDialog({
       promptedPhaseRef.current = null
       setMessages([])
       setInput('')
+      setSavedDetailsDismissed(false)
     }
     const nextPhase = `${session.cartId}:${checkoutPhase(session)}`
     if (promptedPhaseRef.current === nextPhase) {
@@ -108,6 +115,9 @@ export function CartCheckoutDialog({
       return
     }
     const history = messages
+    if (needsAddress) {
+      setSavedDetailsDismissed(true)
+    }
     setMessages((current) => [...current, { role: 'user', content: message }])
     setInput('')
     setAssistantBusy(true)
@@ -212,6 +222,15 @@ export function CartCheckoutDialog({
                 )}
               </div>
             </div>
+          ) : offerSavedDetails && savedDetails ? (
+            <SavedCheckoutDetailsPrompt
+              details={savedDetails}
+              busy={busy || assistantBusy}
+              onUse={() => setSavedDetailsDismissed(true)}
+              onManual={() => setSavedDetailsDismissed(true)}
+              onCheckoutAssistant={onCheckoutAssistant}
+              onRefresh={onRefresh}
+            />
           ) : (
             <form className="mt-checkout-assistant-input" onSubmit={submit}>
               <input

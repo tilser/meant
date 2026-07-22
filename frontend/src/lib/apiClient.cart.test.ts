@@ -38,6 +38,7 @@ const {
   updateUserSettings,
   updateUserTasteSignal,
   updateCart,
+  updateCartCheckout,
   validateInventoryPhotoFile,
 } = await import('./apiClient')
 const originalFetch = globalThis.fetch
@@ -220,6 +221,49 @@ describe('cart request API', () => {
       ],
       selectedDeliveryOptions: [{ groupId: 'delivery-group-1', selectedOptionId: 'standard' }],
       note: 'Ring the bell',
+    })
+  })
+
+  test('reuses saved buyer and address details through the authenticated checkout PATCH', async () => {
+    await updateCartCheckout({
+      cartId: 'cart/saved',
+      expectedUserId: 'user-a',
+      buyer: {
+        email: 'ada@example.com',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        phoneNumber: '+14155552671',
+      },
+      shippingAddress: {
+        streetAddress: '1 Market St',
+        extendedAddress: 'Suite 200',
+        addressLocality: 'San Francisco',
+        addressRegion: 'CA',
+        postalCode: '94105',
+        addressCountry: 'US',
+      },
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('PATCH')
+    expect(requests[0]?.url).toBe('http://localhost:8080/api/carts/cart%2Fsaved/checkout')
+    expect(requests[0]?.headers.get('Authorization')).toBe('Bearer test-token')
+    expect(requests[0]?.headers.get('Content-Type')).toBe('application/json')
+    expect(await requests[0]?.json()).toEqual({
+      buyer: {
+        email: 'ada@example.com',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        phoneNumber: '+14155552671',
+      },
+      shippingAddress: {
+        streetAddress: '1 Market St',
+        extendedAddress: 'Suite 200',
+        addressLocality: 'San Francisco',
+        addressRegion: 'CA',
+        postalCode: '94105',
+        addressCountry: 'US',
+      },
     })
   })
 })

@@ -39,6 +39,12 @@ public record CheckoutResponse(
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "ISO 4217 checkout currency code.")
         String currency,
         @Schema(
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                nullable = true,
+                description = "Saved contact and delivery details offered for explicit reuse by this user."
+        )
+        SavedCheckoutDetailsResponse savedCheckoutDetails,
+        @Schema(
                 requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "Whether the provider checkout state requires merchant or buyer escalation."
         )
@@ -85,6 +91,7 @@ public record CheckoutResponse(
                 result.ucpVersion(),
                 result.totalAmountMinor(),
                 result.currency(),
+                SavedCheckoutDetailsResponse.from(result.savedCheckoutDetails()),
                 result.requiresEscalation(),
                 result.nextAction(),
                 result.selectedRail(),

@@ -35,10 +35,14 @@ import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
+import com.meant.api.module.user.service.UserCheckoutDetailsService;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import com.meant.api.module.user.service.UserCommerceContextService;
+import com.meant.api.module.user.service.command.SaveUserCheckoutDetailsCommand;
 import com.meant.api.module.user.service.dto.UserCommerceContextResult;
+import com.meant.api.module.user.service.dto.UserCheckoutDetailsResult;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
+import com.meant.api.module.user.service.query.GetUserCheckoutDetailsQuery;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
 import com.meant.api.plugin.cart.common.dto.CartBuyer;
@@ -128,6 +132,7 @@ public class CartService {
     private final CommerceMutationPolicy commerceMutationPolicy;
     private final CheckoutUpdateReconciliationService checkoutUpdateReconciliationService;
     private final CheckoutCancellationPolicy checkoutCancellationPolicy;
+    private final UserCheckoutDetailsService userCheckoutDetailsService;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         return create(command, null);
@@ -343,7 +348,10 @@ public class CartService {
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         if (!query.refresh() && hasText(cart.getCheckoutId())) {
-            return checkoutResultMapper.from(cart, provider.executionPolicy());
+            return withSavedCheckoutDetails(
+                    checkoutResultMapper.from(cart, provider.executionPolicy()),
+                    query.userId()
+            );
         }
         UcpSession session = session(cart);
         CheckoutToolCallContext callContext = new CheckoutToolCallContext(
@@ -376,7 +384,10 @@ public class CartService {
         }
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
                 checkoutCart.getId(), query.userId(), checkoutCart.getCheckoutGeneration(), result);
-        return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
+        return withSavedCheckoutDetails(
+                checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy()),
+                query.userId()
+        );
     }
 
     public CheckoutResult getCheckout(@NotNull @Valid GetCheckoutQuery query) {
@@ -387,7 +398,10 @@ public class CartService {
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
         if (!query.refresh()) {
-            return checkoutResultMapper.from(cart, provider.executionPolicy());
+            return withSavedCheckoutDetails(
+                    checkoutResultMapper.from(cart, provider.executionPolicy()),
+                    query.userId()
+            );
         }
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.getCheckout(
                 target,
@@ -397,7 +411,10 @@ public class CartService {
         );
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
                 cart.getId(), query.userId(), cart.getCheckoutGeneration(), result);
-        return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
+        return withSavedCheckoutDetails(
+                checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy()),
+                query.userId()
+        );
     }
 
     private Cart refreshEmptyCartBeforeCheckout(
@@ -481,7 +498,7 @@ public class CartService {
         // A field-validation rejection (e.g. buyer_identity_email_is_invalid) means the merchant
         // discarded this update. Refreshing the checkout here would replace the validation message
         // with the stale pre-update state (e.g. "address required"), hiding the real problem.
-        if (!hasFieldValidationMessages(result.response())) {
+        if (!hasCheckoutDetailsValidationProblems(result.response())) {
             if (fulfillmentOptionsMissing(result.response())) {
                 result = merchantCheckoutPluginDispatchService.getCheckout(
                         target,
@@ -513,7 +530,35 @@ public class CartService {
         }
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
                 cart.getId(), command.userId(), cart.getCheckoutGeneration(), result);
-        return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy());
+        UserCheckoutDetailsResult savedCheckoutDetails = hasCheckoutDetailsValidationProblems(result.response())
+                ? savedCheckoutDetails(command.userId()).orElse(null)
+                : userCheckoutDetailsService.save(saveCheckoutDetailsCommand(command));
+        return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy())
+                .withSavedCheckoutDetails(savedCheckoutDetails);
+    }
+
+    private CheckoutResult withSavedCheckoutDetails(CheckoutResult result, UUID userId) {
+        return result.withSavedCheckoutDetails(savedCheckoutDetails(userId).orElse(null));
+    }
+
+    private Optional<UserCheckoutDetailsResult> savedCheckoutDetails(UUID userId) {
+        return userCheckoutDetailsService.get(new GetUserCheckoutDetailsQuery(userId));
+    }
+
+    private SaveUserCheckoutDetailsCommand saveCheckoutDetailsCommand(UpdateCheckoutCommand command) {
+        return new SaveUserCheckoutDetailsCommand(
+                command.userId(),
+                command.buyer().email(),
+                command.buyer().firstName(),
+                command.buyer().lastName(),
+                command.buyer().phoneNumber(),
+                command.shippingAddress().streetAddress(),
+                command.shippingAddress().extendedAddress(),
+                command.shippingAddress().addressLocality(),
+                command.shippingAddress().addressRegion(),
+                command.shippingAddress().postalCode(),
+                command.shippingAddress().addressCountry()
+        );
     }
 
     private List<UpdateCheckoutRequest.LineItem> updateCheckoutLineItems(
@@ -904,29 +949,110 @@ public class CartService {
         );
     }
 
-    private boolean hasFieldValidationMessages(UcpCheckoutResponse response) {
+    private boolean hasCheckoutDetailsValidationProblems(UcpCheckoutResponse response) {
         if (response == null) {
             return false;
         }
-        return Stream.concat(
+        boolean hasValidationMessage = Stream.concat(
                         safeNonNullList(response.messages()).stream(),
                         response.resolvedCheckout() == null
                                 ? Stream.empty()
                                 : safeNonNullList(response.resolvedCheckout().messages()).stream()
                 )
-                .anyMatch(this::isFieldValidationMessage);
+                .anyMatch(this::isCheckoutDetailsValidationMessage);
+        return hasValidationMessage || safeNonNullList(response.errors()).stream()
+                .anyMatch(this::isCheckoutDetailsValidationError);
     }
 
-    private boolean isFieldValidationMessage(UcpCheckoutResponse.CheckoutMessage message) {
+    private boolean isCheckoutDetailsValidationMessage(UcpCheckoutResponse.CheckoutMessage message) {
         if (message == null) {
             return false;
         }
-        String code = message.code() == null ? "" : message.code().trim().toLowerCase(Locale.ROOT);
+        String code = normalizedValidationValue(message.code());
+        if (isDeliveryCoverageProblem(code)) {
+            return false;
+        }
+        if (isCheckoutDetailsValidationCode(code)) {
+            return true;
+        }
+        boolean rejectsTargetedField = message.isError()
+                || message.isRecoverable()
+                || message.requiresBuyerAction()
+                || hasValidationFailureName(code);
+        return rejectsTargetedField
+                && isCheckoutDetailsTarget(normalizedValidationValue(message.target()));
+    }
+
+    private boolean isCheckoutDetailsValidationError(UcpCheckoutResponse.CheckoutError error) {
+        if (error == null) {
+            return false;
+        }
+        String code = normalizedValidationValue(error.code());
+        if (isDeliveryCoverageProblem(code)) {
+            return false;
+        }
+        return isCheckoutDetailsValidationCode(code)
+                || isCheckoutDetailsValidationText(normalizedValidationValue(error.message()));
+    }
+
+    private boolean isCheckoutDetailsValidationCode(String code) {
         if (code.startsWith("buyer_identity")) {
             return true;
         }
-        String target = message.target() == null ? "" : message.target().trim().toLowerCase(Locale.ROOT);
-        return target.startsWith("$.buyer");
+        return hasCheckoutDetailsFieldName(code) && hasValidationFailureName(code);
+    }
+
+    private boolean isCheckoutDetailsValidationText(String message) {
+        return hasCheckoutDetailsFieldName(message) && hasValidationFailureName(message);
+    }
+
+    private boolean hasCheckoutDetailsFieldName(String value) {
+        return value.contains("buyer")
+                || value.contains("email")
+                || value.contains("phone")
+                || value.contains("first_name")
+                || value.contains("last_name")
+                || value.contains("address")
+                || value.contains("postal")
+                || value.contains("zip")
+                || value.contains("country")
+                || value.contains("region")
+                || value.contains("state")
+                || value.contains("locality")
+                || value.contains("city")
+                || value.contains("street");
+    }
+
+    private boolean hasValidationFailureName(String value) {
+        return value.contains("invalid")
+                || value.contains("validation")
+                || value.contains("required")
+                || value.contains("missing")
+                || value.contains("incomplete")
+                || value.contains("malformed")
+                || value.contains("rejected");
+    }
+
+    private boolean isCheckoutDetailsTarget(String target) {
+        return target.startsWith("$.buyer")
+                || target.contains("shipping_address")
+                || target.contains("delivery_address")
+                || target.contains("shippingaddress")
+                || target.contains("deliveryaddress")
+                || target.contains("destination");
+    }
+
+    private boolean isDeliveryCoverageProblem(String code) {
+        return code.contains("undeliverable")
+                || code.contains("no_delivery_available")
+                || code.contains("delivery_not_available")
+                || code.contains("shipping_not_available")
+                || code.contains("unsupported_destination")
+                || code.contains("outside_delivery_area");
+    }
+
+    private String normalizedValidationValue(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private FulfillmentGroup defaultFulfillmentGroupSelection(UcpCheckoutResponse.CheckoutFulfillmentGroup group) {

@@ -12896,6 +12896,75 @@ body.mt-ins-resizing .mt-ins {
   opacity: 0.52;
 }
 
+.mt-checkout-saved-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  padding: 12px;
+}
+
+.mt-checkout-saved-question {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.mt-checkout-saved-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mt-checkout-saved-summary strong {
+  color: var(--ink);
+}
+
+.mt-checkout-saved-summary address {
+  display: flex;
+  flex-direction: column;
+  font-style: normal;
+}
+
+.mt-checkout-saved-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mt-checkout-saved-actions button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.mt-checkout-saved-actions button.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.mt-checkout-saved-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .mt-checkout-native {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +40,9 @@ import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.cart.service.query.ListActiveCartsQuery;
 import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
 import com.meant.api.module.user.service.UserCommerceContextService;
+import com.meant.api.module.user.service.UserCheckoutDetailsService;
+import com.meant.api.module.user.service.command.SaveUserCheckoutDetailsCommand;
+import com.meant.api.module.user.service.dto.UserCheckoutDetailsResult;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
@@ -106,6 +110,7 @@ class CartServiceTest {
     private CartPersistenceService cartPersistenceService;
     private CartService cartService;
     private UserSelectedOfferResolutionService offerResolution;
+    private UserCheckoutDetailsService userCheckoutDetailsService;
     private SelectedOfferCartRoutingService routing;
     private Merchant merchant;
 
@@ -142,6 +147,25 @@ class CartServiceTest {
         when(routing.resolvePersistedExternal(any())).thenAnswer(invocation -> invocation.getArgument(0));
         CartOfferRevalidationService revalidation = mock(CartOfferRevalidationService.class);
         CartBindingMetrics metrics = new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        userCheckoutDetailsService = mock(UserCheckoutDetailsService.class);
+        when(userCheckoutDetailsService.get(any())).thenReturn(Optional.empty());
+        when(userCheckoutDetailsService.save(any())).thenAnswer(invocation -> {
+            SaveUserCheckoutDetailsCommand command = invocation.getArgument(0);
+            return new UserCheckoutDetailsResult(
+                    command.userId(),
+                    command.email(),
+                    command.firstName(),
+                    command.lastName(),
+                    command.phoneNumber(),
+                    command.streetAddress(),
+                    command.extendedAddress(),
+                    command.addressLocality(),
+                    command.addressRegion(),
+                    command.postalCode(),
+                    command.addressCountry(),
+                    Instant.parse("2026-06-16T11:08:00Z")
+            );
+        });
         cartService = new CartService(
                 providerLookup,
                 new CartBuyerContextService(commerceContextService),
@@ -164,7 +188,8 @@ class CartServiceTest {
                         new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
                         new CartRetrySleeper()),
                 new CheckoutUpdateReconciliationService(),
-                new CheckoutCancellationPolicy()
+                new CheckoutCancellationPolicy(),
+                userCheckoutDetailsService
         );
         cartDispatchService.cartToolResult = cartToolResult();
     }
@@ -948,12 +973,19 @@ class CartServiceTest {
                 Instant.parse("2026-06-16T11:07:00Z")
         );
         cartRepository.save(cart);
+        UserCheckoutDetailsResult savedDetails = new UserCheckoutDetailsResult(
+                USER_ID, "saved@example.com", "Saved", "Buyer", null,
+                "1 Existing St", null, "Prague", null, "11000", "CZ",
+                Instant.parse("2026-06-15T10:00:00Z")
+        );
+        when(userCheckoutDetailsService.get(any())).thenReturn(Optional.of(savedDetails));
 
         CheckoutResult result = cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
 
         assertThat(result.checkoutId()).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/stored-checkout");
         assertThat(result.continueUrl()).isEqualTo("https://merchant.example/stored-continue");
+        assertThat(result.savedCheckoutDetails()).isEqualTo(savedDetails);
         assertThat(cartDispatchService.getCount).isZero();
         assertThat(checkoutDispatchService.createCount).isZero();
         assertNoInventoryAttribution();
@@ -1146,7 +1178,227 @@ class CartServiceTest {
         assertThat(checkoutDispatchService.getCount).isEqualTo(2);
         assertThat(checkoutDispatchService.lastCheckoutId).isEqualTo("gid://shopify/Checkout/stored");
         assertThat(checkoutDispatchService.calls).startsWith("get", "update");
+        ArgumentCaptor<SaveUserCheckoutDetailsCommand> savedDetails =
+                ArgumentCaptor.forClass(SaveUserCheckoutDetailsCommand.class);
+        verify(userCheckoutDetailsService).save(savedDetails.capture());
+        assertThat(savedDetails.getValue()).satisfies(command -> {
+            assertThat(command.userId()).isEqualTo(USER_ID);
+            assertThat(command.email()).isEqualTo("ada@example.com");
+            assertThat(command.firstName()).isEqualTo("Ada");
+            assertThat(command.lastName()).isEqualTo("Lovelace");
+            assertThat(command.phoneNumber()).isEqualTo("+15551234567");
+            assertThat(command.streetAddress()).isEqualTo("123 Main St");
+            assertThat(command.extendedAddress()).isEqualTo("Apt 4");
+            assertThat(command.addressLocality()).isEqualTo("Springfield");
+            assertThat(command.addressRegion()).isEqualTo("IL");
+            assertThat(command.postalCode()).isEqualTo("62701");
+            assertThat(command.addressCountry()).isEqualTo("US");
+        });
+        assertThat(result.savedCheckoutDetails()).isNotNull();
+        assertThat(result.savedCheckoutDetails().email()).isEqualTo("ada@example.com");
         assertNoInventoryAttribution();
+    }
+
+    @Test
+    void updateCheckoutDoesNotReplaceSavedDetailsWhenMerchantRejectsBuyerFields() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                null,
+                null,
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        cartRepository.save(cart);
+        checkoutDispatchService.checkoutToolResult = new UcpCheckoutToolResult(
+                "https://merchant.example/api/mcp",
+                "{}",
+                new ObjectMapper().readValue("""
+                        {
+                          "checkout": {
+                            "id": "gid://shopify/Checkout/stored",
+                            "cart_id": "gid://shopify/Cart/1",
+                            "status": "incomplete",
+                            "line_items": [{
+                              "id": "gid://shopify/CheckoutLine/1",
+                              "product_variant_id": "gid://shopify/ProductVariant/1",
+                              "quantity": 1
+                            }],
+                            "messages": [{
+                              "code": "buyer_identity_email_is_invalid",
+                              "severity": "recoverable",
+                              "content": "Enter a valid email address",
+                              "target": "$.buyer.email"
+                            }]
+                          }
+                        }
+                        """, UcpCheckoutResponse.class)
+        );
+        UserCheckoutDetailsResult existing = new UserCheckoutDetailsResult(
+                USER_ID,
+                "saved@example.com",
+                "Saved",
+                "Buyer",
+                null,
+                "1 Existing St",
+                null,
+                "Prague",
+                null,
+                "11000",
+                "CZ",
+                Instant.parse("2026-06-15T10:00:00Z")
+        );
+        when(userCheckoutDetailsService.get(any())).thenReturn(Optional.of(existing));
+
+        CheckoutResult result = cartService.updateCheckout(new UpdateCheckoutCommand(
+                cartId,
+                USER_ID,
+                new UpdateCheckoutCommand.Buyer("rejected@example.com", "New", "Buyer", null),
+                new UpdateCheckoutCommand.PostalAddress(
+                        "2 New St", null, "Prague", null, "12000", "CZ"),
+                List.of()
+        ));
+
+        verify(userCheckoutDetailsService, never()).save(any());
+        assertThat(result.savedCheckoutDetails()).isEqualTo(existing);
+    }
+
+    @Test
+    void updateCheckoutDoesNotReplaceSavedDetailsWhenMerchantRejectsShippingAddress() throws Exception {
+        assertRejectedCheckoutDetailsAreNotSaved("""
+                {
+                  "checkout": {
+                    "id": "gid://shopify/Checkout/stored",
+                    "cart_id": "gid://shopify/Cart/1",
+                    "status": "incomplete",
+                    "line_items": [{
+                      "id": "gid://shopify/CheckoutLine/1",
+                      "product_variant_id": "gid://shopify/ProductVariant/1",
+                      "quantity": 1
+                    }],
+                    "messages": [{
+                      "code": "delivery_address_invalid",
+                      "severity": "recoverable",
+                      "content": "Enter a valid postal address",
+                      "target": "$.checkout.fulfillment.methods[0].destinations[0].postal_code"
+                    }]
+                  }
+                }
+                """);
+    }
+
+    @Test
+    void updateCheckoutDoesNotReplaceSavedDetailsWhenRootErrorRejectsShippingAddress() throws Exception {
+        assertRejectedCheckoutDetailsAreNotSaved("""
+                {
+                  "checkout": {
+                    "id": "gid://shopify/Checkout/stored",
+                    "cart_id": "gid://shopify/Cart/1",
+                    "status": "incomplete",
+                    "line_items": [{
+                      "id": "gid://shopify/CheckoutLine/1",
+                      "product_variant_id": "gid://shopify/ProductVariant/1",
+                      "quantity": 1
+                    }]
+                  },
+                  "errors": [{
+                    "code": "shipping_address_invalid",
+                    "message": "Enter a valid shipping address"
+                  }]
+                }
+                """);
+    }
+
+    @Test
+    void updateCheckoutKeepsValidDetailsWhenMerchantCannotDeliverToTheAddress() throws Exception {
+        UUID cartId = checkoutReadyCart();
+        checkoutDispatchService.checkoutToolResult = checkoutToolResult("""
+                {
+                  "checkout": {
+                    "id": "gid://shopify/Checkout/stored",
+                    "cart_id": "gid://shopify/Cart/1",
+                    "status": "incomplete",
+                    "line_items": [{
+                      "id": "gid://shopify/CheckoutLine/1",
+                      "product_variant_id": "gid://shopify/ProductVariant/1",
+                      "quantity": 1
+                    }],
+                    "messages": [{
+                      "code": "no_delivery_available",
+                      "severity": "recoverable",
+                      "content": "No delivery is available for this destination",
+                      "target": "$.checkout.fulfillment.methods[0].destinations[0]"
+                    }]
+                  }
+                }
+                """);
+
+        CheckoutResult result = cartService.updateCheckout(checkoutDetailsCommand(cartId));
+
+        verify(userCheckoutDetailsService).save(any());
+        assertThat(result.savedCheckoutDetails()).isNotNull();
+        assertThat(result.savedCheckoutDetails().email()).isEqualTo("new@example.com");
+    }
+
+    private void assertRejectedCheckoutDetailsAreNotSaved(String responseJson) throws Exception {
+        UUID cartId = checkoutReadyCart();
+        checkoutDispatchService.checkoutToolResult = checkoutToolResult(responseJson);
+        UserCheckoutDetailsResult existing = new UserCheckoutDetailsResult(
+                USER_ID,
+                "saved@example.com",
+                "Saved",
+                "Buyer",
+                null,
+                "1 Existing St",
+                null,
+                "Prague",
+                null,
+                "11000",
+                "CZ",
+                Instant.parse("2026-06-15T10:00:00Z")
+        );
+        when(userCheckoutDetailsService.get(any())).thenReturn(Optional.of(existing));
+
+        CheckoutResult result = cartService.updateCheckout(checkoutDetailsCommand(cartId));
+
+        verify(userCheckoutDetailsService, never()).save(any());
+        assertThat(result.savedCheckoutDetails()).isEqualTo(existing);
+    }
+
+    private UUID checkoutReadyCart() {
+        UUID cartId = UUID.randomUUID();
+        Cart cart = cart(cartId, "https://merchant.example/stored-checkout");
+        cart.replaceCheckoutSession(
+                "gid://shopify/Checkout/stored",
+                "incomplete",
+                "https://merchant.example/stored-checkout",
+                null,
+                null,
+                Instant.parse("2026-06-16T11:07:00Z")
+        );
+        cartRepository.save(cart);
+        return cartId;
+    }
+
+    private UpdateCheckoutCommand checkoutDetailsCommand(UUID cartId) {
+        return new UpdateCheckoutCommand(
+                cartId,
+                USER_ID,
+                new UpdateCheckoutCommand.Buyer("new@example.com", "New", "Buyer", null),
+                new UpdateCheckoutCommand.PostalAddress(
+                        "2 New St", null, "Prague", null, "12000", "CZ"),
+                List.of()
+        );
+    }
+
+    private UcpCheckoutToolResult checkoutToolResult(String responseJson) throws JacksonException {
+        return new UcpCheckoutToolResult(
+                "https://merchant.example/api/mcp",
+                responseJson,
+                new ObjectMapper().readValue(responseJson, UcpCheckoutResponse.class)
+        );
     }
 
     @Test

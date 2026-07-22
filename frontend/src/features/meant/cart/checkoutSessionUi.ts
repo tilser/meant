@@ -1,6 +1,7 @@
 import type { CheckoutCompletionProfile, CheckoutProfile } from '../../../lib/apiClient'
 import type { ActiveCheckoutSession } from './checkoutTypes'
 import { merchantDeliveryCoverageSummary } from '../utils'
+import { savedCheckoutDetails } from './savedCheckoutDetails'
 
 // Merchant message content is localized (e.g. French for balibaris.com), so buyer-input
 // detection relies on the standardized UCP message codes and paths instead of text.
@@ -94,6 +95,15 @@ export function checkoutNeedsAddress(session: ActiveCheckoutSession): boolean {
   )
 }
 
+export function checkoutShouldOfferSavedDetails(
+  session: ActiveCheckoutSession,
+  dismissed: boolean,
+): boolean {
+  return (
+    !dismissed && checkoutNeedsAddress(session) && Boolean(savedCheckoutDetails(session.profile))
+  )
+}
+
 export function checkoutReadyForPayment(session: ActiveCheckoutSession): boolean {
   const nextAction = session.profile.nextAction
   if (nextAction) {
@@ -141,6 +151,9 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
   const merchantUrl = merchantCheckoutUrl(session)
   const coverage = merchantDeliveryCoverageSummary(session.merchant)
   if (checkoutNeedsAddress(session)) {
+    if (savedCheckoutDetails(session.profile)) {
+      return `I need shipping and contact details before I can continue with ${session.merchant}. You can reuse your saved details below or enter different details.`
+    }
     return [
       `I need shipping and contact details before I can continue with ${session.merchant}.`,
       coverage,

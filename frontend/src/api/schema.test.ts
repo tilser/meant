@@ -307,6 +307,55 @@ test('embedded checkout bootstrap exposes only short-lived browser instructions'
   expect(fields as string[]).not.toContain('accessToken')
 })
 
+test('checkout exposes typed saved contact and delivery details for explicit reuse', () => {
+  type Checkout = components['schemas']['CheckoutResponse']
+  type SavedDetails = components['schemas']['SavedCheckoutDetailsResponse']
+  type SavedBuyer = components['schemas']['SavedCheckoutBuyerResponse']
+  type SavedAddress = components['schemas']['SavedCheckoutShippingAddressResponse']
+  type IsOptional<T, K extends keyof T> = object extends Pick<T, K> ? true : false
+  type AcceptsNull<T, K extends keyof T> = null extends T[K] ? true : false
+
+  const checkoutFields: Array<keyof Checkout> = ['savedCheckoutDetails']
+  const savedDetailFields: Array<keyof SavedDetails> = ['buyer', 'shippingAddress', 'updatedAt']
+  const buyerFields: Array<keyof SavedBuyer> = ['email', 'firstName', 'lastName', 'phoneNumber']
+  const addressFields: Array<keyof SavedAddress> = [
+    'streetAddress',
+    'extendedAddress',
+    'addressLocality',
+    'addressRegion',
+    'postalCode',
+    'addressCountry',
+  ]
+  const savedDetailsOptional: IsOptional<Checkout, 'savedCheckoutDetails'> = true
+  const savedDetailsNullable: AcceptsNull<Checkout, 'savedCheckoutDetails'> = true
+  const phoneOptional: IsOptional<SavedBuyer, 'phoneNumber'> = true
+  const phoneNullable: AcceptsNull<SavedBuyer, 'phoneNumber'> = true
+  const extendedAddressOptional: IsOptional<SavedAddress, 'extendedAddress'> = true
+  const extendedAddressNullable: AcceptsNull<SavedAddress, 'extendedAddress'> = true
+  const addressRegionOptional: IsOptional<SavedAddress, 'addressRegion'> = true
+  const addressRegionNullable: AcceptsNull<SavedAddress, 'addressRegion'> = true
+
+  expect(checkoutFields).toContain('savedCheckoutDetails')
+  expect(savedDetailFields).toEqual(['buyer', 'shippingAddress', 'updatedAt'])
+  expect(buyerFields).toEqual(['email', 'firstName', 'lastName', 'phoneNumber'])
+  expect(addressFields).toEqual([
+    'streetAddress',
+    'extendedAddress',
+    'addressLocality',
+    'addressRegion',
+    'postalCode',
+    'addressCountry',
+  ])
+  expect(savedDetailsOptional).toBeTrue()
+  expect(savedDetailsNullable).toBeTrue()
+  expect(phoneOptional).toBeTrue()
+  expect(phoneNullable).toBeTrue()
+  expect(extendedAddressOptional).toBeTrue()
+  expect(extendedAddressNullable).toBeTrue()
+  expect(addressRegionOptional).toBeTrue()
+  expect(addressRegionNullable).toBeTrue()
+})
+
 test('inventory exposes uploaded photo details without legacy browser photo inputs', () => {
   type Inventory = components['schemas']['UserInventoryItemResponse']
   type CommerceReference = components['schemas']['UserInventoryCommerceReferenceResponse']
