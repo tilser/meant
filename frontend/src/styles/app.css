@@ -447,14 +447,16 @@
 
 .mt-ct-msg {
   display: flex;
-  animation: mt-rise var(--motion-slow) var(--ease-out) both;
 }
 
 .mt-ct-you {
   justify-content: flex-end;
+  transform-origin: right bottom;
+  animation: mt-chat-message-in-you 360ms cubic-bezier(0.18, 0.88, 0.24, 1.08) both;
 }
 
 .mt-ct-you-bubble {
+  position: relative;
   max-width: min(80%, 680px);
   padding: 11px 16px;
   border-radius: 16px;
@@ -465,8 +467,21 @@
   line-height: 1.5;
 }
 
+.mt-ct-you-bubble::after {
+  position: absolute;
+  right: -5px;
+  bottom: 0;
+  width: 8px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+  content: '';
+}
+
 .mt-ct-meant {
   gap: 13px;
+  transform-origin: left top;
+  animation: mt-chat-message-in-agent 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .mt-ct-av {
@@ -6729,16 +6744,20 @@ button:disabled {
   gap: 8px;
   max-width: 92%;
   transform-origin: center bottom;
-  animation: mt-msg-in-ai var(--motion-medium) var(--ease-out) both;
+  animation: mt-msg-in-ai 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .mt-msg-you {
   align-self: flex-end;
+  transform-origin: right bottom;
   animation-name: mt-msg-in-you;
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.18, 0.88, 0.24, 1.08);
 }
 
 .mt-msg-ai {
   align-self: flex-start;
+  transform-origin: left top;
 }
 
 .mt-msg-av {
@@ -6781,22 +6800,29 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.mt-msg-you .mt-msg-bubble::after {
+  position: absolute;
+  right: -5px;
+  bottom: 0;
+  width: 8px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+  content: '';
+}
+
 .mt-msg-ai .mt-msg-bubble {
-  border: 1px solid var(--line);
-  border-bottom-left-radius: 5px;
-  background: var(--surface);
+  padding: 1px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--ink-soft);
   white-space: normal;
 }
 
 .mt-msg-ai .mt-msg-bubble-streaming {
-  border-color: var(--accent-line);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 4%, var(--surface)),
-    var(--surface) 58%
-  );
-  box-shadow: 0 10px 24px -22px color-mix(in srgb, var(--accent) 70%, transparent);
+  background: transparent;
+  box-shadow: none;
 }
 
 .mt-msg-bubble p {
@@ -10127,7 +10153,7 @@ button:disabled {
 @keyframes mt-msg-in-ai {
   from {
     opacity: 0;
-    transform: translateX(-8px) translateY(6px) scale(0.985);
+    transform: translateX(-10px) translateY(7px) scale(0.985);
   }
 
   to {
@@ -10139,7 +10165,31 @@ button:disabled {
 @keyframes mt-msg-in-you {
   from {
     opacity: 0;
-    transform: translateX(8px) translateY(6px) scale(0.985);
+    transform: translateX(14px) translateY(8px) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-chat-message-in-agent {
+  from {
+    opacity: 0;
+    transform: translateX(-10px) translateY(8px) scale(0.988);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-chat-message-in-you {
+  from {
+    opacity: 0;
+    transform: translateX(16px) translateY(9px) scale(0.94);
   }
 
   to {
