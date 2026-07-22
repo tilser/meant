@@ -1724,6 +1724,7 @@ export function AgentDiscoverView({
 
   return (
     <main className="mt-feed mt-ct-feed">
+      <Workbench />
       {activeThreads.length > 0 && activeConversationId ? (
         <DiscoverThreadTabs
           threads={activeThreads}
