@@ -537,6 +537,33 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(markup).toContain('Just pick one')
   })
 
+  test('renders the merchant domain instead of the Shopify transport identity at checkout', () => {
+    const markup = renderToStaticMarkup(
+      <InlineCheckoutBlock
+        threadId="conversation-1"
+        cart={[
+          {
+            ...cart[0]!,
+            merchant: 'sollys-online-grocery.myshopify.com',
+            merchantDomain: 'nycfactory.com',
+          },
+        ]}
+        products={[first]}
+        onCheckout={() => undefined}
+        activeCheckout={null}
+        checkoutBusy={false}
+        checkoutError={null}
+        onCheckoutAssistant={async () => null}
+        onRefreshCheckout={() => undefined}
+        onOpenCart={() => undefined}
+        onOpenOrders={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('nycfactory.com')
+    expect(markup).not.toContain('sollys-online-grocery.myshopify.com')
+  })
+
   test('renders an explicit review result when a catalog merchant has no review integration', () => {
     const markup = renderToStaticMarkup(
       <ProductReviewsPanel

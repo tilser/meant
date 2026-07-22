@@ -44,6 +44,14 @@ function cartItemReadyForCheckout(item: CartItem): boolean {
   )
 }
 
+function checkoutMerchantDomain(group: CartGroup | null | undefined): string | null {
+  return (
+    group?.items
+      .map((item) => item.merchantDomain?.trim())
+      .find((domain): domain is string => Boolean(domain)) ?? null
+  )
+}
+
 export function InlineCheckoutBlock({
   threadId,
   cart,
@@ -347,6 +355,8 @@ export function InlineCheckoutBlock({
           <div className="mt-ct-checkout-groups">
             {groups.map((group) => {
               const actionGroup = actionCart ? liveCheckoutGroupFor(group, liveGroups) : group
+              const merchantDomain =
+                checkoutMerchantDomain(actionGroup) ?? checkoutMerchantDomain(group)
               const groupCartId = actionGroup?.items.find((item) => item.cartId)?.cartId
               const releasedOutcome = groupCartId ? releasedCheckouts.get(groupCartId) : undefined
               const groupIsActive =
@@ -395,7 +405,7 @@ export function InlineCheckoutBlock({
                 <div className="mt-ct-cogroup" key={group.merchantKey}>
                   <div className="mt-ct-cogroup-head">
                     <div>
-                      <div className="mt-ct-cogroup-name">{group.merchant}</div>
+                      <div className="mt-ct-cogroup-name">{merchantDomain ?? group.merchant}</div>
                       <div className="mt-mono mt-ct-cogroup-meta">
                         {group.items.reduce((sum, line) => sum + line.qty, 0)} items · Estimated{' '}
                         {money(group.total)}
